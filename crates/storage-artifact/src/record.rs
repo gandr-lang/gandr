@@ -67,6 +67,16 @@ impl From<ConstantIndex> for AdmissionKey
     /// - provides: the one spelling of a declaration record's key.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on zero, all byte carries representable by the target,
+    ///   and the usize ceiling observes eight-byte big-endian encodings and
+    ///   numeric/lexicographic agreement. It distinguishes reversed bytes,
+    ///   shortened keys and narrowed indices, without exhausting index pairs.
+    /// - witness: `record::tests::admission_keys_preserve_numeric_order_across_byte_carries`
+    #[anodized::spec(ensures: |ret| ret.0.iter().fold(0_u64, |value, &byte|
+        value.wrapping_shl(8) | u64::from(byte))
+        == u64::try_from(usize::from(index)).unwrap_or(u64::MAX))]
     #[inline]
     fn from(index: ConstantIndex) -> Self
     {
@@ -162,6 +172,23 @@ impl ReassembledArtifact
 
 /// One declaration record: its admission index, its key, and its segment's
 /// bytes.
+///
+/// # Specification
+/// - requires: nothing; segment syntax belongs to kernel decoding.
+/// - ensures: the admitted key is the stored admission index in eight-byte
+///   big-endian form, independent of the segment contents.
+/// - provides: the binding between a declaration's numeric and ordered keys.
+/// - fails: the refinement rejects a key/index disagreement.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 zero, 255, 256 and the native-word maximum distinguish
+///   miskeyed records; raw segments remain admissible. Carry goldens
+///   distinguish byte order from the constructor's own implementation.
+/// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
+/// - witness: `record::tests::admission_keys_preserve_numeric_order_across_byte_carries`
+#[anodized::spec(maintains: self.key.0.iter().rev().copied().eq(
+    u64::try_from(usize::from(self.index)).unwrap_or(u64::MAX).to_le_bytes()))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactRecord
 {
@@ -185,6 +212,18 @@ impl ArtifactRecord
     /// - provides: the one constructor a declaration record has.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 through reassembly and stored reads observes the index,
+    ///   key and complete segment in a shared four-declaration artifact and 64
+    ///   generated environments with at most 47 declarations of four kinds. It
+    ///   distinguishes lost segment bytes and miskeyed declarations; it does
+    ///   not exhaust arbitrary malformed segment contents.
+    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[anodized::spec(ensures: |ret| ret.index == index
+        && ret.key == AdmissionKey::from(index)
+        && ret.segment.as_ref() == segment.0)]
     #[inline]
     #[must_use]
     pub fn new(
@@ -235,6 +274,31 @@ impl ArtifactRecord
 
 /// The record set a kernel artifact is: its header, and one record per
 /// declaration, strictly ascending and unique by admission key.
+///
+/// # Specification
+/// - requires: nothing; header and segment bytes need not decode as a kernel
+///   artifact, and admission indices need not be contiguous.
+/// - ensures: each record binds its index to its key, and keys are strictly
+///   increasing, so duplicate keys are absent.
+/// - provides: canonical record ordering without certifying the payload.
+/// - fails: the refinement rejects miskeyed, reversed or duplicate records.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 empty and noncontiguous sets admit raw bytes; reversing a
+///   byte-carry pair, repeating a key and changing a stored key each violate a
+///   separate part of the refinement. Public construction also refuses named
+///   duplicate positions before sorting.
+/// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
+/// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
+#[anodized::spec(maintains: {
+    let mut previous = None;
+    self.records.iter().all(|record| {
+        let ordered = previous.is_none_or(|key| key < record.key);
+        previous = Some(record.key);
+        ordered && anodized::types::Spec::predicate(record)
+    })
+})]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactRecordSet
 {
@@ -268,12 +332,30 @@ impl ArtifactRecordSet
     ///   image.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — the reassembled set is byte-identical to
-    ///   the encoder's image for a fixed environment sharing subterms across
-    ///   declarations and for generated environments, with one record per
-    ///   declaration plus the header.
+    /// - hypothesis: L2 on a four-declaration environment sharing subterms and
+    ///   64 generated environments of zero to 47 declarations, drawn from four
+    ///   kinds, observes exact image reconstruction and declaration count. It
+    ///   distinguishes dropped bytes, changed ordering and missing records.
+    ///   Those valid-image witnesses do not establish every decoder refusal.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[anodized::spec(ensures: |ret| match ret {
+        Ok(ref set) => {
+            let mut offset = set.header.len();
+            image.as_ref().starts_with(set.header.as_ref())
+                && set.records.iter().enumerate().all(|(index, record)| {
+                    let end = offset.saturating_add(record.segment.len());
+                    let agrees = record.index == ConstantIndex::from(index)
+                        && record.key == AdmissionKey::from(record.index)
+                        && image.as_ref().get(offset .. end) == Some(record.segment.as_ref());
+                    offset = end;
+                    agrees
+                })
+                && offset == image.as_ref().len()
+        },
+        Err(ArtifactError::Kernel { .. } | ArtifactError::SegmentBoundary { .. }) => true,
+        Err(_) => false,
+    })]
     #[inline]
     pub fn from_artifact(image: ArtifactImage<'_>) -> Result<Self, ArtifactError>
     {
@@ -324,12 +406,27 @@ impl ArtifactRecordSet
     /// admission index.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement for the sort — two permutations of one
-    ///   collection build equal sets in ascending key order — and L3 for the
-    ///   refusal, one repeated index with both positions asserted.
+    /// - hypothesis: L2 on forward and reverse orders across the 255/256 carry
+    ///   observes canonical ordering and unchanged payloads, with a downstream
+    ///   identity comparison for a four-declaration artifact. L3 distinguishes
+    ///   first-repetition order from key order and later duplicate positions in
+    ///   three duplicate layouts. It does not exhaust permutations; the
+    ///   predicate retains only the moved collection's count.
     /// - witness: `record::tests::from_records_sorts_any_permutation_canonically`
     /// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
     /// - witness: `artifact_contract::artifact_contract::a_permuted_build_order_yields_the_same_identity`
+    #[anodized::spec(
+        captures: count = records.len(),
+        ensures: |ret| match ret {
+            Ok(ref set) => set.header.as_ref() == header.0
+                && set.records.len() == count
+                && set.records.iter().zip(set.records.iter().skip(1))
+                    .all(|(previous, next)| previous.key < next.key),
+            Err(ArtifactError::DuplicateAdmissionKey { first, second, .. }) =>
+                first < second && usize::from(second) < count,
+            Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn from_records(
         header: SegmentBytes<'_>,
@@ -377,10 +474,45 @@ impl ArtifactRecordSet
     /// position requires.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — a stored tree missing its header record, and one
-    ///   whose declaration keys skip an index, each refused naming the
-    ///   position.
+    /// - hypothesis: L2 through stored reads observes complete reconstruction
+    ///   for one- and 300-declaration artifacts. L3 supplies a missing header
+    ///   and a skipped initial index, observing the exact refused position. It
+    ///   distinguishes shifted keys and omitted values without exhausting
+    ///   malformed key lengths or all later failure positions.
     /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    #[anodized::spec(
+        requires: stored.iter().zip(stored.iter().skip(1))
+            .all(|(previous, next)| previous.key() < next.key()),
+        ensures: |ret| match ret {
+            Ok(ref set) => stored.first().is_some_and(|header|
+                header.key().as_ref() == HEADER_KEY
+                    && set.header.as_ref() == header.value().as_ref())
+                && set.records.len().checked_add(1) == Some(stored.len())
+                && set.records.iter().zip(stored.iter().skip(1)).enumerate()
+                    .all(|(index, (record, original))| {
+                        record.index == ConstantIndex::from(index)
+                            && record.key == AdmissionKey::from(record.index)
+                            && original.key().as_ref() == record.key.as_ref()
+                            && original.value().as_ref() == record.segment.as_ref()
+                    }),
+            Err(ArtifactError::MisplacedRecord { position }) => {
+                let first = if stored.is_empty() {
+                    Some(0)
+                } else {
+                    stored.iter().enumerate().position(|(index, record)| {
+                        if index == 0 {
+                            record.key().as_ref() != HEADER_KEY
+                        } else {
+                            record.key().as_ref() != AdmissionKey::from(ConstantIndex::from(index.saturating_sub(1))).as_ref()
+                        }
+                    })
+                };
+                first == Some(usize::from(position))
+            },
+            Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn from_stored(stored: &[Record]) -> Result<Self, ArtifactError>
     {
@@ -447,6 +579,21 @@ impl ArtifactRecordSet
     /// - provides: the input a record tree is built from.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 through building, storing and reopening a one- and a
+    ///   300-declaration artifact observes ordered keys and every record value.
+    ///   Perturbing the header or a segment changes the stored identity. These
+    ///   witnesses distinguish omitted, reordered and misassociated records;
+    ///   they do not exhaust record-tree shapes or allocation behaviour.
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    /// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
+    #[anodized::spec(ensures: |ret| ret.len() == self.records.len().saturating_add(1)
+        && ret.first().is_some_and(|header| header.key().as_ref() == HEADER_KEY
+            && header.value().as_ref() == self.header.as_ref())
+        && ret.iter().skip(1).zip(&self.records).all(|(view, record)|
+            (view.key().as_ref(), view.value().as_ref())
+                == (record.key.as_ref(), record.segment.as_ref())))]
     #[inline]
     #[must_use]
     pub fn record_refs(&self) -> Vec<RecordRef<'_>>
@@ -470,6 +617,26 @@ impl ArtifactRecordSet
     /// - provides: the bytes a reader hands the kernel's decoder.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the shared four-declaration artifact and 64
+    ///   generated environments of zero to 47 declarations observes every
+    ///   reassembled byte against the kernel encoder, distinguishing misplaced
+    ///   headers, segment loss and reordered bytes. These witnesses do not
+    ///   validate arbitrary bytes admitted by the unchecked record constructor.
+    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[anodized::spec(ensures: |ret| {
+        let mut offset = self.header.len();
+        ret.0.starts_with(self.header.as_ref())
+            && self.records.iter().all(|record| {
+                let end = offset.saturating_add(record.segment.len());
+                let agrees = ret.0.get(offset .. end) == Some(record.segment.as_ref());
+                offset = end;
+                agrees
+            })
+            && offset == ret.0.len()
+    })]
     #[inline]
     #[must_use]
     pub fn reassemble(&self) -> ReassembledArtifact
@@ -511,10 +678,31 @@ impl ArtifactRecordSet
     /// has no segment boundary.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — a stored set whose bytes decode but whose first
-    ///   record carries one byte of the first declaration is refused at that
-    ///   record, and the committed set of the same artifact is admitted.
+    /// - hypothesis: L3 on one four-declaration artifact shifts the header and
+    ///   first declaration cuts separately while preserving all image bytes,
+    ///   observing positions zero and one. The unshifted artifact is admitted.
+    ///   It distinguishes conflating valid bytes with valid cuts; later cuts
+    ///   and differing record/layout counts are not sampled by this witness.
     /// - witness: `artifact_contract::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
+    #[anodized::spec(ensures: |ret| {
+        let ends = layout.declaration_ends();
+        let first = if self.header.len() == usize::from(layout.header_end()) {
+            let mut end = self.header.len();
+            self.records.iter().zip(ends).position(|(record, expected)| {
+                end = end.saturating_add(record.segment.len());
+                end != usize::from(*expected)
+            }).map(|index| index.saturating_add(1)).or_else(||
+                (self.records.len() != ends.len())
+                    .then_some(self.records.len().min(ends.len()).saturating_add(1)))
+        } else {
+            Some(0)
+        };
+        match ret {
+            Ok(()) => first.is_none(),
+            Err(ArtifactError::SegmentBoundary { position }) => first == Some(usize::from(position)),
+            Err(_) => false,
+        }
+    })]
     #[inline]
     pub fn ensure_cut_at(
         &self,
@@ -558,6 +746,7 @@ mod tests
     use gandr_kernel_term::ConstantIndex;
     use gandr_storage_records::RecordIndex;
 
+    use super::AdmissionKey;
     use super::ArtifactRecord;
     use super::ArtifactRecordSet;
     use super::SegmentBytes;
@@ -572,7 +761,7 @@ mod tests
         let forward = vec![
             record(0, b"zero"),
             record(1, b"one"),
-            record(2, b"two"),
+            record(255, b"two hundred fifty-five"),
             record(256, b"two hundred fifty-six"),
         ];
         let reversed = forward.iter().rev().cloned().collect();
@@ -583,14 +772,14 @@ mod tests
             from_forward, from_reversed,
             "a permuted input builds the same set"
         );
-        // Index 256 past 2 is where a little-endian key would sort wrongly.
+        // Index 256 past 255 is where a little-endian key would sort wrongly.
         let indices: Vec<usize> = from_forward
             .records()
             .iter()
             .map(|record| usize::from(record.admission_index()))
             .collect();
         assert_eq!(
-            vec![0, 1, 2, 256],
+            vec![0, 1, 255, 256],
             indices,
             "the records ascend by admission index"
         );
@@ -599,18 +788,100 @@ mod tests
     #[test]
     fn a_duplicate_admission_key_is_rejected()
     {
-        let record = |index: usize, segment: &'static [u8]| {
-            ArtifactRecord::new(ConstantIndex::from(index), SegmentBytes::from(segment))
-        };
-        let records = vec![record(5, b"a"), record(3, b"b"), record(3, b"c")];
+        for (indices, key, first, second) in [
+            ([5, 3, 3, 5], 3, 1, 2),
+            ([5, 3, 5, 3], 5, 0, 2),
+            ([usize::MAX, 0, usize::MAX, 0], usize::MAX, 0, 2),
+        ] {
+            let records = indices
+                .into_iter()
+                .map(|index| {
+                    ArtifactRecord::new(
+                        ConstantIndex::from(index),
+                        SegmentBytes::from(b"segment".as_slice()),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                Err(ArtifactError::DuplicateAdmissionKey {
+                    key: ConstantIndex::from(key),
+                    first: RecordIndex::from(first),
+                    second: RecordIndex::from(second),
+                }),
+                ArtifactRecordSet::from_records(SegmentBytes::from(b"header".as_slice()), records),
+            );
+        }
+    }
+
+    /// The wire key preserves numeric order at every native-word byte carry.
+    #[test]
+    fn admission_keys_preserve_numeric_order_across_byte_carries()
+    {
+        assert_eq!([0; 8], AdmissionKey::from(ConstantIndex::from(0_usize)).0);
+        for byte in 1 .. size_of::<usize>() {
+            let after = 1_usize << (byte * 8);
+            let before = after - 1;
+            let mut lower = [0; 8];
+            lower[8 - byte ..].fill(u8::MAX);
+            let mut upper = [0; 8];
+            upper[7 - byte] = 1;
+            let lower_key = AdmissionKey::from(ConstantIndex::from(before));
+            let upper_key = AdmissionKey::from(ConstantIndex::from(after));
+            assert_eq!(lower, lower_key.0);
+            assert_eq!(upper, upper_key.0);
+            assert!(lower_key < upper_key);
+        }
+        let mut maximum = [0; 8];
+        maximum[8 - size_of::<usize>() ..].fill(u8::MAX);
         assert_eq!(
-            Err(ArtifactError::DuplicateAdmissionKey {
-                key: ConstantIndex::from(3_usize),
-                first: RecordIndex::from(1_usize),
-                second: RecordIndex::from(2_usize),
-            }),
-            ArtifactRecordSet::from_records(SegmentBytes::from(b"header".as_slice()), records),
-            "the repeated index and both positions are named"
+            maximum,
+            AdmissionKey::from(ConstantIndex::from(usize::MAX)).0
         );
+    }
+
+    /// Refinement separates ordered identity from unvalidated payload bytes.
+    #[test]
+    fn record_refinements_bind_keys_and_sorted_unique_sets()
+    {
+        for index in [0_usize, 255, 256, usize::MAX] {
+            let mut record = ArtifactRecord::new(
+                ConstantIndex::from(index),
+                SegmentBytes::from(b"not a kernel segment".as_slice()),
+            );
+            assert!(anodized::types::Spec::predicate(&record));
+            record.key = AdmissionKey::from(ConstantIndex::from(index ^ 1));
+            assert!(!anodized::types::Spec::predicate(&record));
+        }
+
+        let empty =
+            ArtifactRecordSet::from_records(SegmentBytes::from(b"unvalidated".as_slice()), vec![])
+                .expect("an empty record set admits raw header bytes");
+        assert!(anodized::types::Spec::predicate(&empty));
+        assert!(gandr_kernel_term::decode(empty.reassemble().as_image()).is_err());
+
+        let records = [usize::MAX, 256, 255, 0]
+            .into_iter()
+            .map(|index| {
+                ArtifactRecord::new(
+                    ConstantIndex::from(index),
+                    SegmentBytes::from(b"".as_slice()),
+                )
+            })
+            .collect();
+        let set = ArtifactRecordSet::from_records(SegmentBytes::from(b"h".as_slice()), records)
+            .expect("unique noncontiguous indices");
+        assert!(anodized::types::Spec::predicate(&set));
+        let mut reversed = set.clone();
+        reversed.records.reverse();
+        assert!(!anodized::types::Spec::predicate(&reversed));
+        let mut duplicate = set.clone();
+        duplicate
+            .records
+            .insert(1, duplicate.records.first().expect("first record").clone());
+        assert!(!anodized::types::Spec::predicate(&duplicate));
+        let mut miskeyed = set;
+        miskeyed.records.first_mut().expect("first record").key =
+            AdmissionKey::from(ConstantIndex::from(1_usize));
+        assert!(!anodized::types::Spec::predicate(&miskeyed));
     }
 }
