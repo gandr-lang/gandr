@@ -18,6 +18,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The kernel checkpoint](#the-kernel-checkpoint)
 - [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
 - [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
+- [Native universe-path content](#native-universe-path-content)
 - [Localization descends extents](#localization-descends-extents)
 - [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
 - [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
@@ -136,6 +137,12 @@ The session keeps the import rows and alias scope of the last revision the lower
 Each accepted submission carries the `EditScript` from the latest accepted revision: the `diff` of their `Snapshot`s. A snapshot reads each item's signature and body out of the arena as a `Tree` of the incremental checker's `ContentNode`s, numbered breadth-first, each constant read as the `Reference` it resolves to, so two revisions lowered into two arenas compare node by node. Items align by reference — key and occurrence — keeping the largest set whose order both revisions share; each kept pair's bodies are walked together, a changed literal, variable or constant becoming one in-place action and any other change one `Replace` of the old subtree. `apply` of a diff to the old items reproduces the new ones exactly: soundness is total, localization is partial. A path names an item and the child slots from its body's root; an action anchored in the old revision carries the old ordinal, an insertion the new one.
 
 The recorded design is this contract over the prior implementation's named surface core, with actions for grades, injection sides, binder names and annotations, and items aligned by a longest common subsequence of their names in an `n·m` table. The core here carries none of those payloads — binders are de Bruijn indices, so renaming one reconstructs to no action — and its actions are the core's own leaves. Because references are unique within a revision, the longest common subsequence is the longest increasing run of matched old ordinals, which patience sorting finds in `n log n`. The alternatives were a text diff, which names bytes rather than terms, and a diff of content-addressed tables, which numbers nodes and loses the path a face surfaces. The choice reverses when the lowering emits structured edits itself; the session would then forward them.
+
+## Native universe-path content
+
+Edit snapshots retain native `Path_U` classifiers, reflexivity, equivalence maps and evidence, product paths, and transport operands as the incremental layer’s content nodes. Their child ordering is the ordinary constructor ordering, so an edit to a map or endpoint is not hidden by an evidence-insensitive conversion comparison. No session revision becomes a certificate admission receipt by retaining this content.
+
+**Choice.** Extend the existing structural edit vocabulary rather than maintain a second path identity table. These forms are programmatic core content; source-level identity operations, bridge-mode observations, higher fields, funext, `Flow_U` and guarded List values are not introduced by this adapter. **Reversal.** An interactive identity consumer must define its own application and persistence boundary over the kernel APIs.
 
 ## Localization descends extents
 

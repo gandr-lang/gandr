@@ -10,6 +10,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [The decision vocabulary](#the-decision-vocabulary)
+- [Portable path dialogues](#portable-path-dialogues)
 - [Static dispatch](#static-dispatch)
 - [Traces and equality](#traces-and-equality)
 - [Exhaustive matching](#exhaustive-matching)
@@ -33,7 +34,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 
 ## Provided features
 
-- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `Force`, `ComparedShared`, `NegativeSubgoal`.
+- `ConversionDecision<Id>`: the vocabulary — `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Unfold`, `Postpone`, `Freeze`, `EtaExpand`, `Force`, `ComparedShared`, `Decompose`, `NegativeSubgoal`.
 - `SubgoalPosition`: which premise of a decomposition a refutation names, counted in an order both consumers derive from the terms.
 - `ConversionSide`: which leg of the comparison a one-sided decision acts on.
 - `TraceSink<Id>`: the emit seam, with an associated `SinkActivity` constant.
@@ -44,7 +45,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 
 - **A strategy and a replay.** The consumer supplies the convertibility engine that records into a sink and the sequential rechecker that consumes a `TraceLog`. In this workspace the engine is `gandr-core-nbe`'s conversion machine, which emits its winning derivation through `TraceSink<TraceNode>` in preorder, and the rechecker is `gandr-kernel-core`'s `replay`, which reads the decisions with their identifiers mapped to the constants they name. The crate's tests carry a miniature of each as the two sides of their differential.
 - **An identifier space.** Every `Id` is meaningful in the consumer's own arena or value space, and the consumer keeps a trace within the scope in which its identifiers resolve.
-- **A lifetime.** A trace is a session artifact whose lifetime is the consumer's. Nothing persists, and a trace is no serialization contract.
+- **A lifetime.** Raw engine identifiers remain within the arena that gives them meaning. This crate defines no serialization contract; a consumer may persist remapped decisions only under its own framing and identifier policy.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
 ## Examples
@@ -62,7 +63,15 @@ The vocabulary is at the grain of a proof search. `Unfold`, `Postpone`, `Force` 
 
 `NegativeSubgoal` carries the one premise a refutation of a decomposition rests on. A decomposition — two applications of one rigid head, or two formers compared child by child — is refuted by any one premise, and the rule that refutes it has that one premise and no other. A replay that met the decomposition with no position would have to try every premise until one refuted, which is search; the position names the premise, so the replay checks one. The alternatives were to emit the refuted premise alone and let the replay find where it fits, which is the same search moved one step, or to emit every premise's derivation, which would make a refutation as long as the agreement it contradicts. The reversal condition is a replay that can locate the refuted premise from the terms without trying the others, which would make the position redundant.
 
+`Decompose` selects a structural rule before the next child dialogue. It preserves paired-trace boundaries when a component begins with `ComparedShared`: that shortcut must not close the enclosing pair instead. The consumer checks that the current goal has structural premises; it refuses the decision at leaves and at goals requiring unfolding, force or eta.
+
 `ConversionSide` is a type. `Freeze` records which side froze and `EtaExpand` which side was applied to the fresh variable; `ReduceLeft` and `ReduceRight` carry the side structurally. A trace whose side is implicit cannot be replayed without searching for it, and search-free replay is what the seam exists to deliver.
+
+## Portable path dialogues
+
+`kernel-term::PathEvidence` persists this vocabulary with unit anchors, source and target dialogue boundaries, and ordered decision words. The kernel reconstructs every replay obligation from typed terms; a stored trace is not an admission receipt. `Dialogue::pair` in `kernel-core` prefixes two `Decompose` decisions before concatenating returner component traces, so a component’s closing shortcut cannot accidentally discharge the enclosing pair.
+
+**Choice.** One decision alphabet for ordinary conversion and the computations that native paths, higher fields, funext and `Flow_U` replay. A separate certificate protocol would duplicate side, decomposition and negative-premise semantics. **Reversal.** A consumer needing a new payload must define its replay rule and framing without reinterpreting an existing decision. The consumer owns the replay budget; exhaustion is a decline, not an equality decision.
 
 ## Static dispatch
 

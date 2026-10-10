@@ -241,6 +241,8 @@ impl fmt::Display for RefusalSpelling
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RefusalName
 {
+    /// A native path endpoint is not a closed first-order code.
+    PathCode,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A type head no table entry answers.
@@ -339,7 +341,8 @@ impl RefusalName
     ///   omission, foreign names and duplicates without fixing enumeration
     ///   order.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
-    pub const VOCABULARY: [Self; 39_usize] = [
+    pub const VOCABULARY: [Self; 40_usize] = [
+        Self::PathCode,
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -429,7 +432,7 @@ impl RefusalName
         b"FamilyArgumentClassifier") | (Self::StaticLambdaArgument,
         b"StaticLambdaArgument") | (Self::StaticClassifierExpected,
         b"StaticClassifierExpected") | (Self::ExpectationOutsideFixtureRoot,
-        b"ExpectationOutsideFixtureRoot")
+        b"ExpectationOutsideFixtureRoot") | (Self::PathCode, b"PathCode")
     )
 },
     )]
@@ -443,6 +446,7 @@ impl RefusalName
             | Self::DuplicateSignature => "DuplicateSignature",
             | Self::DuplicateDefinition => "DuplicateDefinition",
             | Self::DuplicateImportAlias => "DuplicateImportAlias",
+            | Self::PathCode => "PathCode",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -642,7 +646,7 @@ impl Refusal<'_>
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
         RefusalName::GrammarMismatch) | (Self::Lowering(LoweringRefusal::UnknownMold { ..
-        }), RefusalName::UnknownMold) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
+        }), RefusalName::UnknownMold) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
         RefusalName::TypeMismatch) | (Self::Checking(CheckRefusal::ShapeMismatch { .. }),
         RefusalName::ShapeMismatch) | (Self::Checking(CheckRefusal::NotSynthesisable { ..
         }), RefusalName::NotSynthesisable) |
@@ -832,13 +836,14 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         (CheckRefusal::FamilyArgumentClassifier { .. },
         RefusalName::FamilyArgumentClassifier) | (CheckRefusal::StaticLambdaArgument { ..
         }, RefusalName::StaticLambdaArgument) | (CheckRefusal::StaticClassifierExpected {
-        .. }, RefusalName::StaticClassifierExpected)
+        .. }, RefusalName::StaticClassifierExpected) | (CheckRefusal::PathCode(_), RefusalName::PathCode)
     )
 },
 )]
 const fn checking_name(refusal: CheckRefusal) -> RefusalName
 {
     match refusal {
+        | CheckRefusal::PathCode(_) => RefusalName::PathCode,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
@@ -937,6 +942,7 @@ mod tests
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     #[spec(
         ensures: |ret| {
+
     ret
         .iter()
         .all(|&(refusal, spelled, class)| {
@@ -946,6 +952,7 @@ mod tests
             .iter()
             .all(|name| ret.iter().any(|&(refusal, _, _)| refusal.name() == *name))
 },
+
     )]
     fn vocabulary() -> Vec<(Refusal<'static>, RefusalSpelling, FailureClass)>
     {
@@ -1156,6 +1163,11 @@ mod tests
         ];
         let checking = [
             (
+                CheckRefusal::PathCode(value),
+                "PathCode",
+                FailureClass::MalformedSource,
+            ),
+            (
                 CheckRefusal::TypeMismatch(Mismatch::Value {
                     at: value,
                     synthesised: value_type,
@@ -1191,7 +1203,7 @@ mod tests
             (
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(value)),
-                    former: UnadmittedFormer::Sum,
+                    former: UnadmittedFormer::ValueLift,
                 },
                 "OutOfFragment",
                 FailureClass::Unrepresentable,

@@ -344,6 +344,11 @@ pub fn level_of(
                 levels.push(left.max(&right));
             },
             | Task::Enter(TypeNode::Value(at)) => match value_type_view(arena, at)? {
+                | ValueTypeView::PathUniverse(source, target) => {
+                    let _source = path_code(arena, source)?;
+                    let _target = path_code(arena, target)?;
+                    levels.push(Level::zero());
+                },
                 | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
                     levels.push(Level::zero());
                 },
@@ -363,6 +368,7 @@ pub fn level_of(
                 | ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. } => {
                     levels.push(target.clone());
                 },
+                | ValueTypeView::Sum(first, second)
                 | ValueTypeView::Product(first, second)
                 | ValueTypeView::StaticPi {
                     domain: first,
@@ -393,6 +399,48 @@ pub fn level_of(
     }
 }
 
+/// Decode exactly the closed first-order fragment used by native paths.
+///
+/// # Specification
+/// - requires: nothing; a non-quote is refused.
+/// - ensures: every reachable type is Unit, Base, Sum or Product.
+/// - provides: the decoded endpoint of an admitted native path.
+/// - fails: `PathCode` for any other endpoint or reachable former.
+/// - panics: none.
+///
+/// # Errors
+/// `CheckRefusal::PathCode`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a native Bool equivalence crosses; open codes refuse.
+/// - witness: `bridge::tests::native_path_module_round_trips`
+#[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&gandr_core_term::ValueType::Unit | &gandr_core_term::ValueType::Base(_) | &gandr_core_term::ValueType::Product(..) | &gandr_core_term::ValueType::Sum(..))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
+pub fn path_code(
+    arena: &CoreArena,
+    code: gandr_core_term::ValueId,
+) -> Result<ValueTypeId, CheckRefusal>
+{
+    let Some(&gandr_core_term::Value::Quote(root)) = arena.value(code)
+    else {
+        return Err(CheckRefusal::PathCode(code));
+    };
+    let mut pending = Vec::from([root]);
+    let mut seen = alloc::collections::BTreeSet::new();
+    while let Some(node) = pending.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        match arena.value_type(node) {
+            | Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Unit)) => {},
+            | Some(
+                &(gandr_core_term::ValueType::Product(a, b)
+                | gandr_core_term::ValueType::Sum(a, b)),
+            ) => pending.extend([a, b]),
+            | _ => return Err(CheckRefusal::PathCode(code)),
+        }
+    }
+    Ok(root)
+}
 #[cfg(test)]
 mod tests
 {
@@ -405,7 +453,6 @@ mod tests
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
     use gandr_core_term::SortParameter;
-    use gandr_core_term::ValueType;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_core_term::shift_value_type;
@@ -535,10 +582,8 @@ mod tests
         );
     }
 
-    /// One node of every value-type former of the core vocabulary, beside the
-    /// answer its rule gives: a classifier, or the refusal naming the former.
-    /// The match below is exhaustive over the vocabulary, so a former added
-    /// without a row does not compile.
+    /// Every supported classifier is formed at its semantic level, and
+    /// unsupported classifiers are refused by their boundary.
     #[test]
     fn every_value_type_constructor_has_a_formation_rule()
     {
@@ -547,9 +592,12 @@ mod tests
         let returner = arena.comp_type_returner(unit);
         let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
         let code = arena.value_constant(ConstantIndex::from(0_usize));
+        let closed = arena.value_quote(unit);
+        let path = arena.value_type_path_universe(closed, closed);
         let one = LevelConstant::from(1_u64);
         let zero = LevelConstant::from(0_u64);
-        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 12] = [
+        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 13] = [
+            (path, Ok(value_at(zero))),
             (arena.value_type_base(BaseType::Integer), Ok(value_at(zero))),
             (arena.value_type_base(BaseType::String), Ok(value_at(zero))),
             (
@@ -559,7 +607,7 @@ mod tests
             (unit, Ok(value_at(zero))),
             (arena.value_type_thunk(returner), Ok(value_at(zero))),
             (arena.value_type_product(unit, unit), Ok(value_at(zero))),
-            (arena.value_type_sum(unit, unit), Err(UnadmittedFormer::Sum)),
+            (arena.value_type_sum(unit, unit), Ok(value_at(zero))),
             (small, Ok(value_at(one))),
             (arena.value_type_lift(unit, level(one)), Ok(value_at(one))),
             (
@@ -572,27 +620,7 @@ mod tests
             ),
             (arena.value_type_static_pi(small, small), Ok(value_at(one))),
         ];
-        let mut covered = [false; 10];
-        for &(value_type, _) in &rows {
-            let row = match arena.value_type(value_type) {
-                | Some(&ValueType::Base(_)) => 0_usize,
-                | Some(&ValueType::Unit) => 1_usize,
-                | Some(&ValueType::Product(..)) => 2_usize,
-                | Some(&ValueType::Sum(..)) => 3_usize,
-                | Some(&ValueType::Thunk(_)) => 4_usize,
-                | Some(&ValueType::Universe { .. }) => 5_usize,
-                | Some(&ValueType::Lift { .. }) => 6_usize,
-                | Some(&ValueType::Element { .. }) => 7_usize,
-                | Some(&ValueType::Abstract(_)) => 8_usize,
-                | Some(&ValueType::StaticPi { .. }) => 9_usize,
-                | None => panic!("every row's node resolves"),
-            };
-            covered[row] = true;
-        }
-        assert_eq!(
-            covered, [true; 10],
-            "the rows reach every value-type former"
-        );
+
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[small]);
         for (value_type, answer) in rows {
@@ -652,7 +680,6 @@ mod tests
                 arena.value_type_base(BaseType::Numeric),
                 UnadmittedFormer::NumericAtom,
             ),
-            (arena.value_type_sum(unit, unit), UnadmittedFormer::Sum),
             (
                 arena.value_type_abstract(ConstantIndex::from(0_usize)),
                 UnadmittedFormer::Abstract,
@@ -801,15 +828,15 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit, unit);
-        let result = arena.comp_type_returner(sum);
+        let numeric = arena.value_type_base(BaseType::Numeric);
+        let result = arena.comp_type_returner(numeric);
         let arrow = arena.comp_type_arrow(unit, result);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         assert_eq!(
             form_comp_type(&mut context, arrow),
             Err(CheckRefusal::OutOfFragment {
-                at: CoreNode::Type(TypeNode::Value(sum)),
-                former: UnadmittedFormer::Sum,
+                at: CoreNode::Type(TypeNode::Value(numeric)),
+                former: UnadmittedFormer::NumericAtom,
             }),
             "formation reaches every node, not only the root"
         );

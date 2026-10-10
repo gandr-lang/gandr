@@ -583,9 +583,9 @@ impl DomainArena
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Guard::Flexible`] when the unfolding face is loaded, or
-    ///   when the spine stacks a bind, a case, or an argument whose word is
-    ///   flexible; otherwise the fold of the head and each elimination in spine
-    ///   order.
+    ///   when the spine stacks a bind, a case, a transport, or an argument
+    ///   whose word is flexible; otherwise the fold of the head and each
+    ///   elimination in spine order.
     /// - provides: the rigidity rule for a stuck node: a head with a body to
     ///   unfold, or an elimination holding a closure, can change the answer.
     ///   Its cost is the spine's length, which the spine copy every extension
@@ -601,6 +601,7 @@ impl DomainArena
     ///   separated by head index, by arity and by argument.
     /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    #[spec(ensures: |ret| !(matches!(unfolding, Unfolding::Unforced(_) | Unfolding::Forced(_)) || spine.iter().any(|step| matches!(step, &Elimination::Transport(_) | &Elimination::ProductTransport(_) | &Elimination::Bind(_) | &Elimination::Case { .. }))) || ret == Guard::Flexible)]
     fn neutral_word(
         &self,
         head: NeutralHead,
@@ -633,7 +634,10 @@ impl DomainArena
                     ])
                 },
                 | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
-                | Elimination::Bind(_) | Elimination::Case { .. } => return Guard::Flexible,
+                | Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Bind(_)
+                | Elimination::Case { .. } => return Guard::Flexible,
             };
         }
         word
@@ -812,6 +816,12 @@ impl DomainArena
     /// - fails: never — a body that dangles surfaces where a caller resolves
     ///   it, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source computation closures retain their body without
+    ///   confusing native transport continuations with source syntax.
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    #[spec(ensures: |ret| self.comp_closure(ret).is_some_and(|closure| closure.body() == crate::closure::CompBody::Source(body)))]
     #[inline]
     pub fn comp_closure_node(
         &mut self,
@@ -820,7 +830,27 @@ impl DomainArena
     ) -> CompClosureId
     {
         let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
-        self.comp_closures.push(CompClosure::new(body, environment));
+        self.comp_closures.push(CompClosure::new(
+            crate::closure::CompBody::Source(body),
+            environment,
+        ));
+        id
+    }
+
+    /// Hold a native transport continuation without manufacturing source
+    /// syntax.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn transport_continuation(
+        &mut self,
+        body: crate::closure::CompBody,
+    ) -> CompClosureId
+    {
+        let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
+        self.comp_closures
+            .push(CompClosure::new(body, Environment::new()));
         id
     }
 
@@ -991,6 +1021,45 @@ impl DomainArena
     ) -> DomainValueId
     {
         self.alloc_value(DomainValue::Code { code, face }, Guard::Flexible)
+    }
+
+    /// Preserve a closed native certificate as syntax, without evaluating maps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_certificate(
+        &mut self,
+        certificate: ValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::PathCertificate { certificate, face },
+            Guard::Flexible,
+        )
+    }
+
+    /// Build a semantic product path from its evaluated components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: DomainValueId,
+        second: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::PathProduct {
+                first,
+                second,
+                face,
+            },
+            Guard::Flexible,
+        )
     }
 
     /// Mint a type operator over an already-allocated value closure whose body

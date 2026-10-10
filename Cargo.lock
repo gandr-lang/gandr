@@ -425,6 +425,7 @@ dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "proptest",
  "tracing",
 ]
 
@@ -478,6 +479,8 @@ name = "gandr-kernel-core"
 version = "0.0.0"
 dependencies = [
  "anodized",
+ "gandr-core-nbe",
+ "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
@@ -500,6 +503,7 @@ name = "gandr-kernel-term"
 version = "0.0.0"
 dependencies = [
  "anodized",
+ "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "proptest",
 ]

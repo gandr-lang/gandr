@@ -767,8 +767,14 @@ enum Head
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Elimination
 {
+    /// Transport under a neutral path head, retaining its operand.
+    Transport(ValueId),
+    /// Product transport waiting for a neutral pair operand.
+    ProductTransport(ValueId),
     /// The head forced.
     Force,
+    /// Empty elimination of the head.
+    Absurd,
     /// An application to this argument.
     Apply(ValueId),
     /// A bind into this continuation.
@@ -1008,10 +1014,13 @@ where
     /// # Errors
     /// As [`Self::drive`].
     ///
-    /// # Termination
-    /// - reason: the `loop` below, which rewrites the goal in place, not
-    ///   recursion.
-    /// - measure: the budget left: every iteration charges one step.
+    /// # Adequacy
+    /// - hypothesis: L3 — at finite budgets, valid and corrupt dialogues
+    ///   separate positive replay, named refusal and exhaustion; no budget
+    ///   grants a verdict.
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before && match ret { Ok(()) => self.spent <= self.budget, Err(Stop::Budget) => self.spent > self.budget, Err(_) => true })]
     fn settle(
         &mut self,
         mut goal: Goal,
@@ -1032,6 +1041,12 @@ where
                 && !matches!(next, Next::Decision(ConversionDecision::Unfold { .. }))
             {
                 return Err(self.refuse(next));
+            }
+            if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+                if !matches!(rule(&left_shape, &right_shape), Rule::Structural) {
+                    return Err(self.refuse(next));
+                }
+                return self.structural(&goal, &left_shape, &right_shape, goals);
             }
             if matches!(
                 next,
@@ -1088,6 +1103,14 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — named constant decisions consume evidence; shortcut
+    ///   and frozen refutations refuse rather than inheriting a positive
+    ///   premise.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::a_frozen_branch_cannot_carry_a_refutation`
+    #[spec(captures: before = self.position, ensures: |ret| self.position >= before && ret.as_ref().map_or(true, |_| self.position > before))]
     fn constants(
         &mut self,
         goal: &mut Goal,
@@ -1213,6 +1236,7 @@ where
             | ConversionDecision::EtaExpand { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
+            | ConversionDecision::Decompose
             | ConversionDecision::NegativeSubgoal { .. } => Err(self.refuse(next)),
         }
     }
@@ -1258,6 +1282,17 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — forcing thunks exposes their bodies while native path
+    ///   introductions cannot masquerade as thunks.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `path_universe::tests::no_k`
+    #[spec(ensures: |ret| match ret {
+        Ok(Term::Computation(body)) => match term { Term::Value(value) => match self.arena.value(value) { Some(&Value::Thunk(expected)) => body == expected, Some(&Value::Variable(_) | &Value::Constant(_)) => matches!(self.arena.computation(body), Some(&Computation::Force(found)) if found == value), _ => false }, Term::Computation(_) => false },
+        Err(Stop::Refused(ReplayRefusal::Unreadable)) => match term { Term::Value(value) => !matches!(self.arena.value(value), Some(&Value::Thunk(_) | &Value::Variable(_) | &Value::Constant(_))), Term::Computation(_) => true },
+        _ => false,
+    })]
     fn forced(
         &mut self,
         term: Term,
@@ -1273,7 +1308,10 @@ where
                 Ok(Term::Computation(self.arena.computation_force(value)))
             },
             | Some(
-                &(Value::Unit
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
                 | Value::Injection(..)
@@ -1350,6 +1388,17 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pair decomposition keeps both positive premises but a
+    ///   refutation selects exactly its named negative premise; a leaf rejects
+    ///   Decompose.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `path_universe::tests::it_computes_through_a_former`
+    #[spec(
+        captures: before = goals.len(),
+        ensures: |ret| match ret { Ok(()) => goals.len() >= before && goals.get(before..).is_some_and(|added| added.iter().all(|next| next.expect == goal.expect && next.frozen.left.is_empty() && next.frozen.right.is_empty())) && (goal.expect != Expect::NotConvertible || goals.len() <= before.saturating_add(1)), Err(_) => goals.len() == before },
+    )]
     fn structural(
         &mut self,
         goal: &Goal,
@@ -1359,6 +1408,13 @@ where
     ) -> Result<(), Stop>
     {
         let structure = self.decompose(goal, left, right)?;
+        let next = self.peek();
+        if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+            if !matches!(structure, Structure::Premises(_)) {
+                return Err(self.refuse(next));
+            }
+            self.take();
+        }
         let premises = match structure {
             | Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
             | Structure::Premises(premises) => premises,
@@ -1454,6 +1510,22 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric pair children keep order; native paths
+    ///   compare map syntax, not their evidence or extensional action.
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(ensures: |ret| match ret {
+        Ok(Structure::Premises(ref premises)) => match (self.arena.value(left), self.arena.value(right)) {
+            (Some(&Value::Pair(a, b)), Some(&Value::Pair(c, d))) => premises.iter().copied().eq([Premise::values(a, c), Premise::values(b, d)]),
+            (Some(&Value::Injection(a, x)), Some(&Value::Injection(b, y))) => a == b && premises.iter().copied().eq([Premise::values(x, y)]),
+            (Some(&Value::Lift { body: a, .. }), Some(&Value::Lift { body: b, .. })) => premises.iter().copied().eq([Premise::values(a, b)]),
+            _ => false,
+        },
+        Ok(Structure::Leaf(verdict)) if matches!(self.arena.value(left), Some(&Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. })) => (verdict == Expect::Convertible) == (equal_values(self.arena, left, right) == Convertibility::Convertible),
+        Ok(Structure::Leaf(_)) | Err(_) => true,
+    })]
     fn formers(
         &self,
         left: ValueId,
@@ -1465,6 +1537,16 @@ where
             return Err(unreadable());
         };
         let structure = match (one, other) {
+            | (&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }), _) => {
+                Structure::Leaf(
+                    if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                        Expect::Convertible
+                    }
+                    else {
+                        Expect::NotConvertible
+                    },
+                )
+            },
             | (&Value::Unit, &Value::Unit) => Structure::Leaf(Expect::Convertible),
             | (&Value::Literal(_), &Value::Literal(_)) if one == other => {
                 Structure::Leaf(Expect::Convertible)
@@ -1573,23 +1655,30 @@ where
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Rigidity::Rigid`] exactly when `term` holds no thunk, no
-    ///   lambda, no bind or case, and no constant with a body or an operator
-    ///   body — through the types its quotes hold, the codes those types decode
-    ///   as, and the heads and arguments of its static applications as well —
-    ///   and resolves throughout. No static lambda exists, so a static
+    /// - ensures: native path introductions are rigid records: comparison never
+    ///   descends into their translator programs. Every other term is rigid
+    ///   exactly when it resolves throughout and contains no reducible thunk,
+    ///   lambda, bind, case, transport or defined constant, including through
+    ///   quoted types, decoded codes and static application operands. A static
     ///   application over an opaque head is rigid.
     /// - provides: the separation half of [`Self::compared`].
     /// - fails: never — a dangling id is flexible.
     /// - panics: none.
     ///
-    /// # Termination
-    /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
-    ///   worklist, not recursion.
-    /// - measure: the multiset of arena positions on the worklist: a node is
-    ///   replaced by its children, which the arena minted before it within a
-    ///   family; a crossing between families is to a node the quote or the
-    ///   decode holds, and the arena is finite and acyclic across them.
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted reducible terms do not justify negative
+    ///   equality, while native path records stay rigid regardless of
+    ///   translator reducibility.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&Value::Unit | &Value::Literal(_) | &Value::Variable(_) | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }) => ret == Rigidity::Rigid,
+            Some(&Value::Thunk(_)) | None => ret == Rigidity::Flexible,
+            _ => true,
+        },
+        Term::Computation(id) => !matches!(self.arena.computation(id), Some(&Computation::Transport(..) | &Computation::Lambda(_) | &Computation::Bind(..) | &Computation::Case { .. }) | None) || ret == Rigidity::Flexible,
+    })]
     fn rigidity(
         &self,
         term: Term,
@@ -1602,7 +1691,14 @@ where
         while let Some(next) = work.pop() {
             match next {
                 | AnyNode::Value(value) => match self.arena.value(value) {
-                    | Some(&(Value::Unit | Value::Literal(_) | Value::Variable(_))) => {},
+                    | Some(
+                        &(Value::Unit
+                        | Value::Literal(_)
+                        | Value::Variable(_)
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }),
+                    ) => {},
                     | Some(
                         &(Value::Pair(first, second) | Value::StaticApplication(first, second)),
                     ) => {
@@ -1623,14 +1719,19 @@ where
                     | Some(&Value::Thunk(_)) | None => return Rigidity::Flexible,
                 },
                 | AnyNode::Computation(computation) => match self.arena.computation(computation) {
-                    | Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                    | Some(
+                        &(Computation::Return(value)
+                        | Computation::Force(value)
+                        | Computation::Absurd(value)),
+                    ) => {
                         work.push(AnyNode::Value(value));
                     },
                     | Some(&Computation::Application(head, argument)) => {
                         work.extend([AnyNode::Computation(head), AnyNode::Value(argument)]);
                     },
                     | Some(
-                        &(Computation::Lambda(_)
+                        &(Computation::Transport(..)
+                        | Computation::Lambda(_)
                         | Computation::Bind(..)
                         | Computation::Case { .. }),
                     )
@@ -1642,9 +1743,13 @@ where
                     | Some(
                         &(ValueType::Base(_)
                         | ValueType::Unit
+                        | ValueType::Empty
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)),
                     ) => {},
+                    | Some(&ValueType::PathUniverse(source, target)) => {
+                        work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
+                    },
                     | Some(
                         &(ValueType::Product(first, second)
                         | ValueType::Sum(first, second)
@@ -1656,7 +1761,9 @@ where
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
                     | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
-                    | Some(&ValueType::Lift { inner, .. }) => work.push(AnyNode::ValueType(inner)),
+                    | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                        work.push(AnyNode::ValueType(inner));
+                    },
                     | Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
                     | None => return Rigidity::Flexible,
                 },
@@ -1691,12 +1798,19 @@ where
     /// # Errors
     /// [`Stop::Refused`].
     ///
-    /// # Termination
-    /// - reason: the `loop` below, which descends a computation's head path,
-    ///   and the `while let` loop descending a value's static applications, not
-    ///   recursion.
-    /// - measure: the arena position of the focus, which falls at every descent
-    ///   because a child is minted before its parent.
+    /// # Adequacy
+    /// - hypothesis: L3 — native transport preserves neutral spines and path
+    ///   introductions remain formers; returned values and thunks never
+    ///   exchange polarity.
+    /// - witness: `path_universe::tests::refl_collapses`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(ensures: |ret| match ret {
+        Ok(Shape::Thunk(body)) => matches!(term, Term::Value(value) if matches!(self.arena.value(value), Some(&Value::Thunk(found)) if body == found)),
+        Ok(Shape::Lambda(body)) => matches!(term, Term::Computation(id) if matches!(self.arena.computation(id), Some(&Computation::Lambda(found)) if body == found)),
+        Ok(Shape::Return(value)) => matches!(term, Term::Computation(id) if matches!(self.arena.computation(id), Some(&Computation::Return(found)) if value == found)),
+        Ok(Shape::Former) => matches!(term, Term::Value(value) if self.arena.value(value).is_some_and(|node| !matches!(node, &Value::Variable(_) | &Value::Constant(_) | &Value::Thunk(_) | &Value::StaticApplication(..)))),
+        _ => true,
+    })]
     fn shape(
         &self,
         term: Term,
@@ -1729,7 +1843,10 @@ where
                         Ok(Shape::Neutral(head, spine))
                     },
                     | Some(
-                        &(Value::Unit
+                        &(Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Unit
                         | Value::Literal(_)
                         | Value::Pair(..)
                         | Value::Injection(..)
@@ -1746,6 +1863,14 @@ where
         let mut focus = start;
         let head = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        spine.push(Elimination::ProductTransport(path));
+                        break self.value_head(value, frozen, side)?;
+                    }
+                    spine.push(Elimination::Transport(value));
+                    break self.value_head(path, frozen, side)?;
+                },
                 | Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
@@ -1762,6 +1887,11 @@ where
                 },
                 | Some(&Computation::Force(value)) => {
                     spine.push(Elimination::Force);
+                    let head = self.value_head(value, frozen, side)?;
+                    break head;
+                },
+                | Some(&Computation::Absurd(value)) => {
+                    spine.push(Elimination::Absurd);
                     let head = self.value_head(value, frozen, side)?;
                     break head;
                 },
@@ -1794,6 +1924,18 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — only variables and constants head neutral
+    ///   eliminations; a native path cannot supply a force or case head.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `path_universe::tests::no_k`
+    #[spec(ensures: |ret| match ret {
+        Ok(Head::Variable(index)) => matches!(self.arena.value(value), Some(&Value::Variable(found)) if index == found),
+        Ok(head @ Head::Constant(constant, _)) => matches!(self.arena.value(value), Some(&Value::Constant(found)) if constant == found && head == self.head(constant, frozen, side)),
+        Err(Stop::Refused(ReplayRefusal::Unreadable)) => !matches!(self.arena.value(value), Some(&Value::Variable(_) | &Value::Constant(_))),
+        Err(_) => false,
+    })]
     fn value_head(
         &self,
         value: ValueId,
@@ -1805,7 +1947,10 @@ where
             | Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
             | Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
             | Some(
-                &(Value::Unit
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
                 | Value::Injection(..)
@@ -1863,11 +2008,13 @@ where
     /// # Errors
     /// [`Stop::Refused`].
     ///
-    /// # Termination
-    /// - reason: the `loop` descending the head path and the `while let` loop
-    ///   rebuilding it, not recursion.
-    /// - measure: the focus's arena position while descending, and the frames
-    ///   left while rebuilding.
+    /// # Adequacy
+    /// - hypothesis: L3 — unfolding one side leaves the opposite boundary
+    ///   unchanged and retains its elimination spine; operator argument order
+    ///   matters.
+    /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[spec(captures: other = goal.side(opposite(side)), ensures: goal.side(opposite(side)) == other)]
     fn unfold(
         &mut self,
         goal: &mut Goal,
@@ -1894,6 +2041,14 @@ where
         let mut focus = start;
         let mut rebuilt = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        self.arena.computation_transport(path, body)
+                    }
+                    else {
+                        self.arena.computation_transport(body, value)
+                    };
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -1903,6 +2058,7 @@ where
                     focus = bound;
                 },
                 | Some(&Computation::Force(_)) => break self.arena.computation_force(body),
+                | Some(&Computation::Absurd(_)) => break self.arena.computation_absurd(body),
                 | Some(&Computation::Case {
                     on_left, on_right, ..
                 }) => {
@@ -2025,11 +2181,20 @@ where
     /// # Errors
     /// [`Stop::Budget`] or [`Stop::Refused`].
     ///
-    /// # Termination
-    /// - reason: the `loop` below, which takes one step per iteration, and the
-    ///   `while let` loop rebuilding the head path, not recursion.
-    /// - measure: the budget left, which every iteration charges; then the
-    ///   frames left.
+    /// # Adequacy
+    /// - hypothesis: L3 — beta and native transport reduce before decisions;
+    ///   values stay unchanged, and exhausted work cannot yield a computation
+    ///   result.
+    /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+    /// - witness: `path_universe::tests::transport_computes`
+    /// - witness: `path_universe::tests::refl_collapses`
+    #[spec(ensures: |ret| match (term, &ret) {
+        (Term::Value(value), &Ok(Term::Value(found))) => value == found,
+        (Term::Computation(_), &Ok(Term::Computation(id))) => self.spent <= self.budget && self.arena.computation(id).is_some(),
+        (Term::Computation(_), &Err(Stop::Budget)) => self.spent > self.budget,
+        (Term::Computation(_), &Err(Stop::Refused(_))) => true,
+        _ => false,
+    })]
     fn whnf(
         &mut self,
         term: Term,
@@ -2045,6 +2210,20 @@ where
         loop {
             self.charge()?;
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    match crate::path_universe::beta(self.arena, crate::path_universe::Transport {
+                        path,
+                        value,
+                    })
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        | crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        | crate::path_universe::Reduction::Stuck => break,
+                    }
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -2093,6 +2272,7 @@ where
                     },
                     | Some(&Frame::Apply(_)) | None => break,
                 },
+                | Some(&Computation::Absurd(_)) => break,
                 | None => return Err(unreadable()),
             }
         }
@@ -2276,6 +2456,17 @@ fn rule(
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching neutral eliminations retain their ordered
+///   premises; kind and length mismatches refute, including transport polarity.
+/// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+/// - witness: `path_universe::tests::refl_collapses`
+#[spec(ensures: |ret| match ret {
+    Structure::Leaf(Expect::NotConvertible) => left.len() != right.len() || left.iter().zip(right).any(|(a, b)| core::mem::discriminant(a) != core::mem::discriminant(b)),
+    Structure::Leaf(Expect::Convertible) => left.len() == right.len() && left.iter().zip(right).all(|(a, b)| matches!((a, b), (&Elimination::Force, &Elimination::Force) | (&Elimination::Absurd, &Elimination::Absurd))),
+    Structure::Premises(ref premises) => left.len() == right.len() && left.iter().zip(right).all(|(a, b)| core::mem::discriminant(a) == core::mem::discriminant(b)) && premises.len() == left.iter().map(|item| match item { &Elimination::Force | &Elimination::Absurd => 0_usize, &Elimination::Case(..) => 2, _ => 1 }).sum::<usize>(),
+})]
 fn spines(
     left: &[Elimination],
     right: &[Elimination],
@@ -2287,7 +2478,13 @@ fn spines(
     let mut premises = Vec::new();
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
-            | (Elimination::Force, Elimination::Force) => {},
+            | (Elimination::Force, Elimination::Force)
+            | (Elimination::Absurd, Elimination::Absurd) => {},
+            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
+            | (
+                Elimination::ProductTransport(left_argument),
+                Elimination::ProductTransport(right_argument),
+            )
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
             | (
                 Elimination::StaticApply(left_argument),
@@ -2306,7 +2503,10 @@ fn spines(
                 premises.push(Premise::computations(left_on_right, right_on_right));
             },
             | (
-                Elimination::Force
+                Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Absurd
+                | Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
                 | Elimination::Case(..)

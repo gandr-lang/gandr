@@ -39,8 +39,6 @@ mod sharing_format
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::ReservedKind;
     use gandr_kernel_term::ReservedSlot;
-    use gandr_kernel_term::SHARING_BLOCK_FIRST;
-    use gandr_kernel_term::SHARING_BLOCK_LAST;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::TableEntryCount;
     use gandr_kernel_term::TagSite;
@@ -59,6 +57,36 @@ mod sharing_format
     use proptest::prop_assert_eq;
     use proptest::prop_oneof;
     use proptest::proptest;
+
+    #[test]
+    fn recursive_code_preserves_its_element_across_wire()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let boolean = arena.value_type_sum(unit, unit);
+        let list = arena.value_type_list(boolean);
+        let declarations = vec![MarkedDeclaration::new(
+            AdmissionMark::Checked,
+            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), list),
+        )];
+        let bytes = encode(&arena, &declarations);
+        let decoded = decode(bytes.as_image()).expect("list code decodes");
+        let ty = decoded_declared(&decoded, Position(0)).expect("declaration");
+        let Some(&ValueType::List(element)) = decoded.arena().value_type(ty)
+        else {
+            panic!("list former retained");
+        };
+        let Some(&ValueType::Sum(left, right)) = decoded.arena().value_type(element)
+        else {
+            panic!("element sum retained");
+        };
+        assert_eq!(decoded.arena().value_type(left), Some(&ValueType::Unit));
+        assert_eq!(left, right);
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(decoded.arena(), decoded.declarations()))
+        );
+    }
 
     // ---------------------------------------------------------------------------
     // The suite's own nominal vocabulary
@@ -1874,6 +1902,115 @@ mod sharing_format
         );
     }
 
+    /// Candidate dialogues are syntax, not receipts. Independent wire bytes
+    /// preserve empty dialogues, both sides and the largest premise; malformed
+    /// words and every truncated prefix are refused before admission.
+    #[test]
+    fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
+    {
+        use gandr_kernel_conversion_trace::ConversionDecision as Decision;
+        use gandr_kernel_conversion_trace::ConversionSide;
+        use gandr_kernel_term::PathEvidence;
+
+        let expected = PathEvidence {
+            source: vec![
+                vec![
+                    Decision::ReduceLeft { redex: () },
+                    Decision::ReduceRight { redex: () },
+                    Decision::ConstShortcut { constant: () },
+                    Decision::Unfold { constant: () },
+                    Decision::Postpone { constant: () },
+                    Decision::Freeze {
+                        constant: (),
+                        side: ConversionSide::Left,
+                    },
+                    Decision::Freeze {
+                        constant: (),
+                        side: ConversionSide::Right,
+                    },
+                    Decision::EtaExpand {
+                        variable: (),
+                        side: ConversionSide::Left,
+                    },
+                    Decision::EtaExpand {
+                        variable: (),
+                        side: ConversionSide::Right,
+                    },
+                    Decision::Force { thunk: () },
+                    Decision::ComparedShared {
+                        left: (),
+                        right: (),
+                    },
+                    Decision::Decompose,
+                ],
+                vec![],
+            ],
+            target: vec![vec![Decision::NegativeSubgoal {
+                position: u32::MAX.into(),
+            }]],
+        };
+        // Inline evidence precedes classifier #2, forward #6 and backward #6.
+        // Two source dialogues (twelve decisions and empty), one target.
+        let mut certificate = Bytes(vec![0x2C, 2, 12]);
+        for word in 0_u8 .. 12_u8 {
+            certificate.byte(RawByte(word));
+        }
+        certificate.0.extend_from_slice(&[0, 1, 1]);
+        let premise_offset = certificate.0.len();
+        certificate.varint(WireValue(0x00FF_FFFF_FF0C));
+        certificate.0.extend_from_slice(&[2, 6, 6]);
+        let mut declaration = RawDeclaration::definition(
+            vec![
+                entry_unit_type(),
+                Bytes(vec![0x1C, 0]),    // quote Unit
+                Bytes(vec![0x2A, 1, 1]), // Path_U(Unit, Unit)
+                entry_variable(WireValue(0)),
+                Bytes(vec![0x13, 3]), // return variable
+                Bytes(vec![0x11, 4]), // lambda
+                Bytes(vec![0x0F, 5]), // thunk
+                certificate,
+            ],
+            TableIndex(2),
+            TableIndex(7),
+        );
+        let bytes = raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
+        let artifact =
+            decode(ArtifactImage::from(bytes.as_ref())).expect("candidate syntax decodes");
+        let body = decoded_body(&artifact, Position(0)).expect("the certificate definition");
+        let Value::PathEquiv { ref evidence, .. } =
+            *artifact.arena().value(body).expect("certificate root")
+        else {
+            panic!("native certificate body");
+        };
+        assert_eq!(&expected, evidence.as_ref());
+        assert_eq!(
+            bytes.as_ref(),
+            encode(artifact.arena(), artifact.declarations())
+                .as_image()
+                .as_ref()
+        );
+        for end in 0 .. bytes.0.len() {
+            assert_eq!(
+                Some(DecodeError::Truncated),
+                decode(ArtifactImage::from(&bytes.0[.. end])).err()
+            );
+        }
+        for invalid in [0x0D_u64, 0x0100_0000_000C_u64] {
+            let entry = declaration.entries.last_mut().expect("certificate entry");
+            entry.0.truncate(premise_offset);
+            entry.varint(WireValue(invalid));
+            entry.0.extend_from_slice(&[2, 6, 6]);
+            let malformed =
+                raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
+            assert_eq!(
+                Some(DecodeError::Malformed {
+                    site: MalformedSite::PathEvidence
+                }),
+                decode(ArtifactImage::from(malformed.as_ref())).err()
+            );
+        }
+    }
+
     /// The static formers read their two children back in wire order: a
     /// static Pi's domain before its codomain, a static application's head
     /// before its argument. Each pair is chosen distinct, so a decoder that
@@ -2508,22 +2645,17 @@ mod sharing_format
     #[test]
     fn an_unassigned_node_tag_is_refused_by_name()
     {
-        // Both ends of the reserved sharing block, and the first byte above
-        // it, where the frozen block resumes now that the growth room is spent.
-        // The settled numbering assigns the block but this crate emits no entry
-        // carrying one, so a reader meeting one refuses it exactly as it
-        // refuses any other unassigned byte — the reservation is a numbering
-        // claim, never a parse.
-        let unassigned = [
-            RawByte(u8::from(SHARING_BLOCK_FIRST)),
-            RawByte(u8::from(SHARING_BLOCK_LAST)),
-            RawByte(
-                u8::from(SHARING_BLOCK_LAST)
-                    .checked_add(1)
-                    .expect("the block ends below the byte ceiling"),
-            ),
-        ];
-        for tag in unassigned {
+        // Reject every unassigned byte, including the reserved sharing block.
+        // Growth above that block does not change the rejection contract.
+        for byte in u8::MIN ..= u8::MAX {
+            let wire = WireTag::from(byte);
+            if gandr_kernel_term::NODE_TAG_TABLE
+                .iter()
+                .any(|row| row.tag == wire)
+            {
+                continue;
+            }
+            let tag = RawByte(byte);
             let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
                 vec![entry_unassigned_tag(tag)],
                 TableIndex(0),
@@ -2534,7 +2666,7 @@ mod sharing_format
                     tag: WireTag::from(tag.0),
                 }),
                 decode(ArtifactImage::from(bytes.as_ref())),
-                "the space above the frozen block is a named refusal, never a mis-parse"
+                "an unassigned tag is a named refusal, never a mis-parse"
             );
         }
     }

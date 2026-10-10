@@ -57,6 +57,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
@@ -943,6 +944,13 @@ quenchant_shape::reason_enum! {
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
 ///
 /// [`Absent`]: carrying::Absent
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(value) => matches!(rewrite, Rewrite::Substitute { replacement } if value == replacement) && depth != BinderDepth::NONE && matches!(node, AnyNode::Value(id) if matches!(arena.value(id), Some(&Value::Variable(index)) if BinderDepth::from(u32::from(index)) == depth)),
+    Maybe::Absent(carrying::Absent::Shift) => matches!(rewrite, Rewrite::Shift { .. }),
+    Maybe::Absent(carrying::Absent::NoCrossedBinders) => matches!(rewrite, Rewrite::Substitute { .. }) && depth == BinderDepth::NONE,
+    Maybe::Absent(carrying::Absent::UnreadableValue) => matches!(node, AnyNode::Value(id) if arena.value(id).is_none()),
+    Maybe::Absent(carrying::Absent::DifferentOccurrence) => !matches!(node, AnyNode::Value(id) if matches!(arena.value(id), Some(&Value::Variable(index)) if BinderDepth::from(u32::from(index)) == depth)),
+})]
 #[inline]
 fn carried_occurrence(
     arena: &TermArena,
@@ -970,6 +978,9 @@ fn carried_occurrence(
         | Value::Variable(index) if BinderDepth::from(u32::from(index)) == depth => {
             Maybe::Present(replacement)
         },
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::PathEquiv { .. }
         | Value::Variable(_)
         | Value::Constant(_)
         | Value::Unit
@@ -1025,6 +1036,34 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 ///   where the term language binds.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — free indices beneath binders and native code children
+///   retain their positions; dropped or over-bound children change the rewrite.
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+#[spec(captures: before = tasks.len(), ensures: tasks.len() == before.saturating_add(match node {
+        AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::PathEquiv { .. }) => 3,
+            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
+            Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1,
+            _ => 0,
+        },
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::Case { .. }) => 3,
+            Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2,
+            Some(_) => 1, None => 0,
+        },
+        AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2,
+            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1,
+            _ => 0,
+        },
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(_) => 1, None => 0,
+        },
+    }))]
 fn push_rewrite_children(
     arena: &TermArena,
     node: AnyNode,
@@ -1039,7 +1078,28 @@ fn push_rewrite_children(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             )
             | None => {},
-            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+            | Some(&Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(backward), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(forward), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::PathRefl(code)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+            | Some(
+                &Value::PathProduct(first, second)
+                | &Value::Pair(first, second)
+                | &Value::StaticApplication(first, second),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
             },
@@ -1068,6 +1128,10 @@ fn push_rewrite_children(
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
+            | Some(&Computation::Transport(path, value)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
+            },
             | Some(&Computation::Lambda(body)) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Computation(body),
@@ -1083,7 +1147,11 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+            | Some(
+                &Computation::Return(value)
+                | &Computation::Force(value)
+                | &Computation::Absurd(value),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1120,6 +1188,7 @@ fn push_rewrite_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
+                | &ValueType::Empty
                 | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             )
@@ -1140,10 +1209,14 @@ fn push_rewrite_children(
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
             },
+            | Some(&ValueType::PathUniverse(source, target)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(target), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(source), depth, rewrite));
+            },
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
             },
-            | Some(&ValueType::Lift { inner, .. }) => {
+            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
             },
             // The type-to-term edge: a code is rewritten at the depth the type
@@ -1267,6 +1340,21 @@ fn popped(
 ///   two rewrites differ.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rewriting preserves the enclosing former and consumes
+///   exactly its child outcomes; unchanged closed nodes retain their
+///   identities.
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+#[spec(
+    captures: [before = results.len(), arity = match arena.value(id) { Some(&Value::PathEquiv { .. }) => 3, Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2, Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1, _ => 0 }],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
+        None => ret == id,
+        Some(&Value::Variable(_)) => true,
+        Some(node) => arena.value(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten)),
+    },
+)]
 fn close_value(
     arena: &mut TermArena,
     rewrite: Rewrite,
@@ -1280,6 +1368,50 @@ fn close_value(
         return id;
     };
     match node {
+        | Value::PathRefl(code) => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                arena.value_path_refl(rewritten)
+            }
+        },
+        | Value::PathProduct(first, second) => {
+            let rewritten_second = popped(results, AnyNode::Value(second)).value_or(second);
+            let rewritten_first = popped(results, AnyNode::Value(first)).value_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_path_product(rewritten_first, rewritten_second)
+            }
+        },
+        | Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        } => {
+            let rewritten_backward = popped(results, AnyNode::Value(backward)).value_or(backward);
+            let rewritten_forward = popped(results, AnyNode::Value(forward)).value_or(forward);
+            let rewritten_type =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if rewritten_type == path_type
+                && rewritten_forward == forward
+                && rewritten_backward == backward
+            {
+                id
+            }
+            else {
+                arena.value_path_equiv(
+                    rewritten_type,
+                    rewritten_forward,
+                    rewritten_backward,
+                    evidence,
+                )
+            }
+        },
         | Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
         | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
         | Value::Pair(first, second) => {
@@ -1428,6 +1560,17 @@ fn rewrite_variable(
 /// - provides: the computation arm of the combining half.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rewriting preserves the enclosing former and consumes
+///   exactly its child outcomes; unchanged closed nodes retain their
+///   identities.
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+#[spec(
+    captures: [before = results.len(), arity = match arena.computation(id) { Some(&Computation::Case { .. }) => 3, Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2, Some(_) => 1, None => 0 }],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && arena.computation(id).map_or_else(|| ret == id, |node| arena.computation(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
+)]
 fn close_computation(
     arena: &mut TermArena,
     id: ComputationId,
@@ -1439,6 +1582,16 @@ fn close_computation(
         return id;
     };
     match node {
+        | Computation::Transport(path, value) => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_path = popped(results, AnyNode::Value(path)).value_or(path);
+            if rewritten_value == value && rewritten_path == path {
+                id
+            }
+            else {
+                arena.computation_transport(rewritten_path, rewritten_value)
+            }
+        },
         | Computation::Lambda(body) => {
             let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
             if rewritten == body {
@@ -1465,6 +1618,15 @@ fn close_computation(
             }
             else {
                 arena.computation_return(rewritten)
+            }
+        },
+        | Computation::Absurd(value) => {
+            let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten == value {
+                id
+            }
+            else {
+                arena.computation_absurd(rewritten)
             }
         },
         | Computation::Force(value) => {
@@ -1517,10 +1679,25 @@ fn close_computation(
 /// - requires: the results stack holds one outcome per child of `id`.
 /// - ensures: the rewritten value-type id, minting a fresh node only where some
 ///   child changed and answering `id` otherwise; an unreadable id answers
-///   itself.
+///   itself. Decoding a rewritten quotation returns its quoted type.
 /// - provides: the value-type arm of the combining half.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rewriting consumes exactly its child outcomes; closed
+///   nodes retain their identities, while substituting a quote fires decoding.
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+/// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+#[spec(
+    captures: [before = results.len(), arity = match arena.value_type(id) { Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2, Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1, _ => 0 }, element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
+    ensures: |ret| results.len() == before.saturating_sub(arity) && element.map_or_else(
+        || arena.value_type(id).map_or_else(|| ret == id, |node| arena.value_type(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
+        |code| match arena.value(code) { Some(&Value::Quote(quoted)) => ret == quoted, _ => matches!(arena.value_type(ret), Some(&ValueType::Element { code: found, .. }) if code == found) },
+    ),
+)]
 fn close_value_type(
     arena: &mut TermArena,
     id: ValueTypeId,
@@ -1532,10 +1709,30 @@ fn close_value_type(
         return id;
     };
     match node {
+        | ValueType::PathUniverse(source, target) => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            if rewritten_source == source && rewritten_target == target {
+                id
+            }
+            else {
+                arena.value_type_path_universe(rewritten_source, rewritten_target)
+            }
+        },
         | ValueType::Base(_)
         | ValueType::Unit
+        | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
+        | ValueType::List(element) => {
+            let rewritten = popped(results, AnyNode::ValueType(element)).value_type_or(element);
+            if rewritten == element {
+                id
+            }
+            else {
+                arena.value_type_list(rewritten)
+            }
+        },
         | ValueType::Element { code, target } => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {

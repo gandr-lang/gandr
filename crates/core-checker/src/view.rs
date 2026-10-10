@@ -94,6 +94,10 @@ impl From<FragmentRefusal> for CheckRefusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ValueTypeView<'arena>
 {
+    /// A native universe-path classifier over two codes.
+    PathUniverse(ValueId, ValueId),
+    /// A sum of two value types.
+    Sum(ValueTypeId, ValueTypeId),
     /// The integer atom.
     Integer,
     /// The string atom.
@@ -206,6 +210,8 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
     | Ok(ValueTypeView::Unit) => matches!(arena.value_type(value_type), Some(ValueType::Unit)),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
+    | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
+    | Ok(ValueTypeView::Sum(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Sum(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Product(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Product(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Universe { sort, level }) => matches!(arena.value_type(value_type), Some(ValueType::Universe { sort: Sort::Ground(found), level: found_level }) if *found == sort && found_level == level),
     | Ok(ValueTypeView::Lift { inner, target }) => matches!(arena.value_type(value_type), Some(ValueType::Lift { inner: found, target: found_target }) if *found == inner && found_target == target),
@@ -215,7 +221,7 @@ pub enum CompTypeView<'arena>
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
         && matches!((arena.value_type(value_type), former),
             (Some(ValueType::Base(BaseType::Numeric)), UnadmittedFormer::NumericAtom)
-                | (Some(ValueType::Sum(..)), UnadmittedFormer::Sum)
+
                 | (Some(ValueType::Abstract(_)), UnadmittedFormer::Abstract)
                 | (Some(ValueType::Universe { sort: Sort::Parameter(_), .. }), UnadmittedFormer::SortParameter)),
 })]
@@ -231,13 +237,16 @@ pub fn value_type_view(
     };
     let unadmitted = |former| FragmentRefusal::OutOfFragment { at, former };
     match *node {
+        | ValueType::PathUniverse(source, target) => {
+            Ok(ValueTypeView::PathUniverse(source, target))
+        },
         | ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         | ValueType::Unit => Ok(ValueTypeView::Unit),
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         | ValueType::Product(first, second) => Ok(ValueTypeView::Product(first, second)),
-        | ValueType::Sum(..) => Err(unadmitted(UnadmittedFormer::Sum)),
+        | ValueType::Sum(first, second) => Ok(ValueTypeView::Sum(first, second)),
         | ValueType::Universe {
             sort: Sort::Ground(sort),
             ref level,

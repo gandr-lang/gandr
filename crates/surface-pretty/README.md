@@ -9,6 +9,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 - [Examples](#examples)
 - [The input is a source](#the-input-is-a-source)
 - [One spelling per former](#one-spelling-per-former)
+- [Native universe paths](#native-universe-paths)
 - [Break points](#break-points)
 - [Binder names](#binder-names)
 - [Bounds](#bounds)
@@ -112,6 +113,12 @@ A right-nested arrow chain stays bare because the grammar parses it so. The REPL
 
 - **Alternatives.** A notation independent of the grammar would print text the surface cannot read back. Parenthesizing every compound operand is simpler to state but lengthens every chain.
 - **Reversal.** A ruled change to the grammar's spellings or bands; this crate follows it, never leads it.
+
+## Native universe paths
+
+The native presentations are `Path_U(a, b)`, `refl(a)`, `equiv(f, g)` and `pathProduct(p, q)`. Endpoint, map and product order is retained. Each is explicitly `Fidelity::Approximate`: these forms have no surface parser syntax, and an equivalence’s display does not include its classifier or replay evidence. The core adapter and checkpoint adapter expose the same value-child positions.
+
+**Choice.** Show the structural constructor instead of an unreadable marker, while withholding a surface round-trip claim. The printer neither compares certified maps nor replays transport. **Reversal.** A faithful notation requires parser and lowering rules that preserve all required information. `native_paths_preserve_ordered_endpoints_and_maps` checks the order and approximation boundary through public presentation.
 
 ## Break points
 

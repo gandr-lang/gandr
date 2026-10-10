@@ -528,6 +528,9 @@ impl CodeDefinitions
                 };
                 (Unfolded::Definition(constant), body)
             },
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
             | Value::Variable { .. }
             | Value::Unit
             | Value::Literal(_)
@@ -718,6 +721,16 @@ pub fn loose_reach(
         match node {
             | CoreNode::Term(TermNode::Value(at)) => {
                 match *core.value(at).ok_or_else(|| dangling(node))? {
+                    | Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ..
+                    } => {
+                        work.push((CoreNode::Type(TypeNode::Value(path_type)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(forward)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(backward)), depth));
+                    },
                     | Value::Variable {
                         zone: Zone::Intuitionistic,
                         index,
@@ -734,11 +747,15 @@ pub fn loose_reach(
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => {},
-                    | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                    | Value::PathProduct(first, second)
+                    | Value::Pair(first, second)
+                    | Value::StaticApplication(first, second) => {
                         work.push((CoreNode::Term(TermNode::Value(first)), depth));
                         work.push((CoreNode::Term(TermNode::Value(second)), depth));
                     },
-                    | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                    | Value::PathRefl(body)
+                    | Value::Injection(_, body)
+                    | Value::Lift { body, .. } => {
                         work.push((CoreNode::Term(TermNode::Value(body)), depth));
                     },
                     | Value::StaticLambda(body) => {
@@ -757,6 +774,10 @@ pub fn loose_reach(
             },
             | CoreNode::Term(TermNode::Computation(at)) => {
                 match *core.computation(at).ok_or_else(|| dangling(node))? {
+                    | Computation::Transport(path, value) => {
+                        work.push((CoreNode::Term(TermNode::Value(path)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(value)), depth));
+                    },
                     | Computation::Lambda(body) => {
                         work.push((CoreNode::Term(TermNode::Computation(body)), under));
                     },
@@ -784,6 +805,10 @@ pub fn loose_reach(
             },
             | CoreNode::Type(TypeNode::Value(at)) => {
                 match *core.value_type(at).ok_or_else(|| dangling(node))? {
+                    | ValueType::PathUniverse(source, target) => {
+                        work.push((CoreNode::Term(TermNode::Value(source)), depth));
+                        work.push((CoreNode::Term(TermNode::Value(target)), depth));
+                    },
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }

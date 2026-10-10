@@ -3,7 +3,6 @@
 The certified kernel's judgements: the defunctionalized checking machine, type formation, conversion, the admission choke point, the check memo wired as the default path on both machines, and the sequential replay of an untrusted engine's conversion trace.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
@@ -19,11 +18,17 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
 - [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
+- [Universe flows](#universe-flows)
+- [Native universe paths](#native-universe-paths)
+- [Identity and bridge recursion](#identity-and-bridge-recursion)
+  - [Function identity and funext](#function-identity-and-funext)
+  - [Native fibres and admission](#native-fibres-and-admission)
+- [Guarded higher fields](#guarded-higher-fields)
+- [Recursive code observations](#recursive-code-observations)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -226,6 +231,161 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 
 **Property-test dependency.** Dev-only `proptest` uses the workspace's 1.11 version range, defaults off and only `std` for generation, shrinking and persistence. It reuses the workspace's runner without expanding the shipped kernel dependencies. QuickCheck would add a second runner; hand-written enumeration would lose shrinking of generated term recipes. Reconsider on an unmaintained release, a high-risk advisory or a need the existing strategy API cannot express.
 
+## Universe flows
+
+`flow_universe` defines a separate in-memory `Flow_U a b` family over quoted Unit, Sum, Product and Base codes. A forward certificate stores one closed CBPV translator and one proposed image/dialogue per source constructor pattern. It carries neither an inverse nor round-trip evidence. Every consuming formation checks the translator in a fresh closed checker session, validates the images, and replays kernel-built positive claims. No stored node or classifier is an admission receipt.
+
+| Boundary | Rule or refusal |
+| -------- | --------------- |
+| Forward formation | Exhaustive symbolic source patterns; each target Base position selects a same-typed source leaf. |
+| Directed computation | `ride e v` exposes the checked forward application for ordinary conversion replay. |
+| Directed reflexivity | `ride (stay a) v` returns `v` in one step, without allocating or evaluating an identity translator. |
+| Motive formation | Moving endpoints occur only covariantly; arrow domains and Flow sources reverse variance. |
+| Symmetry | `Flow(Moving, Fixed)` returns `NonCovariantMotive`, including when nested beneath positive formers. |
+| Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
+| Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
+| Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
+
+**Native family boundary.** `Certificate::Path` carries a native value id. `form_certificate` synthesizes that value through the ordinary closed checker and decodes its checked `Path_U` endpoints; there is no auxiliary path arena or trusted classifier shortcut. Missing round-trip evidence and non-path classifiers refuse. Matching Path and Flow families retain separate formation judgements, and both cross-family directions refuse before elimination. The Flow range in the [wire-tag table](../kernel-term/src/tags.rs) remains reserved and unassigned.
+
+**Leaf naturality.** Each source Base position is a distinct rigid variable, including equal-typed positions in a product. Proposed output syntax contains only canonical constructors and those correctly typed variables. The kernel replays the translator on these symbolic inputs; a trace generated at a literal sample has no authority over that obligation. Literals nested beneath sums or products, fresh variables, wrong-typed selections, and sample-only constant maps refuse. The witnesses cover diagonals, both injections, codiagonals, product identity and terminal projection to Unit. The inherited native CBPV vocabulary has no general product eliminator, so these witnesses do not establish generation of every projection or fullness of the one-way alphabet.
+
+**The gate reads wiring.** Sequence has one edge between two occurrences; feedback adds the reverse edge and closes a cycle. Equal endpoint codes do not identify occurrences. In particular, injection followed by fold forms and replays as identity, and terminal followed by injection forms a constant Bool endomap. Neither composite grants inverse evidence. This closed-code gate handles explicit two-occurrence seams, not a general reflected cell-support graph or invertible-core comparison.
+
+**Choice.** The rule arena reuses native closed checking and conversion replay. Flat, constructor-ordered ids and bounded iterative walks avoid recursive ownership; formation and lowering tables live only for one call. Reusing native replay avoids a second evaluator; host-language translators would bypass the obligation. Native persisted formers would require encoding, support and wire integration. No wire tag is allocated. Reconsider this representation when declaration admission must consume Flow syntax. Motive checking is the term-structural covariance side condition over El, Flow, Arrow, Sum and Product; value transport uses `El(Moving)`. General dependent directed elimination and the reflected variance calculus remain outside this rule language.
+
+The seven `flow_universe::tests` witnesses use the independent conversion engine and exact expected outputs. The public replay boundary restores its arena watermark on success and failure. Its memo discipline is the existing six-condition discipline: no caller-supplied checker memo, persistent verdict, storage policy or authority-bearing hit.
+
+**Mutation scope.** The universe-flow source range owns a standalone campaign over leaf aliasing and type confusion, manufactured constants, omitted source coverage, forged dialogues, reversed composition, missed feedback, motive sign propagation, family coercion and Stay reduction. No mutation campaign or score is claimed.
+
+## Native universe paths
+
+`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes at level zero. `Value::PathEquiv`, `PathRefl` and `PathProduct` introduce paths; `Computation::Transport` is their only eliminator. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
+
+| Rule | Kernel obligation or computation |
+| ---- | -------------------------------- |
+| Formation | Both endpoints decode to closed first-order value types. |
+| Equivalence | Closed translators check at opposite CBPV arrows; every source and target round trip replays. |
+| Reflexivity | The endpoint code forms. |
+| Product | Both component paths form; endpoints are their products. |
+| Transport | The input checks at the source and the comparison target at the target returner. |
+| Equivalence beta | `transport (equiv f g) v` becomes `force f v`. |
+| Reflexivity beta | `transport (refl a) v` becomes `return v` in one step. |
+| Product beta | Pair input becomes left and right component transports. |
+| Path conversion | Codes and translators compare structurally; round-trip evidence grants no certificate equality. |
+
+Round-trip coverage is symbolic: sums enumerate both injections, products enumerate constructor combinations, and Base leaves introduce distinct rigid variables rather than sample literals. Each pattern requires a dialogue. Missing, extra or invalid evidence refuses admission. A shape/coverage ceiling and per-dialogue replay budget are independent limits, not one global work counter.
+
+`Dialogue::pair` constructs one product dialogue by prefixing explicit `Decompose` decisions for the returner and pair, then concatenating component traces. This prevents an initial `ComparedShared` from consuming a component trace at the enclosing pair. The kernel re-derives every boundary and premise. There is no transitive certificate-composition operation.
+
+`Environment::add_decl` checks both endpoint codes, checks translators under an empty term context and replays every source and target round trip. Decoding and frontend typechecking grant no authority. Portable evidence participates in artifact content and admission memo keys, but structural certificate conversion erases evidence only: it does not normalize translator syntax. A fresh admission owns the memo and rechecks imported candidates.
+
+The seven witnesses in `path_universe::tests` submit native declarations and use independent `core-nbe` dialogues for Bool negation, product transport, reflexivity, wrong-answer refusal, non-equivalence refusal, intensional certificate conversion and absent K. The K witness applies ordinary force and case eliminators to a path and observes their typing refusals; it is not a theorem about future language extensions. Triple negation retains its two sequencing seams and is compared with direct composition at both Bool constructors.
+
+`path_universe::code`, `Dialogue::pair` and `replay_transport` remain callable. Path operands are ordinary `ValueId`s in `TermArena`; no separate path arena or string-named eliminator dispatcher exists. `replay_transport` rechecks the native path and transport goal before consuming its dialogue.
+
+**Choice.** Native syntax makes the ordinary admission boundary authoritative and permits artifacts to carry untrusted candidates. Transport reduces to ordinary CBPV computations; product transport sequences component computations through capture-avoiding binds. Rust translator closures or an auxiliary path arena would evade persisted admission. **Reversal.** Extend the code grammar only with formation, coverage and replay rules for the new fragment. Element identity, open codes, higher fields, function codes and general dependent elimination remain outside this fragment.
+
+**Mutation scope.** Native formation, replay, structural conversion and encoding own a campaign over omitted coverage, swapped maps or product legs, accepted bad dialogues, reflexivity reduction, evidence omitted from memo keys, and translator syntax erased by conversion. The witnesses distinguish these observations; no mutation score is claimed.
+
+## Identity and bridge recursion
+
+The `identity_recursion` module folds a closed code vocabulary with `Mode::Identity` or `Mode::Bridge`. Identity also reaches the level-zero value universe, including occurrences beneath the admitted formers. It is an in-memory rule language beside `path_universe`, not persisted element-identity syntax. Endpoints are ordinary typed values in an open context; unsupported codes are refused before interpretation.
+
+`Interpretation::path` consumes an ordinary native `ValueId`, synthesizes it through the declaration checker’s closed-value boundary and decodes the checked `PathUniverse` classifier. Native typing failures retain `KernelError` inside `RelationError::Typing`; endpoint failures retain `PathError`. No auxiliary path arena or formation cache participates.
+
+| Code | Relation clause | Identity structure |
+| ---- | --------------- | ------------------ |
+| Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. |
+| Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
+| Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
+| Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
+| Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises. | Higher-evaluation reflexivity and pointwise introduction; application transport replays both returners. |
+| List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
+| Value universe at level zero | Identity only: native `PathUniverse` of the two indexed codes. | Native path reflexivity and certified translator replay. |
+| `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. |
+| Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. |
+| Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. |
+
+**Base choice.** These built-in scalar codes are discrete; their canonical data has decidable equality. This is not a nominal-identifier test for sealed values. A different base interpretation needs an explicit relation interface. A sealed Abstract likewise needs a supplied relation, reflexivity, transport and coherence structure, with any bridge interpretation supplied separately. Looking through the seal or treating its name as equality evidence is not an alternative.
+
+`Relation::constant` and `Relation::cases` construct heterogeneous indexed bridge families. The distinguishing witness is `Br_U Unit Bool` with fibre Unit at `((), inl ())` and Empty at `((), inr ())`. These direct first-order families require neither equality on arbitrary elements nor an equivalence. An arbitrary span needs endpoint fibres and reindexing laws before it can supply such a family. The implementation does not establish the full model laws of [Internal Parametricity, without an Interval](https://doi.org/10.1145/3632920). Bridge mode shares the code clauses but grants no automatic reflexivity or identity transport.
+
+Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the first-order identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces structural reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This relation module does not provide J, arbitrary dependent motives, a general fibrancy theorem or an unrestricted universe hierarchy.
+
+**Universe boundary.** The clause at a quoted `U₀` lowers to the existing native `Path_U`, subject to that former’s closed first-order endpoint stratum. It never interprets two code values as discrete syntax equality. Its diagonal is `PathRefl`; arbitrary evidence is checked as a native path, and code transport uses `path_universe::replay_transport`. Equal endpoint codes do not make a negation certificate reflexive: generic dependent transport stays neutral unless its proof is structural reflexivity. Generic first-order composition refuses code-level certificate composition with `CertificateOperationRequired` rather than replacing the composite by reflexivity. Explicit native certificates remain usable as evidence.
+
+At a quoted `PathUniverse`, the same fold yields a certificate fibre. `Fibers::certificate` reuses `higher_field::unfold`, exposing the four existing obligations without deciding them. Lowering this record to a native first-order type returns `HigherFieldRequired`. This is the stopping point, not a claim of infinite coherence. Nested universe bridges, higher universe levels and an extensional conversion rule are not introduced.
+
+**Universe choice.** Reusing the native former keeps path checking and replay authoritative; a second equivalence arena or discrete comparison would erase the certified map. **Reversal.** A broader native endpoint stratum or a checked certificate-composition language can expand the clause without changing its interpretation.
+
+### Function identity and funext
+
+At a thunk code, the fold records argument and result relations without comparing functions. `apply_related` checks two independently supplied arguments and their relation evidence. It crosses each `U` seam with `force`, applies the function, and relates the values returned through `F`. A variable or stuck application retains a function fibre and both application computations. It never becomes Empty because evaluation is stuck.
+
+`HigherEvaluation` is an untrusted introduction: each component contains two claimed returned values, their `core-nbe` dialogues, and an inhabitant of the computed output relation. The kernel constructs every replay claim itself. Open component telescopes close under lambdas before replay. `function_reflexivity` replays the same function on related inputs; ordinary structural `reflexivity` requires this higher introduction at function fibres. `funext` stores raw evidence in `Identity`, and every consuming operation checks it again. Native conversion gains no function-extensionality rule.
+
+Universal introductions cover closed functions with first-order arguments and native-representable output fibres. Coverage uses Unit, matching Sum injections, Product combinations and fresh rigid Base variables; the relation premise identifies each discrete Base pair, without sampling literals. Higher-order argument coverage and higher-order output evidence remain suspended; their quantified function fibres still form. The admitted function code is the non-dependent arrow `U (A → F B)`; dependent arrows, universe and recursive codes are outside this clause.
+
+`transport_application` instantiates a checked function identity at an argument diagonal and computes the related returned values. Other native motives retain `Transport::Neutral`, including non-reflexive function identities. The Bool witnesses compute `not ∘ not = id` at both constructors and reject `not = id` with the failing component. Double negation uses the annotation-free, case-inlined term with its return/bind seam; the independent engine checks the direct composition too.
+
+**Higher-evaluation cost.** Each Boolean introduction has two components and four application replays. Coverage and each replay have separate finite allowances; implicit beta steps consume replay budget even when they emit no decision. Product coverage can grow multiplicatively, so these bounds do not establish a global work theorem. Traces move into identity evidence; only a retained neutral transport clones that evidence to own its suspended computation.
+
+**Function choice.** A lazy related-input product preserves the observational definition, including distinct related Unit arguments. Native function conversion would impose a stronger equality test; finite literal sampling would not establish the universal premise. Replaying ordinary CBPV evaluation reuses the existing trusted machine. **Reversal.** Higher-order introductions require a quantified evidence language that checks relation assumptions and nested function evidence; complete dependent funext additionally requires its substitution and fibrancy laws.
+
+### Native fibres and admission
+
+Computed fibres lower to native Unit, Empty, Product and universe-path types. Empty forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the fold’s closed vocabulary. As an ordinary native leaf it remains a legitimate bounded-alias target.
+
+The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty, List codes and universe paths; no receipt admits element-relation, higher-field or function-identity programs or guarded list inhabitants.
+
+**Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would couple the rule language to persistent declarations before its dependent substitution laws are checked. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
+
+**Mutation scope.** The witnesses in `identity_recursion::tests` and `identity_recursion::function::tests` distinguish wrong sum branches, dropped product coordinates, negative equality on neutrals, forged identity evidence, incorrect universe classifiers, seal inspection and malformed Empty elimination. Function-specific boundaries include omitted or extra coverage, reused component dialogues, forged returned values, unchecked argument relations, bridge transport and application-motive action. No mutation score is claimed.
+
+## Guarded higher fields
+
+The `higher_field` module computes `Rel₂(p, q)` by quoting the native fibre of two checked parallel identities and applying the same identity-mode code fold to their evidence. No relation clause is duplicated. Neutral fibres retain the existing named refusal; the field adds no equality decision on unknown indices.
+
+A `Codata` program is a flat graph of `Guard` and `Redirect` instructions. Each guard checks an inhabitant of the current higher fibre; its tail requests identity of that inhabitant with itself. The same API also observes any supplied pair of parallel native cells. A guarded cycle represents arbitrarily many requested diagonal layers without materializing an infinite structure. A cycle of redirects returns `NonProductive`. Success is a `Prefix` at exactly the requested positive `Depth`, not a verdict about an unobserved tail.
+
+`ObservationBudget` gives each observation an instruction allowance from `ReplayBudget`. Every redirect and guard consumes one unit; reaching the allowance before the requested depth returns `DepthBound`. Zero depth returns `ZeroDepth`. CBPV dialogues and path formation retain their independent replay ceilings. Native relation checking remains a terminating structural walk, not part of the instruction count. These bounds state replay scope, not a global cost theorem.
+
+`symmetry` checks that the source diagonal and inverse fibres have the same native type. It reindexes diagonal evidence into the path fibre, observes its higher identity with the supplied path evidence, and transports the diagonal in that fibre to produce the inverse. It then checks all four square faces and observes identity between the two boundary composites. Both Bool injections compute with distinct neutral Unit payloads and canonical evidence. A neutral proof-index action retains the existing transport boundary as `NeutralTransport`; this is not general dependent elimination.
+
+`unfold` consumes two native `Value::PathEquiv` introductions, checks each through the ordinary closed-value checker and exposes the identity record:
+
+| Field | Observation |
+| ----- | ----------- |
+| Forward | Replay both translators at the input; check identity of their returned values and its higher diagonal. |
+| Backward | The same observation in the reverse direction. |
+| Source coherence | Replay both backward-after-forward composites to the input; observe identity between their reflected diagonal witnesses. |
+| Target coherence | The corresponding forward-after-backward coherence. |
+
+The negation and case-inlined triple-negation certificates satisfy all four fields at both Bool constructors, while native structural conversion reports `Distinct`. This is **replay-equivalence as identity, never in conversion**. The record is an identity type’s observation interface: each point consumes supplied evidence; observing Base samples would not prove a universal field. Reflexivity and product introductions retain their native path operations; record unfolding requires `PathEquiv`.
+
+`Identity::native_evidence` projects native fibre inhabitants only. Quantified function evidence returns `HigherEvaluationRequired`, preserving the distinction between a higher-evaluation program and a native value; suspended diagonals retain `NeutralFiber`. Function consumers borrow identities and replay their raw evidence.
+
+**Choice.** A first-order cyclic program makes guards and back edges inspectable and bounds each replay. Eager towers cannot represent infinite higher data; closures hide productivity obligations and allocate opaque continuations. The graph stores no checking verdict and adds no dependency or wire tag. **Reversal.** A native higher identity language would replace the auxiliary representation only with checked substitution, reduction and persistence rules. Each observed native fibre must be representable at the admitted stratum; J and a general dependent eliminator are not provided.
+
+**Mutation scope.** The higher-field module and its native-evidence projection: removed guards, uncharged redirects, early depth success, forged fibre evidence, dropped product coordinates, wrong square boundaries, substituted translator outputs and omitted round-trip coherence. The witnesses target these boundaries without claiming a mutation campaign or metatheorem about infinite coherence.
+
+## Recursive code observations
+
+`ValueType::List(A)` is the finite, strictly positive code `μX. Unit + A × X`, at A’s universe level. Wire tag `0x50` carries its element type; `0x51` is reserved and refused. Structural code conversion compares the finite element code, without unfolding a recursive value. The code survives ordinary encoding, decoding, substitution and content-support traversal.
+
+`identity_recursion::recursive` reuses `higher_field::Codata`. Each `Guard` exposes `inl ()` for Nil or `inr head` for Cons, with the Cons recursive coordinate in its tail edge. `Redirect` exposes no constructor. A Nil never reads its tail. `Relation::observe_lists` uses the same fold’s element relation, returns Unit only after both finite spines end, and returns Empty at the first differing head or constructor. Neither verdict validates an unobserved tail.
+
+One shared `ReplayBudget` counts both graphs’ Guard and Redirect visits. A constructor pair costs two instructions; a list of length n compared through Nil costs 2(n + 1). Returned progress includes the terminal or distinguishing constructor. Element checking and each CBPV replay retain separate finite bounds; this is an observation count, not a global work theorem.
+
+`ListEquivalence::form` checks an element equivalence and lifts its forward and inverse maps constructorwise. Nil is fixed; Cons maps its head and delays the tail. Finite-list round trips follow by spine induction from the checked element round trips. Transport rechecks that raw certificate, replays each claimed head output, preserves constructors and consumes precisely one dialogue per Cons. Bool negation computes on empty, singleton and three-element lists through the same rule.
+
+`Refusal` retains the existing `NonProductive` verdict for constructor-free cycles and `DepthBound` for exhausted observations, together with completed depth and visited instructions. A productive infinite spine still returns `DepthBound`: productivity does not establish a finite equality decision. No new uncertified-stratum error or recursive conversion rule is introduced.
+
+**Choice.** A native finite List code plus borrowed guarded inhabitants keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions or persisted inhabitants require their own constructor, substitution and persistence rules; this surface supports the List fixed point and first-order element observations.
+
+**Mutation scope.** Recursive witnesses distinguish swapped constructor branches, dropped heads, eager tail reads, missing instruction charges, false productivity, truncated coverage, corrupt transport dialogues and finite-depth success on infinite input. No mutation campaign or infinite-coherence theorem is claimed.
+
 ## Sharing and persistence
 
 The crate holds no interning table of decoded values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. The kernel's own type conversion performs no search, so it records no conversion trace; the replay is where the kernel reads one.
@@ -241,7 +401,7 @@ An inert mutation identifies what the design does not depend on.
 - **The digest is killed only by its own witnesses.** Collapsing every digest to one constant changes no verdict and no count — it costs a linear bucket scan — and is killed by the digest's unit witnesses rather than by any verdict test, the positive-fast-path design seen from the other side.
 - **The conversion discharged set times out rather than dying.** Removing it leaves the suite unable to finish: the claim it carries is intensional and exponential, and a timeout stays indeterminate rather than counting as a kill. A surviving mutant and an unfinished one call for opposite work.
 
-Two guards are pinned as kills. Removing the outstanding-staged-content guard from `add_decl` is killed by the witness that the later staging's root still resolves after the refusal. Shortening the node-tag block below the dangling sentinel is a build failure, because the reservation is an anonymous `const` assertion: a named unused constant is never evaluated, so `const _NAME: () = assert!(..)` would not guard.
+Removing the outstanding-staged-content guard from `add_decl` is killed by the witness that the later staging’s root still resolves after refusal. An anonymous `const` assertion separately checks every assigned node tag against the private dangling sentinel `0xFF`; it checks tag values rather than the length of the sparse table. A named unused constant would not establish that build-time guard.
 
 ## Specification attributes
 

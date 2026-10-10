@@ -541,6 +541,78 @@ enum Codomain
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Frame
 {
+    /// Await the first component path.
+    PathProductFirst
+    {
+        /// The first path.
+        at: ValueId,
+        /// The second path.
+        second: ValueId,
+    },
+    /// Await the second component path.
+    PathProductSecond
+    {
+        /// The second path.
+        at: ValueId,
+        /// The first source.
+        source: ValueTypeId,
+        /// The first target.
+        target: ValueTypeId,
+    },
+    /// Check the inverse after the forward map.
+    PathBackward
+    {
+        /// The inverse map.
+        backward: ValueId,
+        /// The source type.
+        source: ValueTypeId,
+        /// The target type.
+        target: ValueTypeId,
+        /// The certificate classifier.
+        path_type: ValueTypeId,
+    },
+    /// Finish a native certificate after both maps check.
+    PathChecked
+    {
+        /// The certificate classifier.
+        path_type: ValueTypeId,
+    },
+    /// Await the path classifier.
+    TransportPath
+    {
+        /// The path.
+        path: ValueId,
+        /// The transported operand.
+        value: ValueId,
+    },
+    /// Await the source operand check.
+    TransportOperand
+    {
+        /// The target returner.
+        result: CompTypeId,
+    },
+    /// Await the sum scrutinee classifier.
+    CaseScrutinee
+    {
+        /// The scrutinee.
+        scrutinee: ValueId,
+        /// The left branch.
+        on_left: ComputationId,
+        /// The right branch.
+        on_right: ComputationId,
+        /// The common result type.
+        expected: CompTypeId,
+    },
+    /// Close the left binder and check the right branch.
+    CaseRight
+    {
+        /// The right branch.
+        on_right: ComputationId,
+        /// The right summand.
+        right: ValueTypeId,
+        /// The common result type under one binder.
+        expected: CompTypeId,
+    },
     /// A force waits on the type its value synthesises, which must be a thunk
     /// type; the force has the thunk's body.
     Force
@@ -1054,6 +1126,41 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let produced = |found: FormedValueType| Ok(Step::Ascend(Produced::ValueType(found.id())));
         match *self.value(term)? {
+            | Value::PathRefl(code) => {
+                let _endpoint = crate::formation::path_code(self.context.arena(), code)?;
+                let classifier = self
+                    .context
+                    .arena_mut()
+                    .value_type_path_universe(code, code);
+                Ok(Step::Ascend(Produced::ValueType(classifier)))
+            },
+            | Value::PathProduct(first, second) => {
+                self.frames
+                    .push(Frame::PathProductFirst { at: first, second });
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            } => {
+                let (source, target) = self.path_endpoints(term, path_type)?;
+                let expected = self.map_type(source, target);
+                self.frames.push(Frame::PathBackward {
+                    backward,
+                    source,
+                    target,
+                    path_type,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: forward,
+                    direction: Direction::Check(expected),
+                }))
+            },
             | Value::Variable { zone, index } => {
                 match self.context.binders().occurrence(zone, index) {
                     | Ok(declared) => {
@@ -1106,7 +1213,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
+            | Value::Injection(..) => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Injection(term),
+            }),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
             | Value::StaticLambda(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::StaticLambda(term),
@@ -1207,6 +1316,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(codomain),
                 }))
             },
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Unit
@@ -1220,7 +1332,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
+            | Value::Injection(side, value) => {
+                let (left, right) = self.sum_expected(term, expected)?;
+                let summand = match side {
+                    | gandr_kernel_term::Side::Left => left,
+                    | gandr_kernel_term::Side::Right => right,
+                };
+                Ok(Step::Descend(Goal::Value {
+                    term: value,
+                    direction: Direction::Check(summand),
+                }))
+            },
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
         }
     }
@@ -1334,6 +1456,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Constant(constant) => {
                 matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
             | Value::Variable { .. }
             | Value::Unit
             | Value::Literal(_)
@@ -1380,6 +1505,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.computation(term)? {
+            | Computation::Transport(path, value) => {
+                self.frames.push(Frame::TransportPath { path, value });
+                Ok(Step::Descend(Goal::Value {
+                    term: path,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Computation::Force(value) => {
                 self.frames.push(Frame::Force { value });
                 Ok(Step::Descend(Goal::Value {
@@ -1403,7 +1535,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Synthesise))
             },
-            | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
+            | Computation::Case { .. } => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Case(term),
+            }),
         }
     }
 
@@ -1461,7 +1595,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(result),
                 }))
             },
-            | Computation::Force(_) | Computation::Application(..) => {
+            | Computation::Transport(..) | Computation::Force(_) | Computation::Application(..) => {
                 self.frames.push(Frame::CompBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Computation {
                     term,
@@ -1471,7 +1605,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Check(expected)))
             },
-            | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
+            | Computation::Case {
+                scrutinee,
+                on_left,
+                on_right,
+            } => {
+                self.frames.push(Frame::CaseScrutinee {
+                    scrutinee,
+                    on_left,
+                    on_right,
+                    expected,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
+            },
         }
     }
 
@@ -1550,7 +1699,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(ValueTypeView::Element { .. }) => true,
                 | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit
                     | ValueTypeView::Universe { .. } | ValueTypeView::Lift { .. }
-                    | ValueTypeView::Product(..) | ValueTypeView::StaticPi { .. }) | Err(_) => false,
+                    | ValueTypeView::Product(..) | ValueTypeView::Sum(..) | ValueTypeView::PathUniverse(..) | ValueTypeView::StaticPi { .. }) | Err(_) => false,
             },
         | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Value(at)
             && wanted == ExpectedShape::Thunk && found == TypeNode::Value(expected),
@@ -1565,6 +1714,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let head = self.context.whnf_value_type(expected)?;
         match value_type_view(self.context.arena(), head)? {
             | ValueTypeView::Thunk(body) => Ok(body),
+            | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Sum(..)
             | ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Unit
@@ -1827,6 +1978,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match value_type_view(self.context.arena(), at)? {
+            | ValueTypeView::PathUniverse(source, target) => {
+                let _source = crate::formation::path_code(self.context.arena(), source)?;
+                let _target = crate::formation::path_code(self.context.arena(), target)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
             | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
                 Ok(Step::Ascend(Produced::Checked))
             },
@@ -1853,7 +2009,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | ValueTypeView::Product(first, second) => {
+            | ValueTypeView::Sum(first, second) | ValueTypeView::Product(first, second) => {
                 self.frames.push(Frame::FormNext(TypeNode::Value(second)));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
@@ -2034,6 +2190,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             let head = self.context.whnf_value_type(classifier)?;
             match value_type_view(self.context.arena(), head)? {
                 | ValueTypeView::Universe { .. } | ValueTypeView::StaticPi { .. } => {},
+                | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Sum(..)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -2088,6 +2246,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Element { code, target } => {
                     (code, target.clone(), GroundSort::Value)
                 },
+                | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Sum(..)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Unit
@@ -2214,10 +2374,107 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match (frame, produced) {
+            | (Frame::PathProductFirst { at, second }, Produced::ValueType(classifier)) => {
+                let (source, target) = self.path_endpoints(at, classifier)?;
+                self.frames.push(Frame::PathProductSecond {
+                    at: second,
+                    source,
+                    target,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: second,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (
+                Frame::PathProductSecond { at, source, target },
+                Produced::ValueType(classifier),
+            ) => {
+                let (right_source, right_target) = self.path_endpoints(at, classifier)?;
+                let arena = self.context.arena_mut();
+                let source = arena.value_type_product(source, right_source);
+                let target = arena.value_type_product(target, right_target);
+                let source = arena.value_quote(source);
+                let target = arena.value_quote(target);
+                let classifier = arena.value_type_path_universe(source, target);
+                Ok(Step::Ascend(Produced::ValueType(classifier)))
+            },
+            | (
+                Frame::PathBackward {
+                    backward,
+                    source,
+                    target,
+                    path_type,
+                },
+                Produced::Checked,
+            ) => {
+                let expected = self.map_type(target, source);
+                self.frames.push(Frame::PathChecked { path_type });
+                Ok(Step::Descend(Goal::Value {
+                    term: backward,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            | (Frame::PathChecked { path_type }, Produced::Checked) => {
+                Ok(Step::Ascend(Produced::ValueType(path_type)))
+            },
+            | (Frame::TransportPath { path, value }, Produced::ValueType(classifier)) => {
+                let (source, target) = self.path_endpoints(path, classifier)?;
+                let result = self.context.arena_mut().comp_type_returner(target);
+                self.frames.push(Frame::TransportOperand { result });
+                Ok(Step::Descend(Goal::Value {
+                    term: value,
+                    direction: Direction::Check(source),
+                }))
+            },
+            | (Frame::TransportOperand { result }, Produced::Checked) => {
+                Ok(Step::Ascend(Produced::CompType(result)))
+            },
+            | (
+                Frame::CaseScrutinee {
+                    scrutinee,
+                    on_left,
+                    on_right,
+                    expected,
+                },
+                Produced::ValueType(classifier),
+            ) => {
+                let (left, right) = self.sum_expected(scrutinee, classifier)?;
+                let expected =
+                    shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32));
+                self.context.binders().open(Zone::Intuitionistic, left);
+                self.frames.push(Frame::CaseRight {
+                    on_right,
+                    right,
+                    expected,
+                });
+                Ok(Step::Descend(Goal::Computation {
+                    term: on_left,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            | (
+                Frame::CaseRight {
+                    on_right,
+                    right,
+                    expected,
+                },
+                Produced::Checked,
+            ) => {
+                self.close()?;
+                self.context.binders().open(Zone::Intuitionistic, right);
+                self.frames.push(Frame::LambdaBody);
+                Ok(Step::Descend(Goal::Computation {
+                    term: on_right,
+                    direction: Direction::Check(expected),
+                }))
+            },
             | (Frame::Force { value }, Produced::ValueType(synthesised)) => {
                 let head = self.context.whnf_value_type(synthesised)?;
                 match value_type_view(self.context.arena(), head)? {
                     | ValueTypeView::Thunk(body) => Ok(Step::Ascend(Produced::CompType(body))),
+                    | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Sum(..)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Unit
@@ -2455,7 +2712,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Ascend(Produced::ValueType(codomain)))
             },
             | (
-                Frame::Force { .. }
+                Frame::PathProductFirst { .. }
+                | Frame::PathProductSecond { .. }
+                | Frame::TransportPath { .. }
+                | Frame::CaseScrutinee { .. }
+                | Frame::Force { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::FormElement(_)
                 | Frame::PairFirstSynthesised { .. }
@@ -2469,7 +2730,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::ValueType(_) | Produced::Checked,
             )
             | (
-                Frame::ApplicationArgument { .. }
+                Frame::PathBackward { .. }
+                | Frame::PathChecked { .. }
+                | Frame::TransportOperand { .. }
+                | Frame::CaseRight { .. }
+                | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody
                 | Frame::FormBinder
                 | Frame::Quote(_)
@@ -2485,6 +2750,99 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Err(CheckRefusal::MachineInvariant)
             },
         }
+    }
+    /// Read the two decoded endpoints of a native path classifier.
+    ///
+    /// # Specification
+    /// - requires: nothing; a non-path classifier is refused.
+    /// - ensures: both endpoints are closed first-order value types.
+    /// - provides: source and target types in classifier order.
+    /// - fails: a shape mismatch or an unsupported path code.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native endpoint codes remain ordered and in the
+    ///   first-order fragment; mismatched classifiers report their original
+    ///   site.
+    /// - witness: `bridge::tests::native_path_module_round_trips`
+    #[spec(ensures: |ret| match ret {
+        Ok(pair) => <[ValueTypeId; 2]>::from(pair).iter().all(|&id| matches!(self.context.arena().value_type(id), Some(&gandr_core_term::ValueType::Unit | &gandr_core_term::ValueType::Base(_) | &gandr_core_term::ValueType::Product(..) | &gandr_core_term::ValueType::Sum(..)))),
+        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
+        Err(_) => true,
+    })]
+    fn path_endpoints(
+        &mut self,
+        at: ValueId,
+        classifier: ValueTypeId,
+    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        let ValueTypeView::PathUniverse(source, target) =
+            value_type_view(self.context.arena(), head)?
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::PathUniverse,
+                found: TypeNode::Value(classifier),
+            });
+        };
+        Ok((
+            crate::formation::path_code(self.context.arena(), source)?,
+            crate::formation::path_code(self.context.arena(), target)?,
+        ))
+    }
+
+    /// Form the thunked translator from a closed source to a closed target.
+    ///
+    /// # Specification
+    /// trivial.
+    fn map_type(
+        &mut self,
+        source: ValueTypeId,
+        target: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        let arena = self.context.arena_mut();
+        let result = arena.comp_type_returner(target);
+        let arrow = arena.comp_type_arrow(source, result);
+        arena.value_type_thunk(arrow)
+    }
+
+    /// Read the two summands used by injection and case checking.
+    ///
+    /// # Specification
+    /// - requires: nothing; a non-sum classifier is refused.
+    /// - ensures: the summands of the classifier's weak head.
+    /// - provides: the left and right summands in that order.
+    /// - fails: a shape mismatch when the weak head is not a sum.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sum operands retain their classifiers and mismatch
+    ///   refusals retain the source site instead of reporting a native-path
+    ///   shape.
+    /// - witness: `bridge::tests::native_path_module_round_trips`
+    #[spec(ensures: |ret| match ret {
+        Ok((left, right)) => self.context.arena().value_type(left).is_some() && self.context.arena().value_type(right).is_some() && match self.context.arena().value_type(classifier) { Some(&gandr_core_term::ValueType::Sum(a, b)) => left == a && right == b, _ => true },
+        Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::Sum && found == TypeNode::Value(classifier),
+        Err(_) => true,
+    })]
+    fn sum_expected(
+        &mut self,
+        at: ValueId,
+        classifier: ValueTypeId,
+    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        let ValueTypeView::Sum(left, right) = value_type_view(self.context.arena(), head)?
+        else {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::Sum,
+                found: TypeNode::Value(classifier),
+            });
+        };
+        Ok((left, right))
     }
 }
 
@@ -2502,22 +2860,6 @@ const fn unadmitted_value(
         former,
     }
 }
-
-/// The refusal of a computation former the fragment has no rule for.
-///
-/// # Specification
-/// trivial.
-const fn unadmitted_comp(
-    term: ComputationId,
-    former: UnadmittedFormer,
-) -> CheckRefusal
-{
-    CheckRefusal::OutOfFragment {
-        at: CoreNode::Term(TermNode::Computation(term)),
-        former,
-    }
-}
-
 #[cfg(test)]
 mod tests
 {
@@ -2557,7 +2899,6 @@ mod tests
     use super::checked;
     use super::synthesise_comp;
     use super::synthesise_value;
-    use super::unadmitted_comp;
     use super::unadmitted_value;
     use crate::context::Atom;
     use crate::context::CheckBudget;
@@ -2601,6 +2942,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
         let unit_type = arena.value_type_unit();
+        let sum = arena.value_type_sum(unit_type, unit_type);
         let returns_integer = arena.comp_type_returner(integer);
         let thunk_returns_integer = arena.value_type_thunk(returns_integer);
         let arrow = arena.comp_type_arrow(integer, returns_integer);
@@ -2667,9 +3009,11 @@ mod tests
             ),
             (
                 injection,
-                Err(unadmitted_value(injection, UnadmittedFormer::Injection)),
-                unit_type,
-                Err(unadmitted_value(injection, UnadmittedFormer::Injection)),
+                Err(CheckRefusal::NotSynthesisable {
+                    form: CheckingForm::Injection(injection),
+                }),
+                sum,
+                crossed_once,
             ),
             (
                 lift,
@@ -2807,6 +3151,7 @@ mod tests
         let returns_integer = arena.comp_type_returner(integer);
         let arrow = arena.comp_type_arrow(integer, returns_integer);
         let thunk_arrow = arena.value_type_thunk(arrow);
+
         let unit = arena.value_unit();
         let integer_value = arena.value_literal(integer_literal());
         let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -2821,7 +3166,7 @@ mod tests
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
         let crossed = |crossings: usize| Ok(ConversionCount::from(crossings));
-        let rows: [Row<ComputationId, CompTypeId>; 6] = [
+        let rows: [Row<ComputationId, CompTypeId>; 5] = [
             (force, Ok(arrow), arrow, crossed(1)),
             (
                 application,
@@ -2846,12 +3191,6 @@ mod tests
                 crossed(1),
             ),
             (bind, Ok(arrow), arrow, crossed(2)),
-            (
-                case,
-                Err(unadmitted_comp(case, UnadmittedFormer::Case)),
-                returns_integer,
-                Err(unadmitted_comp(case, UnadmittedFormer::Case)),
-            ),
         ];
         for (term, synthesised, expected, checked) in rows {
             assert_eq!(
@@ -2866,6 +3205,28 @@ mod tests
                 "{term:?} checks by its former's rule"
             );
         }
+        assert_eq!(
+            synthesise_comp(&mut context, case).map(|found| found.produced().id()),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Case(case)
+            })
+        );
+        let expected = form_comp_type(&mut context, returns_integer).unwrap();
+        let Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(at),
+            wanted: ExpectedShape::Sum,
+            found: TypeNode::Value(found),
+        }) = check_comp(&mut context, case, expected)
+        else {
+            panic!("a unit scrutinee must report the required sum shape");
+        };
+        assert_eq!(at, unit);
+        drop(context);
+        assert_eq!(
+            arena.value_type(found),
+            Some(&ValueType::Unit),
+            "the refusal reports the scrutinee's actual classifier, independent of arena allocation"
+        );
     }
 
     #[test]
@@ -3621,6 +3982,9 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv {..}
                     | Value::Pair(..)
                     | Value::Injection(..)
                     | Value::Lift { .. }
@@ -3670,7 +4034,7 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Bind(..) => {
+                    | Computation::Transport(..) | Computation::Bind(..) => {
                         prop_assert!(false, "the free recipe mints no bind");
                     },
                     | Computation::Case { .. } => {

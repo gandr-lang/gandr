@@ -197,14 +197,17 @@ impl Provenance
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum FocusRefusal
 {
+    /// Native universe transport has no command-IL destructor.
+    UniverseTransport(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
     DanglingComputation(ComputationId),
     /// The command arena refused a node.
     Mint(MintRefusal),
-    /// A code: the command IL carries no types, so a quoted type, a type
-    /// operator or a static application has no producer to become.
+    /// A code or universe-path certificate: the command IL carries no types, so
+    /// a quoted type, a type operator or a static application has no
+    /// producer to become.
     Code(ValueId),
     /// An internal invariant broke: a finishing task found no result where
     /// its own children should have left one. Unreachable while the
@@ -226,6 +229,9 @@ impl fmt::Display for FocusRefusal
     ) -> fmt::Result
     {
         match *self {
+            | Self::UniverseTransport(_) => {
+                f.write_str("universe transport has no command-IL destructor")
+            },
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
@@ -791,6 +797,9 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
             | Value::Quote(_)
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
@@ -842,6 +851,7 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
+            | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
             | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,

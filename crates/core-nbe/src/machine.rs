@@ -67,6 +67,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::mem;
 
+use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionHeight;
 use gandr_core_term::Zone;
@@ -2068,6 +2069,13 @@ where
     ///
     /// # Errors
     /// Every fault the channel or the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — forcing preserves computation polarity on both sides;
+    ///   a native path value cannot enter the thunk rule.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+    #[spec(ensures: |ret| ret.is_err() || (matches!(goal.left, Slot::Waiting(_) | Slot::Ready(Glued::Computation(_))) && matches!(goal.right, Slot::Waiting(_) | Slot::Ready(Glued::Computation(_)))))]
     fn force(
         &mut self,
         id: ProcessId,
@@ -2101,6 +2109,8 @@ where
                     let forced = self.domain.comp_neutral(grown, CompTermFace::Reduced);
                     Self::set_side(goal, side, Slot::Ready(Glued::Computation(forced)));
                 },
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
@@ -2763,10 +2773,13 @@ fn deeper(level: BinderLevel) -> Result<BinderLevel, ConversionFault>
 #[cfg(test)]
 mod tests
 {
+    mod trace_pairing;
+
     use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::CompType;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
@@ -3273,6 +3286,20 @@ mod tests
     /// - ensures: each child the former names, in the order erasure mints them.
     /// - provides: the one reading of a core former the lifting walks share.
     /// - panics: when `node` does not resolve, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native term children retain left-to-right order while
+    ///   quoted types remain opaque to the term-only sharing lifter.
+    /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+    #[spec(requires: match node { CoreTerm::Value(id) => core.value(id).is_some(), CoreTerm::Computation(id) => core.computation(id).is_some() }, ensures: |ret| match node {
+        CoreTerm::Value(id) => match core.value(id) {
+            Some(&Value::PathRefl(code)) => ret.as_slice() == [CoreTerm::Value(code)],
+            Some(&Value::PathEquiv { forward, backward, .. }) => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
+            Some(&Value::PathProduct(a, b)) => ret.as_slice() == [CoreTerm::Value(a), CoreTerm::Value(b)],
+            _ => true,
+        },
+        CoreTerm::Computation(id) => match core.computation(id) { Some(&Computation::Transport(path, value)) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)], _ => true },
+    })]
     fn core_children(
         core: &CoreArena,
         node: CoreTerm,
@@ -3286,7 +3313,13 @@ mod tests
                 | Value::Literal(_)
                 | Value::Quote(_)
                 | Value::QuoteComputation(_) => Vec::new(),
-                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                | Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
+                | Value::PathEquiv {
+                    forward, backward, ..
+                } => Vec::from([CoreTerm::Value(forward), CoreTerm::Value(backward)]),
+                | Value::PathProduct(first, second)
+                | Value::Pair(first, second)
+                | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
                 | Value::StaticLambda(body) => Vec::from([CoreTerm::Value(body)]),
@@ -3300,6 +3333,9 @@ mod tests
                     .computation(id)
                     .expect("a reached computation resolves")
                 {
+                    | Computation::Transport(path, value) => {
+                        Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
+                    },
                     | Computation::Lambda(body) => Vec::from([CoreTerm::Computation(body)]),
                     | Computation::Application(head, argument) => {
                         Vec::from([CoreTerm::Computation(head), CoreTerm::Value(argument)])
@@ -3333,6 +3369,13 @@ mod tests
     ///   with two nodes of equal tree sharing one.
     /// - provides: the hash-consing the lifter shares repeated subterms by.
     /// - panics: when a reached node does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — canonicalization retains the root and is idempotent
+    ///   on representatives without changing term polarity; replay compares
+    ///   lifted and source trees.
+    /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+    #[spec(ensures: |ret| ret.contains_key(&root) && ret.iter().all(|(node, representative)| core::mem::discriminant(node) == core::mem::discriminant(representative) && ret.get(representative) == Some(representative)))]
     fn canonical(
         core: &CoreArena,
         root: CoreTerm,
@@ -3371,6 +3414,21 @@ mod tests
                         | CoreTerm::Value(id) => {
                             let key =
                                 match core.value(id).expect("a reached value resolves").clone() {
+                                    | Value::PathRefl(code) => Value::PathRefl(value(code)),
+                                    | Value::PathProduct(first, second) => {
+                                        Value::PathProduct(value(first), value(second))
+                                    },
+                                    | Value::PathEquiv {
+                                        path_type,
+                                        forward,
+                                        backward,
+                                        evidence,
+                                    } => Value::PathEquiv {
+                                        path_type,
+                                        forward: value(forward),
+                                        backward: value(backward),
+                                        evidence,
+                                    },
                                     | Value::Pair(first, second) => {
                                         Value::Pair(value(first), value(second))
                                     },
@@ -3406,6 +3464,9 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Transport(path, argument) => {
+                                    Computation::Transport(value(path), value(argument))
+                                },
                                 | Computation::Lambda(body) => {
                                     Computation::Lambda(computation(body))
                                 },
@@ -3567,6 +3628,12 @@ mod tests
     /// - provides: the one minting walk [`lifted`] runs per leg and for the
     ///   body.
     /// - panics: when a mint is refused, which no fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — grafting preserves term polarity while shared
+    ///   occurrences replay to the same conversion verdict as the source tree.
+    /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+    #[spec(ensures: |ret| matches!((top, ret), (CoreTerm::Value(_), OverlayId::Value(_)) | (CoreTerm::Computation(_), OverlayId::Computation(_))))]
     fn lifted_under(
         overlay: &mut Overlay,
         core: &CoreArena,
@@ -3651,11 +3718,16 @@ mod tests
                                     target: target.clone(),
                                     body: value(0),
                                 },
+                                | Value::PathRefl(_)
+                                | Value::PathProduct(..)
+                                | Value::PathEquiv { .. }
                                 | Value::Quote(_)
                                 | Value::QuoteComputation(_)
                                 | Value::StaticLambda(_)
                                 | Value::StaticApplication(..) => {
-                                    panic!("the duplication fixtures carry no quote or operator")
+                                    panic!(
+                                        "the duplication fixtures carry no quote, operator or path"
+                                    )
                                 },
                             };
                             OverlayId::Value(
@@ -3669,6 +3741,9 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Transport(..) => {
+                                    panic!("the duplication fixtures carry no transport")
+                                },
                                 | Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
                                 | Computation::Application(..) => {
                                     CompGraft::Application(computation(0), value(1))
@@ -3857,7 +3932,19 @@ mod tests
             match node {
                 | Node::Value(value) => {
                     match core.value(value).expect("a fixture value resolves") {
-                        | &(Value::Pair(first, second)
+                        | &Value::PathRefl(code) => Vec::from([Node::Value(code)]),
+                        | &Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ..
+                        } => Vec::from([
+                            Node::ValueType(path_type),
+                            Node::Value(forward),
+                            Node::Value(backward),
+                        ]),
+                        | &(Value::PathProduct(first, second)
+                        | Value::Pair(first, second)
                         | Value::StaticApplication(first, second)) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
@@ -3879,6 +3966,9 @@ mod tests
                         .computation(computation)
                         .expect("a fixture computation resolves")
                     {
+                        | &Computation::Transport(path, value) => {
+                            Vec::from([Node::Value(path), Node::Value(value)])
+                        },
                         | &Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
                         | &Computation::Application(head, argument) => {
                             Vec::from([Node::Computation(head), Node::Value(argument)])
@@ -3905,6 +3995,9 @@ mod tests
                         .value_type(value_type)
                         .expect("a fixture type resolves")
                     {
+                        | ValueType::PathUniverse(source, target) => {
+                            Vec::from([Node::Value(source), Node::Value(target)])
+                        },
                         | ValueType::Product(first, second)
                         | ValueType::Sum(first, second)
                         | ValueType::StaticPi {
@@ -3969,6 +4062,30 @@ mod tests
                         | &Value::Constant(constant) => self.arena.value_constant(constant),
                         | &Value::Unit => self.arena.value_unit(),
                         | &Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
+                        | &Value::PathRefl(code) => {
+                            let code = value(self, code);
+                            self.arena.value_path_refl(code)
+                        },
+                        | &Value::PathProduct(first, second) => {
+                            let (first, second) = (value(self, first), value(self, second));
+                            self.arena.value_path_product(first, second)
+                        },
+                        | &Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ref evidence,
+                        } => {
+                            let path_type =
+                                *self.value_types.get(&path_type).expect("children first");
+                            let (forward, backward) = (value(self, forward), value(self, backward));
+                            self.arena.value_path_equiv(
+                                path_type,
+                                forward,
+                                backward,
+                                alloc::sync::Arc::clone(evidence),
+                            )
+                        },
                         | &Value::Pair(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_pair(first, second)
@@ -4008,6 +4125,10 @@ mod tests
                         .computation(id)
                         .expect("a fixture computation resolves")
                     {
+                        | Computation::Transport(path, argument) => {
+                            let (path, argument) = (value(self, path), value(self, argument));
+                            self.arena.computation_transport(path, argument)
+                        },
                         | Computation::Lambda(body) => {
                             let body = computation(self, body);
                             self.arena.computation_lambda(body)
@@ -4049,6 +4170,10 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.value_type(id).expect("a fixture type resolves") {
+                        | ValueType::PathUniverse(source, target) => {
+                            let (source, target) = (value(self, source), value(self, target));
+                            self.arena.value_type_path_universe(source, target)
+                        },
                         | ValueType::Base(base) => self.arena.value_type_base(base),
                         | ValueType::Unit => self.arena.value_type_unit(),
                         | ValueType::Product(first, second) => {
@@ -4170,6 +4295,7 @@ mod tests
             | ConversionDecision::NegativeSubgoal { position } => {
                 ConversionDecision::NegativeSubgoal { position }
             },
+            | ConversionDecision::Decompose => ConversionDecision::Decompose,
         }
     }
 

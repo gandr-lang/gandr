@@ -182,6 +182,7 @@ path = "crates/core-incremental"
 # consumers:
 # - core-checker
 # - core-sequent (dev)
+# - kernel-core (dev)
 # - surface-pretty (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
@@ -200,6 +201,7 @@ path = "crates/core-sequent"
 # - core-incremental
 # - core-nbe
 # - core-sequent
+# - kernel-core (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -223,6 +225,7 @@ path = "crates/kernel-check-memo"
 # - core-checker
 # - core-nbe
 # - kernel-core
+# - kernel-term
 [workspace.dependencies.gandr-kernel-conversion-trace]
 path = "crates/kernel-conversion-trace"
 
@@ -529,6 +532,7 @@ default-features = false
 # consumers:
 # - core-checker (dev)
 # - core-incremental (dev)
+# - core-nbe (dev)
 # - core-sequent (dev)
 # - kernel-core (dev)
 # - kernel-strata (dev)

@@ -94,7 +94,7 @@ pub fn same_value(
 /// - requires: both reachable term graphs are acyclic.
 /// - ensures: Same exactly when every corresponding supported node has the same
 ///   constructor, labels and ordered children; absent nodes, quoted types and
-///   static forms differ, even if their raw addresses agree.
+///   static forms and native paths differ, even if their raw addresses agree.
 /// - provides: equality independent of each arena's allocation history for the
 ///   pure term fragment used by the focusing and machine suites.
 /// - panics: none.
@@ -102,9 +102,10 @@ pub fn same_value(
 /// # Adequacy
 /// - hypothesis: L3 — independently allocated graphs agree despite different
 ///   addresses; distinct leaves, each pair field, branch labels, binders and
-///   eliminators differ. Missing nodes, quotes and static forms are refused.
-///   These finite cases challenge ignored labels or children and address
-///   comparison, not cyclic inputs or equivalence modulo evaluation.
+///   eliminators differ. Missing nodes, quotes, static forms and native paths
+///   are outside this observer's pure focusing fragment. These finite cases
+///   challenge ignored labels or children and address comparison, not cyclic
+///   inputs or equivalence modulo evaluation.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
 #[spec(ensures: |ret| match start {
@@ -114,7 +115,7 @@ pub fn same_value(
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
             | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
-            | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) => ret == Agreement::Differ,
+            | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },

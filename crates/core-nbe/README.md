@@ -23,10 +23,12 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Conversion machine](#conversion-machine)
 - [Codes](#codes)
 - [Static operators](#static-operators)
+- [Native universe paths](#native-universe-paths)
 - [Termination](#termination)
 - [Process re-sharing](#process-re-sharing)
 - [The cached word](#the-cached-word)
 - [What stays in kernel-core](#what-stays-in-kernel-core)
+- [Trace pairing witnesses](#trace-pairing-witnesses)
 - [Sharing overlay and duplication](#sharing-overlay-and-duplication)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
@@ -156,7 +158,7 @@ A stuck value and a stuck computation share a head and differ in what is stacked
 
 ## Closure spaces
 
-`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures, and a quote and a static lambda are the formers that produce a value closure ([Codes](#codes), [Static operators](#static-operators)). Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
+`ValueClosure` suspends a value body. `CompClosure::body` is `CompBody`: ordinary `Source` syntax or a native product-transport continuation (`TransportPair` or `Pair`) holding domain operands. Lambda, thunk, bind and case use source bodies; suspended product transports sequence components without allocating synthetic core syntax during evaluation. Both spaces capture the two-zone `Environment`; entering a closure extends that environment and evaluates its body. Entries are `Copy` ids, so capturing an environment clones two flat vectors.
 
 ## Per-run arena
 
@@ -240,6 +242,14 @@ Alternatives:
 
 Reversal: a measured family where the decline at a lambda against a neutral costs a refusal a typed η would have answered. Conversion then becomes typed at static Pis.
 
+## Native universe paths
+
+Closed reflexivity and equivalence certificates retain their raw source syntax. Product paths evaluate their children and keep a source face only when both children still denote the original children. Certificate conversion erases evidence but does not normalize maps. Transport applies the forward map, returns its input for reflexivity, or sequences component transports for a pair. Neutral paths and neutral product inputs remain eliminations on a spine.
+
+Readback reconstructs suspended product sequencing with the correct binder depth in both modes. `native_transport_sequences_product_components` distinguishes all four canonical/neutral component combinations; `native_certificate_conversion_retains_map_syntax` distinguishes computational map equality from certificate identity. The engine supplies CBPV dialogues to the kernel’s identity-by-code, higher-field, funext and `Flow_U` consumers; it grants none of those rule languages an admission receipt. Evaluation and readback exhaust `Fuel`; conversion exhausts `StepBudget`. Exhaustion declines rather than proving either equality or inequality.
+
+**Choice.** Ordinary CBPV evaluation and explicit continuations, not Rust translator closures or a second evaluator. Certificate evidence is excluded from conversion, while raw classifier and translator syntax remains observable. **Reversal.** A larger code or elimination fragment must first define the kernel rules that replay these computations.
+
 ## Termination
 
 No termination result covers the machine: a definition may unfold to itself, and an evaluation may run Ω. The unbounded loop is the run queue's driver, not any one evaluation — each slice of an evaluation is bounded by its fuel, while the driver issues unfoldings, slices and alternatives without end — so the driver is what the two mechanisms bound, and each `# Termination` block in the machine names the loop it audits.
@@ -271,6 +281,20 @@ The fold is ten lines over `core::hash::Hasher` rather than a crate. Alternative
 ## What stays in kernel-core
 
 `gandr-kernel-core` keeps its own conversion: identity and structural equality over kernel types and the codes they carry, in the kernel's own arena, two-valued, failing closed to distinct. It stays separate because it is trusted and this pipeline is not. The kernel compares kernel syntax with nothing to unfold and no closures, and it accepts nothing it cannot recheck. This pipeline compares glued domain values, holds neutrals with bodies and closures over environments, answers three ways, and carries a guard table the kernel admits into nothing; its answers reach the kernel only as a conversion trace, which the kernel's `replay` re-derives over kernel terms, firing every reduction itself. Sharing code would put the domain inside the trusted base or make the kernel depend on an untrusted engine, and the two walks share no node type. What is shared is what both must agree on: canonical level equality, the `Eq` of `gandr-kernel-strata`'s `Level`, and the per-call discipline of a set of met pairs.
+
+## Trace pairing witnesses
+
+The machine’s test consumer replays component traces independently before pairing them. A `Decompose` boundary followed by first-component-first concatenation certifies both alpha-equal and non-alpha-equal value pairs. The alpha-equal pair’s one-decision unit also certifies directly. A negative pair selects one refuted component with `NegativeSubgoal`; wrong selections retain their exact refusal classes and positions. Returner pairing uses the two checked boundaries supplied by `kernel-core::path_universe::Dialogue::pair`. No transitive certificate composition is provided.
+
+| Case | Exact observation |
+| ---- | ----------------- |
+| Convertible components | Decomposition and concatenation replay `Convertible`; swapping two distinct unfolding traces refuses `Inapplicable { at: 2 }`. |
+| Alpha-equal pair | Both `[ComparedShared]` and `[Decompose, ComparedShared, ComparedShared]` replay `Convertible`. |
+| Refuted pair | The selected component replays `NotConvertible`; selecting its equal sibling refuses `Contradicted`, and an out-of-range selection refuses `Inapplicable`. |
+
+Witnesses live in `machine::tests::trace_pairing`: three fixed-seed properties run 256 recipes each over zero to seven left/right pair nestings. Positive recipes vary unfolding side and independent sharing of both components; alpha-equal sides are separately allocated; negative recipes select either component. The existing four-rung ladder generator also supplies all sixteen ordered pairs. Exact unfolding and refusal goldens distinguish constant verdicts, reversed component order, ignored selections, and erased refusal payloads. This is bounded evidence, not a proof for arbitrary terms or traces.
+
+The tests reuse workspace `proptest` 1.11, dev-only with defaults disabled and only `std` enabled for the runner and shrinking. QuickCheck would add another runner; manual sampling loses shrinking. Reconsider on an unmaintained release, a high-risk advisory, or a generator requirement it cannot express.
 
 ## Sharing overlay and duplication
 
