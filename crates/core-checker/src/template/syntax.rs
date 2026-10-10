@@ -1,5 +1,6 @@
 //! Flat, content-interned syntax for staging equation families.
 
+pub(super) mod admission;
 mod serialization;
 
 use alloc::collections::BTreeMap;

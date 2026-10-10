@@ -162,6 +162,26 @@ version = "4.6.6"
 default-features = false
 features = ["derive", "error-context", "help", "std", "usage"]
 
+# Standing observer workers exchange jobs and results.
+# features:
+# - std: Sender/Receiver and bounded are absent without hosted support.
+# consumers:
+# - core-checker (dev)
+[workspace.dependencies.crossbeam-channel]
+version = "0.5.17"
+default-features = false
+features = ["std"]
+
+# Standing observer workers balance irregular admission families.
+# features:
+# - std: Injector/Worker are absent without hosted epoch support.
+# consumers:
+# - core-checker (dev)
+[workspace.dependencies.crossbeam-deque]
+version = "0.8.8"
+default-features = false
+features = ["std"]
+
 # Snapshot comparison for the highlighter's role goldens and the printer's
 # layout goldens: a file compared whole, a diff on mismatch, and a rewrite
 # under `UPDATE_EXPECT=1`. It has no features to leave off.
@@ -692,6 +712,25 @@ default-features = false
 version = "0.30.2"
 default-features = false
 features = ["crossterm"]
+
+# Per-worker observer queues without an asynchronous runtime.
+# features:
+# - alloc: HeapRb and its owned endpoints are absent without heap storage.
+# consumers:
+# - core-checker (dev)
+[workspace.dependencies.ringbuf]
+version = "0.5.3"
+default-features = false
+features = ["alloc"]
+
+# Wait-free per-worker observer queues.
+# features:
+# - none: allocation works without the optional standard-library facade.
+# consumers:
+# - core-checker (dev)
+[workspace.dependencies.rtrb]
+version = "0.4.0"
+default-features = false
 
 # The line editor of the read-evaluate loop's terminal face: raw-mode input,
 # editing keys and in-memory history. Defaults off: `with-file-history` writes
