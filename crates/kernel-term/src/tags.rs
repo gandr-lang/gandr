@@ -42,13 +42,14 @@
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
 //! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
 //! | recursive block | `0x50–0x51` | List code and a reserved, unassigned value tag |
+//! | session codes | `0x52–0x5A` | native session code, seven inline graph opcodes, native session Path evidence |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
 //! [`NODE_VT_ELEMENT`] and [`NODE_VT_PATH_UNIVERSE`] carry value codes in
 //! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
-//! path endpoints remain closed first-order value codes.
+//! path endpoints include closed first-order and finite session codes.
 //!
 //! The universe families took four tags from the growth room at once, one
 //! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
@@ -327,6 +328,11 @@ pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
 
+/// Node tag: finite session graph and one payload-telescope child.
+pub const NODE_VT_SESSION: WireTag = WireTag(0x52);
+
+/// Node tag: finite bisimulation, classifier and payload-proof tuple.
+pub const NODE_V_SESSION_PATH: WireTag = WireTag(0x5A);
 /// Reserved tag for persisted recursive inhabitants; currently refused.
 pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
@@ -510,8 +516,8 @@ pub struct NodeTagDescription
 /// Build one row of [`NODE_TAG_TABLE`].
 ///
 /// # Specification
-/// - requires: `tag` is one of the frozen node tags, and the two verdicts are
-///   the classifications recorded for it.
+/// - requires: `tag` is a native node tag, not an inline opcode or reservation,
+///   and the two verdicts are the classifications recorded for it.
 /// - ensures: returns the description carrying its arguments unchanged, with
 ///   the tag's own token contribution fixed at one.
 /// - provides: the one row constructor, so every row agrees that a tag
@@ -519,9 +525,9 @@ pub struct NodeTagDescription
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+/// - hypothesis: L2 compares all 42 native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
-///   interval, the reserved sharing boundary, one-token contributions,
+///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
@@ -531,7 +537,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0)
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0)
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && ret.child_arity.0 == child_arity.0
@@ -571,9 +577,9 @@ const fn row(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+/// - hypothesis: L2 compares all 42 native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
-///   interval, the reserved sharing boundary, one-token contributions,
+///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
@@ -583,7 +589,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0)
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0)
             && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
     ensures: |ret| ret.tag.0 == tag.0
             && ret.child_arity.0 == child_arity.0
@@ -664,7 +670,7 @@ const fn bounded_alias(
 /// # Specification
 /// - requires: the consumer interprets rows by their tag and keeps the two
 ///   verdict criteria distinct.
-/// - ensures: lists each frozen former exactly once in tag order with its child
+/// - ensures: lists each native former exactly once in tag order with its child
 ///   arity, token contribution and storage classifications.
 /// - panics: none.
 /// - executable: none — this catalogue has no runtime invocation; its const
@@ -672,9 +678,9 @@ const fn bounded_alias(
 ///   protocol table.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+/// - hypothesis: L2 compares all 42 native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
-///   interval, the reserved sharing boundary, one-token contributions,
+///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
 ///   distinguish tag reuse, wrong arity and collapsed classification criteria;
 ///   arbitrary extension vocabularies are outside this fixed catalogue.
@@ -683,7 +689,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 42] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -730,6 +736,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
     unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity(2)),
     unbounded(NODE_VT_LIST, ChildArity(1)),
+    unbounded(NODE_VT_SESSION, ChildArity(1)),
+    unbounded(NODE_V_SESSION_PATH, ChildArity(2)),
 ];
 
 #[cfg(test)]
@@ -793,6 +801,7 @@ mod tests
                         Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
+                        Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
                         None => false,
                     },
                     AnyNode::Computation(id) => match ret.0.computation(id) {
@@ -821,6 +830,7 @@ mod tests
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
                         Some(&crate::ValueType::Empty) => row.tag == super::NODE_VT_EMPTY,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
+                        Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         None => false,
                     },
                     AnyNode::CompType(id) => match ret.0.comp_type(id) {
@@ -880,6 +890,14 @@ mod tests
         let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
         let product_path = arena.value_path_product(refl, refl);
         let transport = arena.computation_transport(product_path, pair);
+        let session = arena.value_type_session(
+            alloc::sync::Arc::new(crate::session::Graph {
+                nodes: alloc::vec![crate::session::Node::End],
+                root: crate::session::State(0),
+            }),
+            unit_type,
+        );
+        let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -921,6 +939,8 @@ mod tests
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
+            AnyNode::ValueType(session),
+            AnyNode::Value(session_path),
         ];
         (arena, nodes)
     }
@@ -950,6 +970,25 @@ mod tests
     {
         let mut assigned = [false; 256];
         let reserved = u8::from(super::SHARING_BLOCK_FIRST) ..= u8::from(super::SHARING_BLOCK_LAST);
+        for word in [
+            crate::session::SEND,
+            crate::session::RECEIVE,
+            crate::session::SELECT,
+            crate::session::OFFER,
+            crate::session::END,
+            crate::session::MU,
+            crate::session::VAR,
+        ] {
+            let tag = usize::try_from(word.0).expect("session opcodes fit a byte");
+            assert!(
+                !core::mem::replace(&mut assigned[tag], true),
+                "session opcodes are distinct"
+            );
+            assert!(
+                (0x53 ..= 0x59).contains(&tag),
+                "List and reserved flow bytes remain untouched"
+            );
+        }
         for row in &NODE_TAG_TABLE {
             let tag = u8::from(row.tag);
             assert!(
@@ -985,11 +1024,11 @@ mod tests
         assert_eq!(super::SHARING_BLOCK_LAST, WireTag::from(0x27));
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .chain(0x28 ..= 0x2e)
-            .chain(core::iter::once(0x50))
+            .chain([0x50, 0x52, 0x5a])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
-        assert_eq!(actual.last(), Some(&0x50));
+        assert_eq!(actual.last(), Some(&0x5a));
         assert!(!actual.contains(&0x51));
         let empty = NODE_TAG_TABLE
             .iter()

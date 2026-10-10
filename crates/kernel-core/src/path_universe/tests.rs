@@ -109,6 +109,9 @@ fn children(
     use AnyNode::ValueType as A;
     match node {
         | V(id) => match arena.value(id).expect("fixture value") {
+            | &Value::SessionPath { .. } => {
+                panic!("session evidence has a separate finite producer")
+            },
             | &Value::PathEquiv {
                 path_type,
                 forward,
@@ -144,7 +147,7 @@ fn children(
             } => vec![V(scrutinee), M(on_left), M(on_right)],
         },
         | A(id) => match arena.value_type(id).expect("fixture value type") {
-            | &ValueType::List(_) => {
+            | &ValueType::List(_) | &ValueType::Session { .. } => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
             | &ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
@@ -369,6 +372,9 @@ fn translate(
         match node {
             | AnyNode::Value(id) => {
                 let value = match arena.value(id).expect("fixture value") {
+                    | &Value::SessionPath { .. } => {
+                        panic!("session evidence has a separate finite producer")
+                    },
                     | &Value::PathRefl(code) => core.value_path_refl(values[&code]),
                     | &Value::PathProduct(first, second) => {
                         core.value_path_product(values[&first], values[&second])
@@ -437,7 +443,7 @@ fn translate(
             },
             | AnyNode::ValueType(id) => {
                 let ty = match arena.value_type(id).expect("fixture value type") {
-                    | &ValueType::List(_) => {
+                    | &ValueType::List(_) | &ValueType::Session { .. } => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },
                     | &ValueType::PathUniverse(source, target) => {
@@ -580,7 +586,7 @@ fn engine(
 /// - hypothesis: L3 — finite sampling cannot certify a constant Base map.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 #[spec(ensures: |ret| ret.source.len() == source.len() && ret.target.len() == target.len())]
-fn evidence(
+pub fn evidence(
     arena: &mut TermArena,
     source: &[ValueId],
     target: &[ValueId],

@@ -266,6 +266,8 @@ impl fmt::Display for TagSite
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MalformedSite
 {
+    /// Session graph or finite-relation framing is malformed.
+    Session,
     /// A path dialogue word is outside the portable decision alphabet.
     PathEvidence,
     /// The magic did not match a gandr kernel export.
@@ -339,6 +341,7 @@ impl fmt::Display for MalformedSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
+            | Self::Session => "session inline data was malformed",
             | Self::PathEvidence => "a path dialogue word was invalid",
             | Self::Header => "the artifact magic did not match",
             | Self::Varint => "a varint was overlong or out of range",

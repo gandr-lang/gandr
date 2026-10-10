@@ -447,6 +447,8 @@ name = "gandr-core-session"
 version = "0.0.0"
 dependencies = [
  "anodized",
+ "gandr-kernel-core",
+ "gandr-kernel-term",
 ]
 
 [[package]]

@@ -40,6 +40,8 @@ use crate::env::OutstandingCount;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ValueTypeHead
 {
+    /// A finite session code.
+    Session,
     /// A universe-path classifier.
     PathUniverse,
     /// A rigid base-type atom.
@@ -88,6 +90,7 @@ impl ValueTypeHead
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
             | ValueType::Sum(..) => Self::Sum,
+            | ValueType::Session { .. } => Self::Session,
             | ValueType::List(_) => Self::List,
             | ValueType::Thunk(_) => Self::Thunk,
             | ValueType::Universe { .. } => Self::Universe,
@@ -464,6 +467,8 @@ impl CompTypeMismatch
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelError
 {
+    /// Session formation or finite relation replay failed.
+    Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
     Path(crate::path_universe::PathError),
     /// A value variable's de Bruijn index escaped the typing context.
@@ -655,6 +660,7 @@ impl core::fmt::Display for KernelError
     ) -> core::fmt::Result
     {
         match *self {
+            | Self::Session(ref error) => error.fmt(f),
             | Self::Path(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
             | Self::UnboundConstant { .. } => {
