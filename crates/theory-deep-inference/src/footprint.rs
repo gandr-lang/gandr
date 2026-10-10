@@ -101,6 +101,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -239,6 +240,33 @@ pub enum FootprintIndependence<A: CellAlphabet = SequentAlphabet>
 /// - witness: `footprint::tests::a_footprint_needs_a_transition_to_attach_to`
 /// - witness: `tests::footprint::every_footprint_partitions_exactly_the_addresses_its_redex_covers`
 #[inline]
+#[spec(ensures: |output| match store.get(app.cell) {
+    Maybe::Absent(_) => matches!(output, Err(FootprintObstruction::UnknownCell { cell }) if cell == app.cell),
+    Maybe::Present(cell) => match rewrite_at(cell, term, &app.at) {
+        Maybe::Absent(_) => matches!(output, Err(FootprintObstruction::StepDoesNotFire { ref step }) if **step == *app),
+        Maybe::Present(ref after) => output.as_ref().is_ok_and(|footprint| {
+                let positions = A::command_positions(term);
+                let after_positions = A::command_positions(after);
+                let probes = distinct_subterms::<A>(term, &positions);
+                footprint.at == app.at
+                    && [&footprint.written, &footprint.read, &footprint.framed].iter().all(|part| part.iter().eq(positions.iter().filter(|position| part.contains(position))))
+                    && positions.iter().all(|position| {
+                        let in_write = footprint.written.contains(position);
+                        let in_read = footprint.read.contains(position);
+                        let in_frame = footprint.framed.contains(position);
+                        if matches!(A::position_order(&app.at, position), PositionOrder::Same | PositionOrder::Encloses) {
+                            match node_survival::<A>(term, after, &positions, &after_positions, position) {
+                                NodeSurvival::Replaced => in_write && !in_read && !in_frame,
+                                NodeSurvival::Preserved => match content_sensitivity::<A>(cell, term, &app.at, position, &probes) {
+                                    ContentSensitivity::Sensitive => !in_write && in_read && !in_frame,
+                                    ContentSensitivity::Insensitive => !in_write && !in_read && in_frame,
+                                },
+                            }
+                        } else { !in_write && !in_read && !in_frame }
+                    })
+        }),
+    },
+})]
 pub fn match_footprint<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -311,13 +339,23 @@ where
 ///   and a pair whose only shared address is read by both is independent; the
 ///   scan order is pinned by a pair colliding at every address of one match
 ///   image, which fixes that the reported address is the earliest in
-///   enumeration order.
+///   enumeration order. A genuine identity transition has no reads or writes
+///   and is independent of itself. Inventing a collision in an empty write
+///   domain changes the verdict.
 /// - witness: `tests::footprint::two_root_rules_sharing_only_a_read_node_are_independent`
 /// - witness: `tests::footprint::a_rule_that_destroys_a_node_another_only_reads_is_refused`
 /// - witness: `tests::footprint::two_rules_rewriting_one_child_collide_on_writes`
 /// - witness: `tests::footprint::a_pair_colliding_several_ways_reports_the_earliest_address_it_scans`
+/// - witness: `footprint::tests::node_and_probe_boundaries_distinguish_survival_from_sensitivity`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| left.written.iter().find(|position| right.written.contains(position) || right.read.contains(position)).map_or_else(
+    || right.written.iter().find(|position| left.read.contains(position)).map_or(output == FootprintIndependence::Independent,
+        |expected| matches!(output, FootprintIndependence::ReadWrite { ref position } if position == expected)),
+    |expected| if right.written.contains(expected) {
+        matches!(output, FootprintIndependence::WriteWrite { ref position } if position == expected)
+    } else { matches!(output, FootprintIndependence::ReadWrite { ref position } if position == expected) },
+))]
 pub fn footprint_independence<A>(
     left: &MatchFootprint<A>,
     right: &MatchFootprint<A>,
@@ -358,8 +396,18 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a matched root is classified `read` only because some
-///   probe stops the firing, and a hole `framed` only because none does.
+///   probe stops the firing, and a hole `framed` only because none does. Empty
+///   supplies, unavailable addresses and repeated equal subterms retain the
+///   first readable occurrence only. Duplicating, dropping or reordering probes
+///   changes the direct observer.
 /// - witness: `tests::footprint::a_preserved_root_is_read_and_its_hole_is_framed`
+/// - witness: `footprint::tests::probe_supply_and_child_boundaries_preserve_order`
+#[spec(ensures: |output| {
+    let first_position = |wanted: &A::Cmd| positions.iter().position(|position| matches!(A::subterm_cmd_at(term, position), Maybe::Present(ref subterm) if subterm == wanted));
+    output.iter().all(|subterm| first_position(subterm).is_some())
+        && positions.iter().all(|position| match A::subterm_cmd_at(term, position) { Maybe::Present(ref subterm) => output.contains(subterm), Maybe::Absent(_) => true })
+        && output.windows(2).all(|pair| pair.first().zip(pair.last()).is_some_and(|(left, right)| first_position(left) < first_position(right)))
+})]
 fn distinct_subterms<A>(
     term: &A::Cmd,
     positions: &[A::Pos],
@@ -392,8 +440,14 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a rewrite strictly below a node leaves the node preserved
 ///   only because its immediate children, and not its grandchildren, are held
-///   equal.
+///   equal. Complete address sets distinguish children from grandchildren,
+///   preserve a reversed enumeration order and leave a leaf with no children.
+///   Including the parent or a descendant below an intermediary changes the
+///   result.
 /// - witness: `tests::footprint::a_preserved_root_is_read_and_its_hole_is_framed`
+/// - witness: `footprint::tests::probe_supply_and_child_boundaries_preserve_order`
+#[spec(ensures: |output| output.iter().eq(positions.iter().filter(|candidate| A::position_order(parent, candidate) == PositionOrder::Encloses
+    && !positions.iter().any(|between| A::position_order(parent, between) == PositionOrder::Encloses && A::position_order(between, candidate) == PositionOrder::Encloses))))]
 fn immediate_children<A>(
     positions: &[A::Pos],
     parent: &A::Pos,
@@ -431,9 +485,21 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a ground redex replaces its whole image, a rule whose
 ///   root survives preserves it, and a rule relocating its frame replaces the
-///   vacated addresses.
+///   vacated addresses. A changed descendant preserves the ancestor, while a
+///   changed local head, changed child set or vacated address replaces it.
+///   Child enumeration order alone cannot change survival.
 /// - witness: `tests::footprint::a_ground_redex_writes_its_whole_match_image`
 /// - witness: `tests::footprint::a_preserved_root_is_read_and_its_hole_is_framed`
+/// - witness: `footprint::tests::node_and_probe_boundaries_distinguish_survival_from_sensitivity`
+#[spec(ensures: |output| {
+    let children = immediate_children::<A>(before_positions, position);
+    let after_children = immediate_children::<A>(after_positions, position);
+    (output == NodeSurvival::Preserved) == (after_positions.contains(position) && children.len() == after_children.len() && children.iter().all(|child| after_children.contains(child))
+        && children.iter().try_fold(before.clone(), |current, child| match A::subterm_cmd_at(after, child) {
+            Maybe::Present(replacement) => A::splice_cmd_at(&current, child, replacement).ok(),
+            Maybe::Absent(_) => None,
+        }).is_some_and(|grafted| matches!((A::subterm_cmd_at(&grafted, position), A::subterm_cmd_at(after, position)), (Maybe::Present(ref left), Maybe::Present(ref right)) if left == right)))
+})]
 fn node_survival<A>(
     before: &A::Cmd,
     after: &A::Cmd,
@@ -490,8 +556,17 @@ where
 ///   probes available, never a guess.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a matched root is sensitive and a carried hole is not.
+/// - hypothesis: L3 — a matched root is sensitive and a carried hole is not. On
+///   a firing rule, an empty supply or only the current content cannot
+///   demonstrate sensitivity; a different root probe can. Probing a carried
+///   hole leaves firing possible. Ignoring equality, supplied probes or the
+///   selected address changes the verdict.
 /// - witness: `tests::footprint::a_preserved_root_is_read_and_its_hole_is_framed`
+/// - witness: `footprint::tests::node_and_probe_boundaries_distinguish_survival_from_sensitivity`
+#[spec(ensures: |output| (output == ContentSensitivity::Sensitive) == match A::subterm_cmd_at(term, position) {
+    Maybe::Absent(_) => true,
+    Maybe::Present(ref current) => probes.iter().any(|probe| probe != current && matches!(A::splice_cmd_at(term, position, probe.clone()), Ok(ref perturbed) if matches!(rewrite_at(cell, perturbed, at), Maybe::Absent(_)))),
+})]
 fn content_sensitivity<A>(
     cell: &Cell<A>,
     term: &A::Cmd,
@@ -528,9 +603,13 @@ mod tests
     use gandr_theory_cell_complexes::ConsPat;
     use gandr_theory_cell_complexes::Polarity;
     use gandr_theory_cell_complexes::Pos;
+    use gandr_theory_cell_complexes::PositionStep;
     use gandr_theory_cell_complexes::ProdPat;
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
 
@@ -595,6 +674,143 @@ mod tests
                 at: Pos::root(),
             }),
             "and an unresolvable identifier is refused before the term is read"
+        );
+    }
+
+    #[test]
+    fn probe_supply_and_child_boundaries_preserve_order()
+    {
+        let root = ToyAlphabet::root_position();
+        let left = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        let right = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
+        let missing = ToyAlphabet::position_at_path(&[PositionStep::from(9_usize)]);
+        let repeated = Toy::add(Toy::zero(), Toy::zero());
+        assert!(distinct_subterms::<ToyAlphabet>(&repeated, &[]).is_empty());
+        let probes = distinct_subterms::<ToyAlphabet>(&repeated, &[
+            right.clone(),
+            missing,
+            root.clone(),
+            left.clone(),
+            right.clone(),
+        ]);
+        assert_eq!(alloc::vec![Toy::zero(), repeated], probes);
+        let nested = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
+        let mut positions = ToyAlphabet::command_positions(&nested);
+        assert_eq!(
+            alloc::vec![left.clone(), right.clone()],
+            immediate_children::<ToyAlphabet>(&positions, &root)
+        );
+        assert!(immediate_children::<ToyAlphabet>(&positions, &right).is_empty());
+        positions.reverse();
+        assert_eq!(
+            alloc::vec![right, left],
+            immediate_children::<ToyAlphabet>(&positions, &root)
+        );
+    }
+
+    #[test]
+    fn node_and_probe_boundaries_distinguish_survival_from_sensitivity()
+    {
+        let root = ToyAlphabet::root_position();
+        let left = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        let right = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
+        let before = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
+        let after = Toy::add(Toy::succ(Toy::succ(Toy::zero())), Toy::zero());
+        let before_positions = ToyAlphabet::command_positions(&before);
+        let mut after_positions = ToyAlphabet::command_positions(&after);
+        assert_eq!(
+            NodeSurvival::Preserved,
+            node_survival::<ToyAlphabet>(
+                &before,
+                &after,
+                &before_positions,
+                &after_positions,
+                &root
+            )
+        );
+        after_positions.reverse();
+        assert_eq!(
+            NodeSurvival::Preserved,
+            node_survival::<ToyAlphabet>(
+                &before,
+                &after,
+                &before_positions,
+                &after_positions,
+                &root
+            )
+        );
+        let reduced = Toy::zero();
+        let one = Toy::succ(reduced.clone());
+        let reduced_positions = ToyAlphabet::command_positions(&reduced);
+        let one_positions = ToyAlphabet::command_positions(&one);
+        assert_eq!(
+            NodeSurvival::Replaced,
+            node_survival::<ToyAlphabet>(&one, &reduced, &one_positions, &reduced_positions, &left)
+        );
+        let constant = ToyAlphabet::skolemize(&Toy::var("fresh"));
+        assert_eq!(
+            NodeSurvival::Replaced,
+            node_survival::<ToyAlphabet>(
+                &reduced,
+                &constant,
+                &reduced_positions,
+                &ToyAlphabet::command_positions(&constant),
+                &root
+            )
+        );
+        assert_eq!(
+            NodeSurvival::Replaced,
+            node_survival::<ToyAlphabet>(&before, &one, &before_positions, &one_positions, &root)
+        );
+        let cell = toy_cell(
+            Toy::add(Toy::zero(), Toy::var("x")),
+            Toy::add(Toy::succ(Toy::zero()), Toy::var("x")),
+        );
+        let term = Toy::add(Toy::zero(), Toy::succ(Toy::zero()));
+        assert_eq!(
+            ContentSensitivity::Insensitive,
+            content_sensitivity::<ToyAlphabet>(&cell, &term, &root, &root, &[])
+        );
+        assert_eq!(
+            ContentSensitivity::Insensitive,
+            content_sensitivity::<ToyAlphabet>(
+                &cell,
+                &term,
+                &root,
+                &root,
+                core::slice::from_ref(&term)
+            )
+        );
+        assert_eq!(
+            ContentSensitivity::Sensitive,
+            content_sensitivity::<ToyAlphabet>(&cell, &term, &root, &root, &[Toy::zero()])
+        );
+        assert_eq!(
+            ContentSensitivity::Insensitive,
+            content_sensitivity::<ToyAlphabet>(&cell, &term, &root, &right, &[
+                Toy::zero(),
+                Toy::succ(Toy::succ(Toy::zero()))
+            ])
+        );
+        let mut store = CellStore::new();
+        let identity = store.insert(toy_cell(Toy::var("x"), Toy::var("x")));
+        let footprint = match_footprint(&store, &Toy::zero(), &CellApp {
+            cell: identity,
+            at: root.clone(),
+        })
+        .expect("the identity rule fires");
+        assert_eq!(
+            MatchFootprint::<ToyAlphabet> {
+                at: root.clone(),
+                written: Vec::new(),
+                read: Vec::new(),
+                framed: alloc::vec![root]
+            },
+            footprint
+        );
+        assert_eq!(
+            FootprintIndependence::Independent,
+            footprint_independence(&footprint, &footprint)
         );
     }
 }

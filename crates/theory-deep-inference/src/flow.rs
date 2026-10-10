@@ -121,6 +121,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
@@ -323,14 +324,35 @@ impl Flow
     ///   then one sort of the vertices and one of the threads.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the two outcomes own separate decision surfaces,
+    /// - hypothesis: L3 — the two outcomes own separate decision surfaces,
     ///   separated by the permutation tile, whose two legs record one pair of
     ///   events in opposite orders and canonicalize together, and by a flow
     ///   whose two vertices share a label, a depth and no peak incidence, which
-    ///   is refused rather than ordered.
+    ///   is refused rather than ordered. A projected pair with equal labels and
+    ///   opposite recording order has an exact canonical thread list: peak
+    ///   anchors select the order and both endpoint indices change without
+    ///   changing ports. Dropped threads, lost boundary ends or one-sided
+    ///   re-indexing change that list.
     /// - witness: `tests::flow::the_two_legs_of_a_permutation_tile_have_one_flow`
     /// - witness: `flow::tests::indistinguishable_vertices_are_refused_a_canonical_order`
+    /// - witness: `flow::tests::canonical_reindexing_preserves_peak_anchors_and_ports`
     #[inline]
+    #[spec(ensures: |output| {
+    let depths = self.causal_depths();
+    let mut keys: Vec<(VertexKey, FlowVertexIndex)> = self.labels.iter().enumerate().map(|(index, label)| (self.vertex_key(FlowVertexIndex::from(index), *label, depths.get(index).copied().unwrap_or_default()), FlowVertexIndex::from(index))).collect();
+    keys.sort_by(|left, right| left.0.cmp(&right.0));
+    let tied = keys.iter().zip(keys.iter().skip(1)).any(|(left, right)| left.0 == right.0);
+    match output {
+        Maybe::Absent(flow_canonical::Absent::IndistinguishableVertices) => tied,
+        Maybe::Present(ref canonical) => !tied && {
+            let mut rank = alloc::vec![FlowVertexIndex::default(); keys.len()];
+            for (fresh, entry) in keys.iter().enumerate() { if let Some(slot) = rank.get_mut(usize::from(entry.1)) { *slot = FlowVertexIndex::from(fresh); } }
+            let mut threads: Vec<FlowThread> = self.threads.iter().map(|thread| FlowThread { up: reindex_end(thread.up, &rank), lo: reindex_end(thread.lo, &rank) }).collect();
+            threads.sort_unstable();
+            canonical.convexity == self.convexity && canonical.labels.iter().copied().eq(keys.iter().map(|entry| entry.0.label)) && canonical.threads == threads
+        },
+    }
+})]
     pub fn canonical(&self) -> Maybe<Self, flow_canonical::Absent>
     {
         let depths = self.causal_depths();
@@ -392,9 +414,23 @@ impl Flow
     /// # Adequacy
     /// - hypothesis: L3 — a dependent pair layers its two vertices apart, and
     ///   two same-labelled vertices under one creator share a layer, which is
-    ///   what makes their keys tie.
+    ///   what makes their keys tie. A consumer receiving occurrences from
+    ///   creators at different depths must use the greatest depth, not the
+    ///   first incoming edge. The same projected graph has unequal incidence
+    ///   counts, separating the key’s port counts.
     /// - witness: `tests::flow::a_consumed_creation_is_one_thread_between_two_vertices`
     /// - witness: `tests::flow::the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form`
+    /// - witness: `flow::tests::mixed_depth_creators_determine_the_maximum_layer`
+    #[spec(requires: self.threads.iter().all(|thread| [thread.up, thread.lo].into_iter().all(|end| match end { FlowEnd::Vertex { vertex, .. } => usize::from(vertex) < self.labels.len(), FlowEnd::Peak { .. } | FlowEnd::Join => true })), ensures: |output| {
+    let mut expected = alloc::vec![CausalDepth::default(); self.labels.len()];
+    for thread in &self.threads {
+        if let (FlowEnd::Vertex { vertex: up, .. }, FlowEnd::Vertex { vertex: lo, .. }) = (thread.up, thread.lo) {
+            let lifted = output.get(usize::from(up)).map(|depth| CausalDepth::from(usize::from(*depth).saturating_add(1_usize))).unwrap_or_default();
+            if let Some(slot) = expected.get_mut(usize::from(lo)) { *slot = (*slot).max(lifted); }
+        }
+    }
+    output == expected
+})]
     fn causal_depths(&self) -> Vec<CausalDepth>
     {
         let mut depths: Vec<CausalDepth> = alloc::vec![CausalDepth::default(); self.labels.len()];
@@ -429,9 +465,25 @@ impl Flow
     /// # Adequacy
     /// - hypothesis: L3 — the permutation tile's two legs key their vertices
     ///   alike, and one cell fired at two peak occurrences keys apart on the
-    ///   occurrence it consumes.
+    ///   occurrence it consumes. Unequal match-image sizes give distinct upper
+    ///   and lower incidence counts, observed directly on a projected vertex.
+    ///   Omitting or counting boundary incidences twice changes the key.
     /// - witness: `tests::flow::the_two_legs_of_a_permutation_tile_have_one_flow`
     /// - witness: `tests::flow::the_projection_forgets_where_a_cell_fired`
+    /// - witness: `flow::tests::mixed_depth_creators_determine_the_maximum_layer`
+    #[spec(ensures: |output| {
+    let mut from_peak = Vec::new();
+    let mut upper = 0_usize; let mut lower = 0_usize;
+    for thread in &self.threads {
+        if matches!(thread.lo, FlowEnd::Vertex { vertex: at, .. } if at == vertex) {
+            upper = upper.saturating_add(1_usize);
+            if let FlowEnd::Peak { occurrence } = thread.up { from_peak.push(occurrence); }
+        }
+        if matches!(thread.up, FlowEnd::Vertex { vertex: at, .. } if at == vertex) { lower = lower.saturating_add(1_usize); }
+    }
+    from_peak.sort_unstable();
+    output.depth == depth && output.label == label && output.from_peak == from_peak && usize::from(output.upper) == upper && usize::from(output.lower) == lower
+})]
     fn vertex_key(
         &self,
         vertex: FlowVertexIndex,
@@ -474,8 +526,15 @@ impl Flow
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the permutation tile's legs index their two vertices in
-///   opposite orders and compare equal only once both are re-indexed.
+///   opposite orders and compare equal only once both are re-indexed. The exact
+///   canonical graph retains peak and join ends and nonzero ports; an index
+///   past the rank table is unchanged rather than clamped or defaulted.
 /// - witness: `tests::flow::the_two_legs_of_a_permutation_tile_have_one_flow`
+/// - witness: `flow::tests::canonical_reindexing_preserves_peak_anchors_and_ports`
+#[spec(ensures: |output| output == match end {
+    FlowEnd::Vertex { vertex, port } => rank.get(usize::from(vertex)).map_or(end, |fresh| FlowEnd::Vertex { vertex: *fresh, port }),
+    FlowEnd::Peak { .. } | FlowEnd::Join => end,
+})]
 fn reindex_end(
     end: FlowEnd,
     rank: &[FlowVertexIndex],
@@ -508,6 +567,7 @@ fn reindex_end(
 ///   frame above them uncovered.
 /// - witness: `tests::flow::a_single_step_leg_threads_the_whole_term_through_one_vertex`
 /// - witness: `tests::flow::disjoint_steps_share_no_thread`
+#[spec(ensures: |output| bool::from(output) == matches!(A::position_order(at, position), PositionOrder::Same | PositionOrder::Encloses))]
 fn covered_by<A>(
     at: &A::Pos,
     position: &A::Pos,
@@ -550,16 +610,21 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the three occurrence classes own separate decision
+/// - hypothesis: L3 — the three occurrence classes own separate decision
 ///   surfaces, separated by a single step consuming the whole term, by two
 ///   steps at incomparable positions with an untouched frame, and by a second
 ///   step consuming what the first created; the refusals by an unstored
-///   identifier and a non-firing step.
+///   identifier and a non-firing step. An empty leg retains every skolemized
+///   peak occurrence as a boundary thread. A recorded identity remains one
+///   vertex with every consumed and created port, so erasing identity steps or
+///   losing boundary atoms changes the projection.
 /// - witness: `tests::flow::a_single_step_leg_threads_the_whole_term_through_one_vertex`
 /// - witness: `tests::flow::disjoint_steps_share_no_thread`
 /// - witness: `tests::flow::a_consumed_creation_is_one_thread_between_two_vertices`
 /// - witness: `flow::tests::a_leg_that_does_not_fire_has_no_flow`
+/// - witness: `flow::tests::empty_and_identity_legs_preserve_their_occurrences`
 #[inline]
+#[spec(ensures: |output| output == project_walk(store, peak, path).map(|(flow, _reached)| flow))]
 pub fn project_flow<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -585,9 +650,49 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the reached term is what [`tracelet_flow`] checks, and a
 ///   leg landing short of its recorded join is refused with the term it
-///   reached.
+///   reached. The empty leg reaches the skolemized peak and carries no labels;
+///   a recorded identity keeps that term but adds its real incidences. A wrong
+///   skolemization or no-op deletion changes the observer.
 /// - witness: `tests::flow::a_leg_that_lands_off_the_join_has_no_certificate_flow`
 /// - witness: `flow::tests::a_leg_that_does_not_fire_has_no_flow`
+/// - witness: `flow::tests::empty_and_identity_legs_preserve_their_occurrences`
+#[spec(ensures: |output| {
+    let initial = A::skolemize(peak);
+    let initial_count = A::command_positions(&initial).len();
+    let replayed: Result<_, FlowObstruction<A>> = path.iter().try_fold((initial, Vec::<(usize, usize)>::new()), |(current, mut incidences), step| {
+        match store.get(step.cell) {
+            Maybe::Absent(_) => Err(FlowObstruction::UnknownCell { cell: step.cell }),
+            Maybe::Present(cell) => match rewrite_at(cell, &current, &step.at) {
+                Maybe::Absent(_) => Err(FlowObstruction::StepDoesNotFire { step: Box::new(step.clone()) }),
+                Maybe::Present(next) => {
+                    let upper = A::command_positions(&current).iter().filter(|position| bool::from(covered_by::<A>(&step.at, position))).count();
+                    let lower = A::command_positions(&next).iter().filter(|position| bool::from(covered_by::<A>(&step.at, position))).count();
+                    incidences.push((upper, lower));
+                    Ok((next, incidences))
+                },
+            },
+        }
+    });
+    replayed.map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |(reached, incidences)| {
+        output.as_ref().is_ok_and(|result| {
+            let flow = &result.0;
+            let mut upper: Vec<FlowEnd> = flow.threads.iter().map(|thread| thread.up).collect();
+            let mut lower: Vec<FlowEnd> = flow.threads.iter().map(|thread| thread.lo).collect();
+            upper.sort_unstable(); lower.sort_unstable();
+            let expected_upper = (0..initial_count).map(|occurrence| FlowEnd::Peak { occurrence: PeakOccurrenceIndex::from(occurrence) })
+                .chain(incidences.iter().enumerate().flat_map(|(index, counts)| (0..counts.1).map(move |port| FlowEnd::Vertex { vertex: FlowVertexIndex::from(index), port: FlowPortIndex::from(port) })));
+            let expected_lower = incidences.iter().enumerate().flat_map(|(index, counts)| (0..counts.0).map(move |port| FlowEnd::Vertex { vertex: FlowVertexIndex::from(index), port: FlowPortIndex::from(port) }))
+                .chain(core::iter::repeat_n(FlowEnd::Join, A::command_positions(&reached).len()));
+            result.1 == reached && flow.convexity == A::convexity_discharge(store)
+                && flow.labels.iter().copied().eq(path.iter().filter_map(|step| match store.get(step.cell) { Maybe::Present(cell) => Some(cell_address(cell)), Maybe::Absent(_) => None }))
+                && upper.into_iter().eq(expected_upper) && lower.into_iter().eq(expected_lower)
+                && flow.threads.iter().all(|thread| match (thread.up, thread.lo) {
+                    (FlowEnd::Vertex { vertex: up, .. }, FlowEnd::Vertex { vertex: lo, .. }) => up < lo,
+                    _ => true,
+                })
+        })
+    })
+})]
 fn project_walk<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -697,7 +802,7 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the positive and negative surfaces are separated by the
+/// - hypothesis: L3 — the positive and negative surfaces are separated by the
 ///   permutation tile, whose two legs are identified, by the fused certificate,
 ///   whose two legs carry different label multisets, and by one empty flow
 ///   under two discharges.
@@ -706,6 +811,10 @@ where
 /// - witness: `flow::tests::a_flow_taken_under_a_different_discharge_is_not_identified`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| bool::from(output) == (left.convexity == right.convexity && match (left.canonical(), right.canonical()) {
+    (Maybe::Present(ref left), Maybe::Present(ref right)) => left == right,
+    _ => false,
+}))]
 pub fn flows_equal(
     left: &Flow,
     right: &Flow,
@@ -746,12 +855,20 @@ pub fn flows_equal(
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the reached-the-join requirement owns its own decision
+/// - hypothesis: L3 — the reached-the-join requirement owns its own decision
 ///   surface, separated by a certificate that replays and one whose leg fires
 ///   completely and lands off the recorded join.
 /// - witness: `tests::flow::a_certificate_has_its_own_flow`
 /// - witness: `tests::flow::a_leg_that_lands_off_the_join_has_no_certificate_flow`
 #[inline]
+#[spec(ensures: |output| {
+    let target = A::skolemize(&tracelet.joins_at);
+    project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_a).map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |path_a| {
+        project_leg(store, &tracelet.overlap.peak, &target, &tracelet.path_b).map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |path_b| {
+            output.as_ref().is_ok_and(|projected| projected.peak == tracelet.overlap.peak && projected.joins_at == tracelet.joins_at && projected.path_a == path_a && projected.path_b == path_b)
+        })
+    })
+})]
 pub fn tracelet_flow<A>(
     tracelet: &Tracelet<A>,
     store: &CellStore<A>,
@@ -786,6 +903,9 @@ where
 /// - hypothesis: L3 — a leg landing off the join is refused with the term it
 ///   reached.
 /// - witness: `tests::flow::a_leg_that_lands_off_the_join_has_no_certificate_flow`
+#[spec(ensures: |output| project_walk(store, peak, path).map_or_else(|expected| matches!(output, Err(ref reason) if *reason == expected), |(flow, reached)| {
+    if reached == *target { output == Ok(flow) } else { matches!(output, Err(FlowObstruction::LegMissesTheJoin { reached: ref actual }) if **actual == reached) }
+}))]
 fn project_leg<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -822,13 +942,14 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — the decision surface is one flow comparison, separated by
+/// - hypothesis: L3 — the decision surface is one flow comparison, separated by
 ///   a certificate whose legs differ in length (unequal over a boundary that
 ///   replays) and by a duplicated tile whose legs have no canonical form.
 /// - witness: `tests::flow::flow_equality_is_strictly_finer_than_replay_equivalence`
 /// - witness: `tests::flow::the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form`
 /// - witness: `flow::tests::a_two_step_leg_and_a_one_step_leg_have_different_flows`
 #[inline]
+#[spec(ensures: |output| output == tracelet_flow(tracelet, store).map(|projected| flows_equal(&projected.path_a, &projected.path_b)))]
 pub fn legs_flow_equal<A>(
     tracelet: &Tracelet<A>,
     store: &CellStore<A>,
@@ -875,6 +996,7 @@ where
 /// - witness: `tests::flow::equal_flows_over_different_boundaries_are_not_one_certificate`
 /// - witness: `tests::flow::flow_equality_implies_replay_equivalence`
 #[inline]
+#[spec(ensures: |output| output == tracelet_flow(left, store).and_then(|left| tracelet_flow(right, store).map(|right| FlowEquality::from(left.peak == right.peak && left.joins_at == right.joins_at && bool::from(flows_equal(&left.path_a, &right.path_a)) && bool::from(flows_equal(&left.path_b, &right.path_b))))))]
 pub fn tracelets_flow_equal<A>(
     left: &Tracelet<A>,
     right: &Tracelet<A>,
@@ -903,9 +1025,13 @@ mod tests
     use gandr_theory_cell_complexes::Orientation;
     use gandr_theory_cell_complexes::Polarity;
     use gandr_theory_cell_complexes::Pos;
+    use gandr_theory_cell_complexes::PositionStep;
     use gandr_theory_cell_complexes::ProdPat;
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
     use gandr_theory_coherent_resolutions::OverlapKind;
     use gandr_theory_coherent_resolutions::derive_fused;
     use gandr_theory_coherent_resolutions::enumerate_overlaps;
@@ -1114,5 +1240,225 @@ mod tests
             !bool::from(legs_flow_equal(&tracelet, &store).expect("both legs project")),
             "one boundary, two flows: the projection is strictly finer than the boundary"
         );
+    }
+
+    #[test]
+    fn empty_and_identity_legs_preserve_their_occurrences()
+    {
+        let peak = Toy::add(Toy::var("x"), Toy::zero());
+        let ground = ToyAlphabet::skolemize(&peak);
+        let mut store = CellStore::new();
+        let (empty, reached) =
+            project_walk(&store, &peak, &[]).expect("the empty leg is a derivation");
+        assert_eq!(ground, reached);
+        assert!(empty.labels.is_empty());
+        let boundary: Vec<FlowThread> = (0 .. 3_usize)
+            .map(|index| FlowThread {
+                up: FlowEnd::Peak {
+                    occurrence: PeakOccurrenceIndex::from(index),
+                },
+                lo: FlowEnd::Join,
+            })
+            .collect();
+        assert_eq!(boundary, empty.threads);
+        let identity = store.insert(toy_cell(Toy::var("q"), Toy::var("q")));
+        let (identity_flow, reached) = project_walk(&store, &peak, &[CellApp {
+            cell: identity,
+            at: ToyAlphabet::root_position(),
+        }])
+        .expect("the recorded identity fires");
+        assert_eq!(ground, reached);
+        assert_eq!(1_usize, identity_flow.labels.len());
+        let expected: Vec<FlowThread> = (0 .. 3_usize)
+            .map(|index| FlowThread {
+                up: FlowEnd::Peak {
+                    occurrence: PeakOccurrenceIndex::from(index),
+                },
+                lo: FlowEnd::Vertex {
+                    vertex: FlowVertexIndex::from(0_usize),
+                    port: FlowPortIndex::from(index),
+                },
+            })
+            .chain((0 .. 3_usize).map(|index| FlowThread {
+                up: FlowEnd::Vertex {
+                    vertex: FlowVertexIndex::from(0_usize),
+                    port: FlowPortIndex::from(index),
+                },
+                lo: FlowEnd::Join,
+            }))
+            .collect();
+        assert_eq!(expected, identity_flow.threads);
+        assert!(!bool::from(flows_equal(&empty, &identity_flow)));
+    }
+
+    #[test]
+    fn canonical_reindexing_preserves_peak_anchors_and_ports()
+    {
+        let mut store = CellStore::new();
+        let cell = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::zero()));
+        let steps = [
+            CellApp {
+                cell,
+                at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            },
+            CellApp {
+                cell,
+                at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+            },
+        ];
+        let flow = project_flow(&store, &peak, &steps).expect("the two reductions fire");
+        let Maybe::Present(canonical) = flow.canonical()
+        else {
+            panic!("the peak anchors separate equal labels");
+        };
+        let peak_end = |occurrence| FlowEnd::Peak {
+            occurrence: PeakOccurrenceIndex::from(occurrence),
+        };
+        let vertex_end = |vertex, port| FlowEnd::Vertex {
+            vertex: FlowVertexIndex::from(vertex),
+            port: FlowPortIndex::from(port),
+        };
+        let left_sites = [
+            ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+            ToyAlphabet::position_at_path(&[
+                PositionStep::from(0_usize),
+                PositionStep::from(0_usize),
+            ]),
+        ];
+        let right_sites = [
+            ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            ToyAlphabet::position_at_path(&[
+                PositionStep::from(1_usize),
+                PositionStep::from(0_usize),
+            ]),
+        ];
+        let positions = ToyAlphabet::command_positions(&peak);
+        let left_anchor = positions
+            .iter()
+            .position(|position| Some(position) == left_sites.first())
+            .expect("the left redex is a peak occurrence");
+        let right_anchor = positions
+            .iter()
+            .position(|position| Some(position) == right_sites.first())
+            .expect("the right redex is a peak occurrence");
+        let (left_rank, right_rank) = if left_anchor < right_anchor {
+            (0_usize, 1_usize)
+        }
+        else {
+            (1_usize, 0_usize)
+        };
+        let mut expected: Vec<FlowThread> = positions
+            .iter()
+            .enumerate()
+            .map(|(index, position)| {
+                let lo = if *position == ToyAlphabet::root_position() {
+                    FlowEnd::Join
+                }
+                else if let Some(port) = left_sites.iter().position(|site| site == position) {
+                    vertex_end(left_rank, port)
+                }
+                else if let Some(port) = right_sites.iter().position(|site| site == position) {
+                    vertex_end(right_rank, port)
+                }
+                else {
+                    panic!("the fixture contains only the frame and the two redexes");
+                };
+                FlowThread {
+                    up: peak_end(index),
+                    lo,
+                }
+            })
+            .chain([
+                FlowThread {
+                    up: vertex_end(left_rank, 0_usize),
+                    lo: FlowEnd::Join,
+                },
+                FlowThread {
+                    up: vertex_end(right_rank, 0_usize),
+                    lo: FlowEnd::Join,
+                },
+            ])
+            .collect();
+        expected.sort_unstable();
+        assert_eq!(expected, canonical.threads);
+        assert_eq!(flow.labels, canonical.labels);
+        let outside = vertex_end(2_usize, 7_usize);
+        assert_eq!(
+            outside,
+            reindex_end(outside, &[
+                FlowVertexIndex::from(1_usize),
+                FlowVertexIndex::from(0_usize)
+            ])
+        );
+    }
+
+    #[test]
+    fn mixed_depth_creators_determine_the_maximum_layer()
+    {
+        let mut store = CellStore::new();
+        let shrink = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        let collapse = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::zero(),
+        ));
+        let peak = Toy::add(Toy::succ(Toy::zero()), Toy::succ(Toy::succ(Toy::zero())));
+        let left = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        let right = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
+        let steps = [
+            CellApp {
+                cell: shrink,
+                at: left,
+            },
+            CellApp {
+                cell: shrink,
+                at: right.clone(),
+            },
+            CellApp {
+                cell: shrink,
+                at: right,
+            },
+            CellApp {
+                cell: collapse,
+                at: ToyAlphabet::root_position(),
+            },
+        ];
+        let flow = project_flow(&store, &peak, &steps)
+            .expect("both branches reduce before the root consumes them");
+        assert_eq!(
+            [0_usize, 0_usize, 1_usize, 2_usize]
+                .map(CausalDepth::from)
+                .as_slice(),
+            flow.causal_depths().as_slice()
+        );
+        let key = flow.vertex_key(
+            FlowVertexIndex::from(1_usize),
+            *flow
+                .labels
+                .get(1)
+                .expect("the first right reduction has a label"),
+            CausalDepth::from(0_usize),
+        );
+        assert_eq!(IncidenceCount::from(3_usize), key.upper);
+        assert_eq!(IncidenceCount::from(2_usize), key.lower);
+        let right_sites = [
+            ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            ToyAlphabet::position_at_path(&[
+                PositionStep::from(1_usize),
+                PositionStep::from(0_usize),
+            ]),
+            ToyAlphabet::position_at_path(&[
+                PositionStep::from(1_usize),
+                PositionStep::from(0_usize),
+                PositionStep::from(0_usize),
+            ]),
+        ];
+        let expected: Vec<PeakOccurrenceIndex> = ToyAlphabet::command_positions(&peak)
+            .iter()
+            .enumerate()
+            .filter(|entry| right_sites.contains(entry.1))
+            .map(|(index, _)| PeakOccurrenceIndex::from(index))
+            .collect();
+        assert_eq!(expected, key.from_peak);
     }
 }

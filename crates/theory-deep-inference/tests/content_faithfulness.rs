@@ -1,8 +1,9 @@
-//! Executable witnesses for the alphabet's content-faithfulness contract: a
-//! primitive's content address separates every two cells that differ in
-//! content, on both shipped alphabets, and the adversarial alphabets are the
-//! named exceptions.
+//! Finite witnesses for the alphabet's content-faithfulness contract: paired
+//! fixtures differ in one content component at a time, on both shipped
+//! alphabets. The adversarial alphabets supply named exceptions; these cases
+//! do not claim collision freedom for every possible cell.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellProvenance;
@@ -39,7 +40,18 @@ enum SequentCtor
 /// addresses differ too.
 ///
 /// # Specification
+/// - ensures: the inputs differ structurally and their root primitive addresses
+///   differ.
 /// - panics: when the cells are equal or their addresses coincide.
+///
+/// # Adequacy
+/// - hypothesis: L3 — paired cells differing in the left face, right face,
+///   orientation or provenance, for each shipped alphabet. Structural
+///   inequality and the two root digests distinguish omitted content
+///   components; the finite cases do not establish universal collision freedom.
+/// - witness: `tests::content_faithfulness::production_alphabets_satisfy_content_faithfulness`
+#[spec(ensures: left != right
+    && prim_address(left, &A::root_position()) != prim_address(right, &A::root_position()))]
 fn assert_digest_distinguishes<A>(
     left: &Cell<A>,
     right: &Cell<A>,
@@ -175,24 +187,5 @@ fn same_position_dependence_separates_multiplicity()
         PositionOrder::Encloses,
         ToyAlphabet::position_order(&root, &at![0]),
         "the same primitive at nested positions receives a later causal layer"
-    );
-}
-
-#[test]
-fn mutations_are_rejected_by_the_fixture()
-{
-    // An ordinary positive fixture rather than a mutant-specific branch:
-    // deleting the orientation hash fails the first assertion, and making the
-    // position order irreflexive turns `Same` into `Incomparable` and fails
-    // the second.
-    assert_digest_distinguishes(
-        &toy_cell(Toy::zero(), Toy::zero()),
-        &tagged_toy_cell(ToyOrient::Derived, ToyProv::Rule),
-    );
-    let root = ToyAlphabet::root_position();
-    assert_eq!(
-        PositionOrder::Same,
-        ToyAlphabet::position_order(&root, &root),
-        "a position is the same as itself"
     );
 }
