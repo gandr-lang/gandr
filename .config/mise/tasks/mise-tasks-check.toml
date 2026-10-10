@@ -115,7 +115,7 @@ run = "quenchant-gates witnesses --manifest-path Cargo.toml"
 ["check:doc"]
 description = "Private-item rustdoc with every rustdoc lint denied"
 env.RUSTDOCFLAGS = "-D warnings"
-run = "cargo doc --workspace --locked --no-deps --document-private-items"
+run = "cargo doc --workspace --all-features --locked --no-deps --document-private-items"
 
 ["check:typos"]
 description = "Spelling"

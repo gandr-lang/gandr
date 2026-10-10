@@ -42,6 +42,7 @@ const SCOPES = [
   "kernel",
   "core",
   "storage",
+  "runtime",
   "surface",
   "workflow",
   "ci",
