@@ -53,6 +53,12 @@ fn a_written_root_opens()
     assert_eq!(opened.root(), built.root());
     assert_eq!(opened.root_node_hash(), built.root_node_hash());
     assert_eq!(opened.recheck(&store), Ok(()));
+    assert_eq!(
+        opened.recheck(&InMemoryBlockStore::new()),
+        Err(RecordTreeError::UnknownNode {
+            hash: built.root_node_hash()
+        })
+    );
 }
 
 #[test]
@@ -79,10 +85,23 @@ fn a_root_bound_elsewhere_does_not_open()
     let mut store = InMemoryBlockStore::new();
     built.write_to(&mut store).expect("the tree writes");
 
-    assert!(matches!(
+    let expected_foreign = gandr_storage_records::NodeHash::from([
+        0x5a_u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0xff,
+    ]);
+    let recomputed = gandr_storage_records::TreeRoot::seal(
+        built.root().params(),
+        built.root().record_count(),
+        expected_foreign,
+    )
+    .expect("the parameters are supported");
+    assert_eq!(
         StoredRoot::open(built.root(), foreign_hash(HashSeed::from(0x5a_u8)), &store),
-        Err(RecordTreeError::HashMismatch { .. })
-    ));
+        Err(RecordTreeError::HashMismatch {
+            expected: built.root().identity(),
+            actual: recomputed.identity()
+        })
+    );
 }
 
 #[test]

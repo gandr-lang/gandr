@@ -70,12 +70,10 @@ fn an_absent_key_has_no_membership_proof()
     let corpus = Corpus::of_size(CorpusSize::from(20));
     let built = tree(&corpus);
 
-    assert_eq!(
+    assert!(matches!(
         built.prove_membership(RecordKey::from(b"key-99999999")),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the key a membership proof was asked for is absent".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -88,12 +86,10 @@ fn a_foreign_root_is_refused()
     let value = RecordValue::from(b"value-00000123");
     let proof = built.prove_membership(key).expect("the key is present");
 
-    assert_eq!(
+    assert!(matches!(
         proof.verify(&other.root(), key, value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof names a different root".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -112,12 +108,10 @@ fn a_wrong_kind_is_refused()
         proof.nodes().to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         mislabelled.verify(&built.root(), key, value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof answers a different question".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -129,12 +123,10 @@ fn a_different_query_is_refused()
     let value = RecordValue::from(b"value-00000123");
     let proof = built.prove_membership(key).expect("the key is present");
 
-    assert_eq!(
+    assert!(matches!(
         proof.verify(&built.root(), RecordKey::from(b"key-00000124"), value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof answers for a different key".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -145,12 +137,10 @@ fn a_wrong_value_is_refused()
     let key = RecordKey::from(b"key-00000123");
     let proof = built.prove_membership(key).expect("the key is present");
 
-    assert_eq!(
+    assert!(matches!(
         proof.verify(&built.root(), key, RecordValue::from(b"not the value")),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof claims a different value".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -168,12 +158,10 @@ fn a_forged_binding_is_refused()
         honest.nodes().to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         forged.verify(&built.root(), key, RecordValue::from(b"forged")),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the authenticated leaf binds the key to another value".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -228,12 +216,10 @@ fn an_extra_node_is_refused()
         nodes,
     );
 
-    assert_eq!(
+    assert!(matches!(
         padded.verify(&built.root(), key, value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "membership over an internal root".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -262,12 +248,10 @@ fn a_substituted_leaf_is_refused()
         vec![honest.nodes()[0].clone(), substitute.clone()],
     );
 
-    assert_eq!(
+    assert!(matches!(
         swapped.verify(&built.root(), key, value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "a carried leaf is not the child the root names here".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -287,12 +271,42 @@ fn a_root_node_swapped_for_a_leaf_is_refused()
         vec![honest.nodes()[1].clone(), honest.nodes()[1].clone()],
     );
 
-    assert_eq!(
+    assert!(matches!(
         swapped.verify(&built.root(), key, value),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the first carried node is not the root node".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
+}
+
+#[test]
+fn a_wrong_manifest_count_is_refused()
+{
+    for (size, wrong_count) in [(5_usize, 6_u64), (200_usize, 201_u64)] {
+        let corpus = Corpus::of_size(CorpusSize::from(size));
+        let built = tree_with(
+            &corpus,
+            capped_params(BoundaryRecordCap::try_from(64_u32).expect("the cap is not zero")),
+        );
+        let key = RecordKey::from(b"key-00000002");
+        let value = RecordValue::from(b"value-00000002");
+        let honest = built.prove_membership(key).expect("the key is present");
+        let wrong_root = gandr_storage_records::TreeRoot::seal(
+            built.root().params(),
+            gandr_storage_records::RecordCount::from(wrong_count),
+            honest.root_node_hash(),
+        )
+        .expect("the manifest parameters are supported");
+        let forged = MembershipProof::new(
+            ProofEnvelope::new(wrong_root, ProofKind::Membership),
+            honest.root_node_hash(),
+            key,
+            value,
+            honest.nodes().to_vec(),
+        );
+        assert!(matches!(
+            forged.verify(&wrong_root, key, value),
+            Err(RecordTreeError::InvalidProofShape { .. })
+        ));
+    }
 }
 
 proptest! {

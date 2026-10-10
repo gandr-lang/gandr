@@ -57,6 +57,8 @@ use crate::node::DecodedNode;
 use crate::node::InternalNode;
 use crate::node::LeafNode;
 use crate::node::decode_node;
+use crate::node::encode_internal;
+use crate::node::encode_leaf;
 use crate::node::hash_node;
 use crate::node::inspect_node;
 use crate::node::select_child;
@@ -102,15 +104,44 @@ impl ProofEnvelope
     /// Builds an envelope.
     ///
     /// # Specification
-    /// - requires: `root` is the manifest the proof is to be interpreted
-    ///   against, and `kind` the question it answers.
+    /// - requires: nothing; the root and question remain claims until verified.
     /// - ensures: the envelope carries exactly that root and that question.
     /// - provides: the root itself rather than a copy of its parameters, for
     ///   the reason the type's own prose states.
     /// - fails: never — a verifier decides whether it accepts the root.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 fixtures over 5-, 200- and 300-record trees observe
+    ///   successful verification for each question and reject a foreign root or
+    ///   kind. The predicate checks the question and all digest bytes;
+    ///   verification also distinguishes changed manifest fields on these
+    ///   finite fixtures.
+    /// - witness: `tests::membership::a_valid_proof_verifies`
+    /// - witness: `tests::membership::a_foreign_root_is_refused`
+    /// - witness: `tests::membership::a_wrong_kind_is_refused`
+    /// - witness: `tests::absence::a_valid_proof_verifies`
+    /// - witness: `tests::range::a_valid_proof_verifies`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| {
+        let question_matches = matches!((ret.kind, kind),
+            (ProofKind::Membership, ProofKind::Membership)
+                | (ProofKind::NonMembership, ProofKind::NonMembership)
+                | (ProofKind::Range, ProofKind::Range));
+        let actual_hash = ret.root.identity();
+        let expected_hash = root.identity();
+        let mut actual = actual_hash.byte_view().0.as_slice();
+        let mut expected = expected_hash.byte_view().0.as_slice();
+        let mut same = true;
+        while let (Some((left, left_tail)), Some((right, right_tail))) =
+            (actual.split_first(), expected.split_first()) {
+            same = same && *left == *right;
+            actual = left_tail;
+            expected = right_tail;
+        }
+        question_matches && same
+    })]
     pub const fn new(
         root: TreeRoot,
         kind: ProofKind,
@@ -148,7 +179,7 @@ pub struct ProofNode
 {
     /// The claimed identity.
     hash: NodeHash,
-    /// The canonical node encoding.
+    /// The claimed node encoding, not yet validated.
     bytes: OwnedEncodedNode,
 }
 
@@ -164,9 +195,20 @@ impl ProofNode
     /// - provides: the carried unit a verifier recomputes an identity from, so
     ///   a proof never states an identity without the bytes behind it.
     /// - fails: never — the pairing is checked at verification.
-    /// - panics: none.
+    /// - panics: if the caller-supplied byte conversion panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 membership fixtures retain a carried identity while
+    ///   changing a payload byte, and substitute an independently valid leaf.
+    ///   Verification distinguishes byte authentication from the selected-child
+    ///   relation; generic conversion effects are outside the hash-preservation
+    ///   predicate.
+    /// - witness: `tests::membership::a_valid_proof_verifies`
+    /// - witness: `tests::membership::a_tampered_node_is_refused`
+    /// - witness: `tests::membership::a_substituted_leaf_is_refused`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.hash == hash)]
     pub fn new<B>(
         hash: NodeHash,
         bytes: B,
@@ -191,7 +233,7 @@ impl ProofNode
         self.hash
     }
 
-    /// Returns the canonical node encoding.
+    /// Returns the claimed node encoding without authenticating it.
     ///
     /// # Specification
     /// trivial.
@@ -203,17 +245,17 @@ impl ProofNode
     }
 }
 
-/// The records that bracket an absent key.
+/// The records claimed to bracket an absent key.
 ///
-/// Absence is proved by exhibiting the neighbours: a predecessor below the key
-/// and a successor above it, both authenticated, with a missing neighbour
-/// meaning the key falls outside the tree's range on that side.
+/// Verification authenticates the pair and requires the predecessor to lie
+/// below the query and the successor above it. Construction alone makes no
+/// such guarantee; a missing neighbour claims that side of the tree is empty.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NonMembershipEvidence
 {
-    /// The greatest authenticated record below the absent key.
+    /// The claimed greatest record below the absent key.
     predecessor: Option<Record>,
-    /// The least authenticated record above the absent key.
+    /// The claimed least record above the absent key.
     successor: Option<Record>,
 }
 
@@ -229,6 +271,19 @@ impl NonMembershipEvidence
     /// - fails: never — whether the pair really brackets the key is decided at
     ///   verification.
     /// - panics: none.
+    /// - executable: none — both owned optional records move into the result;
+    ///   no input value survives for a relational postcondition, and constant
+    ///   instrumentation does not support pre-state captures.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 absence fixtures compare complete authenticated
+    ///   neighbours for below, between and above queries, reject missing
+    ///   claimed neighbours, and cover the empty tree. These observations
+    ///   detect lost, swapped or changed evidence without narrowing the
+    ///   constructor's unverified input domain.
+    /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    /// - witness: `tests::absence::forged_evidence_is_refused`
+    /// - witness: `tests::absence::an_empty_tree_proves_absence`
     #[inline]
     #[must_use]
     pub const fn new(
@@ -242,7 +297,7 @@ impl NonMembershipEvidence
         }
     }
 
-    /// Returns the greatest authenticated record below the absent key.
+    /// Returns the claimed greatest record below the absent key.
     ///
     /// # Specification
     /// trivial.
@@ -253,7 +308,7 @@ impl NonMembershipEvidence
         self.predecessor.as_ref()
     }
 
-    /// Returns the least authenticated record above the absent key.
+    /// Returns the claimed least record above the absent key.
     ///
     /// # Specification
     /// trivial.
@@ -265,7 +320,7 @@ impl NonMembershipEvidence
     }
 }
 
-/// A proof that a key is present with a stated value.
+/// Unverified material claiming a key is present with a stated value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MembershipProof
 {
@@ -277,7 +332,7 @@ pub struct MembershipProof
     key: OwnedRecordKey,
     /// The value the proof claims is bound to the key.
     value: OwnedRecordValue,
-    /// The root node, then the leaf the key selects.
+    /// The claimed root and selected-leaf sequence, checked by verification.
     nodes: Box<[ProofNode]>,
 }
 
@@ -293,9 +348,20 @@ impl MembershipProof
     /// - provides: the wire shape a proof travels in, so a decoder and a
     ///   builder produce the same value.
     /// - fails: never — every check lives in verification.
-    /// - panics: none.
+    /// - panics: if a caller-supplied conversion panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 membership fixtures preserve the envelope and root-node
+    ///   identity while forging carried content or layout; verification refuses
+    ///   the altered claim. The predicate observes the two copied commitments;
+    ///   generic conversions are consumed once, not replayed by the predicate.
+    /// - witness: `tests::membership::a_valid_proof_verifies`
+    /// - witness: `tests::membership::a_forged_binding_is_refused`
+    /// - witness: `tests::membership::a_substituted_leaf_is_refused`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.envelope == envelope
+        && ret.root_node_hash == root_node_hash)]
     pub fn new<K, V, N>(
         envelope: ProofEnvelope,
         root_node_hash: NodeHash,
@@ -373,6 +439,14 @@ impl MembershipProof
     ///   refuses a sequence that does not have it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 forged proofs built from the exposed sequence are
+    ///   refused after a targeted content or layout change. Pointer-and-length
+    ///   identity additionally detects replacing the view with a subset or
+    ///   another buffer.
+    /// - witness: `tests::membership::a_substituted_leaf_is_refused`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.nodes.as_ref())))]
     #[inline]
     #[must_use]
     pub fn nodes(&self) -> &[ProofNode]
@@ -388,10 +462,10 @@ impl MembershipProof
     ///   grounds; the proof is arbitrary and possibly hostile.
     /// - ensures: on success the key is bound to the value in the tree named by
     ///   `expected_root`, established from the carried bytes alone.
-    /// - provides: the membership half of the crate's verification surface. The
-    ///   postcondition stays prose: it names the tree `expected_root` denotes,
-    ///   which this call never holds — it holds only the bytes the proof
-    ///   carries.
+    /// - provides: membership verification from carried bytes. The predicate
+    ///   checks the caller's context and cryptographic commitments; the
+    ///   witnesses distinguish a claimed binding from the authenticated leaf's
+    ///   binding.
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the envelope, the
     ///   query, the node layout or the derived binding disagrees;
     ///   [`RecordTreeError::HashMismatch`] when a carried node or the root
@@ -411,10 +485,10 @@ impl MembershipProof
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — the proof is the checkable witness and this
-    ///   is its validator, so the residue is that each rejection arm has a
-    ///   distinguishing input; each is named as its own witness, and the
-    ///   accepting case rides the round-trip property over generated trees.
+    /// - hypothesis: L3 leaf and internal-root fixtures over 5, 200 and 300
+    ///   records observe successful authentication and refusal after changing
+    ///   the root, kind, query, value, carried bytes, node count or selected
+    ///   leaf. This finite mutation set is not a proof of every rejection arm.
     /// - witness: `tests::membership::a_valid_proof_verifies`
     /// - witness: `tests::membership::a_foreign_root_is_refused`
     /// - witness: `tests::membership::a_wrong_kind_is_refused`
@@ -423,7 +497,18 @@ impl MembershipProof
     /// - witness: `tests::membership::a_tampered_node_is_refused`
     /// - witness: `tests::membership::an_extra_node_is_refused`
     /// - witness: `tests::membership::a_substituted_leaf_is_refused`
+    /// - witness: `tests::membership::a_forged_binding_is_refused`
+    /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
+    /// - witness: `tests::membership::every_key_of_a_tree_proves`
     #[inline]
+    #[spec(ensures: |ret| ret.is_err() || (
+        self.envelope.root() == *expected_root
+            && self.envelope.kind() == ProofKind::Membership
+            && self.key() == expected_key && self.value() == expected_value
+            && expected_root.ensure_binds(self.root_node_hash).is_ok()
+            && self.nodes.first().is_some_and(|node| node.identity() == self.root_node_hash)
+            && self.nodes.iter().all(|node| hash_node(node.bytes()) == node.identity())
+    ))]
     pub fn verify(
         &self,
         expected_root: &TreeRoot,
@@ -494,7 +579,7 @@ impl MembershipProof
     }
 }
 
-/// A proof that a key is absent.
+/// Unverified material claiming a key is absent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NonMembershipProof
 {
@@ -506,7 +591,7 @@ pub struct NonMembershipProof
     key: OwnedRecordKey,
     /// The neighbours bracketing the absent key.
     evidence: NonMembershipEvidence,
-    /// The root node, the selected leaf, and the next leaf when one is needed.
+    /// The claimed root, selected leaf and optional successor sequence.
     nodes: Box<[ProofNode]>,
 }
 
@@ -521,9 +606,20 @@ impl NonMembershipProof
     ///   key, evidence, and nodes offered, in the order given.
     /// - provides: the wire shape an absence proof travels in.
     /// - fails: never — every check lives in verification.
-    /// - panics: none.
+    /// - panics: if a caller-supplied conversion panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 absence fixtures preserve the envelope and root-node
+    ///   identity while forging carried content or layout; verification refuses
+    ///   the altered claim. The predicate observes the two copied commitments;
+    ///   generic conversions are consumed once, not replayed by the predicate.
+    /// - witness: `tests::absence::a_valid_proof_verifies`
+    /// - witness: `tests::absence::forged_evidence_is_refused`
+    /// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.envelope == envelope
+        && ret.root_node_hash == root_node_hash)]
     pub fn new<K, N>(
         envelope: ProofEnvelope,
         root_node_hash: NodeHash,
@@ -600,6 +696,14 @@ impl NonMembershipProof
     ///   and refuses a sequence that does not have it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 forged proofs built from the exposed sequence are
+    ///   refused after a targeted content or layout change. Pointer-and-length
+    ///   identity additionally detects replacing the view with a subset or
+    ///   another buffer.
+    /// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.nodes.as_ref())))]
     #[inline]
     #[must_use]
     pub fn nodes(&self) -> &[ProofNode]
@@ -617,11 +721,10 @@ impl NonMembershipProof
     ///   `expected_root`, and the returned evidence is the bracketing pair
     ///   re-derived from the carried bytes rather than the pair the proof
     ///   claimed — the two are required to agree.
-    /// - provides: the absence half of the crate's verification surface. The
-    ///   postcondition stays prose: its first half names the tree
-    ///   `expected_root` denotes, which this call never holds, and a clause for
-    ///   the derived-against-claimed half alone would be weaker than the line
-    ///   it replaces.
+    /// - provides: absence verification from carried bytes. The predicate
+    ///   checks context, commitments, agreement with the claimed pair and
+    ///   strict bracketing; witnesses compare neighbours with the source
+    ///   records.
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the envelope, the
     ///   query, the node layout, the derived evidence, or the key's presence
     ///   disagrees; [`RecordTreeError::HashMismatch`] when a carried node or
@@ -642,16 +745,29 @@ impl NonMembershipProof
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — the derived bracketing pair is the checkable
-    ///   witness and is compared against the claim, so a forged claim cannot
-    ///   pass; the residue is the layout arms, each named as its own witness,
-    ///   and the accepting cases ride the property over generated trees.
+    /// - hypothesis: L2 empty, single-leaf and 200-/300-record fixtures observe
+    ///   complete neighbours for below, between and above queries. Forged
+    ///   evidence, a present query and missing or extra successor leaves
+    ///   distinguish the tested authentication and layout decisions.
     /// - witness: `tests::absence::a_valid_proof_verifies`
-    /// - witness: `tests::absence::a_present_key_has_no_absence_proof`
+    /// - witness: `tests::absence::a_present_key_is_refused_by_verification`
     /// - witness: `tests::absence::forged_evidence_is_refused`
     /// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
     /// - witness: `tests::absence::an_unnecessary_successor_leaf_is_refused`
+    /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    /// - witness: `tests::absence::an_empty_tree_proves_absence`
+    /// - witness: `tests::absence::a_key_absent_from_a_single_leaf_tree_proves`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|evidence| {
+        self.envelope.root() == *expected_root
+            && self.envelope.kind() == ProofKind::NonMembership
+            && self.key() == expected_key && *evidence == self.evidence
+            && evidence.predecessor().is_none_or(|record| record.key() < expected_key)
+            && evidence.successor().is_none_or(|record| expected_key < record.key())
+            && expected_root.ensure_binds(self.root_node_hash).is_ok()
+            && self.nodes.first().is_some_and(|node| node.identity() == self.root_node_hash)
+            && self.nodes.iter().all(|node| hash_node(node.bytes()) == node.identity())
+    }))]
     pub fn verify(
         &self,
         expected_root: &TreeRoot,
@@ -726,7 +842,7 @@ impl NonMembershipProof
     }
 }
 
-/// A proof that a range's records are exactly the carried ones.
+/// Unverified material claiming a range contains exactly the carried records.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RangeProof
 {
@@ -738,7 +854,7 @@ pub struct RangeProof
     range: OwnedKeyRange,
     /// The records the proof claims the range holds.
     records: Box<[Record]>,
-    /// The root node, then the leaves the range selects.
+    /// The claimed root and ordered leaf run, checked by verification.
     nodes: Box<[ProofNode]>,
 }
 
@@ -753,9 +869,20 @@ impl RangeProof
     ///   range, records, and nodes offered, in the order given.
     /// - provides: the wire shape a range proof travels in.
     /// - fails: never — every check lives in verification.
-    /// - panics: none.
+    /// - panics: if a caller-supplied conversion panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 range fixtures preserve the envelope and root-node
+    ///   identity while forging carried content or layout; verification refuses
+    ///   the altered claim. The predicate observes the two copied commitments;
+    ///   generic conversions are consumed once, not replayed by the predicate.
+    /// - witness: `tests::range::a_valid_proof_verifies`
+    /// - witness: `tests::range::a_dropped_record_is_refused`
+    /// - witness: `tests::range::a_reordered_leaf_run_is_refused`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.envelope == envelope
+        && ret.root_node_hash == root_node_hash)]
     pub fn new<R, N>(
         envelope: ProofEnvelope,
         root_node_hash: NodeHash,
@@ -819,6 +946,14 @@ impl RangeProof
     ///   the nodes that authenticate it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 forged proofs built from the exposed sequence are
+    ///   refused after a targeted content or layout change. Pointer-and-length
+    ///   identity additionally detects replacing the view with a subset or
+    ///   another buffer.
+    /// - witness: `tests::range::a_dropped_record_is_refused`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.records.as_ref())))]
     #[inline]
     #[must_use]
     pub fn records(&self) -> &[Record]
@@ -830,12 +965,20 @@ impl RangeProof
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the carried nodes in the order the proof states them: the
-    ///   root node first, then the leaves the range selects, in key order.
-    /// - provides: the material a verifier recomputes identities from, in the
-    ///   order the layout check reads.
+    /// - ensures: exactly the stored sequence, with neither filtering nor
+    ///   reordering; construction does not guarantee root-first or leaf order.
+    /// - provides: the claimed material whose positional layout verification
+    ///   checks before accepting the answer.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 forged proofs built from the exposed sequence are
+    ///   refused after a targeted content or layout change. Pointer-and-length
+    ///   identity additionally detects replacing the view with a subset or
+    ///   another buffer.
+    /// - witness: `tests::range::a_reordered_leaf_run_is_refused`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.nodes.as_ref())))]
     #[inline]
     #[must_use]
     pub fn nodes(&self) -> &[ProofNode]
@@ -853,11 +996,9 @@ impl RangeProof
     ///   the tree named by `expected_root` that lie in the range — derived from
     ///   the carried bytes and required to equal what the proof claimed, so
     ///   both an omitted record and an invented one are refused.
-    /// - provides: the range half of the crate's verification surface. The
-    ///   postcondition stays prose: its first half names the tree
-    ///   `expected_root` denotes, which this call never holds, and a clause for
-    ///   the derived-against-claimed half alone would be weaker than the line
-    ///   it replaces.
+    /// - provides: range verification from carried bytes. The predicate checks
+    ///   context, commitments, claimed-answer agreement, strict ordering and
+    ///   containment; witnesses distinguish omitted and invented records.
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the envelope, the
     ///   query, the node layout or the derived records disagree;
     ///   [`RecordTreeError::HashMismatch`] when a carried node or the root
@@ -878,16 +1019,31 @@ impl RangeProof
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — the derived record set is the checkable
-    ///   witness and is compared against the claim; the residue is the layout
-    ///   and span arms, each named as its own witness, and the accepting cases
-    ///   ride the property over generated trees.
+    /// - hypothesis: L2 single-leaf and 300-record fixtures plus 32 generated
+    ///   ranges (lower position below 300, span below 60, either upper
+    ///   inclusion) compare the returned records with the in-memory answer.
+    ///   Dropping or inventing records and shortening or permuting carried
+    ///   leaves must fail.
     /// - witness: `tests::range::a_valid_proof_verifies`
     /// - witness: `tests::range::a_dropped_record_is_refused`
     /// - witness: `tests::range::an_invented_record_is_refused`
     /// - witness: `tests::range::a_short_leaf_run_is_refused`
     /// - witness: `tests::range::a_reordered_leaf_run_is_refused`
+    /// - witness: `tests::range::generated_ranges_prove_and_verify`
+    /// - witness: `tests::range::a_range_over_a_single_leaf_tree_proves`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|records| {
+        self.envelope.root() == *expected_root
+            && self.envelope.kind() == ProofKind::Range
+            && self.range.as_range() == Ok(expected_range)
+            && records.as_ref() == self.records.as_ref()
+            && records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key())
+            && records.iter().all(|record| expected_range.contains(record.key())
+                == crate::record::RangeContainment::Inside)
+            && expected_root.ensure_binds(self.root_node_hash).is_ok()
+            && self.nodes.first().is_some_and(|node| node.identity() == self.root_node_hash)
+            && self.nodes.iter().all(|node| hash_node(node.bytes()) == node.identity())
+    }))]
     pub fn verify(
         &self,
         expected_root: &TreeRoot,
@@ -969,6 +1125,39 @@ impl RangeProof
 }
 
 /// One carried node after its identity was recomputed and its bytes decoded.
+///
+/// # Specification
+/// - requires: construction follows successful identity and canonical-decoding
+///   checks in `decode_carried`.
+/// - ensures: the identity and decoded node describe the same carried encoding.
+/// - provides: authenticated material, without assigning a proof-layout role.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 membership fixtures authenticate honest material and refuse
+///   changed payloads. A leaf and an internal node have true refinements, then
+///   false ones after their identities are exchanged. These distinguish
+///   unchecked decoding and lost decoded-state correlation.
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_tampered_node_is_refused`
+/// - witness: `proof::tests::carried_refinements_bind_both_decoded_shapes_to_their_identities`
+// Reuse the canonical encoders: the decoded value does not retain its bytes,
+// and a second serializer in this predicate could drift from the wire format.
+#[spec(maintains: match self.node {
+    DecodedNode::Leaf(ref leaf) => {
+        if !anodized::types::Spec::predicate(leaf) {
+            return false;
+        }
+        let records = leaf.records().iter().map(Record::as_record_ref).collect::<Vec<_>>();
+        encode_leaf(records.as_slice())
+            .is_ok_and(|bytes| hash_node(bytes.as_borrowed()) == self.hash)
+    },
+    DecodedNode::Internal(ref internal) => {
+        anodized::types::Spec::predicate(internal)
+            && encode_internal(internal.children())
+                .is_ok_and(|bytes| hash_node(bytes.as_borrowed()) == self.hash)
+    },
+})]
 struct CarriedNode
 {
     /// The recomputed identity, equal to the claimed one.
@@ -978,6 +1167,23 @@ struct CarriedNode
 }
 
 /// The tree's root node, opened.
+///
+/// # Specification
+/// - requires: construction follows manifest binding and first-node identity
+///   checks in `open_root`.
+/// - ensures: the borrowed leaf or internal node is the authenticated root.
+/// - provides: the root-shape distinction used by all three proof verifiers.
+/// - panics: none.
+/// - executable: none — the manifest and carried sequence are not stored in
+///   this borrowed classification; `open_root` checks their binding relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 single-leaf and internal-root membership fixtures verify;
+///   replacing the first carried node with a valid non-root leaf is refused.
+///   This observes root identity rather than accepting any decodable node.
+/// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_root_node_swapped_for_a_leaf_is_refused`
 enum RootNode<'carried>
 {
     /// The tree is one leaf.
@@ -1019,8 +1225,8 @@ impl CarriedIndex
     ///
     /// # Specification
     /// - requires: nothing; the position is a committed layout coordinate.
-    /// - ensures: `|ret| ret.is_ok() == (usize::from(self) < usize::MAX)` — the
-    ///   position one later when representable.
+    /// - ensures: the exact successor below the host ceiling, and overflow at
+    ///   the ceiling; no wrapping or saturation is accepted.
     /// - provides: the position advance a proof layout walks its carried slots.
     /// - fails: [`RecordTreeError::ArithmeticOverflow`] at the host ceiling.
     /// - panics: none.
@@ -1028,8 +1234,18 @@ impl CarriedIndex
     /// # Errors
     /// [`RecordTreeError::ArithmeticOverflow`] — the position was at the
     /// numeric ceiling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observations at zero, `usize::MAX - 1` and `usize::MAX`
+    ///   compare exact positions and counts and the overflow variant, detecting
+    ///   off-by-one arithmetic, wraparound and saturating substitutes.
+    /// - witness: `proof::tests::carried_coordinates_stop_at_the_host_ceiling`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (usize::from(self) < usize::MAX))]
+    #[spec(ensures: |ret| match ret {
+        Ok(next) => self.0.checked_add(1_usize) == Some(next.0),
+        Err(RecordTreeError::ArithmeticOverflow { .. }) => self.0 == usize::MAX,
+        Err(_) => false,
+    })]
     pub fn next(self) -> Result<Self, RecordTreeError>
     {
         self.0
@@ -1087,8 +1303,8 @@ impl CarriedCount
     ///
     /// # Specification
     /// - requires: nothing; the count is a committed layout quantity.
-    /// - ensures: `|ret| ret.is_ok() == (usize::from(self) < usize::MAX)` — the
-    ///   count one larger when representable.
+    /// - ensures: the exact successor below the host ceiling, and overflow at
+    ///   the ceiling; no wrapping or saturation is accepted.
     /// - provides: the count a proof layout advances through its carried slots.
     /// - fails: [`RecordTreeError::ArithmeticOverflow`] at the host ceiling.
     /// - panics: none.
@@ -1096,8 +1312,18 @@ impl CarriedCount
     /// # Errors
     /// [`RecordTreeError::ArithmeticOverflow`] — the count was at the numeric
     /// ceiling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observations at zero, `usize::MAX - 1` and `usize::MAX`
+    ///   compare exact positions and counts and the overflow variant, detecting
+    ///   off-by-one arithmetic, wraparound and saturating substitutes.
+    /// - witness: `proof::tests::carried_coordinates_stop_at_the_host_ceiling`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (usize::from(self) < usize::MAX))]
+    #[spec(ensures: |ret| match ret {
+        Ok(next) => self.0.checked_add(1_usize) == Some(next.0),
+        Err(RecordTreeError::ArithmeticOverflow { .. }) => self.0 == usize::MAX,
+        Err(_) => false,
+    })]
     pub fn next(self) -> Result<Self, RecordTreeError>
     {
         self.0
@@ -1136,6 +1362,22 @@ impl From<CarriedCount> for usize
 }
 
 /// The contiguous run of children a range selects.
+///
+/// # Specification
+/// - requires: construction by `range_span` from selected boundary children.
+/// - ensures: the first selected coordinate does not exceed the last; bounds
+///   against the parent's child table are checked when the run is selected.
+/// - provides: an inclusive, non-reversed run for positional proof material.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on three ordered children observes literal endpoints for
+///   open, below-first, separator-aligned and above-last queries; equal
+///   endpoints have true refinements and a privately reversed pair has a false
+///   one. Empty input is refused. Off-by-one selection and inverted runs are
+///   distinguished on this table, not on arbitrary malformed child tables.
+/// - witness: `proof::tests::child_spans_preserve_order_at_range_boundaries`
+#[spec(maintains: self.first <= self.last)]
 pub(crate) struct ChildSpan
 {
     /// The first selected position.
@@ -1174,16 +1416,24 @@ impl ChildSpan
 /// # Specification
 /// - requires: `envelope` is one the caller holds; `expected_root` and
 ///   `expected_kind` are the verifier's own.
-/// - ensures: `|ret| ret.is_err() || (envelope.kind() == expected_kind &&
-///   envelope.root() == *expected_root)` — on success the envelope's root and
-///   kind match the verifier's.
+/// - ensures: success exactly when the expected parameters are supported, the
+///   question matches, and the complete claimed root equals the expected one.
 /// - fails: [`RecordTreeError::IncompatibleParameters`] or
 ///   [`RecordTreeError::UnsupportedVersion`] when the envelope's parameters are
 ///   unsupported; [`RecordTreeError::InvalidProofShape`] when the root or the
 ///   kind differ.
 /// - panics: none.
-#[spec(ensures: |ret| ret.is_err()
-    || (envelope.kind() == expected_kind && envelope.root() == *expected_root))]
+///
+/// # Adequacy
+/// - hypothesis: L3 membership fixtures over 200 records admit the expected
+///   envelope and reject a foreign root or wrong question. The biconditional
+///   additionally observes parameter admission, without claiming a witness for
+///   every future parameter variant.
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_foreign_root_is_refused`
+/// - witness: `tests::membership::a_wrong_kind_is_refused`
+#[spec(ensures: |ret| ret.is_ok() == (expected_root.params().ensure_supported().is_ok()
+    && envelope.kind() == expected_kind && envelope.root() == *expected_root))]
 fn ensure_envelope(
     envelope: &ProofEnvelope,
     expected_root: &TreeRoot,
@@ -1212,22 +1462,34 @@ fn ensure_envelope(
 /// # Specification
 /// - requires: `nodes` is the proof's carried material; `work` is the proof's
 ///   accounting accumulator.
-/// - ensures: `|ret| ret.as_ref().ok().is_none_or(|carried| carried.len() ==
-///   nodes.len() && carried.iter().zip(nodes.iter()).all(|(entry, node)|
-///   entry.hash == node.identity() && entry.hash == hash_node(node.bytes()) &&
-///   inspect_node(node.bytes()).is_ok()))` — on success every carried node's
-///   bytes hash to its claimed identity under the node domain, and each decodes
-///   as a canonical node, one entry per input in order.
+/// - ensures: on success every carried encoding hashes to its claimed identity
+///   and decodes canonically, one entry per input in order. Each decoded entry
+///   also satisfies its refinement: canonical re-encoding recomputes the
+///   retained identity.
 /// - fails: [`RecordTreeError::HashMismatch`] on a byte that does not hash to
 ///   the claimed identity; [`RecordTreeError::InvalidProofShape`] on an empty
 ///   list; every [`decode_node`] failure.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 valid membership and range material authenticates in order;
+///   a single changed payload byte produces a hash mismatch. The 4096-node
+///   proof ceiling is admitted and its successor refused. Exchanging the
+///   identities of decoded leaf and internal entries makes both refinements
+///   false, distinguishing lost decoded-state correlation. These observations
+///   do not measure allocation or prove every malformed encoding is rejected.
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_tampered_node_is_refused`
+/// - witness: `tests::range::the_node_budget_ceiling_proves`
+/// - witness: `tests::range::a_span_past_the_node_budget_is_refused`
+/// - witness: `proof::tests::carried_refinements_bind_both_decoded_shapes_to_their_identities`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|carried| {
     carried.len() == nodes.len()
         && carried.iter().zip(nodes.iter()).all(|(entry, node)| {
             entry.hash == node.identity()
                 && entry.hash == hash_node(node.bytes())
                 && inspect_node(node.bytes()).is_ok()
+                && anodized::types::Spec::predicate(entry)
         })
 }))]
 fn decode_carried(
@@ -1266,7 +1528,7 @@ fn decode_carried(
 /// Opens the first carried node as the tree's root, binding it to the manifest.
 ///
 /// # Specification
-/// - requires: `carried` is non-empty; `root_node_hash` is the manifest's.
+/// - requires: nothing; the sequence and root-node identity are claims.
 /// - ensures: `|ret| ret.is_err() ||
 ///   (expected_root.ensure_binds(root_node_hash).is_ok() &&
 ///   carried.first().is_some_and(|first| first.hash == root_node_hash))` — on
@@ -1275,9 +1537,25 @@ fn decode_carried(
 /// - fails: [`RecordTreeError::InvalidProofShape`] when the list is empty or
 ///   the first node is not the root; [`TreeRoot::ensure_binds`] failures.
 /// - panics: none.
-#[spec(ensures: |ret| ret.is_err()
-    || (expected_root.ensure_binds(root_node_hash).is_ok()
-        && carried.first().is_some_and(|first| first.hash == root_node_hash)))]
+///
+/// # Adequacy
+/// - hypothesis: L3 single-leaf and internal-root membership fixtures
+///   authenticate the first node; replacing that node with a valid leaf is
+///   refused. The pointer relation distinguishes returning some other carried
+///   node.
+/// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_root_node_swapped_for_a_leaf_is_refused`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|root| {
+    expected_root.ensure_binds(root_node_hash).is_ok()
+        && carried.first().is_some_and(|first| first.hash == root_node_hash
+            && match *root {
+                RootNode::Leaf(leaf) => matches!(first.node,
+                    DecodedNode::Leaf(ref actual) if core::ptr::eq(core::ptr::from_ref(leaf), core::ptr::from_ref(actual))),
+                RootNode::Internal(internal) => matches!(first.node,
+                    DecodedNode::Internal(ref actual) if core::ptr::eq(core::ptr::from_ref(internal), core::ptr::from_ref(actual))),
+            })
+}))]
 fn open_root<'carried>(
     carried: &'carried [CarriedNode],
     expected_root: &TreeRoot,
@@ -1313,6 +1591,16 @@ fn open_root<'carried>(
 /// - fails: [`RecordTreeError::InvalidProofShape`] naming `context` when they
 ///   differ.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 membership, absence and range fixtures admit their exact
+///   layouts and reject an extra membership node, missing or unnecessary
+///   successor leaf, and shortened range. Counts outside these fixtures are
+///   covered by the equality predicate, not an exhaustive enumeration.
+/// - witness: `tests::membership::an_extra_node_is_refused`
+/// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
+/// - witness: `tests::absence::an_unnecessary_successor_leaf_is_refused`
+/// - witness: `tests::range::a_short_leaf_run_is_refused`
 #[spec(ensures: |ret| ret.is_ok() == (CarriedCount::from(carried.len()) == expected))]
 fn ensure_node_count(
     carried: &[CarriedNode],
@@ -1336,6 +1624,13 @@ fn ensure_node_count(
 /// - fails: [`RecordTreeError::InvalidProofShape`] when they differ, plus the
 ///   count's [`RecordCount`] overflow check.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 single-leaf membership fixtures admit the sealed record
+///   total; a separately sealed wrong total is refused by verification. This
+///   distinguishes count omission without forging a digest.
+/// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
+/// - witness: `tests::membership::a_wrong_manifest_count_is_refused`
 #[spec(ensures: |ret| ret.is_ok() == (leaf.record_count() == Ok(expected)))]
 fn ensure_leaf_total(
     leaf: &LeafNode,
@@ -1361,6 +1656,13 @@ fn ensure_leaf_total(
 ///   success the internal node's total equals the root manifest's.
 /// - fails: [`RecordTreeError::InvalidProofShape`] when they differ.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 internal-root membership fixtures admit the sealed record
+///   total and refuse a separately sealed wrong total. The count check is
+///   tested independently of an envelope or digest mismatch.
+/// - witness: `tests::membership::a_valid_proof_verifies`
+/// - witness: `tests::membership::a_wrong_manifest_count_is_refused`
 #[spec(ensures: |ret| ret.is_ok() == (internal.record_count() == expected))]
 fn ensure_internal_total(
     internal: &InternalNode,
@@ -1386,6 +1688,14 @@ fn ensure_internal_total(
 /// - fails: [`RecordTreeError::InvalidProofShape`] when the position is outside
 ///   the root's children.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 membership verification for every key in the fixed
+///   300-record corpus observes the selected child; substituting another valid
+///   leaf is refused. The predicate relates arbitrary positions to slice
+///   lookup, beyond the positions these witnesses traverse.
+/// - witness: `tests::membership::every_key_of_a_tree_proves`
+/// - witness: `tests::membership::a_substituted_leaf_is_refused`
 #[spec(ensures: |ret| ret.as_ref().ok().copied()
     == internal.children().get(usize::from(position)))]
 fn child_at(
@@ -1408,8 +1718,7 @@ fn child_at(
 /// would accept a leaf reachable somewhere else in the tree.
 ///
 /// # Specification
-/// - requires: `position` indexes `carried`, and `child` is a reference of the
-///   root the proof opens under.
+/// - requires: nothing; missing positions and mismatched claims are refused.
 /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|leaf|
 ///   carried.get(usize::from(position)).is_some_and(|node| node.hash ==
 ///   child.identity()) && leaf.first_key() == Some(child.first_key()) &&
@@ -1420,6 +1729,15 @@ fn child_at(
 ///   carried, is empty, or any claim differs; [`DecodedNode::as_leaf`]
 ///   failures; the leaf's [`RecordCount`] overflow check.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 membership for all 300 keys and an absence query requiring
+///   a successor leaf observe successful child authentication. A different
+///   valid leaf in the selected slot is refused. These fixtures distinguish
+///   identity substitution, not every separator or count forgery.
+/// - witness: `tests::membership::every_key_of_a_tree_proves`
+/// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
+/// - witness: `tests::membership::a_substituted_leaf_is_refused`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|leaf| {
     carried
         .get(usize::from(position))
@@ -1486,9 +1804,22 @@ fn leaf_at<'carried>(
 ///
 /// # Errors
 /// [`RecordTreeError::InvalidProofShape`] — the key is present.
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|requirement| {
-    (*requirement == SuccessorLeaf::NotRequired) == records.iter().any(|record| key <= record.key())
-}))]
+///
+/// # Adequacy
+/// - hypothesis: L3 ordered zero- and two-record fixtures compare requirement
+///   states below, between and above keys, and refuse present keys. Omitting
+///   the equality branch or reversing the successor decision is observable.
+/// - witness: `proof::tests::bracketing_handles_presence_and_successor_boundaries`
+#[spec(
+    requires: records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key()),
+    ensures: |ret| match ret {
+        Ok(requirement) => !records.iter().any(|record| record.key() == key)
+            && (requirement == SuccessorLeaf::NotRequired)
+                == records.iter().any(|record| key < record.key()),
+        Err(RecordTreeError::InvalidProofShape { .. }) => records.iter().any(|record| record.key() == key),
+        Err(_) => false,
+    },
+)]
 pub(crate) fn needs_successor(
     records: &[Record],
     key: RecordKey<'_>,
@@ -1517,9 +1848,9 @@ pub(crate) fn needs_successor(
 /// drift would read as a forgery.
 ///
 /// # Specification
-/// - requires: `records` is sorted by strictly increasing key, and `next`
-///   carries the successor leaf's records when the selected leaf is not the
-///   last.
+/// - requires: `records` and any supplied successor run are strictly
+///   key-ordered. A supplied run may be empty or fail to advance; these
+///   candidate errors are refused when its first record is needed.
 /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|evidence|
 ///   evidence.predecessor() == records.iter().rfind(|record| record.key() <
 ///   key) && evidence.successor() == records.iter().find(|record| key <
@@ -1533,7 +1864,18 @@ pub(crate) fn needs_successor(
 /// # Errors
 /// [`RecordTreeError::InvalidProofShape`] — the key is present, the successor
 /// run is empty, or the successor run does not advance past the key.
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|evidence| {
+///
+/// # Adequacy
+/// - hypothesis: L3 ordered empty and two-record fixtures observe complete
+///   neighbours below, between and above the run; present queries and empty or
+///   non-advancing successor runs are refused. A separate successor run
+///   distinguishes losing the cross-leaf neighbour.
+/// - witness: `proof::tests::bracketing_handles_presence_and_successor_boundaries`
+/// - witness: `tests::absence::absent_keys_everywhere_prove`
+#[spec(
+    requires: records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key())
+        && next.is_none_or(|run| run.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key())),
+    ensures: |ret| ret.as_ref().ok().is_none_or(|evidence| {
     evidence.predecessor() == records.iter().rfind(|record| record.key() < key)
         && evidence.successor()
             == records
@@ -1607,6 +1949,20 @@ pub(crate) fn bracket(
 /// - fails: [`RecordTreeError::InvalidProofShape`] when the range selects no
 ///   first or last leaf, or its end precedes its start.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 unbounded, empty and generated bounded ranges over a fixed
+///   300-record corpus observe the selected run through verified records. A
+///   three-child table also distinguishes literal boundary coordinates, equal
+///   versus reversed spans and empty-table refusal. Shortened and reordered
+///   runs fail verification; these fixtures do not enumerate arbitrary
+///   malformed child tables.
+/// - witness: `tests::range::the_unbounded_range_proves`
+/// - witness: `tests::range::an_empty_range_proves`
+/// - witness: `tests::range::generated_ranges_prove_and_verify`
+/// - witness: `tests::range::a_short_leaf_run_is_refused`
+/// - witness: `tests::range::a_reordered_leaf_run_is_refused`
+/// - witness: `proof::tests::child_spans_preserve_order_at_range_boundaries`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|span| {
     Some(span.first())
         == range.start().key().map_or_else(
@@ -1618,7 +1974,7 @@ pub(crate) fn bracket(
                 || children.len().checked_sub(1_usize).map(ChildIndex::from),
                 |key| select_child(children, key),
             )
-        && span.first() <= span.last()
+        && anodized::types::Spec::predicate(span)
 }))]
 pub(crate) fn range_span(
     children: &[ChildRef],
@@ -1653,4 +2009,184 @@ pub(crate) fn range_span(
     }
 
     Ok(ChildSpan { first, last })
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::CarriedCount;
+    use super::CarriedIndex;
+    use super::ChildSpan;
+    use super::ProofNode;
+    use super::SuccessorLeaf;
+    use super::bracket;
+    use super::decode_carried;
+    use super::needs_successor;
+    use super::range_span;
+    use crate::ChildIndex;
+    use crate::ChildRef;
+    use crate::DecodeWork;
+    use crate::KeyBound;
+    use crate::KeyRange;
+    use crate::Record;
+    use crate::RecordCount;
+    use crate::RecordKey;
+    use crate::RecordRef;
+    use crate::RecordTreeError;
+    use crate::encode_internal;
+    use crate::encode_leaf;
+    use crate::hash_node;
+
+    #[test]
+    fn carried_coordinates_stop_at_the_host_ceiling()
+    {
+        for position in [0_usize, usize::MAX - 1_usize] {
+            assert_eq!(
+                CarriedIndex::from(position).next(),
+                Ok(CarriedIndex::from(position + 1_usize))
+            );
+            assert_eq!(
+                CarriedCount::from(position).next(),
+                Ok(CarriedCount::from(position + 1_usize))
+            );
+        }
+        assert!(matches!(
+            CarriedIndex::from(usize::MAX).next(),
+            Err(RecordTreeError::ArithmeticOverflow { .. })
+        ));
+        assert!(matches!(
+            CarriedCount::from(usize::MAX).next(),
+            Err(RecordTreeError::ArithmeticOverflow { .. })
+        ));
+    }
+
+    #[test]
+    fn bracketing_handles_presence_and_successor_boundaries()
+    {
+        let records = [Record::new(b"a", b"1"), Record::new(b"c", b"3")];
+        for (key, required, predecessor, successor) in [
+            (b"0", SuccessorLeaf::NotRequired, None, Some(&records[0])),
+            (
+                b"b",
+                SuccessorLeaf::NotRequired,
+                Some(&records[0]),
+                Some(&records[1]),
+            ),
+            (b"z", SuccessorLeaf::Required, Some(&records[1]), None),
+        ] {
+            let query = RecordKey::from(key);
+            assert_eq!(needs_successor(&records, query), Ok(required));
+            let evidence = bracket(&records, None, query).expect("the query is absent");
+            assert_eq!(evidence.predecessor(), predecessor);
+            assert_eq!(evidence.successor(), successor);
+        }
+        for present in &records {
+            assert!(matches!(
+                needs_successor(&records, present.key()),
+                Err(RecordTreeError::InvalidProofShape { .. })
+            ));
+            assert!(matches!(
+                bracket(&records, None, present.key()),
+                Err(RecordTreeError::InvalidProofShape { .. })
+            ));
+        }
+
+        let query = RecordKey::from(b"z");
+        assert_eq!(needs_successor(&[], query), Ok(SuccessorLeaf::Required));
+        let empty = bracket(&[], None, query).expect("the empty run contains no key");
+        assert_eq!(empty.predecessor(), None);
+        assert_eq!(empty.successor(), None);
+        for next in [&[][..], records.as_slice()] {
+            assert!(matches!(
+                bracket(&records, Some(next), query),
+                Err(RecordTreeError::InvalidProofShape { .. })
+            ));
+        }
+        let next = [Record::new(b"zz", b"9")];
+        let evidence = bracket(&records, Some(&next), query).expect("the successor advances");
+        assert_eq!(evidence.predecessor(), records.last());
+        assert_eq!(evidence.successor(), next.first());
+
+        let inside = bracket(&records, Some(&[]), RecordKey::from(b"b"))
+            .expect("an unused successor run need not supply a record");
+        assert_eq!(inside.predecessor(), records.first());
+        assert_eq!(inside.successor(), records.last());
+    }
+
+    #[test]
+    fn carried_refinements_bind_both_decoded_shapes_to_their_identities()
+    {
+        let leaf = encode_leaf(&[RecordRef::new(b"a", b"1")]).expect("the leaf encodes");
+        let leaf_hash = hash_node(leaf.as_borrowed());
+        let internal = encode_internal(&[ChildRef::new(b"a", leaf_hash, RecordCount::from(1_u64))])
+            .expect("the internal node encodes");
+        let internal_hash = hash_node(internal.as_borrowed());
+        let nodes = [
+            ProofNode::new(internal_hash, internal),
+            ProofNode::new(leaf_hash, leaf),
+        ];
+        let mut carried = decode_carried(&nodes, &mut DecodeWork::default())
+            .expect("both identities authenticate their canonical nodes");
+        let (first, rest) = carried
+            .split_first_mut()
+            .expect("the internal entry is present");
+        let second = rest.first_mut().expect("the leaf entry is present");
+        assert!(anodized::types::Spec::predicate(first));
+        assert!(anodized::types::Spec::predicate(second));
+        core::mem::swap(&mut first.hash, &mut second.hash);
+        assert!(!anodized::types::Spec::predicate(first));
+        assert!(!anodized::types::Spec::predicate(second));
+    }
+
+    #[test]
+    fn child_spans_preserve_order_at_range_boundaries()
+    {
+        let children = [
+            RecordRef::new(b"a", b"1"),
+            RecordRef::new(b"m", b"2"),
+            RecordRef::new(b"z", b"3"),
+        ]
+        .map(|record| {
+            let bytes = encode_leaf(core::slice::from_ref(&record)).expect("one record encodes");
+            ChildRef::new(
+                record.key(),
+                hash_node(bytes.as_borrowed()),
+                RecordCount::from(1_u64),
+            )
+        });
+        for (start, end, expected) in [
+            (KeyBound::Unbounded, KeyBound::Unbounded, (0_usize, 2_usize)),
+            (
+                KeyBound::included(b""),
+                KeyBound::excluded(b"a"),
+                (0_usize, 0_usize),
+            ),
+            (
+                KeyBound::included(b"m"),
+                KeyBound::excluded(b"z"),
+                (1_usize, 2_usize),
+            ),
+            (
+                KeyBound::included(b"zz"),
+                KeyBound::Unbounded,
+                (2_usize, 2_usize),
+            ),
+        ] {
+            let range = KeyRange::new(start, end).expect("the query is ordered");
+            let span = range_span(&children, range).expect("the boundary children exist");
+            assert_eq!(
+                (usize::from(span.first()), usize::from(span.last())),
+                expected
+            );
+            assert!(anodized::types::Spec::predicate(&span));
+        }
+        assert!(!anodized::types::Spec::predicate(&ChildSpan {
+            first: ChildIndex::from(1_usize),
+            last: ChildIndex::ZERO,
+        }));
+        assert!(matches!(
+            range_span(&[], KeyRange::all()),
+            Err(RecordTreeError::InvalidProofShape { .. })
+        ));
+    }
 }

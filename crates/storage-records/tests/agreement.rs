@@ -34,6 +34,20 @@ fn trees_differing_in_one_value_disagree()
     let left = tree(&corpus);
     let right = tree(&edited);
 
+    assert_eq!(right.records().len(), corpus.entries().len());
+    for (index, (actual, original)) in right.records().iter().zip(corpus.entries()).enumerate() {
+        assert_eq!(actual.key(), original.key());
+        assert_eq!(
+            actual.value(),
+            if index == 100_usize {
+                RecordValue::from(b"a different value")
+            }
+            else {
+                original.value()
+            }
+        );
+    }
+
     assert_ne!(left.root(), right.root());
     assert_eq!(left.agrees_with(&right), RecordAgreement::Disagree);
 }
@@ -46,6 +60,13 @@ fn trees_differing_in_one_record_disagree()
     let left = tree(&corpus);
     let right = tree(&shorter);
 
+    assert!(
+        right.records().iter().eq(corpus
+            .entries()
+            .iter()
+            .take(100_usize)
+            .chain(corpus.entries().iter().skip(101_usize)))
+    );
     assert_eq!(left.agrees_with(&right), RecordAgreement::Disagree);
 }
 
