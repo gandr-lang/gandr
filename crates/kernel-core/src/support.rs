@@ -223,14 +223,34 @@ impl LooseDepth
         if self.0 >= other.0 { self } else { other }
     }
 
-    /// The reach seen from outside one binder: a body reaching `n` binders
-    /// reaches `n - 1` of its parent's, and a closed body stays closed.
+    /// The reach seen from outside one binder.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a finite, unsaturated reach loses one binder, stopping at
+    ///   zero; the widest sentinel stays widest because its excess is unknown.
+    /// - provides: conservative reach through a binding position, including
+    ///   saturated variables and unreadable children.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a body reading its own binder and on the largest
+    ///   variable index; exact external reaches separate closing a binder from
+    ///   unsoundly narrowing an overflowed reach.
+    /// - witness: `support::tests::a_binder_closes_its_body`
+    /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
+    #[spec(ensures: |ret| ret.0 == if self.0 == u32::MAX {
+        u32::MAX
+    } else {
+        self.0.saturating_sub(1)
+    })]
     #[inline]
     fn under_binder(self) -> Self
     {
+        if self == Self::WIDEST {
+            return Self::WIDEST;
+        }
         // reason: crossing a binder leaves a closed body's reach at zero.
         Self(u32::from(arith::saturating_sub(
             arith::Int::from(self.0),
@@ -244,19 +264,33 @@ impl LooseDepth
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the offset of the first slot this reach can see, and zero
-    ///   where the reach is at or past the context's length.
+    /// - ensures: the offset of the first slot this reach can see, and zero for
+    ///   the widest sentinel or a reach at or past the context's length.
     /// - provides: the failure direction of the whole reach computation: an
     ///   over-estimate widens the key's telescope to the entire context, so it
     ///   can split a support and never merge two.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on empty and two-slot telescopes at zero, interior,
+    ///   exact, excessive and saturated reach; exact ordered slices separate
+    ///   clipping and reversal faults.
+    /// - witness: `support::tests::telescope_clipping_keeps_binder_order_at_reach_boundaries`
+    #[spec(ensures: |ret| ret.0 == if self.0 == u32::MAX {
+        0
+    } else {
+        context.len().saturating_sub(usize::try_from(self.0).unwrap_or(usize::MAX))
+    })]
     #[inline]
     fn start_in(
         self,
         context: &[ValueTypeId],
     ) -> ContextOffset
     {
+        if self == Self::WIDEST {
+            return ContextOffset(0);
+        }
         let wanted = usize::try_from(self.0).unwrap_or(usize::MAX);
         // reason: an overestimated reach widens the slice to the whole context.
         ContextOffset(usize::from(arith::saturating_sub(
@@ -352,9 +386,9 @@ impl NodeSupport
     ///   question of the same content under the same reached telescope. A wider
     ///   reach yields a longer telescope, so an over-estimate can only split a
     ///   support and never merge two.
-    /// - provides: the memo key. Context and session provenance and equality
-    ///   across goals remain prose-only: one invocation has neither the history
-    ///   nor a second independently interpreted goal.
+    /// - provides: the memo key, with the goal's plane checked by the
+    ///   predicate. Provenance and agreement across independent goals need a
+    ///   second goal and remain obligations of the paired witnesses below.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -370,6 +404,11 @@ impl NodeSupport
     /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_slice_agrees`
     /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
     /// - witness: `support::tests::a_code_carrying_type_reads_its_binder`
+    #[spec(ensures: |ret| ret.plane == match goal {
+        SupportGoal::ValueTypeLevel(_) | SupportGoal::CompTypeLevel(_) => SupportPlane::Type,
+        SupportGoal::SynthValue(_) | SupportGoal::CheckValue(_, _)
+        | SupportGoal::SynthComp(_) | SupportGoal::CheckComp(_, _) => SupportPlane::Term,
+    })]
     #[inline]
     #[must_use]
     pub fn build(
@@ -453,6 +492,16 @@ impl MemoKey for NodeSupport
     /// - provides: the deciding comparison every hit the checker adopts is
     ///   served on.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on equal and differing reached telescopes, disjoint
+    ///   planes and deliberately colliding digests; agreement observes content
+    ///   rather than the bucket selector.
+    /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
+    /// - witness: `support::tests::a_binder_reading_node_collapses_where_its_slice_agrees`
+    /// - witness: `support::tests::a_digest_collision_cannot_decide_support_agreement`
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+        == (self.plane == other.plane && self.encoding == other.encoding))]
     #[inline]
     fn agreement(
         &self,
@@ -478,6 +527,13 @@ impl MemoKey for NodeSupport
 ///   dependency order is part of the content.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on ordered empty and two-slot contexts with reaches on both
+///   sides of the length boundary; exact slices distinguish reversal,
+///   off-by-one clipping and dropping a reached binder.
+/// - witness: `support::tests::telescope_clipping_keeps_binder_order_at_reach_boundaries`
+#[spec(ensures: |ret| context.get(reach.start_in(context).0 ..) == Some(ret.as_slice()))]
 #[inline]
 fn reached_slice(
     context: &[ValueTypeId],
@@ -543,16 +599,14 @@ impl LooseDepths
     /// The binder reach of a value node.
     ///
     /// # Specification
-    /// - requires: nothing — an unreadable id is answered conservatively rather
-    ///   than refused, since this feeds a key and not a verdict.
-    /// - ensures: one more than the node's largest free de Bruijn index, or the
-    ///   widest reach where the graph could not be read. The walk is iterative
-    ///   over an explicit task stack, so it is total on any depth, and each
-    ///   distinct node is combined once however many times it occurs.
-    /// - provides: the telescope length of a value goal's support. Exact
-    ///   free-index reach, totality, and per-node counts remain prose-only:
-    ///   they require an independent binder-aware traversal and its execution
-    ///   trace, not the cached answer itself.
+    /// - requires: cached positions still denote the same nodes in this arena;
+    ///   unreadable roots are allowed and answered conservatively.
+    /// - ensures: one more than the largest free de Bruijn index when exact;
+    ///   unreadable or saturated reach stays widest through enclosing binders.
+    ///   The walk is iterative and combines each distinct node at most once.
+    /// - provides: the telescope length of a value goal's support. The
+    ///   predicate checks the recorded answer and unreadable-root boundary;
+    ///   binder recurrence and sharing are witnessed without a second walk.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -565,6 +619,8 @@ impl LooseDepths
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| self.values.get(&root) == Some(&ret)
+        && (arena.value(root).is_some() || ret == LooseDepth::WIDEST))]
     #[inline]
     pub fn value_reach(
         &mut self,
@@ -579,11 +635,10 @@ impl LooseDepths
     /// The binder reach of a computation node; see [`Self::value_reach`].
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_reach`], over the computation families.
-    /// - provides: the telescope length of a computation goal's support. The
-    ///   inherited reach and traversal clauses remain prose-only for the same
-    ///   reason as [`Self::value_reach`].
+    /// - provides: the telescope length of a computation goal's support; the
+    ///   predicate checks cache agreement and the unreadable-root boundary.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -592,6 +647,8 @@ impl LooseDepths
     ///   binding formers, whose bound positions each step out by one.
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::a_bind_closes_only_its_body`
+    #[spec(ensures: |ret| self.computations.get(&root) == Some(&ret)
+        && (arena.computation(root).is_some() || ret == LooseDepth::WIDEST))]
     #[inline]
     pub fn comp_reach(
         &mut self,
@@ -606,12 +663,11 @@ impl LooseDepths
     /// The binder reach of a value-type node; see [`Self::value_reach`].
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_reach`], over the value-type family, where
     ///   the reach comes entirely from the codes the type carries.
     /// - provides: the telescope length of a value-type formation goal's
-    ///   support. The inherited reach and traversal clauses remain prose-only
-    ///   for the same reason as [`Self::value_reach`].
+    ///   support, with cache agreement and unreadable roots checked directly.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -621,6 +677,8 @@ impl LooseDepths
     ///   variable code (`i + 1`), and a dependent arrow whose codomain reads
     ///   only its own binder (closed from outside).
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    #[spec(ensures: |ret| self.value_types.get(&root) == Some(&ret)
+        && (arena.value_type(root).is_some() || ret == LooseDepth::WIDEST))]
     #[inline]
     pub fn value_type_reach(
         &mut self,
@@ -636,12 +694,11 @@ impl LooseDepths
     /// [`Self::value_type_reach`].
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: cached positions still denote the same nodes in this arena.
     /// - ensures: as [`Self::value_type_reach`], over the computation-type
     ///   family.
     /// - provides: the telescope length of a computation-type formation goal's
-    ///   support. The inherited reach and traversal clauses remain prose-only
-    ///   for the same reason as [`Self::value_type_reach`].
+    ///   support, with cache agreement and unreadable roots checked directly.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -650,6 +707,8 @@ impl LooseDepths
     ///   dependent arrow, whose codomain steps out by one and whose domain does
     ///   not.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    #[spec(ensures: |ret| self.comp_types.get(&root) == Some(&ret)
+        && (arena.comp_type(root).is_some() || ret == LooseDepth::WIDEST))]
     #[inline]
     pub fn comp_type_reach(
         &mut self,
@@ -664,25 +723,43 @@ impl LooseDepths
     /// Drive the reach walk to completion from one root task.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: the root is an open task and cached arena positions are
+    ///   unchanged.
     /// - ensures: every node reachable from the root has a cached reach.
-    /// - provides: the shared engine of the two reach faces. The executable
-    ///   boundary checks root completion; witnesses cover descendant caching
-    ///   across binders and code edges.
+    /// - provides: the shared engine of the four reach families. The predicate
+    ///   checks root completion; the witnesses observe child joins and binder
+    ///   scope without repeating the entire traversal.
     /// - fails: never — an unreadable node caches the widest reach.
     /// - panics: none.
     ///
+    /// # Termination
+    /// - reason: the walk is a loop over an explicit task stack, not recursion.
+    /// - measure: the number of reachable nodes without a cached reach, which
+    ///   strictly falls at every close step and never rises, since an open on a
+    ///   cached node pushes nothing.
+    /// - boundedness: the arena is finite and children have strictly smaller
+    ///   ids, so the reachable set is finite and acyclic.
+    /// - input recursion: none.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — code crossings and binder depth close the root cache;
-    ///   unreadable nodes conservatively reach the whole telescope.
+    /// - hypothesis: L3 on closed leaves, open variables, joined children,
+    ///   binding bodies, type codes and unreadable roots on all four planes;
+    ///   exact resulting reaches separate missing child work and wrong binder
+    ///   scope.
+    /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
+    /// - witness: `support::tests::a_bind_closes_only_its_body`
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: match root {
-        ReachTask::OpenValue(id) | ReachTask::CloseValue(id) => self.values.contains_key(&id),
-        ReachTask::OpenComp(id) | ReachTask::CloseComp(id) => self.computations.contains_key(&id),
-        ReachTask::OpenValueType(id) | ReachTask::CloseValueType(id) => self.value_types.contains_key(&id),
-        ReachTask::OpenCompType(id) | ReachTask::CloseCompType(id) => self.comp_types.contains_key(&id),
-    })]
+    #[spec(
+        requires: matches!(root, ReachTask::OpenValue(_) | ReachTask::OpenComp(_)
+            | ReachTask::OpenValueType(_) | ReachTask::OpenCompType(_)),
+        ensures: match root {
+            ReachTask::OpenValue(id) | ReachTask::CloseValue(id) => self.values.contains_key(&id),
+            ReachTask::OpenComp(id) | ReachTask::CloseComp(id) => self.computations.contains_key(&id),
+            ReachTask::OpenValueType(id) | ReachTask::CloseValueType(id) => self.value_types.contains_key(&id),
+            ReachTask::OpenCompType(id) | ReachTask::CloseCompType(id) => self.comp_types.contains_key(&id),
+        },
+    )]
     fn run(
         &mut self,
         arena: &TermArena,
@@ -879,6 +956,15 @@ impl LooseDepths
     ///   the cache widens the key's telescope rather than narrowing it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on zero, a nonzero variable reach and an unreadable
+    ///   value; exact observations distinguish a missing conservative fallback
+    ///   from a valid closed answer.
+    /// - witness: `support::tests::a_closed_value_reaches_no_binder`
+    /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| ret == self.values.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
     #[inline]
     fn cached_value(
         &self,
@@ -896,6 +982,14 @@ impl LooseDepths
     /// - provides: the conservative read the combine steps compose.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on an open return, its binding lambda and an unreadable
+    ///   computation; exact reaches distinguish closing the body from narrowing
+    ///   a missing answer.
+    /// - witness: `support::tests::a_binder_closes_its_body`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| ret == self.computations.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
     #[inline]
     fn cached_comp(
         &self,
@@ -916,6 +1010,14 @@ impl LooseDepths
     /// - provides: the conservative read the combine steps compose.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a closed type, a variable code and an unreadable
+    ///   value type; the zero, nonzero and widest answers separate cache-plane
+    ///   and fallback faults.
+    /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| ret == self.value_types.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
     #[inline]
     fn cached_value_type(
         &self,
@@ -936,6 +1038,14 @@ impl LooseDepths
     /// - provides: the conservative read the combine steps compose.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a dependent codomain and an unreadable computation
+    ///   type; exact external reach separates binder adjustment and
+    ///   conservative fallback.
+    /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| ret == self.comp_types.get(&id).copied().unwrap_or(LooseDepth::WIDEST))]
     #[inline]
     fn cached_comp_type(
         &self,
@@ -966,10 +1076,12 @@ impl LooseDepths
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — closed types need no telescope; native universe
-    ///   endpoints, list elements and decoded codes retain their greatest loose
-    ///   index.
+    /// - hypothesis: L3 on closed types, variable codes and unreadable roots;
+    ///   exact reaches separate code traversal, leaf closure and conservative
+    ///   refusal. Composite joins are local predicate obligations, not an
+    ///   exhaustive graph proof.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
     #[spec(ensures: |ret| ret == match arena.value_type(id) {
         None => LooseDepth::WIDEST,
@@ -1033,6 +1145,19 @@ impl LooseDepths
     ///   binding former on the negative side.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a returner carrying a variable code, a dependent
+    ///   arrow and an unreadable root; exact reaches distinguish the codomain
+    ///   binder from an unbound domain and conservative refusal.
+    /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: |ret| ret == arena.comp_type(id).map_or(LooseDepth::WIDEST, |node| match *node {
+        CompType::Returner(result) => self.cached_value_type(result),
+        CompType::Arrow { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain)),
+        CompType::Pi { domain, codomain } => self.cached_value_type(domain).join(self.cached_comp_type(codomain).under_binder()),
+        CompType::Element { code, .. } => self.cached_value(code),
+    }))]
     fn combine_comp_type(
         &self,
         arena: &TermArena,
@@ -1073,10 +1198,13 @@ impl LooseDepths
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — free indices set telescope reach; native path
-    ///   classifiers and both maps contribute, but evidence has no term
-    ///   children.
+    /// - hypothesis: L3 on closed and joined values, ordinary and maximal
+    ///   variable indices, and unreadable roots; exact reaches separate omitted
+    ///   children, index offsets and overflow narrowing.
+    /// - witness: `support::tests::a_closed_value_reaches_no_binder`
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
+    /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
     #[spec(ensures: |ret| ret == match arena.value(id) {
         None => LooseDepth::WIDEST,
@@ -1158,10 +1286,14 @@ impl LooseDepths
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a bind closes only its body; transport closes neither
-    ///   its certificate nor its value, so a free endpoint cannot disappear.
-    /// - witness: `support::tests::a_bind_closes_only_its_body`
+    /// - hypothesis: L3 on a lambda, the two positions of a bind, saturated
+    ///   variable reach and unreadable roots; exact reaches separate closing
+    ///   the wrong child and losing the widest sentinel. The case recurrence is
+    ///   checked locally, not exhaustively enumerated.
     /// - witness: `support::tests::a_binder_closes_its_body`
+    /// - witness: `support::tests::a_bind_closes_only_its_body`
+    /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     #[spec(ensures: |ret| ret == match arena.computation(id) {
         None => LooseDepth::WIDEST,
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
@@ -1224,6 +1356,17 @@ mod tests
     use super::SupportContext;
     use super::SupportPlane;
     use crate::encoding::SupportGoal;
+
+    #[test]
+    fn saturated_reach_remains_conservative_beneath_a_binder()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(u32::MAX));
+        let body = arena.computation_return(variable);
+        let lambda = arena.computation_lambda(body);
+        let mut reaches = LooseDepths::new();
+        assert_eq!(reaches.comp_reach(&arena, lambda), LooseDepth::WIDEST);
+    }
 
     #[test]
     fn a_closed_value_reaches_no_binder()
@@ -1301,8 +1444,24 @@ mod tests
         let mut arena = TermArena::new();
         let floor = arena.watermark();
         let unit = arena.value_unit();
+        let computation = arena.computation_return(unit);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
         arena.truncate_to(floor);
         let mut reaches = LooseDepths::new();
+        assert_eq!(reaches.cached_value(unit), LooseDepth::WIDEST);
+        assert_eq!(reaches.cached_comp(computation), LooseDepth::WIDEST);
+        assert_eq!(reaches.cached_value_type(value_type), LooseDepth::WIDEST);
+        assert_eq!(reaches.cached_comp_type(comp_type), LooseDepth::WIDEST);
+        assert_eq!(reaches.comp_reach(&arena, computation), LooseDepth::WIDEST);
+        assert_eq!(
+            reaches.value_type_reach(&arena, value_type),
+            LooseDepth::WIDEST
+        );
+        assert_eq!(
+            reaches.comp_type_reach(&arena, comp_type),
+            LooseDepth::WIDEST
+        );
         assert_eq!(
             LooseDepth::from(u32::MAX),
             reaches.value_reach(&arena, unit),
@@ -1472,6 +1631,50 @@ mod tests
             bare.plane(),
             "and the type-formation walk accounts to its own plane"
         );
+    }
+
+    #[test]
+    fn telescope_clipping_keeps_binder_order_at_reach_boundaries()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let base = arena.value_type_base(BaseType::Integer);
+        let context = [unit, base];
+        for (reach, start) in [(0_u32, 2_usize), (1, 1), (2, 0), (3, 0), (u32::MAX, 0)] {
+            let depth = LooseDepth::from(reach);
+            assert_eq!(depth.start_in(&context).0, start);
+            assert_eq!(
+                super::reached_slice(&context, depth).as_slice(),
+                &context[start ..]
+            );
+            assert_eq!(super::reached_slice(&[], depth).as_slice(), &[]);
+        }
+    }
+
+    #[test]
+    fn a_digest_collision_cannot_decide_support_agreement()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let mut session = SupportContext::new();
+        let left = NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
+            unit,
+        ]);
+        let mut right =
+            NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
+                integer,
+            ]);
+        right.digest = left.digest;
+        assert_eq!(left.agreement(&right), ContentAgreement::Differ);
+        let mut same_content = left.clone();
+        same_content.digest =
+            NodeSupport::build(&arena, &mut session, SupportGoal::SynthValue(variable), &[
+                integer,
+            ])
+            .digest;
+        assert_eq!(left.agreement(&same_content), ContentAgreement::Agree);
     }
 
     #[test]

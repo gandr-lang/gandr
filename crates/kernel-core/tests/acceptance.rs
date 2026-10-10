@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The kernel's acceptance suite: the collapse law, anti-vacuity on both sides,
 //! edit locality, the memoized-against-memoless differential, and the
 //! poisoned-entry cases that prove the differential bites.
@@ -22,6 +11,7 @@
 #[cfg(test)]
 mod acceptance
 {
+    use anodized::spec;
     use gandr_kernel_check_memo::CheckMemo;
     use gandr_kernel_check_memo::MemoEntryCount;
     use gandr_kernel_check_memo::NullMemo;
@@ -42,6 +32,8 @@ mod acceptance
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::Computation;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::Declaration;
     use gandr_kernel_term::DeclarationBuilder;
@@ -51,7 +43,9 @@ mod acceptance
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueId;
+    use gandr_kernel_term::ValueType;
     use gandr_kernel_term::ValueTypeId;
     use quenchant_arith::arith;
 
@@ -104,14 +98,21 @@ mod acceptance
     /// `2^depth`, as the occurrence count of a depth-`depth` composite's leaf.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths, all small enough for
-    ///   the shift to be representable.
+    /// - requires: `depth < 64`, so the power of two is representable.
     /// - ensures: `2^depth`, the occurrence count of a depth-`depth`
     ///   composite's leaf.
     /// - provides: the term every closed form below is written over.
     /// - fails: never.
     /// - panics: when the shift leaves the representable range, which no pinned
     ///   depth reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: occurrence counts at depths 8, 12, and 16 and the
+    ///   depth-28 capability distinguish the exponential term from a linear or
+    ///   off-by-one substitute; the loop is checked against a shift.
+    /// - witness: `acceptance::acceptance::the_occurrence_count_is_pinned_so_the_workload_cannot_stop_being_shared`
+    /// - witness: `acceptance::acceptance::a_billion_occurrence_definition_admits_checked`
+    #[spec(requires: depth.0 < 64, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0))]
     fn two_to_the(depth: CompositeDepth) -> GoalCount
     {
         let mut count = arith::Int::from(1_u64);
@@ -124,7 +125,7 @@ mod acceptance
     /// The memoless goal-expansion law: `5 * 2^d - 2` in total.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: `depth <= 61`, so the intermediate scaled power fits.
     /// - ensures: `5 * 2^depth - 2`, the total goal expansions a memoless check
     ///   of the composite makes across both planes.
     /// - provides: the closed form the memoless side of the collapse law is
@@ -132,6 +133,13 @@ mod acceptance
     /// - fails: never.
     /// - panics: when the form leaves the representable range, which no pinned
     ///   depth reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: independently measured null-memo counts at depths 8,
+    ///   12, and 16 distinguish the coefficient, leaf offset, and selected
+    ///   plane; no execution at exponential depth 28 is claimed.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    #[spec(requires: depth.0 <= 61, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(5)).and_then(|scaled| scaled.checked_sub(2)))]
     fn memoless_total(depth: CompositeDepth) -> GoalCount
     {
         let scaled = arith::mul(
@@ -144,13 +152,20 @@ mod acceptance
     /// The memoless term-plane law: `3 * 2^d - 1` body checks.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: `depth <= 62`, so the intermediate scaled power fits.
     /// - ensures: `3 * 2^depth - 1`, the body checks a memoless check makes on
     ///   the term plane.
     /// - provides: the term-plane half of the memoless form, so neither plane's
     ///   collapse hides behind the other's numbers.
     /// - fails: never.
     /// - panics: when the form leaves the representable range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: independently measured null-memo counts at depths 8,
+    ///   12, and 16 distinguish the coefficient, leaf offset, and selected
+    ///   plane; no execution at exponential depth 28 is claimed.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    #[spec(requires: depth.0 <= 62, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(3)).and_then(|scaled| scaled.checked_sub(1)))]
     fn memoless_term(depth: CompositeDepth) -> GoalCount
     {
         let scaled = arith::mul(
@@ -163,12 +178,19 @@ mod acceptance
     /// The memoless type-plane law: `2^(d+1) - 1` type formations.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: `depth <= 62`, so the intermediate scaled power fits.
     /// - ensures: `2^(depth + 1) - 1`, the type formations a memoless check
     ///   makes on the type plane.
     /// - provides: the type-plane half of the memoless form.
     /// - fails: never.
     /// - panics: when the form leaves the representable range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: independently measured null-memo counts at depths 8,
+    ///   12, and 16 distinguish the coefficient, leaf offset, and selected
+    ///   plane; no execution at exponential depth 28 is claimed.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    #[spec(requires: depth.0 <= 62, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(2)).and_then(|scaled| scaled.checked_sub(1)))]
     fn memoless_type(depth: CompositeDepth) -> GoalCount
     {
         let doubled = arith::mul(
@@ -182,7 +204,7 @@ mod acceptance
     /// synthesis.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: nothing; every depth fits the widened sum.
     /// - ensures: `depth + 2`: one body check per spine level plus the leaf
     ///   synthesis.
     /// - provides: the term-plane half of the memoized form — linear against
@@ -191,6 +213,13 @@ mod acceptance
     /// - fails: never.
     /// - panics: when the sum leaves the representable range, which no pinned
     ///   depth reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the measured per-plane or edit-spine count at depths
+    ///   8, 12, and 16 distinguishes a missing level or extra leaf obligation;
+    ///   this is a fixture law, not a general checker cost bound.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    #[spec(ensures: |ret| ret.0 == u64::from(depth.0).saturating_add(2))]
     fn memoized_term(depth: CompositeDepth) -> GoalCount
     {
         GoalCount(u64::from(arith::add(
@@ -202,12 +231,19 @@ mod acceptance
     /// The memoized type-plane law: `d + 1` type formations.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: nothing; every depth fits the widened sum.
     /// - ensures: `depth + 1`, the type formations a memoized check makes on
     ///   the type plane.
     /// - provides: the type-plane half of the memoized form.
     /// - fails: never.
     /// - panics: when the sum leaves the representable range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the measured per-plane or edit-spine count at depths
+    ///   8, 12, and 16 distinguishes a missing level or extra leaf obligation;
+    ///   this is a fixture law, not a general checker cost bound.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    #[spec(ensures: |ret| ret.0 == u64::from(depth.0).saturating_add(1))]
     fn memoized_type(depth: CompositeDepth) -> GoalCount
     {
         GoalCount(u64::from(arith::add(
@@ -219,12 +255,19 @@ mod acceptance
     /// The `d + 1` spine levels a depth-`d` edit re-checks.
     ///
     /// # Specification
-    /// - requires: `depth` is one of the pinned depths.
+    /// - requires: nothing; every depth fits the widened sum.
     /// - ensures: `depth + 1`, the spine levels a depth-`depth` edit re-checks.
     /// - provides: the locality form the edit case is asserted against, so an
     ///   edit's cost is stated as the spine rather than as the term.
     /// - fails: never.
     /// - panics: when the sum leaves the representable range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the measured per-plane or edit-spine count at depths
+    ///   8, 12, and 16 distinguishes a missing level or extra leaf obligation;
+    ///   this is a fixture law, not a general checker cost bound.
+    /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
+    #[spec(ensures: |ret| ret.0 == u64::from(depth.0).saturating_add(1))]
     fn edit_locality(depth: CompositeDepth) -> GoalCount
     {
         GoalCount(u64::from(arith::add(
@@ -243,6 +286,13 @@ mod acceptance
     /// - fails: never.
     /// - panics: when admission refuses, which an empty constraint set never
     ///   does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: closed and dependent acceptance fixtures run with zero
+    ///   prenex parameters; a bad code is still refused. This observes the
+    ///   fixture scope rather than arbitrary landmark constraints.
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    #[spec(ensures: |ret| u32::from(ret.params()) == 0)]
     fn levels() -> LevelContext
     {
         LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
@@ -276,6 +326,19 @@ mod acceptance
     ///   checker preserves and never creates.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: depths 8, 12, and 16 distinguish linear sharing from
+    ///   exponential occurrence counts on both planes; the executable observer
+    ///   separates a unit leaf from a shared product/pair root.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    /// - witness: `acceptance::acceptance::the_occurrence_count_is_pinned_so_the_workload_cannot_stop_being_shared`
+    #[spec(ensures: |ret| if depth.0 == 0 {
+        arena.value_type(ret.0) == Some(&ValueType::Unit) && arena.value(ret.1) == Some(&Value::Unit)
+    } else {
+        matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
+            && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one == other)
+    })]
     fn shared_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -303,6 +366,20 @@ mod acceptance
     /// - fails: never.
     /// - panics: when the leaf count does not fit a machine index, which no
     ///   pinned depth reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: shared and independently minted composites have equal
+    ///   null-memo costs and verdicts at the finite comparison depths; distinct
+    ///   root children guard against accidentally constructing another shared
+    ///   root.
+    /// - witness: `acceptance::acceptance::sharing_costs_the_memoless_checker_nothing`
+    /// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
+    #[spec(ensures: |ret| if depth.0 == 0 {
+        arena.value_type(ret.0) == Some(&ValueType::Unit) && arena.value(ret.1) == Some(&Value::Unit)
+    } else {
+        matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one != other)
+            && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one != other)
+    })]
     fn unshared_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -360,6 +437,17 @@ mod acceptance
     ///   unit leaf cannot express.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the finite edit-spine cost witnesses use a
+    ///   left-injection leaf and retain every original sibling; the returned
+    ///   ladder checks adjacent sharing and its endpoint without revisiting a
+    ///   graph.
+    /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
+    #[spec(ensures: |ret| u64::try_from(ret.2.len()).ok() == Some(u64::from(depth.0).saturating_add(1))
+        && ret.2.last() == Some(&ret.1)
+        && ret.2.first().is_some_and(|leaf| matches!(arena.value(*leaf), Some(&Value::Injection(Side::Left, payload)) if arena.value(payload) == Some(&Value::Unit)))
+        && ret.2.windows(2).all(|pair| match pair { &[previous, next] => arena.value(next) == Some(&Value::Pair(previous, previous)), _ => false }))]
     fn injection_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -390,6 +478,14 @@ mod acceptance
     /// - provides: the baseline the edit's cost is measured against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: depths 8, 12, and 16 compare the unchanged shared pair
+    ///   with a single edited spine; identical root children prevent the
+    ///   baseline from silently containing an edit.
+    /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
+    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
+        && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one == other))]
     fn unedited_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -434,6 +530,26 @@ mod acceptance
     /// - fails: never.
     /// - panics: when a level below the root was not recorded, which the
     ///   fixture's own construction rules out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the measured edit cost at depths 8, 12, and 16
+    ///   separates a real content edit from reminting identical content; the
+    ///   root observer checks a changed child beside the original sibling, not
+    ///   the entire edit path.
+    /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
+    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
+        && match arena.value(ret.1) {
+            Some(&Value::Pair(original, edited)) if original != edited => {
+                if depth.0 == 0 {
+                    matches!((arena.value(original), arena.value(edited)), (Some(&Value::Injection(Side::Left, old)), Some(&Value::Injection(Side::Right, fresh)))
+                        if old != fresh && arena.value(old) == Some(&Value::Unit) && arena.value(fresh) == Some(&Value::Unit))
+                } else {
+                    matches!((arena.value(original), arena.value(edited)), (Some(&Value::Pair(old, sibling)), Some(&Value::Pair(changed, retained)))
+                        if old == sibling && changed != old && retained == sibling)
+                }
+            },
+            _ => false,
+        })]
     fn edited_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -477,6 +593,16 @@ mod acceptance
     ///   sees.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: shared, unshared, edited, and dependent fixtures are
+    ///   finalized as readable monomorphic definitions and checked by both memo
+    ///   choices; a refused body must remain a definition, not become an
+    ///   unchecked axiom.
+    /// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    #[spec(ensures: |ret| u32::from(ret.1.levels().params()) == 0 && ret.1.levels().constraints().is_empty()
+        && matches!(*ret.1.content(), DeclarationContent::Def { declared, body } if ret.0.value_type(declared).is_some() && ret.0.value(body).is_some()))]
     fn stage<Build>(build: Build) -> (TermArena, Declaration)
     where
         Build: FnOnce(&mut TermArena) -> (ValueTypeId, ValueId),
@@ -500,6 +626,16 @@ mod acceptance
     /// - provides: the ordinary measurement path of this suite.
     /// - fails: never — the verdict is returned rather than propagated.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the named acceptance or poison fixtures stage readable
+    ///   roots, then observe exact verdicts and per-plane counts. Root
+    ///   readability is executable; support-session provenance is not
+    ///   recoverable from an arena id.
+    /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    #[spec(requires: arena.value_type(declaration.declared_id()).is_some()
+        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), _ => true })]
     fn check_with<Memo>(
         arena: &mut TermArena,
         declaration: &Declaration,
@@ -530,6 +666,16 @@ mod acceptance
     ///   lifetime made structural.
     /// - fails: never — the verdict is returned rather than propagated.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the named acceptance or poison fixtures stage readable
+    ///   roots, then observe exact verdicts and per-plane counts. Root
+    ///   readability is executable; support-session provenance is not
+    ///   recoverable from an arena id.
+    /// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
+    /// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
+    #[spec(requires: arena.value_type(declaration.declared_id()).is_some()
+        && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), _ => true })]
     fn check_in_session<Memo>(
         arena: &mut TermArena,
         declaration: &Declaration,
@@ -561,16 +707,24 @@ mod acceptance
     /// # Specification
     /// - requires: `build` mints the same content into every arena it is
     ///   handed.
-    /// - ensures: the memoless verdict, having asserted that the live memo
-    ///   reached the same verdict and, on a refusal, the very same refusal.
-    ///   Each run gets its own arena built by the same closure, so one run's
-    ///   checker intermediates cannot reach the other.
+    /// - ensures: both verdicts are returned, having asserted exact agreement,
+    ///   including the refusal payload. Each run gets its own arena built by
+    ///   the same closure, so checker intermediates cannot cross between runs.
     /// - provides: the zero-drift differential every acceptance and refusal in
     ///   this suite is run through.
-    /// - fails: the memoless refusal, returned so a caller can assert on it.
+    /// - fails: never — both verdicts retain any typed refusal.
     /// - panics: when the two verdicts disagree, which is the assertion this
     ///   harness exists for.
-    fn verdicts_agree<Build>(build: Build) -> Result<(), KernelError>
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2: live and null memo verdicts agree on shared, unshared,
+    ///   edited, and binder-sensitive fixtures at depths 4 and 8, plus the
+    ///   dependent identity and its bad-code counterpart. This catches
+    ///   memo-induced drift, not an error shared by both runs.
+    /// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    #[spec(ensures: |ret| ret.0 == ret.1)]
+    fn verdicts_agree<Build>(build: Build) -> (Result<(), KernelError>, Result<(), KernelError>)
     where
         Build: Fn(&mut TermArena) -> (ValueTypeId, ValueId),
     {
@@ -593,7 +747,7 @@ mod acceptance
                 "a refusal must be the same refusal, not merely a refusal"
             );
         }
-        memoless
+        (memoless, memoized)
     }
 
     // ---------------------------------------------------------------------------
@@ -887,17 +1041,17 @@ mod acceptance
         for depth in [CompositeDepth(4), CompositeDepth(8)] {
             assert_eq!(
                 Ok(()),
-                verdicts_agree(|arena| shared_composite(arena, depth)),
+                verdicts_agree(|arena| shared_composite(arena, depth)).0,
                 "the shared composite"
             );
             assert_eq!(
                 Ok(()),
-                verdicts_agree(|arena| unshared_composite(arena, depth)),
+                verdicts_agree(|arena| unshared_composite(arena, depth)).0,
                 "its unshared spelling"
             );
             assert_eq!(
                 Ok(()),
-                verdicts_agree(|arena| edited_composite(arena, depth)),
+                verdicts_agree(|arena| edited_composite(arena, depth)).0,
                 "and the edited spelling"
             );
         }
@@ -907,7 +1061,8 @@ mod acceptance
             let declared = arena.value_type_base(BaseType::Integer);
             let body = arena.value_unit();
             (declared, body)
-        });
+        })
+        .0;
         assert!(
             matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
             "unit does not inhabit the integers: {refused:?}"
@@ -938,7 +1093,8 @@ mod acceptance
                 let declared = arena.value_type_product(first_type, second_type);
                 let body = arena.value_pair(first_thunk, second_thunk);
                 (declared, body)
-            }),
+            })
+            .0,
             "one closed body under binders of two different types"
         );
 
@@ -967,7 +1123,8 @@ mod acceptance
                 let declared = arena.value_type_product(first_type, second_type);
                 let body = arena.value_pair(first_thunk, second_thunk);
                 (declared, body)
-            }),
+            })
+            .0,
             "one binder-reading body under binders of two different types"
         );
     }
@@ -1363,6 +1520,27 @@ mod acceptance
     ///   serve one type's level for another's.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the dependent identity is accepted by live and null
+    ///   memo paths, and its term census exceeds the closed counterpart because
+    ///   both code obligations are drained. Fixed-depth node views observe
+    ///   binder indices without rerunning the checker.
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    /// - witness: `acceptance::acceptance::draining_code_obligations_reaches_the_checking_machine`
+    #[spec(ensures: |ret| {
+        let Some(&ValueType::Thunk(outer)) = arena.value_type(ret.0) else { return false; };
+        let Some(&CompType::Pi { domain: universe, codomain: inner }) = arena.comp_type(outer) else { return false; };
+        let Some(&CompType::Pi { domain, codomain: returned }) = arena.comp_type(inner) else { return false; };
+        let Some(&CompType::Returner(result)) = arena.comp_type(returned) else { return false; };
+        let Some(&Value::Thunk(lambda)) = arena.value(ret.1) else { return false; };
+        let Some(&Computation::Lambda(inner_lambda)) = arena.computation(lambda) else { return false; };
+        let Some(&Computation::Lambda(body)) = arena.computation(inner_lambda) else { return false; };
+        matches!(arena.value_type(universe), Some(&ValueType::Universe { .. }))
+            && matches!(arena.value_type(domain), Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))))
+            && matches!(arena.value_type(result), Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&Value::Variable(DeBruijnIndex::from(1_u32))))
+            && matches!(arena.computation(body), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))))
+    })]
     fn dependent_identity(arena: &mut TermArena) -> (ValueTypeId, ValueId)
     {
         let zero = level(LevelConstant::from(0));
@@ -1398,6 +1576,23 @@ mod acceptance
     ///   is asserted in both directions.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: both memo paths return a value-type mismatch when the
+    ///   result type decodes the unit value rather than a universe code; the
+    ///   fixed-depth observer distinguishes the bad code from an otherwise
+    ///   ordinary identity body.
+    /// - witness: `acceptance::acceptance::dependent_checking_agrees_memoized_and_memoless`
+    #[spec(ensures: |ret| {
+        let Some(&ValueType::Thunk(arrow)) = arena.value_type(ret.0) else { return false; };
+        let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(arrow) else { return false; };
+        let Some(&CompType::Returner(result)) = arena.comp_type(codomain) else { return false; };
+        let Some(&Value::Thunk(lambda)) = arena.value(ret.1) else { return false; };
+        let Some(&Computation::Lambda(body)) = arena.computation(lambda) else { return false; };
+        arena.value_type(domain) == Some(&ValueType::Unit)
+            && matches!(arena.value_type(result), Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&Value::Unit))
+            && matches!(arena.computation(body), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))))
+    })]
     fn bad_code_identity(arena: &mut TermArena) -> (ValueTypeId, ValueId)
     {
         let zero = level(LevelConstant::from(0));
@@ -1428,10 +1623,10 @@ mod acceptance
     {
         assert_eq!(
             Ok(()),
-            verdicts_agree(dependent_identity),
+            verdicts_agree(dependent_identity).0,
             "the dependent identity admits at both memo instantiations"
         );
-        let refusal = verdicts_agree(bad_code_identity);
+        let refusal = verdicts_agree(bad_code_identity).0;
         assert!(
             matches!(refusal, Err(KernelError::ValueTypeMismatch(_))),
             "and a code that is not of its declared universe is refused at both, alike: {refusal:?}"

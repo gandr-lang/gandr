@@ -39,12 +39,12 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 **Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
 
-**How.** The checker is a defunctionalized machine over a goal register, a produced register, a heap frame stack and an explicit typing-context stack, never mutually recursive methods bounded by a depth budget, so it is total on depth. The arm-by-arm correspondence table in the `check` module docs is the trusted-base audit artifact: a reviewer walks it to confirm the machine is the judgement. Conversion is structural comparison with a positive-only id-equality fast path: equal ids discharge a pair, unequal ids decide nothing. Both machines consult a check memo keyed by content, so a shared subterm is checked once per distinct support, and the memo lives for one check call. Admission truncates the arena on both verdicts, clamped at the admission floor so a rollback never deletes committed content.
+**How.** The checker is a defunctionalized machine over a goal register, a produced register, a heap frame stack and an explicit typing-context stack, never mutually recursive methods bounded by a depth budget, so it is total on depth. The arm-by-arm correspondence table in the `check` module docs is the trusted-base audit artifact: a reviewer walks it to confirm the machine is the judgement. Conversion is structural comparison with a positive-only id-equality fast path: equal readable ids discharge a pair; unreadable roots refuse, and unequal ids require the structural walk. Both machines consult a check memo keyed by content, so a shared subterm is checked once per distinct support, and the memo lives for one check call. Admission truncates the arena on both verdicts, clamped at the admission floor so a rollback never deletes committed content.
 
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration` and `AxiomReport`. The arena is truncated on both verdicts: to content-end on success, to the declaration's content-start on rejection, clamped at the admission floor.
-- **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free.
+- **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free. Node reads borrow arena storage; frames retain child ids and levels needed by synthesized types, without cloning literal payloads merely to dispatch a rule.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, unfolding only what `Unfoldings` defines and stopping at a `ReplayBudget`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, whose `ReplayRefusal` names the `TracePosition` that did not replay.
@@ -56,6 +56,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Expected features
 
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it (see [Staging order and admission](#staging-order-and-admission)).
+- **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history; the position alone cannot establish that relationship.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, a wrong one can make the kernel prove anything, and `audit` reports every declaration that rests on it.
 - **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value, an operator's body is closed beyond its parameters, and a constant given neither is opaque.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
@@ -127,6 +128,10 @@ The seam crate names no term type, so everything that makes a memo sound is a co
 
 The key carries no arena id, so dangling ids are not why the memo lives for one call. The lifetime rests on the two-wall discipline directly: a hit claims only its own history, and no kernel-checked support discipline exists. An outcome also carries arena ids even though the key does not, so an entry outliving its arena would hand back a type that no longer resolves.
 
+The verdict differential excludes operational refusal: with sound per-call histories, the typing answers agree when neither run reaches `CodeObligationCeiling`. That ceiling counts processed code obligations, not distinct supports. A memo can suppress duplicates, so it can accept a well-typed declaration that a memoless check refuses operationally. The boundary witness checks the exact allowed count, one excess occurrence under the null memo, and acceptance of the same shared above-limit declaration under a fresh live memo.
+
+The alternative is a support-based budget independent of memo policy. The occurrence budget is retained because it directly bounds the drain loop; reconsider it if callers need policy-independent resource refusals.
+
 ## Key derivation
 
 Content is named by a content id, assigned by interning each node's one-level record — its tag, its inline payload, and its children's already-assigned ids — bottom-up and exactly. No hash decides an id. The digest above it is a positive fast path only: different digests prove disagreement, equal digests hand off to byte equality of the canonical support encodings, and a collision costs one comparison and degrades to a miss.
@@ -173,11 +178,13 @@ A staged declaration outlives its builder's borrow, so staging order need not be
 
 **Content-start below outstanding content is refused.** Stage one declaration, stage a second, then offer the first: the second's nodes sit above the first's content-start while its `StagedDeclaration` is live, the floor lies below both, and a contiguous truncation cannot spare a disjoint region. Rolling back would hand the producer dangling roots, or free indices a later staging re-mints so that a subsequent admission checks other content under that name. The environment tracks the content-start mark of every staged, unresolved declaration and answers `KernelError::OutstandingStagedContent`, naming how many sit above.
 
-A mark is resolved by admitting, bypassing or `Environment::abandon`; abandoning a staging session before it finishes resolves its mark too. `abandon` truncates when nothing outstanding sits above the mark and otherwise retains the region as an orphan, the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
+A mark is resolved by admitting, bypassing or `Environment::abandon`. Before a borrowing session finishes, both explicit discard and ordinary scope exit roll back its builder and release its final registration. The claim guard holds only the exclusive tracker borrow: no intervening registration is possible, so release pops that final entry without an allocation, state flag or duplicate watermark. All four finishers disarm the guard when responsibility passes to the `StagedDeclaration`.
+
+`abandon` truncates when nothing outstanding sits above the mark and otherwise retains the region as an orphan, the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
 
 ## Sharing-aware conversion
 
-Conversion carries a per-call set of discharged pairs. Without it, two roots that share a subgraph re-walk every shared pair once per occurrence, so the work is the expansion of the compared graphs rather than their size — exponential in sharing depth on a term a decoder handed over. A pair discharged once stays discharged: over this vocabulary a type pair's verdict is a function of the two nodes alone, and any pair that fails returns immediately, so nothing is recorded as discharged while its own subtree is undecided. The set holds only pairs, creates no sharing, is consulted for nothing but skipping a repeat inside one comparison, and dies with the call.
+Conversion carries a per-call set of expanded pairs. Without it, shared subgraphs are re-walked once per occurrence, making work exponential in sharing depth. A pair enters the set before its children are compared; its first expansion leaves every required child on the worklist. Repeated pairs therefore skip expansion without dropping those obligations. Any failing child refuses immediately, and conversion requires an empty worklist. The set holds only pairs, creates no sharing, and dies with the call.
 
 The set bounds the conversion path rather than decoding, so it sits outside the four amplification budgets of `gandr-kernel-term`. It guards a public surface — a direct arena caller is not behind the decoder's expanded-work gate — and it has no extensional face.
 
@@ -193,7 +200,7 @@ The dependent arrow forms at the join of its children like the non-dependent one
 
 Five sites in the checker consume them. A variable synthesis raises its context slot past the binders between the slot and the use site, and an application at a dependent head instantiates the codomain at its argument. **A type keeps the scope it was written in**: a plain arrow's codomain is written outside the arrow's binder, as formation and the reach walk read it, so a lambda checked against it raises the codomain past the slot it pushes, and a bind or a case raises its expected type past its binder the same way. A type synthesized under the binder of a bind or a case branch is strengthened back out of it: the binder's variable is instantiated at the index one past the outer context, which nothing outside the binder can name, and the reach walk refuses the result as `BinderEscape` when that index survives — exactly when the type mentioned the bound value. A dedicated occurrence walk would answer the same question as a third machine; the instantiation and the reach walk already answer it, so it would duplicate both. While every type was closed each of these steps was the identity, which is how the plain arrow's lambda rule could once share the dependent arrow's.
 
-Shifting a value type and instantiating a computation type are the public rewrite surface; the other family faces are crate-visible. A type carrying no code rewrites to itself and the walk hands back the node it was given, so the common case costs nothing and the sharing a decode preserved survives.
+Shifting a value type and instantiating a computation type are the public rewrite surface; the other family faces are crate-visible. Reconstruction preserves unchanged nodes and borrows their payloads, cloning a level only when a changed child needs a new node. A zero shift returns its subject directly, and a variable already at the index ceiling is not re-minted. An unreadable root bypasses memo lookup: two missing ids have no content whose equality would justify adopting one as the other's result. For other goals a memo hit may reuse an equal-content node, so identity preservation is a reconstruction property rather than a promise across all hits.
 
 **The audit follows codes.** A declaration's type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report would miss the second if it followed only the first. A quote crosses back, so the one walk behind both sets follows a value into the type it quotes as well as a type into the code it decodes. The sealing-provenance set does not follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
 
@@ -415,16 +422,7 @@ Removing the outstanding-staged-content guard from `add_decl` is killed by the w
 
 ## Specification attributes
 
-The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors expressible requirements and postconditions, and each predicate appears verbatim in its prose clause. Both admission choke points carry one:
-
-- `Environment::add_decl`: on success exactly one entry is appended and the admission floor ends at the arena's own watermark, the machine form of "the checker's intermediates were truncated rather than committed". Whether the declaration is well-typed is what the body decides and is not restated.
-- `Environment::add_decl_unchecked`: the same, plus the entry carrying `Admission::Unchecked` and the arena watermark unmoved, so the warned bypass cannot quietly grow or shrink the arena.
-- `check_sealing_provenance`: the ascending half, stated as a sortedness test rather than through the body's own previous-index loop. The occurrence half would re-derive the projected-atom set and double a walk over the declared type.
-- `StagedMarks::resolve` and `ContentEncoding::put_word`: exactly one mark gone when one was held, and the varint terminator.
-
-Further attributes check the level-scope boundary, the universe-order precondition, sealed-atom universe lookup, conversion mode-switch results, outstanding-mark counts, rewrite counts, and both type-witness projections. Conversion and witness postconditions repeat their named query only in the enforcing lane; no capture allocates or runs extra work in the ordinary lane.
-
-Each prose-only block names its boundary in `- provides:`: a cross-input law, arena provenance, a lifecycle transition, or a semantic graph judgement needing an independent traversal. The two const register projections keep their API without attributes, because the attribute's expansion calls a non-const evaluator (`E0015`). Runtime checks do not establish the adequacy hypotheses; the witnesses do.
+Executable clauses, finite adequacy and explicit exemptions are indexed in the [crate-level contract boundaries](src/lib.rs).
 
 ## Experimental stage universe
 

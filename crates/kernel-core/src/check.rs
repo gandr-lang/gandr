@@ -190,28 +190,40 @@ use crate::witness::value_type_witness;
 /// The memo an unsupplied check builds for itself: the default path.
 pub type DefaultMemo = OrderedMemo<NodeSupport, NodeOutcome>;
 
-/// Resolve a value id, or the fail-closed arena fault.
+/// Borrow a value node, or the fail-closed arena fault.
 ///
-/// The clone is shallow — a node's children are `Copy` ids — so it costs a
-/// constant and releases the arena borrow before synthesis mints into it.
+/// Child ids are copied; a lift frame owns the level its synthesized type
+/// needs. Literal payloads stay in the arena: the lookup does not clone their
+/// bytes.
 ///
 /// # Specification
 /// - requires: nothing; an id that resolves to nothing is admissible input and
 ///   is refused.
-/// - ensures: a shallow clone of the node at `id`, which releases the arena
-///   borrow before synthesis mints into it.
-/// - provides: the fail-closed read every value rule goes through.
+/// - ensures: a reference to exactly the arena node at `id`.
+/// - provides: the fail-closed borrow every value rule uses; callers retain
+///   only the data their later frames need before mutating the arena.
 /// - fails: `KernelError::ArenaFault` for an id that resolves to no node, so a
 ///   resolution defect rejects the declaration rather than proceeding on a
 ///   fabricated node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readable variable produces its context type; truncating
+///   value and computation roots instead produces the exact arena fault without
+///   fabricating a type or growing the arena.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.value(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
 #[inline]
 fn read_value(
     arena: &TermArena,
     id: ValueId,
-) -> Result<Value, KernelError>
+) -> Result<&Value, KernelError>
 {
-    arena.value(id).cloned().ok_or(KernelError::ArenaFault)
+    arena.value(id).ok_or(KernelError::ArenaFault)
 }
 
 /// Resolve a computation id, or the fail-closed arena fault.
@@ -222,16 +234,24 @@ fn read_value(
 /// - provides: the fail-closed read every computation rule goes through.
 /// - fails: `KernelError::ArenaFault` for an id that resolves to no node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an application produces its codomain and a return binds
+///   its value; an unreadable computation root instead gives the arena fault.
+/// - witness: `check::tests::an_application_produces_the_codomain`
+/// - witness: `check::tests::a_bind_binds_the_returned_value`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.computation(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
 #[inline]
 fn read_computation(
     arena: &TermArena,
     id: ComputationId,
-) -> Result<Computation, KernelError>
+) -> Result<&Computation, KernelError>
 {
-    arena
-        .computation(id)
-        .cloned()
-        .ok_or(KernelError::ArenaFault)
+    arena.computation(id).ok_or(KernelError::ArenaFault)
 }
 
 /// A value-type shape mismatch, with a content witness of the offending type.
@@ -417,7 +437,9 @@ enum TypeLevelFrame
 /// well-formedness gate, computed iteratively so it is total on any depth.
 ///
 /// # Specification
-/// - requires: nothing — an unreadable root refuses rather than panicking.
+/// - requires: the judgement and context belong to this arena; the memo and
+///   session hold only this call's history. An unreadable root is admissible
+///   input and refuses rather than panicking.
 /// - ensures: `Ok(level)` — the type's universe level — exactly when every
 ///   embedded level is in scope, every lift strictly raises, every sealed atom
 ///   resolves to an admitted abstract-type declaration, every static Pi stands
@@ -428,9 +450,9 @@ enum TypeLevelFrame
 ///   it is total on any type depth.
 /// - provides: type formation for the declared type and for the machine's lift
 ///   synthesis, with the memo consulted on **this** plane so the type half's
-///   collapse is real rather than assumed. Formation remains prose-only: the
-///   level and admission judgement requires the full formation walk; repeating
-///   it would neither independently validate the result nor establish totality.
+///   collapse is real rather than assumed. The predicate checks result scope
+///   and the null memo's closed-leaf rule. The full formation judgement and
+///   provenance still require the rule derivation, not a second formation walk.
 /// - fails: [`KernelError::LevelVariableOutOfScope`],
 ///   [`KernelError::LevelArithmetic`], [`KernelError::UniverseViolation`],
 ///   [`KernelError::LevelOracleFault`], [`KernelError::NotAnAbstractType`],
@@ -456,10 +478,21 @@ enum TypeLevelFrame
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |level| match root {
-    TypeLevelGoal::Value(id) if matches!(arena.value_type(id), Some(&ValueType::Unit | &ValueType::Empty | &ValueType::Base(_))) => *level == Level::zero(),
-    _ => true,
-}))]
+/// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
+#[spec(ensures: |ret| {
+    let closed_leaf = match root {
+        TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty)),
+        TypeLevelGoal::Comp(_) => false,
+    };
+    (ret.is_err() || ret.as_ref().is_ok_and(|level| judgement.levels.check_level_scope(level).is_ok()))
+        && (matches!(M::ACTIVITY, MemoActivity::Active) || !closed_leaf
+            || ret.as_ref().is_ok_and(|level| *level == Level::zero()))
+        && (matches!(M::ACTIVITY, MemoActivity::Active) || match root {
+            TypeLevelGoal::Value(id) if matches!(arena.value_type(id), Some(&ValueType::PathUniverse(..))) =>
+                ret.as_ref().map_or(true, |level| *level == Level::zero()),
+            _ => true,
+        })
+})]
 fn type_level<M>(
     arena: &TermArena,
     judgement: Judgement<'_>,
@@ -880,6 +913,11 @@ impl Produced
     /// - witness: `acceptance::acceptance::a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed`
     ///
     /// [`Absent::Formation`]: term_outcome::Absent::Formation
+    #[spec(ensures: |ret| matches!((outcome, &ret),
+        (NodeOutcome::ValueType(_), Maybe::Present(Self::ValueType(_)))
+        | (NodeOutcome::CompType(_), Maybe::Present(Self::CompType(_)))
+        | (NodeOutcome::Checked, Maybe::Present(Self::Checked))
+        | (NodeOutcome::Formed(_), Maybe::Absent(term_outcome::Absent::Formation))))]
     #[inline]
     const fn of_outcome(outcome: &NodeOutcome) -> Maybe<Self, term_outcome::Absent>
     {
@@ -894,25 +932,27 @@ impl Produced
     /// Project a synthesized value type out of the register.
     ///
     /// # Specification
-    /// - requires: the register was set by a value-synthesizing goal, which the
-    ///   module's correspondence table is the wiring audit for.
-    /// - ensures: `Ok(id)` — the produced value-type id.
+    /// - requires: nothing; every register state is admissible input.
+    /// - ensures: a value-type register projects its id; either other state
+    ///   returns the precise value-polarity fault.
     /// - provides: the fail-closed projection every value-consuming frame
-    ///   takes. The const API stays prose-only: the pinned `anodized` expansion
-    ///   calls a non-const evaluator (`E0015`).
-    /// - fails: [`KernelError::CheckerRegisterFault`] on a non-value register,
-    ///   which is unreachable when the machine is wired as its table states and
-    ///   is surfaced rather than trusted, so a wiring defect rejects the
-    ///   declaration instead of fabricating a type that could wrongly convert.
+    ///   takes, so a wiring defect refuses instead of fabricating a type.
+    /// - fails: [`KernelError::CheckerRegisterFault`] with
+    ///   [`RegisterFault::ExpectedValueType`] on a non-value register.
     /// - panics: none.
     ///
     /// # Errors
     /// [`KernelError::CheckerRegisterFault`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the fault arm is unreachable through the public
-    ///   surface by construction, so it is pinned directly at the projection.
+    /// - hypothesis: L3 — the variable fixture preserves its selected context
+    ///   type; both other register states produce the exact polarity fault.
+    /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
     /// - witness: `check::tests::register_polarity_faults_fail_closed`
+    #[spec(ensures: |ret| matches!((self, &ret),
+        (Self::ValueType(_), Ok(_))
+        | (Self::CompType(_) | Self::Checked,
+            Err(KernelError::CheckerRegisterFault(RegisterFault::ExpectedValueType)))))]
     #[inline]
     const fn value_type(self) -> Result<ValueTypeId, KernelError>
     {
@@ -927,22 +967,27 @@ impl Produced
     /// Project a synthesized computation type out of the register.
     ///
     /// # Specification
-    /// - requires: the register was set by a computation-synthesizing goal.
-    /// - ensures: `Ok(id)` — the produced computation-type id.
+    /// - requires: nothing; every register state is admissible input.
+    /// - ensures: a computation-type register projects its id; either other
+    ///   state returns the precise computation-polarity fault.
     /// - provides: the fail-closed projection every computation-consuming frame
-    ///   takes; see [`Self::value_type`] for the posture. The const API stays
-    ///   prose-only: the pinned `anodized` expansion calls a non-const
-    ///   evaluator (`E0015`).
-    /// - fails: [`KernelError::CheckerRegisterFault`] on a non-computation
-    ///   register.
+    ///   takes, with the same refusal discipline as [`Self::value_type`].
+    /// - fails: [`KernelError::CheckerRegisterFault`] with
+    ///   [`RegisterFault::ExpectedCompType`] on a non-computation register.
     /// - panics: none.
     ///
     /// # Errors
     /// [`KernelError::CheckerRegisterFault`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::value_type`].
+    /// - hypothesis: L3 — forcing a thunk preserves its computation type; both
+    ///   other register states produce the exact polarity fault.
+    /// - witness: `check::tests::a_force_unwraps_a_thunk`
     /// - witness: `check::tests::register_polarity_faults_fail_closed`
+    #[spec(ensures: |ret| matches!((self, &ret),
+        (Self::CompType(_), Ok(_))
+        | (Self::ValueType(_) | Self::Checked,
+            Err(KernelError::CheckerRegisterFault(RegisterFault::ExpectedCompType)))))]
     #[inline]
     const fn comp_type(self) -> Result<CompTypeId, KernelError>
     {
@@ -1175,6 +1220,12 @@ quenchant_shape::reason_enum! {
 /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
 ///
 /// [`Absent::OutOfScope`]: context_slot::Absent::OutOfScope
+#[spec(ensures: |ret| usize::try_from(u32::from(index)).ok()
+    .and_then(|steps| context.iter().rev().nth(steps))
+    .map_or_else(
+        || matches!(&ret, Maybe::Absent(context_slot::Absent::OutOfScope)),
+        |expected| matches!(&ret, Maybe::Present(found) if found == expected),
+    ))]
 #[inline]
 fn slot(
     context: &[ValueTypeId],
@@ -1226,6 +1277,13 @@ fn slot(
 /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
 ///
 /// [`Absent::Unbound`]: variable_type::Absent::Unbound
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match (slot(context, index), &ret) {
+            (Maybe::Present(_), &Maybe::Present(_)) => true,
+            (Maybe::Absent(context_slot::Absent::OutOfScope), &Maybe::Absent(variable_type::Absent::Unbound)) => arena.watermark() == entry_mark,
+            _ => false,
+        })]
 #[inline]
 fn lookup(
     arena: &mut TermArena,
@@ -1269,6 +1327,9 @@ fn lookup(
 ///   unweakened reading by the variable it would otherwise name.
 /// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
 /// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[spec(captures: [entry_mark = arena.watermark(), entry_head = arena.comp_type(subject).map(core::mem::discriminant)],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && arena.comp_type(ret).map(core::mem::discriminant) == entry_head)]
 #[inline]
 fn weakened(
     arena: &mut TermArena,
@@ -1313,6 +1374,13 @@ fn weakened(
 /// - hypothesis: L3 — a type naming a code bound outside the bind, which
 ///   lowers, and a type naming the bound value, which is refused.
 /// - witness: `check::tests::a_bind_strengthens_its_type_past_its_binder`
+#[spec(captures: [entry_mark = arena.watermark(), entry_head = arena.comp_type(subject).map(core::mem::discriminant)],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match ret {
+            Ok(lowered) => arena.comp_type(lowered).map(core::mem::discriminant) == entry_head,
+            Err(KernelError::BinderEscape { .. }) => true,
+            Err(_) => false,
+        })]
 fn strengthened(
     arena: &mut TermArena,
     session: &mut SupportContext,
@@ -1359,6 +1427,10 @@ fn strengthened(
 /// - witness: `env::tests::a_forward_constant_reference_is_unbound`
 ///
 /// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
+#[spec(ensures: |ret| entries.get(usize::from(index)).map_or_else(
+    || matches!(&ret, Maybe::Absent(constant_type::Absent::Unadmitted)),
+    |entry| matches!(&ret, Maybe::Present(found) if *found == entry.declared_id()),
+))]
 #[inline]
 fn resolve_constant(
     entries: &[AdmittedDeclaration],
@@ -1376,18 +1448,20 @@ fn resolve_constant(
 ///
 /// # Specification
 /// - requires: `context` is the initial typing context, empty for a
-///   declaration's body; `entries` is the environment's admission log.
+///   declaration's body; its types and the admission log belong to this arena.
+///   The memo and session hold only this call's history.
 /// - ensures: `Ok(produced)` — a synthesized type for a synthesis goal, or the
 ///   checked answer for a checking goal — exactly when the term checks or
 ///   synthesizes under this subset's rules. The walk is iterative over a heap
 ///   frame stack and an explicit context stack, so it is total on any term
-///   depth. Synthesized types are minted into `arena` as intermediates the
-///   caller truncates after the verdict. The verdict is **independent of the
-///   memo**: the same function at the null memo returns the same answer.
-/// - provides: the shared engine of every checking and synthesis judgement. The
-///   typing, context-origin, totality, and memo-independence claims remain
-///   prose-only: they require rule derivations and comparisons of whole
-///   executions, not a predicate over one return value.
+///   depth. Synthesized types are appended to `arena` as readable intermediates
+///   of the goal's family, for the caller to truncate after the verdict. A
+///   successful run can defer code obligations; the declaration driver drains
+///   them and can refuse at its occurrence-based operational ceiling.
+/// - provides: the shared checking and synthesis engine. The predicate checks
+///   result polarity, readable synthesized roots and preservation of the arena
+///   prefix. Typing and provenance require the rule derivation; final verdict
+///   agreement across memo policies excludes operational ceiling refusals.
 /// - fails: any [`KernelError`] a rule surfaces.
 /// - panics: none.
 ///
@@ -1395,11 +1469,10 @@ fn resolve_constant(
 /// Any [`KernelError`].
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — the differential over the corpus pins memoized against
-///   memoless, verdict for verdict, and the golden corpus pins acceptance of
-///   well-typed declarations against rejection of ill-typed ones; the L3
-///   residues are each rule's failure arm, pinned by negative unit goldens, and
-///   totality on adversarial depth, pinned by a small-stack deep-chain witness.
+/// - hypothesis: L2/L3 — the finite corpus separates selected checking and
+///   synthesis rules and their refusal arms, and compares memo policies below
+///   the operational ceiling. The deep-chain witness covers its stated depth on
+///   a small stack, not every possible artifact or resource bound.
 /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
 /// - witness: `check::tests::an_injection_is_not_inferable`
 /// - witness: `check::tests::an_injection_checks_against_its_sum`
@@ -1412,12 +1485,14 @@ fn resolve_constant(
 /// - witness: `check::tests::a_case_requires_convergent_branches`
 /// - witness: `check::tests::a_case_propagates_the_expected_type`
 /// - witness: `check::tests::a_bind_binds_the_returned_value`
-#[spec(ensures: |ret| match ret {
-    Ok(Produced::ValueType(ty)) => matches!(initial, Goal::SynthValue(_)) && arena.value_type(ty).is_some(),
-    Ok(Produced::CompType(ty)) => matches!(initial, Goal::SynthComp(_)) && arena.comp_type(ty).is_some(),
-    Ok(Produced::Checked) => matches!(initial, Goal::CheckValue(..) | Goal::CheckComp(..)),
-    Err(_) => true,
-})]
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && match (initial, &ret) {
+            (Goal::SynthValue(_), &Ok(Produced::ValueType(id))) => arena.value_type(id).is_some(),
+            (Goal::SynthComp(_), &Ok(Produced::CompType(id))) => arena.comp_type(id).is_some(),
+            (Goal::CheckValue(_, _) | Goal::CheckComp(_, _), &Ok(Produced::Checked)) | (_, &Err(_)) => true,
+            _ => false,
+        })]
 fn run<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
@@ -1462,12 +1537,13 @@ where
         let mut produced: Produced = match recalled {
             | Some(outcome) => outcome,
             | None => match goal {
-                | Goal::SynthValue(id) => match read_value(arena, id)? {
+                | Goal::SynthValue(id) => match *read_value(arena, id)? {
                     | Value::SessionPath {
                         path_type,
-                        evidence,
+                        ref evidence,
                         payload_paths,
                     } => {
+                        let evidence = alloc::sync::Arc::clone(evidence);
                         let _level = type_level(
                             arena,
                             judgement,
@@ -1579,8 +1655,8 @@ where
                         goal = Goal::SynthComp(body);
                         continue 'expand;
                     },
-                    | Value::Lift { target, body } => {
-                        frames.push(Frame::SynthLift(target));
+                    | Value::Lift { ref target, body } => {
+                        frames.push(Frame::SynthLift(target.clone()));
                         goal = Goal::SynthValue(body);
                         continue 'expand;
                     },
@@ -1637,7 +1713,7 @@ where
                         continue 'expand;
                     },
                 },
-                | Goal::CheckValue(id, expected) => match read_value(arena, id)? {
+                | Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
                     | Value::Injection(side, body) => match arena.value_type(expected) {
                         | Some(&ValueType::Sum(left, right)) => {
                             let summand = match side {
@@ -1699,7 +1775,7 @@ where
                         continue 'expand;
                     },
                 },
-                | Goal::SynthComp(id) => match read_computation(arena, id)? {
+                | Goal::SynthComp(id) => match *read_computation(arena, id)? {
                     | Computation::Absurd(_) => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::Absurd,
@@ -1745,7 +1821,7 @@ where
                         });
                     },
                 },
-                | Goal::CheckComp(id, expected) => match read_computation(arena, id)? {
+                | Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
                     | Computation::Absurd(value) => {
                         let empty = arena.value_type_empty();
                         goal = Goal::CheckValue(value, empty);
@@ -1861,7 +1937,7 @@ where
                     endpoints,
                     context: outer,
                 } => {
-                    let Value::PathEquiv { backward, .. } = read_value(arena, path)?
+                    let Value::PathEquiv { backward, .. } = *read_value(arena, path)?
                     else {
                         return Err(KernelError::ArenaFault);
                     };
@@ -1885,11 +1961,13 @@ where
                         path_type,
                         forward,
                         backward,
-                        evidence,
-                    } = read_value(arena, path)?
+                        ref evidence,
+                    } = *read_value(arena, path)?
                     else {
                         return Err(KernelError::ArenaFault);
                     };
+                    // Replay mutates the arena; retain only the evidence across that borrow.
+                    let evidence = alloc::sync::Arc::clone(evidence);
                     let watermark = arena.watermark();
                     let source = crate::path_universe::coverage::round_trip(
                         arena,
@@ -2265,16 +2343,15 @@ fn check_sealing_provenance(
 /// # Specification
 /// - requires: `declaration`'s content roots were minted into `arena`;
 ///   `entries` is the environment's admission log.
-/// - ensures: `Ok(())` exactly when the declared type forms, the sealing
-///   provenance re-derives, and a definition's body checks against its declared
-///   type in the empty context. An axiom checks only its type; a sealed atom
-///   checks only that its kind is a universe. Synthesized intermediates are
-///   minted into `arena` for the caller to truncate.
-/// - provides: the body check the choke point runs, with the memo on by default
-///   on both machines. Arena and admission-log provenance carry no runtime
-///   identity token; the typing and formation judgement requires an independent
-///   checker. These clauses remain prose-only rather than repeat the checked
-///   computation.
+/// - ensures: `Ok(())` when the declared type forms, sealing provenance
+///   re-derives, a definition's body checks, and every deferred code checks
+///   within the operational ceiling. An axiom checks only its type; a sealed
+///   atom checks only that its kind is a universe. The original arena prefix
+///   remains, and successful content roots are readable. Synthesized
+///   intermediates are appended for the caller to truncate.
+/// - provides: the body check the choke point runs, with a fresh live memo on
+///   both machines. Full typing and admission-log provenance still require the
+///   rule derivation; an operational refusal does not establish ill-typedness.
 /// - fails: any [`KernelError`] the checker surfaces.
 /// - panics: none.
 ///
@@ -2282,15 +2359,23 @@ fn check_sealing_provenance(
 /// Any [`KernelError`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the corpus pins acceptance of well-typed declarations and
-///   rejection of ill-typed ones, and the memo adds no decision surface of its
-///   own, so its adequacy is the differential's: the memoized answer is the
-///   memoless answer. The L3 residues are the three content arms.
+/// - hypothesis: L2/L3 — the selected definitions, axiom and sealed atom
+///   separate the three content arms; a bad code refuses. At the finite
+///   occurrence boundary, a live memo accepts the shared valid declaration that
+///   the null memo refuses operationally.
 /// - witness: `check::tests::an_identity_thunk_checks`
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
 /// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
 /// - witness: `check::tests::an_axiom_checks_only_its_type`
 /// - witness: `check::tests::a_sealed_atom_checks_only_its_kind`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
+    entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
+        && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
+            && match *declaration.content() {
+                DeclarationContent::Def { body, .. } => arena.value(body).is_some(),
+                DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
+            })))]
 #[inline]
 pub fn check_declaration(
     arena: &mut TermArena,
@@ -2337,32 +2422,49 @@ pub fn check_declaration(
 /// # Specification
 /// - requires: as [`check_declaration`]; additionally, `memo` holds only
 ///   entries recorded during this same call against this same arena.
-/// - ensures: the verdict is **independent of `memo`** — the same as
-///   [`check_declaration`] and the same as running at the null memo. On success
-///   `memo` holds one entry per distinct support the check covered, and
-///   `census` counts one expansion or one recall per goal, per plane.
-/// - provides: the memoized checking path, and the memoless path the
-///   differential compares it against, as one function at two type parameters.
-///   Session provenance, memo independence, and per-goal accounting remain
-///   prose-only: neither an event trace nor an independent execution is
-///   available to a return predicate.
+/// - ensures: the typing verdict agrees with [`check_declaration`] and the null
+///   memo when neither execution reaches
+///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
+///   obligations that exhaust the null memo's occurrence budget. Each counter
+///   is monotone, and the initial formation goal charges at least one
+///   type-plane event, subject to saturation. The arena's original prefix
+///   remains available on either verdict.
+/// - provides: both memo policies through one function. Per-goal accounting,
+///   memo provenance and typing agreement still require their event history or
+///   differential witnesses, not a second check inside a return predicate.
 /// - fails: any [`KernelError`] the checker surfaces.
 /// - panics: none.
-/// - executable: none — memo independence and one-event-per-goal accounting
-///   compare executions; this entry retains neither an independent verdict nor
-///   an event trace against which a return predicate could state those laws.
 ///
 /// # Errors
 /// Any [`KernelError`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the differential over the corpus pins memoized against
-///   memoless, verdict for verdict; the L3 residue is the stale-entry hazard,
-///   pinned by poisoned-memo witnesses that provably change an answer in both
-///   directions and on both planes.
+/// - hypothesis: L2/L3 — the finite differential corpus agrees below the
+///   operational ceiling. The boundary fixture separates resource refusal from
+///   typing, and poisoned histories change answers on both planes,
+///   demonstrating why the per-call history requirement is part of the
+///   contract.
 /// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
 /// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
 /// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[spec(captures: [entry_mark = arena.watermark(),
+    entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
+    entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
+    ensures: entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+        let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
+        let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
+        let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        term_expanded >= entry_term_expanded
+            && term_recalled >= entry_term_recalled
+            && type_expanded >= entry_type_expanded
+            && type_recalled >= entry_type_recalled
+            && type_expanded.saturating_add(type_recalled)
+                >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64)
+    })]
 #[inline]
 pub fn check_declaration_with_memo<M>(
     arena: &mut TermArena,
@@ -2454,15 +2556,14 @@ where
 /// # Specification
 /// - requires: `owed` holds the obligations the declaration's own walks
 ///   recorded, each with the context its code stands in.
-/// - ensures: `Ok(())` exactly when every reachable code checks against the
-///   universe the type that carried it named. The drain is a loop over an
-///   explicit worklist, not recursion, and a check it runs may append further
-///   obligations to the same worklist.
-/// - provides: the half of type formation the formation walk deferred, run
-///   through the checking machine so the two walks never call one another.
-///   Obligation provenance and recursive closure remain prose-only: the
-///   worklist is consumed and extended during checking, so a predicate would
-///   need a copied worklist and another complete check.
+/// - ensures: `Ok(())` when every pending or generated obligation checks before
+///   the operational ceiling is exhausted. An empty worklist is a no-op;
+///   otherwise the first attempted check charges a term-plane event when the
+///   budget is nonzero. Counters never decrease and the arena prefix remains.
+/// - provides: the deferred half of formation, without recursive calls between
+///   the two machines. A memo hit can suppress repeated obligations, so the
+///   occurrence budget can refuse a valid declaration under one memo policy but
+///   not another. Full code typing still requires the checking derivation.
 /// - fails: [`KernelError::CodeObligationCeiling`] when the drain exceeds
 ///   [`MAX_CODE_OBLIGATIONS`]; any [`KernelError`] a code's check surfaces.
 /// - panics: none.
@@ -2482,27 +2583,45 @@ where
 ///   than re-entering this function.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the drain's surface is separated by a code that checks
-///   (admission) and a code that does not (the code's own refusal reaching the
-///   caller), and the drain is shown to reach the checking machine at all by an
-///   expansion-count inequality against the same shape with closed types. **The
-///   ceiling arm carries no witness, and two things about it are recorded
-///   findings rather than omissions.** First, tripping it needs a workload
-///   whose obligation count clears a quarter of a million; the count is not
-///   bounded by the artifact's entry count — a drained check forms types over
-///   nodes it just minted — so a case that reached the arm would be a
-///   constructed pathology sized to the constant rather than a separation of
-///   the arm. Second, the count is **occurrence-based**: an obligation is
-///   pushed per expansion, and a memo hit skips the push, so the memoized and
-///   memoless paths reach the ceiling at different workloads. That divergence
-///   is confined to the refusal direction — the memoized path pushes no more
-///   obligations than the memoless one, so it can only refuse later, never
-///   accept something the memoless path refuses — and at this constant neither
-///   path reaches it, which is why the zero-drift differential is silent on it
-///   rather than failing.
+/// - hypothesis: L3 — the finite witnesses separate a valid code, a code's own
+///   refusal, and the drain's operational boundary. Exactly the allowed count
+///   succeeds with the null memo; one more refuses at the stated ceiling. The
+///   same shared above-limit declaration succeeds with a fresh live memo,
+///   showing that a resource refusal is not an ill-typedness judgement.
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
 /// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
 /// - witness: `acceptance::acceptance::draining_code_obligations_reaches_the_checking_machine`
+/// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+#[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),
+    entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
+    entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
+    entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
+    entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+        let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
+        let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
+        let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
+        let type_recalled = u64::from(census.plane_recalls(SupportPlane::Type));
+        term_expanded >= entry_term_expanded
+            && term_recalled >= entry_term_recalled
+            && type_expanded >= entry_type_expanded
+            && type_recalled >= entry_type_recalled
+            && if entry_empty {
+                ret.is_ok() && arena.watermark() == entry_mark
+                && term_expanded == entry_term_expanded
+                && term_recalled == entry_term_recalled
+                && type_expanded == entry_type_expanded
+                && type_recalled == entry_type_recalled
+            } else {
+                (usize::from(MAX_CODE_OBLIGATIONS) == 0
+                    || term_expanded.saturating_add(term_recalled)
+                        >= entry_term_expanded.saturating_add(entry_term_recalled).saturating_add(1_u64))
+                    && match ret {
+                        Err(KernelError::CodeObligationCeiling { ceiling }) => ceiling == MAX_CODE_OBLIGATIONS,
+                        _ => true,
+                    }
+            }
+    })]
 fn drain_code_obligations<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
@@ -2658,6 +2777,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_check_memo::NullMemo;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -2695,6 +2815,106 @@ mod tests
     use crate::levels::LevelContext;
     use crate::support::SupportContext;
 
+    #[test]
+    fn obligation_ceiling_can_separate_memoized_and_memoless_checks()
+    {
+        let mut environment = Environment::new();
+        let code_axiom = {
+            let mut staging = environment.stage();
+            let universe = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, Level::zero());
+            staging.axiom(LevelSignature::monomorphic(), universe)
+        };
+        let code_axiom = environment
+            .add_decl(code_axiom)
+            .expect("the code axiom admits");
+        let mut arena = environment.arena().clone();
+        let (at_limit, above_limit) = {
+            let mut builder = gandr_kernel_term::DeclarationBuilder::new(&mut arena);
+            let code = builder.arena().value_constant(code_axiom.position());
+            let leaf = builder.arena().value_type_element(code, Level::zero());
+            let mut root = builder.arena().value_type_unit();
+            let mut power = leaf;
+            let mut remaining = usize::from(super::MAX_CODE_OBLIGATIONS);
+            while remaining != 0 {
+                if remaining & 1_usize != 0 {
+                    root = builder.arena().value_type_product(root, power);
+                }
+                remaining >>= 1_u32;
+                if remaining != 0 {
+                    power = builder.arena().value_type_product(power, power);
+                }
+            }
+            let above = builder.arena().value_type_product(root, leaf);
+            (builder.axiom(LevelSignature::monomorphic(), root), above)
+        };
+        let above_limit = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
+            .axiom(LevelSignature::monomorphic(), above_limit);
+        let levels = level_context(LevelParamCount::from(0_u32));
+        let content_end = arena.watermark();
+        let at_limit = super::check_declaration_with_memo(
+            &mut arena,
+            environment.entries(),
+            &levels,
+            &at_limit,
+            &mut NullMemo,
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            at_limit.is_ok(),
+            "the exact occurrence budget is accepted: {at_limit:?}"
+        );
+        arena.truncate_to(content_end);
+        let memoized = super::check_declaration_with_memo(
+            &mut arena,
+            environment.entries(),
+            &levels,
+            &above_limit,
+            &mut super::DefaultMemo::new(),
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            memoized.is_ok(),
+            "the shared valid type checks with a live memo: {memoized:?}"
+        );
+        arena.truncate_to(content_end);
+        let memoless = super::check_declaration_with_memo(
+            &mut arena,
+            environment.entries(),
+            &levels,
+            &above_limit,
+            &mut NullMemo,
+            &mut SupportContext::new(),
+            &mut ExpansionCensus::new(),
+        );
+        assert!(
+            matches!(memoless, Err(KernelError::CodeObligationCeiling { ceiling })
+            if ceiling == super::MAX_CODE_OBLIGATIONS)
+        );
+    }
+
+    #[test]
+    fn unreadable_term_roots_fail_closed()
+    {
+        let mut arena = TermArena::new();
+        let before = arena.watermark();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        arena.truncate_to(before);
+        assert!(matches!(
+            synth_value(&mut arena, vec![], value),
+            Err(KernelError::ArenaFault)
+        ));
+        assert!(matches!(
+            synth_comp(&mut arena, vec![], computation),
+            Err(KernelError::ArenaFault)
+        ));
+        assert_eq!(before, arena.watermark());
+    }
+
     /// No prior declarations.
     ///
     /// # Specification
@@ -2715,6 +2935,14 @@ mod tests
     /// - fails: never.
     /// - panics: when admission refuses, which an empty constraint set never
     ///   does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed universes form in the zero-parameter fixture;
+    ///   the one-parameter boundary admits its last variable and refuses the
+    ///   next one, separating lost or enlarged scope through formation.
+    /// - witness: `check::tests::a_universe_forms_one_level_up`
+    /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
+    #[spec(ensures: |ret| ret.params() == params)]
     fn level_context(params: LevelParamCount) -> LevelContext
     {
         LevelContext::admit(params, Vec::new()).expect("an unconstrained context admits")
@@ -2740,6 +2968,19 @@ mod tests
     /// - provides: the synthesis fixture the value rules are asserted through.
     /// - fails: whatever the machine refuses the goal with.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readable variable synthesizes the selected context
+    ///   type; an injection has no synthesized type and an unreadable root
+    ///   produces the arena fault. These are finite rule and refusal cases.
+    /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+    /// - witness: `check::tests::an_injection_is_not_inferable`
+    /// - witness: `check::tests::unreadable_term_roots_fail_closed`
+    #[spec(ensures: |ret| match ret {
+        Ok(Produced::ValueType(id)) => arena.value_type(id).is_some(),
+        Err(_) => true,
+        _ => false,
+    })]
     fn synth_value(
         arena: &mut TermArena,
         context: Vec<ValueTypeId>,
@@ -2775,6 +3016,14 @@ mod tests
     /// - provides: the checking fixture the value rules are asserted through.
     /// - fails: whatever the machine refuses the goal with.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an injection is accepted against its sum, and the
+    ///   expected type reaches a checking component of a pair. Success is a
+    ///   checking result rather than a synthesized-type register.
+    /// - witness: `check::tests::an_injection_checks_against_its_sum`
+    /// - witness: `check::tests::a_pair_propagates_into_a_checking_component`
+    #[spec(ensures: |ret| matches!(&ret, Ok(Produced::Checked) | Err(_)))]
     fn check_value(
         arena: &mut TermArena,
         context: Vec<ValueTypeId>,
@@ -2812,6 +3061,19 @@ mod tests
     ///   through.
     /// - fails: whatever the machine refuses the goal with.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an application and a force synthesize their selected
+    ///   computation types; an unreadable computation root produces the arena
+    ///   fault without fabricating a type.
+    /// - witness: `check::tests::an_application_produces_the_codomain`
+    /// - witness: `check::tests::a_force_unwraps_a_thunk`
+    /// - witness: `check::tests::unreadable_term_roots_fail_closed`
+    #[spec(ensures: |ret| match ret {
+        Ok(Produced::CompType(id)) => arena.comp_type(id).is_some(),
+        Err(_) => true,
+        _ => false,
+    })]
     fn synth_comp(
         arena: &mut TermArena,
         context: Vec<ValueTypeId>,
@@ -2847,6 +3109,18 @@ mod tests
     /// - provides: the formation fixture the type rules are asserted through.
     /// - fails: whatever the formation walk refuses the type with.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the closed-universe successor and lift boundary
+    ///   distinguish the formation result from refusal. This fixture does not
+    ///   claim to discharge the codes its formation walk defers.
+    /// - witness: `check::tests::a_universe_forms_one_level_up`
+    /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
+    #[spec(ensures: |ret| match arena.value_type(root) {
+        None => matches!(&ret, Err(KernelError::ArenaFault)),
+        Some(&ValueType::Base(_) | &ValueType::Unit) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(_) => ret.is_err() || ret.as_ref().is_ok_and(|level| level.atoms().next().is_none()),
+    })]
     fn value_level(
         arena: &TermArena,
         root: ValueTypeId,
@@ -3113,6 +3387,58 @@ mod tests
             check_value(&mut arena, vec![mixed], thunk, thunk_type).is_ok(),
             "checking pushes one expected type into both branches, where synthesis would have \
              required them to agree on their own"
+        );
+    }
+
+    #[test]
+    fn a_prenex_scope_controls_universe_formation()
+    {
+        let mut arena = TermArena::new();
+        let variable = Level::var(gandr_kernel_strata::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(0_u32),
+        ));
+        let expected = variable.succ().expect("a variable's successor fits");
+        let in_scope = arena.value_type_universe(GroundSort::Value, variable);
+        let out_of_scope = arena.value_type_universe(
+            GroundSort::Value,
+            Level::var(gandr_kernel_strata::LevelVar::new(
+                gandr_kernel_strata::LevelVarIndex::from(1_u32),
+            )),
+        );
+        let levels = level_context(LevelParamCount::from(1_u32));
+        let entries = no_entries();
+        let formed = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(in_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert_eq!(formed, Ok(expected));
+        let refused = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(out_of_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert_eq!(
+            refused,
+            Err(KernelError::LevelVariableOutOfScope {
+                variable: gandr_kernel_strata::LevelVar::new(
+                    gandr_kernel_strata::LevelVarIndex::from(1_u32),
+                ),
+            })
         );
     }
 
