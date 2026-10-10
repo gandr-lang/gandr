@@ -56,6 +56,10 @@ impl SourceRoot
     /// - witness: `root::tests::each_root_settles_under_its_corpus_root`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| matches!((self, ret),
+        (Self::Strict, CorpusRoot::Strict)
+            | (Self::Fixture | Self::Pending, CorpusRoot::Fixture),
+    ))]
     pub const fn corpus_root(self) -> CorpusRoot
     {
         match self {
@@ -104,16 +108,26 @@ impl core::fmt::Display for SourceRoot
 ///   file.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the default, each root name,
-///   innermost-wins in both nestings, `pending` inside and outside a fixture
-///   root, and a file named like a root; each separated by one path asserted at
-///   its exact root.
+/// - hypothesis: L3 — default membership, both root nestings, adjacent pending
+///   membership and root-like filenames have exact expected roots.
+///   Parent-directory components establish lexical rather than filesystem
+///   resolution. These fixtures do not enumerate every native path spelling.
 /// - witness: `root::tests::a_path_under_no_root_is_strict`
 /// - witness: `root::tests::the_innermost_root_decides`
 /// - witness: `root::tests::pending_counts_only_directly_inside_a_fixture_root`
 /// - witness: `root::tests::the_file_name_never_classifies`
+/// - witness: `root::tests::parent_components_are_classified_lexically`
 #[inline]
 #[must_use]
+#[anodized::spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
+    let name = directory.file_name()?;
+    if name == STRICT { Some(SourceRoot::Strict) }
+    else if name == FIXTURE { Some(SourceRoot::Fixture) }
+    else if name == PENDING
+        && directory.parent().and_then(Path::file_name) == Some(OsStr::new(FIXTURE))
+    { Some(SourceRoot::Pending) }
+    else { None }
+}).unwrap_or(SourceRoot::Strict))]
 pub fn classify(path: &Path) -> SourceRoot
 {
     let mut root = SourceRoot::Strict;
@@ -228,6 +242,19 @@ mod tests
             classify(Path::new("fixture")),
             SourceRoot::Strict,
             "a bare file named `fixture` sits under no root"
+        );
+    }
+
+    #[test]
+    fn parent_components_are_classified_lexically()
+    {
+        assert_eq!(
+            SourceRoot::Fixture,
+            classify(Path::new("fixture/../a.gandr"))
+        );
+        assert_eq!(
+            SourceRoot::Pending,
+            classify(Path::new("fixture/pending/../a.gandr"))
         );
     }
 }
