@@ -23,6 +23,7 @@
 //! two-variant type; the judgement and the bridge each convert it into their
 //! own vocabulary, and neither handles a refusal a view cannot give.
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -67,6 +68,18 @@ impl From<FragmentRefusal> for CheckRefusal
     /// - ensures: each variant becomes the [`CheckRefusal`] variant of the same
     ///   name, with the same payload.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dangling value-type id and each rejected former are
+    ///   observed as named checker refusals; this separates a lost node
+    ///   identity or a fragment refusal misclassified as an engine fault.
+    ///   Successful views are outside this conversion.
+    /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
+    /// - witness: `formation::tests::unsupported_forms_have_nominal_kinds`
+    #[spec(ensures: |ret| match refusal {
+        | FragmentRefusal::DanglingNode { node } => ret == Self::DanglingNode { node },
+        | FragmentRefusal::OutOfFragment { at, former } => ret == Self::OutOfFragment { at, former },
+    })]
     #[inline]
     fn from(refusal: FragmentRefusal) -> Self
     {
@@ -188,6 +201,24 @@ pub enum CompTypeView<'arena>
 /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::abstract_sort_raises_the_exact_variant`
 /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
+#[spec(ensures: |ret| match ret {
+    | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
+    | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
+    | Ok(ValueTypeView::Unit) => matches!(arena.value_type(value_type), Some(ValueType::Unit)),
+    | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
+    | Ok(ValueTypeView::Product(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Product(left, right)) if *left == first && *right == second),
+    | Ok(ValueTypeView::Universe { sort, level }) => matches!(arena.value_type(value_type), Some(ValueType::Universe { sort: Sort::Ground(found), level: found_level }) if *found == sort && found_level == level),
+    | Ok(ValueTypeView::Lift { inner, target }) => matches!(arena.value_type(value_type), Some(ValueType::Lift { inner: found, target: found_target }) if *found == inner && found_target == target),
+    | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target),
+    | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
+    | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
+    | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
+        && matches!((arena.value_type(value_type), former),
+            (Some(ValueType::Base(BaseType::Numeric)), UnadmittedFormer::NumericAtom)
+                | (Some(ValueType::Sum(..)), UnadmittedFormer::Sum)
+                | (Some(ValueType::Abstract(_)), UnadmittedFormer::Abstract)
+                | (Some(ValueType::Universe { sort: Sort::Parameter(_), .. }), UnadmittedFormer::SortParameter)),
+})]
 pub fn value_type_view(
     arena: &CoreArena,
     value_type: ValueTypeId,
@@ -244,6 +275,15 @@ pub fn value_type_view(
 ///   by one node of each former viewed with its own children.
 /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+/// - witness: `view::tests::both_views_refuse_ids_missing_from_their_arena`
+#[spec(ensures: |ret| match (arena.comp_type(comp_type), ret) {
+    | (Some(&CompType::Returner(inner)), Ok(CompTypeView::Returner(held))) => inner == held,
+    | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
+    | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
+    | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target,
+    | (None, Err(FragmentRefusal::DanglingNode { node })) => node == CoreNode::Type(TypeNode::Computation(comp_type)),
+    | _ => false,
+})]
 pub fn comp_type_view(
     arena: &CoreArena,
     comp_type: CompTypeId,
@@ -259,5 +299,38 @@ pub fn comp_type_view(
         | CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
         | CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
         | CompType::Element { code, ref target } => Ok(CompTypeView::Element { code, target }),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_term::CoreArena;
+
+    use super::FragmentRefusal;
+    use super::comp_type_view;
+    use super::value_type_view;
+    use crate::refusal::CoreNode;
+    use crate::refusal::TypeNode;
+
+    #[test]
+    fn both_views_refuse_ids_missing_from_their_arena()
+    {
+        let mut producer = CoreArena::new();
+        let value_type = producer.value_type_unit();
+        let comp_type = producer.comp_type_returner(value_type);
+        let empty = CoreArena::new();
+        assert_eq!(
+            value_type_view(&empty, value_type),
+            Err(FragmentRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Value(value_type)),
+            })
+        );
+        assert_eq!(
+            comp_type_view(&empty, comp_type),
+            Err(FragmentRefusal::DanglingNode {
+                node: CoreNode::Type(TypeNode::Computation(comp_type)),
+            })
+        );
     }
 }

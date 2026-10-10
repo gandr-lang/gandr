@@ -25,6 +25,7 @@
 //!
 //! [`Absence`]: crate::Absence
 
+use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -425,6 +426,26 @@ impl CheckRefusal
     /// - witness: `refusal::tests::every_refusal_carries_its_pinned_class`
     /// - witness: `refusal::tests::the_classification_ignores_the_payload`
     /// - witness: `refusal::tests::the_absence_class_has_no_inhabitant`
+    #[spec(ensures: |ret| match *self {
+        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::UnboundIndex { .. }
+        | Self::BudgetExceeded { .. }
+        | Self::DanglingNode { .. }
+        | Self::AdmissionOrder { .. }
+        | Self::MachineInvariant
+        | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
+        | Self::TypeMismatch(_)
+        | Self::ShapeMismatch { .. }
+        | Self::NotSynthesisable { .. }
+        | Self::UnknownConstant { .. }
+        | Self::SortMismatch { .. }
+        | Self::LevelMismatch { .. }
+        | Self::DependentBind { .. }
+        | Self::FamilyArity { .. }
+        | Self::FamilyArgumentClassifier { .. }
+        | Self::StaticLambdaArgument { .. }
+        | Self::StaticClassifierExpected { .. } => matches!(ret, FailureClass::MalformedSource),
+    })]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
@@ -455,6 +476,7 @@ impl CheckRefusal
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
@@ -486,6 +508,20 @@ mod tests
     ///   `every_refusal_carries_its_pinned_class`.
     /// - provides: the table both classification witnesses read.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite eighteen-variant refusal vocabulary is
+    ///   observed through exhaustive coverage and classification of two
+    ///   payloads per variant; these separate omitted, repeated or mispaired
+    ///   rows and incorrect class assignments, not arbitrary payload values.
+    /// - witness: `refusal::tests::every_refusal_carries_its_pinned_class`
+    /// - witness: `refusal::tests::the_classification_ignores_the_payload`
+    #[spec(ensures: |ret| ret.iter().enumerate().all(|(index, row)| {
+        core::mem::discriminant(&row.0) == core::mem::discriminant(&row.1)
+            && ret.iter().take(index).all(|earlier| {
+                core::mem::discriminant(&row.0) != core::mem::discriminant(&earlier.0)
+            })
+    }))]
     fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 18]
     {
         let mut arena = CoreArena::new();
