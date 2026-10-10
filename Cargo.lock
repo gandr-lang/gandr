@@ -902,6 +902,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-computads",
  "gandr-theory-deep-inference",
+ "gandr-theory-dynamic-graphs",
  "gandr-theory-graphs",
  "gandr-theory-levitation",
  "quenchant-shape",
@@ -916,6 +917,17 @@ dependencies = [
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
+name = "gandr-theory-dynamic-graphs"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "gandr-theory-graphs",
+ "gandr-theory-orders",
  "proptest",
  "quenchant-shape",
 ]

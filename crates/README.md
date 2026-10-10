@@ -31,6 +31,7 @@ crates/
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
 ├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection, guarded-family prices
+├── theory-dynamic-graphs/         insertion-only topological orders and feasible offset valuations
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-nominal-automata/        nominal word and tree automata over caller-owned names, literal word membership and name dropping
