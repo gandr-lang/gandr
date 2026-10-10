@@ -782,7 +782,19 @@ fn an_opaque_footprint_is_never_adopted()
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(CASES))]
+    #![proptest_config(ProptestConfig::with_cases(std::env::var("PROPTEST_CASES").ok().and_then(|value| value.parse().ok()).unwrap_or(CASES)))]
+
+    /// Every generated program and each edited intermediate agrees with an
+    /// independent arena walk, including signatures and shadowed references.
+    #[test]
+    fn carried_footprint_matches_reference_walk((statements, edits) in program_and_edits()) {
+        let mut current = statements;
+        crate::supports::assert_footprints(&mut lower(&current));
+        for edit in &edits {
+            current = apply(&current, edit);
+            crate::supports::assert_footprints(&mut lower(&current));
+        }
+    }
 
     /// Over a generated program and one edit, the resume equals batch, every
     /// adoption passes the probe, and the checkpoints survive persistence.

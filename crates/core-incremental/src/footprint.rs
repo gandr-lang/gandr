@@ -1,7 +1,7 @@
 //! The conservative footprint: what an item's terms mention, read off its
 //! content table.
 //!
-//! # A scan, not the judgement's support
+//! # Syntactic support, not the judgement's support
 //!
 //! The footprint over-approximates: every reference anywhere in the item is a
 //! read, whether or not the judgement would reach it. It answers one question
@@ -14,15 +14,13 @@
 //! typing only through them.
 
 use alloc::collections::BTreeSet;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_checker::body;
 use quenchant_shape::shape::Maybe;
 
 use crate::content::ItemContent;
 use crate::content::Opacity;
-use crate::content::Sort;
 use crate::region::Reference;
 
 /// Whether an item's body is a hole.
@@ -115,16 +113,6 @@ impl Footprint
     }
 }
 
-/// Where a node is reached: among terms, or inside a type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Position
-{
-    /// Reached through terms only.
-    Term,
-    /// Reached through a signature or a type former.
-    Type,
-}
-
 /// The footprint of `content`.
 ///
 /// # Specification
@@ -136,15 +124,17 @@ enum Position
 ///   is a hole.
 /// - provides: the read relation the value-changed closure runs over.
 /// - panics: none.
-/// - intension: visits each node at most once per position, so the scan is
-///   linear in the table whatever its sharing.
+/// - intension: reads at most two table entries and unions their carried
+///   reference sets; no descendant is visited.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the reach of the walk, the position a
-///   node is reached in, the opacity and the hole mark, separated by a bound
-///   variable that is no read, a constant under binders that is one, a hole, a
-///   constant read from a signature, and a constant reached from the body and
-///   from the signature at once.
+/// - hypothesis: L2 — an independent arena walk observes exact reference
+///   membership on generated programs; L3 — the position a node is reached in,
+///   the opacity and the hole mark, separated by a bound variable that is no
+///   read, a constant under binders that is one, a hole, a constant read from a
+///   signature, and a constant reached from the body and from the signature at
+///   once.
+/// - witness: `tests::incremental::carried_footprint_matches_reference_walk`
 /// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
 /// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
 /// - witness: `footprint::tests::hole_sets_has_hole`
@@ -152,45 +142,24 @@ enum Position
 /// - witness: `footprint::tests::type_support_holds_only_type_positions`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
+    && ret.opacity == content.opacity()
+    && (ret.hole == HoleMark::Hole) == matches!(content.body(), Maybe::Absent(body::Absent::Hole)))]
 pub fn footprint_of(content: &ItemContent) -> Footprint
 {
     let mut reads = BTreeSet::new();
     let mut type_reads = BTreeSet::new();
-    let mut reached: Vec<[bool; 2]> = alloc::vec![[false; 2]; content.nodes().len()];
-    let mut queue = VecDeque::new();
-    if let Maybe::Present(root) = content.signature() {
-        queue.push_back((root, Position::Type));
+    if let Maybe::Present(root) = content.signature()
+        && let Some(node) = content.nodes().get(usize::from(root))
+    {
+        reads.extend(node.type_reads().chain(node.value_reads()).cloned());
+        type_reads.extend(node.type_reads().chain(node.value_reads()).cloned());
     }
-    if let Maybe::Present(root) = content.body() {
-        queue.push_back((root, Position::Term));
-    }
-    while let Some((index, position)) = queue.pop_front() {
-        let (Some(marks), Some(node)) = (
-            reached.get_mut(usize::from(index)),
-            content.nodes().get(usize::from(index)),
-        )
-        else {
-            continue;
-        };
-        let mark = match position {
-            | Position::Term => marks.first_mut(),
-            | Position::Type => marks.last_mut(),
-        };
-        match mark {
-            | Some(&mut true) | None => continue,
-            | Some(mark) => *mark = true,
-        }
-        if let Maybe::Present(reference) = node.reference() {
-            let _fresh = reads.insert(reference.clone());
-            if position == Position::Type {
-                let _fresh = type_reads.insert(reference.clone());
-            }
-        }
-        let inner = match node.sort() {
-            | Sort::ValueType | Sort::CompType => Position::Type,
-            | Sort::Value | Sort::Computation => position,
-        };
-        queue.extend(node.children().iter().map(|(child, _)| (child, inner)));
+    if let Maybe::Present(root) = content.body()
+        && let Some(node) = content.nodes().get(usize::from(root))
+    {
+        reads.extend(node.type_reads().chain(node.value_reads()).cloned());
+        type_reads.extend(node.type_reads().cloned());
     }
     Footprint {
         reads,

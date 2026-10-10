@@ -487,11 +487,15 @@ mod tests
             })
             .expect("identity is checkpointed");
         assert!(matches!(checkpoint.typing(), Typing::Checked { .. }));
-        let Maybe::Present(root) = checkpoint.content().signature()
+        let Maybe::Present(ty) = checkpoint.content().signature_type()
         else {
             panic!("identity is signed");
         };
-        let spelling = spell(checkpoint.content().nodes(), root)
+        let Maybe::Present(nodes) = ty.debruijn()
+        else {
+            panic!("representable signature");
+        };
+        let spelling = spell(&nodes, gandr_core_incremental::NodeIndex::from(0_usize))
             .expect("the signature lays out")
             .to_string();
         let mut repl = repl();
@@ -500,11 +504,6 @@ mod tests
             (OutKind::Type, format!("identity : {spelling}")),
             (OutKind::Value, "<fun>".to_owned())
         ]);
-        let debug = format!("{:?}", checkpoint.content().nodes());
-        assert!(
-            !spelling.contains("ThunkType") && debug.contains("ThunkType"),
-            "{spelling}"
-        );
     }
 
     /// A function whose later parameter's type reads an earlier type

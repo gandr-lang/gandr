@@ -36,12 +36,13 @@ Incremental checking over the core judgement: each revision's typings equal a ba
 - Andrey Mokhov, Neil Mitchell, and Simon Peyton Jones. "Build Systems à la Carte." _Proceedings of the ACM on Programming Languages_ 2, ICFP (2018), Article 79. `doi:10.1145/3236774` — verifying traces: a result is reused when the recorded values of what it read still match, which is what a checkpoint's support is.
 - Michael L. Fredman. "On Computing the Length of Longest Increasing Subsequences." _Discrete Mathematics_ 11, 1 (1975), pages 29–35. `doi:10.1016/0012-365X(75)90103-X` — the patience-sorting bound the handle splice runs in.
 - Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves, and Zooko Wilcox-O'Hearn. "BLAKE3: One Function, Fast Everywhere." 2020. <https://github.com/BLAKE3-team/BLAKE3-specs> — the digest behind memo identities and content addresses.
+- Conor McBride. "Everybody’s Got To Be Somewhere." _EPTCS_ 275 (MSFP 2018), pages 53–69. <https://doi.org/10.4204/EPTCS.275.6> — minimal scopes, thinnings and covers for co-de Bruijn syntax.
 
 ## Provided features
 
 - **The item seam.** `Program`, `Item`, `ItemKey`, `Reference`, `ItemSource`: items keyed by the front end, admission positions checked once (`ProgramError`), and every position read as the `Reference` — key and occurrence — it resolves to.
-- **Content.** `ItemContent`, `TypeContent`, `ContentNode`, `Opacity`: an item's or a type's nodes as one table numbered by discovery, free of arena ids; `TypeContent::of_value_type` reads a type, and a table holding an id its arena does not resolve is opaque.
-- **The conservative footprint.** `footprint_of` and `Footprint`: every reference an item mentions, those in type positions apart, its opacity and whether its body is a hole.
+- **Content.** `ItemContent`, `TypeContent`, `SupportedNode`, `Scope`, `Thinning`, `Opacity`: canonical minimal-scope tables with bare variables and child covers. `ContentNode<()>` is a compact former; `ContentNode<DeBruijnIndex>` is an ambient view. `TypeContent::debruijn` reconstructs that view for printers and reports `expansion::Absent::IndexOverflow` rather than saturating an index.
+- **The conservative footprint.** `footprint_of` and `Footprint`: reference support read from the signature and body roots, with type positions separate, plus opacity and the hole mark. No descendant scan runs.
 - **Validated resume.** `check_program`, `resume`, `resume_from`, `Resume`, `Checkpoints`, `ItemCheckpoint`, `Answered`, `Answer`, `Adoption`, `ResumeCensus`, and `project`, which turns a verdict of the checker's own batch entry into the `Typing` this crate records, so a caller can compare the two.
 - **Item identity.** `ItemHandle` and `Resume::compare`: a handle per item that survives edits elsewhere and compares in constant time.
 - **Checkpoints and stores.** `encode_checkpoints`, `decode_checkpoints`, `CheckpointBytes`, `UnsupportedPersistence`, `address_of`, `persist`, `restore`, `CheckpointStore`, `MemoryCheckpointStore`, `FileCheckpointStore`, `CheckpointObserver`, `BackendArtifact`, `CheckpointAddress`, `CheckpointStoreError`.
@@ -50,7 +51,7 @@ Incremental checking over the core judgement: each revision's typings equal a ba
 
 ## Expected features
 
-- **A hosted target.** The file store reads and writes the file system through `std`; every other module uses `core` and `alloc` alone.
+- **A hosted target.** The file store uses the file system through `std`; compact-table interning and codec duplicate detection use the standard hash implementations. No new dependency is required.
 - **The checker's support entry.** `gandr_core_checker::check_declaration_supported` judges one declaration and reports the signature answers it consulted; `CheckingContext::adopt` admits an answer as if judged. The crate is built on those two and on nothing private to the checker.
 - **`--cfg anodized_panic` for enforcement.** The enforcing test lane builds the dependency graph with it, so every checked specification clause panics on a violation.
 
@@ -126,13 +127,19 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
 
 **References, not positions.** An admission position is an artefact of one revision. Every position an item mentions is read as the `Reference` it resolves to — the key of the item at that position and how many items of that key precede it — or `Unoccupied`. Two revisions agree on what an item reads exactly when they agree on references.
 
-**Content, not ids.** An item's content is its reference and every node reachable from its signature and its body, numbered in the order a breadth-first walk from the two roots discovers them. The walk visits each node once and needs no stack. Sharing is part of the content: two graphs with different sharing differ, which costs a reuse and never a wrong answer. An id its arena does not resolve is listed by sort, and the item is opaque: never recalled, never persisted, and a reader of everything once anything changed.
+**Content, not ids.** An item carries its reference, compact signature and body roots, and their ambient thinnings. Variables are bare leaves of their zone. A node records its minimal two-zone scope and one thinning per child: the cover records which parent slots each child uses, and binder edges also record whether index zero is used. All current binding formers bind intuitionistically; static Pi is non-binding. Different unused-binder interleavings share one compact node; different variable wiring does not. Independent allocations of equal syntax also share.
+
+Each node carries exact syntactic references, split into value and type occurrences, and propagated opacity. The sets may overlap. Crossing a type former promotes all occurrences below it to type positions; the signature root is a type position. This is not the judgement’s semantic support and does not change the evidence licensing adoption. The carrier records mentions even in ill-typed input; a cover is not a certificate of linear resource use.
+
+Arena discovery, bottom-up factoring and final breadth-first numbering are iterative. The canonical numbering starts with signature then body, children left to right. Work includes all sparse scopes, covers and carried reference sets; node count alone does not bound it. Hashes select interning buckets, but full node equality decides sharing. Unresolved arena ids remain explicit opaque leaves and cannot be recalled or persisted.
 
 **Handles, not indices.** Each item holds a handle into an order-maintenance structure whose order is source order. A revision splices it: a longest run of surviving items whose base order the edit preserved keeps its handles (patience sorting, so a move costs the moved item's handle alone), every other item takes a fresh handle after its predecessor, and the rest are removed. Handles are identity for consumers — an editor's cursor, a stream reader's bookmark — and never evidence for the checker: reuse is decided by content.
 
 | Decision | Alternatives | Reversal |
 | -------- | ------------ | -------- |
 | Identity by content, recalled through the shared memo | positional identity; identity by name | the front end supplies stable item ids that survive every edit |
+| Sparse two-zone thinnings, covers and root placements | dense bitsets indexed by the largest ambient index; de Bruijn indices with cached reference sets, which cannot give relocation-independent identity | representative dense scopes make sparse composition dominate measured work |
+| Exact syntactic references on every compact node | a separate footprint walk; root-only caches that omit local support | measured carried-set duplication outweighs the value of exact local support |
 | Keep handles on a longest preserved run | greedy keep-in-order, which loses every handle after a move to the front; a longest common subsequence over contents, quadratic | a consumer needs handles to follow moved items, which needs move detection in the front end |
 
 ## Validated resume
@@ -158,6 +165,8 @@ A recalled checkpoint is adopted when four things hold, checked in this order; t
 ## Checkpoints and their stores
 
 **One canonical encoding.** A checkpoint set encodes to one byte string: magic, allowance, then each item's content, footprint, support and typing, with sets ascending and tables in discovery order. Decoding refuses truncated, malformed and trailing bytes, a level atom whose offset reaches 4,096 (each step of the offset is a successor the decoder builds, so the cap bounds its work), and any payload that parses but is not the canonical spelling of its value — the decoded set is re-encoded and compared. An opaque item has no spelling, and encoding names the sort of its first unresolved id (`UnsupportedPersistence::Dangling`).
+
+The supported format uses checkpoint magic `GCKPT\0\0\x04` (previously version 3), program-address domain `GPROG\0\0\x02` (previously version 1), and item-content domain `GITEM\0\0\x02` (previously unprefixed). Variables encode their zone but no ambient index. Nodes encode scope widths, covers and both reference sets; roots encode ambient thinnings. Old checkpoint bytes are rejected, and old program/item identities do not collide with the new format. Decoding validates child sorts, acyclicity, cover domains and ranges, minimality, exact reference support, unique compact nodes, root placements and the root-derived footprint before canonical re-encoding.
 
 **Addressed by program, keyed by backend.** A set is stored under the BLAKE3 digest of its program's canonical bytes and the identity of the backend artifact that judged it, so it is only restored for the same program and the same checker. A restored set is validated by the next resume like any other.
 
@@ -194,9 +203,13 @@ Three are held until the vocabulary they test exists, with the rows of a fourth:
 - `rung07_native_primitives_round_trip`: until the core vocabulary has native primitives.
 - The module and package rows of `nested_process_local_and_opaque_forms_report_exact_errors`: until modules and packages exist; the test covers every sort the vocabulary has today.
 
-The content table spells a universe's sort beside its level. The value universe keeps the tag it had before the sorts were spelled, and the computation universe and a universe at a sort parameter take fresh tags, and the two quotes and the computation decode take fresh tags beside their families. `universe_sorts_and_levels_round_trip` pins all three sorts at one level. The refusal vocabulary a typing records moved with the families — the universe, decode, quote and dependent-arrow formers left the unadmitted list, the sort-parameter and top-universe formers joined it, and the sort, level, dependent-bind and undecided refusals are new — so the checkpoint set's magic moved to version 2: a set an earlier checker wrote is refused at its first eight bytes and the program is judged afresh, never decoded under a table whose tags mean something else.
+Universe formers carry their sort and level; the vocabulary includes value, computation and parameter sorts, both quotes, and computation decode. `universe_sorts_and_levels_round_trip` exercises all three sorts. The persisted refusal vocabulary distinguishes sort, level, dependent-bind and undecided failures.
 
-The static operators take fresh tags beside their families: the static lambda and the static application beside the quotes among values, and the static Pi beside the sorted universes among value types. A static Pi seats as a value type in a signature; a static lambda or application is a term and is unseatable, as a quote is. `every_former` carries a type operator and its instance, so the round-trip and resume properties cover all three formers. The refusal vocabulary moved with them — the pair, the product, the static Pi and the static application left the unadmitted list, and the family-arity, family-argument-classifier, static-lambda-argument and static-classifier refusals are new, with the arity and the position as 32-bit counts — so the checkpoint set's magic moved to version 3, for the reason it moved to version 2: a table whose tags meant something else is refused at its first eight bytes and judged afresh. `every_former` reaches each new refusal, and `canonical_maps_and_supported_semantic_variants_round_trip` asserts each decodes as written.
+Static lambda and application are term formers and remain unseatable in a type-only mint. Static Pi is a value-type former with a non-binding codomain. `every_former` includes a type operator and its instance, so the checkpoint round-trip exercises their covers as well as their tags. Family-arity, family-argument-classifier, static-lambda-argument and static-classifier refusals retain their typed payloads.
+
+`carried_footprint_matches_reference_walk` compares root support with an independent arena walk for each generated program and every edited intermediate, at 400 cases by default and at a caller-selected `PROPTEST_CASES` budget. The relocation witness distinguishes sharing from reversed or repeated variable wiring; all binding formers reconstruct exact ambient indices in both zones. The codec witness rejects forged reference sets, scopes, covers, duplicate nodes and cycles. The maximum-index projection witness distinguishes a representable index from binder-shift overflow.
+
+Mutation backlog: the supported-content change covers factoring, binder classification, child-cover composition, root footprint projection and codec support validation. The hypotheses are the independent arena differential and the directed relocation, wiring, binder and forged-support witnesses above; no mutation campaign is claimed.
 
 The four defects are each witnessed absent in `tests/defects.rs`: `the_generator_reaches_value_only_edits_under_type_position_reads` (a deterministic census holds the property's generator to the class), `a_shadowing_program_under_a_type_position_read_checks_and_terminates`, `items_visited_for_a_head_edit_grow_linearly` (counted, not timed), and `a_failed_store_leaves_the_store_as_it_was` (memory and file).
 

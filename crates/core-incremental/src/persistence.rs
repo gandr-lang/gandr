@@ -1013,7 +1013,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
+    fn hand_made(nodes: &[ContentNode]) -> Checkpoints
     {
         let content = ItemContent::from_parts(
             Reference::Item {
@@ -1022,7 +1022,9 @@ mod tests
             },
             Maybe::Absent(signature::Absent::Unsigned),
             Maybe::Present(NodeIndex::from(0_usize)),
-            nodes,
+            crate::fixture::closed_table(nodes),
+            crate::support::Thinning::default(),
+            crate::support::Thinning::default(),
         );
         let footprint = footprint_of(&content);
         Checkpoints::new(CheckBudget::DEFAULT, vec![ItemCheckpoint::new(
@@ -1241,7 +1243,17 @@ mod tests
         let tables: Vec<Vec<ContentNode>> = checkpoints
             .items()
             .iter()
-            .map(|checkpoint| checkpoint.content().nodes().to_vec())
+            .map(|checkpoint| {
+                let Maybe::Present(ty) = checkpoint.content().signature_type()
+                else {
+                    panic!("signed fixture")
+                };
+                let Maybe::Present(nodes) = ty.debruijn()
+                else {
+                    panic!("representable fixture");
+                };
+                nodes
+            })
             .collect();
         let expected: Vec<Vec<ContentNode>> = sorts
             .into_iter()
@@ -1373,7 +1385,7 @@ mod tests
         );
 
         let literal = |digits: &'static str| ContentNode::Literal(integer(Digits(digits)));
-        let out_of_discovery = hand_made(vec![
+        let out_of_discovery = hand_made(&[
             ContentNode::Pair(NodeIndex::from(2_usize), NodeIndex::from(1_usize)),
             literal("1"),
             literal("2"),
@@ -1383,7 +1395,7 @@ mod tests
             Err(CheckpointStoreError::NonCanonical),
             "a table numbered against discovery order"
         );
-        let unreached = hand_made(vec![literal("1"), literal("2")]);
+        let unreached = hand_made(&[literal("1"), literal("2")]);
         assert_eq!(
             decoded(&bytes_of(&unreached)),
             Err(CheckpointStoreError::NonCanonical),
@@ -1397,7 +1409,7 @@ mod tests
         let scratch = Scratch::new(Label("noncanonical-file"));
         let mut store = FileCheckpointStore::open(scratch.path()).expect("open");
         let address = address_of(&pair()).expect("resolved");
-        let payload = bytes_of(&hand_made(vec![
+        let payload = bytes_of(&hand_made(&[
             ContentNode::Literal(integer(Digits("1"))),
             ContentNode::Literal(integer(Digits("2"))),
         ]));

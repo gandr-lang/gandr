@@ -52,7 +52,7 @@ quenchant_shape::reason_enum! {
             Refused,
             /// The item states no signature and synthesised none.
             Unsigned,
-            /// The printer reached a layout ceiling laying the type out.
+            /// The type exceeds an ambient-index or layout representation ceiling.
             Unpresentable,
         }
     }
@@ -219,12 +219,16 @@ fn type_of(
         )
     };
     match *checkpoint.typing() {
-        | Typing::Checked { .. } | Typing::Owed => match content.signature() {
-            | Maybe::Present(root) => laid_out(spell(content.nodes(), root)),
+        | Typing::Checked { .. } | Typing::Owed => match content.signature_type() {
+            | Maybe::Present(ty) => match ty.debruijn() {
+                | Maybe::Present(nodes) => laid_out(spell(&nodes, NodeIndex::from(0))),
+                | Maybe::Absent(_) => Maybe::Absent(spelled::Absent::Unpresentable),
+            },
             | Maybe::Absent(_) => Maybe::Absent(spelled::Absent::Unsigned),
         },
-        | Typing::Synthesised { ref produced, .. } => {
-            laid_out(spell(produced.nodes(), NodeIndex::from(0)))
+        | Typing::Synthesised { ref produced, .. } => match produced.debruijn() {
+            | Maybe::Present(nodes) => laid_out(spell(&nodes, NodeIndex::from(0))),
+            | Maybe::Absent(_) => Maybe::Absent(spelled::Absent::Unpresentable),
         },
         | Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
     }

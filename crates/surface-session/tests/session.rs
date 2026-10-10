@@ -74,11 +74,14 @@ fn checks() -> Outcome
 ///
 /// # Specification
 /// trivial.
-fn produced(typing: &Typing) -> &[ContentNode]
+fn produced(typing: &Typing) -> Vec<ContentNode>
 {
     match *typing {
-        | Typing::Synthesised { ref produced, .. } => produced.nodes(),
-        | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
+        | Typing::Synthesised { ref produced, .. } => match produced.debruijn() {
+            | Maybe::Present(nodes) => nodes,
+            | Maybe::Absent(reason) => panic!("representable fixture: {reason:?}"),
+        },
+        | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => Vec::new(),
     }
 }
 

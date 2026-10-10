@@ -23,6 +23,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
@@ -68,15 +69,21 @@ use crate::footprint::Footprint;
 use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
+use crate::support::Scope;
+use crate::support::SupportedNode;
+use crate::support::Thinning;
 use crate::typing::Form;
 use crate::typing::Refusal;
 use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x03";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x04";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x01";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x02";
+/// The item-content domain and encoding version, shared by digests and
+/// checkpoints.
+const CONTENT_MAGIC: &[u8; 8] = b"GITEM\0\0\x02";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -668,21 +675,30 @@ fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
 /// # Specification
 /// - fails: [`CodecError::Unsupported`] for an unresolved node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all formers round-trip; an unresolved former retains its
+///   named refusal rather than being assigned an ordinary tag.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(ensures: |ret| match *node {
+    ContentNode::Unresolved(sort) => ret == Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))),
+    _ => ret != Err(CodecError::Corrupt),
+})]
 fn write_node<Out>(
     writer: &mut Writer<'_, Out>,
-    node: &ContentNode,
+    node: &ContentNode<()>,
 ) -> Result<(), CodecError>
 where
     Out: Sink,
 {
     match *node {
-        | ContentNode::Variable { zone, index } => {
+        | ContentNode::Variable { zone, index: () } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
                 | Zone::Intuitionistic => Tag(0),
                 | Zone::Linear => Tag(1),
             });
-            writer.word(Word(u64::from(u32::from(index))));
         },
         | ContentNode::Constant(ref reference) => {
             writer.tag(Tag(0x02));
@@ -865,7 +881,13 @@ where
 /// - fails: [`CodecError::Corrupt`] for an unknown tag or a malformed field; no
 ///   tag spells an unresolved node.
 /// - panics: none.
-fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
+///
+/// # Adequacy
+/// - hypothesis: L3 — all former tags round-trip without an ambient variable
+///   payload; the checkpoint decoder rejects old version tags.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| !matches!(ret, Ok(ContentNode::Unresolved(_))))]
+fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode<()>, CodecError>
 {
     let tag = reader.tag()?;
     let node = match tag.0 {
@@ -876,12 +898,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 | 1 => Zone::Linear,
                 | _ => return Err(CodecError::Corrupt),
             };
-            let index = reader.word()?;
-            let index = u32::try_from(index.0).map_err(|_overflow| CodecError::Corrupt)?;
-            ContentNode::Variable {
-                zone,
-                index: DeBruijnIndex::from(index),
-            }
+            ContentNode::Variable { zone, index: () }
         },
         | 0x02 => {
             let reference = read_reference(reader)?;
@@ -1055,42 +1072,413 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
     Ok(node)
 }
 
-/// Write a table.
+/// Write both widths of a compact scope.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: intuitionistic then linear widths, each as a u64 count.
+/// - fails: `CodecError::Unrepresentable` for a width exceeding u64.
+/// - panics: none.
+///
+/// # Errors
+/// A width that cannot fit on the wire is unrepresentable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_ok() == [Zone::Intuitionistic, Zone::Linear].into_iter().all(|zone| u64::try_from(usize::from(scope.depth(zone))).is_ok()))]
+fn write_scope<Out>(
+    writer: &mut Writer<'_, Out>,
+    scope: Scope,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(usize::from(scope.depth(Zone::Intuitionistic))))?;
+    writer.count(Count(usize::from(scope.depth(Zone::Linear))))
+}
+
+/// Read compact widths without allocating from them.
+///
+/// # Specification
+/// - ensures: the two wire counts become the intuitionistic and linear widths.
+/// - fails: `CodecError::Corrupt` for truncated bytes or counts exceeding
+///   usize.
+/// - panics: none.
+///
+/// # Errors
+/// A truncated or unrepresentable count is corrupt.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(captures: cursor = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor.checked_sub(cursor) == Some(16))]
+fn read_scope(reader: &mut Reader<'_>) -> Result<Scope, CodecError>
+{
+    let intuitionistic = reader.count()?;
+    let linear = reader.count()?;
+    Ok(Scope::new(
+        BinderDepth::from(intuitionistic.0),
+        BinderDepth::from(linear.0),
+    ))
+}
+
+/// Write an order-preserving selection in each zone.
+///
+/// # Specification
+/// - ensures: each zone's count followed by its indices, intuitionistic first.
+/// - fails: `CodecError::Unrepresentable` for a selection length exceeding u64.
+/// - panics: none.
+///
+/// # Errors
+/// A selection length that cannot fit on the wire is unrepresentable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_ok() == [Zone::Intuitionistic, Zone::Linear].into_iter().all(|zone| u64::try_from(thinning.indices(zone).len()).is_ok()))]
+fn write_thinning<Out>(
+    writer: &mut Writer<'_, Out>,
+    thinning: &Thinning,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    for zone in [Zone::Intuitionistic, Zone::Linear] {
+        writer.count(Count(thinning.indices(zone).len()))?;
+        for &index in thinning.indices(zone) {
+            writer.word(Word(u64::from(u32::from(index))));
+        }
+    }
+    Ok(())
+}
+
+/// Read a thinning, rejecting repeated, descending or unrepresentable indices.
+///
+/// # Specification
+/// - ensures: on success, both selections are strictly ascending u32 indices.
+/// - fails: `CodecError::Corrupt` for malformed indices or truncated bytes.
+/// - panics: none.
+///
+/// # Errors
+/// `CodecError::Corrupt` for a malformed selection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — tampered selection order and width are rejected while a
+///   nonempty cover survives the checkpoint round trip exactly.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|thinning| {
+    [Zone::Intuitionistic, Zone::Linear].into_iter().all(|zone|
+        thinning.indices(zone).windows(2).all(|pair| pair.first() < pair.last()))
+}))]
+fn read_thinning(reader: &mut Reader<'_>) -> Result<Thinning, CodecError>
+{
+    let mut intuitionistic = Vec::new();
+    let mut linear = Vec::new();
+    for indices in [&mut intuitionistic, &mut linear] {
+        let count = reader.count()?;
+        for _ in 0 .. count.0 {
+            let word = reader.word()?;
+            let index = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+            let index = DeBruijnIndex::from(index);
+            if indices.last().is_some_and(|last| *last >= index) {
+                return Err(CodecError::Corrupt);
+            }
+            indices.push(index);
+        }
+    }
+    Ok(Thinning::from_indices(intuitionistic, linear))
+}
+
+/// Check that a root placement supplies exactly the compact node's support.
+///
+/// # Specification
+/// - ensures: a present root has precisely the thinning's domain; an absent
+///   root carries the empty thinning.
+/// - fails: `CodecError::Corrupt` for a missing root or mismatched domain.
+/// - panics: none.
+///
+/// # Errors
+/// `CodecError::Corrupt` for a malformed placement.
+///
+/// # Adequacy
+/// - hypothesis: L3 — root-domain tampering is rejected independently of
+///   internally well-formed covers.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_ok() == match root {
+    Maybe::Present(root) => nodes.get(usize::from(root)).is_some_and(|node| node.scope() == thinning.scope()),
+    Maybe::Absent(_) => thinning.scope() == Scope::default(),
+})]
+fn check_root_scope<Absent>(
+    nodes: &[SupportedNode],
+    root: Maybe<NodeIndex, Absent>,
+    thinning: &Thinning,
+) -> Result<(), CodecError>
+where
+    Absent: Copy,
+{
+    let scope = match root {
+        | Maybe::Present(root) => nodes
+            .get(usize::from(root))
+            .ok_or(CodecError::Corrupt)?
+            .scope(),
+        | Maybe::Absent(_) => Scope::default(),
+    };
+    if scope == thinning.scope() {
+        Ok(())
+    }
+    else {
+        Err(CodecError::Corrupt)
+    }
+}
+
+/// A validation step in a compact table's post-order.
+#[derive(Clone, Copy, Debug)]
+enum SupportVisit
+{
+    /// Open a node and schedule its children.
+    Enter(NodeIndex),
+    /// Check the node after its children.
+    Exit(NodeIndex),
+}
+
+/// Whether a compact node is unseen, active or validated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SupportState
+{
+    /// Not reached yet.
+    Fresh,
+    /// On the active ancestry: encountering it again is a cycle.
+    Open,
+    /// Its children and carried support were checked.
+    Done,
+}
+
+/// Validate exact covers, reference support, acyclicity and maximal sharing.
+///
+/// # Specification
+/// - requires: every child resolves with its required sort.
+/// - ensures: on success every node is in its minimal scope, every edge embeds
+///   its child's entire domain, references equal the bottom-up union, and no
+///   cycle or duplicate compact entry exists.
+/// - fails: `CodecError::Corrupt` for a cycle, false support or malformed
+///   cover; `CodecError::NonCanonical` for duplicate entries.
+/// - panics: none.
+///
+/// # Errors
+/// Malformed support is corrupt; duplicate entries are noncanonical.
+///
+/// # Adequacy
+/// - hypothesis: L3 — altered reference sets, scope widths, edge selections,
+///   duplicate entries and cyclic edges are each refused; valid sharing with
+///   different root placements round-trips unchanged.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || nodes.iter().all(|node| validate_cover(node, nodes).is_ok()))]
+fn validate_supports(nodes: &[SupportedNode]) -> Result<(), CodecError>
+{
+    let mut states = alloc::vec![SupportState::Fresh; nodes.len()];
+    let mut work = Vec::new();
+    let mut unique = std::collections::HashSet::with_capacity(nodes.len());
+    for root in 0 .. nodes.len() {
+        work.push(SupportVisit::Enter(NodeIndex::from(root)));
+        while let Some(visit) = work.pop() {
+            let index = match visit {
+                | SupportVisit::Enter(index) | SupportVisit::Exit(index) => index,
+            };
+            let state = states
+                .get_mut(usize::from(index))
+                .ok_or(CodecError::Corrupt)?;
+            if *state == SupportState::Done {
+                continue;
+            }
+            let node = nodes.get(usize::from(index)).ok_or(CodecError::Corrupt)?;
+            if matches!(visit, SupportVisit::Enter(_)) {
+                if *state == SupportState::Open {
+                    return Err(CodecError::Corrupt);
+                }
+                *state = SupportState::Open;
+                work.push(SupportVisit::Exit(index));
+                work.extend(
+                    node.children()
+                        .iter()
+                        .map(|(child, _)| SupportVisit::Enter(child)),
+                );
+                continue;
+            }
+            validate_cover(node, nodes)?;
+            let (value_reads, type_reads, opacity) =
+                crate::support::references_of(node.former(), nodes);
+            if node.value_reads().ne(value_reads.iter())
+                || node.type_reads().ne(type_reads.iter())
+                || node.opacity() != opacity
+            {
+                return Err(CodecError::Corrupt);
+            }
+            if !unique.insert(node) {
+                return Err(CodecError::NonCanonical);
+            }
+            *state = SupportState::Done;
+        }
+    }
+    Ok(())
+}
+
+/// Check one node's cover and minimal scope.
+///
+/// # Specification
+/// - ensures: each child uses exactly its domain; every selected parent slot is
+///   in range, and the union selects every slot of the parent's scope.
+/// - fails: `CodecError::Corrupt` for an arity, domain, range or coverage
+///   mismatch.
+/// - panics: none.
+///
+/// # Errors
+/// `CodecError::Corrupt` for a malformed cover.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forged domain widths, omitted cover edges and
+///   out-of-range selections separate all four cover checks.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || (node.cover().len() == node.children().iter().count()
+    && node.children().iter().zip(node.cover()).all(|((child, _), thinning)|
+        nodes.get(usize::from(child)).is_some_and(|child| child.scope() == thinning.scope()))))]
+fn validate_cover(
+    node: &SupportedNode,
+    nodes: &[SupportedNode],
+) -> Result<(), CodecError>
+{
+    if node.cover().len() != node.children().iter().count() {
+        return Err(CodecError::Corrupt);
+    }
+    let mut intuitionistic = BTreeSet::new();
+    let mut linear = BTreeSet::new();
+    if let ContentNode::Variable { zone, index: () } = *node.former() {
+        let selected = match zone {
+            | Zone::Intuitionistic => &mut intuitionistic,
+            | Zone::Linear => &mut linear,
+        };
+        selected.insert(0_usize);
+    }
+    for (slot, ((child, _), thinning)) in node.children().iter().zip(node.cover()).enumerate() {
+        let child = nodes.get(usize::from(child)).ok_or(CodecError::Corrupt)?;
+        if thinning.scope() != child.scope() {
+            return Err(CodecError::Corrupt);
+        }
+        let binding = crate::support::binding(node.former(), crate::support::ChildSlot(slot));
+        for (zone, selected) in [
+            (Zone::Intuitionistic, &mut intuitionistic),
+            (Zone::Linear, &mut linear),
+        ] {
+            let shift = usize::from(
+                zone == Zone::Intuitionistic && binding == crate::support::Binding::Bound,
+            );
+            let width = usize::from(node.scope().depth(zone));
+            for &index in thinning.indices(zone) {
+                let index =
+                    usize::try_from(u32::from(index)).map_err(|_overflow| CodecError::Corrupt)?;
+                if index >= width.saturating_add(shift) {
+                    return Err(CodecError::Corrupt);
+                }
+                if let Some(index) = index.checked_sub(shift) {
+                    selected.insert(index);
+                }
+            }
+        }
+    }
+    for (zone, selected) in [
+        (Zone::Intuitionistic, intuitionistic),
+        (Zone::Linear, linear),
+    ] {
+        if selected.len() != usize::from(node.scope().depth(zone))
+            || selected.iter().copied().ne(0 .. selected.len())
+        {
+            return Err(CodecError::Corrupt);
+        }
+    }
+    Ok(())
+}
+
+/// Write a compact table with covers and exact reference support.
+///
+/// # Specification
+/// - ensures: former, scope, child cover, value reads and type reads for each
+///   node.
+/// - fails: `CodecError::Unsupported` for unresolved formers;
+///   `CodecError::Unrepresentable` when a count cannot fit on the wire.
+/// - panics: none.
+///
+/// # Errors
+/// Unsupported formers and unrepresentable counts propagate from field writers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || nodes.iter().all(|node| node.opacity() == crate::content::Opacity::Transparent))]
 fn write_nodes<Out>(
     writer: &mut Writer<'_, Out>,
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
 ) -> Result<(), CodecError>
 where
     Out: Sink,
 {
     writer.count(Count(nodes.len()))?;
     for node in nodes {
-        write_node(writer, node)?;
+        write_node(writer, node.former())?;
+        write_scope(writer, node.scope())?;
+        writer.count(Count(node.cover().len()))?;
+        for thinning in node.cover() {
+            write_thinning(writer, thinning)?;
+        }
+        write_references(writer, node.value_reads())?;
+        write_references(writer, node.type_reads())?;
     }
     Ok(())
 }
 
-/// Read a table and check it is numbered by discovery from `roots`, every
-/// child in range and of the sort its former requires.
+/// Read a compact table and validate child sorts, covers and reference support.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: on success a table every index of which is reached, in discovery
-///   order, from the roots the caller then reads.
-/// - fails: [`CodecError::Corrupt`] for a child out of range or of the wrong
-///   sort; [`CodecError::NonCanonical`] for a table not numbered by discovery,
-///   or holding a node no root reaches.
+/// - ensures: child indices resolve with their declared sorts; every node has
+///   exact minimal support and no duplicate entry or cycle exists. Discovery
+///   order and root reachability are checked separately by the caller.
+/// - fails: `CodecError::Corrupt` for malformed fields or false support;
+///   `CodecError::NonCanonical` for duplicate nodes;
+///   `CodecError::LevelOffsetTooLarge` for an offset at the decoder cap.
 /// - panics: none.
-fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
+///
+/// # Errors
+/// Malformed fields, false support and duplicate entries are refused as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|nodes| nodes.iter().all(|node|
+    node.children().iter().all(|(child, sort)| nodes.get(usize::from(child)).is_some_and(|child| child.sort() == sort))))) ]
+fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<SupportedNode>, CodecError>
 {
     let count = reader.count()?;
     let mut nodes = Vec::new();
     for _ in 0 .. count.0 {
-        let node = read_node(reader)?;
-        nodes.push(node);
+        let former = read_node(reader)?;
+        let scope = read_scope(reader)?;
+        let count = reader.count()?;
+        let mut cover = Vec::new();
+        for _ in 0 .. count.0 {
+            cover.push(read_thinning(reader)?);
+        }
+        let value_reads = read_references(reader)?;
+        let type_reads = read_references(reader)?;
+        nodes.push(SupportedNode::from_parts(
+            former,
+            cover,
+            scope,
+            value_reads,
+            type_reads,
+        ));
     }
     for node in &nodes {
         for (child, sort) in node.children().iter() {
@@ -1100,6 +1488,7 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
             }
         }
     }
+    validate_supports(&nodes)?;
     Ok(nodes)
 }
 
@@ -1119,8 +1508,10 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
 ///   table whose two entries are swapped and a table carrying an entry no root
 ///   reaches.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(ensures: |ret| ret.is_err() || (roots.iter().all(|root| usize::from(*root) < nodes.len())
+    && (nodes.is_empty() || !roots.is_empty())))]
 fn check_discovery(
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
     roots: &[NodeIndex],
 ) -> Result<(), CodecError>
 {
@@ -1175,10 +1566,26 @@ where
     write_item_content_with(&mut writer, content)
 }
 
-/// Write an item's content.
+/// Write an item with its compact table and root placements.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the canonical root placement and supported table fields are
+///   written.
+/// - fails: `CodecError::Unsupported` for unresolved formers;
+///   `CodecError::Unrepresentable` for a count exceeding the wire
+///   representation.
+/// - panics: none.
+///
+/// # Errors
+/// Unsupported formers and unrepresentable counts propagate from field writers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every former, nonempty covers and both reference
+///   positions round-trip exactly; malformed support and noncanonical tables
+///   are refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(ensures: |ret| ret.is_err() || content.nodes().iter().all(|node| node.opacity() == crate::content::Opacity::Transparent))]
 fn write_item_content_with<Out>(
     writer: &mut Writer<'_, Out>,
     content: &ItemContent,
@@ -1186,6 +1593,7 @@ fn write_item_content_with<Out>(
 where
     Out: Sink,
 {
+    writer.sink.put(Bytes(CONTENT_MAGIC));
     write_reference(writer, content.reference())?;
     match content.signature() {
         | Maybe::Present(root) => {
@@ -1201,18 +1609,36 @@ where
         },
         | Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
     }
+    write_thinning(writer, content.signature_scope())?;
+    write_thinning(writer, content.body_scope())?;
     write_nodes(writer, content.nodes())
 }
 
-/// Read an item's content.
+/// Read an item's supported content.
 ///
 /// # Specification
-/// - fails: as [`read_nodes`] and [`check_discovery`], and
-///   [`CodecError::Corrupt`] for a signature root that is no value type or a
-///   body root that is no value.
+/// - ensures: both roots resolve with their sorts and exact thinning domains;
+///   the table is canonical, minimally supported and numbered from those roots.
+/// - fails: as `read_nodes` and `check_discovery`; `CodecError::Corrupt` for an
+///   invalid version, root sort or root domain.
 /// - panics: none.
+///
+/// # Errors
+/// Malformed tables, roots and placements are refused as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|content|
+    check_root_scope(content.nodes(), content.signature(), content.signature_scope()).is_ok()
+    && check_root_scope(content.nodes(), content.body(), content.body_scope()).is_ok()))]
 fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
+    let magic = reader.take(Count(CONTENT_MAGIC.len()))?;
+    if magic.0 != CONTENT_MAGIC {
+        return Err(CodecError::Corrupt);
+    }
     let reference = read_reference(reader)?;
     let signed = reader.tag()?;
     let signature = match signed.0 {
@@ -1232,6 +1658,8 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
         },
         | _ => return Err(CodecError::Corrupt),
     };
+    let signature_scope = read_thinning(reader)?;
+    let body_scope = read_thinning(reader)?;
     let nodes = read_nodes(reader)?;
     let mut roots = Vec::with_capacity(2);
     if let Maybe::Present(root) = signature {
@@ -1243,15 +1671,37 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
         roots.push(root);
     }
     check_discovery(&nodes, &roots)?;
-    Ok(ItemContent::from_parts(reference, signature, body, nodes))
+    check_root_scope(&nodes, signature, &signature_scope)?;
+    check_root_scope(&nodes, body, &body_scope)?;
+    Ok(ItemContent::from_parts(
+        reference,
+        signature,
+        body,
+        nodes,
+        signature_scope,
+        body_scope,
+    ))
 }
 
-/// Require that the root `root` of `nodes` has sort `sort`.
+/// Require that a root resolves with its declared sort.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: success exactly when the index resolves with `sort`.
+/// - fails: `CodecError::Corrupt` for an out-of-range or wrongly sorted root.
+/// - panics: none.
+///
+/// # Errors
+/// A missing or incorrectly sorted root is corrupt.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every former, nonempty covers and both reference
+///   positions round-trip exactly; malformed support and noncanonical tables
+///   are refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(ensures: |ret| ret.is_ok() == nodes.get(usize::from(root)).is_some_and(|node| node.sort() == sort))]
 fn root_of_sort(
-    nodes: &[ContentNode],
+    nodes: &[SupportedNode],
     root: NodeIndex,
     sort: Sort,
 ) -> Result<(), CodecError>
@@ -1262,10 +1712,26 @@ fn root_of_sort(
     }
 }
 
-/// Write a type's content.
+/// Write a type with its compact table and root placements.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the canonical root placement and supported table fields are
+///   written.
+/// - fails: `CodecError::Unsupported` for unresolved formers;
+///   `CodecError::Unrepresentable` for a count exceeding the wire
+///   representation.
+/// - panics: none.
+///
+/// # Errors
+/// Unsupported formers and unrepresentable counts propagate from field writers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every former, nonempty covers and both reference
+///   positions round-trip exactly; malformed support and noncanonical tables
+///   are refused.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(ensures: |ret| ret.is_err() || content.nodes().iter().all(|node| node.opacity() == crate::content::Opacity::Transparent))]
 fn write_type<Out>(
     writer: &mut Writer<'_, Out>,
     content: &TypeContent,
@@ -1273,24 +1739,43 @@ fn write_type<Out>(
 where
     Out: Sink,
 {
+    write_thinning(writer, content.root_scope())?;
     write_nodes(writer, content.nodes())
 }
 
-/// Read a type's content.
+/// Read a type's supported content.
 ///
 /// # Specification
-/// - fails: as [`read_nodes`] and [`check_discovery`], and
-///   [`CodecError::Corrupt`] for an empty table or a root that is no type.
+/// - ensures: a nonempty canonical table with a type root and exact root
+///   domain.
+/// - fails: as `read_nodes` and `check_discovery`; `CodecError::Corrupt` for an
+///   empty table, non-type root or mismatched root domain.
 /// - panics: none.
+///
+/// # Errors
+/// Malformed tables, roots and placements are refused as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|content| content.nodes().first().is_some_and(|root|
+    matches!(root.sort(), Sort::ValueType | Sort::CompType) && root.scope() == content.root_scope().scope())))]
 fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
+    let root_scope = read_thinning(reader)?;
     let nodes = read_nodes(reader)?;
-    match nodes.first().map(ContentNode::sort) {
+    match nodes.first().map(SupportedNode::sort) {
         | Some(Sort::ValueType | Sort::CompType) => {},
         | Some(Sort::Value | Sort::Computation) | None => return Err(CodecError::Corrupt),
     }
     check_discovery(&nodes, &[NodeIndex::from(0_usize)])?;
-    Ok(TypeContent::from_nodes(nodes))
+    check_root_scope(
+        &nodes,
+        Maybe::<_, body::Absent>::Present(NodeIndex::from(0_usize)),
+        &root_scope,
+    )?;
+    Ok(TypeContent::from_nodes(nodes, root_scope))
 }
 
 /// Write a set of references, ascending.
@@ -1938,14 +2423,30 @@ where
     write_typing(writer, checkpoint.typing())
 }
 
-/// Read one item's checkpoint.
+/// Read one item's checkpoint, validating its carried footprint.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the persisted footprint equals the support read from the roots.
+/// - fails: child decoders' errors; `CodecError::Corrupt` for a footprint
+///   inconsistent with the content roots.
+/// - panics: none.
+///
+/// # Errors
+/// Malformed fields and inconsistent support are refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty two-zone scopes and covers round-trip exactly;
+///   forged domains, selections, references and cycles are refused by name.
+/// - witness: `codec::tests::supported_tables_round_trip_and_reject_forged_support`
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|checkpoint|
+    *checkpoint.footprint() == crate::footprint::footprint_of(checkpoint.content())))]
 fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError>
 {
     let content = read_item_content(reader)?;
     let footprint = read_footprint(reader)?;
+    if footprint != crate::footprint::footprint_of(&content) {
+        return Err(CodecError::Corrupt);
+    }
     let count = reader.count()?;
     let mut support = Vec::new();
     for _ in 0 .. count.0 {
@@ -2039,4 +2540,148 @@ where
         write_item_content_with(&mut writer, content)?;
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::BinderDepth;
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::Bytes;
+    use super::CheckpointBytes;
+    use super::CodecError;
+    use super::Reader;
+    use super::Writer;
+    use crate::boundary::NodeIndex;
+    use crate::content::ContentNode;
+    use crate::region::Reference;
+    use crate::support::Scope;
+    use crate::support::SupportedNode;
+    use crate::support::Thinning;
+
+    /// Decode the wire image of a possibly forged table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn round_trip(nodes: &[SupportedNode]) -> Result<Vec<SupportedNode>, CodecError>
+    {
+        let mut bytes = CheckpointBytes::default();
+        super::write_nodes(&mut Writer { sink: &mut bytes }, nodes)?;
+        super::read_nodes(&mut Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        })
+    }
+
+    #[test]
+    fn supported_tables_round_trip_and_reject_forged_support()
+    {
+        let raw = vec![
+            ContentNode::StaticLambda(NodeIndex::from(1_usize)),
+            ContentNode::Pair(NodeIndex::from(2_usize), NodeIndex::from(3_usize)),
+            ContentNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0),
+            },
+            ContentNode::Constant(Reference::Unoccupied),
+        ];
+        let factored = crate::support::factor(raw);
+        let placed = factored.placements.first().expect("root placement");
+        let nodes = crate::support::number(crate::support::TableSource::from(factored.nodes), &[
+            placed.node,
+        ])
+        .nodes;
+        assert_eq!(
+            round_trip(&nodes),
+            Ok(nodes.clone()),
+            "nonempty binder cover and reference support survive"
+        );
+        let root = nodes.first().expect("root");
+        let forged = [
+            SupportedNode::from_parts(
+                root.former().clone(),
+                root.cover().to_vec(),
+                root.scope(),
+                BTreeSet::new(),
+                BTreeSet::new(),
+            ),
+            SupportedNode::from_parts(
+                root.former().clone(),
+                root.cover().to_vec(),
+                Scope::new(BinderDepth::from(1_usize), BinderDepth::from(0_usize)),
+                root.value_reads().cloned().collect(),
+                BTreeSet::new(),
+            ),
+            SupportedNode::from_parts(
+                root.former().clone(),
+                Vec::new(),
+                root.scope(),
+                root.value_reads().cloned().collect(),
+                BTreeSet::new(),
+            ),
+            SupportedNode::from_parts(
+                root.former().clone(),
+                vec![Thinning::from_indices(
+                    vec![DeBruijnIndex::from(5)],
+                    Vec::new(),
+                )],
+                root.scope(),
+                root.value_reads().cloned().collect(),
+                BTreeSet::new(),
+            ),
+            SupportedNode::from_parts(
+                root.former().clone(),
+                vec![Thinning::from_indices(
+                    vec![DeBruijnIndex::from(0), DeBruijnIndex::from(0)],
+                    Vec::new(),
+                )],
+                root.scope(),
+                root.value_reads().cloned().collect(),
+                BTreeSet::new(),
+            ),
+            SupportedNode::from_parts(
+                ContentNode::StaticLambda(NodeIndex::from(0_usize)),
+                root.cover().to_vec(),
+                root.scope(),
+                root.value_reads().cloned().collect(),
+                BTreeSet::new(),
+            ),
+        ];
+        for forged in forged {
+            let mut corrupted = nodes.clone();
+            *corrupted.first_mut().expect("root") = forged;
+            assert_eq!(round_trip(&corrupted), Err(CodecError::Corrupt));
+        }
+        let mut duplicate = nodes.clone();
+        duplicate.push(nodes.last().expect("leaf").clone());
+        assert_eq!(round_trip(&duplicate), Err(CodecError::NonCanonical));
+        assert_eq!(
+            super::check_root_scope(
+                &nodes,
+                quenchant_shape::shape::Maybe::<_, ()>::Present(NodeIndex::from(0_usize)),
+                &Thinning::from_indices(vec![DeBruijnIndex::from(2)], Vec::new())
+            ),
+            Err(CodecError::Corrupt)
+        );
+
+        let checkpoints =
+            crate::fixture::checked(&mut crate::fixture::every_former(crate::fixture::Noise(0)));
+        let bytes = super::encode_checkpoints(&checkpoints).expect("complete fixture");
+        assert_eq!(
+            super::decode_checkpoints(Bytes(bytes.as_ref())),
+            Ok(checkpoints)
+        );
+        let mut old = bytes.as_ref().to_vec();
+        *old.get_mut(7).expect("version") = 3;
+        assert_eq!(
+            super::decode_checkpoints(Bytes(&old)),
+            Err(CodecError::Corrupt),
+            "the old checkpoint version is not silently reinterpreted"
+        );
+    }
 }

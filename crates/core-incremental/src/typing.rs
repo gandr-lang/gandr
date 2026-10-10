@@ -627,7 +627,10 @@ mod tests
     /// trivial.
     fn base(base: BaseType) -> TypeContent
     {
-        TypeContent::from_nodes(vec![ContentNode::Base(base)])
+        TypeContent::from_nodes(
+            crate::fixture::closed_table(&[ContentNode::Base(base)]),
+            crate::support::Thinning::default(),
+        )
     }
 
     /// The integer literal zero.

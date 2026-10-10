@@ -14,3 +14,5 @@ mod generate;
 mod defects;
 #[cfg(test)]
 mod incremental;
+#[cfg(test)]
+mod supports;

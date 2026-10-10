@@ -97,6 +97,7 @@ mod persistence;
 mod region;
 mod session;
 mod stream;
+mod support;
 mod typing;
 
 pub use crate::boundary::ItemCount;
@@ -166,6 +167,10 @@ pub use crate::stream::MatchOrigin;
 pub use crate::stream::SynthesisEvent;
 pub use crate::stream::SynthesisStream;
 pub use crate::stream::displaced;
+pub use crate::support::Scope;
+pub use crate::support::SupportedNode;
+pub use crate::support::Thinning;
+pub use crate::support::expansion;
 pub use crate::typing::Form;
 pub use crate::typing::Refusal;
 pub use crate::typing::Site;

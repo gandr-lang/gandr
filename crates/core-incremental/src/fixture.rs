@@ -466,3 +466,31 @@ pub fn every_former(noise: Noise) -> Program
 
     Program::new(arena, items).expect("positions ascend")
 }
+/// Assemble closed fixture nodes without repairing deliberately malformed
+/// edges.
+///
+/// # Specification
+/// - requires: no variables and no references below a child edge.
+/// - ensures: empty scopes and covers; leaf references are retained.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed tables reach the mint and decoder refusals
+///   instead of being canonicalized by fixture construction.
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+pub fn closed_table(nodes: &[crate::content::ContentNode]) -> Vec<crate::support::SupportedNode>
+{
+    nodes
+        .iter()
+        .map(|node| {
+            let former = crate::content::map_node(node.clone(), &mut |child| child, &mut |_, _| ());
+            let cover = former
+                .children()
+                .iter()
+                .map(|_| crate::support::Thinning::default())
+                .collect();
+            crate::support::assemble(former, cover, crate::support::Scope::default(), &[])
+        })
+        .collect()
+}
