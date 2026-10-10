@@ -6,8 +6,8 @@
 //! [`shown`]; this module reads it and nothing else. A declaration a verb
 //! prints that is unsettled becomes a [`Report`]; a settled fixture `test`
 //! prints, a pending source's refusal and a pending source the lowering read
-//! are ledger [`Line`]s, one line each, because they record a source's
-//! standing rather than a fault in it.
+//! are ledger entries because they record a source's standing rather than a
+//! fault in it.
 
 use core::fmt;
 use core::slice;
@@ -86,7 +86,21 @@ impl fmt::Display for Line<'_>
     /// fixture root.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the source path, a separator and the kind-specific
+    ///   record, propagating destination failure. Adds no line terminator;
+    ///   embedded controls in producer text or paths are not escaped.
+    /// - provides: the ledger representation beside located reports.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written buffer or
+    ///   independent destination-failure observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fixture and pending-source entries expose their path
+    ///   prefix and record category through real walks. Arbitrary producer text
+    ///   and destination failures are outside these finite formatting fixtures.
+    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
     #[inline]
     fn fmt(
         &self,
@@ -169,13 +183,20 @@ pub struct Entries<'step>
 /// - intension: borrows the step; allocates nothing until an entry is rendered.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — real steps from the dispatcher's walk over sources of
-///   every kind: a refused declaration of each producer, an unsettled and a
-///   goal-shaped declaration under each verb, a settled fixture, a whole-source
-///   refusal, and a pending source under each verb, each asserted at its exact
-///   entries, the driver's own witnesses observing the same through the binary.
+/// - hypothesis: L3 — finite real steps under every verb expose entry category
+///   and admission order. Interleaved counted declarations and an empty source
+///   exercise progress and exhaustion; an empty-path fault exercises silence.
+///   Other malformed step/standing combinations are not enumerated by these
+///   fixtures.
 /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
 /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+/// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
+/// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
+#[anodized::spec(ensures: |ref ret| ret.verb == verb && match *step {
+    Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
+        && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
+    Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
+})]
 #[inline]
 #[must_use]
 pub fn entries<'step>(
@@ -204,7 +225,43 @@ pub fn entries<'step>(
 /// The first cursor over a source at `path` that became `composed`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing; any standing and composition are admissible.
+/// - ensures: pending refusals are ledger entries only under test; other
+///   whole-source refusals are reports. A lowered source starts with its ledger
+///   entry; other settled compositions start at their declarations. Borrowed
+///   declaration and refusal slices retain their complete order.
+/// - provides: the first state of a lazy entry traversal.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite source roots under every verb distinguish
+///   ledger/report selection and declaration admission. Empty settled
+///   compositions expose the zero-length slice boundary. Contradictory
+///   standing/composition pairs are outside the produced-step witnesses.
+/// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+/// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
+#[anodized::spec(ensures: |ref ret| match (standing, composed, ret) {
+    (Standing::Pending, _, &Cursor::Done) => matches!(verb, Verb::Check(_)),
+    (Standing::Pending, &Composed::Refused(expected), &Cursor::Last(Entry::Line(Line {
+        path: actual, kind: LineKind::Pending(refusal),
+    }))) => verb == Verb::Test && core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(path)) && refusal == expected,
+    (Standing::Pending, expected, actual) => {
+        let Composed::Settled { ref unstatable, .. } = *expected else { return false; };
+        let Cursor::Unstatable(ref held) = *actual else { return false; };
+        verb == Verb::Test && core::ptr::eq(core::ptr::from_ref(held.as_slice()), core::ptr::from_ref(unstatable.as_slice()))
+    },
+    (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
+        &Composed::Refused(refusal), &Cursor::Last(Entry::Report(report))) =>
+        core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)) && report.class() == crate::Class::Refusal(refusal.classify()),
+    (Standing::Lowered, &Composed::Settled { ref report, origins: ref expected, .. },
+        &Cursor::Lowered { ref declarations, origins })
+    | (Standing::Settled | Standing::Unsettled | Standing::Refused,
+        &Composed::Settled { ref report, origins: ref expected, .. },
+        &Cursor::Declarations { ref declarations, origins }) =>
+        core::ptr::eq(core::ptr::from_ref(declarations.as_slice()), core::ptr::from_ref(report.declarations())) && core::ptr::eq(core::ptr::from_ref(origins), core::ptr::from_ref(expected)),
+    _ => false,
+})]
 fn cursor<'step>(
     path: &'step Path,
     text: SourceText<'step>,
@@ -263,7 +320,38 @@ impl<'step> Entries<'step>
     /// The entry `declaration` prints, when its verb prints one.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the declaration and origins belong to this entry stream.
+    /// - ensures: counted declarations have no entry; goals are goal reports. A
+    ///   shown settled declaration is a fixture ledger entry; an unsettled
+    ///   declaration is a refusal report when one was produced, otherwise an
+    ///   unsettled report describing the failed expectation.
+    /// - provides: verb-directed selection without changing declaration order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite real declarations distinguish counted, goal
+    ///   and ledger selection from refused or unproduced expectations. Ordered
+    ///   refusal spans expose skipping and substitution. Run-result mismatches
+    ///   and malformed expectations are not enumerated by these fixtures.
+    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
+    #[anodized::spec(ensures: |ref ret| match (shown(declaration, self.verb), ret) {
+        (Shown::Counted, &Maybe::Absent(unshown::Absent::Counted)) => true,
+        (Shown::Goal, &Maybe::Present(Entry::Report(report))) =>
+            core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(self.path)) && report.class() == crate::Class::Goal,
+        (Shown::Line, &Maybe::Present(Entry::Line(Line { path, kind: LineKind::Fixture(held) }))) =>
+            declaration.settlement() == Settlement::Settled
+                && core::ptr::eq(core::ptr::from_ref(path), core::ptr::from_ref(self.path)) && core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(declaration)),
+        (Shown::Line, &Maybe::Present(Entry::Report(report))) =>
+            declaration.settlement() == Settlement::Unsettled && core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(self.path))
+                && match declaration.produced().refusal() {
+                    Maybe::Present(refusal) => report.class() == crate::Class::Refusal(refusal.classify()),
+                    Maybe::Absent(produced_refusal::Absent::Unrefused) => matches!(report.class(), crate::Class::Unsettled(_)),
+                },
+        _ => false,
+    })]
     fn declaration(
         &self,
         declaration: &'step DeclarationReport<'step>,
@@ -313,7 +401,47 @@ impl<'step> Iterator for Entries<'step>
     /// The next entry, in the order [`entries`] states.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: each yielded entry belongs to the source and consumes at
+    ///   least one remaining candidate. Hidden declarations are skipped without
+    ///   ending the traversal. Exhaustion remains exhausted on every subsequent
+    ///   call.
+    /// - provides: declaration order, preceded by a lowered-source ledger entry
+    ///   when present; pending refusals retain their source order.
+    /// - fails: never; exhaustion is None.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interleaved counted and refused declarations expose
+    ///   premature stopping or reordering; empty sources and faults expose
+    ///   false entries and resurrection after exhaustion. Finite pending
+    ///   fixtures exercise ledger selection, not arbitrary long refusal
+    ///   sequences.
+    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
+    /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
+    #[anodized::spec(
+        captures: [before = match self.cursor {
+            Cursor::Done => 0_usize,
+            Cursor::Last(_) => 1_usize,
+            Cursor::Lowered { ref declarations, .. } => declarations.len().saturating_add(1_usize),
+            Cursor::Declarations { ref declarations, .. } => declarations.len(),
+            Cursor::Unstatable(ref refusals) => refusals.len(),
+        }],
+        ensures: |ref ret| {
+            let remaining = match self.cursor {
+                Cursor::Done => 0_usize,
+                Cursor::Last(_) => 1_usize,
+                Cursor::Lowered { ref declarations, .. } => declarations.len().saturating_add(1_usize),
+                Cursor::Declarations { ref declarations, .. } => declarations.len(),
+                Cursor::Unstatable(ref refusals) => refusals.len(),
+            };
+            ret.as_ref().map_or(remaining == 0_usize, |entry| remaining < before && match *entry {
+                Entry::Report(report) => core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(self.path)),
+                Entry::Line(line) => core::ptr::eq(core::ptr::from_ref(line.path), core::ptr::from_ref(self.path)),
+            })
+        },
+    )]
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -358,6 +486,119 @@ impl<'step> Iterator for Entries<'step>
                 }
                 None
             },
+        }
+    }
+}
+
+/// Entry policy through real composition and the walk's fault boundary.
+#[cfg(test)]
+mod tests
+{
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    use gandr_surface_dispatcher::Goals;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_dispatcher::Standing;
+    use gandr_surface_dispatcher::Step;
+    use gandr_surface_dispatcher::Verb;
+    use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::compose;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Entry;
+    use super::entries;
+
+    #[test]
+    fn counted_declarations_preserve_visible_order_and_exhaustion()
+    {
+        let text = SourceText::from(
+            "def quiet = 1 ;\ndef first = missing ;\ndef middle = 2 ;\ndef second = missing ;\ndef last = 3 ;\n",
+        );
+        let grammar = built_in().expect("the grammar builds");
+        let step = Step::Source {
+            path: Path::new("ordered.gandr"),
+            root: SourceRoot::Strict,
+            text,
+            composed: compose(
+                &grammar,
+                SourceRoot::Strict.corpus_root(),
+                text,
+                &mut LoweringCount::default(),
+            )
+            .expect("the source composes"),
+            standing: Standing::Unsettled,
+        };
+        let expected = [
+            text.as_ref().find("missing").expect("the first refusal"),
+            text.as_ref().rfind("missing").expect("the last refusal"),
+        ]
+        .map(|start| {
+            Maybe::Present(
+                ByteSpan::new(
+                    ByteOffset::from(start),
+                    ByteOffset::from(start + "missing".len()),
+                )
+                .expect("an ordered ASCII token"),
+            )
+        });
+        let mut stream = entries(&step, Verb::Check(Goals::Gated));
+        let actual = stream
+            .by_ref()
+            .map(|entry| match entry {
+                | Entry::Report(report) => report.span(),
+                | Entry::Line(_) => panic!("strict counted declarations are not ledger entries"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual.as_slice(), &expected);
+        assert!(
+            stream.next().is_none(),
+            "exhaustion cannot resurrect a skipped declaration"
+        );
+    }
+
+    #[test]
+    fn faults_and_empty_sources_stay_exhausted()
+    {
+        let mut walk = Walk::new(vec![PathBuf::new()]);
+        let Maybe::Present(fault) = walk.step()
+        else {
+            panic!("an empty path is a fault, not an empty walk");
+        };
+        assert!(matches!(fault, Step::Fault { .. }));
+        let text = SourceText::from("");
+        let grammar = built_in().expect("the grammar builds");
+        let empty = Step::Source {
+            path: Path::new("empty.gandr"),
+            root: SourceRoot::Strict,
+            text,
+            composed: compose(
+                &grammar,
+                SourceRoot::Strict.corpus_root(),
+                text,
+                &mut LoweringCount::default(),
+            )
+            .expect("the empty source composes"),
+            standing: Standing::Unsettled,
+        };
+        for step in [&fault, &empty] {
+            for verb in [
+                Verb::Check(Goals::Gated),
+                Verb::Check(Goals::Reported),
+                Verb::Test,
+            ] {
+                let mut stream = entries(step, verb);
+                assert!(stream.next().is_none());
+                assert!(
+                    stream.next().is_none(),
+                    "an exhausted stream stays exhausted"
+                );
+            }
         }
     }
 }

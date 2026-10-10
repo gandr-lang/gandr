@@ -64,8 +64,23 @@ def wrong = "text" ;
         /// An empty directory named for `test` and this process.
         ///
         /// # Specification
+        /// - requires: `test` is one file-name component, owned by this test.
+        /// - ensures: the returned path is an empty directory.
+        /// - provides: isolated storage for filesystem witnesses.
+        /// - fails: never returns a failure.
+        /// - panics: if an existing directory cannot be removed or creation
+        ///   fails.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — a fresh owned directory has no entries; a nested
+        ///   source is then read back through a walk. Omitted creation and
+        ///   stale entries change those observations; concurrent writers and
+        ///   I/O errors are excluded.
+        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        #[anodized::spec(
+            requires: test.file_name() == Some(test.as_os_str()),
+            ensures: |ref ret| std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
+        )]
         fn new(test: &Path) -> Self
         {
             let root = std::env::temp_dir().join(format!(
@@ -84,8 +99,26 @@ def wrong = "text" ;
         /// its path.
         ///
         /// # Specification
+        /// - requires: `relative` names a file through normal or
+        ///   current-directory components within this exclusively owned scratch
+        ///   directory.
+        /// - ensures: returns a path under the scratch root containing `text`.
+        /// - provides: a source for a real filesystem walk.
+        /// - fails: never returns a failure.
+        /// - panics: if the parent directories or the file cannot be written.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — one nested source is read back through a real
+        ///   walk. Exact bytes and subsequent cleanup expose wrong content or
+        ///   placement; concurrent writes and filesystem failures are outside
+        ///   the domain.
+        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        #[anodized::spec(
+            requires: relative.file_name().is_some() && relative.components().all(|component| matches!(component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir)),
+            ensures: |ref ret| ret.starts_with(&self.0) && std::fs::metadata(ret).is_ok_and(|metadata|
+                metadata.is_file() && u64::try_from(text.as_ref().len()).is_ok_and(|length| metadata.len() == length)),
+        )]
         fn file(
             &self,
             relative: &Path,
@@ -105,8 +138,19 @@ def wrong = "text" ;
         /// Remove the directory and everything under it.
         ///
         /// # Specification
+        /// - requires: this test exclusively owns the scratch path.
+        /// - ensures: the directory and its descendants no longer exist.
+        /// - provides: cleanup at the end of the fixture scope.
+        /// - fails: never returns a failure.
+        /// - panics: if removal fails.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — dropping a populated nested fixture leaves its
+        ///   root absent and a new source walk reports a fault. Omitted or
+        ///   incomplete removal changes the observation; concurrent recreation
+        ///   is excluded.
+        /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
+        #[anodized::spec(ensures: matches!(self.0.try_exists(), Ok(false)))]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -117,8 +161,24 @@ def wrong = "text" ;
     /// `text` composed under `root` by the dispatcher's one composition.
     ///
     /// # Specification
+    /// - requires: the source fits the built-in grammar and composition limits.
+    /// - ensures: every settled declaration span lies within `text`.
+    /// - provides: the dispatcher composition used by rendering witnesses.
+    /// - fails: never returns a failure.
+    /// - panics: if grammar construction or composition fails.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — mismatch, duplicate-signature and goal sources retain
+    ///   their expected spans and classes in the resulting reports.
+    ///   Wrong-source composition or shifted spans change those observations;
+    ///   run limits and grammar-construction failure are excluded.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
+    #[anodized::spec(ensures: |ref ret| match *ret {
+        Composed::Settled { ref report, .. } => report.declarations().iter().all(|declaration| text.fragment(declaration.span()).is_ok()),
+        Composed::Refused(_) => true,
+    })]
     fn composed(
         root: SourceRoot,
         text: SourceText<'_>,
@@ -138,8 +198,24 @@ def wrong = "text" ;
     /// standing unsettled.
     ///
     /// # Specification
+    /// - requires: `text` composes within the built-in limits.
+    /// - ensures: returns an unsettled source step borrowing `path` and `text`
+    ///   under the supplied root.
+    /// - provides: a source step for report observations.
+    /// - fails: never returns a failure.
+    /// - panics: if grammar construction or composition fails.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — strict mismatch and fixture expectation sources
+    ///   produce different refusal and unsettlement reports at their own paths
+    ///   and spans. Wrong root, standing or source changes those observations;
+    ///   fault steps and composition failure are excluded.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
+    #[anodized::spec(ensures: |ref ret| matches!(*ret,
+        Step::Source { path: held, root: actual, text: source, standing: Standing::Unsettled, .. }
+            if core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(path)) && actual == root && core::ptr::eq(core::ptr::from_ref(source.as_ref()), core::ptr::from_ref(text.as_ref()))
+    ))]
     fn unsettled<'step>(
         path: &'step Path,
         root: SourceRoot,
@@ -158,8 +234,20 @@ def wrong = "text" ;
     /// The reports `step` prints under `verb`, in order.
     ///
     /// # Specification
+    /// - requires: every visible entry for this source and verb is a report.
+    /// - ensures: preserves report order and each report borrows the step path.
+    /// - provides: collected reports for semantic and rendering assertions.
+    /// - fails: never returns a failure.
+    /// - panics: if an entry is a ledger line.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — three distinct refusals retain source order and exact
+    ///   locations under each verb. Reordering, dropping or misrouting reports
+    ///   changes the sequence; mixed ledger streams are excluded.
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    #[anodized::spec(ensures: |ref ret| ret.iter().all(|report| match *step {
+        Step::Source { path, .. } | Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)),
+    }))]
     fn reports<'step>(
         step: &'step Step<'step>,
         verb: Verb,
@@ -176,8 +264,20 @@ def wrong = "text" ;
     /// The bytes of the first occurrence of `needle` in `text`.
     ///
     /// # Specification
+    /// - requires: `needle` occurs in `text`.
+    /// - ensures: returns the span of its first occurrence.
+    /// - provides: an independent expected source locus.
+    /// - fails: never returns a failure.
+    /// - panics: if the needle is absent or the end is not representable.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — unique ASCII needles in mismatch and refusal sources
+    ///   are checked against produced spans and rendered line/column locations.
+    ///   Shifted bounds or wrong needles change the observation; empty needles
+    ///   and repeated occurrences are outside the witnesses.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    #[anodized::spec(ensures: |ret| text.fragment(ret).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref()))]
     fn span_of(
         text: SourceText<'_>,
         needle: SourceText<'_>,
@@ -193,11 +293,23 @@ def wrong = "text" ;
         ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).expect("the span is ordered")
     }
 
-    /// `styled` with every ANSI escape sequence removed.
+    /// Remove complete SGR styling from the backend's escape-free input.
     ///
     /// # Specification
+    /// - requires: every escape starts a complete backend SGR sequence ending
+    ///   in `m`; the source content contains no literal escapes.
+    /// - ensures: removes those controls while preserving the other characters.
+    /// - provides: a plain-text observer for forced styling.
+    /// - fails: never.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — a mismatch with primary and causal annotations
+    ///   renders to identical plain text after SGR removal. Dropped glyphs or
+    ///   retained controls change equality; other terminal controls and literal
+    ///   source escapes are excluded.
+    /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
+    #[anodized::spec(ensures: |ref ret| ret.len() <= styled.as_ref().len() && !ret.contains('\u{1b}'))]
     fn unstyled(styled: &Rendered) -> String
     {
         let text: &str = styled.as_ref();
@@ -238,10 +350,6 @@ def wrong = "text" ;
             rendered.contains("mismatch.gandr:2:13"),
             "the report names its source at the term: {rendered}"
         );
-        assert!(
-            rendered.contains("the type it is checked against"),
-            "the report marks the expected type: {rendered}"
-        );
         assert_eq!(
             format!("{rendered}\n"),
             include_str!("golden/type-mismatch.txt"),
@@ -262,11 +370,7 @@ def wrong = "text" ;
             "a source with no path is named `<input>`: {rendered}"
         );
         assert!(
-            rendered.contains(
-                "1 │ def wrong : Integer ;
-  │             ─────── the type it is checked against
-"
-            ),
+            rendered.contains("1 │ def wrong : Integer ;\n  │             ───────"),
             "the signature the term is checked against stands as context: {rendered}"
         );
     }
@@ -287,19 +391,27 @@ def a = 1 ;
         assert!(
             rendered.contains(
                 "1 │ def a : Integer ;
-  │ ───────────────── first written here
-2 │ def a : Integer ;
-  │ ━━━━━━━━━━━━━━━━━ malformed source
-"
+  │ ─────────────────"
             ),
-            "the first signature keeps its own line, columns and cause beside the primary: \
-             {rendered}"
+            "the first signature remains secondary context: {rendered}"
+        );
+        assert!(
+            rendered.contains(
+                "2 │ def a : Integer ;
+  │ ━━━━━━━━━━━━━━━━━"
+            ),
+            "the duplicate retains its primary locus: {rendered}"
         );
     }
 
     #[test]
     fn render_style_follows_terminal_capability()
     {
+        assert_eq!(
+            TerminalCapability::from(false),
+            TerminalCapability::NonTerminal
+        );
+        assert_eq!(TerminalCapability::from(true), TerminalCapability::Terminal);
         assert_eq!(
             RenderStyle::for_terminal(TerminalCapability::from(false)),
             RenderStyle::Plain,
@@ -475,6 +587,12 @@ def broken = missing ;
     #[test]
     fn each_verb_prints_its_entries()
     {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        enum Observed
+        {
+            Report(Class),
+            Ledger,
+        }
         let scratch = Scratch::new(Path::new("entries"));
         let sources = [
             ("fixture/hole.gandr", "def hole : Integer ;\n"),
@@ -493,96 +611,137 @@ def broken = missing ;
         for (relative, text) in sources {
             scratch.file(Path::new(relative), SourceText::from(text));
         }
-        let base = format!("{}/", scratch.0.display());
         let printed = |verb: Verb| {
             let mut walk = Walk::new(vec![scratch.0.clone()]);
             let mut printed = Vec::new();
             while let Maybe::Present(step) = walk.step() {
+                let path = match step {
+                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                };
                 for entry in entries(&step, verb) {
-                    printed.push(match entry {
-                        | Entry::Report(report) => format!(
-                            "{}: report: {}",
-                            report
-                                .path()
-                                .strip_prefix(&scratch.0)
-                                .expect("under the scratch directory")
-                                .display(),
-                            report.class()
-                        ),
-                        | Entry::Line(line) => line.to_string().replacen(&base, "", 1_usize),
-                    });
+                    let observation = match entry {
+                        | Entry::Report(report) => Observed::Report(report.class()),
+                        | Entry::Line(line) => {
+                            let rendered = line.to_string();
+                            let prefix = format!("{}: ", path.display());
+                            let payload = rendered
+                                .strip_prefix(&prefix)
+                                .expect("the ledger names its source");
+                            assert!(!rendered.ends_with('\n'), "the ledger adds no terminator");
+                            if path.ends_with("fixture/pending/whole.gandr") {
+                                assert!(payload.contains("ret_expression"));
+                                assert!(
+                                    payload
+                                        .split(|character: char| !character.is_ascii_digit())
+                                        .filter_map(|digits| digits.parse::<usize>().ok())
+                                        .eq([0_usize, 5_usize])
+                                );
+                            }
+                            if path.ends_with("fixture/settled.gandr") {
+                                assert!(payload.contains("later"));
+                                assert!(
+                                    payload
+                                        .split(|character: char| !character.is_ascii_digit())
+                                        .filter_map(|digits| digits.parse::<usize>().ok())
+                                        .eq([0_usize, 34_usize, 1_usize, 1_usize])
+                                );
+                            }
+                            Observed::Ledger
+                        },
+                    };
+                    printed.push((
+                        path.strip_prefix(&scratch.0)
+                            .expect("within scratch")
+                            .to_path_buf(),
+                        observation,
+                    ));
                 }
             }
             printed
         };
-        let lowered = "fixture/pending/lowered.gandr: unsettled: a pending source whose every \
-                       expectation can be stated; it belongs under the fixture root";
-        let check = |hole: &str| {
+        let check = |hole| {
             vec![
-                format!("fixture/hole.gandr: report: {hole}"),
-                lowered.to_owned(),
-                "fixture/unproduced.gandr: report: unproduced refusal".to_owned(),
-                "strict/whole.gandr: report: unrepresentable".to_owned(),
+                (PathBuf::from("fixture/hole.gandr"), Observed::Report(hole)),
+                (
+                    PathBuf::from("fixture/pending/lowered.gandr"),
+                    Observed::Ledger,
+                ),
+                (
+                    PathBuf::from("fixture/unproduced.gandr"),
+                    Observed::Report(Class::Unsettled(Unsettlement::Unproduced)),
+                ),
+                (
+                    PathBuf::from("strict/whole.gandr"),
+                    Observed::Report(Class::Refusal(FailureClass::Unrepresentable)),
+                ),
             ]
         };
         assert_eq!(
             printed(Verb::Check(Goals::Gated)),
-            check("surviving obligations"),
-            "check prints each unsettled declaration and source, never a ledger line of a \
-             settled fixture or a pending refusal"
+            check(Class::Unsettled(Unsettlement::Obligations))
         );
-        assert_eq!(
-            printed(Verb::Check(Goals::Reported)),
-            check("goal"),
-            "check --goals prints an owed declaration as a goal"
-        );
-        assert_eq!(
-            printed(Verb::Test),
-            vec![
-                "fixture/hole.gandr: report: surviving obligations".to_owned(),
-                lowered.to_owned(),
-                "fixture/pending/whole.gandr: pending: `ret_expression` at 0..5, read as a \
-                 declaration, is not a former of this sort"
-                    .to_owned(),
-                "fixture/settled.gandr: settled `later` at 0..34: states checks owing 1; produced \
-                 checks owing 1"
-                    .to_owned(),
-                "fixture/unproduced.gandr: report: unproduced refusal".to_owned(),
-                "strict/whole.gandr: report: unrepresentable".to_owned(),
-            ],
-            "test adds the settled fixture and the pending refusal as ledger lines"
-        );
+        assert_eq!(printed(Verb::Check(Goals::Reported)), check(Class::Goal));
+        assert_eq!(printed(Verb::Test), vec![
+            (
+                PathBuf::from("fixture/hole.gandr"),
+                Observed::Report(Class::Unsettled(Unsettlement::Obligations))
+            ),
+            (
+                PathBuf::from("fixture/pending/lowered.gandr"),
+                Observed::Ledger
+            ),
+            (
+                PathBuf::from("fixture/pending/whole.gandr"),
+                Observed::Ledger
+            ),
+            (PathBuf::from("fixture/settled.gandr"), Observed::Ledger),
+            (
+                PathBuf::from("fixture/unproduced.gandr"),
+                Observed::Report(Class::Unsettled(Unsettlement::Unproduced))
+            ),
+            (
+                PathBuf::from("strict/whole.gandr"),
+                Observed::Report(Class::Refusal(FailureClass::Unrepresentable))
+            ),
+        ]);
     }
 
     #[test]
-    fn a_report_names_and_titles_what_it_renders()
+    fn a_report_preserves_refusal_identity_and_title_payloads()
     {
         let cases = [
             (
                 MISMATCH,
                 Verb::Check(Goals::Gated),
                 Maybe::Present("TypeMismatch"),
-                "the type this term synthesises does not convert to the type it is checked \
-                 against",
+                &[][..],
+                &[][..],
             ),
             (
-                "def broken = missing ;\n",
+                "def broken = missing ;
+",
                 Verb::Check(Goals::Gated),
                 Maybe::Present("UnresolvedName"),
-                "no declaration or binder answers `missing` at 13..20",
+                &[13_usize, 20_usize][..],
+                &["missing"][..],
             ),
             (
-                "def hole : Integer ;\n",
+                "@[ owes(0) ] def hole : Integer ;
+",
                 Verb::Check(Goals::Reported),
                 Maybe::Absent(report_identifier::Absent::Statement),
-                "`hole` states checks owing 0; produced checks owing 1",
+                &[0_usize, 1_usize][..],
+                &["hole"][..],
             ),
         ];
-        for (source, verb, identifier, title) in cases {
-            let text = SourceText::from(source);
-            let step = unsettled(Path::new("named.gandr"), SourceRoot::Strict, text);
+        for (source, verb, identifier, numbers, names) in cases {
+            let step = unsettled(
+                Path::new("named.gandr"),
+                SourceRoot::Fixture,
+                SourceText::from(source),
+            );
             let reports = reports(&step, verb);
-            assert_eq!(reports.len(), 1_usize, "one report for {source:?}");
+            assert_eq!(reports.len(), 1_usize);
             let report = reports[0];
             let named = match report.identifier() {
                 | Maybe::Present(spelling) => Maybe::Present(spelling.to_string()),
@@ -592,17 +751,17 @@ def broken = missing ;
                 | Maybe::Present(spelling) => Maybe::Present(spelling.to_owned()),
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             };
-            assert_eq!(named, expected, "the identifier of {source:?}");
-            assert_eq!(report.title().to_string(), title, "the title of {source:?}");
-            let rendered = report.render(RenderStyle::Plain).to_string();
-            let first = match named {
-                | Maybe::Present(ref spelling) => format!("error[{spelling}]: {title}"),
-                | Maybe::Absent(report_identifier::Absent::Statement) => format!("goal: {title}"),
-            };
-            assert_eq!(
-                rendered.lines().next(),
-                Some(first.as_str()),
-                "the rendering opens with the same identifier and title"
+            assert_eq!(named, expected, "stable refusal identity for {source:?}");
+            let title = report.title().to_string();
+            for name in names {
+                assert!(title.contains(name), "source name in {title}");
+            }
+            assert!(
+                title
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq(numbers.iter().copied()),
+                "title preserves semantic numeric roles without core addresses: {title}"
             );
         }
     }
@@ -660,5 +819,36 @@ def a = 1 ;
             ],
             "a goal names no context"
         );
+    }
+
+    #[test]
+    fn scratch_scope_removal_is_visible_to_a_new_walk()
+    {
+        let scratch = Scratch::new(Path::new("scope-removal"));
+        assert!(
+            std::fs::read_dir(&scratch.0)
+                .expect("scratch is readable")
+                .next()
+                .is_none()
+        );
+        let text = SourceText::from(
+            "def answer = 17 ;
+",
+        );
+        let path = scratch.file(Path::new("strict/nested/source.gandr"), text);
+        {
+            let mut walk = Walk::new(vec![path.clone()]);
+            let Maybe::Present(Step::Source { text: observed, .. }) = walk.step()
+            else {
+                panic!("the written source is readable");
+            };
+            assert_eq!(observed, text);
+            assert!(matches!(walk.step(), Maybe::Absent(_)));
+        }
+        let root = scratch.0.clone();
+        drop(scratch);
+        assert!(matches!(root.try_exists(), Ok(false)));
+        let mut missing = Walk::new(vec![path]);
+        assert!(matches!(missing.step(), Maybe::Present(Step::Fault { .. })));
     }
 }

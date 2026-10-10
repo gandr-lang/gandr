@@ -75,7 +75,23 @@ impl fmt::Display for Label
     /// Writes the label's text.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the annotation's role or required shape, retaining any
+    ///   surviving-obligation counts; propagates a destination failure.
+    /// - provides: the causal label beside a marked source span.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mismatch and duplicate snippets expose located
+    ///   labels; all required shapes expose their surface notation. These
+    ///   observations distinguish lost notation and label placement, not
+    ///   arbitrary wording or failing destinations.
+    /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `locus::tests::shape_labels_retain_surface_notation`
     #[inline]
     fn fmt(
         &self,
@@ -143,12 +159,38 @@ impl Annotations
     /// - requires: nothing.
     /// - ensures: the primary locus is the span the lowering rejected, labelled
     ///   with `class`, and is absent for the two refusals about the run rather
-    ///   than a position; a duplicate signature, definition or attribute marks
-    ///   its first occurrence as context.
+    ///   than a position; a duplicate declaration, import alias or attribute
+    ///   marks its first occurrence as context.
     /// - provides: the loci of a lowering refusal, whether it refused a
     ///   declaration or the source as a whole.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real duplicate and unresolved-name reports expose the
+    ///   rejected span and first-occurrence role. A run-budget refusal exposes
+    ///   the no-source-location boundary. Other lowering constructors are not
+    ///   individually enumerated.
+    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    /// - witness: `locus::tests::run_refusals_have_no_invented_source_locus`
+    #[anodized::spec(ensures: |ref ret| {
+        let located = match (refusal.span(), ret.primary) {
+            (Maybe::Present(span), Maybe::Present(annotation)) =>
+                annotation.span == span && annotation.label == Label::Class(class),
+            (Maybe::Absent(_), Maybe::Absent(report_span::Absent::Run)) => true,
+            _ => false,
+        };
+        located && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed)
+            && if let LoweringRefusal::DuplicateSignature { first, .. }
+                | LoweringRefusal::DuplicateDefinition { first, .. }
+                | LoweringRefusal::DuplicateImportAlias { first, .. }
+                | LoweringRefusal::DuplicateAttribute { first, .. } = refusal {
+                ret.context[0_usize] == Maybe::Present(Annotation { span: first, label: Label::First })
+            } else {
+                ret.context[0_usize] == Maybe::Absent(report_context::Absent::Unnamed)
+            }
+    })]
     pub fn lowering(
         refusal: LoweringRefusal<'_>,
         class: Class,
@@ -214,6 +256,29 @@ impl Annotations
     ///   context.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — lowering, corpus and checker fixtures expose the
+    ///   producer's primary class and causal spans. Distinct origin records and
+    ///   missing nodes distinguish wrong locations from missing metadata. Other
+    ///   producer payloads are outside these finite fixtures.
+    /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
+    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
+    #[anodized::spec(ensures: |ref ret| {
+        let class = Class::Refusal(refusal.classify());
+        let classified = match ret.primary {
+            Maybe::Present(annotation) => annotation.label == Label::Class(class),
+            Maybe::Absent(report_span::Absent::Run | report_span::Absent::Unrecorded) => true,
+            Maybe::Absent(report_span::Absent::OutsideText) => false,
+        };
+        classified && ret.context.iter().all(|slot| !matches!(*slot,
+            Maybe::Absent(report_context::Absent::OutsideText)))
+            && if let Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) = refusal {
+                ret.primary == Maybe::Present(Annotation { span, label: Label::Class(class) })
+                    && ret.context == UNNAMED
+            } else { true }
+    })]
     pub fn refusal(
         refusal: Refusal<'_>,
         declaration: ByteSpan,
@@ -234,7 +299,50 @@ impl Annotations
 /// The loci of the checker refusal `refusal` of class `class`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: origins describe the nodes named by the refusal.
+/// - ensures: node-specific refusals use recorded origins; missing origins
+///   remain unrecorded. Context slots retain their causal roles. Whole-
+///   declaration failures use the declaration span with no invented context.
+/// - provides: raw checker loci before source-text validation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite typed origin tables separate recorded spans from
+///   missing nodes. Computation mismatches and shape failures expose context
+///   order; selected whole-declaration failures expose fallback precedence.
+///   Other checker constructors are not individually enumerated.
+/// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
+/// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
+#[anodized::spec(ensures: |ref ret| {
+    let classified = match ret.primary {
+        Maybe::Present(annotation) => annotation.label == Label::Class(class),
+        Maybe::Absent(report_span::Absent::Unrecorded) => true,
+        Maybe::Absent(report_span::Absent::Run | report_span::Absent::OutsideText) => false,
+    };
+    let role = |slot: &Maybe<Annotation, report_context::Absent>, wanted| match *slot {
+        Maybe::Present(annotation) => annotation.label == wanted,
+        Maybe::Absent(report_context::Absent::Unrecorded) => true,
+        Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
+    };
+    classified && match refusal {
+        CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
+            | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
+            role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
+        CheckRefusal::DependentBind { .. } => role(&ret.context[0_usize], Label::Synthesised)
+            && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+        CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
+            && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+        CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
+            | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
+            | CheckRefusal::MachineInvariant => ret.primary == Maybe::Present(Annotation {
+                span: declaration, label: Label::Class(class),
+            }) && ret.context == UNNAMED,
+        _ => ret.context == UNNAMED,
+    }
+})]
 fn checked(
     refusal: CheckRefusal,
     declaration: ByteSpan,
@@ -334,7 +442,25 @@ quenchant_shape::reason_enum! {
 /// The span of the syntax `origin` names.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves a recorded origin's exact span; every absent origin
+///   becomes an unrecorded node span, never a fabricated location.
+/// - provides: a source span independent of the origin's provenance.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — recorded expected-type origins and missing synthesised
+///   origins distinguish lost metadata from fabricated spans. Finite typed
+///   tables also expose shifted records; arbitrary provenance histories are
+///   outside these observations.
+/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
+#[anodized::spec(ensures: |ret| match (origin, ret) {
+    (Maybe::Present(held), Maybe::Present(span)) => span == held.span(),
+    (Maybe::Absent(_), Maybe::Absent(node_span::Absent::Unrecorded)) => true,
+    _ => false,
+})]
 fn spanned<Reason>(origin: Maybe<Origin, Reason>) -> Maybe<ByteSpan, node_span::Absent>
 where
     Reason: Copy,
@@ -348,7 +474,33 @@ where
 /// The span of the syntax that produced `core`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: origins are indexed under their typed core families.
+/// - ensures: the span recorded for this node in its own family, or the
+///   unrecorded reason when that family holds no origin for its identifier.
+/// - provides: a location without guessing from another node or declaration.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite origin tables with colliding numeric family
+///   positions and distinct spans expose shifted lookup. Unrecorded nodes
+///   expose fabricated declaration fallbacks. Other table sizes and invalid
+///   record insertion order are outside these fixtures.
+/// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
+/// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
+#[anodized::spec(ensures: |ret| {
+    let origin = match core {
+        CoreNode::Term(TermNode::Value(at)) => origins.value(at),
+        CoreNode::Term(TermNode::Computation(at)) => origins.computation(at),
+        CoreNode::Type(TypeNode::Value(at)) => origins.value_type(at),
+        CoreNode::Type(TypeNode::Computation(at)) => origins.comp_type(at),
+    };
+    match (origin, ret) {
+        (Maybe::Present(held), Maybe::Present(span)) => span == held.span(),
+        (Maybe::Absent(_), Maybe::Absent(node_span::Absent::Unrecorded)) => true,
+        _ => false,
+    }
+})]
 fn node(
     origins: &OriginTable,
     core: CoreNode,
@@ -365,7 +517,26 @@ fn node(
 /// A context annotation saying `label` at `span`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a recorded span keeps the supplied causal label; an unrecorded
+///   span remains an unrecorded context slot, never an unnamed one.
+/// - provides: the distinction between absent metadata and no causal locus.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — expected and synthesised context slots expose role
+///   substitution and the unnamed/unrecorded distinction. Shape contexts
+///   exercise the required-shape label. Other source spans are outside these
+///   finite fixtures.
+/// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+/// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
+#[anodized::spec(ensures: |ret| match (span, ret) {
+    (Maybe::Present(span), Maybe::Present(annotation)) =>
+        annotation.span == span && annotation.label == label,
+    (Maybe::Absent(node_span::Absent::Unrecorded), Maybe::Absent(report_context::Absent::Unrecorded)) => true,
+    _ => false,
+})]
 fn annotated(
     span: Maybe<ByteSpan, node_span::Absent>,
     label: Label,
@@ -390,7 +561,24 @@ impl fmt::Display for Checked
     /// carries, which the snippet locates instead.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the refusal's subject and semantic numeric payloads,
+    ///   without exposing diagnostic-only node addresses; propagates a write
+    ///   failure.
+    /// - provides: the checker's diagnostic title.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — output text and destination failure cannot be
+    ///   observed independently through the formatter argument.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — former titles distinguish subjects while remaining
+    ///   invariant under node-address changes. Selected numeric refusals expose
+    ///   payload order without pinning prose. Other refusal messages and
+    ///   failing destinations are outside these observations.
+    /// - witness: `locus::tests::former_titles_distinguish_subjects_not_node_addresses`
+    /// - witness: `locus::tests::checker_titles_preserve_numeric_roles`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     #[inline]
     fn fmt(
         &self,
@@ -488,7 +676,20 @@ impl fmt::Display for Shape
     /// Writes the former with its notation.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the required former with its surface notation.
+    /// - provides: shape information in a causal label or refusal title.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all five required shapes expose distinct surface
+    ///   notation through public labels. Missing or swapped notation changes an
+    ///   observation; surrounding prose and destination failures are not
+    ///   pinned.
+    /// - witness: `locus::tests::shape_labels_retain_surface_notation`
     #[inline]
     fn fmt(
         &self,
@@ -515,7 +716,20 @@ impl fmt::Display for Former
     /// Writes the former's name.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the name of the unadmitted former.
+    /// - provides: the subject of an out-of-fragment checker refusal.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite unadmitted-former vocabulary produces
+    ///   distinct titles independent of node addresses. Collapsed subjects or
+    ///   leaked addresses change an observation; exact prose and destination
+    ///   failures are outside this contract's evidence.
+    /// - witness: `locus::tests::former_titles_distinguish_subjects_not_node_addresses`
     #[inline]
     fn fmt(
         &self,
@@ -535,5 +749,332 @@ impl fmt::Display for Former
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
             | UnadmittedFormer::StaticLambda => "a type operator",
         })
+    }
+}
+
+/// Source-location boundaries and semantic formatter payloads.
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_checker::CheckRefusal;
+    use gandr_core_checker::CoreNode;
+    use gandr_core_checker::ExpectedShape;
+    use gandr_core_checker::Mismatch;
+    use gandr_core_checker::TermNode;
+    use gandr_core_checker::TypeNode;
+    use gandr_core_checker::UnadmittedFormer;
+    use gandr_core_term::CoreArena;
+    use gandr_surface_corpus::Refusal;
+    use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_lowering::Origin;
+    use gandr_surface_lowering::OriginTable;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::NodeDigest;
+    use gandr_surface_syntax::NodeIndex;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Annotation;
+    use super::Annotations;
+    use super::Checked;
+    use super::Class;
+    use super::Label;
+    use super::UNNAMED;
+    use super::report_context;
+    use super::report_span;
+
+    #[test]
+    fn refusal_locations_keep_origin_families_and_missing_nodes_distinct()
+    {
+        let spans: [ByteSpan; 8_usize] = core::array::from_fn(|index| {
+            ByteSpan::new(
+                ByteOffset::from(index * 10_usize),
+                ByteOffset::from(index * 10_usize + 3_usize),
+            )
+            .expect("ordered fixture spans")
+        });
+        let recorded: [Origin; 8_usize] = core::array::from_fn(|index| {
+            Origin::new(
+                NodeIndex::from(index),
+                NodeDigest::from([0_u8; 32_usize]),
+                spans[index],
+            )
+        });
+        let mut arena = CoreArena::new();
+        let values = [arena.value_unit(), arena.value_unit()];
+        let computations = [
+            arena.computation_return(values[0_usize]),
+            arena.computation_return(values[1_usize]),
+        ];
+        let value_types = [arena.value_type_unit(), arena.value_type_unit()];
+        let comp_types = [
+            arena.comp_type_returner(value_types[0_usize]),
+            arena.comp_type_returner(value_types[1_usize]),
+        ];
+        let mut origins = OriginTable::new();
+        for index in 0_usize .. 2_usize {
+            origins.record_value(values[index], recorded[index]);
+            origins.record_computation(computations[index], recorded[index + 2_usize]);
+            origins.record_value_type(value_types[index], recorded[index + 4_usize]);
+            origins.record_comp_type(comp_types[index], recorded[index + 6_usize]);
+        }
+        let nodes = [
+            CoreNode::Term(TermNode::Value(values[0_usize])),
+            CoreNode::Term(TermNode::Value(values[1_usize])),
+            CoreNode::Term(TermNode::Computation(computations[0_usize])),
+            CoreNode::Term(TermNode::Computation(computations[1_usize])),
+            CoreNode::Type(TypeNode::Value(value_types[0_usize])),
+            CoreNode::Type(TypeNode::Value(value_types[1_usize])),
+            CoreNode::Type(TypeNode::Computation(comp_types[0_usize])),
+            CoreNode::Type(TypeNode::Computation(comp_types[1_usize])),
+        ];
+        let declaration = ByteSpan::new(ByteOffset::from(90_usize), ByteOffset::from(99_usize))
+            .expect("the declaration is distinct from every node");
+        for (node, span) in nodes.into_iter().zip(spans) {
+            let refusal = Refusal::Checking(CheckRefusal::DanglingNode { node });
+            let found = Annotations::refusal(refusal, declaration, &origins);
+            assert_eq!(
+                found.primary,
+                Maybe::Present(Annotation {
+                    span,
+                    label: Label::Class(Class::Refusal(refusal.classify())),
+                })
+            );
+            assert_eq!(found.context, UNNAMED);
+        }
+        let missing_value = arena.value_unit();
+        let missing_computation = arena.computation_return(missing_value);
+        let missing_type = arena.value_type_unit();
+        let missing_comp_type = arena.comp_type_returner(missing_type);
+        for node in [
+            CoreNode::Term(TermNode::Value(missing_value)),
+            CoreNode::Term(TermNode::Computation(missing_computation)),
+            CoreNode::Type(TypeNode::Value(missing_type)),
+            CoreNode::Type(TypeNode::Computation(missing_comp_type)),
+        ] {
+            let found = Annotations::refusal(
+                Refusal::Checking(CheckRefusal::DanglingNode { node }),
+                declaration,
+                &origins,
+            );
+            assert_eq!(
+                found.primary,
+                Maybe::Absent(report_span::Absent::Unrecorded)
+            );
+            assert_eq!(found.context, UNNAMED);
+        }
+    }
+
+    #[test]
+    fn checker_fallbacks_preserve_causal_roles()
+    {
+        let spans: [ByteSpan; 4_usize] = core::array::from_fn(|index| {
+            ByteSpan::new(
+                ByteOffset::from(index * 10_usize),
+                ByteOffset::from(index * 10_usize + 5_usize),
+            )
+            .expect("ordered fixture spans")
+        });
+        let recorded: [Origin; 3_usize] = core::array::from_fn(|index| {
+            Origin::new(
+                NodeIndex::from(index),
+                NodeDigest::from([0_u8; 32_usize]),
+                spans[index],
+            )
+        });
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let expected = arena.comp_type_returner(value_type);
+        let synthesised = arena.comp_type_returner(value_type);
+        let mut origins = OriginTable::new();
+        origins.record_computation(computation, recorded[0_usize]);
+        origins.record_comp_type(expected, recorded[1_usize]);
+        origins.record_comp_type(synthesised, recorded[2_usize]);
+        let refusal = Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Computation {
+            at: computation,
+            expected,
+            synthesised,
+        }));
+        let found = Annotations::refusal(refusal, spans[3_usize], &origins);
+        assert_eq!(
+            found.primary,
+            Maybe::Present(Annotation {
+                span: spans[0_usize],
+                label: Label::Class(Class::Refusal(refusal.classify())),
+            })
+        );
+        assert_eq!(found.context, [
+            Maybe::Present(Annotation {
+                span: spans[1_usize],
+                label: Label::Expected
+            }),
+            Maybe::Present(Annotation {
+                span: spans[2_usize],
+                label: Label::Synthesised
+            }),
+        ]);
+        let dependent = Annotations::refusal(
+            Refusal::Checking(CheckRefusal::DependentBind {
+                at: computation,
+                synthesised,
+            }),
+            spans[3_usize],
+            &origins,
+        );
+        assert_eq!(dependent.context, [
+            Maybe::Present(Annotation {
+                span: spans[2_usize],
+                label: Label::Synthesised
+            }),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]);
+        let shape = Annotations::refusal(
+            Refusal::Checking(CheckRefusal::ShapeMismatch {
+                at: TermNode::Computation(computation),
+                wanted: ExpectedShape::Arrow,
+                found: TypeNode::Computation(synthesised),
+            }),
+            spans[3_usize],
+            &origins,
+        );
+        assert_eq!(shape.context, [
+            Maybe::Present(Annotation {
+                span: spans[2_usize],
+                label: Label::Met(ExpectedShape::Arrow)
+            }),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]);
+        for checking in [
+            CheckRefusal::MachineInvariant,
+            CheckRefusal::AdmissionOrder {
+                constant: 3_usize.into(),
+                admitted: 7_usize.into(),
+            },
+        ] {
+            let refusal = Refusal::Checking(checking);
+            let found = Annotations::refusal(refusal, spans[3_usize], &origins);
+            assert_eq!(
+                found.primary,
+                Maybe::Present(Annotation {
+                    span: spans[3_usize],
+                    label: Label::Class(Class::Refusal(refusal.classify())),
+                })
+            );
+            assert_eq!(found.context, UNNAMED);
+        }
+    }
+
+    #[test]
+    fn run_refusals_have_no_invented_source_locus()
+    {
+        let refusal = LoweringRefusal::BudgetExceeded {
+            budget: 0_usize.into(),
+        };
+        let found = Annotations::lowering(refusal, Class::Refusal(refusal.classify()));
+        assert_eq!(found.primary, Maybe::Absent(report_span::Absent::Run));
+        assert_eq!(found.context, UNNAMED);
+    }
+
+    #[test]
+    fn shape_labels_retain_surface_notation()
+    {
+        for (shape, notation) in [
+            (ExpectedShape::Thunk, "+U C"),
+            (ExpectedShape::Returner, "-F A"),
+            (ExpectedShape::Arrow, "A → C"),
+            (ExpectedShape::Product, "A * B"),
+            (ExpectedShape::StaticPi, "K -> J"),
+        ] {
+            let label = Label::Met(shape).to_string();
+            assert_eq!(label.split('`').nth(1_usize), Some(notation));
+        }
+    }
+
+    #[test]
+    fn former_titles_distinguish_subjects_not_node_addresses()
+    {
+        let mut arena = CoreArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_unit();
+        assert_ne!(first, second, "the address-change fixture is non-vacuous");
+        let formers = [
+            UnadmittedFormer::Injection,
+            UnadmittedFormer::ValueLift,
+            UnadmittedFormer::NumericLiteral,
+            UnadmittedFormer::Case,
+            UnadmittedFormer::NumericAtom,
+            UnadmittedFormer::Sum,
+            UnadmittedFormer::TypeLift,
+            UnadmittedFormer::Abstract,
+            UnadmittedFormer::SortParameter,
+            UnadmittedFormer::TopUniverse,
+            UnadmittedFormer::StaticLambda,
+        ];
+        let titles = formers.map(|former| {
+            Checked(CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Value(first)),
+                former,
+            })
+            .to_string()
+        });
+        for (index, former) in formers.into_iter().enumerate() {
+            let changed = Checked(CheckRefusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Value(second)),
+                former,
+            })
+            .to_string();
+            assert_eq!(
+                titles[index], changed,
+                "node addresses do not change a subject"
+            );
+            for earlier in &titles[.. index] {
+                assert_ne!(
+                    earlier, &titles[index],
+                    "distinct formers remain distinguishable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn checker_titles_preserve_numeric_roles()
+    {
+        let mut arena = CoreArena::new();
+        let at = arena.value_unit();
+        for (checking, expected) in [
+            (
+                CheckRefusal::UnknownConstant {
+                    at,
+                    constant: 3_usize.into(),
+                },
+                &[3_usize][..],
+            ),
+            (
+                CheckRefusal::AdmissionOrder {
+                    constant: 7_usize.into(),
+                    admitted: 11_usize.into(),
+                },
+                &[7_usize, 11_usize][..],
+            ),
+            (
+                CheckRefusal::FamilyArity {
+                    at,
+                    expected: 2_u32.into(),
+                    actual: 5_u32.into(),
+                },
+                &[2_usize, 5_usize][..],
+            ),
+        ] {
+            let title = Checked(checking).to_string();
+            assert!(
+                title
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq(expected.iter().copied()),
+                "semantic payload order, without node ids: {title}"
+            );
+        }
     }
 }
