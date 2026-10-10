@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
@@ -27,13 +28,17 @@ use gandr_surface_session::Submission;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// The built-in grammar.
+/// The built-in grammar, assembled once per test process. Generated cases
+/// borrow it; sessions clone it only when taking ownership.
 ///
 /// # Specification
 /// trivial.
-pub fn grammar() -> Pbg
+pub fn grammar() -> &'static Pbg
 {
-    built_in().expect("the built-in grammar builds")
+    /// Shared immutable fixture; each nextest test has its own process.
+    static GRAMMAR: LazyLock<Pbg> =
+        LazyLock::new(|| built_in().expect("the built-in grammar builds"));
+    &GRAMMAR
 }
 
 /// The backend identity every suite persists under.
@@ -52,7 +57,7 @@ pub fn backend() -> BackendArtifact
 pub fn session(root: SourceRoot) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
     Session::new(
-        grammar(),
+        grammar().clone(),
         root,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),

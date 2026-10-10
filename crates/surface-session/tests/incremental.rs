@@ -62,7 +62,7 @@ fn gate<'text>(
     let grammar = grammar();
     let mut lowerings = LoweringCount::default();
     let composed = compose(
-        &grammar,
+        grammar,
         SourceRoot::Strict.corpus_root(),
         SourceText::from(edited),
         &mut lowerings,
@@ -73,7 +73,7 @@ fn gate<'text>(
         composed,
         "the resumed submission reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
     );
-    let program = SurfaceItems::new(grammar)
+    let program = SurfaceItems::new(grammar.clone())
         .items(&Revision::from(edited))
         .expect("the edited revision is offered");
     assert_eq!(
@@ -221,7 +221,7 @@ proptest! {
             let submission = submit(&mut session, &text);
             let mut lowerings = LoweringCount::default();
             let composed = compose(
-                &grammar,
+                grammar,
                 SourceRoot::Fixture.corpus_root(),
                 SourceText::from(text.as_str()),
                 &mut lowerings,

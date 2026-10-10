@@ -71,8 +71,8 @@ fn snapshot<'text>(text: impl Into<Text<'text>>) -> Snapshot
     let text = text.into().0;
     let grammar = grammar();
     let mut lowerings = LoweringCount::default();
-    let lowering = lower_source(&grammar, SourceText::from(text), &mut lowerings)
-        .expect("the revision lowers");
+    let lowering =
+        lower_source(grammar, SourceText::from(text), &mut lowerings).expect("the revision lowers");
     let Lowered::Module { module, arena } = lowering.into_lowered()
     else {
         panic!("the lowering reads a module: {text:?}");
