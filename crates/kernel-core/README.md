@@ -23,6 +23,11 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Specification attributes](#specification-attributes)
 - [Experimental stage universe](#experimental-stage-universe)
   - [Experimental stage readmission](#experimental-stage-readmission)
+- [Guarded admission judgments](#guarded-admission-judgments)
+  - [Schema judgment](#schema-judgment)
+  - [Admissible-substitution judgment](#admissible-substitution-judgment)
+  - [Instance judgment](#instance-judgment)
+  - [Work and parallelism obligations](#work-and-parallelism-obligations)
 - [License](#license)
 <!-- tocstop -->
 
@@ -273,6 +278,32 @@ The rules follow András Kovács, _Staged Compilation with Two-Level Type Theory
 `Program::admit` translates that program to a CBPV thunk with one top-level lambda, sequencing binds and direct primitive calls. `Environment::add_decl` checks the declaration. Object naturals use nonnegative integer literals; multiplication is an explicitly admitted typed axiom, visible in the audit. The kernel proves typing and staging conversion, not arithmetic properties of that primitive. `Program::execute` supplies checked machine-natural arithmetic, returning `Overflow` instead of wrapping.
 
 The end-to-end witness independently interprets the admitted CBPV body and compares it with exponentiation over the same bounded grid as the producer's witness. It also checks the axiom audit, absent unchecked admissions, open capture refusal and a normal form whose certificate derivation was removed.
+
+## Guarded admission judgments
+
+The experimental compressed judgment has three distinct premises. These specifications state proof obligations before implementation supplies admission authority. Ordinary `stage::replay` remains unchanged.
+
+### Schema judgment
+
+`Schema(T)` requires a finite backward-referencing skeleton, source-rooted points, exact classifier content, and one recorded rule at each step. Each distinct region/entry/body obligation is checked with other points represented by pairwise fresh rigid constants. A ground schema owes one check. A producer cache never establishes this judgment.
+
+Inheritance alone is insufficient. Discrimination transparency requires that every constructor or payload inspected by a recorded rule is rigid or fixed by its guard. For iteration this includes the count's stage and zero versus positive classification; for beta it includes the application and lambda heads and the binding behavior of every substituted body. A family allowing both zero and positive counts cannot inherit one iteration rule. A changed step must fail at schema validation, before any instance is considered.
+
+### Admissible-substitution judgment
+
+`T ⊢ σ admissible` requires exactly one guarded arm for every point, belonging to that schema's region, point and classifier content. Correlated occurrences select the same arm. Unknown arms, disagreement and classifier mismatch are distinct refusals. Dense point-ordered rows and validated immutable arm dictionaries permit work linear in the row's encoded size. The row does not authorize an unvalidated body through a claimed digest.
+
+### Instance judgment
+
+`Schema(T)` and `T ⊢ σ admissible` entail the local derivation `T[σ]` by substitution closure and discrimination transparency, without executing the derivation again. Connecting its sides to a consumer's claim is a separate obligation. Local equations do not establish endpoint typing or the connectivity of a complete certificate. Those premises remain required.
+
+Let `D(T, σ)` count distinct skeleton constructors above changed points. A bottom-up digest skeleton costs `O(|σ| + D(T, σ))`, not generally `O(|σ| + depth(T))`: one point can occur beneath many distinct parents in a shallow DAG. A depth-only bound requires an additional bounded-sensitivity premise on the representation. Hash equality alone also cannot establish exact agreement under this kernel's [content-key discipline](#key-derivation). An exact comparison against materialized sides must charge their distinct reachable nodes; digest disagreement may only accelerate refusal.
+
+### Work and parallelism obligations
+
+For a family of independent rows, the advertised compressed bound must price schema validation once, every distinct inheritance obligation, all row validation, and side comparison separately. Repeating a body check for each guard is real work even when the encoding shares that body. Counting only row bytes cannot hide this work. No theorem here grants a compressed cannot-lose bound from measured compression ratios.
+
+Members form an antichain. A validated immutable schema and independent per-member scratch permit scoped threads without interior mutability. Any parallel measurement must retain the same verdict at every thread count, report thread creation separately or include it on both sides, and distinguish local equation admission from complete typed certificate admission.
 
 ## License
 
