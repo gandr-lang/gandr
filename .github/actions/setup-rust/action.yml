@@ -61,17 +61,11 @@ runs:
       id: rust-cache
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
-        # The generation counter carries the cache's content shape. The
-        # root manifest's [profile.test] gives test targets their own
-        # opt-level, so every lane compiles two dependency graphs --
-        # cargo build and cargo clippy under dev, cargo nextest run
-        # under test -- and the cache has to hold both. rust-cache's
-        # key hashes the toolchain, the CARGO_*/RUSTUP_* values and
-        # the lockfiles, never the profile table, so without a bump
-        # the restore stays a full match on an older content shape,
-        # the save is skipped as up-to-date, and every run recompiles
-        # from scratch. Bumping the prefix rotates the lane at once.
-        prefix-key: gandr-v1-rust-deps
+        # Rotate when build profiles or artifact layout change. Both plain and
+        # enforcing tests use the checked, size-optimized test profile; the
+        # nested target/enforcing directory is retained with target/.
+        prefix-key: gandr-v2-rust-deps
+        key: ${{ hashFiles('Cargo.toml') }}
         # One dependency cache across every Rust job; the gate lane's
         # block shares this key, so the cache holds the whole
         # workspace's artifacts under the single toolchain.

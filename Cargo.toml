@@ -811,15 +811,14 @@ pattern = "crates/quenchant-dylints"
 [profile.release]
 opt-level = "s"
 
-# Tests run optimized. The heaviest tests are codegen-bound rather than
-# algorithmically slow: proptest's generation and shrinking machinery, and the
-# budget-boundary encode/decode that must sit on `MAX_TABLE_ENTRIES`, both pay
-# roughly 6x per unit under unoptimized codegen. `debug_assertions` and
-# `overflow_checks` remain on at this opt-level. Specification enforcement is
-# independent: the enforcing lane supplies `--cfg anodized_panic` to the whole
-# graph.
+# Build and tests share size-optimized code without debuginfo. Keep debug
+# assertions and overflow checks: arithmetic boundary tests rely on them to
+# expose defects. Specification enforcement remains graph-wide and separate
+# through `--cfg anodized_panic`.
 [profile.test]
-opt-level = 2
+inherits = "release"
+debug-assertions = true
+overflow-checks = true
 
 # The shipped binary: `cargo build-dist` (`.cargo/config.toml`), which also
 # applies `.cargo/config.dist.toml` (a size-optimized std, immediate abort on
