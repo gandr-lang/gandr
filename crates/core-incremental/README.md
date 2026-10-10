@@ -1,6 +1,6 @@
 # gandr-core-incremental
 
-Incremental checking over the core judgement: each revision's typings equal a batch run's, and only the items whose earlier answer no longer holds are judged again.
+Incremental checking over the core judgement: reuse applicable earlier answers and match batch checking when recorded results are faithful.
 
 <!-- toc -->
 
@@ -9,13 +9,12 @@ Incremental checking over the core judgement: each revision's typings equal a ba
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [The incremental contract](#the-incremental-contract)
+- [The incremental specification](#the-incremental-specification)
 - [Identity: references, content, handles](#identity-references-content-handles)
 - [Validated resume](#validated-resume)
 - [Checkpoints and their stores](#checkpoints-and-their-stores)
 - [The synthesis stream](#the-synthesis-stream)
-- [Redesigned rather than ported](#redesigned-rather-than-ported)
-- [Tests: the floor, the held rows, the defects](#tests-the-floor-the-held-rows-the-defects)
+- [Specification evidence](#specification-evidence)
 - [Consumer and open rows](#consumer-and-open-rows)
 - [License](#license)
 
@@ -112,13 +111,13 @@ cargo nextest run -p gandr-core-incremental
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
 ```
 
-## The incremental contract
+## The incremental specification
 
 **Support is an output of the judgement.** The checker reports, for each declaration it judges, every signature answer it consulted: the reference asked about and the answer given, the type's content or none. That list is the item's support, and a checkpoint stores it. Reuse is licensed by comparing it, entry by entry, against the answers the edited program's table gives at the same point of the pass. Nothing else licenses reuse: not a footprint, not a name, not an edit's location. A footprint over-approximates what an item could read; the support is what it did read, which is both tighter and exact.
 
-**The entry answers one item.** The checker's per-declaration entry judges one declaration against the table the items before it built, so the pass interleaves judging and adopting in source order, and an adopted item enters the table exactly as a judged one would (`CheckingContext::adopt`). The answers an item supplies are derived, never stored: a signed item supplies its signature when it forms, an unsigned item the type it synthesised, and both are re-derived from the edited program at adoption.
+**The entry answers one item.** The checker's per-declaration entry judges one declaration against the table the preceding items built, so the pass interleaves judging and adopting in source order (`CheckingContext::adopt`). The supplied signature answer is assembled at adoption rather than stored separately: a signed item's signature forms in the edited context; an unsigned item's cached synthesised type is seated and forms there. Formation establishes that the type is usable in that context, not that an arbitrary cached type was correctly inferred for the body.
 
-**Incremental equals batch.** `check_program` is the pass at a memo that recalls nothing; `resume` is the same pass at a memo that recalls base checkpoints. The differential suite holds the resume equal to the checker's module entry — the batch pipeline the surface dispatcher runs — projected through `project`, on every named edit and every generated program and edit chain. It is the primary assertion; every other test is secondary to it.
+**Incremental equals batch for faithful records.** `check_program` is the pass at a memo that recalls nothing; `resume` is the same pass at a memo that recalls base checkpoints. Batch equivalence assumes that each recorded typing and complete support truthfully describes a prior judgement of that content under the recorded allowance. Raw constructors and mutation helpers admit arbitrary records: reuse checks establish applicability, not the truth of a cached judgement. The differential suite compares faithful resumes with the checker's module entry and deliberately forges typing and support to witness this boundary. Canonical bytes and integrity digests do not authenticate judgement provenance.
 
 **One memo, two machines.** Recall goes through `gandr-kernel-check-memo`'s `OrderedMemo`, the memo the checking kernel uses: an item's identity is its content, bucketed by the first sixteen bytes of the content's BLAKE3 digest and confirmed by content equality, so a digest collision costs a comparison and never a wrong recall.
 
@@ -141,7 +140,7 @@ A recalled checkpoint is adopted when four things hold, checked in this order; t
 
 1. The item is transparent.
 2. Every recorded answer equals the edited table's answer for the same reference at this point of the pass: the answer the item of that reference supplied when it precedes this one, none otherwise.
-3. No reference in a type position of the item, nor in the type of any recorded answer, names a definition in the value-changed set.
+3. No reference in a type position of the item, nor in the type of any recorded answer, names a definition in the value-changed set. A type former's own reference is in a type position, including an abstract type under quotation.
 4. The adopted type seats: a signed item's signature forms in the edited context; an unsigned item's synthesised type is minted into the edited arena before the pass and forms.
 
 **The value-changed set.** A definition inserted, deleted, or whose content differs between the revisions seeds the set; the set closes over the read relation of the edited footprints through reverse edges and a worklist, so every edge is crossed at most once. Once the set is non-empty every opaque item joins it. The closure guards answers that depend on a definition's _value_ while the support compares types: the checker unfolds a decode `El(c)` of a code constant to the body `c` was defined with, and logs the constant's signature answer, not its body, so a declaration whose type names `c` can change meaning while every recorded answer holds. The closure blocks exactly those reuses. When the checker records the bodies it unfolds in the support, the closure can retire.
@@ -153,19 +152,21 @@ A recalled checkpoint is adopted when four things hold, checked in this order; t
 | Pointwise support recorded by the judgement | compare bindings by name; compare footprints; re-judge every reader of an edited item | none: this is the soundness argument |
 | Mint an unsigned item's synthesised type into the edited arena before the pass | judge every unsigned item a recalled reader depends on | minting dominates a measured profile |
 | Close value changes over footprint reads, blocking type-position reads | no closure, trusting the signature answers alone, which reuses a declaration across an edit to a code it unfolds | the checker records the bodies it unfolds in the support |
-| Supplied answers derived at adoption | stored in the checkpoint | never: a stored answer would be trusted, not validated |
+| Derive supplied answers from the formed signature or seated cached type | store a second answer beside the typing | a consumer needs an independently certified answer |
+| Trust faithful checker results, then validate their applicability | re-judge every cached item; proof-carrying judgement certificates | checkpoints must be accepted from an untrusted producer |
 
 ## Checkpoints and their stores
 
-**One canonical encoding.** A checkpoint set encodes to one byte string: magic, allowance, then each item's content, footprint, support and typing, with sets ascending and tables in discovery order. Decoding refuses truncated, malformed and trailing bytes, a level atom whose offset reaches 4,096 (each step of the offset is a successor the decoder builds, so the cap bounds its work), and any payload that parses but is not the canonical spelling of its value — the decoded set is re-encoded and compared. An opaque item has no spelling, and encoding names the sort of its first unresolved id (`UnsupportedPersistence::Dangling`).
+**One canonical encoding.** A checkpoint set encodes to one byte string: magic, allowance, then each item’s content, footprint, support and typing, with sets ascending and tables in discovery order. Content producers establish the table invariants; the decoder checks them. Before framing, a borrowed pass refuses any level atom whose offset reaches 4,096, in the content, support or typing. The decoder enforces the same bound because it reconstructs each offset with that many successors. It also refuses truncated, malformed and trailing bytes, and any payload that parses but is not the canonical spelling of its value. After the level check, encoding names the sort of its first unresolved id (`UnsupportedPersistence::Dangling`); opaque content has no spelling.
 
 **Addressed by program, keyed by backend.** A set is stored under the BLAKE3 digest of its program's canonical bytes and the identity of the backend artifact that judged it, so it is only restored for the same program and the same checker. A restored set is validated by the next resume like any other.
 
-**A failed store leaves the store as it was.** Both stores encode completely before they change anything. The file store writes the record — header with magic, version, address, backend, length and payload digest, then the payload — to a temporary it created exclusively under a fresh random name, publishes it with one rename, and removes the temporary on every other exit; it never opens a file it did not create. Loading checks the header, the address, the length and the digest before decoding. The store is atomic, not durable: it does not synchronise to the device.
+**A failed store leaves the store as it was.** Both stores encode completely before they change anything, so a capped level cannot replace a readable record. The file store writes the record — header with magic, version, address, backend, length and payload digest, then the payload — to a temporary it created exclusively under a fresh random name, publishes it with one rename, and attempts to remove the temporary on every other exit; it never opens a file it did not create. Cleanup is best effort: a removal failure can leave a private temporary. Loading checks the header, the address, the length and the digest before decoding. The store is atomic, not durable: it does not synchronise to the device.
 
 | Decision | Alternatives | Reversal |
 | -------- | ------------ | -------- |
 | A crate-local canonical binary encoding with a canonicality check | a serialisation framework, which would add a dependency and admit several spellings of one value | the storage tier hosts session checkpoints (below) |
+| Check the decoder’s level bound before checkpoint encoding | publish records that cannot reload; unbounded decoding; decode an extra copy before storing | level reconstruction no longer requires one successor per offset and the decoder can safely admit the full range |
 | BLAKE3 through the workspace `blake3` entry, the digest the storage tier uses | the storage tier's digest wrapper, which a `core` crate cannot depend on under the layering; a second hash function | the digest moves to a layer below both |
 | Exclusive temporary, then rename | write in place; a fixed temporary name, which a squatter or a concurrent store could hijack | a consumer needs durability, which adds a sync before and after the rename |
 
@@ -173,32 +174,21 @@ A recalled checkpoint is adopted when four things hold, checked in this order; t
 
 A stream opens with the item count, carries one event per item in source order — its handle, typing and adoption — then the match liveness its producer computed, by origin, and closes. Liveness follows the items because a match is addressed by source coordinates and one source item may lower to several core items. A submission whose source records are gone is named by an event of its own, because silence would read as a submission without matches. The stream is a function of its inputs: a run that adopted and one that judged publish the same events but for the adoption marks.
 
-## Redesigned rather than ported
+## Specification evidence
 
-The prior implementation of this crate aligned revisions by a longest common subsequence over items, closed invalidation by a fixpoint over all pairs, took an append fast path that adopted a prefix on structural identity, and compared each reader's bindings by name against a footprint. Four defects followed from that design, and each is redesigned away rather than patched:
+Item-level `#[spec]` predicates check observable boundaries and transitions. Each `# Adequacy` section names its witness and bounds the claim; a data declaration, abstract protocol or unsupported opaque return states why it has no executable predicate. Generated differential cases support a finite-domain claim, not a proof over every program.
 
-- **Over-adoption through values.** An answer could depend on a definition's value while only its type was compared. Here the support records what the judgement read, and the value-changed closure blocks type-position reads of changed values.
-- **Non-termination under shadowing.** A shadowed definition made the definitional environment cyclic. Here every position resolves to one earlier reference, so no environment can be cyclic.
-- **Super-linear rechecking.** Alignment and the closure were quadratic. Here every step is linear, and the census counts it.
-- **A failed store that changed the store.** Here both stores encode first and the file store publishes by rename.
+| Evidence | Witness surface | Boundary |
+| -------- | --------------- | -------- |
+| Batch equivalence and real adoption | [differential suite](tests/incremental.rs) | faithful records, named edits, generated single edits and edit chains; forged records expose the trust premise |
+| Edit and lowering semantics | [common fixtures](tests/common.rs), [generator](tests/generate.rs) | forward and shadowed names, maximal literals, missing indices, clamped insertion, coordinated rename and modular integer selection |
+| Type-position dependencies | [footprints](src/footprint.rs), [checkpoint guards](src/checkpoint.rs) | quoted abstract types, recorded-answer types, cycles and opaque readers |
+| Canonical representation | [content](src/content.rs), [codec](src/codec.rs) | all supported node sorts, graph discovery, payloads, malformed tags, lengths and canonicality |
+| Store failure atomicity | [persistence](src/persistence.rs), [defect witnesses](tests/defects.rs) | dangling ids and capped levels preserve existing records; filesystem cleanup remains best effort |
+| Reachability and work | [defect witnesses](tests/defects.rs) | deterministic value-only-edit census, shadowing termination and exact work counts for chains of 250 through 2,000 items; zero-length chains are empty |
+| Session and stream transitions | [session](src/session.rs), [stream](src/stream.rs) | retained state on failure, item ordering, liveness and terminal events |
 
-The append fast path and the alignment are gone: the memo recalls by content wherever an item moved, and the support decides reuse wherever it sits.
-
-## Tests: the floor, the held rows, the defects
-
-The prior implementation's 53 tests are the floor. Fifty exist here by name: the footprint's 5, the persistence suite's 15, the session's 2, the stream's 4, and the differential's 24 — 22 named edits and the two properties `incremental_equals_from_scratch` (one edit) and `edit_sequences_preserve_zero_drift` (one to four edits, each step resumed from the previous result and round-tripped through the codec). Each property runs 400 cases over programs of one to six statements named from a pool of six, with integer, string, thunk, reference and hole bodies and `Integer`, `String`, `U (F Integer)` and `El 0 name` ascriptions, under seven edit kinds: replace, insert, delete, a coordinated rename into a pool of eight names, swap, ascribe, and a value-only edit weighted three times the others.
-
-Three are held until the vocabulary they test exists, with the rows of a fourth:
-
-- `typed_static_family_arguments_round_trip` and `legacy_checkpoint_identity_is_rejected_after_static_family_move`: until the checker admits static families.
-- `rung07_native_primitives_round_trip`: until the core vocabulary has native primitives.
-- The module and package rows of `nested_process_local_and_opaque_forms_report_exact_errors`: until modules and packages exist; the test covers every sort the vocabulary has today.
-
-The content table spells a universe's sort beside its level. The value universe keeps the tag it had before the sorts were spelled, and the computation universe and a universe at a sort parameter take fresh tags, and the two quotes and the computation decode take fresh tags beside their families. `universe_sorts_and_levels_round_trip` pins all three sorts at one level. The refusal vocabulary a typing records moved with the families — the universe, decode, quote and dependent-arrow formers left the unadmitted list, the sort-parameter and top-universe formers joined it, and the sort, level, dependent-bind and undecided refusals are new — so the checkpoint set's magic moved to version 2: a set an earlier checker wrote is refused at its first eight bytes and the program is judged afresh, never decoded under a table whose tags mean something else.
-
-The static operators take fresh tags beside their families: the static lambda and the static application beside the quotes among values, and the static Pi beside the sorted universes among value types. A static Pi seats as a value type in a signature; a static lambda or application is a term and is unseatable, as a quote is. `every_former` carries a type operator and its instance, so the round-trip and resume properties cover all three formers. The refusal vocabulary moved with them — the pair, the product, the static Pi and the static application left the unadmitted list, and the family-arity, family-argument-classifier, static-lambda-argument and static-classifier refusals are new, with the arity and the position as 32-bit counts — so the checkpoint set's magic moved to version 3, for the reason it moved to version 2: a table whose tags meant something else is refused at its first eight bytes and judged afresh. `every_former` reaches each new refusal, and `canonical_maps_and_supported_semantic_variants_round_trip` asserts each decodes as written.
-
-The four defects are each witnessed absent in `tests/defects.rs`: `the_generator_reaches_value_only_edits_under_type_position_reads` (a deterministic census holds the property's generator to the class), `a_shadowing_program_under_a_type_position_read_checks_and_terminates`, `items_visited_for_a_head_edit_grow_linearly` (counted, not timed), and `a_failed_store_leaves_the_store_as_it_was` (memory and file).
+The content vocabulary includes sorted universes, quotes, decodes and static operators. A static Pi seats as a value type; static lambdas, applications and quotes are terms, not seatable types. Checkpoint version 3 records that vocabulary and its refusal payloads; another magic is rejected rather than interpreted under different tags. Native primitives, modules and packages are outside this crate's current vocabulary.
 
 ## Consumer and open rows
 

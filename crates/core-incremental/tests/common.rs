@@ -49,6 +49,15 @@ use proptest::test_runner::TestCaseError;
 use quenchant_shape::shape::Maybe;
 
 /// A statement's body.
+///
+/// # Specification
+/// - executable: none — this syntax declaration is not callable; lowering
+///   relates its payloads to arena nodes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed integer boundaries, Unicode text, references, a
+///   thunk and a hole have distinct lowered stage representations.
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Body
 {
@@ -65,6 +74,15 @@ pub enum Body
 }
 
 /// A statement's ascription.
+///
+/// # Specification
+/// - executable: none — this syntax declaration has no invocation; its
+///   interpretation is checked at lower.
+///
+/// # Adequacy
+/// - hypothesis: L3 — integer, text, returner and code ascriptions are observed
+///   as their exact core formers, including a shadowed code reference.
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Ascription
 {
@@ -74,12 +92,20 @@ pub enum Ascription
     Text,
     /// `U (F Integer)`.
     ReturnsInteger,
-    /// `El 0 name`: a type position reading a definition, outside the
-    /// checker's fragment today and inside the adoption rule's reach.
+    /// `El 0 name`: a type position reading a definition.
     CodeOf(String),
 }
 
 /// `def name [: ascription] = body`.
+///
+/// # Specification
+/// - executable: none — the data does not carry the preceding scope; binding
+///   and position laws belong to lower.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an earlier shadow and a forward reference separate
+///   preceding-scope resolution from final-scope lookup.
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stmt
 {
@@ -155,7 +181,18 @@ pub struct Natural(pub u64);
 /// The integer literal `value`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the nonnegative integer whose magnitude is exactly `value`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and the largest u64 lower to their fixed decimal
+///   magnitudes. The predicate checks a numeric round trip without formatting a
+///   second string.
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
+#[anodized::spec(
+    ensures: |ret| matches!(ret, Literal::Integer(ref literal) if literal.sign() == Sign::NonNegative && literal.magnitude().as_ref().parse::<u64>() == Ok(value.0)),
+)]
 pub fn integer(value: Natural) -> Literal
 {
     Literal::Integer(IntegerLiteral::new(
@@ -170,6 +207,40 @@ pub fn integer(value: Natural) -> Literal
 /// - ensures: one item per statement, keyed by its name, at dense positions; a
 ///   name resolves to the latest earlier statement of it, and an unbound one to
 ///   the first position past the program.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fixed seven-statement stage artifact checks integer
+///   boundaries, every toy former, forward lookup and shadowing. The predicate
+///   covers arity, keys, dense metadata and resolved root presence; it does not
+///   run a second lowering.
+/// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.items().len() == statements.len()
+            && ret.items().iter().zip(statements).enumerate().all(
+                |(position, (item, statement))| {
+                    let declaration = item.declaration();
+                    item.key().as_ref() == statement.name.as_bytes()
+                        && usize::from(declaration.constant()) == position
+                        && usize::from(declaration.origin()) == position
+                        && match declaration.signature() {
+                            | Maybe::Present(id) => {
+                                statement.ascription.is_some()
+                                    && ret.arena().value_type(id).is_some()
+                            },
+                            | Maybe::Absent(_) => statement.ascription.is_none(),
+                        }
+                        && match declaration.body() {
+                            | Maybe::Present(id) => {
+                                !matches!(&statement.body, Body::Hole)
+                                    && ret.arena().value(id).is_some()
+                            },
+                            | Maybe::Absent(_) => matches!(&statement.body, Body::Hole),
+                        }
+                },
+            )
+    },
+)]
 pub fn lower(statements: &[Stmt]) -> Program
 {
     let mut arena = CoreArena::new();
@@ -227,7 +298,21 @@ pub fn lower(statements: &[Stmt]) -> Program
 /// context over a copy of its arena, projected.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one projected module-entry typing per item, in source order, at
+///   the default budget.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the module entry is the differential oracle for the
+///   incremental entry, not an independent checker semantics. The predicate
+///   checks arity; generated edits and deliberate stale typing exercise
+///   agreement and disagreement.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+#[anodized::spec(
+    ensures: |ret| ret.len() == program.items().len(),
+)]
 pub fn batch(program: &Program) -> Vec<Typing>
 {
     let mut arena = program.arena().clone();
@@ -249,13 +334,50 @@ pub fn batch(program: &Program) -> Vec<Typing>
 /// The batch run of `statements` through this crate's own pass.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a fresh default-budget pass with one judged checkpoint per
+///   statement in order.
+/// - panics: an internal order invariant fails.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated edit chains begin at this fresh pass and
+///   compare with the module entry. The predicate checks budget, source keys,
+///   arity and fresh judgement marks.
+/// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.checkpoints().budget() == CheckBudget::DEFAULT
+            && ret.checkpoints().items().len() == statements.len()
+            && ret.adoptions().len() == statements.len()
+            && ret.adoptions().iter().all(|mark| *mark == Adoption::Judged)
+            && ret.checkpoints().items().iter().zip(statements).all(
+                |(checkpoint, statement)| match *checkpoint.content().reference() {
+                    | gandr_core_incremental::Reference::Item { ref key, .. } => {
+                        key.as_ref() == statement.name.as_bytes()
+                    },
+                    | gandr_core_incremental::Reference::Unoccupied => false,
+                },
+            )
+    },
+)]
 pub fn checked(statements: &[Stmt]) -> Resume
 {
     check_program(&mut lower(statements), CheckBudget::DEFAULT).expect("the order builds")
 }
 
 /// What one differential step observed.
+///
+/// # Specification
+/// - executable: none — this result declaration is not callable and retains
+///   neither the base nor the independent module observation; step checks their
+///   relation.
+///
+/// # Adequacy
+/// - hypothesis: L2 — edit chains check the resumed typing. L3 — the precision
+///   witness observes one probe for its one adopted reader; this is an
+///   instrumentation count, not a timing claim.
+/// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
+/// - witness: `tests::incremental::the_precision_probe_examines_real_adoptions`
 #[derive(Debug)]
 pub struct Step
 {
@@ -286,8 +408,50 @@ pub fn failure(message: String) -> TestCaseError
 ///   the persisted round trip unchanged.
 /// - fails: naming the first obligation broken.
 ///
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated edits compare distinct module and incremental
+///   entries while sharing checker semantics. L3 — a forged stale typing must
+///   be a failing case, not a discarded case. The predicate checks retained
+///   budget, target references, output arities and transparency without
+///   repeating checking, footprint derivation or encoding.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+///
 /// # Errors
 /// A test-case failure naming the broken obligation.
+#[anodized::spec(
+    captures: [budget = base.checkpoints().budget()],
+    ensures: |ret| match ret {
+        | Ok(ref step) => {
+            step.resumed.checkpoints().budget() == budget
+                && step.resumed.checkpoints().items().len() == edited.items().len()
+                && step.resumed.adoptions().len() == edited.items().len()
+                && step.resumed.handles().len() == edited.items().len()
+                && step
+                    .resumed
+                    .checkpoints()
+                    .items()
+                    .iter()
+                    .zip(edited.references())
+                    .all(|(checkpoint, reference)| {
+                        checkpoint.content().reference() == reference
+                    })
+                && step
+                    .resumed
+                    .adoptions()
+                    .iter()
+                    .zip(step.resumed.checkpoints().items())
+                    .all(|(mark, checkpoint)| {
+                        *mark != Adoption::Adopted
+                            || checkpoint.content().opacity() == Opacity::Transparent
+                    })
+        },
+        | Err(TestCaseError::Fail(_)) => true,
+        | Err(TestCaseError::Reject(_)) => false,
+    },
+)]
 pub fn step(
     base: Resume,
     edited: &mut Program,
@@ -364,7 +528,31 @@ pub fn step(
 /// The gate over one edit: batch `base`, then step onto `edited`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the successful differential step for `edited`, at the default
+///   budget; the returned checkpoints retain its keys and order.
+/// - panics: a differential obligation fails.
+///
+/// # Adequacy
+/// - hypothesis: L2 — named edits and generated chains pass through the gate.
+///   The predicate checks its output metadata; the stale-typing witness
+///   exercises the underlying failure rather than pinning panic text.
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.resumed.checkpoints().budget() == CheckBudget::DEFAULT
+            && ret.resumed.checkpoints().items().len() == edited.len()
+            && ret.resumed.checkpoints().items().iter().zip(edited).all(
+                |(checkpoint, statement)| match *checkpoint.content().reference() {
+                    | gandr_core_incremental::Reference::Item { ref key, .. } => {
+                        key.as_ref() == statement.name.as_bytes()
+                    },
+                    | gandr_core_incremental::Reference::Unoccupied => false,
+                },
+            )
+    },
+)]
 pub fn gate(
     base: &[Stmt],
     edited: &[Stmt],
@@ -381,8 +569,18 @@ pub fn gate(
 #[derive(Clone, Copy, Debug)]
 pub struct Label(pub &'static str);
 
-/// A directory under the system temporary directory, emptied on creation and
-/// removed on drop.
+/// A labelled temporary path with best-effort removal on creation and drop.
+///
+/// # Specification
+/// - executable: none — the declaration owns a path, not a file-system
+///   snapshot; its constructor and snapshot operation carry the observable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a writable private directory retains two distinct file
+///   payloads in its snapshot and is removed on ordinary drop. Cleanup refusal
+///   is not injected.
+/// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Scratch(PathBuf);
@@ -392,7 +590,25 @@ impl Scratch
     /// The scratch directory of `label` for this process.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the label is unique among concurrent fixtures.
+    /// - ensures: the temporary path ends in the label; any old directory at
+    ///   that path receives a best-effort removal attempt. No directory is
+    ///   created.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the snapshot witness creates and uses the returned
+    ///   path. The predicate checks the label without querying the file system
+    ///   or repeating environment lookup.
+    /// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
+    #[anodized::spec(
+        ensures: |ret| {
+            ret.0
+                .as_os_str()
+                .as_encoded_bytes()
+                .ends_with(label.0.as_bytes())
+        },
+    )]
     pub fn new(label: Label) -> Self
     {
         let path = std::env::temp_dir().join(format!(
@@ -416,7 +632,24 @@ impl Scratch
     /// Every entry's name and bytes, sorted by name.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the directory and every yielded entry are readable files
+    ///   throughout their respective reads.
+    /// - ensures: the observed names and bytes, sorted by name; this is not an
+    ///   atomic snapshot of concurrent file-system changes.
+    /// - panics: a required read fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two deliberately reverse-created names retain their
+    ///   exact distinct bytes in name order. The predicate checks ordering
+    ///   without rereading external state.
+    /// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
+    #[anodized::spec(
+        ensures: |ret| {
+            ret.0
+                .windows(2)
+                .all(|pair| matches!(pair, [left, right] if left.0 <= right.0))
+        },
+    )]
     pub fn snapshot(&self) -> Snapshot
     {
         let mut entries: Vec<(String, Vec<u8>)> = std::fs::read_dir(&self.0)
@@ -435,18 +668,136 @@ impl Scratch
 }
 
 /// A scratch directory's entries, name and bytes, sorted by name.
+///
+/// # Specification
+/// - executable: none — this stored observation is not callable; snapshot
+///   checks ordering when constructing it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a two-file semantic golden observes exact names and
+///   bytes, not merely entry count.
+/// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
 #[repr(transparent)]
 #[derive(Debug, Eq, PartialEq)]
 pub struct Snapshot(Vec<(String, Vec<u8>)>);
 
 impl Drop for Scratch
 {
-    /// Remove the directory.
+    /// Attempt to remove the directory.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: removal is attempted; failure is ignored.
+    /// - executable: none — file-system removal is fallible and the value is
+    ///   being destroyed; no post-drop object can observe the external result.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary drop removes the witness directory and its
+    ///   files. Permission changes and concurrent interference are outside this
+    ///   witness.
+    /// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
     fn drop(&mut self)
     {
         drop(std::fs::remove_dir_all(&self.0));
     }
+}
+
+#[test]
+fn lowering_handles_numeric_and_binding_boundaries()
+{
+    let source = [
+        ascribed(Name("x"), Ascription::Integer, Body::Int(u64::MAX)),
+        def(Name("reader"), read(Name("later"))),
+        def(Name("x"), read(Name("x"))),
+        def(Name("later"), Body::Int(0)),
+        ascribed(
+            Name("type-reader"),
+            Ascription::CodeOf(String::from("x")),
+            Body::Hole,
+        ),
+        ascribed(Name("text"), Ascription::Text, text(Name("λ\0"))),
+        ascribed(Name("thunk"), Ascription::ReturnsInteger, Body::Thunk(7)),
+    ];
+    let resumed = checked(&source);
+    let literal = |digits: &str| {
+        gandr_core_incremental::ContentNode::Literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::from_decimal_text(String::from(digits)).expect("fixed decimal golden"),
+        )))
+    };
+    let expected = [
+        vec![
+            gandr_core_incremental::ContentNode::Base(BaseType::Integer),
+            literal("18446744073709551615"),
+        ],
+        vec![gandr_core_incremental::ContentNode::Constant(
+            gandr_core_incremental::Reference::Unoccupied,
+        )],
+        vec![gandr_core_incremental::ContentNode::Constant(
+            gandr_core_incremental::Reference::Item {
+                key: ItemKey::from("x"),
+                occurrence: gandr_core_incremental::Occurrence::from(0_usize),
+            },
+        )],
+        vec![literal("0")],
+        vec![
+            gandr_core_incremental::ContentNode::Element {
+                code: gandr_core_incremental::NodeIndex::from(1_usize),
+                target: Level::zero(),
+            },
+            gandr_core_incremental::ContentNode::Constant(
+                gandr_core_incremental::Reference::Item {
+                    key: ItemKey::from("x"),
+                    occurrence: gandr_core_incremental::Occurrence::from(1_usize),
+                },
+            ),
+        ],
+        vec![
+            gandr_core_incremental::ContentNode::Base(BaseType::String),
+            gandr_core_incremental::ContentNode::Literal(Literal::Text(StringLiteral::new(
+                String::from("λ\0"),
+            ))),
+        ],
+        vec![
+            gandr_core_incremental::ContentNode::ThunkType(
+                gandr_core_incremental::NodeIndex::from(2_usize),
+            ),
+            gandr_core_incremental::ContentNode::Thunk(gandr_core_incremental::NodeIndex::from(
+                3_usize,
+            )),
+            gandr_core_incremental::ContentNode::Returner(gandr_core_incremental::NodeIndex::from(
+                4_usize,
+            )),
+            gandr_core_incremental::ContentNode::Return(gandr_core_incremental::NodeIndex::from(
+                5_usize,
+            )),
+            gandr_core_incremental::ContentNode::Base(BaseType::Integer),
+            literal("7"),
+        ],
+    ];
+    assert_eq!(resumed.checkpoints().items().len(), expected.len());
+    for (checkpoint, expected) in resumed.checkpoints().items().iter().zip(expected) {
+        assert_eq!(checkpoint.content().nodes(), expected.as_slice());
+    }
+}
+
+#[test]
+fn directory_snapshots_order_names_and_retain_bytes()
+{
+    let scratch = Scratch::new(Label("snapshot-order"));
+    std::fs::create_dir_all(scratch.path()).expect("create fixture directory");
+    std::fs::write(scratch.path().join("zeta"), b"second\0").expect("write zeta");
+    std::fs::write(scratch.path().join("alpha"), b"\0first").expect("write alpha");
+    assert_eq!(
+        scratch.snapshot(),
+        Snapshot(vec![
+            (String::from("alpha"), b"\0first".to_vec()),
+            (String::from("zeta"), b"second\0".to_vec()),
+        ])
+    );
+    let path = scratch.path().to_path_buf();
+    drop(scratch);
+    assert!(
+        !path.exists(),
+        "ordinary drop removes the fixture directory"
+    );
 }
