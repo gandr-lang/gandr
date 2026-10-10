@@ -59,7 +59,7 @@ pub enum Type
 }
 
 /// Terms; all recursive positions are arena coordinates.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Term
 {
     /// An ordinary hypothesis, counted from the telescope's end.
@@ -193,7 +193,7 @@ impl core::error::Error for StageError
 {
 }
 
-/// Append-only staging syntax with canonical classifier identities.
+/// Append-only staging syntax with exact classifier and term identities.
 #[derive(Clone, Debug, Default)]
 pub struct Arena
 {
@@ -203,6 +203,8 @@ pub struct Arena
     type_ids: BTreeMap<Type, TypeId>,
     /// Terms in dependency order.
     terms: Vec<Term>,
+    /// Exact constructor, payload and child lookup within this arena.
+    term_ids: BTreeMap<Term, TermId>,
 }
 
 impl Budget
@@ -320,10 +322,11 @@ impl Arena
         Ok(id)
     }
 
-    /// Append a term over existing children, without checking its typing.
+    /// Intern a term over existing children, without checking its typing.
     ///
     /// # Specification
-    /// - ensures: all edges point backward, preventing cycles.
+    /// - ensures: equal descriptors receive the same coordinate; all edges
+    ///   point backward, preventing cycles. Identity is arena-local syntax.
     /// - fails: `UnknownTerm` or `UnknownType` for an absent child.
     /// - panics: none.
     ///
@@ -331,8 +334,10 @@ impl Arena
     /// Returns the absent child's typed lookup error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — live and forward edges distinguish prefix checking.
+    /// - hypothesis: L3 — equal and unequal descriptors distinguish exact
+    ///   interning; live and forward edges distinguish prefix checking.
     /// - witness: `stage::tests::syntax_boundaries`
+    /// - witness: `stage::tests::term_interning_preserves_exact_content`
     #[inline]
     pub fn alloc(
         &mut self,
@@ -348,8 +353,12 @@ impl Arena
             },
             | _ => {},
         }
+        if let Some(id) = self.term_ids.get(&term) {
+            return Ok(*id);
+        }
         let id = TermId(self.terms.len());
         self.terms.push(term);
+        self.term_ids.insert(term, id);
         Ok(id)
     }
 }
@@ -699,6 +708,66 @@ mod tests
         let mut budget = Budget(1);
         assert_eq!(budget.spend(), Ok(()));
         assert_eq!(budget.spend(), Err(StageError::Exhausted));
+    }
+
+    #[test]
+    fn term_interning_preserves_exact_content()
+    {
+        let mut arena = Arena::default();
+        let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+        let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0)))).unwrap();
+        let a = arena
+            .alloc(Term::Natural(Stage::Outer, Natural(2)))
+            .unwrap();
+        let b = arena
+            .alloc(Term::Natural(Stage::Outer, Natural(3)))
+            .unwrap();
+        let terms = [
+            Term::Variable(Index(0)),
+            Term::Variable(Index(1)),
+            Term::Natural(Stage::Outer, Natural(2)),
+            Term::Natural(Stage::Outer, Natural(3)),
+            Term::Natural(Stage::Inner(Model(0)), Natural(2)),
+            Term::Natural(Stage::Inner(Model(1)), Natural(2)),
+            Term::Code(outer),
+            Term::Code(inner),
+            Term::Lambda(outer, a),
+            Term::Lambda(inner, a),
+            Term::Lambda(outer, b),
+            Term::Apply(a, b),
+            Term::Apply(b, a),
+            Term::Multiply(a, b),
+            Term::Multiply(b, a),
+            Term::Quote(a),
+            Term::Quote(b),
+            Term::Splice(a),
+            Term::Splice(b),
+            Term::Iterate(a, b, a),
+            Term::Iterate(a, a, b),
+            Term::Eliminate(a, outer),
+            Term::Eliminate(a, inner),
+            Term::Eliminate(b, outer),
+        ];
+        let ids: Vec<_> = terms
+            .iter()
+            .map(|term| arena.alloc(*term).unwrap())
+            .collect();
+        let mut cloned = arena.clone();
+        for (term, id) in terms.iter().zip(&ids) {
+            assert_eq!(arena.alloc(*term), Ok(*id));
+            assert_eq!(cloned.alloc(*term), Ok(*id));
+            for (other, other_id) in terms.iter().zip(&ids) {
+                assert_eq!(term == other, id == other_id);
+            }
+        }
+        assert_eq!(
+            arena.alloc(Term::Quote(TermId(usize::MAX))),
+            Err(StageError::UnknownTerm(TermId(usize::MAX)))
+        );
+        assert_eq!(
+            arena.alloc(Term::Code(TypeId(usize::MAX))),
+            Err(StageError::UnknownType(TypeId(usize::MAX)))
+        );
     }
 
     #[test]

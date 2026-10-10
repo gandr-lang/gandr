@@ -38,7 +38,11 @@ serde.workspace = true
 
 [dev-dependencies]
 allocation-counter.workspace = true
+crossbeam-channel.workspace = true
+crossbeam-deque.workspace = true
 proptest.workspace = true
+ringbuf.workspace = true
+rtrb.workspace = true
 serde_json.workspace = true
 
 [lints]

@@ -37,6 +37,8 @@
 //! choice for multithreaded measurements, a security advisory or maintenance
 //! loss.
 
+extern crate alloc;
+
 #[path = "staging_templates/admission.rs"]
 mod admission;
 

@@ -1,14 +1,53 @@
 //! Exact guarded admission, measured against the same local replay judgment.
 //!
-//! Discovery and arena cloning are outside timed intervals. Every worker owns
-//! its replay scratch; guarded workers borrow one immutable schema and arena.
-//! Both parallel paths include scope/thread creation. Totals cover 25 batches.
-//! Full typed certificate replay remains a separate baseline in the parent.
+//! Discovery, fixed-schema binding and arena cloning are outside batch timing.
+//! Each worker owns an interned consumer clone and borrows one immutable
+//! schema. Scoped rows include thread creation; pool rows exclude it. Totals
+//! cover 25 batches. Full typed certificate replay remains a separate baseline
+//! in the parent.
+//!
+//! # Hand-off protocol and measurement
+//!
+//! Set `GANDR_HANDOFF=all` when running the release observer to compare
+//! standing `crossbeam-channel` MPMC, `crossbeam-deque` work stealing, and
+//! per-worker `rtrb`/`ringbuf` SPSC pairs. The rings compare busy polling with
+//! 64 spins followed by park/unpark, individual publication with slice/chunk
+//! publication, and draining 1 or up to 32 jobs. All transports use member,
+//! family, 4-family and 16-family tasks at 1/2/4/8 workers, over exactly 25
+//! copies of each selected family. Queue capacity is 16,384 descriptors; mixed
+//! streams fit without padding or dropped jobs. Busy polling reserves worker
+//! execution capacity but does not set CPU affinity.
+//!
+//! `HANDOFF` stream totals measure amortized throughput. `latency8_ns`
+//! separately measures 25 sequential single-family exchanges, so grouping
+//! families cannot masquerade as lower single-family latency. `HANDOFF-PING`
+//! reports median and p99 empty-job round trips after 100 warmups; half a round
+//! trip is an amortized per-message cost, not a directly measured one-way
+//! latency. Every timed stream is checked against serial verdicts and counters,
+//! and every transport exercises the changed-rule refusal at all worker counts.
+//! `COMPRESSED` retains the scoped-thread baseline, with one worker executing
+//! directly. Schema validation and fixed-content binding are timed separately;
+//! cloning and pool creation are outside batch timing.
+//!
+//! These are observer-only dev-dependencies: channel/deque enable `std`,
+//! ringbuf enables `alloc`, and rtrb uses no default features. The established
+//! Crossbeam implementations provide the MPMC and stealing controls; the two
+//! maintained SPSC crates expose different batched APIs under the same
+//! protocol. Neither enters the kernel. Keep both rings while measuring their
+//! tradeoff; replacing one requires repeatable latency or throughput evidence
+//! on the intended wake policy and grain, including the CPU cost of busy
+//! polling.
+
+#[path = "handoff.rs"]
+mod handoff;
+#[path = "queues.rs"]
+mod queues;
 
 use std::io::Write as _;
 
 use gandr_kernel_core::admission::Admission;
 use gandr_kernel_core::admission::Choice;
+use gandr_kernel_core::admission::Consumer;
 use gandr_kernel_core::admission::Refusal;
 use gandr_kernel_core::admission::Schema;
 use gandr_kernel_core::admission::Work;
@@ -158,20 +197,20 @@ fn replay_measure(
 /// - witness: `template::tests::compressed_admission_matches_plain_families`
 fn member(
     schema: &Schema,
-    arena: &Arena,
+    consumer: &mut Consumer<'_>,
     choices: &[Choice],
     step: Step,
 ) -> Result<Admission, Refusal>
 {
     let row = schema.substitute(schema.classifiers(), choices)?;
-    row.admit(arena, step, &mut Budget(10_000_000))
+    row.admit(consumer, step, &mut Budget(10_000_000))
 }
 
 /// Measure independent compressed members under the requested worker count.
 ///
 /// # Specification
-/// - ensures: every worker borrows immutable syntax and schema; verdict/work
-///   must equal the serial observer in the calling differential.
+/// - ensures: each worker owns a consumer clone; verdict/work must equal the
+///   serial observer in the calling differential.
 /// - fails: named admission refusal or a worker panic as Malformed.
 /// - panics: none.
 ///
@@ -183,7 +222,7 @@ fn member(
 /// - witness: `template::tests::compressed_admission_matches_plain_families`
 fn admission_measure(
     schema: &Schema,
-    arena: &Arena,
+    consumer: &Consumer<'_>,
     members: &[Step],
     rows: &[Vec<Choice>],
     threads: Threads,
@@ -192,12 +231,14 @@ fn admission_measure(
     let chunk = members.len().div_ceil(threads.0).max(1);
     let mut result = Measurement::default();
     for _ in 0_usize .. 25 {
+        let consumers: Vec<_> = members.chunks(chunk).map(|_| consumer.clone()).collect();
         let start = Instant::now();
         let observations = if threads.0 == 1 {
+            let mut consumer = consumers.into_iter().next().ok_or(Refusal::Malformed)?;
             members
                 .iter()
                 .zip(rows)
-                .map(|(step, choices)| member(schema, arena, choices, *step))
+                .map(|(step, choices)| member(schema, &mut consumer, choices, *step))
                 .collect::<Result<Vec<_>, _>>()?
         }
         else {
@@ -205,12 +246,15 @@ fn admission_measure(
                 let handles: Vec<_> = members
                     .chunks(chunk)
                     .zip(rows.chunks(chunk))
-                    .map(|(members, rows)| {
+                    .zip(consumers)
+                    .map(|((members, rows), mut consumer)| {
                         scope.spawn(move || {
                             members
                                 .iter()
                                 .zip(rows)
-                                .map(|(step, choices)| member(schema, arena, choices, *step))
+                                .map(|(step, choices)| {
+                                    member(schema, &mut consumer, choices, *step)
+                                })
                                 .collect::<Result<Vec<_>, _>>()
                         })
                     })
@@ -260,6 +304,7 @@ pub fn run(
     output: &mut io::BufWriter<io::StdoutLock<'_>>
 ) -> Result<(), Box<dyn core::error::Error>>
 {
+    let mut workload = Vec::new();
     let cases = (0 ..= 8)
         .map(|n| Case::Power(Natural(n)))
         .chain((0 ..= 8).map(|n| Case::DoubleProduct(Natural(n))))
@@ -300,18 +345,23 @@ pub fn run(
             let schema = Schema::check(admission.proposal, &mut Budget(10_000_000))?;
             let schema_time = start.elapsed();
             let (checks, fuel, affected) = schema.work();
+            let arena = input.arena.clone();
+            let start = Instant::now();
+            let consumer = schema.bind(arena, &mut Budget(10_000_000))?;
+            let binding_time = start.elapsed();
             let serial = admission_measure(
                 &schema,
-                &input.arena,
+                &consumer,
                 &family.members,
                 &admission.rows,
                 Threads(1),
             )?;
             let baseline = replay_measure(&input.arena, &family.members, Threads(1))?;
             let mut largest = Duration::ZERO;
+            let mut largest_consumer = consumer.clone();
             for (choices, step) in admission.rows.iter().zip(&family.members) {
                 let start = Instant::now();
-                member(&schema, &input.arena, choices, *step)?;
+                member(&schema, &mut largest_consumer, choices, *step)?;
                 largest = largest.max(start.elapsed());
             }
             let rule = family.members.first().ok_or(StageError::Unbalanced)?.rule;
@@ -327,7 +377,7 @@ pub fn run(
             for threads in [1, 2, 4, 8] {
                 let admitted = admission_measure(
                     &schema,
-                    &input.arena,
+                    &consumer,
                     &family.members,
                     &admission.rows,
                     Threads(threads),
@@ -343,7 +393,7 @@ pub fn run(
                 }
                 writeln!(
                     output,
-                    "COMPRESSED,{case},family={index},rule={rule},k={},threads={threads},schema_ns={},checks={},schema_fuel={},D={},row_ops={},comparisons={},classifier_ops={},instance_ops={},plain_fuel={},plain_ns={},admit_ns={},largest_ns={}",
+                    "COMPRESSED,{case},family={index},rule={rule},k={},threads={threads},schema_ns={},checks={},schema_fuel={},D={},row_ops={},comparisons={},classifier_ops={},instance_ops={},plain_fuel={},plain_ns={},admit_ns={},largest_ns={},binding_ns={}",
                     family.members.len(),
                     schema_time.as_nanos(),
                     checks.0,
@@ -356,10 +406,23 @@ pub fn run(
                     plain.work.0,
                     plain.elapsed.as_nanos(),
                     admitted.elapsed.as_nanos(),
-                    largest.as_nanos()
+                    largest.as_nanos(),
+                    binding_time.as_nanos()
                 )?;
             }
+            workload.push(handoff::Workload {
+                case,
+                index: Natural(index),
+                arena: input.arena.clone(),
+                schema,
+                members: family.members.clone(),
+                rows: admission.rows,
+                schema_time,
+                binding_time,
+                largest,
+            });
         }
     }
+    handoff::run(output, &workload)?;
     Ok(())
 }

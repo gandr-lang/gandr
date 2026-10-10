@@ -113,7 +113,7 @@ pub enum Refusal
 {
     /// Syntax, typing, or fuel error from the unchanged staging vocabulary.
     Syntax(StageError),
-    /// Cyclic, malformed, noncanonical or unrooted pattern.
+    /// Malformed schema references or a consumer bound to a different schema.
     Malformed,
     /// Validation exceeded the native proposal image's byte-sized allowance.
     SchemaWorkBound,
@@ -127,7 +127,7 @@ pub enum Refusal
     UnknownArm(Point),
     /// Repeated occurrences select different arms.
     Correlation(Point),
-    /// The consumer supplies a different classifier vocabulary.
+    /// A substitution row supplies a different classifier vocabulary.
     ClassifierMismatch,
     /// The consumer's sides are not the schema instance.
     SidesMismatch,
@@ -181,7 +181,7 @@ pub struct Schema
 {
     /// Validated syntax and guard dictionaries; no caller can mutate them.
     proposal: Proposal,
-    /// Kernel-prepared fixed content and the dynamic exact-interning plan.
+    /// Dependency classification and the reachable instantiation plan.
     content: content::Prepared,
     /// Fresh skolem classifiers, including separate predecessor markers.
     skolems: Vec<TypeId>,
@@ -193,6 +193,16 @@ pub struct Schema
     replay_work: Work,
     /// Distinct dependent rigid constructors in the two side skeletons.
     affected: Work,
+}
+
+/// Schema-bound consumer syntax; no mutable arena replacement is exposed.
+#[derive(Clone, Debug)]
+pub struct Consumer<'schema>
+{
+    /// Exact immutable schema associated with the coordinate mapping.
+    schema: &'schema Schema,
+    /// Owned interned syntax and imported fixed coordinates.
+    content: content::Instance,
 }
 
 /// An admissible point-ordered substitution, tied to its checked schema.
@@ -215,11 +225,12 @@ pub struct Admission
     pub choices: Work,
     /// Distinct dependent skeleton constructors D.
     pub affected: Work,
-    /// Distinct materialized term records imported for exact comparison.
+    /// Materialized term records imported per member; zero for bound arenas.
     pub comparisons: Work,
     /// Dynamic exact records, including predecessor payloads.
     pub instantiations: Work,
-    /// Distinct materialized classifier records compared.
+    /// Materialized classifier records imported per member; zero for bound
+    /// arenas.
     pub classifiers: Work,
 }
 
@@ -444,7 +455,8 @@ impl Schema
         for (point, arm) in obligations {
             schema.inherit(&BTreeMap::from([(point, arm)]), budget)?;
         }
-        schema.content = content::Prepared::build(&schema.proposal, budget)?;
+        schema.content =
+            content::Prepared::build(content::Dependencies(dependent), &reached, budget)?;
         Ok(schema)
     }
 
@@ -468,6 +480,35 @@ impl Schema
     pub fn classifiers(&self) -> &[Type]
     {
         &self.proposal.classifiers
+    }
+
+    /// Bind fixed schema content to an owned consumer arena once.
+    ///
+    /// # Specification
+    /// - ensures: returned coordinates and syntax stay in one owned namespace;
+    ///   cloning preserves their association with this immutable schema.
+    /// - fails: malformed references or exhausted preparation work.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the originating admission refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a different arena or schema cannot reuse a positive
+    ///   id comparison.
+    /// - witness: `admission::tests::bound_arenas_preserve_exactness_and_recovery`
+    #[inline]
+    pub fn bind(
+        &self,
+        arena: Arena,
+        budget: &mut Budget,
+    ) -> Result<Consumer<'_>, Refusal>
+    {
+        let content = content::Instance::bind(self, arena, budget)?;
+        Ok(Consumer {
+            schema: self,
+            content,
+        })
     }
 
     /// Validate every supplied occurrence and require every point.
@@ -784,15 +825,15 @@ impl Substitution<'_>
     ///
     /// # Specification
     /// - ensures: success certifies exactly the schema's instantiated local
-    ///   equation; no member syntax or rule reduct is materialized.
-    /// - fails: `SidesMismatch` for unequal content or decision; syntax/fuel
-    ///   errors.
+    ///   equation by same-arena identities, without member rule replay.
+    /// - fails: `SidesMismatch` for unequal syntax or decision; `Malformed` for
+    ///   a consumer bound to another schema; syntax/fuel errors.
     /// - panics: none.
-    /// - intension: charges materialized-side comparisons separately from row
-    ///   validation and D; iterative walks preserve shared input subgraphs.
+    /// - intension: row validation and D plus two root liveness checks and two
+    ///   exact id comparisons; no consumer-side term or classifier walk.
     ///
     /// # Errors
-    /// Returns `Refusal::SidesMismatch` or syntax/fuel refusals.
+    /// Returns side/schema mismatch or syntax/fuel refusals.
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — ordinary replay, a changed side and aliasing of
@@ -802,11 +843,17 @@ impl Substitution<'_>
     #[inline]
     pub fn admit(
         &self,
-        arena: &Arena,
+        consumer: &mut Consumer<'_>,
         equation: Step,
         budget: &mut Budget,
     ) -> Result<Admission, Refusal>
     {
+        if !core::ptr::eq(
+            core::ptr::from_ref(self.schema),
+            core::ptr::from_ref(consumer.schema),
+        ) {
+            return Err(Refusal::Malformed);
+        }
         if equation.rule != self.schema.proposal.equation.rule {
             return Err(Refusal::SidesMismatch);
         }
@@ -818,7 +865,7 @@ impl Substitution<'_>
         content::compare(
             self.schema,
             &self.guards,
-            arena,
+            &mut consumer.content,
             [equation.source, equation.target],
             budget,
             work,

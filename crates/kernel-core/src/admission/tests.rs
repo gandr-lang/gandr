@@ -52,9 +52,13 @@ fn schema_and_instance_refusals()
             target: body,
             rule: Rule::SpliceQuote,
         };
-        let observation = row.admit(&arena, step, &mut Budget(10_000)).unwrap();
+        let wrong = arena
+            .alloc(Term::Natural(Stage::Outer, Natural(10)))
+            .unwrap();
+        let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+        let observation = row.admit(&mut consumer, step, &mut Budget(10_000)).unwrap();
         assert_eq!(observation.choices, Work(1));
-        assert_eq!(observation.comparisons, Work(3));
+        assert_eq!(observation.comparisons, Work(0));
         let endpoint = arena
             .alloc(Term::Natural(Stage::Outer, Natural(0)))
             .unwrap();
@@ -64,12 +68,9 @@ fn schema_and_instance_refusals()
             steps: Vec::from([step]),
         };
         assert!(crate::stage::replay(&mut arena, &[], &certificate, &mut Budget(10_000)).is_ok());
-        let wrong = arena
-            .alloc(Term::Natural(Stage::Outer, Natural(10)))
-            .unwrap();
         assert_eq!(
             row.admit(
-                &arena,
+                &mut consumer,
                 Step {
                     target: wrong,
                     ..step
@@ -179,7 +180,8 @@ fn successor_and_transparency()
                 &mut Budget(10_000),
             )
             .unwrap();
-        assert!(row.admit(&arena, step, &mut Budget(10_000)).is_ok());
+        let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+        assert!(row.admit(&mut consumer, step, &mut Budget(10_000)).is_ok());
         let certificate = Certificate {
             source: step.source,
             target: step.target,
@@ -260,9 +262,10 @@ fn classifier_coordinates_are_not_content()
     let body = arena.alloc(Term::Code(ty)).unwrap();
     let quote = arena.alloc(Term::Quote(body)).unwrap();
     let source = arena.alloc(Term::Splice(quote)).unwrap();
+    let mut consumer = schema.bind(arena, &mut Budget(10_000)).unwrap();
     assert_eq!(
         row.admit(
-            &arena,
+            &mut consumer,
             Step {
                 source,
                 target: body,
@@ -270,7 +273,103 @@ fn classifier_coordinates_are_not_content()
             },
             &mut Budget(10_000)
         ),
-        Err(Refusal::ClassifierMismatch)
+        Err(Refusal::SidesMismatch)
+    );
+}
+
+#[test]
+fn bound_arenas_preserve_exactness_and_recovery()
+{
+    let schema = Schema::check(cancellation(), &mut Budget(10_000)).unwrap();
+    let other = Schema::check(cancellation(), &mut Budget(10_000)).unwrap();
+    let mut arena = Arena::default();
+    // Shift all coordinates away from the schema's numbering.
+    arena
+        .alloc(Term::Natural(Stage::Outer, Natural(99)))
+        .unwrap();
+    let steps: Vec<_> = [Natural(2), Natural(3)]
+        .into_iter()
+        .map(|value| {
+            let target = arena.alloc(Term::Natural(Stage::Outer, value)).unwrap();
+            let quote = arena.alloc(Term::Quote(target)).unwrap();
+            let source = arena.alloc(Term::Splice(quote)).unwrap();
+            Step {
+                source,
+                target,
+                rule: Rule::SpliceQuote,
+            }
+        })
+        .collect();
+    let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+    let mut foreign = other.bind(arena, &mut Budget(10_000)).unwrap();
+    for (guard, step) in steps.iter().enumerate() {
+        let row = schema
+            .substitute(schema.classifiers(), &[Choice {
+                point: Point(0),
+                guard: Guard(guard),
+            }])
+            .unwrap();
+        let observed = row.admit(&mut consumer, *step, &mut Budget(100)).unwrap();
+        assert_eq!(observed.comparisons, Work(0));
+        assert_eq!(observed.classifiers, Work(0));
+        assert_eq!(observed.instantiations, Work(2));
+        assert_eq!(
+            row.admit(&mut foreign, *step, &mut Budget(100)),
+            Err(Refusal::Malformed)
+        );
+        let wrong = steps[guard.wrapping_add(1) % 2];
+        assert_eq!(
+            row.admit(&mut consumer, wrong, &mut Budget(100)),
+            Err(Refusal::SidesMismatch)
+        );
+        let other_row = schema
+            .substitute(schema.classifiers(), &[Choice {
+                point: Point(0),
+                guard: Guard(guard.wrapping_add(1) % 2),
+            }])
+            .unwrap();
+        assert_eq!(
+            other_row.admit(&mut consumer, wrong, &mut Budget(3)),
+            Err(Refusal::Syntax(StageError::Exhausted))
+        );
+        assert_eq!(
+            row.admit(&mut consumer, *step, &mut Budget(100)),
+            Ok(observed)
+        );
+        assert_eq!(
+            row.admit(&mut consumer.clone(), *step, &mut Budget(100)),
+            Ok(observed)
+        );
+    }
+    // A caller cannot name a future root that instantiation would make live.
+    let mut prefix = Arena::default();
+    let target = prefix
+        .alloc(Term::Natural(Stage::Outer, Natural(2)))
+        .unwrap();
+    prefix
+        .alloc(Term::Natural(Stage::Outer, Natural(3)))
+        .unwrap();
+    let mut future = prefix.clone();
+    let quote = future.alloc(Term::Quote(target)).unwrap();
+    let source = future.alloc(Term::Splice(quote)).unwrap();
+    let mut consumer = schema.bind(prefix, &mut Budget(10_000)).unwrap();
+    let row = schema
+        .substitute(schema.classifiers(), &[Choice {
+            point: Point(0),
+            guard: Guard(0),
+        }])
+        .unwrap();
+    assert_eq!(
+        row.admit(
+            &mut consumer,
+            Step {
+                source,
+                target,
+                rule: Rule::SpliceQuote
+            },
+            &mut Budget(100)
+        ),
+        Err(Refusal::Syntax(StageError::UnknownTerm(source)))
     );
 }
 
@@ -368,8 +467,9 @@ fn affected_constructors_measure_fanout_not_depth()
                 &mut Budget(100_000),
             )
             .unwrap();
+        let mut consumer = schema.bind(arena, &mut Budget(100_000)).unwrap();
         assert_eq!(
-            row.admit(&arena, step, &mut Budget(100_000))
+            row.admit(&mut consumer, step, &mut Budget(100_000))
                 .unwrap()
                 .instantiations,
             affected
