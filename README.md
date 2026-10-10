@@ -32,7 +32,7 @@ cargo build-dist    # the shipped binary: fat LTO, size-optimized std
 
 CI builds every target under `profile.test`, which inherits size-optimized `release` without debuginfo and explicitly keeps debug assertions and overflow checks. `NEXTEST_PROFILE=ci mise run check:tests` uses that build; `NEXTEST_PROFILE=ci mise run check:tests-enforcing` keeps its checked artifacts in `target/enforcing`. The corpus uses the same Cargo profile. `release` and the aggressive, uncached `dist` profile remain separate.
 
-Build-state archives contain the test artifacts from both target directories, compressed with zstd and uploaded without recompression. Main promotes queue artifacts into shared caches; manual test runs warm branch-local caches. Mise caches installed tools by locked pins, including sizelint, so warm CI installs reuse binaries.
+Build-state archives contain the test artifacts from both target directories, compressed with zstd and uploaded without recompression. Complete archives are cached separately from Cargo dependencies so integration-test binaries survive cache cleanup. Cargo validates source checksums rather than checkout timestamps. Main promotes queue artifacts into shared caches; hosted manual test runs warm branch-local caches. Mise caches installed tools by locked pins, including sizelint, so warm CI installs reuse binaries.
 
 `mise run ci:act` runs the committed Linux CI workflow in a disposable checkout. Two host-wide slots bound concurrent gates across repositories and worktrees; further invocations wait until a slot frees. Dead holders are reclaimed. Each invocation uses distinct container names. Cached actions run without GitHub fetches; missing actions download on first use.
 
