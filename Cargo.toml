@@ -650,6 +650,7 @@ default-features = false
 # - core-incremental
 # - core-term
 # - kernel-core
+# - kernel-term
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher

@@ -519,6 +519,7 @@ dependencies = [
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "proptest",
+ "quenchant-shape",
 ]
 
 [[package]]
