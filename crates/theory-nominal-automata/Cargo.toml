@@ -1,0 +1,19 @@
+[package]
+name = "gandr-theory-nominal-automata"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Finite register presentations of nominal word and tree automata"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["automata", "nominal", "registers"]
+categories = ["algorithms", "no-std"]
+publish.workspace = true
+
+[dependencies]
+anodized.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true
