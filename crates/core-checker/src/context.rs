@@ -850,6 +850,7 @@ impl<'arena> CheckingContext<'arena>
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
             | Value::PathRefl(_)
+            | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }

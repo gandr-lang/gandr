@@ -1219,6 +1219,21 @@ where
     Out: Sink,
 {
     match *node {
+        | ContentNode::PrimitiveValue(primitive) => {
+            writer.tag(Tag(0x0D));
+            writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
+        },
+        | ContentNode::Primitive(primitive, arguments) => {
+            writer.tag(Tag(0x16));
+            writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
+            writer.tag(match arguments {
+                | gandr_core_term::primitive::Arguments::Unary(_) => Tag(1),
+                | gandr_core_term::primitive::Arguments::Binary(_) => Tag(2),
+            });
+            for &argument in arguments.iter() {
+                write_index(writer, argument)?;
+            }
+        },
         | ContentNode::PathUniverse(source, target) => {
             writer.tag(Tag(0x40));
             write_index(writer, source)?;
@@ -1459,6 +1474,8 @@ where
             reader.cursor > before
                 && reader.cursor <= reader.bytes.len()
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
+                    | ContentNode::PrimitiveValue(_) => tag == 0x0D,
+                    | ContentNode::Primitive(..) => tag == 0x16,
                     | ContentNode::PathUniverse(..) => tag == 0x40,
                     | ContentNode::PathRefl(_) => tag == 0x41,
                     | ContentNode::PathEquiv { .. } => tag == 0x42,
@@ -1520,6 +1537,27 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 {
     let tag = reader.tag()?;
     let node = match tag.0 {
+        | 0x0D | 0x16 => {
+            use gandr_core_term::primitive::Arguments;
+            use gandr_core_term::primitive::PRELUDE;
+            let name = reader.bytes()?;
+            let primitive = PRELUDE
+                .iter()
+                .find(|primitive| primitive.name().as_ref().as_bytes() == name.0)
+                .copied()
+                .ok_or(CodecError::Corrupt)?;
+            if tag.0 == 0x0D {
+                ContentNode::PrimitiveValue(primitive)
+            }
+            else {
+                let arguments = match reader.tag()?.0 {
+                    | 1 => Arguments::Unary(read_index(reader)?),
+                    | 2 => Arguments::Binary([read_index(reader)?, read_index(reader)?]),
+                    | _ => return Err(CodecError::Corrupt),
+                };
+                ContentNode::Primitive(primitive, arguments)
+            }
+        },
         | 0x01 => {
             let zone = reader.tag()?;
             let zone = match zone.0 {
@@ -3838,6 +3876,50 @@ where
 #[cfg(test)]
 mod tests
 {
+
+    #[test]
+    fn native_names_and_operand_order_survive_persistence()
+    {
+        use gandr_core_term::primitive::Arguments;
+        use gandr_core_term::primitive::PRELUDE;
+        let sub = PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "sub")
+            .unwrap();
+        let neg = PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "neg")
+            .unwrap();
+        for node in [
+            ContentNode::PrimitiveValue(sub),
+            ContentNode::Primitive(
+                sub,
+                Arguments::Binary([NodeIndex::from(4_usize), NodeIndex::from(2_usize)]),
+            ),
+            ContentNode::Primitive(neg, Arguments::Unary(NodeIndex::from(3_usize))),
+        ] {
+            let mut bytes = CheckpointBytes::default();
+            super::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_node(&mut reader), Ok(node));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+        let mut bytes = CheckpointBytes::default();
+        let mut writer = Writer { sink: &mut bytes };
+        writer.tag(Tag(0x0d));
+        writer.bytes(Bytes(b"not-a-native-row")).unwrap();
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
+    }
+
     use super::Answer;
     use super::Answered;
     use super::BTreeSet;

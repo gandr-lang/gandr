@@ -433,6 +433,11 @@ impl Walk<'_>
             .producer(id)
             .ok_or(CheckRefusal::DanglingProducer(id))?;
         match *node {
+            | ProducerNode::Primitive { arguments, .. } => {
+                for argument in arguments.iter().rev() {
+                    self.stack.push(Visit::Producer(*argument, depth));
+                }
+            },
             | ProducerNode::Variable { zone, index } => {
                 let past = match zone {
                     | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
@@ -669,13 +674,14 @@ impl Walk<'_>
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
+    | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
 })]
 fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 {
     match *node {
+        | ProducerNode::Primitive { .. }
         | ProducerNode::Literal(_)
         | ProducerNode::Constructor { .. }
         | ProducerNode::Thunk { .. } => Some(Polarity::Positive),

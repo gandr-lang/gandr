@@ -230,6 +230,8 @@ fn machine_stop(stuck: &Stuck) -> Stop
         | Stuck::Unmatched { .. } => Stop::CasedNonInjection,
         | Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
         | Stuck::UnboundCovariable(_)
+        | Stuck::Primitive(_)
+        | Stuck::NonScalar(_)
         | Stuck::UndefinedConstant(_)
         | Stuck::CyclicConstant(_)
         | Stuck::IllFormedCommand(_)
@@ -327,6 +329,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
         | EvalFault::TransportedNonPath
+        | EvalFault::NativePrimitive(_)
         | EvalFault::OutOfFuel
         | EvalFault::DanglingTerm
         | EvalFault::Domain(_)

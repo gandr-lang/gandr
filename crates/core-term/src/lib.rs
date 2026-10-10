@@ -37,6 +37,7 @@ mod classifier;
 mod context;
 mod definition;
 mod failure;
+pub mod primitive;
 mod rewrite;
 mod syntax;
 

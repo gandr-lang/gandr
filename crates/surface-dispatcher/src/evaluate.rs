@@ -820,10 +820,11 @@ impl<'source> Program<'source>
             },
             | Outcome::Stuck(stuck) => {
                 let observed = match stuck {
-                    | Stuck::Unobservable { value, .. } | Stuck::Unmatched { value, .. } => {
-                        machine.store().value(value)
-                    },
+                    | Stuck::Unobservable { value, .. }
+                    | Stuck::Unmatched { value, .. }
+                    | Stuck::NonScalar(value) => machine.store().value(value),
                     | Stuck::UnboundVariable { .. }
+                    | Stuck::Primitive(_)
                     | Stuck::UnboundCovariable(_)
                     | Stuck::UndefinedConstant(_)
                     | Stuck::CyclicConstant(_)
@@ -964,6 +965,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ref ret| match core.computation(read) {
         Some(&Computation::Lambda(_)) => ret.0 == "<fun>",
         Some(&Computation::Return(value)) => match core.value(value) {
+            Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
             Some(&Value::Unit) => ret.0 == "()",
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
             Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret.0 == "<path>",
@@ -993,7 +995,10 @@ impl<'source> Program<'source>
             Some(&Value::Lift { .. }) => true,
             None => ret.0 == "<dangling>",
         },
-        Some(&(Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) | None => ret.0 == "<computation>",
+        Some(&Computation::Primitive { .. } |
+&(Computation::Transport(..) | Computation::Application(..) |
+Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) |
+None => ret.0 == "<computation>",
     })]
     fn spell(
         &self,
@@ -1006,7 +1011,8 @@ impl<'source> Program<'source>
             | Some(&Computation::Return(value)) => Vec::from([Piece::Value(value)]),
             | Some(&Computation::Lambda(_)) => Vec::from([Piece::Text("<fun>")]),
             | Some(
-                &(Computation::Transport(..)
+                &Computation::Primitive { .. }
+                | &(Computation::Transport(..)
                 | Computation::Application(..)
                 | Computation::Bind(..)
                 | Computation::Force(_)
@@ -1023,6 +1029,9 @@ impl<'source> Program<'source>
                 | Piece::Value(value) => value,
             };
             match core.value(value) {
+                | Some(&Value::Primitive { primitive, .. }) => {
+                    spelled.push_str(primitive.name().as_ref());
+                },
                 | Some(
                     &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }),
                 ) => spelled.push_str("<path>"),
@@ -1133,8 +1142,10 @@ enum Piece
 /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
 #[spec(ensures: |ref ret| match core.value(body) {
     Some(&Value::Constant(constant)) => ret.iter().copied().eq([constant]),
-    Some(&(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_)
-        | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) | None => ret.is_empty(),
+    Some(&Value::Primitive { .. } |
+&(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
+Value::QuoteComputation(_) | Value::StaticLambda(_) |
+Value::StaticApplication(..))) | None => ret.is_empty(),
     Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_))) => true,
 })]
 fn references(
@@ -1177,7 +1188,8 @@ fn references(
                 },
                 | Some(&Value::Thunk(computation)) => pending.push(Node::Computation(computation)),
                 | Some(
-                    &(Value::Variable { .. }
+                    &Value::Primitive { .. }
+                    | &(Value::Variable { .. }
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Quote(_)
@@ -1188,6 +1200,9 @@ fn references(
                 | None => {},
             },
             | Node::Computation(id) => match core.computation(id) {
+                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                    pending.extend(arguments.iter().copied().map(Node::Value));
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     pending.extend([Node::Value(path), Node::Value(value)]);
                 },

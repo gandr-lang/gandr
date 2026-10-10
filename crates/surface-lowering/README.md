@@ -15,6 +15,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [A module is collected by name and resolved by position](#a-module-is-collected-by-name-and-resolved-by-position)
 - [A module declaration flattens to named members](#a-module-declaration-flattens-to-named-members)
 - [The namespace engine](#the-namespace-engine)
+- [Native prelude recognition](#native-prelude-recognition)
 - [Imports bind an alias and resolve nothing](#imports-bind-an-alias-and-resolve-nothing)
 - [A form's sort is decided by its own form](#a-forms-sort-is-decided-by-its-own-form)
 - [A function tail is a thunked chain of lambdas](#a-function-tail-is-a-thunked-chain-of-lambdas)
@@ -156,6 +157,16 @@ Tests whose prerequisites the fragment lacks are held, not written against stand
 `namespace` follows yuujinchou: a trie from hierarchical names to bindings held in one arena, a modifier language that rewrites one, the not-found, shadow and hook events a handler settles, scopes with sections, and `Recognition`, the outermost scope lowering declares names over. Its own page, [docs/namespace.md](docs/namespace.md), states [namespaces, modifiers and scopes](docs/namespace.md#namespaces-modifiers-and-scopes), [the arena trie and its walks](docs/namespace.md#an-arena-trie-and-no-recursion), [the outermost scope](docs/namespace.md#the-outermost-scope), and the [tests held](docs/namespace.md#held-tests) until their readers exist.
 
 The alternatives were a crate of its own and the dispatcher. It sits here because the lowering is its one reader: imports and outermost names are decided during lowering. Reversal: a second reader of scope state outside lowering, a session or a language server, moves it to its own crate.
+
+## Native prelude recognition
+
+`Recognition::default()` seeds `SeedTable::prelude()` in the outermost scope. The rows come from [the core table](../core-term/README.md#native-prelude), including namespace prefixes such as `int` and `prim`. A caller constructing `Recognition::new` supplies its seed tables explicitly and in order: later entries and tables shadow earlier ones. Source declarations and binders are resolved before a bare prelude name; the existing shadow policy still reports or rejects a source shadow.
+
+The table also owns `+`, binary and unary `-`, `*`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `&&` and `||`. Operators lower to saturated native computations. Like ordinary calls, they take value operands: sequence computed operands through explicit block bindings. For example, `def answer : +U (-F Integer) ; def answer = thunk { 20 + 22 } ;` runs to `42`. A named native function can be passed or partially applied using the ordinary thunk and lambda rules. `Bool` names the canonical `Unit + Unit` classifier of comparisons and boolean operations: left is true, right is false.
+
+**Choice.** Seeded bindings rather than a fallback that fabricates a global when name resolution fails. This preserves namespace ordering, shadow policy and the distinction between a missing member and a missing prefix. Revisit only if prelude provisioning becomes an explicit module import.
+
+The prelude ordering floor is `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`. Native seeding and prefix shadowing are witnessed by `native_prelude_seeds_names_and_shadowing`; the public dispatcher integration `builtins::tests::native_names_operators_and_partial_application_execute` covers parsing through execution. No prelude-floor test is deferred.
 
 ## Imports bind an alias and resolve nothing
 
