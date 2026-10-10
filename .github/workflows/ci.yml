@@ -147,7 +147,7 @@ jobs:
           name: junit-${{ runner.os }}-${{ runner.arch }}
           path: |
             target/nextest/ci/junit.xml
-            target/enforcing/nextest/ci/junit.xml
+            target/nextest/ci-enforcing/junit.xml
           if-no-files-found: ignore
       - &restore-test-state
         name: restore complete test state
@@ -347,7 +347,7 @@ jobs:
       # sentinels refuse a build that silently stopped enforcing.
       - name: test every workspace target with specifications enforced
         env:
-          NEXTEST_PROFILE: ci
+          NEXTEST_PROFILE: ci-enforcing
         run: mise run check:tests-enforcing
       - name: check private-item rustdoc
         env:

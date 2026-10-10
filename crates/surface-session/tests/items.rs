@@ -23,7 +23,7 @@ fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
     let grammar = grammar();
     let mut lowerings = LoweringCount::default();
     let lowering = lower_source(
-        &grammar,
+        grammar,
         SourceText::from(
             "def first : Integer ; def first = 1 ; def broken = missing ; def owed : String ; def last = first ;",
         ),
@@ -64,7 +64,7 @@ fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
 #[test]
 fn the_item_source_offers_a_revision_or_names_its_fault()
 {
-    let items = SurfaceItems::new(grammar());
+    let items = SurfaceItems::new(grammar().clone());
     let program = items
         .items(&Revision::from("def a = 1 ; def b = a ;"))
         .expect("a module the lowering reads is offered");
