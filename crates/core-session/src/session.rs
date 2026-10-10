@@ -163,6 +163,15 @@ enum Visit
 
 impl Session
 {
+    /// Borrow finite syntax in graph-position order for code export.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn nodes(&self) -> &[Node]
+    {
+        &self.nodes
+    }
+
     /// The root identity of this validated syntax tree.
     ///
     /// # Specification

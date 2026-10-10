@@ -182,7 +182,17 @@ pub enum Side
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Value
 {
-    /// Reflexivity at a quoted closed first-order code.
+    /// A session bisimulation inhabiting a native `Path_U` classifier.
+    SessionPath
+    {
+        /// Source and target session codes.
+        path_type: ValueTypeId,
+        /// Finite untrusted relation, replayed at formation.
+        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        /// Native payload-path tuple, terminated by Unit.
+        payload_paths: ValueId,
+    },
+    /// Reflexivity at a quoted closed first-order or session code.
     PathRefl(ValueId),
     /// A componentwise path between product codes.
     PathProduct(ValueId, ValueId),

@@ -26,13 +26,16 @@ use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
 
-/// Read a quoted code and validate its entire first-order type graph.
+/// Inspect quoted first-order shapes or finite guarded session graphs.
 ///
 /// # Specification
 /// - requires: the code root belongs to `arena`.
-/// - ensures: every reachable former is Base, Unit, Product or Sum.
-/// - provides: closed level-zero decoding without a type-level evaluator.
-/// - fails: `UnsupportedCode`, `UnsupportedType`, `Arena` or `Budget`.
+/// - ensures: outer formers are Base, Unit, Product, Sum or Session; session
+///   graph structure and guards check. Native formation separately checks
+///   session payload codes in an empty term context.
+/// - provides: code-shape inspection, never a checking verdict.
+/// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
+///   `Budget`.
 /// - panics: none.
 ///
 /// # Errors
@@ -41,14 +44,15 @@ use crate::rewrite::shift_value;
 /// # Adequacy
 /// - hypothesis: L3 — Bool and product codes admit; thunk codes refuse.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `session::tests::session_codes_are_closed_and_contractive`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
         Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Unit | &ValueType::Sum(..) | &ValueType::Product(..))),
+        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Unit | &ValueType::Sum(..) | &ValueType::Product(..) | &ValueType::Session { .. })),
         Err(PathError::Budget) => allowance.0 == 0,
-        Err(PathError::Arena) => true,
+        Err(PathError::Arena | PathError::Session(_)) => true,
         Err(_) => false,
     },
 )]
@@ -72,6 +76,15 @@ pub(super) fn code(
         let node = arena.value_type(id).ok_or(PathError::Arena)?;
         match node {
             | &ValueType::Unit | &ValueType::Base(_) => {},
+            | &ValueType::Session {
+                ref graph,
+                payloads,
+            } => {
+                crate::session::validate_graph(arena, graph, payloads)
+                    .map_err(PathError::Session)?;
+                // Ordinary formation checks payload codes in an empty
+                // telescope.
+            },
             | &ValueType::Sum(first, second) | &ValueType::Product(first, second) => {
                 pending.push(second);
                 pending.push(first);
