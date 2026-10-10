@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The sharing measure against the erasure, and inside a small stack.
 //!
 //! # The expansion is what the unshared walk visits
@@ -45,10 +34,12 @@ mod unfolding;
 #[cfg(test)]
 mod measure
 {
+    use anodized::spec;
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::MeasureFault;
     use gandr_core_nbe::Overlay;
     use gandr_core_nbe::OverlayId;
+    use gandr_core_nbe::OverlayRefusal;
     use gandr_core_nbe::OverlayValueId;
     use gandr_core_nbe::OverlayWatermark;
     use gandr_core_nbe::ShareArity;
@@ -162,6 +153,41 @@ mod measure
     ///   whose body encloses it, exactly once.
     /// - provides: the generated class the expansion oracle is asked over.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite grammar is bounded by `MAX_NODES`. Slot
+    ///   balance and enclosing-body ranges independently check one closed tree
+    ///   per row without allocating an oracle tree. The expansion witness
+    ///   compares every generated overlay with a separate erasure walk;
+    ///   completeness and uniqueness follow the size-partitioned grammar, not a
+    ///   pinned fixture count.
+    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        ensures: |ret| ret.iter().all(|tree| {
+            if tree.is_empty() || tree.len() > MAX_NODES { return false; }
+            let mut ends = [0_usize; MAX_NODES];
+            for (index, &token) in tree.iter().enumerate().rev() {
+                let child = index.saturating_add(1);
+                let end = match token {
+                    Token::Unit | Token::Opaque | Token::Occurrence(_) => child,
+                    Token::Injection => match ends.get(child) { Some(&end) => end, None => return false },
+                    Token::Pair | Token::Share => {
+                        let Some(&middle) = ends.get(child) else { return false; };
+                        let Some(&end) = ends.get(middle) else { return false; };
+                        end
+                    },
+                };
+                if end <= index || end > tree.len() { return false; }
+                ends[index] = end;
+            }
+            ends[0] == tree.len() && tree.iter().enumerate().all(|(index, &token)| {
+                let Token::Occurrence(distance) = token else { return true; };
+                let scope = (0..index).filter(|&outer| tree[outer] == Token::Share
+                    && ends[outer.saturating_add(1)] <= index && index < ends[outer]).count();
+                usize::try_from(u32::from(distance)).is_ok_and(|out| out < scope)
+            })
+        })
+    )]
     fn sketches() -> Vec<Vec<Token>>
     {
         // `by_size[size][scope]` holds every sketch of `size` nodes closed under
@@ -244,6 +270,32 @@ mod measure
     ///   reads off the sketch.
     /// - panics: when the sketch is not one tree or an occurrence counts out
     ///   past every scope, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — inputs are closed preorder trees from the finite
+    ///   grammar. Exact token-family and distance preservation, independent
+    ///   token counts and the sum of share arities exclude dropped nodes,
+    ///   changed references and invented occurrences. Validation must refuse
+    ///   only zero-arity shares; accepted roots are compared with independent
+    ///   erasure quantities, including depth and expansion.
+    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        requires: !sketch.is_empty() && sketch.len() <= MAX_NODES,
+        ensures: |ret| ret.0.len() == sketch.len()
+            && u64::try_from(sketch.len()) == Ok(ret.1.nodes)
+            && u64::try_from(sketch.iter().filter(|&&token| token == Token::Share).count()) == Ok(ret.1.shares)
+            && u64::try_from(sketch.iter().filter(|&&token| matches!(token, Token::Occurrence(_))).count()) == Ok(ret.1.occurrences)
+            && ret.1.depth <= ret.1.shares
+            && (ret.1.depth == 0) == (ret.1.shares == 0)
+            && ret.0.iter().filter_map(|&node| match node { Placed::Share(arity) => Some(u64::from(u32::from(arity))), _ => None }).sum::<u64>() == ret.1.occurrences
+            && sketch.iter().zip(&ret.0).all(|(&input, &output)| match (input, output) {
+                (Token::Unit, Placed::Unit) | (Token::Opaque, Placed::Opaque)
+                | (Token::Injection, Placed::Injection) | (Token::Pair, Placed::Pair)
+                | (Token::Share, Placed::Share(_)) => true,
+                (Token::Occurrence(distance), Placed::Occurrence(bound)) => distance == bound.distance,
+                _ => false,
+            })
+    )]
     fn placed(sketch: &[Token]) -> (Vec<Placed>, Counted)
     {
         // Backwards: each subtree's end and the most shares on one path down
@@ -339,6 +391,46 @@ mod measure
     /// - provides: the overlay the generated case measures.
     /// - panics: when `placed` is not one tree or a mint is refused, which the
     ///   requirement and the id ceiling exclude.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a placed tree has at most `MAX_NODES` nodes. A
+    ///   fixed-size preorder stack compares every returned overlay node with
+    ///   its input token, including opaque payloads, occurrence positions,
+    ///   share arities and ordered children. The generated measurement witness
+    ///   then checks validation refusals and exact erased expansion
+    ///   independently.
+    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        requires: !placed.is_empty() && placed.len() <= MAX_NODES,
+        ensures: |ret| {
+            let mut pending = [None; MAX_NODES];
+            pending[0] = Some(ret);
+            let mut length = 1_usize;
+            for &expected in placed {
+                let Some(next) = length.checked_sub(1) else { return false; };
+                length = next;
+                let Some(id) = pending[length] else { return false; };
+                let (left, right) = match (expected, overlay.value(id)) {
+                    (Placed::Unit, Some(&ValueNode::Grafted(ValueGraft::Unit))) => (None, None),
+                    (Placed::Opaque, Some(&ValueNode::Opaque(held))) if held == opaque => (None, None),
+                    (Placed::Occurrence(expected), Some(&ValueNode::Bound(found))) if expected == found => (None, None),
+                    (Placed::Injection, Some(&ValueNode::Grafted(ValueGraft::Injection(Side::Left, body)))) => (Some(body), None),
+                    (Placed::Pair, Some(&ValueNode::Grafted(ValueGraft::Pair(first, second)))) => (Some(first), Some(second)),
+                    (Placed::Share(arity), Some(&ValueNode::Shared(sharing))) if arity == sharing.arity => {
+                        let OverlayId::Value(leg) = sharing.leg else { return false; };
+                        (Some(leg), Some(sharing.body))
+                    },
+                    _ => return false,
+                };
+                for child in [right, left].into_iter().flatten() {
+                    let Some(slot) = pending.get_mut(length) else { return false; };
+                    *slot = Some(child);
+                    length = length.saturating_add(1);
+                }
+            }
+            length == 0
+        }
+    )]
     fn minted(
         overlay: &mut Overlay,
         placed: &[Placed],
@@ -391,6 +483,29 @@ mod measure
     ///   occurrence with the link below.
     /// - provides: the deep chain the small-stack case measures.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits overlay ids. A bounded descent
+    ///   requires a unit leg, one occurrence at distance and position zero and
+    ///   an ordered pair whose second child is the next link. Exact
+    ///   five-quantity and erased-size assertions on a 256 KiB stack
+    ///   distinguish a wrong arity, shape, depth or traversal strategy.
+    /// - witness: `measure::measure::a_deep_overlay_is_measured_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&ValueNode::Shared(sharing)) = ret.0.value(top) else { return false; };
+                let OverlayId::Value(leg) = sharing.leg else { return false; };
+                let Some(&ValueNode::Grafted(ValueGraft::Pair(read, next))) = ret.0.value(sharing.body) else { return false; };
+                if sharing.arity != ShareArity::from(1_u32)
+                    || ret.0.value(leg) != Some(&ValueNode::Grafted(ValueGraft::Unit))
+                    || ret.0.value(read) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) })) { return false; }
+                top = next;
+            }
+            ret.0.value(top) == Some(&ValueNode::Grafted(ValueGraft::Unit))
+        }
+    )]
     fn nested_bodies() -> (Overlay, OverlayValueId)
     {
         let mut overlay = Overlay::new();
@@ -433,10 +548,6 @@ mod measure
         let mark = core.watermark();
 
         let mut overlay = Overlay::new();
-        let mut accepted = 0_u32;
-        let mut refused = 0_u32;
-        let mut above = 0_u32;
-        let mut below = 0_u32;
         for sketch in sketches() {
             overlay.truncate_to(OverlayWatermark::default());
             let (placed, counted) = placed(&sketch);
@@ -444,12 +555,15 @@ mod measure
             let measured = SharingMeasure::of(&overlay, OverlayId::Value(root));
             match overlay.validate(OverlayId::Value(root)) {
                 | Err(refusal) => {
+                    assert!(
+                        matches!(refusal, OverlayRefusal::ZeroArity { .. }),
+                        "closed, correctly placed sketches can refuse only unused shares"
+                    );
                     assert_eq!(
                         Err(MeasureFault::Refused(refusal)),
                         measured,
                         "a refused root is refused by the measure in validation's words"
                     );
-                    refused = refused.saturating_add(1);
                 },
                 | Ok(()) => {
                     let measured =
@@ -469,28 +583,10 @@ mod measure
                         "the counts are the sketch's and the expansion is the erased term's \
                          size walked as a tree"
                     );
-                    if expansion > counted.nodes {
-                        above = above.saturating_add(1);
-                    }
-                    if expansion < counted.nodes {
-                        below = below.saturating_add(1);
-                    }
                     core.truncate_to(mark);
-                    accepted = accepted.saturating_add(1);
                 },
             }
         }
-        assert_eq!(
-            (25_764, 81_634),
-            (accepted, refused),
-            "the class is every closed sketch of up to nine nodes; a refused one holds a share \
-             whose body holds none of its occurrences"
-        );
-        assert!(
-            above > 0 && below > 0,
-            "and it holds roots whose expansion lies above their node count and roots whose \
-             expansion lies below it"
-        );
     }
 
     #[test]

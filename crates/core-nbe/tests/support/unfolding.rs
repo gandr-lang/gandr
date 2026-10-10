@@ -93,11 +93,59 @@ pub struct Unfolded(pub u64);
 ///   walkable term reaches.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the independent expansion walk treats an existing core
-///   node as one opaque leaf, but visits repeated minted subtrees per
-///   occurrence.
+/// - hypothesis: L3 — the erased arena extends the entry arena and the finite
+///   tree fits the counter. A pre-existing root counts exactly once; a newly
+///   minted leaf counts once, and a composite contributes at least itself and
+///   each immediate child. The independent overlay measures observe the full
+///   count, including repeated DAG paths and opaque bind bases; the local
+///   predicate does not replay that walk.
+/// - witness: `deep_evaluation::deep_evaluation::the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack`
+/// - witness: `deep_readback::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
 /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
-#[spec(ensures: |ret| !(match root { CoreNode::Value(id) => before.value(id).is_some(), CoreNode::Computation(id) => before.computation(id).is_some(), CoreNode::ValueType(id) => before.value_type(id).is_some(), CoreNode::CompType(id) => before.comp_type(id).is_some() }) || ret.0 == 1)]
+#[spec(
+    requires: match root {
+        CoreNode::Value(id) => erased.value(id).is_some(),
+        CoreNode::Computation(id) => erased.computation(id).is_some(),
+        CoreNode::ValueType(id) => erased.value_type(id).is_some(),
+        CoreNode::CompType(id) => erased.comp_type(id).is_some(),
+    },
+    ensures: |ret| {
+        let opaque = match root {
+            CoreNode::Value(id) => before.value(id).is_some(),
+            CoreNode::Computation(id) => before.computation(id).is_some(),
+            CoreNode::ValueType(id) => before.value_type(id).is_some(),
+            CoreNode::CompType(id) => before.comp_type(id).is_some(),
+        };
+        if opaque { return ret.0 == 1; }
+        let minimum = match root {
+            CoreNode::Value(id) => match erased.value(id) {
+                Some(&Value::PathEquiv { .. }) => 4,
+                Some(&(Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_))) => 1,
+                Some(&(Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _))) => 3,
+                Some(&(Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_))) => 2,
+                None => return false,
+            },
+            CoreNode::Computation(id) => match erased.computation(id) {
+                Some(&(Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_))) => 2,
+                Some(&(Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _))) => 3,
+                Some(&Computation::Case { .. }) => 4,
+                None => return false,
+            },
+            CoreNode::ValueType(id) => match erased.value_type(id) {
+                Some(&(ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_))) => 1,
+                Some(&(ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. })) => 3,
+                Some(&(ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. })) => 2,
+                None => return false,
+            },
+            CoreNode::CompType(id) => match erased.comp_type(id) {
+                Some(&(CompType::Returner(_) | CompType::Element { .. })) => 2,
+                Some(&(CompType::Arrow { .. } | CompType::Pi { .. })) => 3,
+                None => return false,
+            },
+        };
+        if minimum == 1 { ret.0 == 1 } else { ret.0 >= minimum }
+    }
+)]
 pub fn unfolded(
     erased: &CoreArena,
     root: CoreNode,

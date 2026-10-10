@@ -179,6 +179,17 @@ pub enum MeasureFault
 /// - provides: the five quantities [`SharingMeasure::of`] computes, read
 ///   through one accessor each; the fields are private, so a measure exists
 ///   only as the measure of some root.
+/// - executable: none — a data `maintains` predicate needs anodized's `logic`
+///   feature, which the workspace does not enable. [`Self::of`] enforces the
+///   four laws; the root and overlay needed for provenance are not retained in
+///   this value.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — values returned for validated roots are observed by
+///   their five counters. Swapping fields or counting a shared leg twice
+///   changes exact tuples or the independently counted erased tree.
+/// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SharingMeasure
 {
@@ -248,7 +259,8 @@ impl SharingMeasure
     ///   parents. The walk's depth is separated from the host stack by chains
     ///   measured inside a small stack. The counters other than the expansion
     ///   need more nodes than four families of 32-bit ids hold to overflow, so
-    ///   their ceilings stay prose.
+    ///   their ceilings stay prose. Swapping counters, counting a shared leg
+    ///   twice or translating a validation refusal changes an observation.
     /// - witness: `measure::tests::a_share_with_many_occurrences_inlines_its_leg_at_each`
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
     /// - witness: `measure::tests::an_occurrence_free_root_measures_its_own_size`
@@ -267,14 +279,19 @@ impl SharingMeasure
     /// - witness:
     ///   `teardown::teardown::the_teardown_overlays_are_measured_inside_a_small_stack`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |measured| {
-        measured.occurrences.0 >= measured.shares.0
+    #[spec(
+        ensures: |ret| match ret {
+            Ok(measured) => measured.occurrences.0 >= measured.shares.0
             && measured.depth.0 <= measured.shares.0
             && measured.nodes.0.checked_sub(measured.shares.0)
                 .and_then(|rest| rest.checked_sub(measured.occurrences.0))
                 .is_some_and(|rest| rest > 0_u64)
-            && measured.expansion.0 >= 1_u64
-    }))]
+            && measured.expansion.0 >= 1_u64,
+            Err(MeasureFault::Refused(refusal)) => overlay.validate(root) == Err(refusal),
+            Err(MeasureFault::Overflow { node, .. }) => overlay.shape(node).is_ok(),
+            Err(MeasureFault::MachineInvariant) => true,
+        }
+    )]
     pub fn of(
         overlay: &Overlay,
         root: OverlayId,
@@ -374,8 +391,13 @@ impl ShareCount
     /// # Adequacy
     /// - hypothesis: L3 — the step is separated by every measured share count
     ///   asserted exactly; the ceiling needs more share nodes than an overlay
-    ///   holds and stays prose.
+    ///   holds and stays prose. Changing the increment or the returned counter
+    ///   field changes the exact public totals; the predicate states the
+    ///   checked arithmetic.
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| ret == self.0.checked_add(1_u64).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Shares, node: share })
+    )]
     fn with(
         self,
         share: OverlayId,
@@ -410,9 +432,14 @@ impl OccurrenceCount
     /// - hypothesis: L3 — the sum is separated from a count of shares by a
     ///   share of arity one thousand and from a count of occurrence nodes by
     ///   the generated class; the ceiling needs more occurrence nodes than an
-    ///   overlay holds and stays prose.
+    ///   overlay holds and stays prose. Changing the increment or the returned
+    ///   counter field changes the exact public totals; the predicate states
+    ///   the checked arithmetic.
     /// - witness: `measure::tests::a_share_with_many_occurrences_inlines_its_leg_at_each`
     /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        ensures: |ret| ret == self.0.checked_add(u64::from(u32::from(arity))).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Occurrences, node: share })
+    )]
     fn with(
         self,
         arity: ShareArity,
@@ -450,8 +477,13 @@ impl ShareDepth
     /// - hypothesis: L3 — the step is separated by chains nested through bodies
     ///   and through legs and by sibling chains in both orders, each asserted
     ///   exactly; the ceiling needs more share nodes than an overlay holds and
-    ///   stays prose.
+    ///   stays prose. Changing the increment or the returned counter field
+    ///   changes the exact public totals; the predicate states the checked
+    ///   arithmetic.
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| ret == self.0.checked_add(1_u64).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Depth, node: share })
+    )]
     fn above(
         self,
         share: OverlayId,
@@ -486,8 +518,13 @@ impl NodeCount
     /// - hypothesis: L3 — the step is separated by every measured node count
     ///   asserted exactly, among them roots whose expansion lies below and
     ///   above their node count; the ceiling needs more nodes than an overlay
-    ///   holds and stays prose.
+    ///   holds and stays prose. Changing the increment or the returned counter
+    ///   field changes the exact public totals; the predicate states the
+    ///   checked arithmetic.
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| ret == self.0.checked_add(1_u64).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Nodes, node })
+    )]
     fn with(
         self,
         node: OverlayId,
@@ -527,9 +564,13 @@ impl ExpansionSize
     ///   doubling chain whose expansion reaches exactly the counter's ceiling
     ///   and the same chain one link longer, refused at that link's graft; the
     ///   ordinary sum is separated by every measured expansion asserted
-    ///   exactly.
+    ///   exactly. Changing the increment or the returned counter field changes
+    ///   the exact public totals; the predicate states the checked arithmetic.
     /// - witness: `measure::tests::a_doubling_chain_measures_in_its_own_size`
     /// - witness: `measure::tests::an_expansion_past_the_counter_is_refused_at_its_node`
+    #[spec(
+        ensures: |ret| ret == self.0.checked_add(child.0).map(Self).ok_or(MeasureFault::Overflow { quantity: MeasuredQuantity::Expansion, node: graft })
+    )]
     fn with(
         self,
         child: Self,
@@ -639,8 +680,13 @@ impl Measuring<'_>
     /// - hypothesis: L3 — the drive's depth is separated from the host stack by
     ///   chains nested through bodies, whose task, leg and result stacks all
     ///   grow with the chain, measured inside a small stack; its result is
-    ///   separated by every measure the suites assert.
+    ///   separated by every measure the suites assert. Leaving a result or leg
+    ///   behind violates the completion predicate; dropping a visit changes the
+    ///   independently observed root measure.
     /// - witness: `measure::measure::a_deep_overlay_is_measured_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| ret.map_or(true, |measured| self.visits.is_empty() && self.legs.is_empty() && self.results.is_empty() && measured.expansion.0 >= 1_u64 && measured.depth.0 <= self.shares.0)
+    )]
     fn run(&mut self) -> Result<Measured, MeasureFault>
     {
         while let Some(visit) = self.visits.pop() {
@@ -704,9 +750,28 @@ impl Measuring<'_>
     ///   different sizes at two distances, including from inside another
     ///   share's leg; the queue order is separated by the same cases, since a
     ///   leg bound after its body would be read by the wrong occurrences.
+    ///   Counting a node twice, entering a body before binding its leg or
+    ///   reversing the children changes a predicate or an exact result.
     /// - witness: `measure::tests::an_occurrence_free_root_measures_its_own_size`
     /// - witness: `measure::tests::a_leg_reads_the_shares_outside_its_own`
     /// - witness: `measure::tests::an_occurrence_reads_the_leg_its_distance_names`
+    #[spec(
+        captures: [nodes = self.nodes, shares = self.shares, occurrences = self.occurrences, results = self.results.len(), visits = self.visits.len()],
+        ensures: |ret| ret.is_err() || (nodes.0.checked_add(1_u64) == Some(self.nodes.0) && self.overlay.shape(node).is_ok_and(|shape| match shape {
+            Shape::Opaque(_) => self.shares == shares && self.occurrences == occurrences && self.visits.len() == visits && self.results.len() == results.saturating_add(1) && self.results.last() == Some(&Measured::LEAF),
+            Shape::Bound(bound) => self.shares == shares && self.occurrences == occurrences && self.visits.len() == visits && self.results.len() == results.saturating_add(1) && usize::try_from(u32::from(bound.distance)).ok().and_then(|distance| self.legs.iter().rev().nth(distance)).is_some_and(|leg| self.results.last() == Some(&Measured { expansion: leg.expansion, depth: ShareDepth::default() })),
+            Shape::Shared(sharing) => shares.0.checked_add(1_u64) == Some(self.shares.0) && occurrences.0.checked_add(u64::from(u32::from(sharing.arity))) == Some(self.occurrences.0) && self.results.len() == results && self.visits.get(visits..) == Some(&[Visit::Unbind { share: node }, Visit::Enter(sharing.body), Visit::Bind, Visit::Enter(sharing.leg)]),
+            Shape::Grafted(children) => {
+                let ordered = match children {
+                    crate::overlay::Children::Leaf => [None, None, None],
+                    crate::overlay::Children::One(first) => [Some(first), None, None],
+                    crate::overlay::Children::Two(first, second) => [Some(first), Some(second), None],
+                    crate::overlay::Children::Three(first, second, third) => [Some(first), Some(second), Some(third)],
+                };
+                self.shares == shares && self.occurrences == occurrences && self.results.len() == results && self.visits.len() == visits.saturating_add(1).saturating_add(ordered.into_iter().flatten().count()) && self.visits.get(visits) == Some(&Visit::Assemble { graft: node, base: Height(results) }) && self.visits.get(visits.saturating_add(1)..).is_some_and(|queued| queued.iter().rev().zip(ordered.into_iter().flatten()).all(|(visit, child)| *visit == Visit::Enter(child)))
+            },
+        }))
+    )]
     fn enter(
         &mut self,
         node: OverlayId,
@@ -777,9 +842,21 @@ impl Measuring<'_>
     /// - hypothesis: L3 — the expansion is separated from one that counted the
     ///   share or its leg again by every share measured exactly, and the depth
     ///   from one that read only the leg or only the body by chains nested
-    ///   through each.
+    ///   through each. Adding the leg again, summing depths or retaining a
+    ///   scope frame changes the measured result or the stack predicate.
     /// - witness: `measure::tests::a_share_with_many_occurrences_inlines_its_leg_at_each`
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        captures: [results = self.results.len(), legs = self.legs.len(), body = self.results.last().copied(), leg = self.legs.last().copied()],
+        ensures: |ret| body.zip(leg).map_or_else(
+            || ret == Err(MeasureFault::MachineInvariant) && self.results.len() == results.saturating_sub(1) && self.legs.len() == legs.saturating_sub(1),
+            |(body, leg)| {
+                let depth = body.depth.0.max(leg.depth.0).checked_add(1_u64);
+                self.legs.len() == legs.saturating_sub(1) && depth.map_or_else(
+                    || ret == Err(MeasureFault::Overflow { quantity: MeasuredQuantity::Depth, node: share }) && self.results.len() == results.saturating_sub(1),
+                    |depth| ret == Ok(()) && self.results.len() == results && self.results.last() == Some(&Measured { expansion: body.expansion, depth: ShareDepth(depth) }))
+            })
+    )]
     fn unbind(
         &mut self,
         share: OverlayId,
@@ -820,10 +897,25 @@ impl Measuring<'_>
     /// - hypothesis: L3 — the sum and the depth are separated by grafts of
     ///   none, one, two and three children measured exactly and by sibling
     ///   chains of different depths in both orders; the overflow by the
-    ///   doubling chain's boundary pair.
+    ///   doubling chain's boundary pair. Omitting the graft node, summing child
+    ///   depths or dropping a child changes an exact result and the
+    ///   reconstruction predicate.
     /// - witness: `measure::tests::an_occurrence_free_root_measures_its_own_size`
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
     /// - witness: `measure::tests::an_expansion_past_the_counter_is_refused_at_its_node`
+    #[spec(
+        captures: [count = self.results.len(), children = [self.results.get(base.0).copied(), self.results.get(base.0.saturating_add(1)).copied(), self.results.get(base.0.saturating_add(2)).copied()]],
+        ensures: |ret| {
+            if count < base.0 {
+                ret == Err(MeasureFault::MachineInvariant) && self.results.len() == count
+            } else {
+                let expected = children.into_iter().flatten().try_fold(Measured::LEAF, |sum, child| sum.expansion.0.checked_add(child.expansion.0).map(|expansion| Measured { expansion: ExpansionSize(expansion), depth: sum.depth.max(child.depth) }));
+                expected.map_or_else(
+                    || ret == Err(MeasureFault::Overflow { quantity: MeasuredQuantity::Expansion, node: graft }) && self.results.len() == base.0,
+                    |expected| ret == Ok(()) && self.results.len() == base.0.saturating_add(1) && self.results.last() == Some(&expected))
+            }
+        }
+    )]
     fn assemble(
         &mut self,
         graft: OverlayId,
@@ -846,6 +938,7 @@ impl Measuring<'_>
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_kernel_term::Side;
 
@@ -890,6 +983,16 @@ mod tests
     /// - ensures: a fresh value leaf.
     /// - provides: the legs and leaves the cases share.
     /// - panics: when the mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replacing a unit leaf with another former changes the
+    ///   exact no-sharing measure and the independent erased-tree count.
+    /// - witness: `measure::tests::an_occurrence_free_root_measures_its_own_size`
+    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        captures: entry = overlay.watermark(),
+        ensures: |ret| overlay.watermark() != entry && overlay.value(ret) == Some(&ValueNode::Grafted(ValueGraft::Unit))
+    )]
     fn unit(overlay: &mut Overlay) -> OverlayValueId
     {
         overlay
@@ -904,6 +1007,16 @@ mod tests
     /// - ensures: a fresh value occurrence.
     /// - provides: the occurrences the cases place in preorder.
     /// - panics: when the mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing distance or position either refuses the root
+    ///   or reads a differently sized leg.
+    /// - witness: `measure::tests::an_occurrence_reads_the_leg_its_distance_names`
+    /// - witness: `measure::tests::an_invalid_overlay_is_refused_by_name_before_measuring`
+    #[spec(
+        captures: entry = overlay.watermark(),
+        ensures: |ret| overlay.watermark() != entry && overlay.value(ret) == Some(&ValueNode::Bound(Bound { distance, position }))
+    )]
     fn occurrence(
         overlay: &mut Overlay,
         distance: ShareDistance,
@@ -922,6 +1035,15 @@ mod tests
     /// - ensures: a fresh grafted pair.
     /// - provides: the two-child graft the cases build with.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversing the pair or dropping a child changes
+    ///   occurrence preorder or the exact expanded size.
+    /// - witness: `measure::tests::a_share_with_many_occurrences_inlines_its_leg_at_each`
+    /// - witness: `measure::tests::an_invalid_overlay_is_refused_by_name_before_measuring`
+    #[spec(
+        ensures: |ret| ret != first && ret != second && overlay.value(ret) == Some(&ValueNode::Grafted(ValueGraft::Pair(first, second)))
+    )]
     fn pair(
         overlay: &mut Overlay,
         first: OverlayValueId,
@@ -940,6 +1062,15 @@ mod tests
     /// - ensures: a fresh value share.
     /// - provides: the shares the cases build.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replacing the arity or interchanging the leg and body
+    ///   changes the scope, share depth or measured expansion.
+    /// - witness: `measure::tests::a_leg_reads_the_shares_outside_its_own`
+    /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| ret != leg && ret != body && overlay.value(ret) == Some(&ValueNode::Shared(Sharing { arity, leg: OverlayId::Value(leg), body }))
+    )]
     fn share(
         overlay: &mut Overlay,
         arity: ShareArity,
@@ -964,6 +1095,16 @@ mod tests
     /// - ensures: a fresh value occurrence.
     /// - provides: the one occurrence each chain link holds.
     /// - panics: when the mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing either zero selects a different frame or
+    ///   refuses a single-occurrence share.
+    /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    /// - witness: `measure::tests::a_leg_reads_the_shares_outside_its_own`
+    #[spec(
+        captures: entry = overlay.watermark(),
+        ensures: |ret| overlay.watermark() != entry && overlay.value(ret) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) }))
+    )]
     fn only_occurrence(overlay: &mut Overlay) -> OverlayValueId
     {
         occurrence(
@@ -983,6 +1124,16 @@ mod tests
     /// - provides: a chain whose share depth is its length, whose node count is
     ///   four per link and one, and whose expansion is two per link and one.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nesting through the wrong side, adding a link twice
+    ///   or dropping an occurrence changes the exact depth, physical size or
+    ///   expansion; unequal sibling chains witness the maximum rather than the
+    ///   sum.
+    /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)).is_ok_and(|measured| measured.shares.0 == u64::from(links.0) && measured.occurrences.0 == u64::from(links.0) && measured.depth.0 == u64::from(links.0) && measured.nodes.0 == u64::from(links.0).saturating_mul(4).saturating_add(1) && measured.expansion.0 == u64::from(links.0).saturating_mul(2).saturating_add(1))
+    )]
     fn body_chain(
         overlay: &mut Overlay,
         links: Links,
@@ -1008,6 +1159,16 @@ mod tests
     /// - provides: a chain whose share depth is its length, whose node count is
     ///   two per link and one, and whose expansion is the unit's alone.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nesting through the wrong side, adding a link twice
+    ///   or dropping an occurrence changes the exact depth, physical size or
+    ///   expansion; unequal sibling chains witness the maximum rather than the
+    ///   sum.
+    /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[spec(
+        ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)).is_ok_and(|measured| measured.shares.0 == u64::from(links.0) && measured.occurrences.0 == u64::from(links.0) && measured.depth.0 == u64::from(links.0) && measured.nodes.0 == u64::from(links.0).saturating_mul(2).saturating_add(1) && measured.expansion.0 == 1_u64)
+    )]
     fn leg_chain(
         overlay: &mut Overlay,
         links: Links,
@@ -1032,6 +1193,22 @@ mod tests
     /// - provides: a chain of four nodes per link and one whose link `k` stands
     ///   for `2^(k + 1) - 1` nodes.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replacing doubling with one occurrence, returning
+    ///   another body id or wrapping the last sum changes the last-fitting
+    ///   expansion or the exact overflowing graft.
+    /// - witness: `measure::tests::a_doubling_chain_measures_in_its_own_size`
+    /// - witness: `measure::tests::an_expansion_past_the_counter_is_refused_at_its_node`
+    #[spec(
+        ensures: |ret| {
+            let expansion = 1_u64.checked_shl(links.0).and_then(|half| half.checked_add(half.saturating_sub(1)));
+            let shape = if links.0 == 0 { ret.0 == ret.1 && overlay.value(ret.0) == Some(&ValueNode::Grafted(ValueGraft::Unit)) } else { matches!(overlay.value(ret.0), Some(&ValueNode::Shared(sharing)) if sharing.body == ret.1 && u32::from(sharing.arity) == 2) };
+            shape && SharingMeasure::of(overlay, OverlayId::Value(ret.0)).map_or_else(
+                |fault| expansion.is_none() && matches!(fault, MeasureFault::Overflow { quantity: MeasuredQuantity::Expansion, .. }),
+                |measured| expansion == Some(measured.expansion.0) && measured.shares.0 == u64::from(links.0) && measured.occurrences.0 == u64::from(links.0).saturating_mul(2) && measured.depth.0 == u64::from(links.0) && measured.nodes.0 == u64::from(links.0).saturating_mul(4).saturating_add(1))
+        }
+    )]
     fn doubling_chain(
         overlay: &mut Overlay,
         links: Links,
@@ -1066,6 +1243,16 @@ mod tests
     /// - provides: the root the scope and purity cases measure: nine nodes, two
     ///   shares of three occurrences nested two deep, standing for seven nodes.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — counting an occurrence in a leg from inside its own
+    ///   share changes the refusal or expanded size; adding unrelated nodes
+    ///   must not change this root-local tuple.
+    /// - witness: `measure::tests::a_leg_reads_the_shares_outside_its_own`
+    /// - witness: `measure::tests::the_measure_is_a_function_of_what_the_root_reaches`
+    #[spec(
+        ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)) == Ok(SharingMeasure { shares: ShareCount(2), occurrences: OccurrenceCount(3), depth: ShareDepth(2), nodes: NodeCount(9), expansion: ExpansionSize(7) })
+    )]
     fn leg_scope_case(overlay: &mut Overlay) -> OverlayValueId
     {
         let first = unit(overlay);
@@ -1090,6 +1277,16 @@ mod tests
     /// - ensures: [`SharingMeasure::of`] at the value root `root`.
     /// - provides: the one call every case below measures through.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — changing the root or replacing a refusal with a
+    ///   measure changes the exact values, fault payloads and independently
+    ///   counted erasures observed by the callers.
+    /// - witness: `measure::tests::an_invalid_overlay_is_refused_by_name_before_measuring`
+    /// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+    #[spec(
+        ensures: |ret| ret == SharingMeasure::of(overlay, OverlayId::Value(root))
+    )]
     fn measured(
         overlay: &Overlay,
         root: OverlayValueId,

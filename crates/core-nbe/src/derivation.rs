@@ -20,6 +20,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::SinkActivity;
@@ -115,6 +116,16 @@ impl Derivations
     /// - provides: the observation the sink-off witness asserts on.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — inactive recording keeps no derivation even for
+    ///   invalid process ids, while an active run keeps exactly one per opened
+    ///   process. Allocating under the inactive policy or losing an opened slot
+    ///   changes the count.
+    /// - witness: `machine::tests::derivation_refusals_preserve_state_and_inactive_recording_is_empty`
+    /// - witness: `machine::tests::the_sink_off_run_keeps_no_derivation`
+    #[spec(ensures: |ret| ret.0 == self.store.len()
+        && (!matches!(self.activity, SinkActivity::Inactive) || ret.0 == 0))]
     pub(crate) fn count(&self) -> DerivationCount
     {
         DerivationCount(self.store.len())
@@ -132,9 +143,25 @@ impl Derivations
     ///   `process` is not the next id the store expects.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the next process opens once, duplicate and skipped
+    ///   ids refuse without modifying previous derivations, and inactive
+    ///   recording ignores the id. Accepting an out-of-order process or adding
+    ///   a nonempty derivation changes state or emission.
+    /// - witness: `machine::tests::derivation_refusals_preserve_state_and_inactive_recording_is_empty`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the ids and the store
     ///   disagree.
+    #[spec(
+        captures: entry_length = self.store.len(),
+        ensures: |ret| if matches!(self.activity, SinkActivity::Inactive) {
+            ret == Ok(()) && self.store.len() == entry_length
+        } else if usize::from(process) == entry_length {
+            ret == Ok(()) && self.store.len().checked_sub(1) == Some(entry_length)
+                && self.store.last().is_some_and(|held| held.decisions.is_empty() && matches!(held.ending, Ending::Alone))
+        } else { ret == Err(ConversionFault::MachineInvariant) && self.store.len() == entry_length },
+    )]
     pub(crate) fn open(
         &mut self,
         process: ProcessId,
@@ -164,8 +191,24 @@ impl Derivations
     ///   process was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — two decisions at one goal stay in order before both
+    ///   child derivations, and an unopened goal refuses without changing the
+    ///   store. Prepending, dropping or attributing a decision to another goal
+    ///   changes the emitted preorder.
+    /// - witness: `machine::tests::derivations_emit_preorder_and_repeat_shared_children`
+    /// - witness: `machine::tests::derivation_refusals_preserve_state_and_inactive_recording_is_empty`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no derivation for `process`.
+    #[spec(
+        captures: entry_decisions = self.store.get(usize::from(process)).map(|held| held.decisions.len()),
+        ensures: |ret| if matches!(self.activity, SinkActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |held| ret == Ok(()) && held.decisions.last() == Some(&decision)
+                && held.decisions.len().checked_sub(1) == entry_decisions) },
+    )]
     pub(crate) fn decide(
         &mut self,
         process: ProcessId,
@@ -194,8 +237,24 @@ impl Derivations
     ///   process was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a derivation with two ordered children, both resting
+    ///   on one shared child, emits each child in preorder and the shared child
+    ///   under both parents. Reversing the children or deduplicating the shared
+    ///   derivation changes the trace; the predicate retains cardinality and
+    ///   both ends without cloning the consumed list.
+    /// - witness: `machine::tests::derivations_emit_preorder_and_repeat_shared_children`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no derivation for `process`.
+    #[spec(
+        captures: [child_count = children.len(), first_child = children.first().copied(), last_child = children.last().copied()],
+        ensures: |ret| if matches!(self.activity, SinkActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |held| ret == Ok(()) && matches!(held.ending, Ending::Children(ref recorded)
+                if recorded.len() == child_count && recorded.first().copied() == first_child && recorded.last().copied() == last_child)) },
+    )]
     pub(crate) fn rest_on(
         &mut self,
         process: ProcessId,
@@ -225,8 +284,23 @@ impl Derivations
     ///   process was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an equal pair collapses its ending to one
+    ///   shared-comparison decision, while a deferred pair retains the children
+    ///   in order; earlier decisions of the parent remain in both cases. Losing
+    ///   the pair or its children changes which trace is emitted.
+    /// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no derivation for `process`.
+    #[spec(
+        captures: [child_count = children.len(), first_child = children.first().copied(), last_child = children.last().copied()],
+        ensures: |ret| if matches!(self.activity, SinkActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |held| ret == Ok(()) && matches!(held.ending, Ending::Agreed { pair: recorded_pair, children: ref recorded }
+                if recorded_pair == pair && recorded.len() == child_count && recorded.first().copied() == first_child && recorded.last().copied() == last_child)) },
+    )]
     pub(crate) fn agree_on(
         &mut self,
         process: ProcessId,
@@ -253,13 +327,17 @@ impl Derivations
     /// - ensures: when recording, `sink` receives each goal's decisions
     ///   followed by its children's derivations in order — except that an
     ///   agreeing decomposition whose pair the search-free steps settle equal
-    ///   is emitted as one [`ConversionDecision::ComparedShared`] on that pair,
-    ///   which is the reading a replay gives a decision met at a decomposable
-    ///   goal it can close. A derivation shared by two parents is emitted under
-    ///   each. Nothing is emitted when not recording.
-    /// - provides: the sequential trace the kernel replays.
+    ///   emits its ending as one [`ConversionDecision::ComparedShared`] on that
+    ///   pair after its own decisions. This is the reading a replay gives to a
+    ///   decision met at a decomposable goal it can close. A derivation shared
+    ///   by two parents is emitted under each. Nothing is emitted when not
+    ///   recording.
+    /// - provides: the sequential trace the kernel replays. The predicate
+    ///   checks inactivity, root resolution and observable decision counts; the
+    ///   witnesses pin preorder and repeated children.
     /// - fails: [`ConversionFault::MachineInvariant`] for a process with no
-    ///   derivation, and whatever the search-free steps refuse.
+    ///   derivation, and whatever the search-free steps refuse. Decisions
+    ///   emitted before a refusal remain in the sink.
     /// - panics: none.
     ///
     /// # Errors
@@ -282,14 +360,40 @@ impl Derivations
     /// # Adequacy
     /// - hypothesis: L2 — the oracle is the kernel's replay, which shares no
     ///   code with this emission and refuses a trace that does not follow.
+    ///   Reversing child order, omitting a repeated shared child or collapsing
+    ///   a deferred pair changes the trace or its replay; a refusal preserves
+    ///   the prefix already emitted.
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
     /// - witness: `machine::tests::recording_does_not_move_the_verdict`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::derivations_emit_preorder_and_repeat_shared_children`
+    /// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
+    /// - witness: `machine::tests::derivation_refusals_preserve_state_and_inactive_recording_is_empty`
     // economy: a derivation shared by two parents is emitted once per parent,
     // so a proof whose sharing is a deep DAG emits its expansion. The replay
     // reads a tree, so the expansion is what it needs; upgrade path: a
     // back-reference decision, which is a vocabulary change and waits for a
     // measured trace that needs it.
+    #[spec(
+        captures: entry_count = usize::from(sink.recorded_count()),
+        ensures: |ret| {
+            let recorded = usize::from(sink.recorded_count());
+            if matches!(self.activity, SinkActivity::Inactive) {
+                ret == Ok(()) && recorded == entry_count
+            } else if let Some(held) = self.store.get(usize::from(root)) {
+                if matches!(S::ACTIVITY, SinkActivity::Inactive) { recorded == entry_count }
+                else {
+                    let own = entry_count.saturating_add(held.decisions.len());
+                    recorded >= own && match held.ending {
+                        Ending::Alone => ret == Ok(()) && recorded == own,
+                        Ending::Agreed { pair, .. } if matches!(settle(core, domain, pair), Ok(Settlement::Identical | Settlement::StructurallyEqual)) =>
+                            ret == Ok(()) && recorded == own.saturating_add(1),
+                        Ending::Children(_) | Ending::Agreed { .. } => true,
+                    }
+                }
+            } else { ret == Err(ConversionFault::MachineInvariant) && recorded == entry_count }
+        },
+    )]
     pub(crate) fn emit<S>(
         &self,
         core: &CoreArena,
@@ -347,9 +451,21 @@ impl Derivations
 ///   whatever the steps refuse.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — the emission collapses equal value and computation pairs,
+///   retains a deferred pair’s children, and refuses a mixed-polarity or
+///   removed pair. Treating a deferral as equality or ignoring polarity changes
+///   the emitted trace or refusal.
+/// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
+///
 /// # Errors
 /// - [`ConversionFault::Polarity`] — a value met a computation.
 /// - [`ConversionFault`] — as the steps refuse.
+#[spec(ensures: |ret| match pair {
+    (Glued::Value(left), Glued::Value(right)) => ret == convert_values(core, domain, left, right),
+    (Glued::Computation(left), Glued::Computation(right)) => ret == convert_computations(core, domain, left, right),
+    _ => ret == Err(ConversionFault::Polarity),
+})]
 fn settle(
     core: &CoreArena,
     domain: &DomainArena,
