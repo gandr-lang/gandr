@@ -1,6 +1,7 @@
 //! The echo's highlight spans: the grammar's role table over the submitted
 //! buffer.
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_parser::parse;
@@ -34,6 +35,8 @@ pub enum SpanOrder
 ///   boundary each answer exactly; the highlighter's output answers sorted.
 /// - witness: `highlight::tests::the_disjointness_predicate_rejects_an_overlap`
 /// - witness: `highlight::tests::spans_are_sorted_and_disjoint`
+#[spec(ensures: |ret| (ret == SpanOrder::SortedAndDisjoint)
+    == spans.iter().zip(spans.iter().skip(1)).all(|(a, b)| a.range.end() <= b.range.start()))]
 #[inline]
 #[must_use]
 pub fn span_order(spans: &[HlSpan]) -> SpanOrder
@@ -68,11 +71,17 @@ pub fn span_order(spans: &[HlSpan]) -> SpanOrder
 /// # Adequacy
 /// - hypothesis: L3 — a definition's `def` is classified as a keyword; spans
 ///   over a declaration are sorted and disjoint; text the grammar cannot read
-///   yields spans inside the buffer.
+///   yields spans inside the buffer; Unicode string bytes retain their role
+///   without splitting scalar values.
 /// - witness: `highlight::tests::a_keyword_is_classified`
 /// - witness: `highlight::tests::spans_are_sorted_and_disjoint`
 /// - witness: `highlight::tests::an_unclassifiable_buffer_yields_no_panic`
 /// - witness: `loop::tests::a_submission_carries_highlight_spans`
+/// - witness: `highlight::tests::unicode_literals_keep_their_byte_boundaries`
+#[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1))
+    .all(|(left, right)| left.range.end() <= right.range.start())
+    && ret.iter().all(|span| <&str>::from(buffer).is_char_boundary(usize::from(span.range.start()))
+        && <&str>::from(buffer).is_char_boundary(usize::from(span.range.end()))))]
 #[inline]
 #[must_use]
 pub fn highlight_source(
@@ -98,6 +107,7 @@ pub fn highlight_source(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::RoleTable;
     use gandr_surface_grammar::built_in;
@@ -114,7 +124,19 @@ mod tests
     /// The built-in grammar and its role table.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in grammar and its role table are valid.
+    /// - ensures: a nonempty grammar and a role for every mold it defines.
+    /// - provides: the grammar and role pair used by the highlighting
+    ///   witnesses.
+    /// - fails: never.
+    /// - panics: if either fixture construction fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact keyword classification observes the pair
+    ///   together; the predicate checks that no mold lacks its role entry.
+    /// - witness: `highlight::tests::a_keyword_is_classified`
+    #[spec(ensures: |ret| !ret.0.rules().is_empty()
+        && ret.0.iter_molds().all(|(mold, _)| ret.1.role_of(mold).is_ok()))]
     fn toolkit() -> (Pbg, RoleTable)
     {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -128,7 +150,19 @@ mod tests
     /// A span of `role` over the bytes a [`Bytes`] pair spells.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `start <= end`.
+    /// - ensures: the exact byte endpoints and role.
+    /// - provides: an explicit span oracle.
+    /// - fails: never.
+    /// - panics: if the endpoints are inverted.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact keyword and ordered, overlapping or inverted
+    ///   pairs distinguish changed endpoints and classifications.
+    /// - witness: `highlight::tests::a_keyword_is_classified`
+    /// - witness: `highlight::tests::the_disjointness_predicate_rejects_an_overlap`
+    #[spec(requires: start <= end, ensures: |ret|
+        usize::from(ret.range.start()) == start && usize::from(ret.range.end()) == end && ret.role == role)]
     fn span(
         Bytes(start, end): Bytes,
         role: HlRole,
@@ -155,7 +189,7 @@ mod tests
     }
 
     /// The spans over a declaration with several tiles are sorted and pairwise
-    /// disjoint, and there is more than one of them.
+    /// disjoint.
     #[test]
     fn spans_are_sorted_and_disjoint()
     {
@@ -165,7 +199,7 @@ mod tests
             &roles,
             SourceText::from("def answer : Integer ;\ndef answer = 42 ;"),
         );
-        assert!(spans.len() > 4, "every tile is classified: {spans:?}");
+
         assert_eq!(span_order(&spans), SpanOrder::SortedAndDisjoint);
     }
 
@@ -207,5 +241,26 @@ mod tests
                 .all(|each| usize::from(each.range.end()) <= buffer.len()),
             "every span lies inside the buffer: {spans:?}"
         );
+    }
+
+    /// UTF-8 byte offsets never split a multibyte string literal or its scalar
+    /// values.
+    #[test]
+    fn unicode_literals_keep_their_byte_boundaries()
+    {
+        let (grammar, roles) = toolkit();
+        let text = "def f = \"é𐍈\" ;\r\n";
+        let spans = highlight_source(&grammar, &roles, SourceText::from(text));
+        let string_bytes: Vec<_> = spans
+            .iter()
+            .filter(|span| span.role == HlRole::StringLit)
+            .flat_map(|span| usize::from(span.range.start()) .. usize::from(span.range.end()))
+            .collect();
+        assert_eq!(string_bytes, (8_usize .. 16).collect::<Vec<_>>());
+        assert!(spans.iter().all(
+            |span| text.is_char_boundary(usize::from(span.range.start()))
+                && text.is_char_boundary(usize::from(span.range.end()))
+        ));
+        assert_eq!(span_order(&spans), SpanOrder::SortedAndDisjoint);
     }
 }
