@@ -24,9 +24,9 @@ use proptest::prop_assert_eq;
 use proptest::proptest;
 use quenchant_shape::shape::Maybe;
 
+use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::batch;
-use crate::common::grammar;
 use crate::common::resumed;
 use crate::common::session;
 use crate::common::submit;
@@ -83,10 +83,10 @@ fn gate<'text>(
     let mut session = session(SourceRoot::Strict);
     let _base = submit(&mut session, base);
     let submission = submit(&mut session, edited);
-    let grammar = grammar();
+    let grammar = &*GRAMMAR;
     let mut lowerings = LoweringCount::default();
     let composed = compose(
-        &grammar,
+        grammar,
         SourceRoot::Strict.corpus_root(),
         SourceText::from(edited),
         &mut lowerings,
@@ -97,7 +97,7 @@ fn gate<'text>(
         composed,
         "the resumed submission reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
     );
-    let program = SurfaceItems::new(grammar)
+    let program = SurfaceItems::new(grammar.clone())
         .items(&Revision::from(edited))
         .expect("the edited revision is offered");
     assert_eq!(
@@ -227,7 +227,7 @@ proptest! {
     /// reports and types what the checker's module entry types.
     #[test]
     fn incremental_equals_from_scratch((statements, edits) in program_and_edits()) {
-        let grammar = grammar();
+        let grammar = &*GRAMMAR;
         let items = SurfaceItems::new(grammar.clone());
         let mut session = Session::new(
             grammar.clone(),
@@ -245,7 +245,7 @@ proptest! {
             let submission = submit(&mut session, &text);
             let mut lowerings = LoweringCount::default();
             let composed = compose(
-                &grammar,
+                grammar,
                 SourceRoot::Fixture.corpus_root(),
                 SourceText::from(text.as_str()),
                 &mut lowerings,

@@ -77,6 +77,19 @@ env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
+# CI separates compilation from execution so failed tests retain built state.
+# The plain build still covers every workspace target before test execution.
+["build:tests"]
+description = "Compile every plain workspace target without running tests"
+run = "cargo build --locked --workspace --all-targets --profile test"
+
+# Flags and target directory match the enforcing test gate.
+["build:tests-enforcing"]
+description = "Compile enforcing test targets without running them"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+run = "cargo nextest run --workspace --locked --no-run"
+
 # The test twin under enforcement; the suite's runtime sentinels refuse a
 # target-only or stale macro build.
 ["check:tests-enforcing"]

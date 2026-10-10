@@ -30,10 +30,10 @@ use crate::common::grammar;
 #[test]
 fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
 {
-    let grammar = grammar();
+    let grammar = &*crate::common::GRAMMAR;
     let mut lowerings = LoweringCount::default();
     let lowering = lower_source(
-        &grammar,
+        grammar,
         SourceText::from(
             "def first : Integer ; def first = 1 ; def broken = missing ; def owed : String ; def last = first ;",
         ),

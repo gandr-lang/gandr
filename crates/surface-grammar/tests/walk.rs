@@ -554,15 +554,19 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
 fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
+    // The grammar is immutable; borrow each full-table view once.
+    let form_first = pbg.form_first();
+    let form_last = pbg.form_last();
+    let adjacencies = pbg.adjacencies();
     let ascending = |molds: &[MoldId]| {
         molds.windows(2).all(|pair| match *pair {
             | [left, right] => left < right,
             | _ => true,
         })
     };
-    assert!(ascending(pbg.form_first()));
-    assert!(ascending(pbg.form_last()));
-    assert!(pbg.adjacencies().windows(2).all(|pair| match *pair {
+    assert!(ascending(form_first));
+    assert!(ascending(form_last));
+    assert!(adjacencies.windows(2).all(|pair| match *pair {
         | [left, right] => left < right,
         | _ => true,
     }));
@@ -570,20 +574,20 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
     let mut required_tails = 0_usize;
     for (mold, _def) in pbg.iter_molds() {
         assert_eq!(
-            pbg.adjacencies().iter().any(|&(_, right)| right == mold),
+            adjacencies.iter().any(|&(_, right)| right == mold),
             bool::from(pbg.mold_has_predecessor(mold))
         );
         assert_eq!(
-            pbg.adjacencies().iter().any(|&(left, _)| left == mold),
+            adjacencies.iter().any(|&(left, _)| left == mold),
             bool::from(pbg.mold_has_successor(mold))
         );
         assert_eq!(
-            pbg.form_first().contains(&mold),
+            form_first.contains(&mold),
             bool::from(pbg.mold_is_form_first(mold))
         );
         let complete = bool::from(pbg.mold_is_form_last(mold));
         let required = bool::from(pbg.mold_has_required_tail(mold));
-        if pbg.form_last().contains(&mold) {
+        if form_last.contains(&mold) {
             assert!(complete != required, "mold {mold:?} ends its form one way");
         }
         else {
