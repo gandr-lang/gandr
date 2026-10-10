@@ -12,7 +12,7 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 # Start the hosted heavy tail first; the ci profile inherits these overrides.
 # Priorities change scheduling only, never cases, domains or timeouts.
 [[profile.default.overrides]]
-filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch)"
+filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)"
 priority = 100
 
 [[profile.default.overrides]]

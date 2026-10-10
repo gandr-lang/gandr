@@ -11,11 +11,10 @@ on:
   workflow_dispatch: {}
   # The push to main runs no checks: the merge-group run already tested this
   # exact commit, so a rerun could only disagree through its environment. It
-  # promotes caches instead. Actions caches are restorable only from the run's
-  # own branch, its base, and the default branch, so a merge-group run, on an
-  # ephemeral `gh-readonly-queue/*` ref, writes none that later runs can read.
-  # A queue lane whose cache missed uploads its build state as an artifact,
-  # and the push run's promote jobs save it under main's cache keys.
+  # promotes caches instead. Queue refs cannot warm sibling branches, so cache
+  # misses may reuse artifacts from the latest completed queue run. Successful
+  # builds publish state even when a later test fails. Main promotes only the
+  # exact landing's state; cached state never substitutes for running a gate.
   push:
     branches: [main]
   merge_group: {}
@@ -115,20 +114,22 @@ jobs:
         with:
           path: &dylint-drivers ~/.dylint_drivers
           key: dylint-drivers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock') }}
-      - &restore-dylint-library
-        name: restore Dylint library
-        id: dylint-library-restore
+      - &restore-policy-state
+        name: restore Dylint library and gate binary
+        id: policy-state-restore
         uses: *cache-restore
         with:
-          path: &dylint-library target/dylint
-          key: dylint-library-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
-      - &save-dylint-library
-        name: save Dylint library
-        if: ${{ hashFiles('build-state-*.tar.zst') != '' && steps.dylint-library-restore.outputs.cache-hit != 'true' }}
+          path: &policy-state |
+            target/dylint
+            target/workflow-tools
+          key: policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
+      - &save-policy-state
+        name: save Dylint library and gate binary
+        if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
         uses: &cache-save actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: *dylint-library
-          key: ${{ steps.dylint-library-restore.outputs.cache-primary-key }}
+          path: *policy-state
+          key: ${{ steps.policy-state-restore.outputs.cache-primary-key }}
       - &save-dylint-drivers
         name: save Dylint drivers
         if: &promote-drivers ${{ hashFiles('dylint-drivers.tar') != '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
@@ -161,7 +162,7 @@ jobs:
           lookup-only: ${{ github.event_name == 'push' }}
       - &save-test-state
         name: cache complete test state
-        if: ${{ env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles('build-state-*.tar.zst') != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || steps.build-state-archive.outcome == 'success') && steps.test-state-restore.outputs.cache-hit != 'true' && hashFiles(format('build-state-{0}.tar.zst', env.CI_BUILD_STATE)) != '' }}
         uses: *cache-save
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
@@ -171,12 +172,13 @@ jobs:
       # Dispatches also upload, so warm measurements cover the promotion path.
       - &archive-build-state
         name: archive build state
-        if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') }}
+        id: build-state-archive
+        if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && steps.build-enforcing.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true')) }}
         shell: bash
         run: tar -cf - target/debug target/enforcing/debug | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
       - &upload-build-state
         name: upload build state
-        if: ${{ env.ACT != 'true' && hashFiles('build-state-*.tar.zst') != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && steps.build-state-archive.outcome == 'success' }}
         uses: *upload-artifact
         with:
           path: build-state-${{ github.job }}.tar.zst
@@ -184,12 +186,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
-      # The push run's side. Only this workflow's merge-group runs are trusted
-      # producers: GitHub sets the event, and only a pull request the owner
-      # queued reaches the queue.
+      # Only this workflow's queue runs are trusted artifact producers:
+      # GitHub sets the event, and only an owner-queued PR reaches the queue.
+      # Exact cache hits need no artifact download.
       - &download-build-state
-        name: download the landing's build state
-        if: ${{ contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}', env.CI_BUILD_STATE)) }}
+        name: download reusable queue build state
+        if: ${{ steps.test-state-restore.outputs.cache-hit != 'true' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}', env.CI_BUILD_STATE)) }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-state-${{ env.CI_BUILD_STATE }}
@@ -317,10 +319,13 @@ jobs:
   # integration tests as processes. The manual event exercises it under act.
   cargo-test:
     name: test the workspace (linux)
-    needs: *rust-needs
+    needs: &cached-test-needs [changes, ci-image-ref, build-state]
     if: &heavy-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: &build-state-read-permissions
+      contents: read
+      packages: read
+      actions: read
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
@@ -331,9 +336,14 @@ jobs:
       - *install-policy-tools
       - *setup-rust
       - *restore-test-state
+      - *download-build-state
       - *unpack-build-state
       - name: build every workspace target
+        id: build-workspace
         run: cargo build --locked --workspace --all-targets --profile test
+      - name: build enforcing test targets
+        id: build-enforcing
+        run: mise run build:tests-enforcing
       - name: test every workspace target
         env:
           NEXTEST_PROFILE: ci
@@ -362,9 +372,12 @@ jobs:
   # is the second development host.
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: *rust-needs
+    needs: *cached-test-needs
     if: *heavy-lane
     runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: read
     timeout-minutes: 45
     env:
       CI_INSTALL_TOOLCHAIN: "true"
@@ -391,39 +404,49 @@ jobs:
   # restores the exact compiler- and revision-matched policy artifacts.
   cargo-dylint-crate:
     name: check quenchant compiler policy
-    needs: *rust-needs
+    needs: *cached-test-needs
     if: *heavy-lane
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      # Witness discovery uses the same enforcing binaries as the test lane.
+      CI_BUILD_STATE: cargo-test
     steps:
       - *git-checkout
       - *install-policy-tools
       - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *unpack-build-state
       - *restore-dylint-drivers
-      - *restore-dylint-library
+      - *restore-policy-state
       - name: lint every workspace target
+        id: policy-library
         run: mise run check:dylint
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state, the enforcing
       # requirement, and adequacy-witness resolution.
       - name: check the specification invocation state
+        id: invocation-state
         run: mise run check:anodized
       - name: require specification enforcement
         run: mise run check:anodized-enforcing
       - name: resolve adequacy witnesses
         run: mise run check:witnesses
       # This lane hands over its policy caches, not the dependency cache.
-      - name: archive Dylint library
-        if: ${{ github.event_name == 'merge_group' && steps.dylint-library-restore.outputs.cache-hit != 'true' }}
+      - name: archive Dylint library and gate binary
+        id: build-state-archive
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success' && steps.policy-state-restore.outputs.cache-hit != 'true' }}
         shell: bash
-        run: tar -cf - target/dylint | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
+        run: tar -cf - target/dylint target/workflow-tools | zstd -T0 -3 -o "build-state-$GITHUB_JOB.tar.zst"
       - *upload-build-state
+      - *save-policy-state
       - name: archive Dylint drivers
-        if: ${{ github.event_name == 'merge_group' && needs.ci-image-ref.outputs.ref == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && steps.policy-library.outcome == 'success' && needs.ci-image-ref.outputs.ref == '' && steps.dylint-drivers-restore.outputs.cache-hit != 'true' }}
         run: tar -cf dylint-drivers.tar -C "$HOME" .dylint_drivers
       - name: upload Dylint drivers
-        if: ${{ hashFiles('dylint-drivers.tar') != '' }}
+        if: ${{ !cancelled() && env.ACT != 'true' && hashFiles('dylint-drivers.tar') != '' }}
         uses: *upload-artifact
         with:
           path: dylint-drivers.tar
@@ -485,17 +508,20 @@ jobs:
             fi
           done
 
-  # Only successful merge-group runs at the exact landing SHA supply state.
-  # Official artifact actions plus the GitHub API keep the trust boundary:
-  # dawidd6/action-download-artifact remains outside the admitted action set.
+  # Completed queue runs supply successful builds independently of their test
+  # verdict. A new queue ref can read these artifacts even when it cannot read
+  # its predecessor's branch-local cache. Cargo still checks all fingerprints.
+  # Main promotion requires the exact landing SHA; test lanes may reuse the
+  # latest queue build just as they reuse older cache-prefix matches.
+  # Hosted artifact discovery is skipped under act, never a compilation gate.
   build-state:
-    name: find the landing's build state
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    name: find reusable queue build state
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
     runs-on: *linux
     permissions:
       actions: read
     outputs:
-      run-id: ${{ steps.run.outputs.run-id }}
+      run-id: &queue-run ${{ steps.run.outputs.run-id || steps.previous.outputs.run-id }}
       artifacts: ${{ steps.artifacts.outputs.artifacts }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -503,17 +529,26 @@ jobs:
       CI_SHA: ${{ github.sha }}
     steps:
       - id: run
-        name: find the successful queue run for this landing
+        name: find the completed queue run for this landing
+        if: ${{ env.ACT != 'true' && github.event_name == 'push' }}
         run: >-
           gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
-          -f event=merge_group -f status=success -f head_sha="$CI_SHA"
+          -f event=merge_group -f status=completed -f head_sha="$CI_SHA"
+          --jq '"run-id=" + ((.workflow_runs[0].id // "") | tostring)'
+          >> "$GITHUB_OUTPUT"
+      - id: previous
+        name: find the latest completed queue run
+        if: ${{ env.ACT != 'true' && github.event_name != 'push' }}
+        run: >-
+          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
+          -f event=merge_group -f status=completed -f per_page=1
           --jq '"run-id=" + ((.workflow_runs[0].id // "") | tostring)'
           >> "$GITHUB_OUTPUT"
       - id: artifacts
         name: list its build-state artifacts
-        if: ${{ steps.run.outputs.run-id != '' }}
+        if: ${{ steps.run.outputs.run-id != '' || steps.previous.outputs.run-id != '' }}
         env:
-          CI_RUN_ID: ${{ steps.run.outputs.run-id }}
+          CI_RUN_ID: *queue-run
         run: >-
           gh api "repos/$GH_REPO/actions/runs/$CI_RUN_ID/artifacts"
           --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
@@ -524,10 +559,7 @@ jobs:
     needs: &promote-needs [build-state, ci-image-ref]
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'build-state-cargo-test') }}
     runs-on: *linux
-    permissions: &promote-permissions
-      contents: read
-      packages: read
-      actions: read
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-test
@@ -556,11 +588,11 @@ jobs:
     steps: *promote-steps
 
   promote-dylint-crate:
-    name: promote the Dylint state
+    name: promote the compiler policy state
     needs: *promote-needs
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'build-state-cargo-dylint-crate') || contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers')) }}
     runs-on: *linux
-    permissions: *promote-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-dylint-crate
@@ -576,10 +608,10 @@ jobs:
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - *restore-dylint-drivers
-      - *restore-dylint-library
+      - *restore-policy-state
       - *unpack-build-state
       - name: unpack Dylint drivers
         if: *promote-drivers
         run: tar -xf dylint-drivers.tar -C "$HOME"
-      - *save-dylint-library
+      - *save-policy-state
       - *save-dylint-drivers
