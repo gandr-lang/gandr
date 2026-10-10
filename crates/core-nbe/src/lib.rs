@@ -69,6 +69,7 @@ mod policy;
 mod readback;
 mod resharing;
 mod rules;
+pub mod stage;
 mod traced;
 
 pub use crate::arena::CompClosureId;

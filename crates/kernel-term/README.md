@@ -3,7 +3,6 @@
 The kernel's term arena and sharing format: a flat, id-addressed arena, the unified subterm-table encoding over it, canonical decode, and the decode-time budgets that bound the work a small artifact can cost.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -19,8 +18,8 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
+- [Experimental stage syntax](#experimental-stage-syntax)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -174,6 +173,12 @@ The `# Specification` prose is the statement of record; a combined `#[spec(...)]
 - `LevelSignature::new`, `DeclarationBuilder::sealed_def` and `DeclarationBuilder::abstract_type` pin the content variant and slot arity each finisher promises, which separates adjacent finishers that differ only in a variant.
 
 Two sites keep prose and say why at the site. `TermArena::truncate_to` would panic on its documented stale-watermark no-op if `self.watermark() == watermark` were asserted. `TermArena::children_of` defines "strictly less than the node's own id" only within one family, and it is the edge relation every walk over the arena runs.
+
+## Experimental stage syntax
+
+`stage::Arena` is a separate, append-only rule-language arena for
+[hypothesis-indexed staging](../kernel-core/README.md#experimental-stage-universe).
+It holds indexed classifiers, terms and untrusted conversion certificates. Classifier interning is exact syntactic equality; term sharing carries no conversion authority. Child coordinates must already exist. De Bruijn substitution uses an explicit worklist and raises replacements under binders. There is no staging wire format and no allocated wire tag.
 
 ## License
 
