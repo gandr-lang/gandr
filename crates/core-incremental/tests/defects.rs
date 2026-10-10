@@ -1,7 +1,5 @@
-//! Witnesses that the four defects of the prior implementation are absent:
-//! value-mediated over-adoption out of the generator's reach, a hang on
-//! shadowing under a type-position read, rechecking that grows faster than
-//! the program, and a failed store that changes the store.
+//! Witnesses for generator reachability, termination under shadowing,
+//! linear rechecking work, and failure-atomic persistence.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -63,7 +61,40 @@ use crate::generate::revalue;
 /// integer: a value-only edit.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: answers Yes exactly when the modular integer selection changes
+///   its value; other edits and absent integer bodies answer No.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the deterministic census requires actual value-only
+///   mutations, including cases under a type-position read; direct mutation
+///   boundaries distinguish changed, equal and absent integer selections.
+/// - witness: `tests::defects::the_generator_reaches_value_only_edits_under_type_position_reads`
+/// - witness: `tests::generate::revalue_preserves_metadata_and_classifies_exactly`
+#[anodized::spec(
+    ensures: |ret| {
+        (ret == Reached::Yes)
+            == match *edit {
+                | Edit::Revalue(rank, value) => {
+                    let count = statements
+                        .iter()
+                        .filter(|statement| matches!(statement.body, Body::Int(_)))
+                        .count();
+                    rank.checked_rem(count)
+                        .and_then(|rank| {
+                            statements
+                                .iter()
+                                .filter_map(|statement| match statement.body {
+                                    | Body::Int(old) => Some(old),
+                                    | _ => None,
+                                })
+                                .nth(rank)
+                        })
+                        .is_some_and(|old| old != value)
+                },
+                | _ => false,
+            }
+    },
+)]
 fn value_only(
     statements: &[Stmt],
     edit: &Edit,
@@ -165,17 +196,46 @@ fn a_shadowing_program_under_a_type_position_read_checks_and_terminates()
 /// The chain `d0 = head; d1 = d0; …` of `length` definitions.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: produces exactly length unsigned definitions, including none for
+///   zero; the first holds head and each later body reads its predecessor.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and singleton lengths pin the empty boundary and
+///   head payload. Chains of 250 through 2000 definitions exercise both value
+///   and type changes; their exact work census is distinct from this structural
+///   predicate, which captures only the head variant rather than cloning it.
+/// - witness: `tests::defects::chain_respects_zero_and_singleton_lengths`
+/// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
+#[anodized::spec(
+    captures: [head_kind = core::mem::discriminant(&head)],
+    ensures: |ret| {
+        ret.len() == usize::from(length)
+            && ret.iter().all(|statement| statement.ascription.is_none())
+            && ret.first().is_none_or(|first| {
+                first.name == "d0" && core::mem::discriminant(&first.body) == head_kind
+            })
+            && ret.windows(2).all(|pair| match *pair {
+                | [ref earlier, ref later] => match later.body {
+                    | Body::Ref(ref name) => name == &earlier.name,
+                    | _ => false,
+                },
+                | _ => false,
+            })
+    },
+)]
 fn chain(
     length: ItemCount,
     head: Body,
 ) -> Vec<Stmt>
 {
-    let mut statements = vec![Stmt {
-        name: String::from("d0"),
-        ascription: None,
-        body: head,
-    }];
+    let mut statements = Vec::with_capacity(usize::from(length));
+    if usize::from(length) != 0 {
+        statements.push(Stmt {
+            name: String::from("d0"),
+            ascription: None,
+            body: head,
+        });
+    }
     for index in 1 .. usize::from(length) {
         statements.push(Stmt {
             name: format!("d{index}"),
@@ -246,7 +306,39 @@ fn items_visited_for_a_head_edit_grow_linearly()
 /// A one-item program whose body holds an id no arena of it resolves.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: one unsigned item at position zero has a pair body whose first
+///   child resolves and whose second child is deliberately unresolved.
+/// - provides: a malformed input for refusal and failure-atomicity witnesses,
+///   not evidence that the arena constructor's valid-child domain is met.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both stores reject the resulting dangling Value content
+///   without changing the prior record or file bytes. The predicate
+///   independently observes the one resolving and one missing child, without
+///   running the codec.
+/// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.items().len() == 1
+            && ret.items().first().is_some_and(|item| {
+                let declaration = item.declaration();
+                item.key().as_ref() == b"opaque"
+                    && usize::from(declaration.constant()) == 0
+                    && usize::from(declaration.origin()) == 0
+                    && declaration.signature() == Maybe::Absent(signature::Absent::Unsigned)
+                    && match declaration.body() {
+                        | Maybe::Present(root) => match ret.arena().value(root) {
+                            | Some(&gandr_core_term::Value::Pair(first, second)) => {
+                                ret.arena().value(first).is_some()
+                                    && ret.arena().value(second).is_none()
+                            },
+                            | _ => false,
+                        },
+                        | Maybe::Absent(_) => false,
+                    }
+            })
+    },
+)]
 fn opaque_program() -> Program
 {
     let mut foreign = CoreArena::new();
@@ -326,4 +418,15 @@ fn a_failed_store_leaves_the_store_as_it_was()
         Ok(Maybe::Present(good)),
         "the good record loads"
     );
+}
+
+#[test]
+fn chain_respects_zero_and_singleton_lengths()
+{
+    assert_eq!(chain(ItemCount::from(0_usize), Body::Int(7)), []);
+    assert_eq!(chain(ItemCount::from(1_usize), Body::Int(7)), [Stmt {
+        name: String::from("d0"),
+        ascription: None,
+        body: Body::Int(7)
+    },]);
 }

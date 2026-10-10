@@ -97,6 +97,15 @@ quenchant_shape::reason_enum! {
 }
 
 /// The four node sorts of the core vocabulary.
+///
+/// # Specification
+/// - executable: none — a sort tag carries no arena or node whose
+///   classification it could certify.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the finite content corpus exercises all four sorts; the
+///   tag alone does not certify a table edge.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Sort
 {
@@ -111,6 +120,17 @@ pub enum Sort
 }
 
 /// A node of a core arena, of any sort.
+///
+/// # Specification
+/// - executable: none — the tagged identifier has no arena to establish whether
+///   its node resolves.
+///
+/// # Adequacy
+/// - hypothesis: L2 — arena-relative identity is separated by allocation noise
+///   and an unresolved value identifier; other unresolved sorts are not claimed
+///   here.
+/// - witness: `content::tests::content_is_free_of_arena_ids`
+/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ArenaNode
 {
@@ -125,6 +145,18 @@ pub enum ArenaNode
 }
 
 /// One node of a content table: a core former over table indices.
+///
+/// # Specification
+/// - executable: none — an entry alone has neither its table nor its arena;
+///   edge validity belongs to the consuming walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — shared and unresolved nodes, interleaved roots and the
+///   finite persistence corpus bound the former and edge evidence; raw entries
+///   need not form a closed or well-sorted table.
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ContentNode
 {
@@ -259,6 +291,18 @@ pub enum ContentNode
 }
 
 /// The children of one content node, each with the sort it must have.
+///
+/// # Specification
+/// - executable: none — the active-prefix representation is maintained by
+///   `Children::of` and read by the graph walks, not a callable declaration.
+///
+/// # Adequacy
+/// - hypothesis: L2 — sharing and interleaved roots exercise active child
+///   slots; the persistence corpus covers selected multi-sort formers, not
+///   every graph.
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Children
 {
@@ -289,6 +333,19 @@ impl Children
     /// - requires: at most three children, which every former satisfies.
     /// - ensures: the first `children.len()` slots, in order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — shared nodes and the signature walk exercise active
+    ///   child slots through graph consumers; the finite corpus adds selected
+    ///   arities.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(
+        requires: children.len() <= 3,
+        ensures: |ret| ret.count == children.len()
+            && ret.slots.get(..ret.count) == Some(children),
+    )]
     fn of(children: &[(NodeIndex, Sort)]) -> Self
     {
         let mut slots = [(NodeIndex::default(), Sort::Value); 3];
@@ -303,7 +360,16 @@ impl Children
     /// The children, in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the active prefix, in order, excluding unused slots.
+    /// - executable: none — anodized 0.7 emits an invalid closure return type
+    ///   for this opaque iterator, including for preconditions alone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the named graph consumer exercises the iterator; that
+    ///   bounded evidence does not instrument the opaque return.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + '_
     {
         self.slots.iter().copied().take(self.count)
@@ -315,7 +381,57 @@ impl ContentNode
     /// The node's sort.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the core family of the former, or the stored unresolved sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises all four
+    ///   families; the unresolved witness bounds the foreign-identifier case to
+    ///   values.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[anodized::spec(ensures: |ret| match *self {
+        | Self::Variable { .. }
+        | Self::Constant(_)
+        | Self::Unit
+        | Self::Literal(_)
+        | Self::Pair(..)
+        | Self::Injection(..)
+        | Self::Thunk(_)
+        | Self::ValueLift { .. }
+        | Self::Quote(_)
+        | Self::QuoteComputation(_)
+        | Self::StaticLambda(_)
+        | Self::StaticApplication(..) => matches!(ret, Sort::Value),
+        | Self::Lambda(_)
+        | Self::Application(..)
+        | Self::Return(_)
+        | Self::Bind(..)
+        | Self::Force(_)
+        | Self::Case { .. } => matches!(ret, Sort::Computation),
+        | Self::Base(_)
+        | Self::UnitType
+        | Self::Product(..)
+        | Self::Sum(..)
+        | Self::ThunkType(_)
+        | Self::Universe { .. }
+        | Self::TypeLift { .. }
+        | Self::Element { .. }
+        | Self::Abstract(_)
+        | Self::StaticPi { .. } => matches!(ret, Sort::ValueType),
+        | Self::Returner(_)
+        | Self::Arrow { .. }
+        | Self::Pi { .. }
+        | Self::ComputationElement { .. } => matches!(ret, Sort::CompType),
+        | Self::Unresolved(sort) => matches!(
+            (sort, ret),
+            (Sort::Value, Sort::Value)
+                | (Sort::Computation, Sort::Computation)
+                | (Sort::ValueType, Sort::ValueType)
+                | (Sort::CompType, Sort::CompType)
+        ),
+    })]
     pub(crate) const fn sort(&self) -> Sort
     {
         match *self {
@@ -362,6 +478,68 @@ impl ContentNode
     /// - ensures: every child index the node holds, left to right, beside the
     ///   sort the core vocabulary gives that position.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shared edges and interleaved signature roots test
+    ///   graph discovery; the finite persistence corpus supplies selected edges
+    ///   across the four sorts. This is not exhaustive evidence for all graphs.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(ensures: |ret| {
+        use Sort::CompType as C;
+        use Sort::Computation as M;
+        use Sort::Value as V;
+        use Sort::ValueType as A;
+        let actual = ret.slots.get(.. ret.count);
+        match *self {
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Unit
+            | Self::Literal(_)
+            | Self::Base(_)
+            | Self::UnitType
+            | Self::Universe { .. }
+            | Self::Abstract(_)
+            | Self::Unresolved(_) => ret.count == 0,
+            | Self::Pair(a, b) | Self::StaticApplication(a, b) => {
+                actual == Some(&[(a, V), (b, V)][..])
+            },
+            | Self::StaticLambda(a)
+            | Self::Injection(_, a)
+            | Self::ValueLift { body: a, .. }
+            | Self::Return(a)
+            | Self::Force(a)
+            | Self::Element { code: a, .. }
+            | Self::ComputationElement { code: a, .. } => actual == Some(&[(a, V)][..]),
+            | Self::Thunk(a) | Self::Lambda(a) => actual == Some(&[(a, M)][..]),
+            | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
+            | Self::Bind(a, b) => actual == Some(&[(a, M), (b, M)][..]),
+            | Self::Case {
+                scrutinee: a,
+                on_left: b,
+                on_right: c,
+            } => actual == Some(&[(a, V), (b, M), (c, M)][..]),
+            | Self::Product(a, b)
+            | Self::Sum(a, b)
+            | Self::StaticPi {
+                domain: a,
+                codomain: b,
+            } => actual == Some(&[(a, A), (b, A)][..]),
+            | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
+            | Self::TypeLift { inner: a, .. } | Self::Returner(a) | Self::Quote(a) => {
+                actual == Some(&[(a, A)][..])
+            },
+            | Self::Arrow {
+                domain: a,
+                codomain: b,
+            }
+            | Self::Pi {
+                domain: a,
+                codomain: b,
+            } => actual == Some(&[(a, A), (b, C)][..]),
+        }
+    })]
     pub(crate) fn children(&self) -> Children
     {
         use Sort::CompType as C;
@@ -416,7 +594,20 @@ impl ContentNode
     /// The reference a constant or an abstract type names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the borrowed reference for Constant or Abstract, otherwise
+    ///   `NotAReference`; the predicate checks the presence classification.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the footprint corpus separates reachable references
+    ///   from unreachable and unresolved entries; the attribute does not assert
+    ///   borrowed payload identity in a const expression.
+    /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+    #[anodized::spec(ensures: |ret| match *self {
+        Self::Constant(_) | Self::Abstract(_) => matches!(ret, Maybe::Present(_)),
+        _ => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
+    })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
         match *self {
@@ -459,6 +650,15 @@ impl ContentNode
 }
 
 /// Where an arena node sits in the table of the item that reached it.
+///
+/// # Specification
+/// - executable: none — the map alone cannot establish which arena and walk
+///   produced its entries.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the projection witness separates all four node families
+///   and an unreached identifier in the same arena.
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Sites(BTreeMap<ArenaNode, NodeIndex>);
@@ -468,7 +668,18 @@ impl Sites
     /// The table index of `node`, when the item's walk reached it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the recorded index exactly, or Unreached if absent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — projection checks all four node families and an
+    ///   unreached identifier in the same arena.
+    /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+    #[anodized::spec(ensures: |ret| match self.0.get(&node) {
+        Some(&index) => ret == Maybe::Present(index),
+        None => ret == Maybe::Absent(site::Absent::Unreached),
+    })]
     pub(crate) fn of(
         &self,
         node: ArenaNode,
@@ -482,6 +693,16 @@ impl Sites
 }
 
 /// Whether a table holds an id another arena minted.
+///
+/// # Specification
+/// - executable: none — the tag contains no table; `opacity_of` establishes its
+///   correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a foreign unresolved value makes content opaque; the
+///   supported persistence corpus supplies resolving tables.
+/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Opacity
 {
@@ -492,6 +713,19 @@ pub enum Opacity
 }
 
 /// An item's canonical content: its reference and its two halves as one table.
+///
+/// # Specification
+/// - executable: none — stored roots and entries do not retain an arena; raw
+///   reconstruction is not validation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — noisy arenas, sharing, unresolved identifiers and
+///   signature extraction bound the encoding evidence; arbitrary raw tables are
+///   not certified by this representation.
+/// - witness: `content::tests::content_is_free_of_arena_ids`
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ItemContent
 {
@@ -588,6 +822,22 @@ impl ItemContent
     ///   [`TypeContent::of_value_type`] gives the signature in its arena.
     /// - provides: `signature::Absent::Unsigned` for an unsigned item.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an interleaved signature is compared with
+    ///   independently encoding its root. Raw malformed roots are not covered
+    ///   by that witness.
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[anodized::spec(ensures: |ret| match ret {
+        Maybe::Present(ref content) => match self.signature {
+            Maybe::Present(root) => self.nodes.get(usize::from(root)).map_or_else(
+                || content.nodes == [ContentNode::Unresolved(Sort::Value)],
+                |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort()),
+            ),
+            Maybe::Absent(_) => false,
+        },
+        Maybe::Absent(reason) => self.signature == Maybe::Absent(reason),
+    })]
     pub(crate) fn signature_type(&self) -> Maybe<TypeContent, signature::Absent>
     {
         match self.signature {
@@ -601,6 +851,16 @@ impl ItemContent
 
 /// A type's canonical content: every node reachable from it, numbered by
 /// discovery, the type itself first.
+///
+/// # Specification
+/// - executable: none — the raw table constructor admits malformed graphs;
+///   canonicality is a producer or decoder obligation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independent type encoding and minting preserve a shared
+///   arrow; a finite malformed corpus separates the five named mint refusals.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TypeContent
@@ -641,6 +901,19 @@ impl TypeContent
     /// - provides: the comparison form of types: answers, verdicts and seats
     ///   are compared by it, never by arena id.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — allocation noise and a shared arrow separate arena
+    ///   identity from content; the same signature is encoded through the item
+    ///   path.
+    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[anodized::spec(ensures: |ret| match program.arena().value_type(ty) {
+            | Some(_) => ret.nodes.first().is_some_and(|node| {
+                node.sort() == Sort::ValueType && !matches!(*node, ContentNode::Unresolved(_))
+            }),
+            | None => ret.nodes == [ContentNode::Unresolved(Sort::ValueType)],
+        })]
     #[inline]
     #[must_use]
     pub fn of_value_type(
@@ -659,6 +932,28 @@ impl TypeContent
     /// - ensures: the discovery-numbered table of every node reachable from
     ///   `root`, `root` first.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent type extraction and shared-node minting
+    ///   exercise a rooted value-type graph; other root families are not
+    ///   claimed here.
+    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[anodized::spec(ensures: |ret| {
+            ret.nodes.first().is_some_and(|node| {
+                node.sort()
+                    == match root {
+                        | ArenaNode::Value(_) => Sort::Value,
+                        | ArenaNode::Computation(_) => Sort::Computation,
+                        | ArenaNode::ValueType(_) => Sort::ValueType,
+                        | ArenaNode::CompType(_) => Sort::CompType,
+                    }
+            }) && ret.nodes.iter().all(|node| {
+                node.children()
+                    .iter()
+                    .all(|(child, _)| usize::from(child) < ret.nodes.len())
+            })
+        })]
     pub(crate) fn of(
         arena: &CoreArena,
         layout: &Layout,
@@ -676,7 +971,18 @@ impl TypeContent
     /// Every reference the type names, anywhere in it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: all stored Constant and Abstract references in table order,
+    ///   including duplicates.
+    /// - executable: none — anodized 0.7 emits an invalid closure return type
+    ///   for this opaque iterator, including for preconditions alone.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — with no footprint type reads, changing either an
+    ///   abstract reference or a code reference inside a recorded answer
+    ///   invalidates it; an unrelated change and an untyped answer do not.
+    ///   These are constructed guard inputs, not a claim of checker provenance.
+    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
     pub(crate) fn references(&self) -> impl Iterator<Item = &Reference>
     {
         self.nodes.iter().filter_map(|node| match node.reference() {
@@ -699,11 +1005,15 @@ impl TypeContent
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the post-order mint and its three
-    ///   refusals, separated by a shared arrow type minted back equal, and a
-    ///   cyclic, an unresolved and an ill-sorted table each refused by name.
+    /// - hypothesis: L3 — a shared arrow is minted back into a noisy arena; one
+    ///   table for each of the five refusal reasons bounds error evidence. The
+    ///   predicate checks successful seat resolution, not a second encoding.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+    #[anodized::spec(ensures: |ret| match ret {
+        Maybe::Present(id) => arena.value_type(id).is_some(),
+        Maybe::Absent(_) => true,
+    })]
     pub(crate) fn mint(
         &self,
         arena: &mut CoreArena,
@@ -719,6 +1029,16 @@ impl TypeContent
 }
 
 /// An item's content beside where its arena nodes sit in it.
+///
+/// # Specification
+/// - executable: none — the pair does not retain its source arena;
+///   correspondence is established by `encode_item`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — item identity and the site projection are checked through
+///   their actual consumers, not inferred from the pair alone.
+/// - witness: `content::tests::content_is_free_of_arena_ids`
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 pub struct Encoded
 {
     /// The content.
@@ -730,8 +1050,8 @@ pub struct Encoded
 /// The content of the item at `ordinal` of a program.
 ///
 /// # Specification
-/// - requires: `ordinal` names an item of `layout`; another ordinal encodes an
-///   empty unsigned hole under an unoccupied reference.
+/// - requires: nothing; an ordinal outside `layout` encodes an empty unsigned
+///   hole under an unoccupied reference.
 /// - ensures: the item's reference, its two roots and the discovery-numbered
 ///   table of every node reachable from them, the signature's root first.
 /// - provides: the item's identity, the sites its verdict is projected through,
@@ -748,6 +1068,22 @@ pub struct Encoded
 /// - witness: `content::tests::content_is_free_of_arena_ids`
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+#[anodized::spec(ensures: |ret| ret.sites.0.len() == ret.content.nodes.len()
+    && ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
+    && match layout.items.get(usize::from(ordinal)) {
+        Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
+            && match (item.declaration().signature(), ret.content.signature) {
+                (Maybe::Present(_), Maybe::Present(root)) => usize::from(root) == 0,
+                (Maybe::Absent(reason), Maybe::Absent(returned)) => reason == returned,
+                _ => false,
+            }
+            && matches!((item.declaration().body(), ret.content.body),
+                (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_))),
+        None => ret.content.reference == Reference::Unoccupied
+            && ret.content.signature == Maybe::Absent(signature::Absent::Unsigned)
+            && ret.content.body == Maybe::Absent(body::Absent::Hole)
+            && ret.content.nodes.is_empty(),
+    })]
 pub fn encode_item(
     arena: &CoreArena,
     layout: &Layout,
@@ -792,7 +1128,17 @@ pub fn encode_item(
 /// Whether `nodes` holds an unresolved node.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: Opaque exactly when any entry is Unresolved.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — unresolved foreign content and the supported persistence
+///   corpus separate opaque and resolving tables.
+/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[anodized::spec(ensures: |ret| (ret == Opacity::Opaque)
+    == nodes.iter().any(|node| matches!(*node, ContentNode::Unresolved(_))))]
 pub fn opacity_of(nodes: &[ContentNode]) -> Opacity
 {
     if nodes
@@ -807,6 +1153,18 @@ pub fn opacity_of(nodes: &[ContentNode]) -> Opacity
 }
 
 /// The breadth-first walk that numbers an arena graph by discovery.
+///
+/// # Specification
+/// - executable: none — queue order and first discovery relate mutable fields
+///   over a walk, not a callable type declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct arena allocations, shared nodes and interleaved
+///   roots separate the breadth-first identity cases without a universal graph
+///   claim.
+/// - witness: `content::tests::content_is_free_of_arena_ids`
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 struct Encoder<'arena, 'layout>
 {
     /// The arena read.
@@ -848,6 +1206,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the number `node` took when first discovered; a node
     ///   discovered now takes the next number and joins the queue.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a shared node retains one number; separately
+    ///   allocated equal nodes retain distinct numbers.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    #[anodized::spec(
+        captures: [old = self.seen.get(&node).copied(), count = self.seen.len(), queued = self.queue.len()],
+        ensures: |ret| self.seen.get(&node) == Some(&ret) && match old {
+            Some(index) => ret == index && self.seen.len() == count && self.queue.len() == queued,
+            None => usize::from(ret) == count && self.seen.len() == count.saturating_add(1)
+                && self.queue.len() == queued.saturating_add(1) && self.queue.back() == Some(&node),
+        },
+    )]
     fn discover(
         &mut self,
         node: ArenaNode,
@@ -868,6 +1239,14 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the queue is empty and the table holds one entry per number
     ///   handed out, in number order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — shared and interleaved roots are exhausted into one
+    ///   discovery-numbered table.
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[anodized::spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
+        && self.seen.values().all(|index| usize::from(*index) < self.nodes.len()))]
     fn drain(&mut self)
     {
         while let Some(node) = self.queue.pop_front() {
@@ -883,6 +1262,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - ensures: the former of `node` over its children's numbers, a constant
     ///   resolved to its reference, or the unresolved node of its sort.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite corpus exercises four resolving node
+    ///   families; the foreign-id witness exercises the unresolved value
+    ///   branch.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[anodized::spec(ensures: |ret| ret.sort() == match node {
+        ArenaNode::Value(_) => Sort::Value,
+        ArenaNode::Computation(_) => Sort::Computation,
+        ArenaNode::ValueType(_) => Sort::ValueType,
+        ArenaNode::CompType(_) => Sort::CompType,
+    })]
     fn read(
         &mut self,
         node: ArenaNode,
@@ -912,7 +1304,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// The content node of a value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the corresponding former with child ids replaced by their
+    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. The attribute does not independently reconstruct
+    ///   every payload.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(ensures: |ret| ret.sort() == Sort::Value
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value(
         &mut self,
         value: &Value,
@@ -954,7 +1358,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// The content node of a computation.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the corresponding former with child ids replaced by their
+    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. The attribute does not independently reconstruct
+    ///   every payload.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(ensures: |ret| ret.sort() == Sort::Computation
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_computation(
         &mut self,
         computation: &Computation,
@@ -997,7 +1413,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// The content node of a value type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the corresponding former with child ids replaced by their
+    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. The attribute does not independently reconstruct
+    ///   every payload.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(ensures: |ret| ret.sort() == Sort::ValueType
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
         &mut self,
         value_type: &ValueType,
@@ -1043,7 +1471,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// The content node of a computation type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the corresponding former with child ids replaced by their
+    ///   discovery indices; the predicate bounds the sort and child indices.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite persistence corpus exercises selected
+    ///   formers and sharing. The attribute does not independently reconstruct
+    ///   every payload.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    #[anodized::spec(ensures: |ret| ret.sort() == Sort::CompType
+        && !matches!(ret, ContentNode::Unresolved(_))
+        && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_comp_type(
         &mut self,
         comp_type: &CompType,
@@ -1084,10 +1524,21 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surface is the renumbering, separated by a signature
-///   whose nodes the body's discovery interleaves, compared with the type
-///   encoded on its own.
+/// - hypothesis: L3 — an interleaved signature is compared with independent
+///   encoding; cyclic, dangling, leaf and absent roots are checked against
+///   explicit discovery-numbered tables.
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
+#[anodized::spec(ensures: |ret| {
+        nodes.get(usize::from(root)).map_or_else(
+            || ret == [ContentNode::Unresolved(Sort::Value)],
+            |node| ret.first().is_some_and(|first| first.sort() == node.sort()),
+        ) && ret.iter().all(|node| {
+            node.children()
+                .iter()
+                .all(|(child, _)| usize::from(child) < ret.len())
+        })
+    })]
 pub fn renumber(
     nodes: &[ContentNode],
     root: NodeIndex,
@@ -1121,7 +1572,27 @@ pub fn renumber(
 /// left to right.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the former and non-child payloads are retained; each child is
+///   replaced by one call to `image`, in left-to-right order. The predicate
+///   checks the former, sort and child-slot sorts without recalling `image`.
+/// - panics: propagates a panic from `image`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an interleaved signature is renumbered independently. The
+///   malformed-table witness checks cycles, dangling children and root
+///   selection.
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+/// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
+#[anodized::spec(ensures: |ret| {
+        core::mem::discriminant(&ret) == core::mem::discriminant(node)
+            && ret.sort() == node.sort()
+            && ret
+                .children()
+                .iter()
+                .map(|(_, sort)| sort)
+                .eq(node.children().iter().map(|(_, sort)| sort))
+    })]
 pub fn map_children<Image>(
     node: &ContentNode,
     image: &mut Image,
@@ -1227,6 +1698,16 @@ where
 }
 
 /// A type node minted into an arena.
+///
+/// # Specification
+/// - executable: none — the sort-tagged seat has no arena with which to certify
+///   resolution.
+///
+/// # Adequacy
+/// - hypothesis: L2 — A shared arrow is minted into a noisy arena and
+///   reconstructed by content.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Minted
 {
@@ -1237,6 +1718,16 @@ enum Minted
 }
 
 /// Where the post-order mint stands at one table entry.
+///
+/// # Specification
+/// - executable: none — a traversal marker alone cannot establish the preceding
+///   DFS transitions.
+///
+/// # Adequacy
+/// - hypothesis: L2 — Shared-node reuse and a cycle distinguish completed from
+///   open entries.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MintState
 {
@@ -1249,6 +1740,16 @@ enum MintState
 }
 
 /// One step of the post-order mint.
+///
+/// # Specification
+/// - executable: none — an individual frame has neither the traversal stack nor
+///   its state table.
+///
+/// # Adequacy
+/// - hypothesis: L2 — The shared-arrow and refusal corpus bound post-order
+///   traversal evidence.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MintFrame
 {
@@ -1266,6 +1767,22 @@ enum MintFrame
 ///   after its children.
 /// - fails: as [`TypeContent::mint`].
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared arrow is reconstructed after minting; one finite
+///   table for each named refusal bounds failures. Empty, dangling and
+///   wrong-sort child tables add structural boundaries without claiming
+///   arbitrary graphs.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+#[anodized::spec(ensures: |ret| match ret {
+    Maybe::Present(Minted::ValueType(id)) => arena.value_type(id).is_some()
+        && nodes.first().is_some_and(|node| node.sort() == Sort::ValueType),
+    Maybe::Present(Minted::CompType(id)) => arena.comp_type(id).is_some()
+        && nodes.first().is_some_and(|node| node.sort() == Sort::CompType),
+    Maybe::Absent(reason) => !nodes.is_empty() || reason == seating::Absent::IllSorted,
+})]
 fn mint_table(
     nodes: &[ContentNode],
     arena: &mut CoreArena,
@@ -1325,7 +1842,20 @@ fn mint_table(
 /// The value type minted for the entry `index`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the matching completed seat at `index`, otherwise `IllSorted`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the shared-arrow reconstruction exercises completed
+///   seats; malformed child sorts are refused through the enclosing mint. Fresh
+///   and open states are not claimed as direct witness coverage.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+#[anodized::spec(ensures: |ret| match states.get(usize::from(index)) {
+    Some(&MintState::Done(Minted::ValueType(id))) => ret == Maybe::Present(id),
+    _ => ret == Maybe::Absent(seating::Absent::IllSorted),
+})]
 fn minted_value_type(
     states: &[MintState],
     index: NodeIndex,
@@ -1341,7 +1871,20 @@ fn minted_value_type(
 /// The computation type minted for the entry `index`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the matching completed seat at `index`, otherwise `IllSorted`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the shared-arrow reconstruction exercises completed
+///   seats; malformed child sorts are refused through the enclosing mint. Fresh
+///   and open states are not claimed as direct witness coverage.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+#[anodized::spec(ensures: |ret| match states.get(usize::from(index)) {
+    Some(&MintState::Done(Minted::CompType(id))) => ret == Maybe::Present(id),
+    _ => ret == Maybe::Absent(seating::Absent::IllSorted),
+})]
 fn minted_comp_type(
     states: &[MintState],
     index: NodeIndex,
@@ -1364,6 +1907,30 @@ fn minted_comp_type(
 ///   the program does not hold, `IllSorted` for a child of the wrong sort, and
 ///   `Unseatable` for a former that holds a term.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the shared-arrow graph checks reconstruction; named
+///   refusal tables and wrong-sort children bound failures. The predicate
+///   checks seat resolution, result sort and refusal class, not a duplicate
+///   arena encoding.
+/// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `content::tests::malformed_type_tables_fail_by_structure`
+#[anodized::spec(
+    requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
+    ensures: |ret| match ret {
+        Maybe::Present(Minted::ValueType(id)) => node.sort() == Sort::ValueType && arena.value_type(id).is_some(),
+        Maybe::Present(Minted::CompType(id)) => node.sort() == Sort::CompType && arena.comp_type(id).is_some(),
+        Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
+            reason == seating::Absent::Unresolved
+        } else if matches!(node.sort(), Sort::Value | Sort::Computation)
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. }) {
+            reason == seating::Absent::Unseatable
+        } else {
+            reason == seating::Absent::IllSorted || (matches!(*node, ContentNode::Abstract(_)) && reason == seating::Absent::Unplaced)
+        },
+    },
+)]
 fn mint_node(
     node: &ContentNode,
     states: &[MintState],
@@ -1488,6 +2055,23 @@ fn mint_node(
 /// - ensures: the position of the item whose own reference is `reference`.
 /// - provides: `Unplaced` when no item of the program carries it.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a missing abstract reference is refused; repeated keys
+///   and skipped positions distinguish successful relocation by occurrence.
+/// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+/// - witness: `content::tests::abstract_types_relocate_by_key_and_occurrence`
+#[anodized::spec(ensures: |ret| match ret {
+        | Maybe::Present(position) => layout
+            .items
+            .iter()
+            .zip(&layout.references)
+            .any(|(item, named)| item.declaration().constant() == position && named == reference),
+        | Maybe::Absent(reason) => {
+            reason == seating::Absent::Unplaced
+                && !layout.references.iter().any(|named| named == reference)
+        },
+    })]
 fn place(
     layout: &Layout,
     reference: &Reference,
@@ -1541,7 +2125,20 @@ mod tests
     /// The program of one item `it` at position 0 with `signature` and `body`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; unresolved ids are allowed.
+    /// - ensures: one item at position zero with the supplied two roots.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent allocation, sharing and an unresolved
+    ///   body exercise the roots through item encoding.
+    /// - witness: `content::tests::content_is_free_of_arena_ids`
+    /// - witness: `content::tests::a_shared_node_is_listed_once`
+    /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+    #[anodized::spec(ensures: |ret| ret.items().len() == 1
+        && ret.items().first().is_some_and(|item| item.declaration().signature() == signature
+            && item.declaration().body() == body
+            && item.declaration().constant() == ConstantIndex::from(0_usize)))]
     fn single(
         arena: CoreArena,
         signature: Maybe<ValueTypeId, signature::Absent>,
@@ -1573,7 +2170,27 @@ mod tests
     /// result, built in `arena`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the arena has identifier headroom for the four nodes.
+    /// - ensures: a thunk of an arrow whose integer domain is also its result.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — content has four entries despite two integer uses,
+    ///   and reconstruction in a noisy arena preserves that shared graph.
+    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+    #[anodized::spec(ensures: |ret| match arena.value_type(ret) {
+            | Some(&gandr_core_term::ValueType::Thunk(arrow)) => match arena.comp_type(arrow) {
+                | Some(&gandr_core_term::CompType::Arrow { domain, codomain }) => {
+                    arena.value_type(domain)
+                        == Some(&gandr_core_term::ValueType::Base(BaseType::Integer))
+                        && arena.comp_type(codomain)
+                            == Some(&gandr_core_term::CompType::Returner(domain))
+                },
+                | _ => false,
+            },
+            | _ => false,
+        })]
     fn shared_arrow(arena: &mut CoreArena) -> ValueTypeId
     {
         let integer = arena.value_type_base(BaseType::Integer);
@@ -1802,6 +2419,129 @@ mod tests
             content.signature_type(),
             Maybe::Present(TypeContent::of_value_type(&program, ty)),
             "the signature renumbered from its root is the type encoded alone"
+        );
+    }
+
+    #[test]
+    fn renumbering_closes_dangling_and_cyclic_tables()
+    {
+        let index = NodeIndex::from;
+        let nodes = [
+            ContentNode::UnitType,
+            ContentNode::Product(index(3_usize), index(3_usize)),
+            ContentNode::Abstract(Reference::Unoccupied),
+            ContentNode::ThunkType(index(4_usize)),
+            ContentNode::Returner(index(1_usize)),
+        ];
+        assert_eq!(super::renumber(&nodes, index(1_usize)), [
+            ContentNode::Product(index(1_usize), index(1_usize)),
+            ContentNode::ThunkType(index(2_usize)),
+            ContentNode::Returner(index(0_usize)),
+        ]);
+        assert_eq!(super::renumber(&nodes, index(2_usize)), [
+            ContentNode::Abstract(Reference::Unoccupied),
+        ]);
+        let dangling = [ContentNode::Case {
+            scrutinee: index(usize::MAX),
+            on_left: index(0_usize),
+            on_right: index(usize::MAX),
+        }];
+        assert_eq!(super::renumber(&dangling, index(0_usize)), [
+            ContentNode::Case {
+                scrutinee: index(1_usize),
+                on_left: index(0_usize),
+                on_right: index(1_usize),
+            },
+            ContentNode::Unresolved(Sort::Value),
+        ]);
+        assert_eq!(super::renumber(&nodes, index(usize::MAX)), [
+            ContentNode::Unresolved(Sort::Value),
+        ]);
+    }
+
+    #[test]
+    fn malformed_type_tables_fail_by_structure()
+    {
+        let index = NodeIndex::from;
+        let cases = [
+            vec![],
+            vec![
+                ContentNode::Product(index(1_usize), index(usize::MAX)),
+                ContentNode::UnitType,
+            ],
+            vec![
+                ContentNode::Product(index(1_usize), index(2_usize)),
+                ContentNode::Returner(index(2_usize)),
+                ContentNode::UnitType,
+            ],
+            vec![
+                ContentNode::Arrow {
+                    domain: index(1_usize),
+                    codomain: index(1_usize),
+                },
+                ContentNode::UnitType,
+            ],
+        ];
+        for nodes in cases {
+            let mut program = single(
+                CoreArena::new(),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Absent(body::Absent::Hole),
+            );
+            let (arena, layout) = program.parts_mut();
+            assert_eq!(
+                TypeContent::from_nodes(nodes).mint(arena, layout),
+                Maybe::Absent(seating::Absent::IllSorted)
+            );
+        }
+    }
+
+    #[test]
+    fn abstract_types_relocate_by_key_and_occurrence()
+    {
+        let items = [17_usize, 42_usize]
+            .into_iter()
+            .map(|position| {
+                Item::new(
+                    ItemKey::from("repeated"),
+                    Declaration::new(
+                        ConstantIndex::from(position),
+                        Maybe::Absent(signature::Absent::Unsigned),
+                        Maybe::Absent(body::Absent::Hole),
+                        OriginToken::from(position),
+                    ),
+                )
+            })
+            .collect();
+        let mut program = Program::new(CoreArena::new(), items).expect("ascending positions");
+        let named = Reference::Item {
+            key: ItemKey::from("repeated"),
+            occurrence: Occurrence::from(1_usize),
+        };
+        let content = TypeContent::from_nodes(vec![ContentNode::Abstract(named)]);
+        let minted = {
+            let (arena, layout) = program.parts_mut();
+            content.mint(arena, layout)
+        };
+        let Maybe::Present(id) = minted
+        else {
+            panic!("an existing occurrence must place: {minted:?}");
+        };
+        assert_eq!(
+            program.arena().value_type(id),
+            Some(&gandr_core_term::ValueType::Abstract(ConstantIndex::from(
+                42_usize
+            )))
+        );
+        assert_eq!(TypeContent::of_value_type(&program, id), content);
+        let absent = TypeContent::from_nodes(vec![ContentNode::Abstract(Reference::Item {
+            key: ItemKey::from("repeated"),
+            occurrence: Occurrence::from(2_usize),
+        })]);
+        let (arena, layout) = program.parts_mut();
+        assert_eq!(
+            absent.mint(arena, layout),
+            Maybe::Absent(seating::Absent::Unplaced)
         );
     }
 }

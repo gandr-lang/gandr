@@ -57,7 +57,22 @@ use crate::generate::program_and_edits;
 /// The type content of `String`, read off a program that ascribes it.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the canonical type table contains exactly the String base type.
+/// - panics: the lowering fixture unexpectedly lacks its ascription.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stale String typing replaces an Integer result and is
+///   rejected by the differential; a real type change rechecks its dependent.
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.nodes()
+            == [gandr_core_incremental::ContentNode::Base(
+                gandr_kernel_term::BaseType::String,
+            )]
+    },
+)]
 fn string_type() -> TypeContent
 {
     let program = lower(&[ascribed(Name("s"), Ascription::Text, Body::Hole)]);
@@ -71,10 +86,40 @@ fn string_type() -> TypeContent
     TypeContent::of_value_type(&program, ty)
 }
 
-/// The base checkpoints of `statements`, one replaced by `replace`.
+/// The base checkpoints of `statements`, replacing every row named `at`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: retains the default budget and row order; only matching names are
+///   passed to the replacement. Duplicate names are all selected.
+/// - panics: propagates a replacement panic or a broken fixture-order
+///   invariant.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two shadowing names around an unrelated item are both
+///   corrupted; the middle checkpoint remains exactly its fresh value. Mutation
+///   witnesses separately demonstrate detection of stale typing and footprints.
+/// - witness: `tests::incremental::corruption_selects_every_matching_name`
+/// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
+/// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
+#[anodized::spec(
+    ensures: |ret| {
+        ret.budget() == CheckBudget::DEFAULT
+            && ret.items().len() == statements.len()
+            && ret
+                .items()
+                .iter()
+                .zip(statements)
+                .all(|(checkpoint, statement)| {
+                    statement.name == at.0
+                        || match *checkpoint.content().reference() {
+                            | Reference::Item { ref key, .. } => {
+                                key.as_ref() == statement.name.as_bytes()
+                            },
+                            | Reference::Unoccupied => false,
+                        }
+                })
+    },
+)]
 fn corrupted<Replace>(
     statements: &[Stmt],
     at: Name,
@@ -507,6 +552,13 @@ fn a_stale_cached_typing_is_caught()
         expected,
         "the differential catches the stale typing"
     );
+    assert!(
+        matches!(
+            step(resumed, &mut lower(&source)),
+            Err(proptest::test_runner::TestCaseError::Fail(_)),
+        ),
+        "the differential step must fail, not discard a stale-typing case"
+    );
 }
 
 #[test]
@@ -804,4 +856,34 @@ proptest! {
             resumed = step(resumed, &mut lower(&current))?.resumed;
         }
     }
+}
+
+#[test]
+fn corruption_selects_every_matching_name()
+{
+    let source = [
+        def(Name("x"), Body::Int(1)),
+        def(Name("middle"), Body::Int(2)),
+        def(Name("x"), Body::Int(3)),
+    ];
+    let fresh = checked(&source);
+    let corrupted = corrupted(&source, Name("x"), |checkpoint| {
+        checkpoint.with_typing(Typing::Owed)
+    });
+    let expected = fresh
+        .checkpoints()
+        .items()
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, checkpoint)| {
+            if index == 1 {
+                checkpoint
+            }
+            else {
+                checkpoint.with_typing(Typing::Owed)
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(corrupted, Checkpoints::new(CheckBudget::DEFAULT, expected));
 }
