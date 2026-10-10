@@ -179,6 +179,7 @@ path = "crates/core-incremental"
 # - core-checker
 # - core-sequent (dev)
 # - surface-pretty (dev)
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 
@@ -202,6 +203,7 @@ path = "crates/core-sequent"
 # - surface-lowering
 # - surface-pretty
 # - surface-session
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
@@ -228,6 +230,7 @@ path = "crates/kernel-conversion-trace"
 # - core-checker
 # - core-nbe (dev)
 # - surface-lowering (dev)
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
 
@@ -263,6 +266,7 @@ path = "crates/kernel-strata"
 # - surface-repl (dev)
 # - surface-session
 # - surface-tui (dev)
+# - theory-levitation (dev)
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 

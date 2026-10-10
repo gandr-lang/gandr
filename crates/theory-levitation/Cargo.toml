@@ -25,6 +25,10 @@ anodized.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-term.workspace = true
 proptest.workspace = true
 
 [lints]

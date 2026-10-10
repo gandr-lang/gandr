@@ -10,6 +10,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [The closed tier](#the-closed-tier)
+- [Single-substitution signatures](#single-substitution-signatures)
 - [Decoding into core types](#decoding-into-core-types)
 - [Flat representation](#flat-representation)
 - [Code equality](#code-equality)
@@ -34,6 +35,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - James Chapman, Pierre-Évariste Dagand, Conor McBride, and Peter Morris. "The Gentle Art of Levitation." In _Proceedings of the 15th ACM SIGPLAN International Conference on Functional Programming (ICFP '10)_, pages 3–14, September 2010. `doi:10.1145/1863543.1863547` — the universe of datatype descriptions as an inductive object, generic programs driven by a description, and the staging that keeps the meta-theory functions host-side until each moves deliberately.
 - Nicola Gambino and Joachim Kock. "Polynomial Functors and Polynomial Monads." _Mathematical Proceedings of the Cambridge Philosophical Society_ 154, 1 (2013), pages 153–192. `arXiv:0906.4931` — the presentation of a polynomial by finite sets and maps, `Σ_t ∘ Π_π ∘ Δ_s`, which `BridgeArity` stores as the bridge diagram `A ←s— J —π→ I —t→ B`.
 - Hayato Nasu. _Logical Aspects of Virtual Double Categories_. Preprint, January 2025. `arXiv:2501.17869` — the split cartesian fibrant virtual double category (Definition 3.2.6) and its splitness lemma (Lemma 3.2.8), whose laws the dictionary suite checks on this crate's structures, and protype isomorphisms (§ 3.2.3), the shape of the certificate suite's value translators.
+- Ambrus Kaposi and Szumi Xie. "Second-Order Generalised Algebraic Theories: Signatures and First-Order Semantics." FSCD 2024. `doi:10.4230/LIPIcs.FSCD.2024.10` — second-order signatures and first-order semantics; §7 gives the eight dependent single-substitution laws.
 
 ## Provided features
 
@@ -120,10 +122,25 @@ cargo nextest run -p gandr-theory-levitation
 
 ## The closed tier
 
-The crate depends on no other crate of the workspace, so no wrapper in its signatures belongs to a crate a dependent's manifest does not name, and it re-exports none. The field leaf is the one place a core notion meets the code universe, and it enters as a type parameter: a field carries a grade `G` the consumer supplies, and its value type stays this crate's own symbolic reference (`ValueTypeRef` over `PrimTy` and declared heads), which is all the generic programs, the arity naming and the rendering read. The crate is `no_std`, so it cannot name a `std` collection; the compiler holds that line.
+The crate has no production dependency on another workspace crate. Core and kernel crates are dev-dependencies of the single-substitution experiment only; they do not enter the public API. The field leaf is the one place a core notion meets the code universe, and it enters as a type parameter: a field carries a grade `G` the consumer supplies, and its value type stays this crate's own symbolic reference (`ValueTypeRef` over `PrimTy` and declared heads), which is all the generic programs, the arity naming and the rendering read. The crate is `no_std`, so it cannot name a `std` collection; the compiler holds that line.
 
 - **Alternatives.** Depending on the core term crate for its grade and value types puts a core edge under a theory crate, inverting the layering, and lets a dependent reach that crate through re-exported wrappers. A whole-leaf parameter `Field(L)` would lose `PrimTy` and the symbolic value type that operation arities, the inspection rendering and the leaf-shift certificate read. A trait declared here and implemented in the core tier is an abstraction with one implementation.
 - **Reversal.** A reordering of the categories that puts the core tier below the theory tier returns the field leaf to the core's own grade and value types.
+
+## Single-substitution signatures
+
+A `SortDesc` is ordinary or representable. A `SortRef` carries its index arguments and a flat, outermost-first `pi_plus` telescope. `check_desc` rejects a binding domain that is undeclared or not representable. This is restricted object-language binding, not the atom abstraction `Code::Bind`.
+
+`first_order` folds sort, operation and equation declarations once into a single-substitution presentation. It adds contexts and a pointed substitution graph, substitution actions, and extension, weakening, newest-variable, single-substitution and lifting operations for representable families. Operation naturality lifts substitution under every binder. It adds no substitution identity, composition or empty substitution. Constructor payloads, circuit rules, external parameters, reserved `$` names and non-product arities are refused. Index expressions must already be well-typed; the description checker is not a dependent type checker. Equation notation leaves context and index parameters implicit, while operation telescopes display them. Existing equation faces retain their implicit source context; this is not an elaborator for arbitrary second-order equations.
+
+The generation witness derives the unindexed lambda binding signature from the paper's Definition 4 and §§6–7. The four index laws are vacuous for `Tm : Type+`; four term laws and naturality for `lam` and `app` remain. A separate indexed `Ty/Tm` fixture checks all eight printed laws. The paper does not print an SSC table for pure lambda calculus; source beta equations are not part of this binding-signature experiment.
+
+The identity-return experiment identifies **typed judgements**, not bare arena handles: context and expected type recover the parameters erased by core `Lambda`. Its variables are canonical `q` followed by weakenings; lambdas and returns are normal forms. Both composites are checked structurally in 256 deterministic generated cases, including open contexts and mixed type parameters. Another 256 cases exercise evaluation and `ReadbackMode::Unfolding`, bypassing source-face caching. Returns preserve semantic constructor data and lambdas capture their body and environment. Environment extension is isomorphic to a prefix/value pair; separately allocated neutral and readback nodes have different handles. Thus equality here is structural, not identity of arena allocations. This experiment does not prove a generic equivalence of models or equality of arbitrary explicit-substitution expressions.
+
+Witnesses: `tests::glf::generation_matches_derived_lc`, `tests::glf::eight_dependent_single_substitution_laws`, `tests::glf::indexed_signature_translates_without_name_cases`, `tests::glf::model::identification`, `tests::glf::model::both_views`, `tests::glf::model::return_commutes_and_environment_extension_is_an_isomorphism`, `tests::glf::model::kernel`. The kernel witness admits the generated identity after mapping through core, and independently rejects an unannotated lambda in a synthesis position.
+
+- **Alternatives.** Reusing atom abstraction conflates nominal names with representable contexts. A recursive binder tree adds ownership recursion to the flat description tier; a per-signature translation duplicates the structural laws.
+- **Reversal.** A signature requiring dependence on earlier bound terms needs a typed telescope elaborator and corresponding equation contexts before this representation can claim the full theory of signatures. A generic semantic action must replace the test-specific interpretation before it establishes an equivalence for every simply-sorted signature.
 
 ## Decoding into core types
 

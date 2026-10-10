@@ -17,8 +17,8 @@
 //!   linearity of a rule face are derived ([`derive_cell_var_meta`]), so an
 //!   attribute Σ that names them is declined.
 //!
-//! A higher-order field has no decline here because [`Code`] cannot encode
-//! one: that decline lands at elaboration, before a description exists.
+//! Restricted π⁺ ports require representable domain sorts; nominal
+//! atom abstraction in constructor codes remains a separate former.
 //!
 //! [`Code`]: crate::Code
 
@@ -89,6 +89,8 @@ pub enum WfKind
     /// A declared sort's polarity disagrees with the declaration's polarity,
     /// outside the polarity-homogeneous fragment this table admits.
     SortPolarityDisagreement,
+    /// A restricted binder's domain is undeclared or not representable.
+    NonRepresentableBinder,
 }
 
 quenchant_shape::reason_enum! {
@@ -200,6 +202,7 @@ fn located(
 /// - witness: `wellformed::tests::a_declared_telescope_admits_the_redex_heads_it_names`
 /// - witness: `wellformed::tests::a_redex_applying_an_undeclared_port_is_declined`
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
+/// - witness: `tests::glf::restricted_binding_requires_representability`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 #[inline]
 #[must_use]
@@ -207,7 +210,7 @@ fn located(
     | WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget => matches!(diagnostic.span, Maybe::Present(_)),
     | WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
-    | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+    | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement | WfKind::NonRepresentableBinder => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
 }))]
 pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
 {
@@ -216,6 +219,26 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
     // The sorting discipline: the declared sort set is the description's
     // index, and every indexed slot must resolve in it.
     check_sorts(desc, &mut diagnostics);
+    for port in desc
+        .opers
+        .iter()
+        .flat_map(|op| op.arity.inputs.iter().chain(&op.arity.outputs))
+    {
+        for binder in &port.bindings {
+            if !desc.sorts.iter().any(|sort| {
+                sort.name == binder.sort
+                    && sort.representability == crate::desc::Representability::Representable
+            }) {
+                diagnostics.push(unlocated(
+                    WfKind::NonRepresentableBinder,
+                    format!(
+                        "π⁺ domain '{}' of port '{}' is not representable",
+                        binder.sort, port.name
+                    ),
+                ));
+            }
+        }
+    }
 
     // Reserved-derived metadata: no attribute Σ may declare it.
     check_attrs(

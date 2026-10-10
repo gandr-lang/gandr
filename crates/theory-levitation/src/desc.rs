@@ -126,6 +126,16 @@ pub enum DeclPolarity
     Codata,
 }
 
+/// Membership in the representable sub-universe of signature sorts.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Representability
+{
+    /// An ordinary sort, forbidden as a restricted binder domain.
+    Ordinary,
+    /// A sort equipped with context extension in the first-order model.
+    Representable,
+}
+
 /// A declared sort of a signature (a 0-cell), with the fixpoint its
 /// declaration names.
 ///
@@ -143,6 +153,8 @@ pub struct SortDesc
     pub name: Name,
     /// The fixpoint the sort's declaration names.
     pub polarity: DeclPolarity,
+    /// Whether this sort admits context extension and restricted binding.
+    pub representability: Representability,
     /// The sort's index telescope, empty for an unindexed sort.
     ///
     /// `sort Hom(dom : Ob, cod : Ob) : Type` declares a sort family, and a
@@ -173,6 +185,7 @@ impl SortDesc
         Self {
             name: name.into(),
             polarity,
+            representability: Representability::Ordinary,
             indices: Box::default(),
         }
     }
@@ -209,7 +222,21 @@ impl SortDesc
         Self {
             name: name.into(),
             polarity,
+            representability: Representability::Ordinary,
             indices: indices.into(),
+        }
+    }
+    /// Mark this sort as a member of the representable sub-universe.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn representable(self) -> Self
+    {
+        Self {
+            representability: Representability::Representable,
+            ..self
         }
     }
 }
@@ -227,6 +254,8 @@ pub struct SortIndex
     pub name: Name,
     /// The sort it ranges over, which the same signature declares.
     pub sort: Name,
+    /// Arguments of this sort family, in telescope order.
+    pub arguments: Box<[crate::rule::FreeTerm]>,
 }
 
 impl SortIndex
@@ -248,6 +277,25 @@ impl SortIndex
         Self {
             name: name.into(),
             sort: sort.into(),
+            arguments: Box::default(),
+        }
+    }
+    /// Apply the sort family to the given index terms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn applied<I>(
+        self,
+        arguments: I,
+    ) -> Self
+    where
+        I: Into<Box<[crate::rule::FreeTerm]>>,
+    {
+        Self {
+            arguments: arguments.into(),
+            ..self
         }
     }
 }

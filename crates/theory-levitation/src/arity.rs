@@ -14,6 +14,8 @@ use anodized::spec;
 
 use crate::boundary::MonomialCount;
 use crate::code::Name;
+use crate::desc::SortIndex;
+use crate::rule::FreeTerm;
 
 /// A named port of an operation's input (`A`) or output (`B`) tuple.
 ///
@@ -26,6 +28,12 @@ pub struct SortRef
     pub name: Name,
     /// The port's symbolic sort spelling.
     pub sort: Name,
+    /// Arguments of the sort family, in telescope order.
+    pub arguments: Box<[FreeTerm]>,
+    /// Restricted π⁺ domains, outermost first; empty for a first-order port.
+    /// Each domain must name a representable sort. This is not atom
+    /// abstraction.
+    pub bindings: Box<[SortIndex]>,
 }
 
 impl SortRef
@@ -47,6 +55,45 @@ impl SortRef
         Self {
             name: name.into(),
             sort: sort.into(),
+            arguments: Box::default(),
+            bindings: Box::default(),
+        }
+    }
+    /// Apply this port's sort family to index terms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn applied<I>(
+        self,
+        arguments: I,
+    ) -> Self
+    where
+        I: Into<Box<[FreeTerm]>>,
+    {
+        Self {
+            arguments: arguments.into(),
+            ..self
+        }
+    }
+
+    /// Bind representable variables over this port, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn pi_plus<I>(
+        self,
+        bindings: I,
+    ) -> Self
+    where
+        I: Into<Box<[SortIndex]>>,
+    {
+        Self {
+            bindings: bindings.into(),
+            ..self
         }
     }
 }
