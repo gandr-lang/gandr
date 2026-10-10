@@ -26,6 +26,8 @@ use crate::image::NodeKind;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Form
 {
+    /// A native function or operation.
+    Primitive,
     /// Function introduction.
     Lambda,
     /// Function elimination.
@@ -72,6 +74,7 @@ impl core::fmt::Display for Form
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
+            | Self::Primitive => "a native primitive",
             | Self::Lambda => "an abstraction",
             | Self::Application => "an application",
             | Self::Force => "a forced thunk",
@@ -266,6 +269,9 @@ pub fn lower_computation(
                     .computation(id)
                     .ok_or(LowerError::DanglingComputation(id))?;
                 match *computation {
+                    | Computation::Primitive { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Primitive));
+                    },
                     | Computation::Return(value) => steps.push(Step::Value(value, depth)),
                     | Computation::Bind(bound, body) => {
                         steps.push(Step::Build(NodeKind::Bind, CtorTag::Unit, Arity(2)));
@@ -303,6 +309,9 @@ pub fn lower_computation(
                     operands: Vec::new(),
                 };
                 match *value {
+                    | Value::Primitive { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Primitive));
+                    },
                     | Value::Unit => {},
                     | Value::Literal(CoreLiteral::Integer(ref integer)) => {
                         node.kind = NodeKind::Lit;
