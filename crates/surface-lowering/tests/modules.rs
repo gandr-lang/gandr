@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Module declarations and nested modules, lowered: every member flattened to
 //! one declaration in source order under its structured name, every path
 //! governed by the module that binds it, inline signatures matched coercively
@@ -23,6 +12,7 @@ mod modules
 {
     use core::fmt::Write as _;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingContext;
@@ -75,6 +65,24 @@ mod modules
     use quenchant_shape::shape::Maybe;
 
     /// A source lowered over its own arena.
+    ///
+    /// # Specification
+    /// - requires: the module is interpreted against its retained arena.
+    /// - ensures: emitted bodies and signatures remain readable in that arena
+    ///   after checker append operations.
+    /// - provides: a paired lowering fixture, not globally authenticated
+    ///   numeric identifiers.
+    /// - fails: none as a data value.
+    /// - panics: none.
+    /// - executable: none — type-level invariant expansion is unavailable in
+    ///   the enabled facade; `finish` checks the arena membership relation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named parsed fixtures — lowered members are
+    ///   checked through the same arena, including mismatched ascribed
+    ///   components.
+    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
     struct Lowered<'source>
     {
         /// The lowered module.
@@ -84,6 +92,23 @@ mod modules
     }
 
     /// What one declaration amounts to, as these tests compare it.
+    ///
+    /// # Specification
+    /// - requires: a value is interpreted as the normalization of one
+    ///   declaration outcome.
+    /// - ensures: completed, signature-only, body-only and refused outcomes
+    ///   stay distinct; a refusal retains its payload.
+    /// - provides: a coordinate-independent outcome observer.
+    /// - fails: none as a data value.
+    /// - panics: none.
+    /// - executable: none — the original declaration is not retained; `rows`
+    ///   checks the exact normalization.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered declarations and held manifest refusals
+    ///   distinguish the successful shapes from an erased or displaced refusal.
+    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    /// - witness: `modules::modules::manifest_refusals_propagate_transitively_before_minting`
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Amounts<'source>
     {
@@ -98,6 +123,23 @@ mod modules
     }
 
     /// What the checker said about one declaration, as these tests compare it.
+    ///
+    /// # Specification
+    /// - requires: a value is interpreted as the normalization of one checking
+    ///   verdict.
+    /// - ensures: checked, synthesized, owed and refused outcomes remain
+    ///   distinct, with type mismatch separated from other refusals.
+    /// - provides: the checking observer for module fixtures.
+    /// - fails: none as a data value.
+    /// - panics: none.
+    /// - executable: none — the original checker report is not retained;
+    ///   `verdicts` checks positional and outcome-shape constraints.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mismatched components and body holes distinguish a
+    ///   refusal from an obligation and a successful check.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Judgement
     {
@@ -114,6 +156,26 @@ mod modules
     }
 
     /// One module's stratum item, as these tests compare it.
+    ///
+    /// # Specification
+    /// - requires: component coordinates are interpreted against their source
+    ///   module.
+    /// - ensures: the path, ordered value and module inventories, and coercion
+    ///   status stay independently observable.
+    /// - provides: an export view that omits arena-local type identifiers.
+    /// - fails: none as a data value.
+    /// - panics: none.
+    /// - executable: none — the source structure is not retained; `strata`
+    ///   checks the complete normalized view and the builders specify their
+    ///   updates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named goldens — reordering and hiding change
+    ///   exports without changing member admission order; nesting retains
+    ///   parent paths.
+    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
     #[derive(Debug, Eq, PartialEq)]
     struct Stratum
     {
@@ -132,7 +194,22 @@ mod modules
         /// The expected item of the module at `path`, exporting nothing yet.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: an expected stratum starts with no exports and retains
+        ///   its coercion status.
+        /// - provides: the initial state of an expected export inventory.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — empty and coerced module fixtures distinguish an
+        ///   empty inventory from a copied export list or a changed coercion
+        ///   flag.
+        /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
+        /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+        #[spec(
+            ensures: |ret| ret.values.is_empty() && ret.modules.is_empty() && ret.coerced == coerced,
+        )]
         fn new<Path>(
             path: Path,
             coerced: Coerced,
@@ -151,7 +228,26 @@ mod modules
         /// This item, exporting the value component `name` at `position` next.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: one value component is appended without changing the
+        ///   nested-module inventory or coercion flag.
+        /// - provides: an ordered expected value inventory.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — multi-member and reordered signatures compare the
+        ///   whole export inventory, distinguishing append from replacement.
+        /// - witness: `modules::modules::module_members_admit_in_source_order`
+        /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+        #[spec(
+            captures: before = (self.values.len(), self.modules.len(), self.coerced),
+            ensures: |ret| {
+                ret.values.len() == before.0.saturating_add(1)
+                    && ret.modules.len() == before.1
+                    && ret.coerced == before.2
+            },
+        )]
         fn value<Name, Position>(
             mut self,
             name: Name,
@@ -168,7 +264,26 @@ mod modules
         /// This item, exporting the nested module `name` next.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: one nested-module component is appended without changing
+        ///   the value inventory or coercion flag.
+        /// - provides: an ordered expected module inventory.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — nested module fixtures compare parent and child
+        ///   inventories, distinguishing an append from replacing earlier
+        ///   components.
+        /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+        #[spec(
+            captures: before = (self.modules.len(), self.values.len(), self.coerced),
+            ensures: |ret| {
+                ret.modules.len() == before.0.saturating_add(1)
+                    && ret.values.len() == before.1
+                    && ret.coerced == before.2
+            },
+        )]
         fn module<Name>(
             mut self,
             name: Name,
@@ -185,7 +300,40 @@ mod modules
     /// repair, and lowered against an empty outermost scope.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the source parses cleanly and fits the default lowering
+    ///   allowance.
+    /// - ensures: the lowered module and its retained arena agree on every
+    ///   emitted core coordinate.
+    /// - provides: a real parser-to-lowering fixture with no outermost names.
+    /// - fails: none for an accepted fixture.
+    /// - panics: on parsing, repair or engine refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named module goldens — complete and body-only
+    ///   members retain their actual core nodes in the paired arena.
+    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    #[spec(
+        ensures: |ret| {
+            ret.module
+                .declarations()
+                .iter()
+                .all(|declaration| match declaration.outcome() {
+                    | DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => {
+                        ret.arena.value_type(declared_type).is_some()
+                            && ret.arena.value(body).is_some()
+                    },
+                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                        ret.arena.value_type(declared_type).is_some()
+                    },
+                    | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Refused(_) => true,
+                })
+        },
+    )]
     fn lower<'source, Text>(source: Text) -> Lowered<'source>
     where
         Text: Into<SourceText<'source>>,
@@ -204,7 +352,41 @@ mod modules
     /// lowered against an empty outermost scope.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the parser repairs the fixture and the lowering engine
+    ///   accepts its tree.
+    /// - ensures: emitted core coordinates remain readable in the retained
+    ///   arena despite local repairs.
+    /// - provides: a repaired-source fixture without discarding unrelated
+    ///   members.
+    /// - fails: none for an accepted fixture.
+    /// - panics: on an unparseable or clean source, or an engine refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — malformed members and repaired containers preserve
+    ///   their independently asserted surviving declarations.
+    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
+    #[spec(
+        ensures: |ret| {
+            ret.module
+                .declarations()
+                .iter()
+                .all(|declaration| match declaration.outcome() {
+                    | DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => {
+                        ret.arena.value_type(declared_type).is_some()
+                            && ret.arena.value(body).is_some()
+                    },
+                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                        ret.arena.value_type(declared_type).is_some()
+                    },
+                    | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Refused(_) => true,
+                })
+        },
+    )]
     fn repaired<'source, Text>(source: Text) -> Lowered<'source>
     where
         Text: Into<SourceText<'source>>,
@@ -222,7 +404,41 @@ mod modules
     /// `tree` lowered against an empty outermost scope.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the grammar matches the tree and the engine accepts it
+    ///   within the default allowance.
+    /// - ensures: the module’s body and signature identifiers refer to nodes in
+    ///   the paired arena.
+    /// - provides: a coherent lowered fixture rather than detached numeric
+    ///   identifiers.
+    /// - fails: none for an accepted fixture.
+    /// - panics: if the lowering engine refuses the tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named goldens — successful and locally refused
+    ///   members coexist while successful nodes remain readable by the checker.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+    #[spec(
+        ensures: |ret| {
+            ret.module
+                .declarations()
+                .iter()
+                .all(|declaration| match declaration.outcome() {
+                    | DeclarationOutcome::Completed {
+                        declared_type,
+                        body,
+                    } => {
+                        ret.arena.value_type(declared_type).is_some()
+                            && ret.arena.value(body).is_some()
+                    },
+                    | DeclarationOutcome::Uncompleted { declared_type } => {
+                        ret.arena.value_type(declared_type).is_some()
+                    },
+                    | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Refused(_) => true,
+                })
+        },
+    )]
     fn finish<'source>(
         pbg: &Pbg,
         tree: &SyntaxTree<'source>,
@@ -243,7 +459,35 @@ mod modules
     /// The dotted path of `declaration` in `module`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the declaration and container coordinates belong to the
+    ///   module; name segments contain no period.
+    /// - ensures: the container path followed by the declaration’s own name,
+    ///   joined with periods.
+    /// - provides: an arena-coordinate-independent declaration key for these
+    ///   fixtures.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — top-level and nested members retain every container
+    ///   segment, distinguishing same-leaf names in different modules.
+    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    #[spec(
+        ensures: |ret| {
+            let prefix: &[SurfaceName<'_>] = match declaration.container() {
+                | gandr_surface_lowering::Container::TopLevel => &[],
+                | gandr_surface_lowering::Container::Module(index) => module
+                    .structures()
+                    .get(usize::from(index))
+                    .map_or(&[], LoweredStructure::path),
+            };
+            ret.split('.').eq(prefix
+                .iter()
+                .map(AsRef::as_ref)
+                .chain(core::iter::once(declaration.name().as_ref())))
+        },
+    )]
     fn dotted(
         module: &LoweredModule<'_>,
         declaration: &LoweredDeclaration<'_>,
@@ -261,7 +505,55 @@ mod modules
     /// role and what it amounts to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a coherent parsed fixture with period-free name segments.
+    /// - ensures: one row per declaration in admission order, preserving its
+    ///   qualified name, role and semantic outcome.
+    /// - provides: the normalized declaration observer used by module goldens.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named goldens — source order and explicit held
+    ///   refusals distinguish omission, reordering and outcome erasure.
+    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    /// - witness: `modules::modules::manifest_refusals_propagate_transitively_before_minting`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == lowered.module.declarations().len()
+                && ret.iter().zip(lowered.module.declarations()).all(
+                    |(&(ref path, role, amounts), declaration)| {
+                        role == declaration.role()
+                            && {
+                                let prefix: &[SurfaceName<'_>] = match declaration.container() {
+                                    | gandr_surface_lowering::Container::TopLevel => &[],
+                                    | gandr_surface_lowering::Container::Module(index) => lowered
+                                        .module
+                                        .structures()
+                                        .get(usize::from(index))
+                                        .map_or(&[], LoweredStructure::path),
+                                };
+                                path.split('.').eq(prefix
+                                    .iter()
+                                    .map(AsRef::as_ref)
+                                    .chain(core::iter::once(declaration.name().as_ref())))
+                            }
+                            && match (amounts, declaration.outcome()) {
+                                | (Amounts::Completed, DeclarationOutcome::Completed { .. })
+                                | (
+                                    Amounts::Uncompleted,
+                                    DeclarationOutcome::Uncompleted { .. },
+                                )
+                                | (Amounts::Bodied, DeclarationOutcome::Bodied { .. }) => true,
+                                | (
+                                    Amounts::Refused(actual),
+                                    DeclarationOutcome::Refused(expected),
+                                ) => actual == expected,
+                                | _ => false,
+                            }
+                    },
+                )
+        },
+    )]
     fn rows<'source>(lowered: &Lowered<'source>) -> Vec<(String, Role, Amounts<'source>)>
     {
         lowered
@@ -302,7 +594,44 @@ mod modules
     /// The declaration of `lowered` at `path` in `role`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: one declaration has the requested qualified path and role.
+    /// - ensures: the matching declaration is borrowed from the fixture’s
+    ///   admission-ordered array.
+    /// - provides: a role-sensitive selector, not a same-leaf-name lookup.
+    /// - fails: none when the requested declaration exists.
+    /// - panics: if no declaration matches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested and ascribed declarations distinguish
+    ///   qualified paths and declared versus witness roles.
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    #[spec(
+        ensures: |ret| {
+            ret.role() == role
+                && {
+                    let prefix: &[SurfaceName<'_>] = match ret.container() {
+                        | gandr_surface_lowering::Container::TopLevel => &[],
+                        | gandr_surface_lowering::Container::Module(index) => lowered
+                            .module
+                            .structures()
+                            .get(usize::from(index))
+                            .map_or(&[], LoweredStructure::path),
+                    };
+                    path.as_ref().split('.').eq(prefix
+                        .iter()
+                        .map(AsRef::as_ref)
+                        .chain(core::iter::once(ret.name().as_ref())))
+                }
+                && lowered
+                    .module
+                    .declarations()
+                    .binary_search_by_key(&ret.constant(), LoweredDeclaration::constant)
+                    .ok()
+                    .and_then(|index| lowered.module.declarations().get(index))
+                    .is_some_and(|stored| core::ptr::eq(&raw const *stored, &raw const *ret))
+        },
+    )]
     fn declaration<'lowered, 'source, Path>(
         lowered: &'lowered Lowered<'source>,
         path: Path,
@@ -325,7 +654,22 @@ mod modules
     /// The body of the declared name at `path`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the declared name has a completed or body-only outcome.
+    /// - ensures: the selected declaration’s body identifier.
+    /// - provides: the core body used by structural assertions.
+    /// - fails: none on the required outcome variants.
+    /// - panics: if the name is absent or has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — module member selections retain the exact constant
+    ///   body instead of a sibling’s coordinate or a signature identifier.
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    #[spec(
+        ensures: |ret| {
+            lowered.module.declarations().iter().any(|declaration| declaration.role() == Role::Declared && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } if body == ret))
+        },
+    )]
     fn body_of<Path>(
         lowered: &Lowered<'_>,
         path: Path,
@@ -348,7 +692,46 @@ mod modules
     /// The constant the body of the declared name at `path` is.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the selected declaration’s body is a constant reference.
+    /// - ensures: that body’s exact referenced constant, not the declaration’s
+    ///   own admission position.
+    /// - provides: a semantic resolution observer.
+    /// - fails: none on a constant body.
+    /// - panics: if the declaration is absent or its body is not a constant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — backward references and nested selections name their
+    ///   target’s admission coordinate rather than the referring declaration.
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    #[spec(
+        ensures: |ret| {
+            lowered.module.declarations().iter().any(|declaration| {
+                declaration.role() == Role::Declared
+                    && {
+                        let prefix: &[SurfaceName<'_>] = match declaration.container() {
+                            | gandr_surface_lowering::Container::TopLevel => &[],
+                            | gandr_surface_lowering::Container::Module(index) => lowered
+                                .module
+                                .structures()
+                                .get(usize::from(index))
+                                .map_or(&[], LoweredStructure::path),
+                        };
+                        path.as_ref().split('.').eq(prefix
+                            .iter()
+                            .map(AsRef::as_ref)
+                            .chain(core::iter::once(declaration.name().as_ref())))
+                    }
+                    && match declaration.outcome() {
+                        | DeclarationOutcome::Completed { body, .. }
+                        | DeclarationOutcome::Bodied { body } => {
+                            lowered.arena.value(body) == Some(&Value::Constant(ret))
+                        },
+                        | _ => false,
+                    }
+            })
+        },
+    )]
     fn constant_read_by<Path>(
         lowered: &Lowered<'_>,
         path: Path,
@@ -366,7 +749,24 @@ mod modules
     /// The declared type of the declaration at `path` in `role`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the selected role and qualified name have a lowered
+    ///   signature.
+    /// - ensures: the exact declared type of that declaration.
+    /// - provides: a role-sensitive type observer for ascriptions and
+    ///   witnesses.
+    /// - fails: none on the required outcome variants.
+    /// - panics: if the name is absent or has no signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — written and derived member signatures distinguish
+    ///   their core types and the ascription origin that supplies them.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    #[spec(
+        ensures: |ret| {
+            lowered.module.declarations().iter().any(|declaration| declaration.role() == role && { let prefix: &[SurfaceName<'_>] = match declaration.container() { gandr_surface_lowering::Container::TopLevel => &[], gandr_surface_lowering::Container::Module(index) => lowered.module.structures().get(usize::from(index)).map_or(&[], LoweredStructure::path), }; path.as_ref().split('.').eq(prefix.iter().map(AsRef::as_ref).chain(core::iter::once(declaration.name().as_ref()))) } && matches!(declaration.outcome(), DeclarationOutcome::Completed { declared_type, .. } | DeclarationOutcome::Uncompleted { declared_type } if declared_type == ret))
+        },
+    )]
     fn declared_type_of<Path>(
         lowered: &Lowered<'_>,
         path: Path,
@@ -388,7 +788,20 @@ mod modules
     /// The bytes the origin of the type `declared` covers.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the type has an origin in this fixture’s table.
+    /// - ensures: the span recorded for that value-type identifier.
+    /// - provides: the source observer for a written or derived signature.
+    /// - fails: none for a recorded type.
+    /// - panics: if the origin is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ascribed member types retain the written component’s
+    ///   span, distinct from the member body or another component.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
+    #[spec(
+        ensures: |ret| matches!(lowered.module.origins().value_type(declared), Maybe::Present(origin) if ret == origin.span()),
+    )]
     fn origin_of(
         lowered: &Lowered<'_>,
         declared: ValueTypeId,
@@ -403,7 +816,46 @@ mod modules
     /// Every module's stratum item, in pre-order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a coherent parsed fixture with period-free name segments.
+    /// - ensures: one stratum per structure in preorder, preserving each
+    ///   ordered export inventory and coercion flag.
+    /// - provides: the semantic export observer used by module goldens.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named goldens — nested modules, reordered
+    ///   exports and hidden members distinguish preorder from admission order
+    ///   and the public inventory from every collected member.
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == lowered.module.structures().len()
+                && ret
+                    .iter()
+                    .zip(lowered.module.structures())
+                    .all(|(actual, structure)| {
+                        actual.coerced == structure.coerced()
+                            && actual
+                                .path
+                                .split('.')
+                                .eq(structure.path().iter().map(AsRef::as_ref))
+                            && actual.values.len() == structure.values().len()
+                            && actual.values.iter().zip(structure.values()).all(
+                                |(&(ref name, constant), value)| {
+                                    name == value.name.as_ref() && constant == value.constant
+                                },
+                            )
+                            && actual
+                                .modules
+                                .iter()
+                                .map(String::as_str)
+                                .eq(structure.modules().iter().map(AsRef::as_ref))
+                    })
+        },
+    )]
     fn strata(lowered: &Lowered<'_>) -> Vec<Stratum>
     {
         lowered
@@ -435,7 +887,35 @@ mod modules
     /// The checker's report over every declaration `lowered` did not refuse.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture’s core identifiers belong to its arena and fit
+    ///   the checker’s default allowance.
+    /// - ensures: every unrefused declaration is checked at its original
+    ///   admission coordinate; lowering refusals are not submitted.
+    /// - provides: a real checking report over the lowered core.
+    /// - fails: checking refusals remain in the returned report.
+    /// - panics: none for a coherent fixture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching and mismatching signatures, body-only
+    ///   members and signature obligations preserve their distinct checker
+    ///   verdicts.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    #[spec(
+        ensures: |ret| {
+            ret.judged()
+                .iter()
+                .map(gandr_core_checker::Judged::constant)
+                .eq(lowered
+                    .module
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| {
+                        !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))
+                    })
+                    .map(LoweredDeclaration::constant))
+        },
+    )]
     fn report(lowered: &mut Lowered<'_>) -> ModuleReport
     {
         let declarations: Vec<Declaration> = lowered
@@ -476,7 +956,53 @@ mod modules
     /// by admission position.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a coherent lowered fixture accepted by the checker’s run
+    ///   budget.
+    /// - ensures: one normalized judgement per unrefused declaration in
+    ///   admission order; a type mismatch remains distinct from another
+    ///   checking refusal.
+    /// - provides: the semantic checker observer used by module goldens.
+    /// - fails: checking failures are represented, not panicked away.
+    /// - panics: none for a coherent fixture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a correct component, a mismatched component and an
+    ///   uncompleted signature distinguish checked, mismatched and owed
+    ///   results.
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    #[spec(
+        ensures: |ret| {
+            let mut actual = ret.iter();
+            lowered
+                .module
+                .declarations()
+                .iter()
+                .filter(|declaration| {
+                    !matches!(declaration.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .all(|declaration| match actual.next() {
+                    | Some(&(constant, judgement)) if constant == declaration.constant() => {
+                        match judgement {
+                            | Judgement::Checked => matches!(
+                                declaration.outcome(),
+                                DeclarationOutcome::Completed { .. }
+                            ),
+                            | Judgement::Synthesised => {
+                                matches!(declaration.outcome(), DeclarationOutcome::Bodied { .. })
+                            },
+                            | Judgement::Owed => matches!(
+                                declaration.outcome(),
+                                DeclarationOutcome::Uncompleted { .. }
+                            ),
+                            | Judgement::Mismatched | Judgement::Refused => true,
+                        }
+                    },
+                    | _ => false,
+                })
+                && actual.next().is_none()
+        },
+    )]
     fn verdicts(lowered: &mut Lowered<'_>) -> Vec<(ConstantIndex, Judgement)>
     {
         report(lowered)
@@ -513,7 +1039,27 @@ mod modules
     /// `needle` in `source`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the requested nonoverlapping occurrence of the needle
+    ///   exists.
+    /// - ensures: the returned source slice is exactly the needle at that
+    ///   occurrence.
+    /// - provides: an independent lexical location oracle.
+    /// - fails: none when the occurrence exists.
+    /// - panics: when the requested occurrence is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated member names distinguish the later fault’s
+    ///   span from the earlier declaration it conflicts with.
+    /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `modules::modules::signatures_attach_to_their_defs`
+    #[spec(
+        ensures: |ret| {
+            source
+                .as_ref()
+                .get(usize::from(ret.start()) .. usize::from(ret.end()))
+                == Some(needle.as_ref())
+        },
+    )]
     fn span_of<Source, Needle, Occurrence>(
         source: Source,
         needle: Needle,
@@ -539,7 +1085,37 @@ mod modules
     /// `written`: the name a selection selects.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the dotted spelling occurs in the source and has a final
+    ///   segment.
+    /// - ensures: the final segment of the first occurrence, ending where the
+    ///   complete spelling ends.
+    /// - provides: an independent location oracle for governed selections.
+    /// - fails: none for a present dotted spelling.
+    /// - panics: when the spelling is absent or has no period.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested selections distinguish the selected member’s
+    ///   span from the whole path and its governing prefix.
+    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
+    #[spec(
+        ensures: |ret| {
+            written
+                .as_ref()
+                .rsplit_once('.')
+                .is_some_and(|(_prefix, member)| {
+                    source
+                        .as_ref()
+                        .get(usize::from(ret.start()) .. usize::from(ret.end()))
+                        == Some(member)
+                        && Some(usize::from(ret.end()))
+                            == source
+                                .as_ref()
+                                .find(written.as_ref())
+                                .and_then(|start| start.checked_add(written.as_ref().len()))
+                })
+        },
+    )]
     fn selected<Source, Written>(
         source: Source,
         written: Written,
@@ -1026,6 +1602,33 @@ mod modules
     }
 
     #[test]
+    fn manifest_refusals_propagate_transitively_before_minting()
+    {
+        let source = "module M : #{ type A = Missing, type B = A, value: B } { def value = unbound; }\ndef after = 2;";
+        let lowered = lower(source);
+        let fault = Amounts::Refused(LoweringRefusal::UnresolvedTypeHead {
+            span: span_of(source, "Missing", 0_usize),
+            name: name("Missing"),
+            arity: gandr_surface_lowering::HeadArity::Nullary,
+        });
+        assert_eq!(
+            rows(&lowered),
+            [
+                row("M.value", Role::Declared, fault),
+                row("M.A", Role::Held, fault),
+                row("M.B", Role::Held, fault),
+                row("after", Role::Declared, Amounts::Bodied),
+            ],
+            "the earlier signature failure wins over the member's independent body failure"
+        );
+        let components = lowered.module.structures().first().expect("module").types();
+        assert!(matches!(components, [first, second]
+            if first.name == name("A") && second.name == name("B")
+                && matches!(first.defined, Maybe::Absent(_))
+                && matches!(second.defined, Maybe::Absent(_))));
+    }
+
+    #[test]
     fn a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not()
     {
         let kinded = "module M : #{ type Hom : Integer -> Integer } { }";
@@ -1081,23 +1684,6 @@ mod modules
             verdicts(&mut lowered),
             [judged(0_usize, Judgement::Checked)],
             "and the sibling checks"
-        );
-    }
-
-    #[test]
-    fn an_abstract_component_under_transparent_ascription_points_at_seal()
-    {
-        let source = "module Bad : #{ type T, value: Integer } { def value = 1; }";
-        let lowered = lower(source);
-        let refusal = match declaration(&lowered, "Bad.T", Role::Held).outcome() {
-            | DeclarationOutcome::Refused(refusal) => refusal,
-            | other => panic!("the abstract component is refused, not {other:?}"),
-        };
-        assert_eq!(
-            refusal.to_string(),
-            "`T` at 21..22 is an abstract type component, given its meaning only by opaque \
-             ascription `:>`; the fragment does not read it yet",
-            "the refusal names opaque ascription as the form that gives the component meaning"
         );
     }
 

@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Recognition as scoped resolution: the outermost scope seeded from ordered
 //! tables, the shadow policy that settles a source name over a builtin, and
 //! the lowering that declares every name and reports every binder against it.
@@ -21,6 +10,7 @@
 #[cfg(test)]
 mod recognition
 {
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationOutcome;
@@ -67,7 +57,19 @@ mod recognition
     /// The bytes from `start` to `end`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the converted start does not exceed the converted end.
+    /// - ensures: the supplied byte endpoints are retained exactly.
+    /// - provides: an independent span fixture.
+    /// - fails: none for ordered endpoints.
+    /// - panics: if the converted endpoints are reversed.
+    /// - executable: none — the generic conversion consumes both inputs;
+    ///   retaining them would add bounds or copies, while checking the result’s
+    ///   ordering would only restate the span type.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on ordered endpoint fixtures — builtin shadow reports
+    ///   retain the supplied source location under both policies.
+    /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
     fn site<Bound>(
         start: Bound,
         end: Bound,
@@ -81,7 +83,50 @@ mod recognition
     /// The test seed table: five namespaces with one member each.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the ordered fixture table contains five namespace/member
+    ///   pairs with their distinct seed kinds.
+    /// - provides: a finite hierarchy for governed-path and shadow-policy
+    ///   witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — namespace and member seeds govern different path
+    ///   continuations; reordering or changing kinds changes the observed
+    ///   resolution.
+    /// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+    /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
+    #[spec(
+        ensures: |ret| {
+            let expected = [
+                ("list", SeedKind::Namespace),
+                ("list.each", SeedKind::Member),
+                ("record", SeedKind::Namespace),
+                ("record.get", SeedKind::Member),
+                ("prim", SeedKind::Namespace),
+                ("prim.id", SeedKind::Member),
+                ("string", SeedKind::Namespace),
+                ("string.escape", SeedKind::Member),
+                ("env", SeedKind::Namespace),
+                ("env.get", SeedKind::Member),
+            ];
+            ret.entries().len() == expected.len()
+                && ret
+                    .entries()
+                    .iter()
+                    .zip(expected)
+                    .all(|(entry, (spelling, kind))| {
+                        entry.kind == kind
+                            && entry
+                                .path
+                                .segments()
+                                .iter()
+                                .map(AsRef::as_ref)
+                                .eq(spelling.split('.'))
+                    })
+        },
+    )]
     fn table() -> SeedTable
     {
         SeedTable::from(
@@ -118,7 +163,25 @@ mod recognition
     /// A one-binding namespace for a source declaration written at `at`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the span is interpreted as fixture metadata, not an
+    ///   ownership certificate.
+    /// - ensures: exactly one root binding, recognized as a source definition
+    ///   at the supplied span.
+    /// - provides: a declaration subtree for shadow-policy witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source definitions displace builtin subtrees while
+    ///   retaining the source site used by the selected shadow policy.
+    /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
+    /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+    #[spec(
+        ensures: |ret| {
+            usize::from(ret.binding_count()) == 1
+                && matches!(ret.get(&NamePath::root()), Maybe::Present(binding) if binding.data == Recognized::Definition && binding.tag == RecognitionSite::Source(at))
+        },
+    )]
     fn declaration(at: ByteSpan) -> Trie<Recognized, RecognitionSite>
     {
         let mut namespace = Trie::empty();
@@ -133,7 +196,31 @@ mod recognition
     /// `outermost`, which must not refuse the module.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the source parses cleanly and the lowering engine accepts it
+    ///   under the supplied recognition context.
+    /// - ensures: emitted declarations keep source-bounded spans and admission
+    ///   order while preserving the context’s observable policy effects.
+    /// - provides: a real source-to-core recognition fixture.
+    /// - fails: declaration-local refusals remain observable in the module.
+    /// - panics: on parsing, repair or engine refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same source under warning and rejection policies
+    ///   distinguishes a retained definition from a located shadow refusal.
+    /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
+    /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = source.as_ref();
+            ret.declarations()
+                .iter()
+                .all(|declaration| usize::from(declaration.span().end()) <= spelled.len())
+                && ret.declarations().windows(2).all(|pair| match *pair {
+                    | [ref left, ref right] => left.constant() < right.constant(),
+                    | _ => false,
+                })
+        },
+    )]
     fn lowered(
         source: SourceText<'_>,
         outermost: Recognition,
@@ -154,7 +241,25 @@ mod recognition
     /// What each declaration of `module` amounts to, in admission order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one outcome per declaration, preserving admission order and
+    ///   every refusal payload.
+    /// - provides: the semantic outcome sequence used by lowering witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — warning and rejecting policies preserve different
+    ///   declaration outcomes without changing their admission order.
+    /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
+    #[spec(
+        ensures: |ret| {
+            ret.iter().copied().eq(module
+                .declarations()
+                .iter()
+                .map(LoweredDeclaration::outcome))
+        },
+    )]
     fn outcomes<'source>(module: &LoweredModule<'source>) -> Vec<DeclarationOutcome<'source>>
     {
         module
@@ -164,6 +269,92 @@ mod recognition
             .collect()
     }
 
+    #[test]
+    fn shadow_policy_uses_site_tags_independently_of_recognized_kinds()
+    {
+        let at = site(4_usize, 8_usize);
+        let mut scope = Recognition::new(&[], ShadowPolicy::Reject);
+        scope.declare_resumed(
+            Segment::from("source"),
+            core::iter::once((
+                NamePath::root(),
+                Binding::new(
+                    Recognized::BuiltinMember(SeedPosition {
+                        table: 0_usize,
+                        entry: 0_usize,
+                    }),
+                    RecognitionSite::Source(at),
+                ),
+            ))
+            .collect(),
+        );
+        scope
+            .note_binder(Segment::from("source"), at)
+            .expect("a source site is not a builtin shadow, regardless of recognized kind");
+        assert!(scope.shadowed().is_empty());
+        scope.declare_resumed(
+            Segment::from("builtin"),
+            core::iter::once((
+                NamePath::root(),
+                Binding::new(Recognized::Definition, RecognitionSite::Builtin),
+            ))
+            .collect(),
+        );
+        let refused = scope
+            .note_binder(Segment::from("builtin"), at)
+            .expect_err("the site tag marks a builtin, regardless of recognized kind");
+        assert_eq!(refused.path(), &path("builtin"));
+        assert_eq!(
+            scope.resolve(&path("builtin")),
+            Maybe::Present(&Recognized::Definition)
+        );
+        assert_eq!(
+            scope.resolve(&path("source")),
+            Maybe::Present(&Recognized::BuiltinMember(SeedPosition {
+                table: 0_usize,
+                entry: 0_usize
+            }))
+        );
+        assert!(scope.shadowed().is_empty());
+    }
+
+    #[test]
+    fn root_seeds_do_not_bridge_an_unbound_namespace_prefix()
+    {
+        let seeds = SeedTable::from(Vec::from([
+            SeedEntry {
+                path: NamePath::root(),
+                kind: SeedKind::Namespace,
+            },
+            SeedEntry {
+                path: path("missing.member"),
+                kind: SeedKind::Member,
+            },
+        ]));
+        let scope = Recognition::new(&[seeds], ShadowPolicy::WarnAndAllow);
+        assert_eq!(
+            scope.resolve(&NamePath::root()),
+            Maybe::Present(&Recognized::BuiltinNamespace(SeedPosition {
+                table: 0_usize,
+                entry: 0_usize
+            }))
+        );
+        assert_eq!(
+            scope.resolve(&path("missing.member")),
+            Maybe::Present(&Recognized::BuiltinMember(SeedPosition {
+                table: 0_usize,
+                entry: 1_usize
+            }))
+        );
+        assert_eq!(
+            scope.resolve_path(&NamePath::root()),
+            PathResolution::Ungoverned
+        );
+        assert_eq!(
+            scope.resolve_path(&path("missing.member")),
+            PathResolution::Ungoverned
+        );
+    }
     #[test]
     fn only_governed_namespaces_decline_an_unknown_member()
     {

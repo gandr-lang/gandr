@@ -22,6 +22,8 @@ use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::namespace::path::NamePath;
 use crate::namespace::trie::Binding;
 use crate::namespace::trie::Collision;
@@ -124,6 +126,22 @@ impl fmt::Display for RejectionReason
 ///
 /// The engine has no opinion on whether a collision or an empty selection is
 /// fatal, so it propagates the refusal unchanged and stops.
+///
+/// # Specification
+/// - requires: the producer supplies the event it is refusing.
+/// - ensures: the kind, whole path and reason travel together; the interpreter
+///   returns that refusal rather than replacing it with a different event.
+/// - provides: a policy-owned refusal, not proof that an event occurred.
+/// - executable: none — correspondence and propagation require the producing
+///   handler and interpreter run, neither of which a rejection value holds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — rejecting handlers refuse each event kind at a known
+///   path, distinguishing the policy refusal from a structural scope failure.
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EventRejection
 {
@@ -191,21 +209,10 @@ impl fmt::Display for EventRejection
     /// Writes "the {kind} event at `{path}` was rejected: {reason}".
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the text names the event kind, the path — the root as `.` —
-    ///   and the handler's reason, because this rendering is what a consumer
-    ///   with no other reporting layer shows.
-    /// - provides: the message of every namespace refusal.
-    /// - fails: propagates the formatter's error.
-    /// - panics: none.
+    /// trivial.
     ///
     /// # Errors
     /// The formatter's error.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one rejection of each kind, one of them at the root,
-    ///   each asserted as the exact text.
-    /// - witness: `namespace::namespace::a_rejection_renders_its_event_kind_path_and_reason`
     #[inline]
     fn fmt(
         &self,
@@ -225,6 +232,23 @@ impl Error for EventRejection
 }
 
 /// One performed event, as a permissive handler records it.
+///
+/// # Specification
+/// - requires: a producer records a performed event at its whole path.
+/// - ensures: the variant distinguishes emptiness, collision and hook events;
+///   hook records retain the producer's label.
+/// - provides: event data without replaying the namespace operation.
+/// - executable: none — this record does not hold the interpreter run that
+///   establishes its path and label correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nested emptiness check, collision and hook expose their
+///   accumulated paths, and one mixed run fixes their order.
+/// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NamespaceEvent<Label>
 {
@@ -255,6 +279,22 @@ pub enum NamespaceEvent<Label>
 /// `Data` and `Tag` are the carrier's binding components, so one handler can
 /// serve any payload. `Label` is associated because the handler is what gives
 /// hook labels meaning.
+///
+/// # Specification
+/// - requires: the interpreter supplies the current event's path and operands.
+/// - ensures: the handler chooses whether execution continues and, for a
+///   collision or hook, the value with which it continues.
+/// - provides: policy without changing the modifier language.
+/// - executable: none — this trait declares callbacks; applying their choices
+///   and stopping on refusal belong to the interpreter, not a held trait value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — permissive and rejecting handlers cover all three
+///   callback kinds and both successful and refused runs.
+/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
+/// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
 pub trait NamespaceEventHandler<Data, Tag>
 {
     /// The hook vocabulary this handler interprets.
@@ -270,10 +310,18 @@ pub trait NamespaceEventHandler<Data, Tag>
     ///   mistake.
     /// - fails: a rejection aborts the run.
     /// - panics: none.
+    /// - executable: none — continuing with the current namespace is an
+    ///   interpreter transition; this required callback receives no namespace.
     ///
     /// # Errors
     /// An [`EventRejection`] when the policy treats an empty selection as
     /// fatal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — permissive and rejecting handlers settle one missing
+    ///   selection; the caller observes continued or aborted execution.
+    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
     fn not_found(
         &mut self,
         path: &NamePath,
@@ -288,9 +336,17 @@ pub trait NamespaceEventHandler<Data, Tag>
     /// - provides: the place a policy settles a collision.
     /// - fails: a rejection aborts the run.
     /// - panics: none.
+    /// - executable: none — any returned binding is permitted; its installation
+    ///   at the path is an interpreter transition outside this callback.
     ///
     /// # Errors
     /// An [`EventRejection`] when the policy forbids the collision.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later binding survives a permissive collision,
+    ///   while the rejecting policy aborts at that collision.
+    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_shadow`
     fn shadow(
         &mut self,
         path: &NamePath,
@@ -306,10 +362,18 @@ pub trait NamespaceEventHandler<Data, Tag>
     /// - provides: the extension point of the modifier language.
     /// - fails: a rejection aborts the run.
     /// - panics: none.
+    /// - executable: none — any returned namespace is permitted; replacement
+    ///   and abortion are interpreter transitions outside this callback.
     ///
     /// # Errors
     /// An [`EventRejection`] when the policy does not know `label` or refuses
     /// to run it here.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one hook preserves its subject under the permissive
+    ///   policy and one is refused by the rejecting policy.
+    /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
     fn hook(
         &mut self,
         path: &NamePath,
@@ -323,6 +387,22 @@ pub trait NamespaceEventHandler<Data, Tag>
 /// A later binding shadows an earlier one and hooks are the identity, so a run
 /// under this handler always succeeds and its recorded events are what a
 /// diagnostic layer reports.
+///
+/// # Specification
+/// - requires: callbacks are invoked in the order the interpreter performs
+///   them.
+/// - ensures: each callback appends one event; clearing forgets the log without
+///   changing the policy, collisions choose the later binding and hooks
+///   preserve their subject.
+/// - provides: an ordered, reusable warn-and-allow event recorder.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; callback predicates check append and clear boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a three-event run observes order and chosen payloads; a
+///   clear followed by another run observes log reuse.
+/// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+/// - witness: `namespace::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PermissiveHandler<Label>
@@ -381,6 +461,9 @@ impl<Label> PermissiveHandler<Label>
     /// - hypothesis: L3 — a handler holding an event, cleared, then recording
     ///   one more, asserted as the exact log both times.
     /// - witness: `namespace::namespace::clearing_a_permissive_handler_forgets_what_it_recorded`
+    #[spec(
+        ensures: self.events.is_empty(),
+    )]
     #[inline]
     pub fn clear(&mut self)
     {
@@ -397,7 +480,12 @@ where
     /// Record the not-found event and continue.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends one not-found record at exactly the supplied path and
+    ///   succeeds; earlier events remain in order.
+    /// - provides: nonfatal empty-selection diagnostics.
+    /// - fails: never.
+    /// - panics: none.
     ///
     /// # Errors
     /// Never.
@@ -406,6 +494,14 @@ where
     /// - hypothesis: L3 — one run performing all three events, asserted as the
     ///   exact log.
     /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    #[spec(
+        captures: before = self.events.len(),
+        ensures: |ret| {
+            ret.is_ok()
+                && self.events.len() == before.saturating_add(1)
+                && matches!(self.events.last(), Some(NamespaceEvent::NotFound { path: recorded }) if recorded == path)
+        },
+    )]
     #[inline]
     fn not_found(
         &mut self,
@@ -420,15 +516,29 @@ where
     /// Record the shadow event and keep the later binding.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends one shadow record at the supplied path and returns
+    ///   the later binding; earlier events remain in order.
+    /// - provides: warn-and-allow collision resolution.
+    /// - fails: never.
+    /// - panics: none.
     ///
     /// # Errors
     /// Never.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one run performing all three events, asserted as the
-    ///   exact log and namespace.
+    ///   exact log and namespace. Generic payload identity is witnessed here;
+    ///   the runtime predicate needs no equality bound on payloads or tags.
     /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    #[spec(
+        captures: before = self.events.len(),
+        ensures: |ret| {
+            ret.is_ok()
+                && self.events.len() == before.saturating_add(1)
+                && matches!(self.events.last(), Some(NamespaceEvent::Shadow { path: recorded }) if recorded == path)
+        },
+    )]
     #[inline]
     fn shadow(
         &mut self,
@@ -444,15 +554,32 @@ where
     /// Record the hook event and run the identity.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends one hook record with the supplied path and label and
+    ///   returns the unchanged subject; earlier events remain in order.
+    /// - provides: diagnostic hooks with no namespace transformation.
+    /// - fails: never.
+    /// - panics: none.
     ///
     /// # Errors
     /// Never.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one run performing all three events, asserted as the
-    ///   exact log and namespace.
+    ///   exact log and namespace. Labels and payloads need no equality bound;
+    ///   the runtime predicate checks the event path and retained binding
+    ///   count.
     /// - witness: `namespace::namespace::the_permissive_handler_records_all_three_events`
+    #[spec(
+        captures: before = (self.events.len(), subject.binding_count()),
+        ensures: |ret| {
+            self.events.len() == before.0.saturating_add(1)
+                && matches!(self.events.last(), Some(NamespaceEvent::Hook { path: recorded, .. }) if recorded == path)
+                && ret
+                    .as_ref()
+                    .is_ok_and(|namespace| namespace.binding_count() == before.1)
+        },
+    )]
     #[inline]
     fn hook(
         &mut self,

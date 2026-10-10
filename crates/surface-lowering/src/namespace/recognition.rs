@@ -33,6 +33,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -51,6 +52,19 @@ use crate::namespace::trie::binding;
 
 /// Where a seeded binding came from: its table's position in the seeding
 /// order and its entry's position in that table.
+///
+/// # Specification
+/// - requires: the seed-table sequence accompanies the coordinate.
+/// - ensures: the pair identifies an entry within that sequence, not a globally
+///   owned binding.
+/// - provides: source coordinates for builtin recognition.
+/// - executable: none — a coordinate does not hold the tables needed to check
+///   its bounds or meaning.
+///
+/// # Adequacy
+/// - hypothesis: L3 — duplicate entries and later tables resolve to the exact
+///   winning table and entry positions.
+/// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SeedPosition
 {
@@ -61,6 +75,21 @@ pub struct SeedPosition
 }
 
 /// What an outermost path resolves to.
+///
+/// # Specification
+/// - requires: the producer supplies the recognition kind and any seed
+///   coordinate.
+/// - ensures: namespace kinds govern unknown members; member and definition
+///   kinds do not. A builtin coordinate remains relative to its seed sequence.
+/// - provides: recognition kind independently of the binding's site tag.
+/// - executable: none — a kind does not hold the seed tables or producing
+///   declaration; the governance method checks its local classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every kind has a governance result, and site tags govern
+///   shadow policy independently of the recognized kind.
+/// - witness: `recognition::recognition::only_governed_namespaces_decline_an_unknown_member`
+/// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Recognized
 {
@@ -99,6 +128,9 @@ impl Recognized
     /// # Adequacy
     /// - hypothesis: L3 — the answer asserted for every variant.
     /// - witness: `recognition::recognition::only_governed_namespaces_decline_an_unknown_member`
+    #[spec(
+        ensures: |ret| ret.0 == matches!(*self, Self::BuiltinNamespace(_) | Self::ModuleNamespace),
+    )]
     #[inline]
     #[must_use]
     pub const fn declines_unknown_member(&self) -> Declines
@@ -114,6 +146,21 @@ impl Recognized
 ///
 /// A path can be governed without resolving: `M.nope` under a module is a
 /// refusal, while `stranger.nope` is no business of the scope's.
+///
+/// # Specification
+/// - requires: the producing scope and queried path accompany the answer.
+/// - ensures: complete answers consume the path; unknown members name a proper
+///   governed prefix; ungoverned answers leave interpretation outside the
+///   scope.
+/// - provides: a whole-path decision rather than mere exact-key lookup.
+/// - executable: none — the answer holds neither its query path nor the scope
+///   that establishes the prefix relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — paths stop at each tested depth and kind; a seeded root
+///   does not bridge an unbound first segment.
+/// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+/// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PathResolution
 {
@@ -138,6 +185,20 @@ pub enum PathResolution
 ///
 /// Displacing a [`Self::Builtin`] binding is the event a policy settles; one
 /// source declaration replacing another is ordinary rebinding.
+///
+/// # Specification
+/// - requires: the producer assigns the binding's provenance tag.
+/// - ensures: builtin tags trigger shadow policy; source tags carry their
+///   producer's span and permit ordinary rebinding.
+/// - provides: provenance independently of recognition kind.
+/// - executable: none — the tag holds neither the seeding history nor source
+///   text that establishes its provenance.
+///
+/// # Adequacy
+/// - hypothesis: L3 — policy distinguishes builtin and source tags even when
+///   their recognition kinds suggest a different origin.
+/// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+/// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RecognitionSite
 {
@@ -159,6 +220,20 @@ pub enum ShadowPolicy
 }
 
 /// One shadowing of a builtin by the source.
+///
+/// # Specification
+/// - requires: a source-tagged arrival displaced a builtin-tagged binding under
+///   warning policy.
+/// - ensures: the record retains the displaced path and arriving source span.
+/// - provides: one diagnostic event, not a certificate of a past collision.
+/// - executable: none — a record does not hold the collision or policy run that
+///   establishes its correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one source shadow records its exact path and span; a
+///   builtin arrival supplies no source event to record.
+/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ShadowedBuiltin
 {
@@ -192,6 +267,19 @@ pub struct SeedEntry
 ///
 /// The table keeps every entry in order; a later entry at a path an earlier
 /// one bound shadows it, within a table and across tables seeded later.
+///
+/// # Specification
+/// - requires: the complete sequence of tables accompanies seeding.
+/// - ensures: stored entry order participates in last-wins seeding, within this
+///   table and across later tables.
+/// - provides: an ordered builtin input, without deduplicating entries.
+/// - executable: none — cross-table winners depend on the other tables;
+///   `Recognition::new` checks the complete seeding boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated paths within one table and across two tables
+///   resolve to the exact final position and kind.
+/// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SeedTable(Vec<SeedEntry>);
@@ -227,6 +315,21 @@ impl SeedTable
 ///
 /// Not-found and hook events are inert: no outermost modifier performs them
 /// to any purpose.
+///
+/// # Specification
+/// - requires: collision callbacks receive the producing path and binding
+///   sites.
+/// - ensures: rejection records nothing; warning records only source arrivals
+///   over builtin tags; other arrivals preserve the log.
+/// - provides: outermost shadow policy and its ordered diagnostic log.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; the shadow predicate checks the callback transition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both policies, source rebinding and builtin arrivals
+///   produce their exact decisions and bounded record changes.
+/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct RecognitionHandler
 {
@@ -261,10 +364,11 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: displacing a builtin is refused under
-    ///   [`ShadowPolicy::Reject`]; under warn-and-allow it is recorded at the
-    ///   later binding's source span and the later binding survives. Any other
-    ///   collision keeps the later binding and records nothing.
+    /// - ensures: a formerly builtin-tagged binding is refused under
+    ///   [`ShadowPolicy::Reject`]; under warn-and-allow the later binding
+    ///   survives, and a source-tagged arrival is recorded at its span. A
+    ///   builtin-tagged arrival supplies no source span and is not recorded.
+    ///   Any collision over a source-tagged binding records nothing.
     /// - provides: the policy of every outermost shadow.
     /// - fails: under the reject policy, on a builtin.
     /// - panics: none.
@@ -279,6 +383,36 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
     /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
     /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
     /// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+    /// - witness: `namespace::recognition::tests::a_builtin_arrival_does_not_invent_a_source_shadow_record`
+    /// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+    #[spec(
+        captures: before = (
+            self.policy,
+            self.shadowed.len(),
+            collision.former.tag,
+            collision.latter,
+        ),
+        ensures: |ret| {
+            if before.2 == RecognitionSite::Builtin && before.0 == ShadowPolicy::Reject {
+                self.shadowed.len() == before.1
+                    && ret.as_ref().is_err_and(|rejection| {
+                        rejection.kind() == EventKind::Shadow && rejection.path() == path
+                    })
+            }
+            else {
+                ret.as_ref().is_ok_and(|binding| *binding == before.3)
+                    && match (before.2, before.3.tag) {
+                        | (RecognitionSite::Builtin, RecognitionSite::Source(span)) => {
+                            self.shadowed.len() == before.1.saturating_add(1)
+                                && self.shadowed.last().is_some_and(|record| {
+                                    record.path == *path && record.span == span
+                                })
+                        },
+                        | _ => self.shadowed.len() == before.1,
+                    }
+            }
+        },
+    )]
     #[inline]
     fn shadow(
         &mut self,
@@ -326,6 +460,23 @@ impl NamespaceEventHandler<Recognized, RecognitionSite> for RecognitionHandler
 }
 
 /// The outermost visible scope and the shadow policy governing it.
+///
+/// # Specification
+/// - requires: names and site tags are supplied by their producers.
+/// - ensures: visible recognition is independent of exports; mutations apply
+///   the selected shadow policy and resume starts a fresh diagnostic log.
+/// - provides: an outermost namespace carried across submissions.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; construction and mutation predicates check their
+///   boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ordered seeding, rejected and accepted declarations,
+///   nonbinding binder reports and resumed names cover the state transitions.
+/// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
+/// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
+/// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+/// - witness: `recognition::recognition::resuming_carries_the_names_and_drops_the_events`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Recognition
 {
@@ -354,18 +505,53 @@ impl Recognition
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: each entry's path resolves to its kind at its seed position,
-    ///   and nothing else resolves; a later entry at a path displaces an
-    ///   earlier one, within a table and across tables; every seeded binding is
-    ///   a builtin, so a declaration over it is a shadow event.
+    /// - ensures: each distinct path resolves to the last entry's kind and seed
+    ///   position, within a table and across tables; nothing else resolves.
+    ///   Every seeded binding has a builtin site tag, so a declaration over it
+    ///   is a shadow event.
     /// - provides: the outermost scope a lowering starts from.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a table with a duplicate path and a later table
-    ///   overriding an earlier, asserted as the exact entries and resolutions.
+    /// - hypothesis: L3 — duplicate paths within and across tables resolve to
+    ///   the exact winning kind and position; root seeds do not fill gaps.
     /// - witness: `namespace::recognition::tests::ordered_bindings_shadow_from_the_right`
+    /// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
+    #[spec(
+        ensures: |ret| {
+            let mut distinct = 0_usize;
+            let matches_inputs = tables.iter().enumerate().all(|(table, seeded)| {
+                seeded.entries().iter().enumerate().all(|(entry, seed)| {
+                    let Maybe::Present(found) = ret.scope.resolve(&seed.path)
+                    else {
+                        return false;
+                    };
+                    let (position, kind) = match found.data {
+                        | Recognized::BuiltinNamespace(position) => (position, SeedKind::Namespace),
+                        | Recognized::BuiltinMember(position) => (position, SeedKind::Member),
+                        | Recognized::ModuleNamespace
+                        | Recognized::ModuleComponent
+                        | Recognized::Definition => return false,
+                    };
+                    if (position.table, position.entry) == (table, entry) {
+                        distinct = distinct.saturating_add(1);
+                    }
+                    found.tag == RecognitionSite::Builtin
+                        && (position.table, position.entry) >= (table, entry)
+                        && tables
+                            .get(position.table)
+                            .and_then(|seeded| seeded.entries().get(position.entry))
+                            .is_some_and(|winner| winner.path == seed.path && winner.kind == kind)
+                })
+            });
+            matches_inputs
+                && usize::from(ret.scope.visible().binding_count()) == distinct
+                && usize::from(ret.scope.export().binding_count()) == 0
+                && ret.handler.policy == policy
+                && ret.handler.shadowed.is_empty()
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn new(
@@ -413,6 +599,14 @@ impl Recognition
     ///   record, resumed, asserted as the exact resolutions and the empty
     ///   record.
     /// - witness: `recognition::recognition::resuming_carries_the_names_and_drops_the_events`
+    #[spec(
+        ensures: |ret| {
+            ret.handler.policy == policy
+                && ret.handler.shadowed.is_empty()
+                && ret.scope.visible().binding_count() == previous.scope.visible().binding_count()
+                && ret.scope.export().binding_count() == previous.scope.export().binding_count()
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn resumed(
@@ -460,6 +654,23 @@ impl Recognition
     /// - hypothesis: L3 — paths stopping at each depth under each kind of
     ///   deepest binding, asserted as the exact resolution.
     /// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+    /// - witness: `recognition::recognition::root_seeds_do_not_bridge_an_unbound_namespace_prefix`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.scope.visible().resolved_prefix(path) {
+                | Maybe::Present((depth, found)) if depth == path.depth() => {
+                    PathResolution::Complete(found.data)
+                },
+                | Maybe::Present((depth, found)) if found.data.declines_unknown_member().0 => {
+                    PathResolution::UnknownMember {
+                        depth,
+                        namespace: found.data,
+                    }
+                },
+                | Maybe::Present(_) | Maybe::Absent(_) => PathResolution::Ungoverned,
+            }
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn resolve_path(
@@ -521,6 +732,39 @@ impl Recognition
     /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
     /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
     /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+    #[spec(
+        captures: before = (
+            self.handler.policy,
+            self.handler.shadowed.len(),
+            usize::from(self.scope.visible().binding_count()),
+            self.scope.export().binding_count(),
+            usize::from(subtree.binding_count()),
+        ),
+        ensures: |ret| {
+            self.handler.policy == before.0
+                && self.scope.export().binding_count() == before.3
+                && if ret.is_err() {
+                    self.handler.policy == ShadowPolicy::Reject
+                        && self.handler.shadowed.len() == before.1
+                        && usize::from(self.scope.visible().binding_count()) == before.2
+                        && ret.as_ref().is_err_and(|rejection| {
+                            rejection.kind() == EventKind::Shadow
+                                && rejection.path().segments().len() == 1
+                        })
+                }
+                else {
+                    usize::from(self.scope.visible().binding_count()) >= before.4
+                        && usize::from(self.scope.visible().binding_count())
+                            <= before.2.saturating_add(before.4)
+                        && (self.handler.shadowed.len() == before.1
+                            || (self.handler.policy == ShadowPolicy::WarnAndAllow
+                                && self.handler.shadowed.len() == before.1.saturating_add(1)
+                                && self.handler.shadowed.last().is_some_and(|record| {
+                                    record.span == site && record.path.segments().len() == 1
+                                })))
+                }
+        },
+    )]
     #[inline]
     pub fn declare(
         &mut self,
@@ -567,6 +811,36 @@ impl Recognition
     ///   builtin under the reject policy, resolution asserted exactly after
     ///   each.
     /// - witness: `recognition::recognition::a_binder_over_a_builtin_reports_without_shadowing`
+    /// - witness: `recognition::recognition::shadow_policy_uses_site_tags_independently_of_recognized_kinds`
+    #[spec(
+        captures: before = (
+            self.handler.policy,
+            self.handler.shadowed.len(),
+            self.scope.visible().binding_count(),
+            self.scope.export().binding_count(),
+        ),
+        ensures: |ret| {
+            self.handler.policy == before.0
+                && self.scope.visible().binding_count() == before.2
+                && self.scope.export().binding_count() == before.3
+                && if ret.is_err() {
+                    self.handler.policy == ShadowPolicy::Reject
+                        && self.handler.shadowed.len() == before.1
+                        && ret.as_ref().is_err_and(|rejection| {
+                            rejection.kind() == EventKind::Shadow
+                                && rejection.path().segments().len() == 1
+                        })
+                }
+                else {
+                    self.handler.shadowed.len() == before.1
+                        || (self.handler.policy == ShadowPolicy::WarnAndAllow
+                            && self.handler.shadowed.len() == before.1.saturating_add(1)
+                            && self.handler.shadowed.last().is_some_and(|record| {
+                                record.span == site && record.path.segments().len() == 1
+                            }))
+                }
+        },
+    )]
     #[inline]
     pub fn note_binder(
         &mut self,
@@ -603,6 +877,21 @@ impl Recognition
     /// - hypothesis: L3 — a carried declaration over a builtin under the reject
     ///   policy, asserted as the exact resolution and the empty record.
     /// - witness: `recognition::recognition::a_resumed_declaration_binds_without_reporting`
+    #[spec(
+        captures: before = (
+            self.handler.policy,
+            self.handler.shadowed.len(),
+            usize::from(self.scope.visible().binding_count()),
+            self.scope.export().binding_count(),
+            usize::from(subtree.binding_count()),
+        ),
+        ensures: self.handler.policy == before.0
+            && self.handler.shadowed.len() == before.1
+            && self.scope.export().binding_count() == before.3
+            && usize::from(self.scope.visible().binding_count()) >= before.4
+            && usize::from(self.scope.visible().binding_count())
+                <= before.2.saturating_add(before.4),
+    )]
     #[inline]
     pub fn declare_resumed(
         &mut self,
@@ -629,8 +918,14 @@ mod tests
     use super::SeedPosition;
     use super::SeedTable;
     use super::ShadowPolicy;
+    use crate::namespace::Binding;
+    use crate::namespace::Collision;
+    use crate::namespace::EventKind;
+    use crate::namespace::NamespaceEventHandler as _;
+    use crate::namespace::RecognitionSite;
     use crate::namespace::path::DottedName;
     use crate::namespace::path::NamePath;
+    use crate::namespace::recognition::RecognitionHandler;
 
     /// The path `text` renders.
     ///
@@ -658,15 +953,47 @@ mod tests
     }
 
     #[test]
+    fn a_builtin_arrival_does_not_invent_a_source_shadow_record()
+    {
+        let former = Binding::new(
+            Recognized::BuiltinMember(SeedPosition {
+                table: 0_usize,
+                entry: 0_usize,
+            }),
+            RecognitionSite::Builtin,
+        );
+        let latter = Binding::new(
+            Recognized::BuiltinNamespace(SeedPosition {
+                table: 1_usize,
+                entry: 0_usize,
+            }),
+            RecognitionSite::Builtin,
+        );
+        let at = path("x");
+        let mut warning = RecognitionHandler {
+            policy: ShadowPolicy::WarnAndAllow,
+            shadowed: Vec::new(),
+        };
+        assert_eq!(
+            warning.shadow(&at, Collision { former, latter }),
+            Ok(latter)
+        );
+        assert!(warning.shadowed.is_empty());
+        let mut rejecting = RecognitionHandler {
+            policy: ShadowPolicy::Reject,
+            shadowed: Vec::new(),
+        };
+        let refused = rejecting
+            .shadow(&at, Collision { former, latter })
+            .expect_err("a formerly builtin-tagged binding is protected under rejection");
+        assert_eq!(refused.kind(), EventKind::Shadow);
+        assert_eq!(refused.path(), &at);
+        assert!(rejecting.shadowed.is_empty());
+    }
+    #[test]
     fn ordered_bindings_shadow_from_the_right()
     {
-        let entries = Vec::from([member("x"), member("x")]);
-        let table = SeedTable::from(entries.clone());
-        assert_eq!(
-            table.entries(),
-            entries.as_slice(),
-            "the table keeps every entry, duplicates included, in order"
-        );
+        let table = SeedTable::from(Vec::from([member("x"), member("x")]));
         let recognition =
             Recognition::new(core::slice::from_ref(&table), ShadowPolicy::WarnAndAllow);
         assert_eq!(
