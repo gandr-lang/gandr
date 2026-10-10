@@ -2,10 +2,10 @@
 //!
 //! # Plain unless asked
 //!
-//! [`RenderStyle::Plain`] is the default: deterministic text with no escape
-//! sequence, the form a test compares and a pipe receives. Styled output is
-//! the caller's explicit choice, and [`RenderStyle::for_terminal`] makes it
-//! only for a destination that is a terminal.
+//! [`RenderStyle::Plain`] adds no terminal styling. Styled output is the
+//! caller's explicit choice, and [`RenderStyle::for_terminal`] selects it for
+//! a terminal. Literal controls in caller-provided paths are preserved; style
+//! selection does not sanitize that content.
 
 use core::fmt;
 
@@ -26,7 +26,18 @@ impl From<bool> for TerminalCapability
     /// reports it for a destination.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: true denotes a terminal; false denotes a non-terminal.
+    /// - provides: a capability from the caller's terminal observation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both boolean inputs reach an exact style observation
+    ///   through the capability. A reversed or constant mapping changes one
+    ///   result; operating-system detection is outside this conversion.
+    /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
+    #[anodized::spec(ensures: |ret| matches!(ret, Self::Terminal) == is_terminal)]
     #[inline]
     fn from(is_terminal: bool) -> Self
     {
@@ -43,7 +54,8 @@ impl From<bool> for TerminalCapability
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RenderStyle
 {
-    /// Deterministic text with no terminal escape sequence.
+    /// Text without added terminal styling; caller path controls remain
+    /// literal.
     #[default]
     Plain,
     /// The snippet backend's styled terminal presentation, coloured with ANSI
@@ -65,10 +77,14 @@ impl RenderStyle
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two capabilities, both enumerated with the exact
-    ///   style asserted, each reached through the `bool` conversion a face
-    ///   holds.
+    /// - hypothesis: L3 — the two capabilities exhaust the typed domain,
+    ///   observed through their exact styles. Reversed or constant selection
+    ///   changes a result; backend rendering is a separate decision surface.
     /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
+    #[anodized::spec(ensures: |ret| matches!((capability, ret),
+        (TerminalCapability::NonTerminal, Self::Plain)
+            | (TerminalCapability::Terminal, Self::Styled)
+    ))]
     #[inline]
     #[must_use]
     pub const fn for_terminal(capability: TerminalCapability) -> Self
@@ -80,7 +96,9 @@ impl RenderStyle
     }
 }
 
-/// The text one report renders as: lines without a final terminator.
+/// Owned presentation text. [`crate::Report::render`] adds no framing
+/// terminator; literal path content can include one. Adopting a string
+/// preserves its bytes unchanged.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Rendered(String);

@@ -94,7 +94,21 @@ impl fmt::Display for Class
     /// Writes the failure class, the unsettlement, or `goal`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the producer's failure class, the unsettlement reason
+    ///   or the goal label; propagates destination failure.
+    /// - provides: the human-readable report class.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither output text nor an
+    ///   independent destination-failure observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four unsettlement reasons remain distinguishable
+    ///   from one refusal class and a goal. Collapsed labels change a finite
+    ///   observation; other failure classes and destination errors are
+    ///   excluded.
+    /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -128,7 +142,19 @@ impl fmt::Display for Unsettlement
     /// Writes what the unsettlement rests on.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the reason the declaration did not settle.
+    /// - provides: a distinguishable description of each unsettlement kind.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither output text nor an
+    ///   independent destination-failure observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all four unsettlement kinds have distinct public
+    ///   class labels. A collapsed reason changes an observation; exact prose
+    ///   and destination failures are outside this evidence.
+    /// - witness: `report::tests::class_labels_keep_their_decision_surfaces_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -232,13 +258,20 @@ impl<'step> Report<'step>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one report of each subject is asserted at its exact
-    ///   class: a lowering refusal and a checker refusal of the malformed
-    ///   source class, a corpus refusal, a whole-source refusal of the
-    ///   unrepresentable class, an unproduced refusal and a goal.
+    /// - hypothesis: L3 — finite real reports expose the producer's exact class
+    ///   across refused declarations and whole-source refusal. Unproduced
+    ///   expectations and goals distinguish the non-refusal branches; arbitrary
+    ///   checker payloads are outside these fixtures.
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
+    /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    #[anodized::spec(ensures: |ret| ret == match self.subject {
+        Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
+        Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
+        Subject::Goal(_) => Class::Goal,
+        Subject::Source(refusal) => Class::Refusal(refusal.classify()),
+    })]
     #[inline]
     #[must_use]
     pub fn class(&self) -> Class
@@ -269,17 +302,22 @@ impl<'step> Report<'step>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a checker refusal located through the origin table, a
-    ///   lowering refusal at its own span and a declaration-wide report are
-    ///   each asserted at their exact span, and a span outside the text is
-    ///   asserted unlocated.
+    /// - hypothesis: L3 — real producer spans and finite UTF-8 boundary
+    ///   fixtures distinguish exact location from out-of-text metadata. Split
+    ///   characters and empty end positions expose accidental clamping. Other
+    ///   producer/span combinations are not enumerated.
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`
+    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     ///
     /// [`Run`]: report_span::Absent::Run
     /// [`Unrecorded`]: report_span::Absent::Unrecorded
     /// [`OutsideText`]: report_span::Absent::OutsideText
+    #[anodized::spec(ensures: |ret| match ret {
+        Maybe::Present(span) => self.text.fragment(span).is_ok(),
+        Maybe::Absent(_) => true,
+    })]
     #[inline]
     pub fn span(&self) -> Maybe<ByteSpan, report_span::Absent>
     {
@@ -304,10 +342,17 @@ impl<'step> Report<'step>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a checker refusal, a lowering refusal and a goal are
-    ///   each asserted at their exact spelling or absence, against the
-    ///   identifier the same report renders.
-    /// - witness: `diagnostics::diagnostics::a_report_names_and_titles_what_it_renders`
+    /// - hypothesis: L3 — checker and lowering refusals expose stable
+    ///   vocabulary identifiers; a goal exposes statement absence. These
+    ///   distinguish missing or substituted identifiers on the finite fixture
+    ///   subjects, not every refusal vocabulary member.
+    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    #[anodized::spec(ensures: |ret| match (self.subject, ret) {
+        (Subject::Refused { refusal, .. }, Maybe::Present(spelling)) => spelling == refusal.name().spelling(),
+        (Subject::Source(refusal), Maybe::Present(spelling)) => spelling == Refusal::Lowering(refusal).name().spelling(),
+        (Subject::Unsettled { .. } | Subject::Goal(_), Maybe::Absent(report_identifier::Absent::Statement)) => true,
+        _ => false,
+    })]
     #[inline]
     pub fn identifier(&self) -> Maybe<RefusalSpelling, report_identifier::Absent>
     {
@@ -336,9 +381,17 @@ impl<'step> Report<'step>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a refusal and a goal are each asserted at their exact
-    ///   title, and at the first line of the same report's rendering.
-    /// - witness: `diagnostics::diagnostics::a_report_names_and_titles_what_it_renders`
+    /// - hypothesis: L3 — unresolved-name and goal titles preserve source names
+    ///   and numeric roles; mismatch titles expose no core addresses. Distinct
+    ///   stated/produced counts expose lost or swapped payloads. Other subjects
+    ///   and natural-language wording are excluded.
+    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
+    #[anodized::spec(ensures: |ret| matches!((self.subject, ret.0),
+        (Subject::Refused { .. }, Subject::Refused { .. })
+            | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
+            | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
+    ))]
     #[inline]
     #[must_use]
     pub const fn title(&self) -> Title<'step>
@@ -363,14 +416,23 @@ impl<'step> Report<'step>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a type mismatch, whose synthesised type has no
-    ///   origin, and a duplicate signature are each asserted at their exact
-    ///   slots; a goal at two unnamed slots.
+    /// - hypothesis: L3 — mismatch and duplicate fixtures expose causal slot
+    ///   order. Finite UTF-8 boundaries distinguish outside-text context from
+    ///   unrecorded or unnamed context; a goal has two unnamed slots. Other
+    ///   producer payloads are outside these observations.
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     ///
     /// [`Unnamed`]: report_context::Absent::Unnamed
     /// [`Unrecorded`]: report_context::Absent::Unrecorded
     /// [`OutsideText`]: report_context::Absent::OutsideText
+    #[anodized::spec(ensures: |ret| ret.iter().all(|slot| match *slot {
+        Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
+        Maybe::Absent(_) => true,
+    }) && match self.subject {
+        Subject::Goal(_) | Subject::Unsettled { .. } => ret == [Maybe::Absent(report_context::Absent::Unnamed); 2_usize],
+        Subject::Refused { .. } | Subject::Source(_) => true,
+    })]
     #[inline]
     pub fn context(&self) -> [Maybe<Annotation, report_context::Absent>; 2_usize]
     {
@@ -390,8 +452,10 @@ impl<'step> Report<'step>
     ///   each context locus marked with what it explains; an unlocated report
     ///   names the source's path alone. A refused declaration closes with a
     ///   note naming it and what it states. A source with an empty path is
-    ///   named `<input>`. [`RenderStyle::Plain`] writes no escape sequence;
-    ///   [`RenderStyle::Styled`] colours the same text.
+    ///   named `<input>`. Plain adds no styling; styled adds the backend's
+    ///   colour sequences. Caller path controls remain literal in both modes.
+    ///   No framing terminator is appended, but a trailing path line ending can
+    ///   end an unlocated rendering.
     /// - provides: the plain text the driver prints and the tests compare.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
@@ -400,17 +464,28 @@ impl<'step> Report<'step>
     ///   layout; the loci it receives are exactly the producer's.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — one pinned golden per kind, a refusal with two loci,
-    ///   an unsettled declaration and a goal, compared byte for byte; L3 for
-    ///   the residue — a pathless report names `<input>` and keeps its causal
-    ///   context, a context locus keeps its own span and label, and styling
-    ///   adds escape sequences to the plain text's content.
+    /// - hypothesis: L1 — one byte-exact golden for each report kind bounds
+    ///   layout evidence to those fixtures. L3 — pathless and causal-context
+    ///   observations distinguish lost locations; plain/styled pairs expose
+    ///   added colour. Literal path controls and UTF-8 boundary fixtures expose
+    ///   false sanitization or location guarantees. Other paths and producer
+    ///   payloads are not exhaustively covered.
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::a_pathless_report_names_input_and_renders_causal_context`
     /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
     /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
+    /// - witness: `report::tests::literal_path_controls_are_not_styling_or_framing`
+    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
+    #[anodized::spec(ensures: |ref ret| match style {
+        RenderStyle::Plain => match self.subject {
+            Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
+            Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
+            Subject::Refused { .. } | Subject::Source(_) => ret.as_ref().starts_with("error["),
+        },
+        RenderStyle::Styled => ret.as_ref().contains("\u{1b}["),
+    })]
     #[inline]
     #[must_use]
     pub fn render(
@@ -496,11 +571,36 @@ impl<'step> Report<'step>
     /// - ensures: the subject's loci as its producer recorded them; a primary
     ///   locus the text cannot answer becomes the
     ///   [`report_span::Absent::OutsideText`] absence, and such a context locus
-    ///   is dropped.
+    ///   is marked `OutsideText` in its original context slot.
     /// - provides: the only loci [`Report::span`], [`Report::context`] and
     ///   [`Report::render`] read.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite real producer spans and UTF-8 boundary cases
+    ///   expose unvalidated or clamped locations. Independent primary and
+    ///   context validation preserves the surviving causal slot. Arbitrary text
+    ///   sizes and other producer payloads are outside these fixtures.
+    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    /// - witness: `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`
+    /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
+    #[anodized::spec(ensures: |ref ret| {
+        let primary = match ret.primary {
+            Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok() && match self.subject {
+                Subject::Refused { refusal, .. } => annotation.label == Label::Class(Class::Refusal(refusal.classify())),
+                Subject::Source(refusal) => annotation.label == Label::Class(Class::Refusal(refusal.classify())),
+                Subject::Unsettled { declaration, unsettlement: Unsettlement::Obligations }
+                    | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
+                Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Class(Class::Unsettled(unsettlement)),
+            },
+            Maybe::Absent(_) => true,
+        };
+        primary && ret.context.iter().all(|slot| match *slot {
+            Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
+            Maybe::Absent(_) => true,
+        })
+    })]
     fn annotations(&self) -> Annotations
     {
         let annotations = match self.subject {
@@ -565,7 +665,24 @@ quenchant_shape::reason_enum! {
 /// The text of an annotation's label, or the empty text for a locus absent.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: absent loci have empty labels; present loci have a nonempty,
+///   single-line, unstyled role label.
+/// - provides: optional labels for the snippet backend.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite mismatch and duplicate snippets expose present
+///   role labels alongside absent context. Missing labels or added line/control
+///   characters change those renderings; arbitrary formatter failures are
+///   outside these infallible string observations.
+/// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+/// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
+/// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
+#[anodized::spec(ensures: |ref ret| ret.is_empty() == matches!(annotation, Maybe::Absent(_))
+    && !ret.contains(['\r', '\n', '\u{1b}'])
+)]
 fn labelled<Reason>(annotation: Maybe<Annotation, Reason>) -> String
 where
     Reason: Copy,
@@ -588,7 +705,23 @@ impl fmt::Display for Title<'_>
     /// states and produced otherwise.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the refusal's message or the declaration identity with
+    ///   its stated and produced outcomes; whole-source refusal keeps its
+    ///   scope.
+    /// - provides: a report title independent of terminal styling.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent destination-failure observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unresolved-name and goal titles retain source names
+    ///   and numeric roles; mismatch titles expose no core addresses. Distinct
+    ///   stated/produced counts expose substitution or reversal. Other wording
+    ///   and failing destinations are excluded.
+    /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
     #[inline]
     fn fmt(
         &self,
@@ -633,7 +766,21 @@ impl fmt::Display for Note<'_>
     /// obligations that survive when any do.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes settlement, declaration identity and stated outcome,
+    ///   then surviving obligations exactly when the ledger is nonempty.
+    /// - provides: the context note after a refused declaration's snippet.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent destination-failure observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — explicit fixture expectations produce empty ledgers
+    ///   and each direction of an obligation mismatch. Exact semantic counts
+    ///   and declaration names expose omitted or reversed payloads without
+    ///   pinning prose. Other statements and destination failures are excluded.
+    /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
     #[inline]
     fn fmt(
         &self,
@@ -652,5 +799,230 @@ impl fmt::Display for Note<'_>
             write!(f, "; surviving obligations: {surviving}")?;
         }
         Ok(())
+    }
+}
+
+/// Report-level validation, framing and semantic payload boundaries.
+#[cfg(test)]
+mod tests
+{
+    use std::path::Path;
+
+    use gandr_core_term::FailureClass;
+    use gandr_surface_dispatcher::Composed;
+    use gandr_surface_dispatcher::Goals;
+    use gandr_surface_dispatcher::LoweringCount;
+    use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_dispatcher::Standing;
+    use gandr_surface_dispatcher::Step;
+    use gandr_surface_dispatcher::Verb;
+    use gandr_surface_dispatcher::compose;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::LoweringRefusal;
+    use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ByteSpan;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Annotation;
+    use super::Class;
+    use super::Label;
+    use super::Note;
+    use super::RenderStyle;
+    use super::Report;
+    use super::Subject;
+    use super::Unsettlement;
+    use super::report_context;
+    use super::report_span;
+    use crate::Entry;
+    use crate::entries;
+
+    #[test]
+    fn class_labels_keep_their_decision_surfaces_distinct()
+    {
+        let classes = [
+            Class::Refusal(FailureClass::MalformedSource),
+            Class::Unsettled(Unsettlement::Obligations),
+            Class::Unsettled(Unsettlement::Unproduced),
+            Class::Unsettled(Unsettlement::RunOutcome),
+            Class::Unsettled(Unsettlement::Malformed),
+            Class::Goal,
+        ];
+        let labels = classes.map(|class| class.to_string());
+        for (index, label) in labels.iter().enumerate() {
+            for earlier in &labels[.. index] {
+                assert_ne!(earlier, label, "different causes remain distinguishable");
+            }
+        }
+    }
+
+    #[test]
+    fn utf8_boundaries_are_checked_per_locus_without_clamping()
+    {
+        let text = SourceText::from("αβ");
+        for (start, end, first_start, first_end, primary_valid, context_valid) in [
+            (1_usize, 2_usize, 2_usize, 4_usize, false, true),
+            (0_usize, 2_usize, 1_usize, 2_usize, true, false),
+            (4_usize, 4_usize, 0_usize, 0_usize, true, true),
+            (5_usize, 7_usize, 0_usize, 2_usize, false, true),
+        ] {
+            let span = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
+                .expect("ordered span");
+            let first = ByteSpan::new(ByteOffset::from(first_start), ByteOffset::from(first_end))
+                .expect("ordered context");
+            let report = Report::new(
+                Path::new("boundary.gandr"),
+                text,
+                Subject::Source(LoweringRefusal::DuplicateDefinition {
+                    span,
+                    first,
+                    name: "a".into(),
+                }),
+            );
+            assert_eq!(
+                report.span(),
+                if primary_valid {
+                    Maybe::Present(span)
+                }
+                else {
+                    Maybe::Absent(report_span::Absent::OutsideText)
+                }
+            );
+            assert_eq!(report.context(), [
+                if context_valid {
+                    Maybe::Present(Annotation {
+                        span: first,
+                        label: Label::First,
+                    })
+                }
+                else {
+                    Maybe::Absent(report_context::Absent::OutsideText)
+                },
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ]);
+            let rendered = report.render(RenderStyle::Plain);
+            if primary_valid {
+                let column = if start == 4_usize { 3_usize } else { 1_usize };
+                assert!(
+                    rendered
+                        .as_ref()
+                        .contains(&format!("boundary.gandr:1:{column}"))
+                );
+            }
+            else {
+                assert!(rendered.as_ref().contains("boundary.gandr"));
+                assert!(!rendered.as_ref().contains("boundary.gandr:"));
+            }
+        }
+        let empty = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
+            .expect("empty span");
+        let report = Report::new(
+            Path::new("empty.gandr"),
+            SourceText::from(""),
+            Subject::Source(LoweringRefusal::UnresolvedName {
+                span: empty,
+                name: "empty".into(),
+            }),
+        );
+        assert_eq!(report.span(), Maybe::Present(empty));
+        assert!(
+            report
+                .render(RenderStyle::Plain)
+                .as_ref()
+                .contains("empty.gandr:1:1")
+        );
+    }
+
+    #[test]
+    fn literal_path_controls_are_not_styling_or_framing()
+    {
+        for path in [
+            "plain.gandr",
+            "escape\u{1b}[31m.gandr",
+            "final\n",
+            "final\r",
+        ] {
+            let report = Report::new(
+                Path::new(path),
+                SourceText::from(""),
+                Subject::Source(LoweringRefusal::BudgetExceeded {
+                    budget: 0_usize.into(),
+                }),
+            );
+            let plain = report.render(RenderStyle::Plain);
+            let styled = report.render(RenderStyle::Styled);
+            assert!(
+                plain.as_ref().ends_with(path),
+                "the literal path ends the unlocated report"
+            );
+            assert!(
+                styled.as_ref().contains(path),
+                "style preserves the path payload"
+            );
+        }
+    }
+
+    #[test]
+    fn notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors()
+    {
+        let text = SourceText::from(
+            "@[ owes(0) ] def quiet = 1 ;\n@[ owes(3) ] def pending : Integer ;\n@[ owes(0) ] def excess : Integer ;\n",
+        );
+        let grammar = built_in().expect("the grammar builds");
+        let step = Step::Source {
+            path: Path::new("payload.gandr"),
+            root: SourceRoot::Fixture,
+            text,
+            composed: compose(
+                &grammar,
+                SourceRoot::Fixture.corpus_root(),
+                text,
+                &mut LoweringCount::default(),
+            )
+            .expect("the fixture composes"),
+            standing: Standing::Unsettled,
+        };
+        let Step::Source {
+            composed: Composed::Settled { ref report, .. },
+            ..
+        } = step
+        else {
+            panic!("the declarations reach the ledger");
+        };
+        assert_eq!(report.declarations().len(), 3_usize);
+        for (declaration, (name, expected)) in report.declarations().iter().zip([
+            ("quiet", &[0_usize][..]),
+            ("pending", &[3_usize, 0_usize, 2_usize][..]),
+            ("excess", &[0_usize, 1_usize, 0_usize][..]),
+        ]) {
+            let note = Note(declaration).to_string();
+            assert!(note.contains(name), "the note retains declaration identity");
+            assert!(
+                note.split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq(expected.iter().copied()),
+                "only stated and nonempty surviving payloads: {note}"
+            );
+        }
+        let mut stream = entries(&step, Verb::Check(Goals::Gated));
+        for (name, expected) in [
+            ("pending", [3_usize, 1_usize]),
+            ("excess", [0_usize, 1_usize]),
+        ] {
+            let Some(Entry::Report(report)) = stream.next()
+            else {
+                panic!("each owed declaration reports");
+            };
+            let title = report.title().to_string();
+            assert!(title.contains(name));
+            assert!(
+                title
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq(expected),
+                "stated count precedes the produced count: {title}"
+            );
+        }
+        assert!(stream.next().is_none());
     }
 }
