@@ -18,7 +18,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 - [Repairs are cards](#repairs-are-cards)
 - [The transcript](#the-transcript)
 - [A checked declaration prints what it runs to](#a-checked-declaration-prints-what-it-runs-to)
-- [Tests: the floor, the deferred rows, the defect](#tests-the-floor-the-deferred-rows-the-defect)
+- [Specification evidence](#specification-evidence)
 - [License](#license)
 
 <!-- tocstop -->
@@ -38,7 +38,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 
 ## Provided features
 
-- **The gate.** `completeness` and the parser's `CompletionStatus`, re-exported. Witnesses: `loop::tests::an_open_form_is_incomplete`, `loop::tests::a_bare_atom_is_complete`, `loop::tests::a_hole_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator`, `loop::tests::unused_completion_status_name_stays_in_scope`.
+- **The gate.** `completeness` and the parser's `CompletionStatus`, re-exported. Witnesses: `loop::tests::an_open_form_is_incomplete`, `loop::tests::a_bare_atom_is_complete`, `loop::tests::a_hole_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator`, `loop::tests::an_empty_buffer_is_complete`.
 - **The loop.** `SessionLoop`, `SessionLoop::new`, `offer`, `finish`, `prompt`, `discard`; `LoopEvent`, `Prompt`, `LoopError`, `Faulted`, `finished::Absent`. Witnesses: `loop::tests::an_open_form_continues`, `loop::tests::a_complete_atom_submits`, `loop::tests::a_definition_is_visible_on_the_next_line`, `loop::tests::a_refused_chunk_is_not_kept`, `loop::tests::quit_stops_the_loop`, `loop::tests::the_meta_commands_answer`, `loop::tests::the_type_command_answers_without_keeping_the_probe`, `loop::tests::a_loaded_file_is_one_chunk`, `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`, `loop::tests::finishing_an_empty_loop_yields_nothing`, `loop::tests::finishing_twice_reports_once`.
 - **The encoder.** `encode_submission`, `Offer`, `Echo`, `Subject`, `Standings`, `Encoded`, `Disposition`, `spelled::Absent`. Witnesses: `loop::tests::a_hole_encodes_as_a_goal_line`, `loop::tests::a_later_definition_settles_an_earlier_goal`, `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`, `loop::tests::styled_session_diagnostics_reach_the_repl_transcript`, `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`, `render::tests::eval_renders_each_outcome_class`.
 - **The type spelling.** `spell`, answering the printer's `Presentation`. Witnesses: `render::tests::value_ty_covers_every_reachable_former`, `render::tests::comp_ty_covers_every_reachable_former`, `render::tests::ty_dispatches_on_polarity`, `render::tests::fidelity_tracks_unsupported_nodes_not_user_punctuation`, `render::tests::types_render_without_debug`, `render::tests::a_malformed_table_spells_unknown`, `loop::tests::corpus_types_spell_as_their_source_writes_them`, `loop::tests::a_dependent_function_names_its_type_with_its_binder`.
@@ -68,13 +68,13 @@ The crate's tests run with `cargo nextest run -p gandr-surface-repl`.
 
 ## A verb of the driver
 
-The loop is reached as `gandr repl`, one verb of the `gandr` binary beside `check`, `test`, `lsp` and `tui`, the loop's full-screen face; bare `gandr` keeps its status report. The prior implementation made bare `gandr` the loop and `gandr <file>` a script run. That surface would change a landed driver witness and read a file name where a verb stands. The choice reverses if bare `gandr` is ruled the loop.
+The loop is reached as `gandr repl`, beside `check`, `test`, `lsp` and `tui`; bare `gandr` keeps its status report. Making bare `gandr` the loop or treating a file path as a verb would change the driver specification. The choice reverses if bare `gandr` is designated the loop.
 
 ## The line editor
 
 The terminal face edits lines with `rustyline` 18.0.1, defaults off. Off are `with-file-history`, which writes history in plain text, `with-dirs`, which only locates that file, and `custom-bindings`, a keymap the face does not use; history lives in memory for the run. On this workspace the editor adds six crates to a build — itself, `nix`, `cfg_aliases`, `log`, `unicode-segmentation` and `utf8parse` — beside `libc`, `bitflags`, `cfg-if`, `memchr` and `unicode-width`, which the build already carries, and compiles in about a second.
 
-The recorded design and the prior implementation used `reedline`. Its 0.52.1 release with defaults off brings 43 crates, among them `crossterm`, `mio`, `signal-hook`, `chrono`, `serde_derive`, `strum` and `derive_more`, and its releases break their interface often; the loop uses none of what it adds over `rustyline` — menus, a multi-line edit buffer, a painter of its own. A raw-mode loop over `crossterm` alone would hand-write the line editing a maintained crate provides. `rustyline` is the most used line editor on crates.io and keeps a stable interface. The choice reverses on a high-risk advisory or an unmaintained mark against `rustyline`, or when a face needs what only `reedline` offers, such as completion menus or editing a whole buffer across lines.
+The alternative, `reedline`, supplies menus, multiline editing and a painter this face does not use. A raw-mode loop over `crossterm` would hand-write line editing that `rustyline` provides. The choice reverses on a high-risk advisory or an unmaintained mark against `rustyline`, or when the face needs completion menus or whole-buffer editing.
 
 The face is always built: `gandr repl` on a terminal needs it, so a feature gate would only make the default binary unable to do what its verb says.
 
@@ -86,11 +86,11 @@ The fragment's source is declarations. A bare expression such as `42` is refused
 
 The session judges whole revisions and keeps no text, so the loop owns the accepted text and submits it with each new chunk after it: a later line sees every declaration kept before it. A chunk is kept when its revision drew no refusal — no refusal, no unsettled declaration, no refusal of the revision as a whole — and is otherwise dropped, the accepted text and the declarations' standings unchanged. The encoder reports a declaration when the chunk introduced it, or when its outcome differs from the accepted revision's, which is how a definition settling an earlier signature is seen.
 
-The alternative was keeping every chunk. A refused declaration would then be refused again at every later submission, and its report would repeat or have to be filtered by age; dropping it keeps the accepted text clean, so each revision's refusals are the chunk's own. A report's line and column count from the first kept line, since the revision is the whole session: `:load` submits a file's text as one chunk, and its reports address the session, not the file. The choice reverses when the lowering takes a seed of earlier declarations; the session then owns the line-append, a submission is the chunk alone, and reports address it.
+Keeping every chunk would repeat a refused declaration at each later submission or require age filtering. Dropping it keeps accepted text clean. Reports count lines and columns from the first accepted line: `:load` submits one chunk whose reports address the session, not the file. The choice reverses when lowering accepts earlier declarations as a seed, allowing reports to address each chunk alone.
 
 ## Completeness is the parser's
 
-A buffer is submitted when the parser's push machine, having molded its tokens, expects nothing more: no open form and no owed operand. The loop parses nothing of its own. A hole `?` is a complete term, so a buffer holding one is submitted rather than continued — holes are typeable, never a reason to wait. Complete is not clean: a buffer the parser repairs inside can be complete, and is submitted and reported. At the end of input a buffer still waiting is submitted whatever its state, so an open form at the end of a pipe is reported rather than dropped; an interrupt on the terminal drops it.
+A buffer is submitted when the parser's push machine, having molded its tokens, expects nothing more. Complete is not clean: a repaired buffer can be complete and is submitted with its diagnostics. Empty fresh input is ignored. Offered text may contain pasted line breaks, which are preserved; meta-commands dispatch only without a pending buffer. EOF submits a pending buffer regardless of completeness. An interrupt discards pending text without forgetting accepted declarations.
 
 ## Types are spelled from the checkpoints
 
@@ -98,37 +98,49 @@ A type line names its type through `spell`, the one spelling every transcript li
 
 The page is 100 columns, fixed rather than read off a terminal, so a transcript stays a function of its input. It bounds the type, not the `name :` before it, and a type wider than the page breaks onto continuation lines, which `rows` lays out as later rows of the type line. The choice reverses when a face lays types out at its own width: the terminal face once it reads the terminal's.
 
-The interim renderer this replaces wrote a table on one line in the arrow-and-bridge syntax and `?` for everything else, including the universes and the dependent arrow the classifier had landed; the printer spells both, and every face shares its layout. The prior implementation rendered surface types it built itself; here the types come back from the checker as content, so the reader reads content, and it reads no `Debug` image.
+Types come from checker checkpoints rather than surface-built stand-ins or `Debug` images. The shared printer handles universes and dependent arrows as well as ordinary arrows and polarity bridges.
 
 ## Repairs are cards
 
-The session carries the parse's repairs beside its step. The encoder takes those inside the chunk and projects each onto a `DiagCard` under `W0012`, `parse repaired: <class>`, its span measured from the chunk's start; a warning line in the transcript carries it. A repair before the chunk belongs to text already accepted and is not repeated. The alternative was the published obligation vocabulary with its own cards and severity classes, which the renderer seam leaves to the recovery engine that will read them; the cards move to that vocabulary when it lands.
+The session carries parse repairs beside its step. The encoder selects obligations starting at or after the chunk boundary and projects each onto a `DiagCard` under `W0012`, with its span shifted to chunk-relative bytes. An obligation starting earlier, even one crossing the boundary, is omitted; a zero-width obligation at the boundary is retained. Distinct obligation classes have distinguishable messages. A richer recovery vocabulary is the alternative when the renderer seam supports structured recovery actions.
 
 ## The transcript
 
-A block's layout is `rows`: the echo's rows, then each result line's, each row carrying its line's kind, its lead and its text without a terminator, and its byte offset in that line's text, so a renderer can lay the echo's highlight spans over it. A line's first row opens with its kind's mark — `▸` the echo, `?` a goal, `·` a note, `=` a value, `!` blame; a type line spells its own `name : T` and a diagnostic opens with its own severity, so neither takes a mark — a later row with text is indented to the mark's width, and a later empty row carries nothing. The rows are the one spelling of a block's layout both faces read: `write_block` prints each row on a line of its own, and a full-screen face paints the same rows, so the two never disagree about a mark or an indent. The batch face writes refusals plainly; the terminal face colours them when standard output is a terminal. A fault — a grammar that did not build, input that is not text, an editor that failed, a session fault — ends a face with `Ended::Faulted`, after the blocks before it are flushed; a refusal is a transcript line, never a fault.
+A block's `rows` layout contains the echo followed by result lines, retaining kinds, leads, text and byte offsets. The first row takes the kind's mark; subsequent nonempty rows take its indentation, and empty rows take no indentation. Type and diagnostic rows have no mark. CRLF terminators are stripped; a lone carriage return is retained. `write_block` writes this layout without flushing; faces flush on normal or faulted endings, but not after write errors. A flush error takes precedence over the ending being returned.
 
 ## A checked declaration prints what it runs to
 
-After the type line of each declaration the checker accepted, the encoder asks the session to evaluate it and writes what the run came to on a line of its own kind: `=` and the value, `!` and the goal the run was blamed on, or `·` and why it stopped short or never reached the machine — a code, of which the machine carries no image, among them. The text is the run stage's one spelling, the one `gandr run` prints and a `runs` expectation states. A goal line takes no run; a probe answers with its type alone. The prior implementation evaluated a top-level expression and gave a definition its type line alone; the fragment has no top-level expression, so the declaration is the item evaluated ([a hole-free item is evaluated](../surface-session/README.md#a-hole-free-item-is-evaluated)). The choice reverses with the session's: when the surface gains a top-level expression, that expression's line carries the value and a definition returns to its type line alone.
+After a checked declaration's type line, the encoder writes its evaluation: a value, goal blame, or a note for a stuck or unrunnable result. The run stage owns the spelling shared with `gandr run` and `runs` expectations. Goal declarations are not evaluated; probes answer only a type. The declaration is the evaluation unit because the fragment has no top-level expression; see [the session evaluation specification](../surface-session/README.md#a-hole-free-item-is-evaluated).
 
-## Tests: the floor, the deferred rows, the defect
+## Specification evidence
 
-The prior implementation's loop and highlight suites and its type renderer's suite are the floor: 28 tests, all here under their names.
+The crate has 52 tests. Predicates observe branch decisions, empty-state boundaries, byte ranges, type-absence precedence, preserved payloads and transcript kinds. They do not parse, print, evaluate or clone a whole session a second time. The corpus spelling witness covers one-line signatures in three selected strict sources, not every corpus file or arbitrary syntax. Diagnostic prose is not a golden interface.
 
-| Suite | Floor | Here | Deferred |
-| ----- | ----- | ---- | -------- |
-| loop | 18 | 18 | 0 |
-| highlight | 4 | 4 | 0 |
-| render | 6 | 6 | 0 |
+| Boundary | Witness |
+| -------- | ------- |
+| Empty, incomplete and complete input | `loop::tests::an_empty_buffer_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator` |
+| Pasted lines, ignored blank input, interruption and retained declarations | `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations` |
+| No resume, missing checkpoint and refused checkpoint | `encode::tests::missing_and_refused_types_keep_their_absence_reasons` |
+| Unicode literal coverage and scalar boundaries | `highlight::tests::unicode_literals_keep_their_byte_boundaries` |
+| Old, crossing and zero-width repairs; distinguishable repair classes | `remote::tests::repair_boundaries_preserve_locations_and_distinct_classes` |
+| Every output kind, UTF-8 byte offsets, empty rows, CRLF and lone carriage returns | `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning` |
+| Empty transcript performs no write or flush | `loop::tests::empty_transcripts_do_not_touch_the_writer` |
+| Partial-write refusal, skipped flush and flush-error precedence | `loop::tests::write_and_flush_failures_keep_their_kind` |
+| End and failed reads leave later events unread and flush once | `loop::tests::terminal_endings_stop_reads_and_flush_once` |
 
-The crate carries 44 tests: the 28 ported rows, the two repair-card rows of the prior implementation's render-bus projection, and fourteen rows for what is new here — reading a meta-command, answering each, the probe, `:load`, the dropped chunk, a goal settled later, the declaration terminator, the terminal face over a scripted source, unreadable input, the malformed table, a checked definition's spelling, the corpus spelling, a block's rows, and a dependent function's type line.
+The terminal adapter additionally needs a pseudo-terminal smoke: fresh and continuing prompts, a completed definition, an interrupted buffer, a definition referring to accepted text, and EOF with a pending buffer. Scripted tests observe the same state transitions but cannot establish terminal-device behavior.
 
-The ported rows take the fragment's forms. `a_complete_atom_submits` submits `42` and expects the lowering's refusal of it as a whole, exactly as the diagnostics renderer writes it. `a_hole_encodes_as_a_goal_line` takes a signature without a definition, the fragment's goal. `an_outcome_only_refusal_is_visible_in_the_repl` takes a definition the checker refuses against an earlier signature and expects the renderer's own report over the session's revision. `piped_value_prints_a_transcript` pipes `:load` of a strict corpus source and `:type`, and expects each declaration's type line and value line. `eval_renders_each_outcome_class` offers a loop a run of each class the fragment writes — a value, a string with escapes, a function, a run blamed on a goal, and a code that never reaches the machine — and expects the transcript's last line at its exact kind and text; the prior row's stuck class is the note line here, since a well-typed fragment program reaches no stuck configuration. `unused_completion_status_name_stays_in_scope` names the gate's answer through this crate and asserts the empty buffer complete. `an_unclassifiable_buffer_yields_no_panic` asserts the spans over unreadable text ordered and inside it. The render rows run over the checker's content tables, the prior surface types' formers each mapped to the content former that carries them. With the printer behind `spell`, `fidelity_tracks_unsupported_nodes_not_user_punctuation` takes an unoccupied position where it took a product, which the printer now spells, so the row keeps its claim: fidelity follows the nodes the surface cannot write.
+Five items have explicit executable exemptions. Their boundary witnesses observe behavior that the signature cannot inspect without consuming it or adding an observer:
 
-Deferred, with what it needs: the prior render-bus row `advertised_capabilities_match_the_live_path` waits with the capability form the renderer seam does not carry.
+| Item | Why no runtime predicate |
+| ---- | ------------------------ |
+| `rows::line_rows` | The opaque one-shot iterator has no row observer or clone; consuming it would change the caller's rows. |
+| `rows::rows` | The same opaque iterator boundary prevents observing rows before returning them. |
+| `LineSource::read` | An abstract source exposes no history observer; the caller's stopping obligation is not a return-value property. |
+| `interactive::drive` | Arbitrary sources can return any fault kind; generic writers expose neither transcript nor flush state. |
+| `interactive::converse` | The same generic source and writer prevent observing the transcript and read sequence. |
 
-One defect of the prior implementation is absent: a transcript line named its type through a `Debug` image. Absent at L2: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling` reads the checked signature from a session's checkpoint and expects the loop's line to be `spell`'s spelling of it, and `loop::tests::corpus_types_spell_as_their_source_writes_them` expects every corpus signature's line to be the source's own text.
+Single-pass iterators and generic I/O remain the API instead of adding collection, cloning or observer traits solely for assertions. Reconsider an exemption if its API gains a non-consuming semantic observer. All predicates and witnesses run in the enforcing lane; executable checks are a bounded part of the specification, not proof of the whole protocol.
 
 ## License
 

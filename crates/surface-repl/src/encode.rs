@@ -7,6 +7,7 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use std::path::Path;
 
+use anodized::spec;
 use gandr_core_incremental::ItemCheckpoint;
 use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Reference;
@@ -187,10 +188,27 @@ pub struct Encoded
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — every strict corpus declaration's line spells the type
-///   its source wrote; a synthesised probe answers its synthesised type.
+/// - hypothesis: L2 — one-line signatures in three selected strict corpus
+///   sources have their written types; a probe has its synthesized type. L3 —
+///   no resume, an absent name and a refused checkpoint retain distinct absence
+///   reasons. The predicate checks precedence without printing twice.
 /// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
 /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
+/// - witness: `encode::tests::missing_and_refused_types_keep_their_absence_reasons`
+#[spec(ensures: |ret| match resume {
+    Maybe::Absent(_) => matches!(ret, Maybe::Absent(spelled::Absent::Unresumed)),
+    Maybe::Present(resume) => resume.checkpoints().items().iter().rfind(|checkpoint|
+        matches!(checkpoint.content().reference(), Reference::Item { key, .. }
+            if key.as_ref() == AsRef::<str>::as_ref(&name).as_bytes()))
+        .map_or(matches!(ret, Maybe::Absent(spelled::Absent::Uncheckpointed)), |checkpoint| match *checkpoint.typing() {
+            Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
+            Typing::Checked { .. } | Typing::Owed
+                if matches!(checkpoint.content().signature(), Maybe::Absent(_)) =>
+                matches!(ret, Maybe::Absent(spelled::Absent::Unsigned)),
+            Typing::Checked { .. } | Typing::Owed | Typing::Synthesised { .. } =>
+                matches!(ret, Maybe::Present(_) | Maybe::Absent(spelled::Absent::Unpresentable)),
+        }),
+})]
 fn type_of(
     resume: Maybe<&Resume, submitted::Absent>,
     name: SourceFragment<'_>,
@@ -233,14 +251,31 @@ fn type_of(
 /// `name : T`, or the bare name when no type can be spelled.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the name followed by ` : ` and the presentation when available,
+///   otherwise the name alone, preserving all presented characters.
+/// - provides: type and goal lines without inventing a missing type.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — selected corpus signatures agree with source spelling; L3
+///   — owed signatures and dependent types retain their names and syntax.
+/// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
+/// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
+/// - witness: `loop::tests::a_dependent_function_names_its_type_with_its_binder`
+#[spec(ensures: |ret| match *spelling {
+    Maybe::Present(ref presentation) => ret.strip_prefix(AsRef::<str>::as_ref(&name))
+        .and_then(|rest| rest.strip_prefix(" : ")) == Some(presentation.as_ref()),
+    Maybe::Absent(_) => ret == AsRef::<str>::as_ref(&name),
+})]
 fn typed_line(
     name: SourceFragment<'_>,
-    spelling: Maybe<Presentation, spelled::Absent>,
+    spelling: &Maybe<Presentation, spelled::Absent>,
 ) -> String
 {
-    match spelling {
-        | Maybe::Present(spelling) => format!("{name} : {spelling}"),
+    match *spelling {
+        | Maybe::Present(ref spelling) => format!("{name} : {spelling}"),
         | Maybe::Absent(_) => name.to_string(),
     }
 }
@@ -248,7 +283,27 @@ fn typed_line(
 /// A repair card as one diagnostic line.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a warning line with the card's code and unchanged message; a
+///   located card appends its exact `start..end` byte range.
+/// - provides: repair diagnostics in the transcript.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a repaired end-of-input buffer is reported; the predicate
+///   parses the code and byte endpoints without formatting a second copy.
+/// - witness: `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`
+#[spec(ensures: |ret| ret.strip_prefix("warning[")
+    .and_then(|rest| rest.split_once("]: ")).is_some_and(|(code, body)|
+        code.parse::<gandr_surface_render_remote::DiagnosticCode>().is_ok_and(|parsed| parsed == card.code)
+            && card.span.map_or(body == card.message, |span|
+                body.strip_prefix(card.message.as_str())
+                    .and_then(|rest| rest.strip_prefix(" at "))
+                    .and_then(|rest| rest.split_once(".."))
+                    .is_some_and(|(start, end)|
+                        start.parse::<usize>().is_ok_and(|at| at == usize::from(span.start()))
+                            && end.parse::<usize>().is_ok_and(|at| at == usize::from(span.end()))))))]
 fn card_line(card: &DiagCard) -> String
 {
     match card.span {
@@ -277,9 +332,15 @@ fn card_line(card: &DiagCard) -> String
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a run of each class the fragment writes is submitted to a
-///   loop and the transcript's line asserted at its exact kind and text.
+/// - hypothesis: L3 — value, escaped-string and function results retain their
+///   structural spelling; blamed and unrunnable outcomes retain their kinds
+///   without pinning explanatory prose.
 /// - witness: `render::tests::eval_renders_each_outcome_class`
+#[spec(ensures: |ret| ret.0 == match *evaluation {
+    Evaluation::Value(_) => OutKind::Value,
+    Evaluation::Blamed(_) => OutKind::Blame,
+    Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => OutKind::Stuck,
+} && !ret.1.is_empty())]
 fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 {
     let kind = match *evaluation {
@@ -335,6 +396,27 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 /// - witness: `loop::tests::a_later_definition_settles_an_earlier_goal`
 /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
 /// - witness: `render::tests::eval_renders_each_outcome_class`
+#[spec(captures: [
+    subject = offer.subject,
+    echo_bytes = offer.echo.source.len(),
+    highlights = offer.echo.highlights.len(),
+    declarations = match *submission.composed() { Composed::Settled { ref report, .. } => report.declarations().len(), Composed::Refused(_) => 0 },
+    refused = match *submission.composed() {
+        Composed::Settled { ref report, .. } => report.declarations().iter()
+            .any(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_))),
+        Composed::Refused(_) => true,
+    }
+], ensures: |ret| ret.block.source.len() == echo_bytes && ret.block.source_hl.len() == highlights
+    && ret.block.lines.iter().all(|row| row.0 != OutKind::Source)
+    && match ret.disposition {
+        Disposition::Kept(ref standings) => matches!(subject, Subject::Declarations)
+            && !refused && standings.0.len() <= declarations,
+        Disposition::Dropped => matches!(subject, Subject::Probe { .. })
+            || ret.block.lines.iter().any(|row| row.0 == OutKind::Diag),
+    }
+    && (!matches!(subject, Subject::Probe { .. }) || ret.block.lines.iter().all(|row|
+        matches!(row.0, OutKind::Diag | OutKind::Info) || (row.0 == OutKind::Type && row.1.starts_with(':'))))
+)]
 #[inline]
 #[must_use]
 pub fn encode_submission(
@@ -400,13 +482,13 @@ pub fn encode_submission(
                     | (Subject::Declarations, &Outcome::Checks(owed)) if usize::from(owed) > 0 => {
                         lines.push((
                             OutKind::Goal,
-                            typed_line(fragment, type_of(resume, fragment)),
+                            typed_line(fragment, &type_of(resume, fragment)),
                         ));
                     },
                     | (Subject::Declarations, &(Outcome::Checks(_) | Outcome::Runs(_))) => {
                         lines.push((
                             OutKind::Type,
-                            typed_line(fragment, type_of(resume, fragment)),
+                            typed_line(fragment, &type_of(resume, fragment)),
                         ));
                         if let Maybe::Present(evaluation) = evaluate(declaration, program) {
                             lines.push(evaluation_line(&evaluation));
@@ -433,5 +515,58 @@ pub fn encode_submission(
             lines,
         },
         disposition,
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_incremental::BackendArtifact;
+    use gandr_core_incremental::MemoryCheckpointStore;
+    use gandr_storage_records::InMemoryBlockStore;
+    use gandr_surface_dispatcher::SourceRoot;
+    use gandr_surface_grammar::built_in;
+    use gandr_surface_session::Session;
+    use gandr_surface_syntax::SourceFragment;
+    use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
+
+    use super::spelled;
+    use super::type_of;
+
+    /// No resume, an absent name and a refused item have distinct absence
+    /// reasons, while an owed signature retains its declared type.
+    #[test]
+    fn missing_and_refused_types_keep_their_absence_reasons()
+    {
+        let mut session = Session::new(
+            built_in().expect("the grammar builds"),
+            SourceRoot::Strict,
+            MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
+            BackendArtifact::from(b"repl type observer".as_slice()),
+        );
+        assert!(matches!(
+            type_of(session.last(), SourceFragment::from("name")),
+            Maybe::Absent(spelled::Absent::Unresumed)
+        ));
+        let _submitted = session
+            .submit(SourceText::from("def name : String ;"))
+            .expect("the session does not fault");
+        assert!(matches!(
+            type_of(session.last(), SourceFragment::from("missing")),
+            Maybe::Absent(spelled::Absent::Uncheckpointed)
+        ));
+        assert!(
+            matches!(type_of(session.last(), SourceFragment::from("name")),
+            Maybe::Present(ref shown) if shown.as_ref() == "String")
+        );
+        let _submitted = session
+            .submit(SourceText::from("def name : String ;\ndef name = 42 ;"))
+            .expect("the mismatch is a refusal, not an engine fault");
+        assert!(matches!(
+            type_of(session.last(), SourceFragment::from("name")),
+            Maybe::Absent(spelled::Absent::Refused)
+        ));
     }
 }

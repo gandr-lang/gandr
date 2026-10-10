@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use anodized::spec;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -66,15 +67,38 @@ pub enum Command<'line>
 ///   command: its word is the text up to the first space, its argument the rest
 ///   with surrounding space trimmed. `:help`, `:quit`, `:q` and `:reset` ignore
 ///   an argument; `:load` and `:type` take theirs, or are a usage answer
-///   without one; any other word is unknown. Every other line is source text.
+///   without one; any other word is unknown, preserving the rest of the line
+///   including its argument and trimming trailing space. Every other line is
+///   source text.
 /// - provides: the loop's reading of a line typed while no buffer waits.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every command, each argument-taking command bare, an
-///   unknown word and a source line are asserted at their exact reading.
+///   unknown word and a source line are asserted at their exact reading,
+///   including Unicode whitespace, an empty word and case-sensitive names.
 /// - witness: `meta::tests::every_command_reads_exactly`
+#[spec(ensures: |ret| match ret {
+    Maybe::Absent(commanded::Absent::Source) => !<&str>::from(line).trim_start().starts_with(':'),
+    Maybe::Present(parsed) => <&str>::from(line).trim_start().strip_prefix(':').is_some_and(|rest| {
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let word = parts.next().unwrap_or_default();
+        let argument = parts.next().unwrap_or_default().trim();
+        match parsed {
+            Command::Help => word == "help",
+            Command::Quit => matches!(word, "q" | "quit"),
+            Command::Reset => word == "reset",
+            Command::Load(path) => word == "load" && !argument.is_empty() && path == Path::new(argument),
+            Command::TypeOf(expression) => word == "type" && !argument.is_empty()
+                && <&str>::from(expression) == argument,
+            Command::Usage(Missing::Path) => word == "load" && argument.is_empty(),
+            Command::Usage(Missing::Expression) => word == "type" && argument.is_empty(),
+            Command::Unknown(text) => !matches!(word, "help" | "q" | "quit" | "reset" | "load" | "type")
+                && <&str>::from(text) == rest.trim_end(),
+        }
+    }),
+})]
 pub fn command(line: SourceText<'_>) -> Maybe<Command<'_>, commanded::Absent>
 {
     let Some(rest) = <&str>::from(line).trim_start().strip_prefix(':')
@@ -143,6 +167,23 @@ mod tests
         assert_eq!(
             command("def a = 1 ;".into()),
             Maybe::Absent(commanded::Absent::Source)
+        );
+        assert_eq!(
+            command("\u{2003}:\u{2003}".into()),
+            Maybe::Present(Command::Unknown(SourceText::from("")))
+        );
+        assert_eq!(
+            command(":help ignored".into()),
+            Maybe::Present(Command::Help)
+        );
+        assert_eq!(command(":q ignored".into()), Maybe::Present(Command::Quit));
+        assert_eq!(
+            command(":Help  args  ".into()),
+            Maybe::Present(Command::Unknown(SourceText::from("Help  args")))
+        );
+        assert_eq!(
+            command(":type\u{2003}a b\u{2003}".into()),
+            Maybe::Present(Command::TypeOf(SourceText::from("a b")))
         );
     }
 }
