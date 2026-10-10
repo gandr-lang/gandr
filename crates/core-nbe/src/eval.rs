@@ -267,6 +267,16 @@ impl LoweredChain
     /// - witness: `eval::tests::a_chain_lowers_each_body_once_in_admission_order`
     /// - witness: `eval::tests::a_refused_lowering_returns_no_chain`
     #[inline]
+    #[spec(
+        captures: [entry_count = chain.entries().len(), entry_first = chain.entries().first().copied(), entry_last = chain.entries().last().copied()],
+        ensures: |ret| ret.as_ref().map_or(true, |lowered| {
+            lowered.chain.entries().len() == entry_count
+                && lowered.chain.entries().first().copied() == entry_first
+                && lowered.chain.entries().last().copied() == entry_last
+                && lowered.bodies.len() <= entry_count
+                && lowered.chain.entries().iter().all(|entry| lowered.bodies.contains_key(&entry.body()))
+        }),
+    )]
     pub fn lower<Lowering, Refusal>(
         chain: DefinitionChain,
         mut lowering: Lowering,
@@ -327,17 +337,28 @@ impl<'run> Definitions<'run>
     /// Read `chain` from `scope` of `environment`.
     ///
     /// # Specification
-    /// - requires: `scope` is a scope of `environment`, and `environment` was
-    ///   built over `chain`; an unknown scope is admissible and reads as
-    ///   unfolding nothing.
+    /// - requires: `environment` was built over `chain`; every scope id is
+    ///   admissible, and an unknown scope reads as unfolding nothing.
     /// - ensures: the three travel together thereafter, so no later call can
     ///   pair a chain with another run's scope.
     /// - provides: the one bundle every unfolding question is asked of, which
     ///   is what keeps a call site from reaching the root scope by accident.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same admitted body is manifest at one scope and
+    ///   sealed at another. Replacing the supplied scope with the root would
+    ///   unfold the sealed case.
+    /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
+    /// - witness: `eval::tests::a_sealed_definition_is_rigid`
     #[inline]
     #[must_use]
+    #[spec(
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.chain), core::ptr::from_ref(chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.environment), core::ptr::from_ref(environment))
+            && ret.scope == scope,
+    )]
     pub fn new(
         chain: &'run LoweredChain,
         environment: &'run DefinitionalEnvironment,
@@ -371,6 +392,17 @@ impl<'run> Definitions<'run>
     /// - provides: the input the scheduling policy's share reads.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a deep refuting definition competes with a shallow
+    ///   divergence. The uniform schedule refutes while the height-weighted
+    ///   schedule declines under the same budget; flattening recorded heights
+    ///   removes that distinction.
+    /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    #[spec(
+        ensures: |ret| ret == self.chain.chain().entry(constant)
+            .map_or_else(DefinitionHeight::default, DefinitionEntry::height),
+    )]
     pub(crate) fn height(
         &self,
         constant: ConstantIndex,
@@ -626,6 +658,23 @@ impl<'run> Machine<'run>
     ///   caller.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed value evaluates, a loose occurrence refuses,
+    ///   and a zero-step slice retains its first task. A pre-bound root,
+    ///   inherited result or pre-spent budget changes one of those outcomes.
+    /// - witness: `eval::tests::a_variable_resolves_out_of_the_environment`
+    /// - witness: `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause`
+    #[spec(
+        ensures: |ret| ret.tasks.is_empty() && ret.values.is_empty() && ret.comps.is_empty()
+            && ret.envs.len() == 1_usize
+            && ret.envs.first().is_some_and(|env| usize::from(env.depth(Zone::Intuitionistic)) == 0_usize
+                && usize::from(env.depth(Zone::Linear)) == 0_usize)
+            && ret.fuel == fuel && ret.definitions.scope == definitions.scope
+            && core::ptr::eq(core::ptr::from_ref(ret.definitions.chain), core::ptr::from_ref(definitions.chain))
+            && core::ptr::eq(core::ptr::from_ref(ret.definitions.environment), core::ptr::from_ref(definitions.environment))
+            && ret.sharing.legs.is_empty() && ret.sharing.remembered.is_empty() && ret.sharing.pending.is_empty(),
+    )]
     fn new(
         definitions: Definitions<'run>,
         fuel: Fuel,
@@ -652,7 +701,16 @@ impl<'run> Machine<'run>
     /// - provides: the environment a closed term is evaluated under.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a loose root occurrence refuses while the same
+    ///   occurrence under a beta binder resolves. Choosing an appended
+    ///   environment instead of the empty root confuses those cases.
+    /// - witness: `eval::tests::a_variable_resolves_out_of_the_environment`
     #[inline]
+    #[spec(
+        ensures: |ret| ret.0 == 0_usize,
+    )]
     fn root_env() -> EnvId
     {
         EnvId(0_usize)
@@ -675,7 +733,20 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`EvalFault::MachineInvariant`] — the id names no held environment.
-    #[spec(ensures: |ret| ret.as_ref().ok().copied() == self.envs.get(id.0))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — supplied bindings differ from the empty root, and the
+    ///   two zones carry different values in a shared configuration. An
+    ///   off-by-one environment read or zone substitution changes the resulting
+    ///   pair.
+    /// - witness: `eval::tests::an_evaluation_in_a_supplied_environment_reports_its_remainder`
+    /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(
+            |fault| *fault == EvalFault::MachineInvariant && self.envs.get(id.0).is_none(),
+            |held| self.envs.get(id.0).is_some_and(|stored| core::ptr::eq(core::ptr::from_ref(*held), core::ptr::from_ref(stored))),
+        ),
+    )]
     fn env(
         &self,
         id: EnvId,
@@ -699,7 +770,20 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`EvalFault::MachineInvariant`] — the id names no held environment.
-    #[spec(ensures: |ret| ret.as_ref().ok() == self.envs.get(id.0))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — applying a captured closure under a different
+    ///   argument preserves the outer binding, and replayed branches retain
+    ///   distinct captures. Capturing the root or replacing the old binding by
+    ///   the new argument changes the result.
+    /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
+    /// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(
+            |fault| *fault == EvalFault::MachineInvariant && self.envs.get(id.0).is_none(),
+            |captured| self.envs.get(id.0) == Some(captured),
+        ),
+    )]
     fn capture(
         &self,
         id: EnvId,
@@ -720,6 +804,26 @@ impl<'run> Machine<'run>
     ///   environment owns two vectors.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a supplied environment and two differently captured
+    ///   continuations produce different ordered pairs. Reusing an old slot,
+    ///   dropping one zone or losing an outer binding changes those
+    ///   observations.
+    /// - witness: `eval::tests::an_evaluation_in_a_supplied_environment_reports_its_remainder`
+    /// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+    /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
+    #[spec(
+        captures: [entry_len = self.envs.len(),
+            intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear),
+            intuitionistic_top = environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+            linear_top = environment.lookup(Zone::Linear, DeBruijnIndex::from(0_u32))],
+        ensures: |ret| ret.0 == entry_len && self.envs.len() == entry_len.saturating_add(1_usize)
+            && self.envs.get(ret.0).is_some_and(|held| held.depth(Zone::Intuitionistic) == intuitionistic
+                && held.depth(Zone::Linear) == linear
+                && held.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == intuitionistic_top
+                && held.lookup(Zone::Linear, DeBruijnIndex::from(0_u32)) == linear_top),
+    )]
     fn hold_env(
         &mut self,
         environment: Environment,
@@ -749,6 +853,14 @@ impl<'run> Machine<'run>
     // *closure's* environment inline in `step_apply`, which is the dominant
     // shape and carries the same note. Ceiling and upgrade path are stated
     // there, once, at the site that reaches them first.
+    /// # Adequacy
+    /// - hypothesis: L3 — bind and case introduce the returned or injected
+    ///   value innermost without discarding captured bindings. Using the wrong
+    ///   zone or replacing rather than extending the environment changes the
+    ///   returned value.
+    /// - witness: `eval::tests::a_bind_passes_the_returned_value_on`
+    /// - witness: `eval::tests::a_case_picks_the_branch_the_injection_names`
+    /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
     #[spec(
         captures: [
             entry_len = self.envs.len(),
@@ -796,9 +908,17 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`EvalFault::MachineInvariant`] — the value result stack was empty.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered eliminations consume the most recent operand,
+    ///   and a later elimination with no operand refuses by `MachineInvariant`.
+    ///   Reading the opposite stack or reusing a consumed result changes the
+    ///   pair or replaces the named refusal.
+    /// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+    /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     #[spec(
         captures: [entry_len = self.values.len(), entry_last = self.values.last().copied()],
-        ensures: |ret| ret.as_ref().ok().copied() == entry_last
+        ensures: |ret| ret == entry_last.ok_or(EvalFault::MachineInvariant)
             && self.values.len() == entry_len.saturating_sub(1_usize),
     )]
     fn pop_value(&mut self) -> Result<DomainValueId, EvalFault>
@@ -819,9 +939,17 @@ impl<'run> Machine<'run>
     /// # Errors
     /// - [`EvalFault::MachineInvariant`] — the computation result stack was
     ///   empty.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered eliminations consume the most recent operand,
+    ///   and a later elimination with no operand refuses by `MachineInvariant`.
+    ///   Reading the opposite stack or reusing a consumed result changes the
+    ///   pair or replaces the named refusal.
+    /// - witness: `eval::tests::a_bind_passes_the_returned_value_on`
+    /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     #[spec(
         captures: [entry_len = self.comps.len(), entry_last = self.comps.last().copied()],
-        ensures: |ret| ret.as_ref().ok().copied() == entry_last
+        ensures: |ret| ret == entry_last.ok_or(EvalFault::MachineInvariant)
             && self.comps.len() == entry_len.saturating_sub(1_usize),
     )]
     fn pop_comp(&mut self) -> Result<DomainCompId, EvalFault>
@@ -835,16 +963,16 @@ impl<'run> Machine<'run>
     /// - requires: nothing — an id this machine does not hold is admissible
     ///   input.
     /// - ensures: [`Recall::Unshared`] when `term` is no leg this run shares,
-    ///   or when a free index of it resolves to nothing in `env`, which the
-    ///   evaluation then refuses by name; [`Recall::Remembered`] with the weak
-    ///   head a configuration of equal bindings at every free index was
-    ///   evaluated to; and otherwise [`Recall::Pending`], having pushed the
-    ///   task that remembers the weak head the evaluation about to start
-    ///   leaves.
+    ///   or when a free index of it resolves to nothing in `env`; such an open
+    ///   configuration is not cached, and reading the missing index later
+    ///   refuses by name. [`Recall::Remembered`] carries the weak head of equal
+    ///   bindings at every free index; otherwise [`Recall::Pending`] pushes the
+    ///   task that will remember the weak head the evaluation leaves.
     /// - provides: the closed-configuration rule: one evaluation serves every
     ///   occurrence of a leg that reads its free indices in one environment.
-    /// - fails: [`EvalFault::MachineInvariant`] when `env` names no held
-    ///   environment.
+    /// - fails: [`EvalFault::MachineInvariant`] when a shared leg names an
+    ///   environment not held by the machine. An unshared term does not read
+    ///   it.
     /// - panics: none.
     ///
     /// # Errors
@@ -862,6 +990,39 @@ impl<'run> Machine<'run>
     ///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
     /// - witness:
     ///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
+    #[spec(
+        captures: [entry_tasks = self.tasks.len(), entry_pending = self.sharing.pending.len(), entry_remembered = self.sharing.remembered.len()],
+        ensures: |ret| self.sharing.remembered.len() == entry_remembered && {
+            let unchanged = self.tasks.len() == entry_tasks && self.sharing.pending.len() == entry_pending;
+            match ret {
+                Err(fault) => fault == EvalFault::MachineInvariant && unchanged
+                    && self.sharing.legs.contains_key(&term) && self.envs.get(env.0).is_none(),
+                Ok(Recall::Unshared) => unchanged && self.sharing.legs.get(&term).is_none_or(|free| {
+                    self.envs.get(env.0).is_some_and(|environment| {
+                        free.intuitionistic().counts().iter().any(|index| environment.lookup(Zone::Intuitionistic, *index).is_none())
+                            || free.linear().counts().iter().any(|index| environment.lookup(Zone::Linear, *index).is_none())
+                    })
+                }),
+                Ok(Recall::Pending) => self.tasks.len() == entry_tasks.saturating_add(1_usize)
+                    && self.sharing.pending.len() == entry_pending.saturating_add(1_usize)
+                    && matches!(self.tasks.last(), Some(Task::Remember(pending)) if pending.0 == entry_pending)
+                    && self.sharing.pending.last().and_then(Option::as_ref).is_some_and(|configuration| {
+                        configuration.term == term && !self.sharing.remembered.contains_key(configuration)
+                            && self.sharing.legs.get(&term).zip(self.envs.get(env.0)).is_some_and(|(free, environment)| configuration.entries.iter().copied().map(Some).eq(
+            free.intuitionistic().counts().iter().map(|index| environment.lookup(Zone::Intuitionistic, *index))
+                .chain(free.linear().counts().iter().map(|index| environment.lookup(Zone::Linear, *index)))))
+                    }),
+                Ok(Recall::Remembered(remembered)) => unchanged
+                    && self.sharing.legs.get(&term).zip(self.envs.get(env.0)).is_some_and(|(free, environment)| {
+                        self.sharing.remembered.iter().any(|(configuration, head)| configuration.term == term
+                            && *head == remembered && configuration.entries.iter().copied().map(Some).eq(
+            free.intuitionistic().counts().iter().map(|index| environment.lookup(Zone::Intuitionistic, *index))
+                .chain(free.linear().counts().iter().map(|index| environment.lookup(Zone::Linear, *index)))))
+                    }),
+            }
+        },
+    )]
     fn recall(
         &mut self,
         term: CoreTerm,
@@ -912,7 +1073,41 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`EvalFault::MachineInvariant`] — the configuration or its result is
-    ///   missing.
+    ///   missing. The pending slot is taken before reading the result, so a
+    ///   missing result consumes that slot without recording a weak head.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same free bindings are evaluated once even when
+    ///   an unused binding differs, but exchanging values between zones
+    ///   produces a different pair and incurs the first-evaluation cost again.
+    ///   Remembering the wrong head, consuming its operand or conflating keys
+    ///   changes those observations.
+    /// - witness: `eval::tests::shared_configurations_distinguish_zones_but_ignore_unused_bindings`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [entry_pending = self.sharing.pending.len(), entry_remembered = self.sharing.remembered.len(),
+            entry_values = self.values.len(), entry_comps = self.comps.len(),
+            entry_value = self.values.last().copied(), entry_comp = self.comps.last().copied(),
+            entry_configuration = self.sharing.pending.get(pending.0).and_then(Option::as_ref)
+                .map(|configuration| (configuration.term, configuration.entries.len(), configuration.entries.first().copied(), configuration.entries.last().copied()))],
+        ensures: |ret| self.sharing.pending.len() == entry_pending
+            && self.sharing.pending.get(pending.0).is_none_or(Option::is_none)
+            && self.values.len() == entry_values && self.comps.len() == entry_comps
+            && self.values.last().copied() == entry_value && self.comps.last().copied() == entry_comp
+            && {
+                let produced = entry_configuration.and_then(|configuration| match configuration.0 {
+                    CoreTerm::Value(_) => entry_value.map(Glued::Value),
+                    CoreTerm::Computation(_) => entry_comp.map(Glued::Computation),
+                });
+                match produced {
+                    None => ret == Err(EvalFault::MachineInvariant) && self.sharing.remembered.len() == entry_remembered,
+                    Some(produced) => ret.is_ok()
+                        && (self.sharing.remembered.len() == entry_remembered || self.sharing.remembered.len() == entry_remembered.saturating_add(1_usize))
+                        && self.sharing.remembered.iter().any(|(configuration, head)| *head == produced
+                            && Some((configuration.term, configuration.entries.len(), configuration.entries.first().copied(), configuration.entries.last().copied())) == entry_configuration),
+                }
+            },
+    )]
     fn remember(
         &mut self,
         pending: PendingId,
@@ -949,6 +1144,15 @@ impl<'run> Machine<'run>
 ///   matches on the value's own former.
 /// - fails: returns `None` when the id names no node of the value family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unchanged leaves retain their exact source ids while
+///   substituted children and captured closures lose their source faces.
+///   Returning a generic source or Reduced for every value confuses those
+///   cases.
+/// - witness: `eval::tests::the_leaf_and_lift_arms_evaluate_and_keep_their_faces`
+/// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
+/// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
 #[spec(ensures: |ret| ret == domain.value(value).map(DomainValue::face))]
 fn face_of(
     domain: &DomainArena,
@@ -985,7 +1189,17 @@ impl SourceKept
     ///   through, written as a total table for the reason above.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a wholly unchanged pair keeps its face and a pair
+    ///   with one substituted child loses it. Replacing conjunction by
+    ///   disjunction incorrectly preserves the second pair.
+    /// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
+    /// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
     #[inline]
+    #[spec(
+        ensures: |ret| (ret == Self::Kept) == (self == Self::Kept && other == Self::Kept),
+    )]
     fn and(
         self,
         other: Self,
@@ -1013,6 +1227,16 @@ impl SourceKept
 ///   so "nothing inside it reduced" is decided one child at a time.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unchanged source children are distinguished from supplied
+///   values with another source and from reduced faces. Ignoring source
+///   identity gives a substituted composite its original face.
+/// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
+/// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
+#[spec(
+    ensures: |ret| (ret == SourceKept::Kept) == (face_of(domain, value) == Some(TermFace::Source(source))),
+)]
 fn denotes(
     domain: &DomainArena,
     value: DomainValueId,
@@ -1040,6 +1264,18 @@ fn denotes(
 ///   child to compare.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closed lambdas and quotes keep their source faces, while
+///   closures carrying substitutions lose them. Ignoring the captured
+///   environment gives the open closure a source shortcut it cannot justify.
+/// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
+/// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+#[spec(
+    ensures: |ret| (ret == SourceKept::Kept)
+        == (usize::from(environment.depth(Zone::Intuitionistic)) == 0_usize
+            && usize::from(environment.depth(Zone::Linear)) == 0_usize),
+)]
 fn capture_keeps_source(environment: &Environment) -> SourceKept
 {
     if environment.depth(Zone::Intuitionistic) == EnvironmentDepth::from(0_usize)
@@ -1062,6 +1298,16 @@ fn capture_keeps_source(environment: &Environment) -> SourceKept
 ///   rule mints a source face over children that reduced.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unchanged composite retains its own source id and a
+///   composite with a substituted child is Reduced. Inverting the verdict or
+///   using a child source changes these faces.
+/// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
+/// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
+#[spec(
+    ensures: |ret| ret == match kept { SourceKept::Kept => TermFace::Source(term), SourceKept::Lost => TermFace::Reduced },
+)]
 fn composite_face(
     kept: SourceKept,
     term: ValueId,
@@ -1083,6 +1329,16 @@ fn composite_face(
 /// - provides: the negative side's single verdict-to-face site.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed lambda retains its source but a captured lambda
+///   and a return of a substituted value are Reduced. Keeping an original
+///   source after substitution changes these observations.
+/// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
+/// - witness: `eval::tests::a_bind_passes_the_returned_value_on`
+#[spec(
+    ensures: |ret| ret == match kept { SourceKept::Kept => CompTermFace::Source(term), SourceKept::Lost => CompTermFace::Reduced },
+)]
 fn composite_comp_face(
     kept: SourceKept,
     term: ComputationId,
@@ -1107,10 +1363,8 @@ fn composite_comp_face(
 ///   unchanged.
 /// - provides: the one growth step of a stuck spine, shared by all four
 ///   eliminator rules. The clause states the fresh neutral's head, unfolding
-///   face, spine length and appended elimination against the source's, and the
-///   source's own spine length unchanged; the source spine's contents would
-///   need an owned entry snapshot, which the pinned expansion evaluates even in
-///   a non-enforcing build.
+///   face and source form against the entry metadata, and compares the grown
+///   prefix with the still-held source spine without copying an entry snapshot.
 /// - fails: [`EvalFault::Domain`] carrying [`DomainFault::Dangling`] when the
 ///   id names no neutral. The head-against-face condition the arena re-checks
 ///   cannot fail here: both come off a neutral the arena already accepted, so
@@ -1122,24 +1376,24 @@ fn composite_comp_face(
 // and the tail is shared — the same flat-representation move the arena already
 // makes for terms, not taken here because it costs every reader of `spine()` a
 // walk in exchange.
+/// # Adequacy
+/// - hypothesis: L3 — force, application, bind and case grow stuck spines, and
+///   a mixed spine replays to the same returned value after unfolding. Dropping
+///   the prefix, reversing frames or replacing a captured closure changes that
+///   result.
+/// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
+/// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+/// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
 #[spec(
-    captures: [
-        entry_form = domain
-            .neutral(neutral)
-            .map(|held| (held.head(), held.unfolding(), held.spine().len())),
-    ],
+    captures: [entry_form = domain.neutral(neutral).map(|held| (held.head(), held.unfolding(), held.spine().len()))],
     ensures: |ret| match ret {
-        | Ok(fresh) => {
-            domain
-                .neutral(fresh)
-                .map(|held| (held.head(), held.unfolding(), held.spine().len()))
-                == entry_form.map(|form| (form.0, form.1, form.2.saturating_add(1_usize)))
-                && domain.neutral(fresh).and_then(|held| held.spine().last().copied())
-                    == Some(elimination)
-                && domain.neutral(neutral).map(|held| held.spine().len())
-                    == entry_form.map(|form| form.2)
-        },
-        | Err(_) => entry_form.is_none(),
+        Ok(fresh) => domain.neutral(fresh).map(|held| (held.head(), held.unfolding(), held.spine().len()))
+            == entry_form.map(|form| (form.0, form.1, form.2.saturating_add(1_usize)))
+            && domain.neutral(neutral).map(|held| (held.head(), held.unfolding(), held.spine().len())) == entry_form
+            && domain.neutral(neutral).zip(domain.neutral(fresh)).is_some_and(|(source, grown)| {
+                grown.spine().split_last().is_some_and(|(last, prefix)| *last == elimination && prefix == source.spine())
+            }),
+        Err(fault) => fault == EvalFault::Domain(DomainFault::Dangling) && entry_form.is_none(),
     },
 )]
 pub fn extend_spine(
@@ -1176,10 +1430,10 @@ pub fn extend_spine(
 ///   neutral in the result carries the unfolding face `definitions` gives its
 ///   head, are judgements over the whole produced graph rather than over one
 ///   call's exit state, and the witnesses below carry them.
-/// - fails: every variant of [`EvalFault`]; a refusal mints nothing the caller
-///   can observe, because the ids it would have returned are never handed back.
-///   [`EvalFault::DanglingTerm`] is publicly reachable: a term id minted by one
-///   core arena and evaluated against another names no node there.
+/// - fails: every variant of [`EvalFault`]. A refusal returns no produced id;
+///   the arena may retain nodes minted before the refusal.
+///   [`EvalFault::DanglingTerm`] is publicly reachable when the passed core
+///   arena holds no node at the supplied term id.
 /// - panics: none — every stack read is checked and every arithmetic step is
 ///   saturating.
 /// - intension: the machine performs one task per step and spends one unit of
@@ -1201,6 +1455,7 @@ pub fn extend_spine(
 /// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
 /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
 /// - witness: `eval::tests::a_term_from_another_arena_is_refused`
+/// - witness: `eval::tests::a_refused_evaluation_leaves_existing_values_usable`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
@@ -1624,6 +1879,16 @@ impl<'run> Evaluation<'run>
     ///   distinct body entry.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a zero-step first slice pauses and the next exact
+    ///   one-step slice produces the requested unit with its source face.
+    ///   Losing or replacing the initial task changes that answer.
+    /// - witness: `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause`
+    #[spec(
+        ensures: |ret| ret.answer == Answer::Value && ret.machine.fuel.0 == 0_u32
+            && matches!(ret.machine.tasks.as_slice(), [Task::Value { term, env }] if *term == body && env.0 == 0_usize),
+    )]
     pub(crate) fn body(
         definitions: Definitions<'run>,
         body: ValueId,
@@ -1656,11 +1921,42 @@ impl<'run> Evaluation<'run>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — reapplied neutral eliminations preserve their head
-    ///   and produce a value only for an entirely static-application spine.
+    /// - hypothesis: L3 — a mixed force/application/bind spine reduces after
+    ///   unfolding, two case branches retain different captures, and later
+    ///   ill-shaped eliminations refuse by variant. Reversing frames or
+    ///   supplying an argument after its consumer changes the answer or the
+    ///   refusal.
     /// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+    /// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+    /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(requires: !spine.is_empty(), ensures: |ret| ret.machine.values.as_slice() == [head] && ret.answer == if spine.iter().all(|item| matches!(item, &Elimination::StaticApply(_))) { Answer::Value } else { Answer::Computation })]
+    #[spec(
+        requires: matches!(spine.first(), Some(Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_))),
+        ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
+            && ret.machine.fuel.0 == 0_u32 && {
+                let mut tasks = ret.machine.tasks.iter().rev();
+                let mut answer = Answer::Value;
+                let ordered = spine.iter().all(|elimination| match *elimination {
+                    Elimination::Transport(value) => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Transport)) },
+                    Elimination::ProductTransport(path) => { answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::ProductTransport(held)) if *held == path) },
+                    Elimination::StaticApply(argument) => matches!(tasks.next(), Some(Task::Supply(value)) if *value == argument)
+                        && matches!(tasks.next(), Some(Task::StaticApply)),
+                    Elimination::Apply(argument) => {
+                        answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::Supply(value)) if *value == argument) && matches!(tasks.next(), Some(Task::Apply))
+                    },
+                    Elimination::Force => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::Force)) },
+                    Elimination::Bind(body) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::BindClosure(held)) if *held == body) },
+                    Elimination::Case { on_left, on_right } => {
+                        answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::CaseClosures { on_left: left, on_right: right }) if *left == on_left && *right == on_right)
+                    },
+                });
+                ordered && tasks.next().is_none() && ret.answer == answer
+            },
+    )]
     pub(crate) fn eliminate(
         definitions: Definitions<'run>,
         head: DomainValueId,
@@ -1724,15 +2020,31 @@ impl<'run> Evaluation<'run>
     /// - [`EvalFault::Domain`] — `closure` names no closure of `domain`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — closure entry retains its source or native body and
-    ///   computation polarity; a supplied binder is observed by evaluation.
+    /// - hypothesis: L3 — a thunk resumes under its captured environment, while
+    ///   opening a lambda adds its argument inside the existing capture.
+    ///   Emptying the capture or opening in the wrong zone changes the weak
+    ///   head and the conversion verdict.
+    /// - witness: `eval::tests::a_sliced_evaluation_agrees_with_an_unsliced_one`
+    /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
+    /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
     /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(ensures: |ret| match ret {
-        Ok(ref evaluation) => evaluation.answer == Answer::Computation && domain.comp_closure(closure).is_some_and(|held| matches!(evaluation.machine.tasks.as_slice(), &[Task::Body { body, .. }] if body == held.body())),
-        Err(EvalFault::Domain(DomainFault::Dangling)) => domain.comp_closure(closure).is_none(),
-        Err(_) => false,
-    })]
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(
+            |fault| *fault == EvalFault::Domain(DomainFault::Dangling) && domain.comp_closure(closure).is_none(),
+            |evaluation| evaluation.answer == Answer::Computation && evaluation.machine.fuel.0 == 0_u32
+                && domain.comp_closure(closure).is_some_and(|held| match evaluation.machine.tasks.as_slice() {
+                    &[Task::Body { body: term, env }] => term == held.body() && evaluation.machine.envs.get(env.0).is_some_and(|environment| match bound {
+                        Bound::Nothing => environment == held.environment(),
+                        Bound::Variable(variable) => usize::from(environment.depth(Zone::Intuitionistic))
+                            == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(1_usize)
+                            && environment.depth(Zone::Linear) == held.environment().depth(Zone::Linear)
+                            && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(variable),
+                    }),
+                    _ => false,
+                }),
+        ),
+    )]
     pub(crate) fn enter(
         definitions: Definitions<'run>,
         domain: &DomainArena,
@@ -1781,7 +2093,20 @@ impl<'run> Evaluation<'run>
     ///   driven to its answer through slices of one step each, which must
     ///   agree.
     /// - witness: `eval::tests::a_sliced_evaluation_agrees_with_an_unsliced_one`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pair| u32::from(pair.1) <= u32::from(slice)))]
+    /// - witness: `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause`
+    /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+    #[spec(
+        captures: [entry_tasks = self.machine.tasks.len(), entry_values = self.machine.values.len(), entry_comps = self.machine.comps.len()],
+        ensures: |ret| self.machine.fuel.0 <= slice.0 && ret != Err(EvalFault::OutOfFuel)
+            && (slice.0 != 0_u32 || entry_tasks == 0_usize || (ret == Ok((Progress::Paused, Fuel(0_u32)))
+                && self.machine.tasks.len() == entry_tasks && self.machine.values.len() == entry_values && self.machine.comps.len() == entry_comps))
+            && ret.as_ref().map_or(true, |&(progress, spent)| spent.0 == slice.0.saturating_sub(self.machine.fuel.0)
+                && match progress {
+                    Progress::Paused => !self.machine.tasks.is_empty() && self.machine.fuel.0 == 0_u32,
+                    Progress::Finished(Glued::Value(_)) => self.machine.tasks.is_empty() && self.answer == Answer::Value,
+                    Progress::Finished(Glued::Computation(_)) => self.machine.tasks.is_empty() && self.answer == Answer::Computation,
+                }),
+    )]
     pub(crate) fn resume(
         &mut self,
         core: &CoreArena,
@@ -1838,6 +2163,24 @@ pub enum Bound
 /// - boundedness: the loop ends when the fuel is zero or the task stack is
 ///   empty, whichever is first.
 /// - input recursion: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a zero slice leaves the initial task available, exact
+///   exhaustion on the finishing task finishes rather than pauses, and one-step
+///   slices agree with an uninterrupted run. Popping before the budget check or
+///   checking exhaustion before completion changes these boundaries.
+/// - witness: `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause`
+/// - witness: `eval::tests::a_sliced_evaluation_agrees_with_an_unsliced_one`
+#[spec(
+    captures: [entry_fuel = machine.fuel, entry_tasks = machine.tasks.len(), entry_domain = domain.watermark()],
+    ensures: |ret| machine.fuel.0 <= entry_fuel.0 && ret != Err(EvalFault::OutOfFuel)
+        && (entry_fuel.0 != 0_u32 || (machine.tasks.len() == entry_tasks && domain.watermark() == entry_domain))
+        && match ret {
+            Ok(SliceEnd::Drained) => machine.tasks.is_empty(),
+            Ok(SliceEnd::Spent) => !machine.tasks.is_empty() && machine.fuel.0 == 0_u32,
+            Err(_) => true,
+        },
+)]
 fn run_slice(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -1884,7 +2227,9 @@ fn run_slice(
 /// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
 #[spec(
     requires: !machine.tasks.is_empty(),
-    ensures: |ret| ret.is_err() || machine.tasks.is_empty(),
+    captures: [entry_fuel = machine.fuel],
+    ensures: |ret| machine.fuel.0 <= entry_fuel.0 && (ret.is_err() || machine.tasks.is_empty())
+        && (ret != Err(EvalFault::OutOfFuel) || machine.fuel.0 == 0_u32),
 )]
 fn run(
     core: &CoreArena,
@@ -1908,14 +2253,16 @@ fn run(
 /// Perform one task.
 ///
 /// # Specification
-/// - requires: `task` was popped from `machine`'s own stack, so its operands
-///   are on the result stacks.
+/// - requires: `task` belongs to this run. A malformed re-applied spine may
+///   leave an operand absent, which is reported as
+///   [`EvalFault::MachineInvariant`].
 /// - ensures: the task's result is pushed on the stack of its own polarity, or
 ///   further tasks are pushed that will produce it. Fuel remains unchanged: the
 ///   driver, not a transition, charges the popped task.
 /// - provides: the machine's whole transition relation, one arm per source
-///   former plus one per assembly frame. The executable boundary fixes fuel
-///   ownership; witnesses distinguish source and assembly results.
+///   former plus one per assembly frame. Scalar lengths and copied operands
+///   state the assembly transitions and preserve polarity; the delegated
+///   eliminators state their own transitions. Only the driver charges fuel.
 /// - fails: every variant of [`EvalFault`] except [`EvalFault::OutOfFuel`],
 ///   which belongs to the driver rather than to a step.
 /// - panics: none.
@@ -1928,7 +2275,60 @@ fn run(
 /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
-#[spec(captures: before = machine.fuel, ensures: |ret| machine.fuel == before && !matches!(ret, Err(EvalFault::OutOfFuel)))]
+/// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+#[spec(
+    captures: [entry_fuel = machine.fuel, entry_tasks = machine.tasks.len(),
+        entry_values = machine.values.len(), entry_comps = machine.comps.len(),
+        entry_value = machine.values.last().copied(),
+        entry_first = machine.values.len().checked_sub(2_usize).and_then(|index| machine.values.get(index)).copied()],
+    ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
+        && (ret.is_err() || match task {
+            Task::Value { .. } => machine.comps.len() == entry_comps
+                && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
+                    || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
+            Task::Body { body: crate::closure::CompBody::Source(_), .. } | Task::Comp { .. } => machine.values.len() == entry_values
+                && ((machine.comps.len() == entry_comps.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
+                    || (machine.comps.len() == entry_comps && machine.tasks.len() > entry_tasks)),
+            Task::Body { body: crate::closure::CompBody::Pair(first), env } => machine.values.len() == entry_values
+                && machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps.saturating_add(1)
+                && matches!(machine.comps.last().and_then(|&id| domain.computation(id)), Some(&DomainComp::Return { value, .. })
+                    if matches!(domain.value(value), Some(&DomainValue::Pair { first: held, second, .. })
+                        if held == first && machine.env(env).is_ok_and(|environment| environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)))),
+            Task::Body { body: crate::closure::CompBody::TransportPair { path, value }, .. } => machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(2) && machine.values.ends_with(&[path, value])
+                && machine.tasks.len() == entry_tasks.saturating_add(2)
+                && matches!(machine.tasks.get(entry_tasks..), Some([Task::BindClosure(_), Task::Transport])),
+            Task::PathProduct(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && entry_values.checked_sub(1) == Some(machine.values.len())
+                && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
+                    if Some(first) == entry_first && Some(second) == entry_value),
+            Task::Pair { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && entry_values.checked_sub(1_usize) == Some(machine.values.len())
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::Pair { first, second, .. }) if Some(*first) == entry_first && Some(*second) == entry_value),
+            Task::Inject { term } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::Injection { side, body, .. }) if Some(*body) == entry_value
+                        && matches!(core.value(term), Some(Value::Injection(source_side, _)) if source_side == side)),
+            Task::Lift { target, .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::Lift { target: held, body, .. }) if *held == target && Some(*body) == entry_value),
+            Task::Return { .. } => machine.tasks.len() == entry_tasks
+                && entry_values.checked_sub(1_usize) == Some(machine.values.len())
+                && machine.comps.len() == entry_comps.saturating_add(1_usize)
+                && matches!(machine.comps.last().and_then(|comp| domain.computation(*comp)),
+                    Some(DomainComp::Return { value, .. }) if Some(*value) == entry_value),
+            Task::Supply(value) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && machine.values.len() == entry_values.saturating_add(1_usize) && machine.values.last() == Some(&value),
+            Task::Remember(pending) => machine.tasks.len() == entry_tasks && machine.values.len() == entry_values
+                && machine.comps.len() == entry_comps && machine.sharing.pending.get(pending.0).is_none_or(Option::is_none),
+            Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
+            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) => machine.tasks.len() >= entry_tasks,
+        }),
+)]
 fn step(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -2091,7 +2491,7 @@ fn step(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the ten-arm match plus the
+/// - hypothesis: L3 — the decision surface is the value-former match plus the
 ///   variable and constant lookups, separated by one case per arm — the leaf
 ///   arms and the lift arm included, the last being the only one that holds a
 ///   level and so the only producer of the level family — an index past the
@@ -2339,7 +2739,7 @@ fn step_comp(
 /// Run the thunk the value on the stack holds, or get stuck on it.
 ///
 /// # Specification
-/// - requires: one value result on the stack.
+/// - requires: nothing; a missing value operand is admissible and refused.
 /// - ensures: a thunk pushes a task entering its closure, so the forced
 ///   computation's weak head becomes this task's result; a stuck value grows
 ///   its neutral's spine by one `force`.
@@ -2348,8 +2748,10 @@ fn step_comp(
 ///   computation result; that the stuck outcome's spine grew by exactly one
 ///   `force` is a judgement over the produced graph, and the witnesses below
 ///   carry it.
-/// - fails: [`EvalFault::ForcedNonThunk`] for any other value, which is an
-///   ill-typed input this crate does not re-derive types to exclude.
+/// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
+///   [`EvalFault::Domain`] when the value or its closure does not resolve, and
+///   [`EvalFault::ForcedNonThunk`] for another value. Ill-typed inputs are
+///   refused rather than re-derived here.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2358,19 +2760,20 @@ fn step_comp(
 /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 #[spec(
-    requires: !machine.values.is_empty(),
     captures: [
         entry_values = machine.values.len(),
         entry_comps = machine.comps.len(),
         entry_tasks = machine.tasks.len(),
     ],
-    ensures: |ret| ret.is_err()
+    ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_values == 0_usize))
+        && (ret.is_err()
         || (machine.values.len() == entry_values.saturating_sub(1_usize)
             && ((machine.tasks.len() == entry_tasks.saturating_add(1_usize)
                 && machine.comps.len() == entry_comps)
                 || (machine.comps.len() == entry_comps.saturating_add(1_usize)
-                    && machine.tasks.len() == entry_tasks))),
+                    && machine.tasks.len() == entry_tasks)))),
 )]
 fn step_force(
     domain: &mut DomainArena,
@@ -2415,7 +2818,7 @@ fn step_force(
 /// Apply the weak head on the stack to the value on the stack.
 ///
 /// # Specification
-/// - requires: one computation result and one value result on the stacks.
+/// - requires: nothing; a missing head or argument is admissible and refused.
 /// - ensures: a lambda pushes a task entering its closure with the argument
 ///   bound in the intuitionistic zone; a neutral grows its spine by one
 ///   application.
@@ -2425,7 +2828,9 @@ fn step_force(
 ///   result standing for the grown neutral; that the stuck outcome's spine grew
 ///   by exactly one application is a judgement over the produced graph, and the
 ///   witnesses below carry it.
-/// - fails: [`EvalFault::AppliedNonFunction`] when the head is a returner.
+/// - fails: [`EvalFault::MachineInvariant`] for a missing head or argument,
+///   [`EvalFault::Domain`] for a missing node, and
+///   [`EvalFault::AppliedNonFunction`] when the head is a returner.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2434,19 +2839,20 @@ fn step_force(
 /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 #[spec(
-    requires: [!machine.comps.is_empty(), !machine.values.is_empty()],
     captures: [
         entry_values = machine.values.len(),
         entry_comps = machine.comps.len(),
         entry_tasks = machine.tasks.len(),
     ],
-    ensures: |ret| ret.is_err()
+    ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_comps == 0_usize || entry_values == 0_usize))
+        && (ret.is_err()
         || (machine.values.len() == entry_values.saturating_sub(1_usize)
             && ((machine.tasks.len() == entry_tasks.saturating_add(1_usize)
                 && machine.comps.len() == entry_comps.saturating_sub(1_usize))
                 || (machine.comps.len() == entry_comps
-                    && machine.tasks.len() == entry_tasks))),
+                    && machine.tasks.len() == entry_tasks)))),
 )]
 fn step_apply(
     domain: &mut DomainArena,
@@ -2499,8 +2905,8 @@ fn step_apply(
 /// top of it.
 ///
 /// # Specification
-/// - requires: two value results on the stack, the operator beneath the
-///   argument.
+/// - requires: nothing; a malformed spine may leave an operator or argument
+///   missing, which is refused rather than assumed away.
 /// - ensures: a static lambda pushes a task entering its body with the argument
 ///   bound in the intuitionistic zone; a neutral grows its spine by one static
 ///   application and stands as a value again.
@@ -2511,10 +2917,10 @@ fn step_apply(
 ///   result standing for the grown neutral; that the stuck outcome's spine grew
 ///   by exactly one static application is a judgement over the produced graph,
 ///   and the witnesses below carry it.
-/// - fails: [`EvalFault::AppliedNonOperator`] when the operator is neither a
-///   static lambda nor stuck, an ill-typed input this crate does not re-derive
-///   types to exclude; [`EvalFault::DanglingTerm`] when the lambda's closure
-///   holds anything but a static lambda.
+/// - fails: [`EvalFault::MachineInvariant`] for a missing operator or argument;
+///   [`EvalFault::AppliedNonOperator`] when the operator is neither a static
+///   lambda nor stuck, without re-deriving types; [`EvalFault::DanglingTerm`]
+///   when the lambda's closure holds anything but a static lambda.
 /// - panics: none.
 ///
 /// # Errors
@@ -2532,17 +2938,18 @@ fn step_apply(
 /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
 /// - witness: `static_normalization::static_normalization::a_static_redex_normalizes_to_its_ground_type`
 /// - witness: `static_normalization::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 #[spec(
-    requires: machine.values.len() >= 2_usize,
     captures: [
         entry_values = machine.values.len(),
         entry_tasks = machine.tasks.len(),
     ],
-    ensures: |ret| ret.is_err()
+    ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_values < 2_usize))
+        && (ret.is_err()
         || (machine.values.len() == entry_values.saturating_sub(2_usize)
             && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
         || (machine.values.len() == entry_values.saturating_sub(1_usize)
-            && machine.tasks.len() == entry_tasks),
+            && machine.tasks.len() == entry_tasks)),
 )]
 fn step_static_apply(
     core: &CoreArena,
@@ -2747,24 +3154,32 @@ fn step_case(
 /// has a weak head.
 ///
 /// # Specification
-/// - requires: one computation result on the stack.
+/// - requires: nothing; an absent computation operand is admissible and
+///   refused.
 /// - ensures: a returner pushes the continuation's body with the returned value
 ///   bound innermost in its own environment; a neutral grows its spine by the
 ///   same bind, the closure reused rather than re-captured.
 /// - provides: [`step_bind`] for a continuation a spine already captured, which
 ///   is how an unfolding re-applies a stuck bind.
-/// - fails: [`EvalFault::BoundNonReturner`] when the bound computation is a
-///   lambda, [`EvalFault::Domain`] when a node does not resolve.
+/// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
+///   [`EvalFault::BoundNonReturner`] when it is a lambda, and
+///   [`EvalFault::Domain`] when a needed node does not resolve.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the three-way match, separated by
 ///   an unfolded body that returns into the bind and one that stays stuck.
 /// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+/// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+/// - witness: `eval::tests::reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers`
 #[spec(
-    requires: !machine.comps.is_empty(),
-    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
-    ensures: |ret| ret.is_err() || (machine.values.len() == values && ((machine.comps.len() == comps.saturating_sub(1) && machine.tasks.len() == tasks.saturating_add(1)) || (machine.comps.len() == comps && machine.tasks.len() == tasks))),
+    captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_comps == 0_usize))
+        && machine.values.len() == entry_values
+        && (ret.is_err()
+            || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
+            || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)),
 )]
 fn step_bind_closure(
     domain: &mut DomainArena,
@@ -2804,24 +3219,34 @@ fn step_bind_closure(
 /// value.
 ///
 /// # Specification
-/// - requires: one value result on the stack.
+/// - requires: nothing; an absent value operand is admissible and refused.
 /// - ensures: an injection pushes the named branch's body with the injected
 ///   value bound innermost in that branch's own environment; a neutral grows
-///   its spine by the same case, both closures reused.
+///   its spine by the same case, both closures reused. Only the selected branch
+///   is read; a missing unselected closure does not refuse the chosen branch.
 /// - provides: [`step_case`] for branches a spine already captured, which is
 ///   how an unfolding re-applies a stuck case.
-/// - fails: [`EvalFault::CasedNonInjection`] for any other value,
-///   [`EvalFault::Domain`] when a node does not resolve.
+/// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
+///   [`EvalFault::CasedNonInjection`] for another value, and
+///   [`EvalFault::Domain`] when the scrutinee or chosen closure does not
+///   resolve.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the three-way match and the side
 ///   selection, separated by an unfolded scrutinee injecting on the right.
 /// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+/// - witness: `eval::tests::reapplied_eliminations_preserve_captures_and_argument_order`
+/// - witness: `eval::tests::reapplied_cases_refuse_only_when_the_selected_closure_is_missing`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
+/// - witness: `eval::tests::reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers`
 #[spec(
-    requires: !machine.values.is_empty(),
-    captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
-    ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(1) && ((machine.comps.len() == comps && machine.tasks.len() == tasks.saturating_add(1)) || (machine.comps.len() == comps.saturating_add(1) && machine.tasks.len() == tasks))),
+    captures: [entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_tasks = machine.tasks.len()],
+    ensures: |ret| ((ret == Err(EvalFault::MachineInvariant)) == (entry_values == 0_usize))
+        && (ret.is_err()
+            || (machine.values.len() == entry_values.saturating_sub(1_usize)
+                && ((machine.tasks.len() == entry_tasks.saturating_add(1_usize) && machine.comps.len() == entry_comps)
+                    || (machine.comps.len() == entry_comps.saturating_add(1_usize) && machine.tasks.len() == entry_tasks)))),
 )]
 fn step_case_closures(
     domain: &mut DomainArena,
@@ -2873,13 +3298,14 @@ fn step_case_closures(
 /// Apply a native path using the same iterative evaluation stack as CBPV.
 ///
 /// # Specification
-/// - requires: the value stack holds a path followed by its source operand.
+/// - requires: nothing; missing operands are admitted as malformed spines.
 /// - ensures: reflexivity returns unchanged; equivalence invokes the forward
 ///   map; product transport uses ordinary bind closures, including neutral
 ///   cases.
 /// - provides: a returned value, a forward application or sequenced components,
 ///   never an evaluation of a certificate merely to compare it.
-/// - fails: dangling nodes, non-path operands, or existing evaluation faults.
+/// - fails: missing operands are `MachineInvariant`; dangling nodes, non-path
+///   operands and existing evaluation faults retain their errors.
 /// - panics: none.
 ///
 /// # Errors
@@ -2887,12 +3313,13 @@ fn step_case_closures(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — product components sequence and reflexivity preserves
-///   values.
+///   values. A computation-valued prefix followed by transport must return a
+///   machine fault rather than panic under enforcement.
 /// - witness: `eval::tests::native_transport_sequences_product_components`
+/// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
 #[spec(
-    requires: machine.values.len() >= 2,
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len(), path = machine.values.get(machine.values.len().saturating_sub(2)).copied(), value = machine.values.last().copied()],
-    ensures: |ret| ret.is_err() || match path.and_then(|id| domain.value(id)) {
+    ensures: |ret| if values < 2 { ret == Err(EvalFault::MachineInvariant) && machine.values.is_empty() && machine.comps.len() == comps && machine.tasks.len() == tasks } else { ret.is_err() || match path.and_then(|id| domain.value(id)) {
         Some(&DomainValue::PathCertificate { certificate, .. }) => match core.value(certificate) {
             Some(&Value::PathRefl(_)) => machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1) && machine.comps.last().is_some_and(|&id| matches!(domain.computation(id), Some(&DomainComp::Return { value: returned, .. }) if Some(returned) == value)),
             Some(&Value::PathEquiv { forward, .. }) => machine.values.len() == values.saturating_sub(1) && machine.values.last().copied() == value && machine.comps.len() == comps && matches!(machine.tasks.get(tasks..), Some(&[Task::Apply, Task::Force, Task::Value { term, .. }]) if term == forward),
@@ -2901,7 +3328,7 @@ fn step_case_closures(
         Some(&DomainValue::PathProduct { .. }) => (machine.values.len() == values && machine.tasks.len() == tasks.saturating_add(2) && machine.comps.len() == comps) || (machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1)),
         Some(&DomainValue::Neutral { .. }) => machine.values.len() == values.saturating_sub(2) && machine.tasks.len() == tasks && machine.comps.len() == comps.saturating_add(1),
         _ => false,
-    },
+    } },
 )]
 fn step_transport(
     core: &CoreArena,
@@ -2983,6 +3410,7 @@ mod tests
     use alloc::vec::Vec;
     use core::convert::Infallible;
 
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
@@ -3041,6 +3469,17 @@ mod tests
     /// - provides: the budget every finishing case is run with; the exhaustion
     ///   cases name their own small budgets.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the positive budget is sufficient for the finite
+    ///   beta, bind and case fixtures, whose exact results would instead be
+    ///   `OutOfFuel` if the budget did not cover their work.
+    /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
+    /// - witness: `eval::tests::a_bind_passes_the_returned_value_on`
+    /// - witness: `eval::tests::a_case_picks_the_branch_the_injection_names`
+    #[spec(
+        ensures: |ret| ret.0 > 0_u32,
+    )]
     fn ample() -> Fuel
     {
         Fuel::from(4_096_u32)
@@ -3064,6 +3503,16 @@ mod tests
     /// - provides: the definition side of every fixture that is about reduction
     ///   rather than unfolding.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant under the empty chain remains a rigid
+    ///   neutral and its eliminations remain stuck. Introducing a body would
+    ///   change the unfolding face and the normalization path.
+    /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
+    /// - witness: `eval::tests::normalization_preserves_a_stuck_application`
+    #[spec(
+        ensures: |ret| ret.0.chain.entries().is_empty() && ret.0.bodies.is_empty(),
+    )]
     fn nothing_unfolds() -> (LoweredChain, DefinitionalEnvironment)
     {
         (LoweredChain::new(), DefinitionalEnvironment::new())
@@ -3079,6 +3528,20 @@ mod tests
     ///   face without forcing it, where what the body lowers to is not what is
     ///   asserted.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one lowered definition is manifest or sealed
+    ///   according to the chosen scope, and its unforced face names the
+    ///   admitted body. Losing a body mapping or using another lowering
+    ///   prevents the advertised definition from being forced.
+    /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
+    /// - witness: `eval::tests::a_sealed_definition_is_rigid`
+    #[spec(
+        captures: [entry_count = chain.entries().len()],
+        ensures: |ret| ret.chain.entries().len() == entry_count
+            && ret.bodies.values().all(|body| *body == lowered)
+            && ret.chain.entries().iter().all(|entry| ret.bodies.get(&entry.body()) == Some(&lowered)),
+    )]
     fn lowered_to(
         chain: DefinitionChain,
         lowered: ValueId,
@@ -3393,6 +3856,8 @@ mod tests
         let inner = core.computation_lambda(returner);
         let outer = core.computation_lambda(inner);
         let applied = core.computation_application(outer, argument);
+        let different = core.value_pair(argument, argument);
+        let applied_twice = core.computation_application(applied, different);
 
         let (chain, environment) = nothing_unfolds();
         let scope = environment.root();
@@ -3421,6 +3886,17 @@ mod tests
             CompTermFace::Reduced,
             face,
             "one that captured a binding denotes its body only up to what the environment supplies"
+        );
+        let twice = eval_computation(&core, &mut domain, definitions, ample(), applied_twice)
+            .expect("the captured outer binding survives the second application");
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(twice)
+        else {
+            panic!("the outer-bound variable returns its argument");
+        };
+        assert_eq!(
+            Some(TermFace::Source(argument)),
+            face_of(&domain, value),
+            "the captured unit, not the inner pair argument, is returned"
         );
     }
 
@@ -4194,7 +4670,6 @@ mod tests
 
         let mut sliced = Evaluation::enter(definitions, &domain, body, Bound::Nothing)
             .expect("the closure resolves");
-        let mut slices = 0_u32;
         let answer = loop {
             let (progress, spent) = sliced
                 .resume(&core, &mut domain, Fuel::from(1_u32))
@@ -4203,21 +4678,15 @@ mod tests
                 u32::from(spent) <= 1_u32,
                 "a slice never outspends its budget"
             );
-            slices = slices.saturating_add(1_u32);
             if let Progress::Finished(answer) = progress {
                 break answer;
             }
         };
 
-        assert!(
-            slices > 2_u32,
-            "the redex takes several steps, so one-step slices paused between them"
-        );
         let Glued::Computation(sliced) = answer
         else {
             panic!("an entered closure answers a computation");
         };
-        assert_ne!(unsliced, sliced, "two runs minted two nodes");
         assert_eq!(
             Ok(Settlement::StructurallyEqual),
             convert_computations(&core, &domain, unsliced, sliced),
@@ -4304,5 +4773,342 @@ mod tests
                  unfolded head in order"
             );
         }
+    }
+
+    #[test]
+    fn a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let mut evaluation = Evaluation::body(definitions, unit);
+        assert_eq!(
+            Ok((Progress::Paused, Fuel::from(0_u32))),
+            evaluation.resume(&core, &mut domain, Fuel::from(0_u32))
+        );
+        let (progress, spent) = evaluation
+            .resume(&core, &mut domain, Fuel::from(1_u32))
+            .expect("the unspent task is still available");
+        assert_eq!(Fuel::from(1_u32), spent);
+        let Progress::Finished(Glued::Value(value)) = progress
+        else {
+            panic!("draining on the last available step finishes rather than pauses");
+        };
+        assert_eq!(
+            Some(&DomainValue::Unit {
+                face: TermFace::Source(unit)
+            }),
+            domain.value(value)
+        );
+    }
+
+    #[test]
+    fn reapplied_eliminations_preserve_captures_and_argument_order()
+    {
+        let mut core = CoreArena::new();
+        let argument = core.value_variable(Zone::Intuitionistic, innermost());
+        let captured = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let pair = core.value_pair(captured, argument);
+        let body = core.computation_return(pair);
+        let pass = core.computation_return(argument);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let first = domain.value_unit(TermFace::Reduced);
+        let second = domain.value_injection(Side::Left, first, TermFace::Reduced);
+        let supplied = domain.value_injection(Side::Right, first, TermFace::Reduced);
+        let mut left_capture = Environment::new();
+        left_capture.extend(Zone::Intuitionistic, first);
+        let mut right_capture = Environment::new();
+        right_capture.extend(Zone::Intuitionistic, second);
+        let on_left = domain.comp_closure_node(body, left_capture);
+        let on_right = domain.comp_closure_node(body, right_capture);
+        let left = domain.value_injection(Side::Left, supplied, TermFace::Reduced);
+        let right = domain.value_injection(Side::Right, supplied, TermFace::Reduced);
+        let mut returned_capture = Environment::new();
+        returned_capture.extend(Zone::Intuitionistic, supplied);
+        let returning = domain.comp_closure_node(pass, returned_capture);
+        let thunk = domain.value_thunk(returning, TermFace::Reduced);
+        let case = [Elimination::Case { on_left, on_right }];
+        let bind = [Elimination::Force, Elimination::Bind(on_right)];
+        for (head, spine, expected_capture) in [
+            (left, case.as_slice(), first),
+            (right, case.as_slice(), second),
+            (thunk, bind.as_slice(), second),
+        ] {
+            let mut evaluation = Evaluation::eliminate(definitions, head, spine);
+            let (progress, _spent) = evaluation
+                .resume(&core, &mut domain, ample())
+                .expect("the captured elimination has its operands");
+            let Progress::Finished(Glued::Computation(answer)) = progress
+            else {
+                panic!("each elimination finishes at a returner");
+            };
+            let Some(&DomainComp::Return { value, .. }) = domain.computation(answer)
+            else {
+                panic!("the selected continuation returns its pair");
+            };
+            assert_eq!(
+                Some(&DomainValue::Pair {
+                    first: expected_capture,
+                    second: supplied,
+                    face: TermFace::Reduced,
+                }),
+                domain.value(value),
+                "the old capture stays outside the new argument, in the selected environment"
+            );
+        }
+    }
+
+    #[test]
+    fn reapplied_cases_refuse_only_when_the_selected_closure_is_missing()
+    {
+        let mut core = CoreArena::new();
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let body = core.computation_return(occurrence);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let value = domain.value_unit(TermFace::Reduced);
+        let mut captured = Environment::new();
+        captured.extend(Zone::Intuitionistic, value);
+        let live = domain.comp_closure_node(body, captured);
+        let left = domain.value_injection(Side::Left, value, TermFace::Reduced);
+        let right = domain.value_injection(Side::Right, value, TermFace::Reduced);
+        let boundary = domain.watermark();
+        let missing = domain.comp_closure_node(body, Environment::new());
+        domain.truncate_to(boundary);
+        let spine = [Elimination::Case {
+            on_left: missing,
+            on_right: live,
+        }];
+        let mut selected_live = Evaluation::eliminate(definitions, right, &spine);
+        let (progress, _spent) = selected_live
+            .resume(&core, &mut domain, ample())
+            .expect("the unselected closure is not read");
+        let Progress::Finished(Glued::Computation(answer)) = progress
+        else {
+            panic!("the live branch finishes");
+        };
+        assert_eq!(
+            Some(&DomainComp::Return {
+                value,
+                face: CompTermFace::Reduced
+            }),
+            domain.computation(answer)
+        );
+        let mut selected_missing = Evaluation::eliminate(definitions, left, &spine);
+        assert_eq!(
+            Err(EvalFault::Domain(super::DomainFault::Dangling)),
+            selected_missing.resume(&core, &mut domain, ample())
+        );
+    }
+
+    #[test]
+    fn shared_configurations_distinguish_zones_but_ignore_unused_bindings()
+    {
+        let mut core = CoreArena::new();
+        let intuitionistic = core.value_variable(Zone::Intuitionistic, innermost());
+        let linear = core.value_variable(Zone::Linear, innermost());
+        let pair = core.value_pair(intuitionistic, linear);
+        let term = super::CoreTerm::Value(pair);
+        let mut indices = crate::free::FreeIndices::default();
+        let free = indices
+            .of(&core, term)
+            .expect("both free indices resolve in the core")
+            .clone();
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut machine = super::Machine::new(definitions, ample());
+        machine.sharing.legs.insert(term, free);
+        let mut domain = DomainArena::new();
+        let unit = domain.value_unit(TermFace::Reduced);
+        let injection = domain.value_injection(Side::Left, unit, TermFace::Reduced);
+        for (first, second, unused, steps) in [
+            (unit, injection, unit, 5_u32),
+            (unit, injection, injection, 1_u32),
+            (injection, unit, unit, 5_u32),
+        ] {
+            let mut environment = Environment::new();
+            environment.extend(Zone::Intuitionistic, unused);
+            environment.extend(Zone::Intuitionistic, first);
+            environment.extend(Zone::Linear, second);
+            let env = machine.hold_env(environment);
+            machine.tasks.push(super::Task::Value { term: pair, env });
+            machine.fuel = ample();
+            super::run(&core, &mut domain, &mut machine).expect("both free bindings are supplied");
+            let result = machine.pop_value().expect("the leg produced its pair");
+            assert_eq!(
+                Some(&DomainValue::Pair {
+                    first,
+                    second,
+                    face: TermFace::Reduced
+                }),
+                domain.value(result)
+            );
+            assert_eq!(
+                steps,
+                u32::from(ample()).saturating_sub(u32::from(machine.fuel))
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_evaluation_leaves_existing_values_usable()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let loose = core.value_variable(Zone::Linear, innermost());
+        let pair = core.value_pair(unit, loose);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let existing = domain.value_unit(TermFace::Reduced);
+        assert_eq!(
+            Err(EvalFault::UnboundVariable {
+                zone: Zone::Linear,
+                index: innermost()
+            }),
+            eval_value(&core, &mut domain, definitions, ample(), pair)
+        );
+        assert_eq!(
+            Some(&DomainValue::Unit {
+                face: TermFace::Reduced
+            }),
+            domain.value(existing)
+        );
+        let retried = eval_value(&core, &mut domain, definitions, ample(), unit)
+            .expect("a refused run does not poison later evaluation");
+        assert_eq!(
+            Some(&DomainValue::Unit {
+                face: TermFace::Source(unit)
+            }),
+            domain.value(retried)
+        );
+    }
+
+    #[test]
+    fn ill_shaped_reapplied_spines_return_machine_faults()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let argument = domain.value_unit(TermFace::Reduced);
+        let continuation = domain.comp_closure_node(body, Environment::new());
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a rigid constant carries no body");
+        let head = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("the initial spine is a value spine");
+        for spine in [
+            [Elimination::Force, Elimination::Transport(argument)],
+            [Elimination::Force, Elimination::ProductTransport(argument)],
+            [Elimination::Force, Elimination::Force],
+            [Elimination::Force, Elimination::StaticApply(argument)],
+            [
+                Elimination::StaticApply(argument),
+                Elimination::Apply(argument),
+            ],
+            [
+                Elimination::StaticApply(argument),
+                Elimination::Bind(continuation),
+            ],
+            [Elimination::Force, Elimination::Case {
+                on_left: continuation,
+                on_right: continuation,
+            }],
+        ] {
+            let mut evaluation = Evaluation::eliminate(definitions, head, &spine);
+            assert_eq!(
+                Err(EvalFault::MachineInvariant),
+                evaluation.resume(&core, &mut domain, ample()),
+                "an ill-shaped later elimination is a named refusal, not a contract panic"
+            );
+        }
+    }
+
+    #[test]
+    fn reapplied_closures_keep_stuck_spines_and_refuse_wrong_formers()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let returned = core.computation_return(unit);
+        let pair = core.value_pair(unit, unit);
+        let paired = core.computation_return(pair);
+        let lambda = core.computation_lambda(returned);
+        let suspended_lambda = core.value_thunk(lambda);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let argument = domain.value_unit(TermFace::Reduced);
+        let on_left = domain.comp_closure_node(returned, Environment::new());
+        let on_right = domain.comp_closure_node(paired, Environment::new());
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                Vec::from([Elimination::StaticApply(argument)]),
+                Unfolding::Rigid,
+            )
+            .expect("a rigid head can carry an existing static frame");
+        let head = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .expect("the prefix still denotes a value");
+        let bind = [Elimination::Force, Elimination::Bind(on_left)];
+        let case = [Elimination::Case { on_left, on_right }];
+        let bound = [
+            Elimination::StaticApply(argument),
+            Elimination::Force,
+            Elimination::Bind(on_left),
+        ];
+        let cased = [Elimination::StaticApply(argument), Elimination::Case {
+            on_left,
+            on_right,
+        }];
+        for (spine, expected) in [
+            (bind.as_slice(), bound.as_slice()),
+            (case.as_slice(), cased.as_slice()),
+        ] {
+            let mut evaluation = Evaluation::eliminate(definitions, head, spine);
+            let (progress, _spent) = evaluation
+                .resume(&core, &mut domain, ample())
+                .expect("a rigid head leaves its eliminations stuck");
+            let Progress::Finished(Glued::Computation(answer)) = progress
+            else {
+                panic!("the eliminations produce a computation");
+            };
+            let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(answer)
+            else {
+                panic!("the result stays neutral");
+            };
+            assert_eq!(
+                expected,
+                domain
+                    .neutral(neutral)
+                    .expect("the grown spine resolves")
+                    .spine()
+            );
+        }
+        let mut wrong_case = Evaluation::eliminate(definitions, argument, &case);
+        assert_eq!(
+            Err(EvalFault::CasedNonInjection),
+            wrong_case.resume(&core, &mut domain, ample())
+        );
+        let thunk = eval_value(&core, &mut domain, definitions, ample(), suspended_lambda)
+            .expect("the thunk captures the lambda");
+        let mut wrong_bind = Evaluation::eliminate(definitions, thunk, &bind);
+        assert_eq!(
+            Err(EvalFault::BoundNonReturner),
+            wrong_bind.resume(&core, &mut domain, ample())
+        );
     }
 }

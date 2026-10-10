@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Full laziness and beyond, read off the evaluator's step count.
 //!
 //! The spinal stance shares an abstraction's ribs: each maximal subterm of its
@@ -31,6 +20,7 @@ mod trees;
 #[cfg(test)]
 mod full_laziness
 {
+    use anodized::spec;
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::CompGraft;
     use gandr_core_nbe::CompNode;
@@ -258,7 +248,33 @@ mod full_laziness
         /// fixed number of steps per link and reads what `start` reads.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: `start` resolves and the added links fit the id space.
+        /// - ensures: exactly `links` binds pass intuitionistic index zero on,
+        ///   ending at `start`; zero links return `start` unchanged.
+        /// - panics: if a mint is refused.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — start is a live computation and the requested
+        ///   links fit the id space. An independent bounded descent requires
+        ///   exactly one bind and an intuitionistic zero-index return per link,
+        ///   ending at start. The cost-slope witnesses distinguish an omitted
+        ///   link, a wrong binder and reversed sequencing.
+        /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+        /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+        /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+        #[spec(
+            requires: self.overlay.computation(start).is_some(),
+            ensures: |ret| {
+                let mut top = ret;
+                for _ in 0..links.0 {
+                    let Some(&CompNode::Grafted(CompGraft::Bind(bound, body))) = self.overlay.computation(top) else { return false; };
+                    let Some(&CompNode::Grafted(CompGraft::Return(value))) = self.overlay.computation(body) else { return false; };
+                    if self.overlay.value(value) != Some(&ValueNode::Grafted(ValueGraft::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })) { return false; }
+                    top = bound;
+                }
+                top == start
+            }
+        )]
         fn chain(
             &mut self,
             start: OverlayCompId,
@@ -307,6 +323,19 @@ mod full_laziness
     /// - provides: the one run every witness compares.
     /// - panics: when installation, evaluation or readback refuses, which no
     ///   witness provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the builder returns a closed computation. The
+    ///   returned id must resolve in its returned arena and charged steps
+    ///   cannot exceed the supplied fuel. Independent reference-tree
+    ///   comparisons and exact relative growth separate wrong readback, swapped
+    ///   stance results and a fictitious cost report.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+    /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    #[spec(
+        ensures: |ret| ret.0.0 <= u32::from(ample()) && ret.1.computation(ret.2).is_some()
+    )]
     fn run(
         stance: DuplicationStance,
         built: Built,
@@ -356,12 +385,27 @@ mod full_laziness
     /// grew between the sizes.
     ///
     /// # Specification
-    /// - requires: as [`run`].
+    /// - requires: as [`run`], with deterministic construction and
+    ///   nondecreasing evaluation cost between the two sizes.
     /// - ensures: the growth under the reference stance, then under the spinal
     ///   one.
     /// - provides: the measurement every witness asserts on.
     /// - panics: when a run panics, or when a spinal result reads back as
     ///   another tree than the reference's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — deterministic closed builders have nondecreasing cost
+    ///   over the two sizes. Each difference lies within one run budget; the
+    ///   closed-rib and inner-binder witnesses require a two-to-one slope,
+    ///   while the open-configuration witness requires equal slopes. These
+    ///   distinguish swapped stances and sharing across different bindings
+    ///   without replaying an effectful function pointer in a predicate.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+    /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    #[spec(
+        ensures: |ret| ret.0.0 <= u32::from(ample()) && ret.1.0 <= u32::from(ample())
+    )]
     fn growth(built: Built) -> (Steps, Steps)
     {
         let mut grown = Vec::new();
@@ -404,7 +448,30 @@ mod full_laziness
     /// closed chain of `links` binds: `R` reads nothing, so it is a rib.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the requested links and surrounding nodes fit the id space.
+    /// - ensures: the closed arity-two sharing computation described above.
+    /// - panics: if a fixture mint is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the link count fits the overlay id space. The result
+    ///   validates as one arity-two share of a thunk with one lambda.
+    ///   Independent result-tree equality and the exact cost slope distinguish
+    ///   a misplaced rib, a wrong binder and copying where a configuration
+    ///   should be shared.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        ensures: |ret| {
+            let Some(&CompNode::Shared(sharing)) = build.overlay.computation(ret) else { return false; };
+            let OverlayId::Value(leg) = sharing.leg else { return false; };
+            let Some(&ValueNode::Grafted(ValueGraft::Thunk(mut body))) = build.overlay.value(leg) else { return false; };
+            for _ in 0_u32..1_u32 {
+                let Some(&CompNode::Grafted(CompGraft::Lambda(inner))) = build.overlay.computation(body) else { return false; };
+                body = inner;
+            }
+            sharing.arity == ShareArity::from(2_u32)
+                && build.overlay.validate(OverlayId::Computation(ret)).is_ok()
+        }
+    )]
     fn closed_rib(
         build: &mut Build,
         links: Links,
@@ -445,7 +512,30 @@ mod full_laziness
     /// full laziness could not float out of the inner lambda.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the requested links and surrounding nodes fit the id space.
+    /// - ensures: the closed arity-two sharing computation described above.
+    /// - panics: if a fixture mint is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the link count fits the overlay id space. The result
+    ///   validates as one arity-two share of a thunk with two lambdas.
+    ///   Independent result-tree equality and the exact cost slope distinguish
+    ///   a misplaced rib, a wrong binder and copying where a configuration
+    ///   should be shared.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+    #[spec(
+        ensures: |ret| {
+            let Some(&CompNode::Shared(sharing)) = build.overlay.computation(ret) else { return false; };
+            let OverlayId::Value(leg) = sharing.leg else { return false; };
+            let Some(&ValueNode::Grafted(ValueGraft::Thunk(mut body))) = build.overlay.value(leg) else { return false; };
+            for _ in 0_u32..2_u32 {
+                let Some(&CompNode::Grafted(CompGraft::Lambda(inner))) = build.overlay.computation(body) else { return false; };
+                body = inner;
+            }
+            sharing.arity == ShareArity::from(2_u32)
+                && build.overlay.validate(OverlayId::Computation(ret)).is_ok()
+        }
+    )]
     fn inner_binder_rib(
         build: &mut Build,
         links: Links,
@@ -493,7 +583,21 @@ mod full_laziness
     /// the second `w`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the requested links and surrounding nodes fit the id space.
+    /// - ensures: the closed arity-two sharing computation described above.
+    /// - panics: if a fixture mint is refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the link count fits the overlay id space. The result
+    ///   validates as an arity-two share of a computation leg. Independent
+    ///   result trees and equal cost slopes distinguish reusing one result
+    ///   across the two different bindings from evaluating each occurrence.
+    /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    #[spec(
+        ensures: |ret| matches!(build.overlay.computation(ret), Some(CompNode::Shared(sharing))
+            if sharing.arity == ShareArity::from(2_u32) && matches!(sharing.leg, OverlayId::Computation(_)))
+            && build.overlay.validate(OverlayId::Computation(ret)).is_ok()
+    )]
     fn open_leg(
         build: &mut Build,
         links: Links,

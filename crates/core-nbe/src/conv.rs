@@ -118,8 +118,19 @@ impl Settlement
     ///   answered reads.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a deferred comparison remains undecided, a later
+    ///   rigid mismatch becomes distinct, and comparing a live node with itself
+    ///   is convertible; conflating deferral with either settled answer changes
+    ///   the consumer verdict.
+    /// - witness: `conv::tests::the_first_deferral_is_retained_until_a_rigid_refutation`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::Identical | Self::StructurallyEqual, Convertibility::Convertible)
+        | (Self::GuardedApart | Self::StructurallyApart, Convertibility::Distinct)
+        | (Self::Deferred(_), Convertibility::Undecided)))]
     pub fn verdict(self) -> Convertibility
     {
         match self {
@@ -246,26 +257,56 @@ struct Walk<'run>
 ///
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
-/// - ensures: [`Early::Identical`] when the ids are equal or both term faces
-///   name one source term; otherwise [`Early::Apart`] when the guards settle
-///   the pair apart; otherwise [`Early::Open`].
+/// - ensures: validation precedes identity: for resolving ids,
+///   [`Early::Identical`] when the ids are equal or both term faces name one
+///   source term; otherwise [`Early::Apart`] when the guards settle the pair
+///   apart; otherwise [`Early::Open`].
 /// - provides: the two constant-time steps, shared by the root and every pair
 ///   the walk reaches.
-/// - fails: [`ConversionFault::Domain`] when either id does not resolve.
+/// - fails: [`ConversionFault::Domain`] when either id does not resolve,
+///   including an identical pair of dangling ids.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a side does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — live identity and equal source faces answer before guard
+///   comparison, but truncating that same id makes even self-comparison fail;
+///   rigid unequal words separate and flexible words remain open. Moving
+///   identity before validation or treating equal hashes as equality changes a
+///   boundary result.
+/// - witness: `conv::tests::identical_truncated_values_are_refused`
+/// - witness: `conv::tests::identity_answers_one_node_and_one_source_term`
+/// - witness: `conv::tests::the_guard_answers_a_rigid_pair_identity_does_not`
+/// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+#[spec(ensures: |ret| match (domain.value(left), domain.value(right)) {
+    (Some(one), Some(other)) => {
+        let identical = left == right || matches!((one.face(), other.face()),
+            (TermFace::Source(first), TermFace::Source(second)) if first == second);
+        if identical { ret == Ok(Early::Identical) } else {
+            match (domain.value_guard(left), domain.value_guard(right)) {
+                (Ok(first), Ok(second)) => ret == Ok(early_by_guard(first, second)),
+                _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+            }
+        }
+    },
+    _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+})]
 pub fn early_values(
     domain: &DomainArena,
     left: DomainValueId,
     right: DomainValueId,
 ) -> Result<Early, ConversionFault>
 {
+    let Some(one) = domain.value(left)
+    else {
+        return Err(ConversionFault::Domain(DomainFault::Dangling));
+    };
     if left == right {
         return Ok(Early::Identical);
     }
-    let (Some(one), Some(other)) = (domain.value(left), domain.value(right))
+    let Some(other) = domain.value(right)
     else {
         return Err(ConversionFault::Domain(DomainFault::Dangling));
     };
@@ -286,25 +327,55 @@ pub fn early_values(
 ///
 /// # Specification
 /// - requires: nothing — dangling ids are admissible input and refused.
-/// - ensures: [`Early::Identical`] when the ids are equal or both term faces
-///   name one source term; otherwise [`Early::Apart`] when the guards settle
-///   the pair apart; otherwise [`Early::Open`].
+/// - ensures: validation precedes identity: for resolving ids,
+///   [`Early::Identical`] when the ids are equal or both term faces name one
+///   source term; otherwise [`Early::Apart`] when the guards settle the pair
+///   apart; otherwise [`Early::Open`].
 /// - provides: the computation half of the two constant-time steps.
-/// - fails: [`ConversionFault::Domain`] when either id does not resolve.
+/// - fails: [`ConversionFault::Domain`] when either id does not resolve,
+///   including an identical pair of dangling ids.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a side does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — live identity and equal source faces answer before guard
+///   comparison, but truncating that same id makes even self-comparison fail;
+///   rigid unequal words separate and flexible words remain open. Moving
+///   identity before validation or treating equal hashes as equality changes a
+///   boundary result.
+/// - witness: `conv::tests::identical_truncated_computations_are_refused`
+/// - witness: `conv::tests::identity_answers_one_node_and_one_source_term`
+/// - witness: `conv::tests::the_guard_answers_a_rigid_pair_identity_does_not`
+/// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+#[spec(ensures: |ret| match (domain.computation(left), domain.computation(right)) {
+    (Some(one), Some(other)) => {
+        let identical = left == right || matches!((one.face(), other.face()),
+            (CompTermFace::Source(first), CompTermFace::Source(second)) if first == second);
+        if identical { ret == Ok(Early::Identical) } else {
+            match (domain.comp_guard(left), domain.comp_guard(right)) {
+                (Ok(first), Ok(second)) => ret == Ok(early_by_guard(first, second)),
+                _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+            }
+        }
+    },
+    _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+})]
 pub fn early_comps(
     domain: &DomainArena,
     left: DomainCompId,
     right: DomainCompId,
 ) -> Result<Early, ConversionFault>
 {
+    let Some(one) = domain.computation(left)
+    else {
+        return Err(ConversionFault::Domain(DomainFault::Dangling));
+    };
     if left == right {
         return Ok(Early::Identical);
     }
-    let (Some(one), Some(other)) = (domain.computation(left), domain.computation(right))
+    let Some(other) = domain.computation(right)
     else {
         return Err(ConversionFault::Domain(DomainFault::Dangling));
     };
@@ -368,7 +439,9 @@ fn early_by_guard(
 ///   does not, pairs deferred for each reason, a mismatch under an unfoldable
 ///   head deferring where the same mismatch under a rigid head separates, and a
 ///   shared graph whose expansion is exponential in its depth compared in
-///   linear steps.
+///   linear steps. A dangling identity is refused before step 1; accepting it
+///   or changing the step precedence changes a boundary observation.
+/// - witness: `conv::tests::identical_truncated_values_are_refused`
 /// - witness: `conv::tests::identity_answers_one_node_and_one_source_term`
 /// - witness: `conv::tests::the_guard_answers_a_rigid_pair_identity_does_not`
 /// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
@@ -376,6 +449,12 @@ fn early_by_guard(
 /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
 /// - witness: `conv::tests::a_shared_graph_is_compared_once_per_pair`
 #[inline]
+#[spec(ensures: |ret| match early_values(domain, left, right) {
+    Ok(Early::Identical) => ret == Ok(Settlement::Identical),
+    Ok(Early::Apart) => ret == Ok(Settlement::GuardedApart),
+    Ok(Early::Open) => !matches!(ret, Ok(Settlement::Identical | Settlement::GuardedApart)),
+    Err(fault) => ret == Err(fault),
+})]
 pub fn convert_values(
     core: &CoreArena,
     domain: &DomainArena,
@@ -414,10 +493,19 @@ pub fn convert_values(
 /// - hypothesis: L3 — the decision surfaces are the three computation arms and
 ///   their mixtures, separated by two returners apart on their values, a lambda
 ///   against a neutral deferred to a binder, a returner against a rigid neutral
-///   separated, and a lambda against a returner separated.
+///   separated, and a lambda against a returner separated. A dangling identity
+///   is refused before step 1; accepting it or changing the step precedence
+///   changes a boundary observation.
+/// - witness: `conv::tests::identical_truncated_computations_are_refused`
 /// - witness: `conv::tests::computations_settle_by_their_weak_heads`
 /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
 #[inline]
+#[spec(ensures: |ret| match early_comps(domain, left, right) {
+    Ok(Early::Identical) => ret == Ok(Settlement::Identical),
+    Ok(Early::Apart) => ret == Ok(Settlement::GuardedApart),
+    Ok(Early::Open) => !matches!(ret, Ok(Settlement::Identical | Settlement::GuardedApart)),
+    Err(fault) => ret == Err(fault),
+})]
 pub fn convert_computations(
     core: &CoreArena,
     domain: &DomainArena,
@@ -467,6 +555,20 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// Whatever [`Walk::run`] refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — structural equality, binder deferral, unfolding
+    ///   deferral and a later rigid refutation produce distinct settlements;
+    ///   overwriting the first reason or allowing it to mask a rigid refutation
+    ///   changes the observed answer.
+    /// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+    /// - witness: `conv::tests::the_first_deferral_is_retained_until_a_rigid_refutation`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |settlement| match *settlement {
+        Settlement::StructurallyEqual => self.goals.is_empty() && self.outstanding == Outstanding::Nothing,
+        Settlement::Deferred(reason) => self.goals.is_empty() && self.outstanding == Outstanding::Deferred(reason),
+        Settlement::StructurallyApart => true,
+        Settlement::Identical | Settlement::GuardedApart => false,
+    }))]
     fn settle(
         mut self,
         root: Goal,
@@ -495,6 +597,19 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// [`ConversionFault`] as the pair comparisons raise it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the first of two different deferrals is retained, a
+    ///   rigid mismatch overrides the deferred settlement, and a shared graph
+    ///   settles without expanding its repeated subgraphs; leaving queued work
+    ///   or replacing the first reason changes a result.
+    /// - witness: `conv::tests::the_first_deferral_is_retained_until_a_rigid_refutation`
+    /// - witness: `conv::tests::a_shared_graph_is_compared_once_per_pair`
+    #[spec(
+        captures: entry_outstanding = self.outstanding,
+        ensures: |ret| (ret != Ok(Walked::Exhausted) || self.goals.is_empty())
+            && (entry_outstanding == Outstanding::Nothing || self.outstanding == entry_outstanding),
+    )]
     fn run(&mut self) -> Result<Walked, ConversionFault>
     {
         while let Some(goal) = self.goals.pop() {
@@ -533,7 +648,25 @@ impl<'run> Walk<'run>
     /// Record `reason` unless a deferral is already recorded.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the first deferral is recorded; a later reason preserves it.
+    /// - provides: stable precedence among unresolved structural comparisons.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty slot accepts either reason and an occupied
+    ///   slot retains its first reason. Pairs presenting binder and unfolding
+    ///   deferrals in both orders observe the chosen reason; a later rigid
+    ///   refutation still wins. Overwriting or ignoring the first reason
+    ///   changes those public settlements.
+    /// - witness: `conv::tests::the_first_deferral_is_retained_until_a_rigid_refutation`
+    #[spec(
+        captures: [prior = self.outstanding],
+        ensures: self.outstanding == match prior {
+            Outstanding::Nothing => Outstanding::Deferred(reason),
+            Outstanding::Deferred(_) => prior,
+        }
+    )]
     fn defer(
         &mut self,
         reason: Deferral,
@@ -556,6 +689,18 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the same argument mismatch separates under a rigid
+    ///   head and defers under a loaded head; classifying a loaded face as
+    ///   rigid makes conversion unsound.
+    /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
+    #[spec(ensures: |ret| self.domain.neutral(neutral).map_or_else(
+        || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        |node| ret == Ok(if matches!(node.unfolding(), Unfolding::Rigid) {
+            Context::Rigid
+        } else { Context::Flexible(Deferral::Unfolding) }),
+    ))]
     fn unfoldable(
         &self,
         neutral: NeutralId,
@@ -587,6 +732,17 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a returner separates from a rigid neutral but defers
+    ///   against a defined one, and a defined value may meet unit after
+    ///   unfolding; refusing the unfolding opportunity changes the verdict.
+    /// - witness: `conv::tests::computations_settle_by_their_weak_heads`
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
+    #[spec(ensures: |ret| ret == self.unfoldable(neutral).map(|context| match context {
+        Context::Rigid => Local::Disagree,
+        Context::Flexible(reason) => Local::Defer(reason),
+    }))]
     fn neutral_against_former(
         &self,
         neutral: NeutralId,
@@ -611,6 +767,16 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::LiteralPayload`] — no core literal at `literal`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — equal literal contents at different core ids compare
+    ///   structurally, while a unit id and an absent id are refused as
+    ///   payloads; confusing a nonliteral node with a literal changes the named
+    ///   refusal.
+    /// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+    /// - witness: `conv::tests::a_payload_read_refuses_nonliteral_and_missing_nodes`
+    #[spec(ensures: |ret| ret.is_ok() == matches!(self.core.value(literal), Some(Value::Literal(_)))
+        && ret.as_ref().err().is_none_or(|fault| *fault == ConversionFault::LiteralPayload { literal }))]
     fn payload(
         &self,
         literal: ValueId,
@@ -644,16 +810,29 @@ impl<'run> Walk<'run>
     /// [`ConversionFault`] for an unresolved node.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — native certificates compare structurally without
-    ///   queuing map evaluation; different native constructor kinds remain
-    ///   distinct.
+    /// - hypothesis: L2 — structural children distinguish agreement from a
+    ///   rigid mismatch, while a binder or an unfoldable head forces deferral;
+    ///   suppressing a child, turning deferral into disagreement or proceeding
+    ///   after an early answer changes the settlement.
+    /// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
     /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
-    #[spec(captures: before = self.goals.len(), ensures: |ret| self.goals.len() >= before && match (self.domain.value(left), self.domain.value(right)) {
-        (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => matches!(ret, Ok(Local::Disagree)),
-        (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => matches!(ret, Ok(Local::Agree)) && self.goals.len() == before,
-        _ => true,
-    })]
+    #[spec(
+        captures: entry_goals = self.goals.len(),
+        ensures: |ret| self.goals.len() >= entry_goals
+            && (ret == Ok(Local::Agree) || self.goals.len() == entry_goals)
+            && match early_values(self.domain, left, right) {
+                Ok(Early::Identical) => ret == Ok(Local::Agree),
+                Ok(Early::Apart) => ret == Ok(Local::Disagree),
+                Ok(Early::Open) => true,
+                Err(fault) => ret == Err(fault),
+            } && match (self.domain.value(left), self.domain.value(right)) {
+                (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => ret == Ok(Local::Disagree),
+                (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => ret == Ok(Local::Agree) && self.goals.len() == entry_goals,
+                _ => true,
+            },
+    )]
     fn values(
         &mut self,
         left: DomainValueId,
@@ -877,6 +1056,25 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — a side does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — structural children distinguish agreement from a
+    ///   rigid mismatch, while a binder or an unfoldable head forces deferral;
+    ///   suppressing a child, turning deferral into disagreement or proceeding
+    ///   after an early answer changes the settlement.
+    /// - witness: `conv::tests::computations_settle_by_their_weak_heads`
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
+    #[spec(
+        captures: entry_goals = self.goals.len(),
+        ensures: |ret| self.goals.len() >= entry_goals
+            && (ret == Ok(Local::Agree) || self.goals.len() == entry_goals)
+            && match early_comps(self.domain, left, right) {
+                Ok(Early::Identical) => ret == Ok(Local::Agree),
+                Ok(Early::Apart) => ret == Ok(Local::Disagree),
+                Ok(Early::Open) => true,
+                Err(fault) => ret == Err(fault),
+            },
+    )]
     fn comps(
         &mut self,
         left: DomainCompId,
@@ -953,13 +1151,14 @@ impl<'run> Walk<'run>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Local::Agree`] when the ids are equal, or when the heads
-    ///   agree and the spines have one length and one elimination kind at every
-    ///   position — each operand pair then queued beneath the head, flexible
-    ///   for unfolding when the head has a body; [`Local::Disagree`] when the
-    ///   guards separate the neutrals, or when rigid heads differ or a rigid
-    ///   head's spines disagree in shape; [`Local::Defer`] for unfolding when
-    ///   either head has a body and the heads or the spine shapes differ.
+    /// - ensures: validation precedes identity: [`Local::Agree`] when resolving
+    ///   ids are equal, or when the heads agree and the spines have one length
+    ///   and one elimination kind at every position — each operand pair then
+    ///   queued beneath the head, flexible for unfolding when the head has a
+    ///   body; [`Local::Disagree`] when the guards separate the neutrals, or
+    ///   when rigid heads differ or a rigid head's spines disagree in shape;
+    ///   [`Local::Defer`] for unfolding when either head has a body and the
+    ///   heads or the spine shapes differ.
     /// - provides: Courant–Leroy's `var-1`, `var-2`, `var-3` and `const` rules,
     ///   with `var-2` the head-mismatch fast-fail.
     /// - fails: [`ConversionFault::Domain`] for a neutral that does not
@@ -970,11 +1169,20 @@ impl<'run> Walk<'run>
     /// - [`ConversionFault::Domain`] — a neutral does not resolve.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — different rigid heads and elimination kinds cannot
-    ///   agree; paired native eliminations retain their argument obligations.
+    /// - hypothesis: L2 — rigid and loaded heads give different answers to the
+    ///   same spine mismatch, head and arity differences separate rigid
+    ///   families, and identity is refused after truncation; skipping
+    ///   validation or losing the flexible context changes the result.
+    /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    /// - witness: `conv::tests::identical_truncated_neutrals_and_closures_are_refused`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(ensures: |ret| if left == right { matches!(ret, Ok(Local::Agree)) } else if matches!(ret, Ok(Local::Agree)) { self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(a, b)| a.head() == b.head() && a.spine().len() == b.spine().len() && a.spine().iter().zip(b.spine()).all(|(x, y)| core::mem::discriminant(x) == core::mem::discriminant(y))) } else { true })]
+    #[spec(ensures: |ret| if self.domain.neutral(left).is_some() && self.domain.neutral(right).is_some() {
+        ret.is_ok() && (left != right || ret == Ok(Local::Agree))
+            && (ret != Ok(Local::Agree) || self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(one, other)|
+                one.head() == other.head() && one.spine().len() == other.spine().len()
+                    && one.spine().iter().zip(other.spine()).all(|(a, b)| core::mem::discriminant(a) == core::mem::discriminant(b))))
+    } else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) })]
     fn neutrals(
         &mut self,
         left: NeutralId,
@@ -982,14 +1190,14 @@ impl<'run> Walk<'run>
         context: Context,
     ) -> Result<Local, ConversionFault>
     {
+        let Ok(left_guard) = self.domain.neutral_guard(left)
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
         if left == right {
             return Ok(Local::Agree);
         }
-        let guards = (
-            self.domain.neutral_guard(left),
-            self.domain.neutral_guard(right),
-        );
-        let (Ok(left_guard), Ok(right_guard)) = guards
+        let Ok(right_guard) = self.domain.neutral_guard(right)
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
@@ -1070,11 +1278,11 @@ impl<'run> Walk<'run>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Local::Agree`] when the ids are equal, or when both suspend
-    ///   one core body over environments of one depth per zone — each binding
-    ///   pair then queued flexible for a binder, because the body may never
-    ///   read the binding that differs; [`Local::Defer`] for a binder
-    ///   otherwise.
+    /// - ensures: validation precedes identity: [`Local::Agree`] when resolving
+    ///   ids are equal, or when both suspend one core body over environments of
+    ///   one depth per zone — each binding pair then queued flexible for a
+    ///   binder, because the body may never read the binding that differs;
+    ///   [`Local::Defer`] for a binder otherwise.
     /// - provides: the congruence that settles two closures without evaluating
     ///   either; two different bodies wait for the rule that opens a binder.
     /// - fails: [`ConversionFault::Domain`] for a closure that does not
@@ -1083,19 +1291,36 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — a closure does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — different suspended bodies defer to binder opening,
+    ///   whereas comparing a live closure with itself agrees; after truncation
+    ///   the same id refuses. Treating different bodies as equal or accepting a
+    ///   dangling identity changes the boundary answer.
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
+    /// - witness: `conv::tests::identical_truncated_neutrals_and_closures_are_refused`
+    #[spec(ensures: |ret| match (self.domain.comp_closure(left), self.domain.comp_closure(right)) {
+        (Some(one), Some(other)) => ret == Ok(if one.body() == other.body()
+            && [Zone::Intuitionistic, Zone::Linear].iter().all(|&zone|
+                one.environment().depth(zone) == other.environment().depth(zone)) {
+            Local::Agree
+        } else { Local::Defer(Deferral::Binder) }),
+        _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+    })]
     fn closures(
         &mut self,
         left: CompClosureId,
         right: CompClosureId,
     ) -> Result<Local, ConversionFault>
     {
+        let Some(one) = self.domain.comp_closure(left)
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
         if left == right {
             return Ok(Local::Agree);
         }
-        let (Some(one), Some(other)) = (
-            self.domain.comp_closure(left),
-            self.domain.comp_closure(right),
-        )
+        let Some(other) = self.domain.comp_closure(right)
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
@@ -1208,6 +1433,7 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Zone;
     use gandr_kernel_term::ConstantIndex;
@@ -1243,6 +1469,18 @@ mod tests
     ///   integer.
     /// - provides: the rigid leaves the step witnesses compare.
     /// - panics: when `digits` is not decimal, which no fixture passes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — distinct decimal payloads separate through rigid
+    ///   guards, while repeated equal payloads at distinct ids agree
+    ///   structurally; replacing the requested integer or retaining a source
+    ///   face changes which step answers.
+    /// - witness: `conv::tests::the_guard_answers_a_rigid_pair_identity_does_not`
+    /// - witness: `conv::tests::structure_answers_what_the_guard_cannot`
+    #[spec(
+        requires: !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()),
+        ensures: |ret| matches!(domain.value(ret), Some(crate::DomainValue::Literal { face: TermFace::Reduced, .. })),
+    )]
     fn literal(
         core: &mut CoreArena,
         domain: &mut DomainArena,
@@ -1262,6 +1500,18 @@ mod tests
     /// - ensures: a fresh closure id over a fresh core body.
     /// - provides: the flexible part a thunk or a lambda fixture carries.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — independently suspended returners supply the two
+    ///   thunks whose bodies require binder opening; reusing a body or adding a
+    ///   captured binding changes the comparison path.
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
+    #[spec(ensures: |ret| domain.comp_closure(ret).is_some_and(|closure|
+        [Zone::Intuitionistic, Zone::Linear].iter().all(|&zone|
+            closure.environment().bindings(zone).is_empty())
+        && matches!(closure.body(), crate::closure::CompBody::Source(body)
+            if matches!(core.computation(body), Some(gandr_core_term::Computation::Return(value))
+                if matches!(core.value(*value), Some(gandr_core_term::Value::Unit))))))]
     fn closure(
         core: &mut CoreArena,
         domain: &mut DomainArena,
@@ -1279,6 +1529,19 @@ mod tests
     /// - ensures: a reduced-face value standing for a spineless neutral.
     /// - provides: the stuck values the deferral witnesses compare.
     /// - panics: when the arena refuses the neutral, which no fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — rigid and defined value heads distinguish a
+    ///   separating mismatch from unfolding deferral, while a rigid value
+    ///   against a thunk waits for a binder; changing the head or face changes
+    ///   the settlement.
+    /// - witness: `conv::tests::a_pair_needing_an_unfolding_or_a_binder_is_deferred`
+    #[spec(ensures: |ret| match domain.value(ret) {
+        Some(&crate::DomainValue::Neutral { neutral, face: TermFace::Reduced }) =>
+            domain.neutral(neutral).is_some_and(|node| node.head() == head
+                && node.unfolding() == unfolding && node.spine().is_empty()),
+        _ => false,
+    })]
     fn stuck(
         domain: &mut DomainArena,
         head: NeutralHead,
@@ -1301,6 +1564,19 @@ mod tests
     /// - ensures: a reduced-face computation standing for that neutral.
     /// - provides: the stuck computations the spine witnesses compare.
     /// - panics: when the arena refuses the neutral, which no fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — equal-shaped spines under rigid and loaded heads
+    ///   distinguish refutation from unfolding deferral, and different head
+    ///   indices and arities separate rigid families; changing the neutral
+    ///   represented changes those results.
+    /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
+    /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    #[spec(ensures: |ret| match domain.computation(ret) {
+        Some(&crate::DomainComp::Neutral { neutral, face: CompTermFace::Reduced }) =>
+            domain.neutral(neutral).is_some_and(|node| node.head() == head && node.unfolding() == unfolding),
+        _ => false,
+    })]
     fn stuck_comp(
         domain: &mut DomainArena,
         head: NeutralHead,
@@ -1630,6 +1906,138 @@ mod tests
             Ok(Settlement::GuardedApart),
             convert_values(&core, &domain, f_one, f_two),
             "and two arguments at one head and arity fold apart too"
+        );
+    }
+
+    #[test]
+    fn identical_truncated_values_are_refused()
+    {
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let value = domain.value_unit(TermFace::Reduced);
+        assert_eq!(
+            Ok(super::Early::Identical),
+            super::early_values(&domain, value, value)
+        );
+        domain.truncate_to(floor);
+        assert!(domain.value(value).is_none());
+        assert_eq!(
+            Err(super::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            super::early_values(&domain, value, value)
+        );
+    }
+
+    #[test]
+    fn identical_truncated_computations_are_refused()
+    {
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let value = domain.value_unit(TermFace::Reduced);
+        let computation = domain.comp_return(value, CompTermFace::Reduced);
+        assert_eq!(
+            Ok(super::Early::Identical),
+            super::early_comps(&domain, computation, computation)
+        );
+        domain.truncate_to(floor);
+        assert!(domain.computation(computation).is_none());
+        assert_eq!(
+            Err(super::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            super::early_comps(&domain, computation, computation)
+        );
+    }
+
+    #[test]
+    fn identical_truncated_neutrals_and_closures_are_refused()
+    {
+        let mut core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let suspended = closure(&mut core, &mut domain);
+        let neutral = domain
+            .neutral_node(variable(), Vec::new(), Unfolding::Rigid)
+            .expect("a variable is rigid");
+        {
+            let mut walk = super::Walk::new(&core, &domain);
+            assert_eq!(
+                Ok(super::Local::Agree),
+                walk.neutrals(neutral, neutral, super::Context::Rigid)
+            );
+            assert_eq!(Ok(super::Local::Agree), walk.closures(suspended, suspended));
+        }
+        domain.truncate_to(floor);
+        let mut walk = super::Walk::new(&core, &domain);
+        let neutral_result = walk.neutrals(neutral, neutral, super::Context::Rigid);
+        let closure_result = walk.closures(suspended, suspended);
+        let refused = Err(super::ConversionFault::Domain(crate::DomainFault::Dangling));
+        assert_eq!((refused, refused), (neutral_result, closure_result));
+    }
+
+    #[test]
+    fn the_first_deferral_is_retained_until_a_rigid_refutation()
+    {
+        let mut core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let first = closure(&mut core, &mut domain);
+        let second = closure(&mut core, &mut domain);
+        let first_thunk = domain.value_thunk(first, TermFace::Reduced);
+        let second_thunk = domain.value_thunk(second, TermFace::Reduced);
+        let defined = stuck(
+            &mut domain,
+            NeutralHead::Constant(ConstantIndex::from(0_usize)),
+            Unfolding::Unforced(GlobalIndex::from(0_u32)),
+        );
+        let unit = domain.value_unit(TermFace::Reduced);
+        for (left_first, left_second, right_first, right_second, reason) in [
+            (first_thunk, defined, second_thunk, unit, Deferral::Binder),
+            (
+                defined,
+                first_thunk,
+                unit,
+                second_thunk,
+                Deferral::Unfolding,
+            ),
+        ] {
+            let left = domain.value_pair(left_first, left_second, TermFace::Reduced);
+            let right = domain.value_pair(right_first, right_second, TermFace::Reduced);
+            let answer =
+                convert_values(&core, &domain, left, right).expect("the pair is well formed");
+            assert_eq!(Settlement::Deferred(reason), answer);
+            assert_eq!(Convertibility::Undecided, answer.verdict());
+            assert_eq!(
+                Convertibility::Convertible,
+                convert_values(&core, &domain, left, left)
+                    .expect("live identity agrees")
+                    .verdict()
+            );
+            let one = literal(&mut core, &mut domain, String::from("1"));
+            let left = domain.value_pair(left, unit, TermFace::Reduced);
+            let right = domain.value_pair(right, one, TermFace::Reduced);
+            let answer =
+                convert_values(&core, &domain, left, right).expect("the mismatch resolves");
+            assert_eq!(Settlement::StructurallyApart, answer);
+            assert_eq!(Convertibility::Distinct, answer.verdict());
+        }
+    }
+
+    #[test]
+    fn a_payload_read_refuses_nonliteral_and_missing_nodes()
+    {
+        let mut core = CoreArena::new();
+        let floor = core.watermark();
+        let nonliteral = core.value_unit();
+        let domain = DomainArena::new();
+        assert_eq!(
+            Err(super::ConversionFault::LiteralPayload {
+                literal: nonliteral
+            }),
+            super::Walk::new(&core, &domain).payload(nonliteral)
+        );
+        core.truncate_to(floor);
+        assert_eq!(
+            Err(super::ConversionFault::LiteralPayload {
+                literal: nonliteral
+            }),
+            super::Walk::new(&core, &domain).payload(nonliteral)
         );
     }
 }

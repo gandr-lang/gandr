@@ -190,7 +190,9 @@ pub enum DuplicationFault
 ///   stance keeping a leaf leg and distributing an abstraction into its ribs
 ///   with node counts asserted, a refusal by validation and by the id space
 ///   each leaving the overlay at its watermark, and the teardown chain
-///   duplicated inside a small stack.
+///   duplicated inside a small stack. Reusing the input root or retaining
+///   scratch on refusal violates the predicate; changing a former or child
+///   order changes the erasure oracle.
 /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
 /// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
 /// - witness:
@@ -202,9 +204,10 @@ pub enum DuplicationFault
 /// - witness:
 ///   `teardown::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
 #[inline]
-#[spec(ensures: |ret| ret
-    .as_ref()
-    .map_or(true, |rebuilt| overlay.validate(OverlayId::Value(*rebuilt)).is_ok()))]
+#[spec(
+    captures: entry = overlay.watermark(),
+    ensures: |ret| ret.map_or_else(|_| overlay.watermark() == entry, |rebuilt| rebuilt != root && overlay.validate(OverlayId::Value(rebuilt)).is_ok())
+)]
 pub fn duplicate_value(
     overlay: &mut Overlay,
     core: &CoreArena,
@@ -236,13 +239,16 @@ pub fn duplicate_value(
 /// # Adequacy
 /// - hypothesis: L1 for the erasure, over the generated computation roots of
 ///   the property; L3 for the distribution of a shared abstraction applied
-///   twice, read off the evaluator's step count.
+///   twice, read off the evaluator's step count. Reusing the input root or
+///   retaining scratch on refusal violates the predicate; changing a former or
+///   child order changes the erasure oracle.
 /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
 /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
 #[inline]
-#[spec(ensures: |ret| ret
-    .as_ref()
-    .map_or(true, |rebuilt| overlay.validate(OverlayId::Computation(*rebuilt)).is_ok()))]
+#[spec(
+    captures: entry = overlay.watermark(),
+    ensures: |ret| ret.map_or_else(|_| overlay.watermark() == entry, |rebuilt| rebuilt != root && overlay.validate(OverlayId::Computation(rebuilt)).is_ok())
+)]
 pub fn duplicate_computation(
     overlay: &mut Overlay,
     core: &CoreArena,
@@ -270,6 +276,18 @@ pub fn duplicate_computation(
 ///
 /// # Errors
 /// As [`duplicate_value`].
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — failing to roll back a partial walk or changing its
+///   root family violates the predicate; erasure and expansion witnesses
+///   distinguish a valid but incorrect reconstruction.
+/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+/// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
+/// - witness: `duplication::duplication::a_refused_duplication_leaves_the_overlay_as_it_found_it`
+#[spec(
+    captures: entry = overlay.watermark(),
+    ensures: |ret| ret.map_or_else(|_| overlay.watermark() == entry, |rebuilt| rebuilt != root && core::mem::discriminant(&rebuilt) == core::mem::discriminant(&root) && overlay.validate(rebuilt).is_ok())
+)]
 pub fn duplicate(
     overlay: &mut Overlay,
     core: &CoreArena,
@@ -365,6 +383,42 @@ impl Under
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — `node` is no evaluation
     ///   graft.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — swapping case branches, lowering the scrutinee or
+    ///   omitting a branch binder changes the survey witness. The erasure
+    ///   oracle covers the remaining former orderings.
+    /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    #[spec(
+        ensures: |ret| {
+            let child = |node, binders| Some(Child { node, binders });
+            let expected = match node {
+                OverlayId::Value(id) => overlay.value(id).map_or(Err(DuplicationFault::MachineInvariant), |held| match *held {
+                    ValueNode::Grafted(ref graft) => match *graft {
+                        ValueGraft::Variable { .. } | ValueGraft::Constant(_) | ValueGraft::Unit | ValueGraft::Literal(_) => Ok(Self { listed: [None; 3] }),
+                        ValueGraft::Pair(first, second) => Ok(Self { listed: [child(OverlayId::Value(first), Lowering::NONE), child(OverlayId::Value(second), Lowering::NONE), None] }),
+                        ValueGraft::Injection(_, body) | ValueGraft::Lift { body, .. } => Ok(Self { listed: [child(OverlayId::Value(body), Lowering::NONE), None, None] }),
+                        ValueGraft::Thunk(body) => Ok(Self { listed: [child(OverlayId::Computation(body), Lowering::NONE), None, None] }),
+                        ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => Err(DuplicationFault::Quote { node }),
+                    },
+                    _ => Err(DuplicationFault::MachineInvariant),
+                }),
+                OverlayId::Computation(id) => overlay.computation(id).map_or(Err(DuplicationFault::MachineInvariant), |held| match *held {
+                    CompNode::Grafted(graft) => match graft {
+                        CompGraft::Lambda(body) => Ok(Self { listed: [child(OverlayId::Computation(body), Lowering::ONE), None, None] }),
+                        CompGraft::Application(head, argument) => Ok(Self { listed: [child(OverlayId::Computation(head), Lowering::NONE), child(OverlayId::Value(argument), Lowering::NONE), None] }),
+                        CompGraft::Return(value) | CompGraft::Force(value) => Ok(Self { listed: [child(OverlayId::Value(value), Lowering::NONE), None, None] }),
+                        CompGraft::Bind(bound, body) => Ok(Self { listed: [child(OverlayId::Computation(bound), Lowering::NONE), child(OverlayId::Computation(body), Lowering::ONE), None] }),
+                        CompGraft::Case { scrutinee, on_left, on_right } => Ok(Self { listed: [child(OverlayId::Value(scrutinee), Lowering::NONE), child(OverlayId::Computation(on_left), Lowering::ONE), child(OverlayId::Computation(on_right), Lowering::ONE)] }),
+                    },
+                    _ => Err(DuplicationFault::MachineInvariant),
+                }),
+                OverlayId::ValueType(_) | OverlayId::CompType(_) => Err(DuplicationFault::MachineInvariant),
+            };
+            ret == expected
+        }
+    )]
     fn of(
         overlay: &Overlay,
         node: OverlayId,
@@ -475,6 +529,14 @@ enum Survey
 ///
 /// # Errors
 /// - [`DuplicationFault::MachineInvariant`] — no leg in scope answers.
+///
+/// # Adequacy
+/// - hypothesis: L3 — selecting the outer rather than inner leg, shifting a
+///   distance or accepting an exhausted scope changes the named leg or refusal.
+/// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+#[spec(
+    ensures: |ret| ret == usize::try_from(u32::from(distance)).ok().and_then(|offset| legs.iter().rev().nth(offset)).copied().ok_or(DuplicationFault::MachineInvariant)
+)]
 fn innermost(
     legs: &[OverlayId],
     distance: ShareDistance,
@@ -516,6 +578,17 @@ fn innermost(
 /// # Errors
 /// - [`DuplicationFault::UnresolvedOpaque`] — an opaque node does not resolve.
 /// - [`DuplicationFault::MachineInvariant`] — the survey's order broke.
+///
+/// # Adequacy
+/// - hypothesis: L3/L1 — the predicate rejects a missing root or fabricated
+///   node key. Omitting binder lowering or treating linear reads as
+///   intuitionistic changes the independent boundary witness; the erasure
+///   property observes the resulting rib placement.
+/// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or(true, |reached| reached.contains_key(&root) && reached.keys().all(|node| overlay.shape(*node).is_ok()))
+)]
 fn survey(
     overlay: &Overlay,
     core: &CoreArena,
@@ -655,6 +728,23 @@ enum LegShape
 /// - provides: the classification the treatment is read from.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — classifying a thunk over a return as an abstraction, or
+///   missing a bare lambda, changes the chosen treatment and the witnessed rib
+///   counts.
+/// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+/// - witness: `duplication::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
+#[spec(
+    ensures: |ret| (ret == LegShape::Abstraction) == match leg {
+        OverlayId::Value(id) => overlay.value(id).is_some_and(|held| match *held {
+            ValueNode::Grafted(ValueGraft::Thunk(body)) => matches!(overlay.computation(body), Some(&CompNode::Grafted(CompGraft::Lambda(_)))),
+            _ => false,
+        }),
+        OverlayId::Computation(id) => matches!(overlay.computation(id), Some(&CompNode::Grafted(CompGraft::Lambda(_)))),
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => false,
+    }
+)]
 fn leg_shape(
     overlay: &Overlay,
     leg: OverlayId,
@@ -685,6 +775,20 @@ fn leg_shape(
 /// - provides: the one place the policy's per-part answers become a treatment.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — treating a whole leg like an abstraction or copying a rib
+///   in the spinal stance changes the measured expansion or retained-share
+///   shape.
+/// - witness: `duplication::duplication::a_copying_duplicate_is_the_expansion`
+/// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+/// - witness: `duplication::duplication::a_spinal_duplicate_distributes_an_abstraction_over_its_ribs`
+#[spec(
+    ensures: |ret| ret == match shape {
+        LegShape::Whole => if policy.copies(SharedPart::Rib) == Copied::Copied { Treatment::Inline } else { Treatment::Keep },
+        LegShape::Abstraction => if policy.copies(SharedPart::Spine) == Copied::Shared { Treatment::Keep } else if policy.copies(SharedPart::Rib) == Copied::Shared { Treatment::Distribute } else { Treatment::Inline },
+    }
+)]
 fn treatment(
     policy: DuplicationPolicy,
     shape: LegShape,
@@ -771,6 +875,14 @@ impl RibSite
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the depth passed its counter.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — altering the share depth while crossing a binder or
+    ///   wrapping the binder counter changes the site or overflow refusal.
+    /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    #[spec(
+        ensures: |ret| ret == self.depth.0.checked_add(u32::from(binders)).map(|depth| Self { depth: BinderDepth(depth), inner: self.inner }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn under(
         self,
         binders: Lowering,
@@ -799,6 +911,14 @@ impl RibSite
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the frames passed their
     ///   counter.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — altering the binder depth while entering a share or
+    ///   wrapping its frame counter changes the site or refusal.
+    /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    #[spec(
+        ensures: |ret| ret == self.inner.0.checked_add(1_u32).map(|inner| Self { depth: self.depth, inner: InnerFrames(inner) }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn within(self) -> Result<Self, DuplicationFault>
     {
         let Some(inner) = self.inner.0.checked_add(1_u32)
@@ -1006,6 +1126,16 @@ impl Walk<'_>
     ///   asks for, and the copies of a node are bounded by its occurrences in
     ///   the root's expansion.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — a leftover result or open frame violates the
+    ///   completion predicate; the independent erasure walk rejects a completed
+    ///   but wrong reconstruction, and the deep witness catches host recursion.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `teardown::teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| ret.map_or(true, |rebuilt| self.tasks.is_empty() && self.results.is_empty() && self.frames.is_empty() && rebuilt != root && self.overlay.validate(rebuilt).is_ok())
+    )]
     fn run(
         &mut self,
         root: OverlayId,
@@ -1042,6 +1172,22 @@ impl Walk<'_>
     ///
     /// # Errors
     /// Every variant the arms raise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — queued work must name existing input scopes,
+    ///   cursors and nodes; the erasure and rib witnesses distinguish dropping,
+    ///   swapping or executing a valid task at the wrong time.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: tasks = self.tasks.len(),
+        ensures: |ret| ret.is_err() || (self.results.last().is_none_or(|node| self.overlay.shape(*node).is_ok()) && self.tasks.get(tasks..).is_some_and(|queued| queued.iter().all(|task| match *task {
+            Task::Enter { scope, .. } | Task::Open { scope, .. } | Task::Distribute { scope, .. } => self.scopes.get(scope.0).is_some(),
+            Task::OpenRib(cursor) | Task::CloseRibs(cursor) => self.cursors.get(cursor.0).is_some(),
+            Task::Assemble(node) => self.overlay.shape(node).is_ok(),
+            Task::Close => true,
+        })))
+    )]
     fn step(
         &mut self,
         task: Task,
@@ -1080,6 +1226,17 @@ impl Walk<'_>
     ///
     /// # Errors
     /// Every variant the kind's arm raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — silently skipping a rebuilding entry violates the
+    ///   progress predicate; keeping a rib on the spine or rebuilding a dry
+    ///   node changes the erasure or the full-laziness step observation.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [tasks = self.tasks.len(), results = self.results.len()],
+        ensures: |ret| ret.is_err() || (self.tasks.len() >= tasks && self.results.len() >= results && (matches!(mode, Mode::Dry { .. } | Mode::DryPrefix { .. }) || self.tasks.len() > tasks || self.results.len() > results))
+    )]
     fn enter(
         &mut self,
         node: OverlayId,
@@ -1135,6 +1292,16 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — no survey answer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — confusing an inner share with an outer one, or
+    ///   changing the binder index used by the rib test, changes a
+    ///   classification and the observed maximal-rib sharing.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    #[spec(
+        ensures: |ret| ret == self.reached.get(&node).map(|reach| if reach.reads.holds(DeBruijnIndex::from(at.depth.0)) == Membership::Held || reach.escapes.least().is_some_and(|least| u32::from(least) < at.inner.0) { SharedPart::Spine } else { SharedPart::Rib }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn part(
         &self,
         node: OverlayId,
@@ -1169,6 +1336,20 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — a prefix mode met it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — copying the wrong core term, reusing the original
+    ///   id or minting in the dry pass violates the predicate; the public
+    ///   erasure oracle checks the retained opaque meaning.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    #[spec(
+        captures: [results = self.results.len(), entry = self.overlay.watermark()],
+        ensures: |ret| match mode {
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => ret == Err(DuplicationFault::MachineInvariant),
+            Mode::Dry { .. } => ret == Ok(()) && self.results.len() == results && self.overlay.watermark() == entry,
+            Mode::Plain | Mode::Spine { .. } => ret.is_err() || (self.results.len() == results.saturating_add(1) && self.results.last().is_some_and(|copied| *copied != node && self.overlay.shape(*copied) == self.overlay.shape(node))),
+        }
+    )]
     fn opaque(
         &mut self,
         node: OverlayId,
@@ -1224,6 +1405,26 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — the scope does not answer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — resolving an occurrence in its use site rather
+    ///   than its leg scope changes the queued task; treating a covered or
+    ///   exhausted binding as usable changes the refusal.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    #[spec(
+        captures: [tasks = self.tasks.len(), results = self.results.len(), cursors = self.cursors.len()],
+        ensures: |ret| match mode {
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => ret == Err(DuplicationFault::MachineInvariant),
+            Mode::Dry { .. } => ret == Ok(()) && self.tasks.len() == tasks && self.results.len() == results && self.cursors.len() == cursors,
+            Mode::Plain | Mode::Spine { .. } => ret.is_err() || self.binding(scope, bound.distance).is_ok_and(|binding| match binding {
+                Binding::Kept { .. } => self.results.len() == results.saturating_add(1) && self.tasks.len() == tasks,
+                Binding::Inlined { leg, scope: outer } => self.tasks.len() == tasks.saturating_add(1) && self.tasks.last() == Some(&Task::Enter { node: leg, scope: outer, mode: Mode::Plain }),
+                Binding::Distributed { leg, scope: outer, ribs } => self.cursors.len() == cursors.saturating_add(1) && self.cursors.get(cursors) == Some(&Cursor { ribs, met: RibCount::default() }) && self.tasks.last() == Some(&Task::Enter { node: leg, scope: outer, mode: Mode::Prefix { cursor: CursorId(cursors) } }),
+                Binding::Empty | Binding::Covered => false,
+            }),
+        }
+    )]
     fn occurrence(
         &mut self,
         node: OverlayId,
@@ -1279,6 +1480,25 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — a prefix mode met it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — scheduling the body before its leg, binding a dry
+    ///   share as live or skipping the dry pass violates the task or scope
+    ///   relation; the retained-share and rib witnesses distinguish treatments.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [tasks = self.tasks.len(), scopes = self.scopes.len(), cursors = self.cursors.len(), results = self.results.len()],
+        ensures: |ret| ret.is_err() || (self.results.len() == results && match mode {
+            Mode::Dry { .. } => self.scopes.len() == scopes.saturating_add(1) && self.tasks.len() == tasks.saturating_add(1) && self.scopes.last().is_some_and(|cell| cell.binding == Binding::Covered && cell.parent == scope),
+            Mode::Plain | Mode::Spine { .. } => match treatment(self.policy, leg_shape(self.overlay, sharing.leg)) {
+                Treatment::Keep => self.tasks.len() == tasks.saturating_add(3) && self.tasks.get(tasks) == Some(&Task::Close) && self.tasks.last() == Some(&Task::Enter { node: sharing.leg, scope, mode: Mode::Plain }),
+                Treatment::Inline => self.tasks.len() == tasks.saturating_add(1) && self.scopes.len() == scopes.saturating_add(1) && self.scopes.last().is_some_and(|cell| cell.binding == Binding::Inlined { leg: sharing.leg, scope } && cell.parent == scope),
+                Treatment::Distribute => self.tasks.len() == tasks.saturating_add(2) && self.cursors.len() == cursors.saturating_add(1) && self.tasks.last() == Some(&Task::Enter { node: sharing.leg, scope, mode: Mode::DryPrefix { cursor: CursorId(cursors) } }),
+            },
+            Mode::Prefix { .. } | Mode::DryPrefix { .. } => false,
+        })
+    )]
     fn share(
         &mut self,
         node: OverlayId,
@@ -1367,6 +1587,33 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the prefix or a counter
     ///   broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — reversed child execution, a missing binder shift
+    ///   or minting during a dry prefix violates the queued-mode relation.
+    ///   Accepting a nullary former as an abstraction prefix changes the
+    ///   retained refusal witness.
+    /// - witness: `duplicate::tests::nullary_grafts_cannot_stand_in_an_abstraction_prefix`
+    /// - witness: `duplicate::tests::surveys_lower_only_the_binders_above_each_child`
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    #[spec(
+        captures: tasks = self.tasks.len(),
+        ensures: |ret| ret.is_err() || Under::of(self.overlay, node).is_ok_and(|under| {
+            let rebuilds = !matches!(mode, Mode::Dry { .. } | Mode::DryPrefix { .. });
+            self.tasks.len() == tasks.saturating_add(under.listed.into_iter().flatten().count()).saturating_add(usize::from(rebuilds))
+                && (!rebuilds || self.tasks.get(tasks) == Some(&Task::Assemble(node)))
+                && self.tasks.get(tasks..).is_some_and(|queued| queued.iter().skip(usize::from(rebuilds)).rev().zip(under.listed.into_iter().flatten()).all(|(task, child)| {
+                    let expected = match mode {
+                        Mode::Plain => Ok(Mode::Plain),
+                        Mode::Prefix { cursor } => prefix_below(self.overlay, node).map(|below| match below { Below::Lambda => Mode::Prefix { cursor }, Below::Body => Mode::Spine { cursor, at: RibSite::default() } }),
+                        Mode::DryPrefix { cursor } => prefix_below(self.overlay, node).map(|below| match below { Below::Lambda => Mode::DryPrefix { cursor }, Below::Body => Mode::Dry { cursor, at: RibSite::default() } }),
+                        Mode::Spine { cursor, at } => at.under(child.binders).map(|at| Mode::Spine { cursor, at }),
+                        Mode::Dry { cursor, at } => at.under(child.binders).map(|at| Mode::Dry { cursor, at }),
+                    };
+                    matches!(*task, Task::Enter { node: queued_node, scope: queued_scope, mode: queued_mode } if queued_node == child.node && queued_scope == scope && expected == Ok(queued_mode))
+                }))
+        })
+    )]
     fn graft(
         &mut self,
         node: OverlayId,
@@ -1375,6 +1622,12 @@ impl Walk<'_>
     ) -> Result<(), DuplicationFault>
     {
         let under = Under::of(self.overlay, node)?;
+        let prefix = match mode {
+            | Mode::Prefix { .. } | Mode::DryPrefix { .. } => {
+                Some(prefix_below(self.overlay, node)?)
+            },
+            | Mode::Plain | Mode::Spine { .. } | Mode::Dry { .. } => None,
+        };
         let rebuilds = match mode {
             | Mode::Plain | Mode::Prefix { .. } | Mode::Spine { .. } => Rebuilds::Yes,
             | Mode::DryPrefix { .. } | Mode::Dry { .. } => Rebuilds::No,
@@ -1386,7 +1639,7 @@ impl Walk<'_>
             let mode = match mode {
                 | Mode::Plain => Mode::Plain,
                 | Mode::Prefix { cursor } | Mode::DryPrefix { cursor } => {
-                    let below = prefix_below(self.overlay, node)?;
+                    let below = prefix.ok_or(DuplicationFault::MachineInvariant)?;
                     match (below, rebuilds) {
                         | (Below::Lambda, _) => Mode::Prefix { cursor },
                         | (Below::Body, Rebuilds::Yes) => Mode::Spine {
@@ -1434,6 +1687,17 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — `share` is no share.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — binding the share to an older frame or entering
+    ///   its body in the outer scope violates the opening predicate and changes
+    ///   the erased occurrence.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    #[spec(
+        captures: [frames = self.frames.len(), scopes = self.scopes.len(), tasks = self.tasks.len()],
+        ensures: |ret| ret.is_err() || (self.frames.len() == frames.saturating_add(1) && self.frames.last() == Some(&Taken::default()) && self.scopes.len() == scopes.saturating_add(1) && self.scopes.last() == Some(&ScopeCell { binding: Binding::Kept { frame: FrameIndex(frames) }, parent: scope }) && self.tasks.len() == tasks.saturating_add(1) && self.sharing(share).is_ok_and(|sharing| self.tasks.last() == Some(&Task::Enter { node: sharing.body, scope: ScopeId(scopes), mode })))
+    )]
     fn open(
         &mut self,
         share: OverlayId,
@@ -1467,6 +1731,17 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — a stack is short.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — reversing the leg and body, losing an occurrence
+    ///   count or leaving the frame open changes the resulting share or its
+    ///   validation.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    #[spec(
+        captures: [results = self.results.len(), frames = self.frames.len(), body = self.results.last().copied(), leg = self.results.iter().rev().nth(1).copied(), taken = self.frames.last().copied()],
+        ensures: |ret| ret.is_err() || (self.results.len().saturating_add(1) == results && self.frames.len().saturating_add(1) == frames && body.zip(leg).zip(taken).is_some_and(|((body, leg), taken)| self.results.last().is_some_and(|shared| self.overlay.shape(*shared) == Ok(Shape::Shared(Sharing { body, leg, arity: ShareArity::from(taken.0) })))))
+    )]
     fn close(&mut self) -> Result<(), DuplicationFault>
     {
         let (Some(body), Some(leg), Some(taken)) =
@@ -1492,6 +1767,18 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the cursor broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — advancing the wrong cursor, preserving a stale arity
+    ///   or wrapping a full rib counter changes the next frame or refusal.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [frames = self.frames.len(), held = self.cursors.get(cursor.0).copied()],
+        ensures: |ret| held.and_then(|held| held.met.0.checked_add(1_u32).map(|met| Cursor { ribs: held.ribs, met: RibCount(met) })).map_or_else(
+            || ret == Err(DuplicationFault::MachineInvariant) && self.frames.len() == frames && self.cursors.get(cursor.0).copied() == held,
+            |next| ret == Ok(()) && self.frames.len() == frames.saturating_add(1) && self.frames.last() == Some(&Taken::default()) && self.cursors.get(cursor.0) == Some(&next))
+    )]
     fn open_rib(
         &mut self,
         cursor: CursorId,
@@ -1524,6 +1811,17 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the share or cursor broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — closing ribs before rebuilding the body or using
+    ///   the wrong first rib frame changes the pending tasks, bound scope and
+    ///   full-laziness observation.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [tasks = self.tasks.len(), scopes = self.scopes.len()],
+        ensures: |ret| ret.is_err() || (self.tasks.len() == tasks.saturating_add(2) && self.tasks.get(tasks) == Some(&Task::CloseRibs(cursor)) && self.scopes.len() == scopes.saturating_add(1) && self.sharing(share).is_ok_and(|sharing| self.cursors.get(cursor.0).is_some_and(|held| self.scopes.last() == Some(&ScopeCell { binding: Binding::Distributed { leg: sharing.leg, scope, ribs: held.ribs }, parent: scope }) && self.tasks.last() == Some(&Task::Enter { node: sharing.body, scope: ScopeId(scopes), mode }))))
+    )]
     fn distribute(
         &mut self,
         share: OverlayId,
@@ -1567,6 +1865,23 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — a stack is short.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — omitting a rib share, closing an extra frame or
+    ///   replacing the rebuilt body violates the nesting and stack relation;
+    ///   erasure and measured sharing check leg order and arities.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [results = self.results.len(), frames = self.frames.len(), held = self.cursors.get(cursor.0).copied(), body = self.results.last().copied()],
+        ensures: |ret| ret.is_err() || held.is_some_and(|held| usize::try_from(held.met.0).is_ok_and(|count| {
+            let mut inner = self.results.last().copied();
+            for _ in 0..count {
+                inner = inner.and_then(|node| self.overlay.shape(node).ok()).and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing.body), _ => None });
+            }
+            self.results.len().saturating_add(count) == results && self.frames.len().saturating_add(count) == frames && inner == body
+        }))
+    )]
     fn close_ribs(
         &mut self,
         cursor: CursorId,
@@ -1605,6 +1920,17 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — the cursor broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — repeating or skipping a rib counter, or minting
+    ///   its occurrence in the wrong family, violates the predicate; rib
+    ///   positions and full-laziness observations check the frame chosen.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: [results = self.results.len(), held = self.cursors.get(cursor.0).copied()],
+        ensures: |ret| ret.is_err() || (self.results.len() == results.saturating_add(1) && held.is_some_and(|held| self.cursors.get(cursor.0).is_some_and(|next| next.ribs == held.ribs && held.met.0.checked_add(1_u32) == Some(next.met.0)) && self.results.last().is_some_and(|pointed| core::mem::discriminant(pointed) == core::mem::discriminant(&node) && matches!(self.overlay.shape(*pointed), Ok(Shape::Bound(_))))))
+    )]
     fn rib_occurrence(
         &mut self,
         node: OverlayId,
@@ -1644,6 +1970,20 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — the frame broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pointing at the neighboring frame, reusing a position
+    ///   or wrapping the occurrence counter changes the returned bound node or
+    ///   refusal.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    #[spec(
+        captures: taken = self.frames.get(frame.0).copied(),
+        ensures: |ret| ret.map_or(true, |pointed| taken.is_some_and(|taken| self.frames.get(frame.0).is_some_and(|next| taken.0.checked_add(1_u32) == Some(next.0)) && core::mem::discriminant(&pointed) == core::mem::discriminant(&node) && self.overlay.shape(pointed).is_ok_and(|shape| match shape {
+            Shape::Bound(bound) => u32::from(bound.position) == taken.0 && usize::try_from(u32::from(bound.distance)).ok() == self.frames.len().checked_sub(frame.0).and_then(|remaining| remaining.checked_sub(1)),
+            _ => false,
+        })))
+    )]
     fn point(
         &mut self,
         node: OverlayId,
@@ -1703,6 +2043,16 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — the body is of a type family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — exchanging the leg and body or losing the arity
+    ///   violates the exact minted shape; erasure and retained-share counts
+    ///   witness its consumer meaning.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    #[spec(
+        ensures: |ret| ret.map_or(true, |shared| shared != body && core::mem::discriminant(&shared) == core::mem::discriminant(&body) && self.overlay.shape(shared) == Ok(Shape::Shared(Sharing { arity, leg, body })))
+    )]
     fn mint_share(
         &mut self,
         body: OverlayId,
@@ -1741,6 +2091,21 @@ impl Walk<'_>
     /// # Errors
     /// - [`DuplicationFault::Mint`] — the family is full.
     /// - [`DuplicationFault::MachineInvariant`] — a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — rebuilding a pair or case over reversed results
+    ///   violates the positional predicate. The independent erasure oracle and
+    ///   asymmetric former witness distinguish a changed constructor or
+    ///   payload.
+    /// - witness: `duplicate::tests::assembly_preserves_formers_payloads_and_child_order`
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    #[spec(
+        captures: [results = self.results.len(), top = [self.results.last().copied(), self.results.iter().rev().nth(1).copied(), self.results.iter().rev().nth(2).copied()]],
+        ensures: |ret| ret.map_or(true, |rebuilt| rebuilt != node && core::mem::discriminant(&rebuilt) == core::mem::discriminant(&node) && Under::of(self.overlay, node).is_ok_and(|before| Under::of(self.overlay, rebuilt).is_ok_and(|after| {
+            let count = before.listed.into_iter().flatten().count();
+            self.results.len().saturating_add(count) == results && after.listed.into_iter().flatten().count() == count && after.listed.into_iter().flatten().zip(before.listed.into_iter().flatten()).enumerate().all(|(index, (new, old))| new.binders == old.binders && count.checked_sub(index).and_then(|remaining| remaining.checked_sub(1)).and_then(|slot| top.get(slot)).copied().flatten() == Some(new.node))
+        })))
+    )]
     fn assemble(
         &mut self,
         node: OverlayId,
@@ -1853,6 +2218,15 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — no value is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — taking the bottom result, accepting the other family
+    ///   or retaining a refused top changes the result and the remaining stack.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    #[spec(
+        captures: [count = self.results.len(), top = self.results.last().copied()],
+        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Value(id) => Some(id), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn value(&mut self) -> Result<OverlayValueId, DuplicationFault>
     {
         let Some(OverlayId::Value(id)) = self.results.pop()
@@ -1874,6 +2248,15 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — no computation is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — taking the bottom result, accepting the other family
+    ///   or retaining a refused top changes the result and the remaining stack.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    #[spec(
+        captures: [count = self.results.len(), top = self.results.last().copied()],
+        ensures: |ret| self.results.len() == count.saturating_sub(1) && ret == top.and_then(|node| match node { OverlayId::Computation(id) => Some(id), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn computation(&mut self) -> Result<OverlayCompId, DuplicationFault>
     {
         let Some(OverlayId::Computation(id)) = self.results.pop()
@@ -1895,6 +2278,16 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — `share` is no share.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3/L1 — accepting a graft as a share or changing its
+    ///   arity, leg or body changes the checked shape and the independently
+    ///   erased result.
+    /// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+    /// - witness: `duplication::duplication::a_spinal_duplicate_keeps_a_leg_that_is_no_abstraction`
+    #[spec(
+        ensures: |ret| ret == self.overlay.shape(share).ok().and_then(|shape| match shape { Shape::Shared(sharing) => Some(sharing), _ => None }).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn sharing(
         &self,
         share: OverlayId,
@@ -1923,6 +2316,15 @@ impl Walk<'_>
     ///
     /// # Errors
     /// - [`DuplicationFault::MachineInvariant`] — the scope does not answer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — stepping by arena position rather than the recorded
+    ///   parent, shifting a distance or accepting the empty scope changes the
+    ///   binding or refusal.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    #[spec(
+        ensures: |ret| ret == usize::try_from(u32::from(distance)).ok().and_then(|distance| core::iter::successors(Some(scope), |here| self.scopes.get(here.0).filter(|cell| cell.binding != Binding::Empty).map(|cell| cell.parent)).nth(distance)).and_then(|here| self.scopes.get(here.0)).filter(|cell| cell.binding != Binding::Empty).map(|cell| cell.binding).ok_or(DuplicationFault::MachineInvariant)
+    )]
     fn binding(
         &self,
         scope: ScopeId,
@@ -1951,7 +2353,20 @@ impl Walk<'_>
     /// Open a scope cell binding one share inside `scope`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `scope` names an existing lexical scope.
+    /// - ensures: a fresh cell containing `binding` with `scope` as its parent.
+    /// - provides: persistent branch-local scope extension.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — allocating a nonfresh scope or replacing its lexical
+    ///   parent changes lookup across branched scope chains.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    #[spec(
+        captures: count = self.scopes.len(),
+        ensures: |ret| ret.0 == count && self.scopes.len() == count.saturating_add(1) && self.scopes.get(ret.0) == Some(&ScopeCell { binding, parent: scope })
+    )]
     fn bind(
         &mut self,
         scope: ScopeId,
@@ -1969,7 +2384,21 @@ impl Walk<'_>
     /// Start a cursor whose first rib frame is `ribs`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `ribs` names the first frame of this distribution.
+    /// - ensures: a fresh cursor starting at `ribs`, with no rib met yet.
+    /// - provides: independent positions for distributions and their copies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — aliasing another distribution or inheriting its met
+    ///   count changes the next rib frame or overflow boundary.
+    /// - witness: `duplicate::tests::scope_distances_and_typed_results_keep_their_boundaries`
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    #[spec(
+        captures: count = self.cursors.len(),
+        ensures: |ret| ret.0 == count && self.cursors.len() == count.saturating_add(1) && self.cursors.get(ret.0) == Some(&Cursor { ribs, met: RibCount::default() })
+    )]
     fn cursor(
         &mut self,
         ribs: FrameIndex,
@@ -2017,6 +2446,20 @@ enum Below
 ///
 /// # Errors
 /// - [`DuplicationFault::MachineInvariant`] — `node` is no prefix node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — confusing a thunk with a lambda enters the wrong mode;
+///   admitting a nullary graft instead of refusing it violates the prefix
+///   boundary.
+/// - witness: `duplicate::tests::nullary_grafts_cannot_stand_in_an_abstraction_prefix`
+/// - witness: `duplication::duplication::spinal_duplication_is_invisible_to_erasure`
+#[spec(
+    ensures: |ret| ret == match node {
+        OverlayId::Value(id) => if matches!(overlay.value(id), Some(&ValueNode::Grafted(ValueGraft::Thunk(_)))) { Ok(Below::Lambda) } else { Err(DuplicationFault::MachineInvariant) },
+        OverlayId::Computation(id) => if matches!(overlay.computation(id), Some(&CompNode::Grafted(CompGraft::Lambda(_)))) { Ok(Below::Body) } else { Err(DuplicationFault::MachineInvariant) },
+        OverlayId::ValueType(_) | OverlayId::CompType(_) => Err(DuplicationFault::MachineInvariant),
+    }
+)]
 fn prefix_below(
     overlay: &Overlay,
     node: OverlayId,
@@ -2034,5 +2477,453 @@ fn prefix_below(
         | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
             Err(DuplicationFault::MachineInvariant)
         },
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use alloc::vec::Vec;
+
+    use super::Binding;
+    use super::CursorId;
+    use super::DuplicationFault;
+    use super::Mode;
+    use super::ScopeCell;
+    use super::ScopeId;
+    use super::Walk;
+    use crate::DuplicationPolicy;
+    use crate::Overlay;
+    use crate::OverlayId;
+    use crate::ValueGraft;
+    use crate::ValueNode;
+
+    #[test]
+    fn nullary_grafts_cannot_stand_in_an_abstraction_prefix()
+    {
+        for mode in [
+            Mode::Prefix {
+                cursor: CursorId(0),
+            },
+            Mode::DryPrefix {
+                cursor: CursorId(0),
+            },
+        ] {
+            let mut overlay = Overlay::new();
+            let unit = overlay
+                .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+                .expect("a unit has no children");
+            let mut walk = Walk {
+                overlay: &mut overlay,
+                policy: DuplicationPolicy::default(),
+                reached: BTreeMap::new(),
+                tasks: Vec::new(),
+                results: Vec::new(),
+                frames: Vec::new(),
+                scopes: Vec::from([ScopeCell {
+                    binding: Binding::Empty,
+                    parent: ScopeId::EMPTY,
+                }]),
+                cursors: Vec::new(),
+            };
+            assert_eq!(
+                Err(DuplicationFault::MachineInvariant),
+                walk.graft(OverlayId::Value(unit), ScopeId::EMPTY, mode)
+            );
+        }
+    }
+
+    #[test]
+    fn scope_distances_and_typed_results_keep_their_boundaries()
+    {
+        use super::Bound;
+        use super::CompGraft;
+        use super::CompNode;
+        use super::Cursor;
+        use super::FrameIndex;
+        use super::RibCount;
+        use super::Shape;
+        use super::ShareDistance;
+        use super::SharePosition;
+        use super::Taken;
+        use super::innermost;
+        let mut overlay = Overlay::new();
+        let value = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+            .expect("the unit is closed");
+        let comp = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(value)))
+            .expect("the value lives");
+        let legs = [OverlayId::Value(value), OverlayId::Computation(comp)];
+        assert_eq!(
+            Ok(OverlayId::Computation(comp)),
+            innermost(&legs, ShareDistance::from(0_u32))
+        );
+        assert_eq!(
+            Ok(OverlayId::Value(value)),
+            innermost(&legs, ShareDistance::from(1_u32))
+        );
+        for distance in [2_u32, u32::MAX] {
+            assert_eq!(
+                Err(DuplicationFault::MachineInvariant),
+                innermost(&legs, ShareDistance::from(distance))
+            );
+        }
+        let mut walk = Walk {
+            overlay: &mut overlay,
+            policy: DuplicationPolicy::default(),
+            reached: BTreeMap::new(),
+            tasks: Vec::new(),
+            results: Vec::new(),
+            frames: Vec::new(),
+            scopes: Vec::from([ScopeCell {
+                binding: Binding::Empty,
+                parent: ScopeId::EMPTY,
+            }]),
+            cursors: Vec::new(),
+        };
+        let first_binding = Binding::Kept {
+            frame: FrameIndex(2),
+        };
+        let first = walk.bind(ScopeId::EMPTY, first_binding);
+        let separate = walk.bind(ScopeId::EMPTY, Binding::Covered);
+        let inner_binding = Binding::Inlined {
+            leg: OverlayId::Value(value),
+            scope: first,
+        };
+        let inner = walk.bind(first, inner_binding);
+        assert_eq!(
+            Ok(inner_binding),
+            walk.binding(inner, ShareDistance::from(0_u32))
+        );
+        assert_eq!(
+            Ok(first_binding),
+            walk.binding(inner, ShareDistance::from(1_u32))
+        );
+        assert_eq!(
+            Ok(Binding::Covered),
+            walk.binding(separate, ShareDistance::from(0_u32))
+        );
+        for distance in [2_u32, u32::MAX] {
+            assert_eq!(
+                Err(DuplicationFault::MachineInvariant),
+                walk.binding(inner, ShareDistance::from(distance))
+            );
+        }
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            walk.binding(ScopeId(usize::MAX), ShareDistance::from(0_u32))
+        );
+        walk.results
+            .extend([OverlayId::Value(value), OverlayId::Computation(comp)]);
+        assert_eq!(Err(DuplicationFault::MachineInvariant), walk.value());
+        assert_eq!(Err(DuplicationFault::MachineInvariant), walk.computation());
+        assert_eq!(Err(DuplicationFault::MachineInvariant), walk.value());
+        walk.results
+            .extend([OverlayId::Computation(comp), OverlayId::Value(value)]);
+        assert_eq!(Ok(value), walk.value());
+        assert_eq!(Ok(comp), walk.computation());
+        walk.frames.extend([Taken(2), Taken(5)]);
+        let outer = walk
+            .point(OverlayId::Value(value), FrameIndex(0))
+            .expect("the outer frame lives");
+        let inner = walk
+            .point(OverlayId::Computation(comp), FrameIndex(1))
+            .expect("the inner frame lives");
+        assert_eq!(
+            Ok(Shape::Bound(Bound {
+                distance: ShareDistance::from(1_u32),
+                position: SharePosition::from(2_u32)
+            })),
+            walk.overlay.shape(outer)
+        );
+        assert_eq!(
+            Ok(Shape::Bound(Bound {
+                distance: ShareDistance::from(0_u32),
+                position: SharePosition::from(5_u32)
+            })),
+            walk.overlay.shape(inner)
+        );
+        assert_eq!(Vec::from([Taken(3), Taken(6)]), walk.frames);
+        *walk.frames.get_mut(0).expect("the outer frame lives") = Taken(u32::MAX);
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            walk.point(OverlayId::Value(value), FrameIndex(0))
+        );
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            walk.point(OverlayId::Value(value), FrameIndex(usize::MAX))
+        );
+        assert_eq!(Some(&Taken(u32::MAX)), walk.frames.first());
+        let full = walk.cursor(FrameIndex(0));
+        walk.cursors.get_mut(full.0).expect("the cursor lives").met = RibCount(u32::MAX);
+        assert_eq!(Err(DuplicationFault::MachineInvariant), walk.open_rib(full));
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            walk.open_rib(CursorId(usize::MAX))
+        );
+        assert_eq!(2, walk.frames.len());
+        let fresh = walk.cursor(FrameIndex(2));
+        walk.open_rib(fresh)
+            .expect("a fresh cursor opens its first frame");
+        assert_eq!(
+            Some(&Cursor {
+                ribs: FrameIndex(2),
+                met: RibCount(1)
+            }),
+            walk.cursors.get(fresh.0)
+        );
+        assert_eq!(Some(&Taken::default()), walk.frames.get(2));
+        assert_eq!(
+            Some(&Cursor {
+                ribs: FrameIndex(0),
+                met: RibCount(u32::MAX)
+            }),
+            walk.cursors.get(full.0)
+        );
+    }
+
+    #[test]
+    fn surveys_lower_only_the_binders_above_each_child()
+    {
+        use super::BinderDepth;
+        use super::Child;
+        use super::CompGraft;
+        use super::CompNode;
+        use super::DeBruijnIndex;
+        use super::InnerFrames;
+        use super::Lowering;
+        use super::Outward;
+        use super::RibSite;
+        use super::Under;
+        use super::Zone;
+        use super::survey;
+        let mut overlay = Overlay::new();
+        let one = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32),
+            }))
+            .expect("a variable has no children");
+        let branch_one = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32),
+            }))
+            .expect("a second occurrence has its own overlay node");
+        let two = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(2_u32),
+            }))
+            .expect("a variable has no children");
+        let linear = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Linear,
+                index: DeBruijnIndex::from(0_u32),
+            }))
+            .expect("a variable has no children");
+        let left = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(branch_one)))
+            .expect("the child lives");
+        let right = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(two)))
+            .expect("the child lives");
+        let case = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Case {
+                scrutinee: one,
+                on_left: left,
+                on_right: right,
+            }))
+            .expect("the children live");
+        let lambda = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Lambda(case)))
+            .expect("the body lives");
+        overlay
+            .validate(OverlayId::Computation(lambda))
+            .expect("the fixture uses each overlay node once");
+        assert_eq!(
+            Ok(Under {
+                listed: [
+                    Some(Child {
+                        node: OverlayId::Value(one),
+                        binders: Lowering::NONE
+                    }),
+                    Some(Child {
+                        node: OverlayId::Computation(left),
+                        binders: Lowering::ONE
+                    }),
+                    Some(Child {
+                        node: OverlayId::Computation(right),
+                        binders: Lowering::ONE
+                    }),
+                ]
+            }),
+            Under::of(&overlay, OverlayId::Computation(case))
+        );
+        let core = gandr_core_term::CoreArena::new();
+        let reached = survey(&overlay, &core, OverlayId::Computation(lambda))
+            .expect("the overlay has no unresolved shares");
+        assert_eq!(
+            Outward::single(DeBruijnIndex::from(0_u32)),
+            reached
+                .get(&OverlayId::Computation(lambda))
+                .expect("the root was surveyed")
+                .reads
+        );
+        let mut case_reads = Outward::single(DeBruijnIndex::from(0_u32));
+        case_reads.join_lowered(&Outward::single(DeBruijnIndex::from(1_u32)), Lowering::NONE);
+        assert_eq!(
+            case_reads,
+            reached
+                .get(&OverlayId::Computation(case))
+                .expect("the case was surveyed")
+                .reads
+        );
+        assert_eq!(
+            Outward::default(),
+            reached
+                .get(&OverlayId::Computation(lambda))
+                .expect("the root was surveyed")
+                .escapes
+        );
+        let linear_reach =
+            survey(&overlay, &core, OverlayId::Value(linear)).expect("a linear variable surveys");
+        assert_eq!(
+            Outward::default(),
+            linear_reach
+                .get(&OverlayId::Value(linear))
+                .expect("the root was surveyed")
+                .reads
+        );
+        let site = RibSite {
+            depth: BinderDepth(5),
+            inner: InnerFrames(7),
+        };
+        assert_eq!(
+            Ok(RibSite {
+                depth: BinderDepth(6),
+                inner: InnerFrames(7)
+            }),
+            site.under(Lowering::ONE)
+        );
+        assert_eq!(
+            Ok(RibSite {
+                depth: BinderDepth(5),
+                inner: InnerFrames(8)
+            }),
+            site.within()
+        );
+        let deepest = RibSite {
+            depth: BinderDepth(u32::MAX),
+            inner: InnerFrames(7),
+        };
+        assert_eq!(Ok(deepest), deepest.under(Lowering::NONE));
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            deepest.under(Lowering::ONE)
+        );
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            (RibSite {
+                depth: BinderDepth(5),
+                inner: InnerFrames(u32::MAX)
+            })
+            .within()
+        );
+    }
+
+    #[test]
+    fn assembly_preserves_formers_payloads_and_child_order()
+    {
+        use super::CompGraft;
+        use super::CompNode;
+        use super::DeBruijnIndex;
+        use super::Zone;
+        let mut overlay = Overlay::new();
+        let original = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Linear,
+                index: DeBruijnIndex::from(3_u32),
+            }))
+            .expect("a variable has no children");
+        let unit = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+            .expect("a unit has no children");
+        let other = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(7_u32),
+            }))
+            .expect("a variable has no children");
+        let pair = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Pair(original, unit)))
+            .expect("both children live");
+        let left = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(unit)))
+            .expect("the child lives");
+        let forced_variable = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Linear,
+                index: DeBruijnIndex::from(3_u32),
+            }))
+            .expect("the force has its own occurrence node");
+        let right = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Force(forced_variable)))
+            .expect("the child lives");
+        let case = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Case {
+                scrutinee: original,
+                on_left: left,
+                on_right: right,
+            }))
+            .expect("the children live");
+        overlay
+            .validate(OverlayId::Computation(case))
+            .expect("the source case has no implicit node reuse");
+        let mut walk = Walk {
+            overlay: &mut overlay,
+            policy: DuplicationPolicy::default(),
+            reached: BTreeMap::new(),
+            tasks: Vec::new(),
+            results: Vec::new(),
+            frames: Vec::new(),
+            scopes: Vec::from([ScopeCell {
+                binding: Binding::Empty,
+                parent: ScopeId::EMPTY,
+            }]),
+            cursors: Vec::new(),
+        };
+        walk.results
+            .extend([OverlayId::Value(unit), OverlayId::Value(other)]);
+        let rebuilt = walk
+            .assemble(OverlayId::Value(pair))
+            .expect("the rebuilt pair children are ready");
+        assert!(
+            matches!(rebuilt, OverlayId::Value(id) if walk.overlay.value(id) == Some(&ValueNode::Grafted(ValueGraft::Pair(unit, other))))
+        );
+        let copied = walk
+            .assemble(OverlayId::Value(original))
+            .expect("a variable has no children to pop");
+        assert!(
+            matches!(copied, OverlayId::Value(id) if walk.overlay.value(id) == Some(&ValueNode::Grafted(ValueGraft::Variable { zone: Zone::Linear, index: DeBruijnIndex::from(3_u32) })))
+        );
+        walk.results.extend([
+            OverlayId::Value(other),
+            OverlayId::Computation(right),
+            OverlayId::Computation(left),
+        ]);
+        let rebuilt = walk
+            .assemble(OverlayId::Computation(case))
+            .expect("the rebuilt case children are ready");
+        assert!(
+            matches!(rebuilt, OverlayId::Computation(id) if walk.overlay.computation(id) == Some(&CompNode::Grafted(CompGraft::Case { scrutinee: other, on_left: right, on_right: left })))
+        );
+        walk.results.push(OverlayId::Value(unit));
+        assert_eq!(
+            Err(DuplicationFault::MachineInvariant),
+            walk.assemble(OverlayId::Value(pair))
+        );
     }
 }

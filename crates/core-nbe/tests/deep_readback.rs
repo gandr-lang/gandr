@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Readback is iterative, observed as stack usage rather than as completion.
 //!
 //! Readback has the same reason to be a machine that evaluation has, and one
@@ -73,6 +62,7 @@ mod trees;
 #[cfg(test)]
 mod deep_readback
 {
+    use anodized::spec;
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::CompGraft;
     use gandr_core_nbe::CompNode;
@@ -139,6 +129,19 @@ mod deep_readback
     /// - provides: the budget that keeps a refusal in these witnesses a depth
     ///   result rather than an exhaustion one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the fixed budget is observed directly, while both
+    ///   50,000-link fixtures completing inside a 256 KiB stack establish its
+    ///   adequacy. The budget guard alone does not establish normalization or
+    ///   depth; the rebuilt chains and byte-for-byte comparisons do.
+    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        ensures: |ret| ret == Fuel::from(4_000_000_u32)
+    )]
     fn ample() -> Fuel
     {
         Fuel::from(4_000_000_u32)
@@ -157,6 +160,28 @@ mod deep_readback
     ///   outermost pair's id.
     /// - provides: the deep value and the reference its overlay erases to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent
+    ///   requires every pair to reuse one unit leaf and ends at that leaf at
+    ///   exactly the requested depth. Exact erased-arena equality and the
+    ///   independently walked readback distinguish a shorter chain, a non-unit
+    ///   second child and exponential self-sharing.
+    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut leaf = None;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&Value::Pair(first, second)) = ret.0.value(top) else { return false; };
+                if ret.0.value(second) != Some(&Value::Unit) || leaf.is_some_and(|held| held != second) { return false; }
+                leaf = Some(second);
+                top = first;
+            }
+            ret.0.value(top) == Some(&Value::Unit) && leaf.is_none_or(|held| held == top)
+        }
+    )]
     fn unshared_value_chain() -> (CoreArena, ValueId)
     {
         let mut core = CoreArena::new();
@@ -179,6 +204,30 @@ mod deep_readback
     ///   occurrence than [`CHAIN_LINKS`], placed in preorder down the chain.
     /// - provides: the overlay that erases to [`unshared_value_chain`].
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth and arity fit their counters. The
+    ///   root shares one unit, the right occurrence at each pair has its
+    ///   descending preorder position, and the terminal occurrence has position
+    ///   zero. Exact erased-arena equality and measured quantities distinguish
+    ///   reversed numbering, a wrong arity and a missing link.
+    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_readback::deep_readback::the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| {
+            let Some(&ValueNode::Shared(sharing)) = ret.0.value(ret.1) else { return false; };
+            let OverlayId::Value(leg) = sharing.leg else { return false; };
+            let Ok(links) = u32::try_from(CHAIN_LINKS) else { return false; };
+            if sharing.arity != ShareArity::from(links.saturating_add(1)) || ret.0.value(leg) != Some(&ValueNode::Grafted(ValueGraft::Unit)) { return false; }
+            let mut top = sharing.body;
+            for position in (1..=links).rev() {
+                let Some(&ValueNode::Grafted(ValueGraft::Pair(first, second))) = ret.0.value(top) else { return false; };
+                if ret.0.value(second) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(position) })) { return false; }
+                top = first;
+            }
+            ret.0.value(top) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) }))
+        }
+    )]
     fn shared_value_chain() -> (Overlay, OverlayValueId)
     {
         let mut overlay = Overlay::new();
@@ -224,6 +273,26 @@ mod deep_readback
     /// - provides: the deep computation and the reference its overlay erases
     ///   to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent
+    ///   crosses return/thunk at every link and ends at return/unit, excluding
+    ///   an early weak-head stop and a wrong-polarity child. Exact arena
+    ///   equality and a 256 KiB readback witness independently observe the
+    ///   complete chain.
+    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&Computation::Return(value)) = ret.0.computation(top) else { return false; };
+                let Some(&Value::Thunk(body)) = ret.0.value(value) else { return false; };
+                top = body;
+            }
+            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+        }
+    )]
     fn unshared_suspension_chain() -> (CoreArena, ComputationId)
     {
         let mut core = CoreArena::new();
@@ -246,6 +315,27 @@ mod deep_readback
     ///   thunk-returner links over `return ⟨⟩`, with no share.
     /// - provides: the overlay that erases to [`unshared_suspension_chain`].
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits overlay ids. Every link is a
+    ///   grafted return/thunk pair and the terminal grafts are return/unit,
+    ///   excluding accidental shares and a short suspension chain. The
+    ///   independently built core arena and full readback must agree byte for
+    ///   byte.
+    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&CompNode::Grafted(CompGraft::Return(value))) = ret.0.computation(top) else { return false; };
+                let Some(&ValueNode::Grafted(ValueGraft::Thunk(body))) = ret.0.value(value) else { return false; };
+                top = body;
+            }
+            matches!(ret.0.computation(top), Some(&CompNode::Grafted(CompGraft::Return(value)))
+                if ret.0.value(value) == Some(&ValueNode::Grafted(ValueGraft::Unit)))
+        }
+    )]
     fn grafted_suspension_chain() -> (Overlay, OverlayCompId)
     {
         let mut overlay = Overlay::new();
@@ -275,6 +365,16 @@ mod deep_readback
     /// - ensures: a fresh occurrence at distance zero.
     /// - provides: the occurrences the shared builder places in preorder.
     /// - panics: when the mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — any occurrence position fits its own counter and the
+    ///   mint fits overlay ids. Exact distance and position preserve the
+    ///   preorder numbering; the shared chain erasing byte for byte and its
+    ///   measured arity distinguish a shifted or repeated occurrence.
+    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        ensures: |ret| overlay.value(ret) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position }))
+    )]
     fn value_occurrence(
         overlay: &mut Overlay,
         position: SharePosition,
@@ -291,13 +391,26 @@ mod deep_readback
     /// Evaluate a closed value and read it back in the rebuilding mode.
     ///
     /// # Specification
-    /// - requires: `term` is a closed value of `core`.
+    /// - requires: `term` is a closed value whose evaluation and readback fit
+    ///   the supplied budget.
     /// - ensures: the domain arena the run filled and the rebuilt core value,
     ///   minted into `core`.
     /// - provides: the one run of the unshared pipeline both sides of a
     ///   comparison go through.
-    /// - panics: when the evaluation or the readback is refused, which a closed
-    ///   term under an ample budget does not provoke.
+    /// - panics: when evaluation or readback refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed value normalizes within the supplied budget.
+    ///   Input and rebuilt ids must resolve in the same arena. Independent
+    ///   depth, leaf and whole-arena comparisons distinguish source reuse from
+    ///   rebuilding, a shorter result and wrong readback structure; the small
+    ///   stack witnesses traversal depth.
+    /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        requires: core.value(term).is_some(),
+        ensures: |ret| core.value(term).is_some() && core.value(ret.1).is_some()
+    )]
     fn read_back_value(
         core: &mut CoreArena,
         term: ValueId,
@@ -325,13 +438,26 @@ mod deep_readback
     /// Evaluate a closed computation and read it back in the rebuilding mode.
     ///
     /// # Specification
-    /// - requires: `term` is a closed computation of `core`.
+    /// - requires: `term` is a closed computation whose evaluation and readback
+    ///   fit the supplied budget.
     /// - ensures: the domain arena the run filled and the rebuilt core
     ///   computation, minted into `core`.
     /// - provides: the one run of the unshared pipeline both sides of a
     ///   comparison go through.
-    /// - panics: when the evaluation or the readback is refused, which a closed
-    ///   term under an ample budget does not provoke.
+    /// - panics: when evaluation or readback refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed computation and its driven evaluations fit
+    ///   the supplied budget. Both input and rebuilt ids remain live. The
+    ///   suspension-chain depth and exact arena comparisons distinguish
+    ///   stopping at the outer returner, losing a thunk and reading a wrong
+    ///   family.
+    /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+    /// - witness: `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+    #[spec(
+        requires: core.computation(term).is_some(),
+        ensures: |ret| core.computation(term).is_some() && core.computation(ret.1).is_some()
+    )]
     fn read_back_computation(
         core: &mut CoreArena,
         term: ComputationId,
@@ -360,12 +486,31 @@ mod deep_readback
     /// fresh arena, and read the result back there.
     ///
     /// # Specification
-    /// - requires: `root` stands for a closed term with no opaque node.
+    /// - requires: a closed evaluation root with no opaque node, whose run fits
+    ///   the supplied budget.
     /// - ensures: the arena the run erased and read back into, and the result
     ///   read back; the overlay is as it was.
     /// - provides: the spinal side of each readback differential.
     /// - panics: when installation, evaluation or readback refuses, which no
     ///   deep case under an ample budget provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed evaluation overlay contains no opaque node
+    ///   and fits the run budget. The entry watermark is preserved and the
+    ///   returned id has the input family in its returned arena. Independent
+    ///   erased-pipeline tree comparisons distinguish wrong sharing, a changed
+    ///   overlay prefix and a readback into the wrong arena.
+    /// - witness: `deep_readback::deep_readback::a_spinal_value_chain_reads_back_as_the_erased_one`
+    /// - witness: `deep_readback::deep_readback::a_spinal_suspension_chain_reads_back_as_the_erased_one`
+    #[spec(
+        requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
+        captures: [mark = overlay.watermark()],
+        ensures: |ret| overlay.watermark() == mark && match (root, ret.1) {
+            (OverlayId::Value(_), Term::Value(id)) => ret.0.value(id).is_some(),
+            (OverlayId::Computation(_), Term::Computation(id)) => ret.0.computation(id).is_some(),
+            _ => false,
+        }
+    )]
     fn spinal_read_back(
         overlay: &mut Overlay,
         root: OverlayId,

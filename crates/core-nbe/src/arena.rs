@@ -142,9 +142,15 @@ struct ArenaIndex(u32);
 ///   and kernel arenas take the same posture, so the three do not diverge on a
 ///   condition none can reach.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — zero, one and both sides of the index ceiling distinguish
+///   exact minting from premature saturation; widening each representable
+///   result must recover the input.
+/// - witness: `arena::tests::index_conversion_preserves_the_range_before_saturating`
 #[inline]
-#[spec(ensures: |ret| usize::try_from(ret.0).is_ok_and(|widened| widened == length.0)
-    || ret.0 == u32::MAX)]
+#[spec(ensures: |ret| u32::try_from(length.0)
+    .map_or(ret.0 == u32::MAX, |index| ret.0 == index))]
 fn id_index(length: ArenaLength) -> ArenaIndex
 {
     ArenaIndex(u32::try_from(length.0).unwrap_or(u32::MAX))
@@ -160,9 +166,15 @@ fn id_index(length: ArenaLength) -> ArenaIndex
 /// - fails: never; it saturates at the offset ceiling, which a checked read
 ///   then rejects.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — zero, one and the last two indices widen without
+///   aliasing, so narrowing or prematurely saturating an offset changes a
+///   boundary observation.
+/// - witness: `arena::tests::index_conversion_preserves_the_range_before_saturating`
 #[inline]
-#[spec(ensures: |ret| u32::try_from(ret.0).is_ok_and(|narrowed| narrowed == index.0)
-    || ret.0 == usize::MAX)]
+#[spec(ensures: |ret| usize::try_from(index.0)
+    .map_or(ret.0 == usize::MAX, |offset| ret.0 == offset))]
 fn id_offset(index: ArenaIndex) -> ArenaLength
 {
     ArenaLength(usize::try_from(index.0).unwrap_or(usize::MAX))
@@ -203,7 +215,16 @@ impl From<ForceRefusal> for DomainFault
     ///   reads an `Option` around a `Result`.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — forcing a rigid neutral and forcing a loaded neutral
+    ///   twice distinguish both translated refusals from dangling resolution
+    ///   and successful forcing.
+    /// - witness: `arena::tests::forcing_a_dangling_neutral_is_refused`
     #[inline]
+    #[spec(ensures: |ret| matches!((refusal, ret),
+        (ForceRefusal::Rigid, Self::NeutralIsRigid)
+        | (ForceRefusal::AlreadyForced, Self::NeutralAlreadyForced)))]
     fn from(refusal: ForceRefusal) -> Self
     {
         match refusal {
@@ -282,8 +303,21 @@ impl DomainArena
     ///   accepts.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a populated mark covers all six families, a retained
+    ///   prefix survives truncation and a stale later mark cannot regrow it;
+    ///   omitting a family or restoring the wrong boundary changes a lookup.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.values == self.values.len()
+        && ret.computations == self.computations.len()
+        && ret.neutrals == self.neutrals.len()
+        && ret.value_closures == self.value_closures.len()
+        && ret.comp_closures == self.comp_closures.len()
+        && ret.levels == self.levels.len())]
     pub fn watermark(&self) -> RunWatermark
     {
         RunWatermark {
@@ -319,7 +353,8 @@ impl DomainArena
     /// - hypothesis: L3 — one decision surface per family, separated by a mark
     ///   below the current length and a mark at it, with the post-truncation
     ///   lookup of a dropped id asserted absent in each family a node was
-    ///   minted into.
+    ///   minted into. Retaining any dropped family or guard, or regrowing a
+    ///   stale mark, changes the post-truncation lookups.
     /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
     /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
@@ -361,8 +396,16 @@ impl DomainArena
     ///   another arena that is nevertheless in range resolves to this arena's
     ///   node there; an id carries no arena provenance.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(id.0)
+        .is_ok_and(|offset| offset < self.values.len()))]
     pub fn value(
         &self,
         id: DomainValueId,
@@ -383,8 +426,16 @@ impl DomainArena
     /// - fails: yields nothing at or above the family length; an id carries no
     ///   arena provenance, so an in-range foreign id resolves here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(id.0)
+        .is_ok_and(|offset| offset < self.computations.len()))]
     pub fn computation(
         &self,
         id: DomainCompId,
@@ -405,8 +456,16 @@ impl DomainArena
     /// - fails: yields nothing at or above the family length; an id carries no
     ///   arena provenance, so an in-range foreign id resolves here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(id.0)
+        .is_ok_and(|offset| offset < self.neutrals.len()))]
     pub fn neutral(
         &self,
         id: NeutralId,
@@ -427,8 +486,16 @@ impl DomainArena
     /// - fails: yields nothing at or above the family length; an id carries no
     ///   arena provenance, so an in-range foreign id resolves here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(id.0)
+        .is_ok_and(|offset| offset < self.value_closures.len()))]
     pub fn value_closure(
         &self,
         id: ValueClosureId,
@@ -449,8 +516,16 @@ impl DomainArena
     /// - fails: yields nothing at or above the family length; an id carries no
     ///   arena provenance, so an in-range foreign id resolves here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(id.0)
+        .is_ok_and(|offset| offset < self.comp_closures.len()))]
     pub fn comp_closure(
         &self,
         id: CompClosureId,
@@ -471,8 +546,16 @@ impl DomainArena
     /// - fails: yields nothing at or above the table length; a target carries
     ///   no arena provenance, so an in-range foreign one resolves here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — live entries resolve before teardown and the same ids
+    ///   fail after their family is truncated; retaining a dropped entry or
+    ///   rejecting an allocated entry changes the boundary observation.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == usize::try_from(u32::from(target))
+        .is_ok_and(|offset| offset < self.levels.len()))]
     pub fn level(
         &self,
         target: LiftTarget,
@@ -494,6 +577,14 @@ impl DomainArena
     ///
     /// # Errors
     /// - [`DomainFault::Dangling`] — the id names no value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — allocated words disappear with their nodes at
+    ///   teardown; loaded heads and closure-bearing spines remain flexible, so
+    ///   stale guard entries or a false rigid answer are observable.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok() == self.value(id).is_some())]
     pub fn value_guard(
@@ -519,6 +610,14 @@ impl DomainArena
     ///
     /// # Errors
     /// - [`DomainFault::Dangling`] — the id names no computation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — allocated words disappear with their nodes at
+    ///   teardown; loaded heads and closure-bearing spines remain flexible, so
+    ///   stale guard entries or a false rigid answer are observable.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok() == self.computation(id).is_some())]
     pub fn comp_guard(
@@ -545,6 +644,14 @@ impl DomainArena
     ///
     /// # Errors
     /// - [`DomainFault::Dangling`] — the id names no neutral.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — allocated words disappear with their nodes at
+    ///   teardown; loaded heads and closure-bearing spines remain flexible, so
+    ///   stale guard entries or a false rigid answer are observable.
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok() == self.neutral(id).is_some())]
     pub fn neutral_guard(
@@ -569,7 +676,17 @@ impl DomainArena
     ///   child through: a word over a dangling child decides nothing.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a rigid argument, a closure-bearing argument and a
+    ///   dangling argument separate preservation of a usable word from
+    ///   conservative flexibility; losing flexibility later in the spine
+    ///   changes the final guard.
+    /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     #[inline]
+    #[spec(ensures: |ret| self.value_guard(id)
+        .map_or(ret == Guard::Flexible, |guard| ret == guard))]
     fn folded_value_guard(
         &self,
         id: DomainValueId,
@@ -598,10 +715,19 @@ impl DomainArena
     ///   closure-holding eliminations and the argument's word, separated by a
     ///   rigid variable applied to a rigid argument, the same head carrying an
     ///   unforced body, and a spine stacking a bind; a static family's word is
-    ///   separated by head index, by arity and by argument.
+    ///   separated by head index, by arity and by argument. A flexible argument
+    ///   or a case before a later rigid elimination must not become rigid
+    ///   again; losing its flexibility changes the final word.
+    /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
-    #[spec(ensures: |ret| !(matches!(unfolding, Unfolding::Unforced(_) | Unfolding::Forced(_)) || spine.iter().any(|step| matches!(step, &Elimination::Transport(_) | &Elimination::ProductTransport(_) | &Elimination::Bind(_) | &Elimination::Case { .. }))) || ret == Guard::Flexible)]
+    #[spec(ensures: |ret| matches!(ret, Guard::Flexible) ==
+        (!matches!(unfolding, Unfolding::Rigid) || spine.iter().any(|elimination| match *elimination {
+            Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
+                !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
+            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } => true,
+            Elimination::Force => false,
+        })))]
     fn neutral_word(
         &self,
         head: NeutralHead,
@@ -656,7 +782,24 @@ impl DomainArena
     ///   item states rather than a fallback.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — distinct child and parent ids remain ordered,
+    ///   reconstructed terms retain their operands, and truncation removes
+    ///   nodes together with their words; aliasing an earlier allocation or
+    ///   desynchronizing guards changes an observation.
+    /// - witness: `arena::tests::a_child_id_is_strictly_below_its_parent`
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
+    #[spec(
+        captures: entry_length = self.values.len(),
+        ensures: |ret| self.values.len().checked_sub(1) == Some(entry_length)
+            && self.value_guards.len() == self.values.len()
+            && u32::try_from(entry_length).map_or(ret.0 == u32::MAX, |index|
+                ret.0 == index && self.value(ret) == Some(&value)),
+    )]
     fn alloc_value(
         &mut self,
         value: DomainValue,
@@ -680,7 +823,24 @@ impl DomainArena
     ///   `id_index` states the aliasing at and above the ceiling.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — distinct child and parent ids remain ordered,
+    ///   reconstructed terms retain their operands, and truncation removes
+    ///   nodes together with their words; aliasing an earlier allocation or
+    ///   desynchronizing guards changes an observation.
+    /// - witness: `arena::tests::a_child_id_is_strictly_below_its_parent`
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
+    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
+    #[spec(
+        captures: entry_length = self.computations.len(),
+        ensures: |ret| self.computations.len().checked_sub(1) == Some(entry_length)
+            && self.comp_guards.len() == self.computations.len()
+            && u32::try_from(entry_length).map_or(ret.0 == u32::MAX, |index|
+                ret.0 == index && self.computation(ret) == Some(&computation)),
+    )]
     fn alloc_computation(
         &mut self,
         computation: DomainComp,
@@ -704,7 +864,20 @@ impl DomainArena
     ///   above the ceiling.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — rebuilding a lift recovers its nonzero level and body
+    ///   through the level table, while teardown makes the target dangle; a
+    ///   wrong slot or discarded level changes the reconstructed term.
+    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
+    /// - witness: `arena::tests::truncating_to_the_floor_empties_every_family`
     #[inline]
+    #[spec(
+        captures: entry_length = self.levels.len(),
+        ensures: |ret| self.levels.len().checked_sub(1) == Some(entry_length)
+            && u32::try_from(entry_length).map_or_else(|_| u32::from(ret) == u32::MAX,
+                |index| u32::from(ret) == index),
+    )]
     pub fn hold_level(
         &mut self,
         level: Level,
@@ -741,7 +914,8 @@ impl DomainArena
     /// - hypothesis: L3 — the decision surface is the head-against-face table,
     ///   separated by a declaration head at each of the three faces, and by a
     ///   variable head and a module head at each of the two loaded faces, all
-    ///   asserted by variant.
+    ///   asserted by variant. Accepting a loaded non-declaration or refusing a
+    ///   declaration face changes the refusal table.
     /// - witness: `arena::tests::a_head_that_cannot_unfold_carries_no_body`
     #[inline]
     #[spec(
@@ -790,7 +964,19 @@ impl DomainArena
     /// - fails: never — a body that dangles surfaces where a caller resolves
     ///   it, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — readback opens a captured body under binders and
+    ///   recovers the original variable indices; swapping the body, dropping
+    ///   the environment or returning an earlier closure changes the
+    ///   reconstructed binding.
+    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
     #[inline]
+    #[spec(
+        captures: entry_length = self.value_closures.len(),
+        ensures: |ret| self.value_closures.len().checked_sub(1) == Some(entry_length)
+            && self.value_closure(ret).is_some_and(|closure| closure.body() == body),
+    )]
     pub fn value_closure_node(
         &mut self,
         body: ValueId,
@@ -818,11 +1004,18 @@ impl DomainArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — source computation closures retain their body without
-    ///   confusing native transport continuations with source syntax.
+    /// - hypothesis: L1 — readback opens a captured body under binders and
+    ///   recovers the original variable indices; swapping the body, dropping
+    ///   the environment or returning an earlier closure changes the
+    ///   reconstructed binding.
+    /// - witness: `readback::tests::nested_binders_read_back_as_the_indices_that_name_them`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(ensures: |ret| self.comp_closure(ret).is_some_and(|closure| closure.body() == crate::closure::CompBody::Source(body)))]
     #[inline]
+    #[spec(
+        captures: entry_length = self.comp_closures.len(),
+        ensures: |ret| self.comp_closures.len().checked_sub(1) == Some(entry_length)
+            && self.comp_closure(ret).is_some_and(|closure| closure.body() == crate::closure::CompBody::Source(body)),
+    )]
     pub fn comp_closure_node(
         &mut self,
         body: ComputationId,
@@ -841,8 +1034,22 @@ impl DomainArena
     /// syntax.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; referenced values are checked when the body runs.
+    /// - ensures: a fresh computation closure holds `body` with no bindings.
+    /// - provides: the continuation for ordered native product transport.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both product components can be stuck independently;
+    ///   the captured continuation must retain the first result and transport
+    ///   the second component before pairing them in source order.
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[inline]
+    #[spec(captures: entry_length = self.comp_closures.len(), ensures: |ret|
+        self.comp_closures.len().checked_sub(1) == Some(entry_length)
+            && self.comp_closure(ret).is_some_and(|closure| closure.body() == body
+                && [gandr_core_term::Zone::Intuitionistic, gandr_core_term::Zone::Linear].iter().all(|&zone| closure.environment().bindings(zone).is_empty())))]
     pub(crate) fn transport_continuation(
         &mut self,
         body: crate::closure::CompBody,
@@ -863,7 +1070,14 @@ impl DomainArena
     /// - provides: the domain form a unit introduction evaluates to.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — unit beneath a pair is rebuilt as unit rather than a
+    ///   different leaf; a wrong former, payload or source face changes the
+    ///   observed term.
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Unit { face }))]
     pub fn value_unit(
         &mut self,
         face: TermFace,
@@ -885,7 +1099,14 @@ impl DomainArena
     ///   representation left to the core arena that owns it.
     /// - fails: never — a payload that dangles surfaces at readback, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a literal retains its payload id through rebuilding
+    ///   rather than being replaced or copied; a wrong former, payload or
+    ///   source face changes the observed term.
+    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Literal { literal, face }))]
     pub fn value_literal(
         &mut self,
         literal: ValueId,
@@ -908,7 +1129,14 @@ impl DomainArena
     /// - fails: never — a component that dangles surfaces at readback, not
     ///   here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — different left and right children are reconstructed
+    ///   in their original order; a wrong former, payload or source face
+    ///   changes the observed term.
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Pair { first, second, face }))]
     pub fn value_pair(
         &mut self,
         first: DomainValueId,
@@ -940,7 +1168,14 @@ impl DomainArena
     ///   what a case elimination selects on.
     /// - fails: never — a body that dangles surfaces at readback, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a right injection retains its side and ordered pair
+    ///   payload; a wrong former, payload or source face changes the observed
+    ///   term.
+    /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Injection { side, body, face }))]
     pub fn value_injection(
         &mut self,
         side: Side,
@@ -962,7 +1197,14 @@ impl DomainArena
     /// - fails: never — a closure that dangles surfaces where a force resolves
     ///   it, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — retaining a closed thunk reuses its source while
+    ///   rebuilding enters the suspended returner; a wrong former, payload or
+    ///   source face changes the observed term.
+    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Thunk { body, face }))]
     pub fn value_thunk(
         &mut self,
         body: CompClosureId,
@@ -982,7 +1224,14 @@ impl DomainArena
     ///   held in the table rather than inline.
     /// - fails: never — either id dangling surfaces at readback, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a lifted unit recovers the nonzero level from the
+    ///   table and rebuilds the correct body; a wrong former, payload or source
+    ///   face changes the observed term.
+    /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Lift { target, body, face }))]
     pub fn value_lift(
         &mut self,
         target: LiftTarget,
@@ -1013,7 +1262,14 @@ impl DomainArena
     /// - provides: the domain form a quote evaluates to.
     /// - fails: never — a closure that dangles surfaces where it is read.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a quote under a lambda reads the captured binder back
+    ///   as the original index; a wrong former, payload or source face changes
+    ///   the observed term.
+    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::Code { code, face }))]
     pub fn value_code(
         &mut self,
         code: ValueClosureId,
@@ -1026,8 +1282,24 @@ impl DomainArena
     /// Preserve a closed native certificate as syntax, without evaluating maps.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; certificate syntax is checked by its consumer.
+    /// - ensures: a fresh value retains `certificate` and `face` with a
+    ///   flexible guard, so syntax rather than an arena id decides path
+    ///   equality.
+    /// - provides: a suspended native certificate without map evaluation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — extensionally equal translator programs can differ
+    ///   syntactically, while distinct evidence can describe the same maps.
+    ///   Collapsing the programs or hashing certificate ids changes equality.
+    /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
     #[inline]
+    #[spec(captures: entry_length = self.values.len(), ensures: |ret|
+        self.values.len().checked_sub(1) == Some(entry_length)
+            && self.value(ret) == Some(&DomainValue::PathCertificate { certificate, face })
+            && matches!(self.value_guard(ret), Ok(Guard::Flexible)))]
     pub fn value_path_certificate(
         &mut self,
         certificate: ValueId,
@@ -1043,8 +1315,23 @@ impl DomainArena
     /// Build a semantic product path from its evaluated components.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; dangling components are checked by their consumer.
+    /// - ensures: a fresh, flexibly guarded path retains both components in
+    ///   order and the supplied source face.
+    /// - provides: a semantic product without reducing either translator.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and second components independently become
+    ///   neutral or reduce. Swapping components or dropping either continuation
+    ///   changes the final pair or its stuck spine.
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[inline]
+    #[spec(captures: entry_length = self.values.len(), ensures: |ret|
+        self.values.len().checked_sub(1) == Some(entry_length)
+            && self.value(ret) == Some(&DomainValue::PathProduct { first, second, face })
+            && matches!(self.value_guard(ret), Ok(Guard::Flexible)))]
     pub fn value_path_product(
         &mut self,
         first: DomainValueId,
@@ -1079,7 +1366,9 @@ impl DomainArena
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one operator evaluated from a static lambda and read
-    ///   by variant before its body is read back under a fresh binder.
+    ///   by variant before its body is read back under a fresh binder. Swapping
+    ///   the nested binders or losing the source face changes the retained id
+    ///   or the rebuilt indices.
     /// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
     #[spec(ensures: |ret| matches!(
@@ -1120,7 +1409,9 @@ impl DomainArena
     /// - hypothesis: L3 — the two decision surfaces are the resolution guard
     ///   and the spine guard, separated by a spineless neutral, a neutral
     ///   carrying one static application, a neutral carrying one application,
-    ///   and an id past the family, each asserted by variant.
+    ///   and an id past the family, each asserted by variant. Confusing static
+    ///   with computation application, or accepting a dangling id, changes the
+    ///   named outcome.
     /// - witness: `arena::tests::a_value_neutral_refuses_a_computation_spine`
     #[inline]
     #[spec(ensures: |ret| match ret {
@@ -1168,7 +1459,14 @@ impl DomainArena
     /// - fails: never — a closure that dangles surfaces where an application
     ///   resolves it, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — opening an identity lambda reconstructs its bound
+    ///   variable rather than substituting another body; a wrong former,
+    ///   payload or source face changes the observed term.
+    /// - witness: `readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Lambda { body, face }))]
     pub fn comp_lambda(
         &mut self,
         body: CompClosureId,
@@ -1187,7 +1485,14 @@ impl DomainArena
     ///   computation's result crosses back into value position.
     /// - fails: never — a value that dangles surfaces at readback, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — rebuilding a suspended returner produces the unit
+    ///   held by its result; a wrong former, payload or source face changes the
+    ///   observed term.
+    /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[inline]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Return { value, face }))]
     pub fn comp_return(
         &mut self,
         value: DomainValueId,
@@ -1221,7 +1526,14 @@ impl DomainArena
     /// - fails: never — a spineless or dangling neutral yields a node readback
     ///   refuses by name rather than a refusal here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a force followed by an application is rebuilt with
+    ///   the original argument and elimination order; a wrong former, payload
+    ///   or source face changes the observed term.
+    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Neutral { neutral, face }))]
     pub fn comp_neutral(
         &mut self,
         neutral: NeutralId,
@@ -1261,7 +1573,8 @@ impl DomainArena
     /// - hypothesis: L3 — the decision surface is the resolution guard, the
     ///   neutral's own three-state match being witnessed at its own item;
     ///   separated by forcing a resolvable neutral and an id past the family,
-    ///   each asserted by variant.
+    ///   each asserted by variant. Collapsing either forcing refusal into
+    ///   dangling, or permitting a second force, changes the returned variant.
     /// - witness: `arena::tests::forcing_a_dangling_neutral_is_refused`
     #[inline]
     #[spec(
@@ -1337,6 +1650,7 @@ mod tests
         let kept = arena.value_unit(TermFace::Reduced);
         let mark = arena.watermark();
         let dropped = arena.value_unit(TermFace::Reduced);
+        let later_mark = arena.watermark();
         arena.truncate_to(mark);
         assert!(
             arena.value(kept).is_some(),
@@ -1351,6 +1665,13 @@ mod tests
             arena.value(kept).is_some(),
             "truncating twice to the same mark is a no-op"
         );
+        arena.truncate_to(later_mark);
+        assert_eq!(
+            mark,
+            arena.watermark(),
+            "a stale mark cannot regrow the arena"
+        );
+        assert!(arena.value(dropped).is_none());
     }
 
     #[test]
@@ -1372,6 +1693,25 @@ mod tests
         let unit = arena.value_unit(TermFace::Reduced);
         let thunk = arena.value_thunk(closure, TermFace::Reduced);
         let returner = arena.comp_return(unit, CompTermFace::Reduced);
+        let value_closure = arena.value_closure_node(produced, Environment::new());
+        let target = arena.hold_level(super::Level::zero());
+        assert_eq!(
+            RunWatermark {
+                values: 2,
+                computations: 1,
+                neutrals: 1,
+                value_closures: 1,
+                comp_closures: 1,
+                levels: 1
+            },
+            arena.watermark(),
+        );
+        assert!(arena.value_closure(value_closure).is_some());
+        assert!(arena.comp_closure(closure).is_some());
+        assert!(arena.level(target).is_some());
+        assert!(arena.neutral(neutral).is_some());
+        assert!(arena.computation(returner).is_some());
+        assert!(arena.value(thunk).is_some());
 
         arena.truncate_to(floor);
         assert_eq!(
@@ -1384,6 +1724,11 @@ mod tests
         assert!(arena.computation(returner).is_none());
         assert!(arena.neutral(neutral).is_none());
         assert!(arena.comp_closure(closure).is_none());
+        assert!(arena.value_closure(value_closure).is_none());
+        assert!(arena.level(target).is_none());
+        assert_eq!(Err(DomainFault::Dangling), arena.value_guard(unit));
+        assert_eq!(Err(DomainFault::Dangling), arena.comp_guard(returner));
+        assert_eq!(Err(DomainFault::Dangling), arena.neutral_guard(neutral));
     }
 
     #[test]
@@ -1575,5 +1920,53 @@ mod tests
             arena.comp_guard(stuck),
             "and the computation standing for it inherits the word"
         );
+    }
+
+    #[test]
+    fn index_conversion_preserves_the_range_before_saturating()
+    {
+        let ceiling = usize::try_from(u32::MAX).expect("supported platforms hold an index");
+        for index in [0_u32, 1_u32, u32::MAX - 1, u32::MAX] {
+            let length = usize::try_from(index).expect("the index fits");
+            assert_eq!(index, super::id_index(super::ArenaLength(length)).0);
+            assert_eq!(length, super::id_offset(super::ArenaIndex(index)).0);
+        }
+        if let Some(above) = ceiling.checked_add(1) {
+            assert_eq!(u32::MAX, super::id_index(super::ArenaLength(above)).0);
+        }
+    }
+
+    #[test]
+    fn guard_flexibility_survives_the_entire_spine()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let mut arena = DomainArena::new();
+        let closure = arena.comp_closure_node(body, Environment::new());
+        let flexible = arena.value_thunk(closure, TermFace::Reduced);
+        let rigid = arena.value_unit(TermFace::Reduced);
+        let dangling = super::DomainValueId(u32::MAX);
+        for spine in [
+            [Elimination::Apply(dangling), Elimination::Force],
+            [Elimination::Apply(flexible), Elimination::Apply(rigid)],
+            [Elimination::StaticApply(flexible), Elimination::Force],
+            [
+                Elimination::Case {
+                    on_left: closure,
+                    on_right: closure,
+                },
+                Elimination::Force,
+            ],
+        ] {
+            let neutral = arena
+                .neutral_node(
+                    NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                    Vec::from(spine),
+                    Unfolding::Rigid,
+                )
+                .expect("every spine is admissible on a rigid declaration head");
+            assert_eq!(Ok(Guard::Flexible), arena.neutral_guard(neutral));
+        }
     }
 }
