@@ -79,6 +79,8 @@ Unknown statuses retain their numeric code. `RawOutcome` uses C layout in this o
 
 Dup and Drop remain representable image operations with separate static counts. A case makes those counts upper bounds because only one arm executes. Core lowering cannot emit these operations until core grade formers exist. The flat arena and explicit traversal avoid owning recursive terms and cloning the input arena; they preserve the fixed wire instead of introducing a general serialization framework.
 
+Native functions and saturated native operations are typed core terms but are outside this version-one image vocabulary. They return `OutsideSlice(Primitive)` after checking; they are not pre-evaluated, erased or encoded as an unrelated image instruction. `tests::typed::native_operations_are_typed_but_outside_version_one` exercises both boundaries. Execution of native arithmetic belongs to the sequent runtime.
+
 ## Typed admission
 
 The checker owns acceptance. The caller supplies a formed expected type; this boundary neither synthesizes a missing type nor invents an unknown type. A typed text value therefore reaches `NotLowered(OutsideSlice(String))`, while an ill-typed case reaches `NotChecked` first.
