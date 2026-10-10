@@ -57,6 +57,36 @@ mod sharing_format
     use proptest::prop_oneof;
     use proptest::proptest;
 
+    #[test]
+    fn recursive_code_preserves_its_element_across_wire()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let boolean = arena.value_type_sum(unit, unit);
+        let list = arena.value_type_list(boolean);
+        let declarations = vec![MarkedDeclaration::new(
+            AdmissionMark::Checked,
+            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), list),
+        )];
+        let bytes = encode(&arena, &declarations);
+        let decoded = decode(bytes.as_image()).expect("list code decodes");
+        let ty = decoded_declared(&decoded, Position(0)).expect("declaration");
+        let Some(&ValueType::List(element)) = decoded.arena().value_type(ty)
+        else {
+            panic!("list former retained");
+        };
+        let Some(&ValueType::Sum(left, right)) = decoded.arena().value_type(element)
+        else {
+            panic!("element sum retained");
+        };
+        assert_eq!(decoded.arena().value_type(left), Some(&ValueType::Unit));
+        assert_eq!(left, right);
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(decoded.arena(), decoded.declarations()))
+        );
+    }
+
     // ---------------------------------------------------------------------------
     // The suite's own nominal vocabulary
     // ---------------------------------------------------------------------------

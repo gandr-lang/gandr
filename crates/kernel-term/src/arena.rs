@@ -978,6 +978,19 @@ impl TermArena
         self.alloc_value_type(ValueType::Sum(first, second))
     }
 
+    /// Allocate the strictly positive list code over an element type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_list(
+        &mut self,
+        element: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::List(element))
+    }
+
     /// Mint a thunk type over an already-allocated computation type.
     ///
     /// # Specification
@@ -1381,7 +1394,7 @@ impl TermArena
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
             Some(&ValueType::PathUniverse(source, target)) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
             Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
-            Some(&ValueType::Lift { inner, .. }) => ret.as_slice() == [AnyNode::ValueType(inner)],
+            Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => ret.as_slice() == [AnyNode::ValueType(inner)],
             Some(&ValueType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
         },
         AnyNode::CompType(id) => match self.comp_type(id) {
@@ -1489,7 +1502,9 @@ impl TermArena
                     children.push(AnyNode::Value(target));
                 },
                 | Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
-                | Some(&ValueType::Lift { inner, .. }) => children.push(AnyNode::ValueType(inner)),
+                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                    children.push(AnyNode::ValueType(inner));
+                },
                 // The one edge that leaves the type language: a code is a value,
                 // which is what lets a type mention a bound variable at all.
                 | Some(&ValueType::Element { code, .. }) => children.push(AnyNode::Value(code)),

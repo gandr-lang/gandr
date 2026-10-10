@@ -1209,7 +1209,9 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },
-                | Some(&ValueType::Lift { inner, .. }) => pending.push(AnyNode::ValueType(inner)),
+                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                    pending.push(AnyNode::ValueType(inner));
+                },
                 | Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),
             },
             | AnyNode::CompType(id) => match arena.comp_type(id) {

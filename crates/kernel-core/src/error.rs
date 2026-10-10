@@ -52,6 +52,8 @@ pub enum ValueTypeHead
     Product,
     /// A sum.
     Sum,
+    /// A strictly positive list fixed point.
+    List,
     /// A thunk type.
     Thunk,
     /// A universe, of either ground sort; the digest tells the sorts apart.
@@ -86,6 +88,7 @@ impl ValueTypeHead
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
             | ValueType::Sum(..) => Self::Sum,
+            | ValueType::List(_) => Self::List,
             | ValueType::Thunk(_) => Self::Thunk,
             | ValueType::Universe { .. } => Self::Universe,
             | ValueType::Lift { .. } => Self::Lift,

@@ -425,6 +425,9 @@ fn converge(
                     | (&ValueType::Thunk(one_body), &ValueType::Thunk(other_body)) => {
                         stack.push(ConversionGoal::CompType(one_body, other_body));
                     },
+                    | (&ValueType::List(one), &ValueType::List(other)) => {
+                        stack.push(ConversionGoal::ValueType(one, other));
+                    },
                     // Both sides are pinned to the universe former by the
                     // pattern, and the former carries a sort and a level and no
                     // child, so the node comparison delegated to here *is* the
@@ -483,6 +486,7 @@ fn converge(
                         | &ValueType::Empty
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
+                        | &ValueType::List(_)
                         | &ValueType::Thunk(_)
                         | &ValueType::Universe { .. }
                         | &ValueType::Abstract(_)

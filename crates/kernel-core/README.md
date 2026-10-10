@@ -22,6 +22,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Native universe paths](#native-universe-paths)
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Guarded higher fields](#guarded-higher-fields)
+- [Recursive code observations](#recursive-code-observations)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -294,6 +295,7 @@ The experimental `identity_recursion` module folds one closed, level-zero code v
 | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
 | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
 | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises. | Higher-evaluation reflexivity and pointwise introduction; application transport replays both returners. |
+| List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
 | Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. |
 | Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. |
 
@@ -317,7 +319,7 @@ Universal introductions cover closed functions with first-order arguments and na
 
 Computed fibres lower to native Unit, Empty and Product types. Empty is the separate native extension: it forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the parent experiment's closed vocabulary.
 
-The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty and universe paths; no receipt admits element-relation, higher-field or function-identity programs.
+The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty, List codes and universe paths; no receipt admits element-relation, higher-field or function-identity programs or guarded list inhabitants.
 
 **Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would prematurely couple this experiment to persistent declarations. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
 
@@ -349,6 +351,23 @@ The negation and case-inlined triple-negation certificates satisfy all four fiel
 **Choice.** A first-order cyclic program makes guards and back edges inspectable and bounds each replay. Eager towers cannot represent infinite higher data; closures hide productivity obligations and allocate opaque continuations. The graph stores no checking verdict and adds no dependency or wire tag. **Reversal.** A native higher identity language would replace the auxiliary representation only with checked substitution, reduction and persistence rules. Function codes, universe and recursive codes, J and Flow are outside this module.
 
 **Mutation scope.** The higher-field module and its native-evidence projection: removed guards, uncharged redirects, early depth success, forged fibre evidence, dropped product coordinates, wrong square boundaries, substituted translator outputs and omitted round-trip coherence. The four witnesses target these boundaries without claiming a mutation campaign or metatheorem about infinite coherence.
+
+
+## Recursive code observations
+
+`ValueType::List(A)` is the finite, strictly positive code `μX. Unit + A × X`, at A’s universe level. Wire tag `0x50` carries its element type; `0x51` is reserved and refused. Structural code conversion compares the finite element code, without unfolding a recursive value. The code survives ordinary encoding, decoding, substitution and content-support traversal.
+
+`identity_recursion::recursive` reuses `higher_field::Codata`. Each `Guard` exposes `inl ()` for Nil or `inr head` for Cons, with the Cons recursive coordinate in its tail edge. `Redirect` exposes no constructor. A Nil never reads its tail. `Relation::observe_lists` uses the same fold’s element relation, returns Unit only after both finite spines end, and returns Empty at the first differing head or constructor. Neither verdict validates an unobserved tail.
+
+One shared `ReplayBudget` counts both graphs’ Guard and Redirect visits. A constructor pair costs two instructions; a list of length n compared through Nil costs 2(n + 1). Returned progress includes the terminal or distinguishing constructor. Element checking and each CBPV replay retain separate finite bounds; this is an observation count, not a global work theorem.
+
+`ListEquivalence::form` checks an element equivalence and lifts its forward and inverse maps constructorwise. Nil is fixed; Cons maps its head and delays the tail. Finite-list round trips follow by spine induction from the checked element round trips. Transport rechecks that raw certificate, replays each claimed head output, preserves constructors and consumes precisely one dialogue per Cons. Bool negation computes on empty, singleton and three-element lists through the same rule.
+
+`Refusal` retains the existing `NonProductive` verdict for constructor-free cycles and `DepthBound` for exhausted observations, together with completed depth and visited instructions. A productive infinite spine still returns `DepthBound`: productivity does not establish a finite equality decision. No new uncertified-stratum error or recursive conversion rule is introduced.
+
+**Choice.** A native finite List code plus borrowed guarded inhabitants keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions or persisted inhabitants require their own constructor, substitution and persistence rules; this surface supports the List fixed point and first-order element observations.
+
+**Mutation scope.** Recursive witnesses distinguish swapped constructor branches, dropped heads, eager tail reads, missing instruction charges, false productivity, truncated coverage, corrupt transport dialogues and finite-depth success on infinite input. No mutation campaign or infinite-coherence theorem is claimed.
 
 ## Sharing and persistence
 

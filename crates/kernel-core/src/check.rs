@@ -566,6 +566,10 @@ where
                             goal = TypeLevelGoal::Comp(body);
                             continue 'expand;
                         },
+                        | ValueType::List(element) => {
+                            goal = TypeLevelGoal::Value(element);
+                            continue 'expand;
+                        },
                         | ValueType::Lift { inner, ref target } => {
                             frames.push(TypeLevelFrame::LiftCheck(target.clone()));
                             goal = TypeLevelGoal::Value(inner);
@@ -730,6 +734,7 @@ fn abstract_atom_level(
         | ValueType::Unit
         | ValueType::Empty
         | ValueType::Product(..)
+        | ValueType::List(_)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
         | ValueType::Lift { .. }
@@ -778,6 +783,7 @@ fn static_classifier(
         | ValueType::Unit
         | ValueType::Empty
         | ValueType::Product(..)
+        | ValueType::List(_)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
         | ValueType::Lift { .. }
@@ -2326,6 +2332,7 @@ where
                 | ValueType::Unit
                 | ValueType::Empty
                 | ValueType::Product(..)
+                | ValueType::List(_)
                 | ValueType::Sum(..)
                 | ValueType::Thunk(_)
                 | ValueType::Lift { .. }

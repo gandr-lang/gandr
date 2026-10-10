@@ -1307,6 +1307,11 @@ fn decode_entry(
             let id = table.arena.value_type_product(first, second);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
+        | tags::NODE_VT_LIST => {
+            let element = read_value_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_list(element);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
         | tags::NODE_VT_SUM => {
             let first = read_value_type(reader, table, this, &mut children)?;
             let second = read_value_type(reader, table, this, &mut children)?;

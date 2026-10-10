@@ -4,6 +4,9 @@
 #[path = "../higher_field/certificate_tests.rs"]
 mod higher_field_tests;
 
+#[path = "../identity_recursion/recursive/transport_tests.rs"]
+mod recursive_transport_tests;
+
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -106,6 +109,9 @@ fn children(
             } => vec![V(scrutinee), M(on_left), M(on_right)],
         },
         | A(id) => match arena.value_type(id).expect("fixture value type") {
+            | &ValueType::List(_) => {
+                panic!("recursive inhabitants stay outside the first-order path producer")
+            },
             | &ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
             | &ValueType::Product(a, b)
             | &ValueType::Sum(a, b)
@@ -392,6 +398,9 @@ fn translate(
             },
             | AnyNode::ValueType(id) => {
                 let ty = match arena.value_type(id).expect("fixture value type") {
+                    | &ValueType::List(_) => {
+                        panic!("recursive inhabitants stay outside the first-order path producer")
+                    },
                     | &ValueType::PathUniverse(source, target) => {
                         core.value_type_path_universe(values[&source], values[&target])
                     },

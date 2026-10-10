@@ -301,6 +301,7 @@ impl Relation
                     joined
                 },
                 | Clause::Function(..) => return Err(RelationError::NeutralFiber),
+                | Clause::List(_) => return Err(RelationError::RecursiveObservationRequired),
                 | Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => {
                     return Err(RelationError::Classifier);
                 },

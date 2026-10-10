@@ -40,7 +40,8 @@
 //! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
 //! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
-//! | universe flows | `0x48+` | reserved; forward certificates and replay remain an in-memory rule language |
+//! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
+//! | recursive block | `0x50–0x51` | List code and a reserved, unassigned value tag |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
@@ -249,6 +250,11 @@ pub const NODE_VT_EMPTY: WireTag = WireTag(0x28);
 /// Node tag: empty elimination, over one value scrutinee.
 pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
 
+/// Node tag: the strictly positive list code, over one element type.
+pub const NODE_VT_LIST: WireTag = WireTag(0x50);
+
+/// Reserved tag for persisted recursive inhabitants; currently refused.
+pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
 #[repr(transparent)]
@@ -433,7 +439,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 39] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -479,6 +485,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 39] = [
     unbounded(NODE_V_PATH_EQUIV, ChildArity(3)),
     unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity(2)),
+    unbounded(NODE_VT_LIST, ChildArity(1)),
 ];
 
 #[cfg(test)]
@@ -605,6 +612,7 @@ mod tests
             AnyNode::Value(equiv),
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
+            AnyNode::ValueType(arena.value_type_list(unit_type)),
         ];
         (arena, nodes)
     }
@@ -645,7 +653,7 @@ mod tests
                 "an assigned former cannot consume a reserved sharing byte"
             );
             assert!(
-                tag < 0x30,
+                !(0x30_u8 .. 0x50).contains(&tag),
                 "higher-field, funext and universe-flow reservations have no native formers"
             );
         }

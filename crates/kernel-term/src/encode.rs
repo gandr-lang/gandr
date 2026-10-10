@@ -488,6 +488,7 @@ fn intern(
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
             Some(&ValueType::Product(..)) => tags::NODE_VT_PRODUCT,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
+            Some(&ValueType::List(_)) => tags::NODE_VT_LIST,
             Some(&ValueType::Thunk(_)) => tags::NODE_VT_THUNK,
             Some(&ValueType::Lift { .. }) => tags::NODE_VT_LIFT,
             Some(&ValueType::Element { .. }) => tags::NODE_VT_ELEMENT,
@@ -564,6 +565,7 @@ fn encode_entry(
                 },
                 | ValueType::Product(..) => out.put_tag(tags::NODE_VT_PRODUCT),
                 | ValueType::Sum(..) => out.put_tag(tags::NODE_VT_SUM),
+                | ValueType::List(_) => out.put_tag(tags::NODE_VT_LIST),
                 | ValueType::Thunk(_) => out.put_tag(tags::NODE_VT_THUNK),
                 | ValueType::Lift { ref target, .. } => {
                     out.put_tag(tags::NODE_VT_LIFT);

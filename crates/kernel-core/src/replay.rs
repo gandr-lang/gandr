@@ -1643,7 +1643,9 @@ where
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
                     | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
-                    | Some(&ValueType::Lift { inner, .. }) => work.push(AnyNode::ValueType(inner)),
+                    | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                        work.push(AnyNode::ValueType(inner));
+                    },
                     | Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
                     | None => return Rigidity::Flexible,
                 },

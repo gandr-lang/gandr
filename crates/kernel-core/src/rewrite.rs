@@ -1180,7 +1180,7 @@ fn push_rewrite_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
             },
-            | Some(&ValueType::Lift { inner, .. }) => {
+            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
             },
             // The type-to-term edge: a code is rewritten at the depth the type
@@ -1647,6 +1647,15 @@ fn close_value_type(
         | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
+        | ValueType::List(element) => {
+            let rewritten = popped(results, AnyNode::ValueType(element)).value_type_or(element);
+            if rewritten == element {
+                id
+            }
+            else {
+                arena.value_type_list(rewritten)
+            }
+        },
         | ValueType::Element { code, target } => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {

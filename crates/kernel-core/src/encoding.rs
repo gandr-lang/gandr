@@ -909,6 +909,10 @@ impl ContentTable
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
                 record.put_content(self.content_of(AnyNode::CompType(body)));
             },
+            | ValueType::List(element) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_LIST);
+                record.put_content(self.content_of(AnyNode::ValueType(element)));
+            },
             | ValueType::Lift { inner, ref target } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIFT);
                 record.put_content(self.content_of(AnyNode::ValueType(inner)));
@@ -1091,7 +1095,7 @@ fn push_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));
             },
-            | Some(&ValueType::Lift { inner, .. }) => {
+            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
             | Some(&ValueType::Element { code, .. }) => {

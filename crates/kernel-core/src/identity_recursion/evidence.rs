@@ -43,7 +43,7 @@ impl Identity
     /// - witness: `higher_field::tests::higher_fibres_preserve_boundaries`
     /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
     #[inline]
-    pub fn native_evidence(self) -> Result<ValueId, RelationError>
+    pub fn native_evidence(&self) -> Result<ValueId, RelationError>
     {
         match self.proof {
             | Proof::Native(value) => Ok(value),

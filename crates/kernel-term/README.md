@@ -158,6 +158,8 @@ Assigning an unassigned tag or kind byte, or filling a reserved slot that is fra
 
 The portable decision alphabet comes from `kernel-conversion-trace`; unit anchors carry no arena identity. Reusing that vocabulary avoids a second replay protocol. The sharing-format witness preserves all decisions, empty dialogues and direction boundaries against independent bytes, and rejects malformed words and truncated prefixes. **Reversal:** introduce a new framing version if the alphabet needs payloads that cannot be encoded without changing existing word meanings.
 
+The List code (`NODE_VT_LIST`, `0x50`) has one value-type child, its element code. It represents the strictly positive fixed point `μX. Unit + A × X` without a back edge in the type arena. Its finite code round-trips through the ordinary sharing format. `NODE_LIST_VALUE_RESERVED` (`0x51`) remains unassigned: guarded list inhabitants are in-memory kernel observations, not persisted term values.
+
 ## Sharing and compression
 
 The kernel preserves sharing and never creates it. The crate has no interning table and no content-keyed memo of values; a decode hands over exactly the sharing the artifact encodes, id equality is a positive-only fast path deciding reflexive pairs, and any pass that creates sharing is elaborator-side. A decoded artifact owns its arena.

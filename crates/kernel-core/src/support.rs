@@ -809,7 +809,7 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(source));
                             tasks.push(ReachTask::OpenValue(target));
                         },
-                        | ValueType::Lift { inner, .. } => {
+                        | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
                             tasks.push(ReachTask::OpenValueType(inner));
                         },
                         | ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
@@ -976,7 +976,9 @@ impl LooseDepths
             } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
-            | ValueType::Lift { inner, .. } => self.cached_value_type(inner),
+            | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
+                self.cached_value_type(inner)
+            },
             | ValueType::Thunk(body) => self.cached_comp_type(body),
             | ValueType::Element { code, .. } => self.cached_value(code),
         }

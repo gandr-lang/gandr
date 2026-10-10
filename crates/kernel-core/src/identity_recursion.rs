@@ -31,6 +31,7 @@ use crate::replay::ReplayBudget;
 mod evaluation;
 mod evidence;
 mod function;
+pub mod recursive;
 #[cfg(test)]
 mod tests;
 
@@ -127,6 +128,8 @@ enum Clause
     Sum(RelationId, RelationId),
     /// Related arguments entail related values after force/application/return.
     Function(RelationId, RelationId),
+    /// One list constructor, with its recursive tail delayed in guarded syntax.
+    List(RelationId),
     /// Split the left endpoint; both branches share the right endpoint type.
     CaseLeft(RelationId, RelationId),
     /// Split the right endpoint; both branches share the left endpoint type.
@@ -217,6 +220,8 @@ pub enum RelationError
     Pointwise(Component, Box<KernelError>),
     /// An application trace did not certify its claimed returned value.
     Evaluation(Component, EvaluationSide, crate::replay::KernelVerdict),
+    /// Recursive inhabitants require the guarded observation interface.
+    RecursiveObservationRequired,
     /// Symbolic coverage exhausted its work allowance.
     Budget,
 }
@@ -266,6 +271,9 @@ impl fmt::Display for RelationError
                 )
             },
             | Self::Budget => f.write_str("relation work allowance exhausted"),
+            | Self::RecursiveObservationRequired => {
+                f.write_str("recursive identity requires guarded observation")
+            },
         }
     }
 }
@@ -278,9 +286,9 @@ impl core::error::Error for RelationError
 ///
 /// # Specification
 /// - requires: codes and their types belong to `arena`.
-/// - ensures: Unit, Base, Sum, Product and pure function thunks each contribute
-///   one clause in either mode; Abstract refuses before nominal comparison.
-///   Codes selects certified paths or indexed relation families.
+/// - ensures: Unit, Base, Sum, Product, List and pure function thunks each
+///   contribute one clause in either mode; Abstract refuses before nominal
+///   comparison. Codes selects certified paths or indexed relation families.
 /// - provides: a flat iterative fold; it never compares endpoint elements.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `AbstractInterface`, `Arena`.
 /// - panics: none.
@@ -336,6 +344,15 @@ pub fn interpret(
                     | ValueType::Sum(..) => Clause::Sum(left, right),
                     | _ => Clause::Product(left, right),
                 }
+            },
+            | ValueType::List(element) => {
+                if !expanded {
+                    pending.push((ty, true));
+                    pending.push((element, false));
+                    continue;
+                }
+                let element = *formed.get(&element).ok_or(RelationError::Arena)?;
+                Clause::List(element)
             },
             | ValueType::Thunk(computation) => {
                 let Some(&CompType::Arrow {
@@ -632,6 +649,7 @@ impl Relation
                     Clause::Product(relocate(a, offset), relocate(b, offset))
                 },
                 | Clause::Sum(a, b) => Clause::Sum(relocate(a, offset), relocate(b, offset)),
+                | Clause::List(element) => Clause::List(relocate(element, offset)),
                 | Clause::Function(a, b) => {
                     Clause::Function(relocate(a, offset), relocate(b, offset))
                 },

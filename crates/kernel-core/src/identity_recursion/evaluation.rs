@@ -194,6 +194,9 @@ impl Relation
                         | Clause::Unit => Fiber::Unit,
                         | Clause::Empty => Fiber::Empty,
                         | Clause::Discrete => result.discrete(arena, left, right)?,
+                        | Clause::List(_) => {
+                            return Err(RelationError::RecursiveObservationRequired);
+                        },
                         | Clause::Function(argument, result) => {
                             let argument = self.node(argument)?;
                             let result = self.node(result)?;

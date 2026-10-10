@@ -101,6 +101,9 @@ pub enum ValueType
     Product(ValueTypeId, ValueTypeId),
     /// The sum `A + B`, with left and right injections.
     Sum(ValueTypeId, ValueTypeId),
+    /// The strictly positive fixed point List A = μX. Unit + A × X.
+    /// Its code is finite; inhabitants are observed through guarded replay.
+    List(ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
     Thunk(CompTypeId),
     /// The universe of one ground sort at a canonical level `l`: the codes of
