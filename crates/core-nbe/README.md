@@ -29,6 +29,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [What stays in kernel-core](#what-stays-in-kernel-core)
 - [Sharing overlay and duplication](#sharing-overlay-and-duplication)
 - [Specification attributes](#specification-attributes)
+- [Experimental stage normalization](#experimental-stage-normalization)
 - [License](#license)
 <!-- tocstop -->
 
@@ -279,6 +280,28 @@ The sharing half of the crate has its own page, [docs/sharing.md](docs/sharing.m
 ## Specification attributes
 
 Each item's `# Specification` prose is the statement of record; a `#[spec(...)]` attribute states a clause verbatim where it is a cheap predicate over one call. `SchedulingPolicy::share` asserts its share is strictly positive, so a stance answering zero aborts at its first call under enforcement. `SharingMeasure::of` asserts the measure's four laws: occurrences at least shares, depth at most shares, nodes above shares and occurrences together, and an expansion of at least one. `duplicate_value` and `duplicate_computation` assert that a duplicate validates; `TracedDuplication::install` asserts that the spinal stance installs exactly over a sink that records; and the installation's evaluators assert that they leave the overlay at its entry watermark and spend no more fuel than they were given. The erasure property is a statement over trees and stays prose, carried by its witnesses. The machines' `step` dispatchers stay prose: an assembly frame pops its operands in the same step that pushes its result, so no relation between entry and exit stack lengths states that the result reached the stack of its polarity. Where a clause covers part of a prose line, the block's `provides` names the residue and the witnesses that carry it.
+
+## Experimental stage normalization
+
+`stage::normalize` evaluates the meta level of the auxiliary [stage language](../kernel-core/README.md#experimental-stage-universe) and leaves the object program as written. Typing determines the stage through the universe index. Every meta contraction and congruence equation is independently replayed by the kernel before the residual is admitted as object code.
+
+The producer uses a postorder worklist and capture-avoiding substitution. It reduces meta beta, outer natural iteration, outer identity elimination and both quote/splice round trips, including beneath object binders. Object beta, iteration, elimination and multiplication remain residual. In particular, `(λx. x * x) e` retains its application and sharing instead of duplicating `e`.
+
+**Decision.** Strict two-level staging preserves the source program's object computation and cost model. Full conversion normalization is the alternative: it also contracts object redexes, changing sharing and when work occurs. Revisit this choice for a staged program whose cost the user cannot predict from the source under the strict rule. The stage discipline follows András Kovács, _Staged Compilation with Two-Level Type Theory_, ICFP 2022, §2, [doi:10.1145/3547641](https://doi.org/10.1145/3547641); kernel replay additionally checks the proposed staging equations.
+
+`stage::power` builds `λn. λx. iter n <1> (λp.<~x * ~p>)`, of type `Nat_outer → Lift Nat_inner → Lift Nat_inner`. It threads quoted input at the meta level and carries quoted naturals through iteration. Specialization `<λx. ~(pow n <x>)>` yields `λx. x * (x * (… * 1))` without creating object redexes. Witnesses compare exponents zero through eight at inputs zero through five with checked integer exponentiation and independently execute the ordinarily admitted CBPV body. The function-valued-accumulator encoding `λn. iter n <λx.1> (λp.<λx. x * (~p) x>)` witnesses the complementary case: its object applications survive.
+
+The equation census for those exponents uses fresh arenas and includes every replayed equation, including congruence:
+
+| Exponent `n` | Replayed equations | Distinct shapes | Largest family |
+| ------------ | -----------------: | --------------: | -------------: |
+| 0 | 9 | 9 | 1 |
+| 1 | 18 | 13 | 3 |
+| 2–8 | `8n + 10` | 14 | `2n + 1` |
+
+Shapes retain the rule and classifier. Beta uses capture-avoiding substitution; congruence retains parent constructors and non-child payloads, replacing immediate children by holes shared according to structural equality across both endpoints. Arena sharing does not affect that equality. Splice-of-quote is the largest family for positive exponents. These are observations over the stated range, not serialized sizes, a compression result or a performance bound.
+
+The existing glued domain does not interpret this auxiliary vocabulary. Explicit per-step replay keeps the producer outside the trusted boundary without introducing a second semantic domain; native formers are the condition for reusing the glued evaluator. Residual extraction supports closed first-order natural functions, rather than general closure conversion.
 
 ## License
 

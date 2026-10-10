@@ -172,6 +172,7 @@ mod judgement;
 mod ledger;
 mod module;
 mod refusal;
+pub mod stage;
 mod support;
 mod view;
 

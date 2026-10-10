@@ -33,13 +33,13 @@ crates/
 ├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
 ├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
-├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets
+├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets, hypothesis-indexed stage syntax
 ├── kernel-check-memo/             gandr-kernel-check-memo             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       gandr-kernel-conversion-trace       the conversion-decision vocabulary and its sink
-├── kernel-core/                   gandr-kernel-core                   the checking machine, conversion, admission, the check memo
+├── kernel-core/                   gandr-kernel-core                   the checking machine, conversion, admission, the check memo, stage formation and replay
 ├── core-term/                     gandr-core-term                     the core syntax and the one unified context
-├── core-nbe/                      gandr-core-nbe                      the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay, its erasure and its measure
-├── core-checker/                  gandr-core-checker                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
+├── core-nbe/                      gandr-core-nbe                      the glued value domain, evaluation, readback, conversion, the sharing overlay, strict meta-level staging
+├── core-checker/                  gandr-core-checker                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, residual readmission
 ├── core-incremental/              gandr-core-incremental              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-sequent/                  gandr-core-sequent                  the command IL a core program is focused into and the two-region store its machine runs in
 ├── core-session/                  gandr-core-session                  contractive binary session types, coinductive relations, and endpoint replay

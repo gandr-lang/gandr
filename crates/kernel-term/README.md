@@ -3,7 +3,6 @@
 The kernel's term arena and sharing format: a flat, id-addressed arena, the unified subterm-table encoding over it, canonical decode, and the decode-time budgets that bound the work a small artifact can cost.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -19,8 +18,8 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
+- [Experimental stage syntax](#experimental-stage-syntax)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -174,6 +173,12 @@ Encoding requires live, acyclic reachable graphs and an interner used with the u
 Literal byte fixtures independently pin every former, payload and child position. Decoder witnesses vary every tag byte, proper prefixes, reference order and polarity, normalization residues and the arithmetic ceilings. Local normalization is not canonical-wire acceptance: decoding also compares the whole artifact with its re-encoding. That agreement check is not an independent format oracle. Budget witnesses use explicit expansion and widened arithmetic; the integration diamond model saturates the final tree size, including the exact `u64::MAX` boundary, rather than saturating a power before subtraction.
 
 The deep-graph witness walks 100,000 thunk-over-returner links to unit and drops the sole decoded owner on a 256 KiB stack. An entry count alone cannot prove depth. This is evidence for that shape and stack bound, not all graph shapes or allocation failures. Formatter effects, non-callable data and policy constants, the consuming builder-discard boundary and an opaque test strategy state their unobservable obligations and witnesses at their definitions.
+
+## Experimental stage syntax
+
+`stage::Arena` is a separate, append-only rule-language arena for
+[hypothesis-indexed staging](../kernel-core/README.md#experimental-stage-universe).
+It holds indexed classifiers, terms and untrusted conversion certificates. Classifier interning is exact syntactic equality; term sharing carries no conversion authority. Child coordinates must already exist. De Bruijn substitution uses an explicit worklist and raises replacements under binders. There is no staging wire format and no allocated wire tag.
 
 ## License
 
