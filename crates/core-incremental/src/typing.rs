@@ -56,6 +56,10 @@ pub enum Site
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
+    /// A sum injection.
+    Injection(Site),
+    /// A sum case.
+    Case(Site),
     /// A thunk.
     Thunk(Site),
     /// A lambda.
@@ -72,6 +76,8 @@ pub enum Form
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal
 {
+    /// A native path endpoint is not a closed first-order code.
+    PathCode(Site),
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -375,6 +381,7 @@ impl Projection<'_, '_, '_>
     ) -> Refusal
     {
         match refusal {
+            | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
                 synthesised,
@@ -400,6 +407,10 @@ impl Projection<'_, '_, '_>
             },
             | CheckRefusal::NotSynthesisable { form } => Refusal::NotSynthesisable {
                 form: match form {
+                    | CheckingForm::Injection(id) => {
+                        Form::Injection(self.site(ArenaNode::Value(id)))
+                    },
+                    | CheckingForm::Case(id) => Form::Case(self.site(ArenaNode::Computation(id))),
                     | CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
                     | CheckingForm::Lambda(id) => {
                         Form::Lambda(self.site(ArenaNode::Computation(id)))
@@ -750,11 +761,10 @@ mod tests
         );
 
         let mut arena = CoreArena::new();
-        let unit = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit, unit);
+        let unformed = arena.value_type_base(gandr_kernel_term::BaseType::Numeric);
         let (_verdict, typing) = judged(
             arena,
-            Maybe::Present(sum),
+            Maybe::Present(unformed),
             Maybe::Absent(body::Absent::Hole),
             CheckBudget::DEFAULT,
         );
@@ -762,7 +772,7 @@ mod tests
             typing,
             Typing::Refused(Refusal::OutOfFragment {
                 at: first,
-                former: UnadmittedFormer::Sum,
+                former: UnadmittedFormer::NumericAtom,
             }),
             "a former without a rule names the node carrying it"
         );

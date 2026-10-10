@@ -388,6 +388,11 @@ pub fn spine_subgoals(
     let mut subgoals = Vec::new();
     for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
         match (left_elimination, right_elimination) {
+            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
+            | (
+                Elimination::ProductTransport(left_argument),
+                Elimination::ProductTransport(right_argument),
+            )
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
             | (
                 Elimination::StaticApply(left_argument),
@@ -413,7 +418,9 @@ pub fn spine_subgoals(
                 subgoals.push(Subgoal::Opened(left_on_right, right_on_right));
             },
             | (
-                Elimination::Apply(_)
+                Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }
@@ -684,6 +691,8 @@ fn value_neutrality(
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -783,6 +792,19 @@ fn plan_values(
         return Ok(planned);
     }
     let planned = match (one, other) {
+        | (
+            DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+            DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+        ) => Plan::Shared(
+            if crate::conv::equal_paths(core, domain, left, right)?
+                == gandr_core_term::CertificateEquality::Equal
+            {
+                Settled::Convertible
+            }
+            else {
+                Settled::NotConvertible
+            },
+        ),
         | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Plan::Leaf(Settled::Convertible),
         | (
             DomainValue::Literal { literal: first, .. },
@@ -925,7 +947,9 @@ fn plan_values(
             Plan::Decline(DeclineReason::UndecidedCodes)
         },
         | (
-            DomainValue::Unit { .. }
+            DomainValue::PathCertificate { .. }
+            | DomainValue::PathProduct { .. }
+            | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
             | DomainValue::Injection { .. }

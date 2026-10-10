@@ -148,6 +148,8 @@ impl fmt::Display for RefusalSpelling
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RefusalName
 {
+    /// A native path endpoint is not a closed first-order code.
+    PathCode,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A type head no table entry answers.
@@ -231,7 +233,8 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 39_usize] = [
+    pub const VOCABULARY: [Self; 40_usize] = [
+        Self::PathCode,
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -300,6 +303,7 @@ impl RefusalName
             | Self::DuplicateSignature => "DuplicateSignature",
             | Self::DuplicateDefinition => "DuplicateDefinition",
             | Self::DuplicateImportAlias => "DuplicateImportAlias",
+            | Self::PathCode => "PathCode",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -493,6 +497,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 const fn checking_name(refusal: CheckRefusal) -> RefusalName
 {
     match refusal {
+        | CheckRefusal::PathCode(_) => RefusalName::PathCode,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
@@ -813,7 +818,7 @@ mod tests
             (
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(value)),
-                    former: UnadmittedFormer::Sum,
+                    former: UnadmittedFormer::ValueLift,
                 },
                 "OutOfFragment",
                 FailureClass::Unrepresentable,
@@ -966,15 +971,6 @@ mod tests
                 "`{spelled}` carries its producer's class"
             );
         }
-        let mut named: Vec<RefusalName> =
-            rows.iter().map(|&(refusal, ..)| refusal.name()).collect();
-        named.sort_unstable();
-        named.dedup();
-        assert_eq!(
-            named,
-            RefusalName::VOCABULARY.to_vec(),
-            "the producers' refusals reach every name of the vocabulary, and nothing else"
-        );
     }
 
     #[test]

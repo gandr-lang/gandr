@@ -18,7 +18,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
 - [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
-- [Universe-path experiment](#universe-path-experiment)
+- [Native universe paths](#native-universe-paths)
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Guarded higher fields](#guarded-higher-fields)
 - [Sharing and persistence](#sharing-and-persistence)
@@ -223,9 +223,9 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 
 **Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
 
-## Universe-path experiment
+## Native universe paths
 
-`path_universe` implements an additive rule language for `Path_U a b` over quoted Base, Unit, Sum and Product codes at level zero. It has `equiv`, `refl`, product introductions and transport as its only eliminator. The module is an in-memory kernel experiment; the persisted `ValueType` vocabulary, declaration admission and the surface parser do not contain it.
+`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes at level zero. `Value::PathEquiv`, `PathRefl` and `PathProduct` introduce paths; `Computation::Transport` is their only eliminator. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
 
 | Rule | Kernel obligation or computation |
 | ---- | -------------------------------- |
@@ -239,15 +239,19 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 | Product beta | Pair input becomes left and right component transports. |
 | Path conversion | Codes and translators compare structurally; round-trip evidence grants no certificate equality. |
 
-Round-trip coverage is symbolic: sums enumerate both injections, products enumerate constructor combinations, and Base leaves introduce distinct rigid variables rather than sample literals. Each pattern requires a dialogue. Missing, extra or invalid evidence refuses formation. A shape/coverage ceiling and per-dialogue replay budget bound the experiment; these are independent limits rather than one global work counter.
+Round-trip coverage is symbolic: sums enumerate both injections, products enumerate constructor combinations, and Base leaves introduce distinct rigid variables rather than sample literals. Each pattern requires a dialogue. Missing, extra or invalid evidence refuses admission. A shape/coverage ceiling and per-dialogue replay budget are independent limits, not one global work counter.
 
 `Dialogue::pair` constructs one product dialogue by prefixing explicit `Decompose` decisions for the returner and pair, then concatenating component traces. This prevents an initial `ComparedShared` from consuming a component trace at the enclosing pair. The kernel re-derives every boundary and premise. There is no transitive certificate-composition operation.
 
-The seven witnesses in `path_universe::tests` use the independent `core-nbe` engine for Bool negation, product transport, reflexivity, the wrong answer, non-equivalence refusal, intensional certificate conversion and absent K. Triple negation is supplied in its case-inlined, annotation-free kernel form; its two sequencing seams remain. The engine also compares it with the direct three-function composition at both Bool constructors.
+`Environment::add_decl` checks both endpoint codes, checks translators under an empty term context and replays every source and target round trip. Decoding and frontend typechecking grant no authority. Portable evidence participates in artifact content and admission memo keys, but structural certificate conversion erases evidence only: it does not normalize translator syntax. A fresh admission owns the memo and rechecks imported candidates.
 
-**Choice.** The rule module borrows the existing term arena and checker, without changing serialized syntax. Replaying ordinary CBPV reducts keeps evaluation independent of the producer and avoids a second evaluator. Extending the persisted vocabulary would require all exporters and importers to participate; using Rust translator closures would bypass the question. **Reversal.** Integration into declaration admission requires native term formers, content encoding and wire support before any persistent receipt can claim to admit a universe path. Element identity, open types, higher fields, function codes and general dependent elimination remain outside this experiment.
+The seven witnesses in `path_universe::tests` submit native declarations and use independent `core-nbe` dialogues for Bool negation, product transport, reflexivity, wrong-answer refusal, non-equivalence refusal, intensional certificate conversion and absent K. The K witness applies ordinary force and case eliminators to a path and observes their typing refusals; it is not a theorem about future language extensions. Triple negation retains its two sequencing seams and is compared with direct composition at both Bool constructors.
 
-**Mutation scope.** The universe-path source range owns a standalone campaign over omitted coverage, swapped translators or product legs, accepted bad dialogues, reflexivity reduction, and certificate-proof erasure. The seven witnesses name the expected distinguishing observations; no mutation score is claimed.
+`path_universe::code`, `Dialogue::pair` and `replay_transport` remain callable. Path operands are ordinary `ValueId`s in `TermArena`; no separate path arena or string-named eliminator dispatcher exists. `replay_transport` rechecks the native path and transport goal before consuming its dialogue.
+
+**Choice.** Native syntax makes the ordinary admission boundary authoritative and permits artifacts to carry untrusted candidates. Transport reduces to ordinary CBPV computations; product transport sequences component computations through capture-avoiding binds. Rust translator closures or an auxiliary path arena would evade persisted admission. **Reversal.** Extend the code grammar only with formation, coverage and replay rules for the new fragment. Element identity, open codes, higher fields, function codes and general dependent elimination remain outside this fragment.
+
+**Mutation scope.** Native formation, replay, structural conversion and encoding own a campaign over omitted coverage, swapped maps or product legs, accepted bad dialogues, reflexivity reduction, evidence omitted from memo keys, and translator syntax erased by conversion. The witnesses distinguish these observations; no mutation score is claimed.
 
 ## Identity and bridge recursion
 

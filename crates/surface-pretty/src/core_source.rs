@@ -105,6 +105,13 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value {
+            | Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
+            | Value::PathProduct(first, second) => {
+                Former::PathProduct(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            | Value::PathEquiv {
+                forward, backward, ..
+            } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
             | Value::Variable { zone, index } => Former::Variable { zone, index },
             | Value::Constant(constant) => self.named(constant, Former::Constant),
             | Value::Unit => Former::Unit,
@@ -145,6 +152,9 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value_type {
+            | ValueType::PathUniverse(source, target) => {
+                Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
+            },
             | ValueType::Base(base) => Former::BaseType(base),
             | ValueType::Unit => Former::UnitType,
             | ValueType::Product(first, second) => {
@@ -230,7 +240,8 @@ impl Source for CoreSource<'_>
             | CoreNode::Value(id) => self.value(id),
             | CoreNode::Computation(id) => match self.arena.computation(id) {
                 | Some(
-                    &(Computation::Lambda(_)
+                    &(Computation::Transport(..)
+                    | Computation::Lambda(_)
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)

@@ -287,8 +287,10 @@ fn checked(
             ])
         },
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Thunk(at) | CheckingForm::StaticLambda(at),
+            form:
+                CheckingForm::Injection(at) | CheckingForm::Thunk(at) | CheckingForm::StaticLambda(at),
         }
+        | CheckRefusal::PathCode(at)
         | CheckRefusal::UnknownConstant { at, .. }
         | CheckRefusal::UnboundIndex { at, .. }
         | CheckRefusal::Undecided { at }
@@ -298,7 +300,7 @@ fn checked(
             (spanned(origins.value_type(found)), UNNAMED)
         },
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Lambda(at) | CheckingForm::Return(at),
+            form: CheckingForm::Case(at) | CheckingForm::Lambda(at) | CheckingForm::Return(at),
         } => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
@@ -398,6 +400,7 @@ impl fmt::Display for Checked
     ) -> fmt::Result
     {
         match self.0 {
+            | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -408,6 +411,8 @@ impl fmt::Display for Checked
                 f,
                 "{} stands where a type must be synthesised",
                 match form {
+                    | CheckingForm::Injection(_) => "an injection",
+                    | CheckingForm::Case(_) => "a case",
                     | CheckingForm::Thunk(_) => "a thunk",
                     | CheckingForm::Lambda(_) => "a lambda",
                     | CheckingForm::Return(_) => "a return",
@@ -496,6 +501,8 @@ impl fmt::Display for Shape
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
+            | ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
+            | ExpectedShape::Sum => "a sum type `A + B`",
             | ExpectedShape::Thunk => "a thunk type `+U C`",
             | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",
@@ -523,12 +530,11 @@ impl fmt::Display for Former
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | UnadmittedFormer::Injection => "a sum injection",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
             | UnadmittedFormer::NumericLiteral => "a numeric literal",
-            | UnadmittedFormer::Case => "a sum elimination",
+
             | UnadmittedFormer::NumericAtom => "the numeric base atom",
-            | UnadmittedFormer::Sum => "the sum type",
+
             | UnadmittedFormer::TypeLift => "a lift of a value type to a level not above its own",
             | UnadmittedFormer::Abstract => "a sealed abstract type",
             | UnadmittedFormer::SortParameter => "a universe over a sort parameter",

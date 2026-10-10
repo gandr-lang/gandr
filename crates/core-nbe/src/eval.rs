@@ -166,6 +166,8 @@ struct EnvId(usize);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvalFault
 {
+    /// Transport met neither a native path nor a neutral path operand.
+    TransportedNonPath,
     /// The budget ran out. The term may or may not have a weak-head form; the
     /// machine declines rather than continuing.
     OutOfFuel,
@@ -443,6 +445,21 @@ impl<'run> Definitions<'run>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Task
 {
+    /// Enter a source or native computation body.
+    Body
+    {
+        /// The suspended source or native continuation.
+        body: crate::closure::CompBody,
+        /// Bindings for a source body or a native continuation’s returned
+        /// value.
+        env: EnvId,
+    },
+    /// Assemble a native product path.
+    PathProduct(ValueId),
+    /// Transport the operand above the path on the value stack.
+    Transport,
+    /// Transport a neutral pair through the held product path.
+    ProductTransport(DomainValueId),
     /// Evaluate a core value.
     Value
     {
@@ -1339,9 +1356,43 @@ pub fn eval_comp_within(
     environment: Environment,
 ) -> Result<(DomainCompId, Fuel), EvalFault>
 {
+    eval_body_within(
+        core,
+        domain,
+        definitions,
+        fuel,
+        crate::closure::CompBody::Source(term),
+        environment,
+    )
+}
+
+/// Evaluate a captured source or native transport body in its environment.
+///
+/// # Specification
+/// - requires: the environment supplies all free source variables or the native
+///   continuation's innermost result binder.
+/// - ensures: the body's weak head and the unspent task allowance.
+/// - fails: a domain, evaluation or budget fault.
+/// - panics: none.
+///
+/// # Errors
+/// Any `EvalFault`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested product transport preserves component order.
+/// - witness: `eval::tests::native_transport_sequences_product_components`
+pub fn eval_body_within(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    body: crate::closure::CompBody,
+    environment: Environment,
+) -> Result<(DomainCompId, Fuel), EvalFault>
+{
     let mut machine = Machine::new(definitions, fuel);
     let env = machine.hold_env(environment);
-    machine.tasks.push(Task::Comp { term, env });
+    machine.tasks.push(Task::Body { body, env });
     run(core, domain, &mut machine)?;
     let produced = machine.pop_comp()?;
     Ok((produced, machine.fuel))
@@ -1611,6 +1662,15 @@ impl<'run> Evaluation<'run>
         let mut answer = Answer::Value;
         for elimination in spine.iter().rev() {
             match *elimination {
+                | Elimination::Transport(value) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::Transport);
+                    machine.tasks.push(Task::Supply(value));
+                },
+                | Elimination::ProductTransport(path) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::ProductTransport(path));
+                },
                 | Elimination::StaticApply(argument) => {
                     machine.tasks.push(Task::StaticApply);
                     machine.tasks.push(Task::Supply(argument));
@@ -1670,7 +1730,7 @@ impl<'run> Evaluation<'run>
         let term = held.body();
         let mut machine = Machine::new(definitions, Fuel(0_u32));
         let env = machine.hold_env(environment);
-        machine.tasks.push(Task::Comp { term, env });
+        machine.tasks.push(Task::Body { body: term, env });
         Ok(Self {
             machine,
             answer: Answer::Computation,
@@ -1871,6 +1931,10 @@ fn step(
                 },
             }
         },
+        | Task::Body {
+            body: crate::closure::CompBody::Source(term),
+            env,
+        }
         | Task::Comp { term, env } => {
             let recalled = machine.recall(CoreTerm::Computation(term), env)?;
             match recalled {
@@ -1881,6 +1945,52 @@ fn step(
                 | Recall::Remembered(Glued::Value(_)) => Err(EvalFault::MachineInvariant),
                 | Recall::Unshared | Recall::Pending => step_comp(core, domain, machine, term, env),
             }
+        },
+        | Task::Body { body, env } => {
+            let bound = machine
+                .env(env)?
+                .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
+                .ok_or(EvalFault::MachineInvariant)?;
+            match body {
+                | crate::closure::CompBody::Source(_) => Err(EvalFault::MachineInvariant),
+                | crate::closure::CompBody::Pair(first) => {
+                    let pair = domain.value_pair(first, bound, TermFace::Reduced);
+                    machine
+                        .comps
+                        .push(domain.comp_return(pair, CompTermFace::Reduced));
+                    Ok(())
+                },
+                | crate::closure::CompBody::TransportPair { path, value } => {
+                    let continuation =
+                        domain.transport_continuation(crate::closure::CompBody::Pair(bound));
+                    machine.tasks.push(Task::BindClosure(continuation));
+                    machine.tasks.push(Task::Transport);
+                    machine.values.extend([path, value]);
+                    Ok(())
+                },
+            }
+        },
+        | Task::PathProduct(term) => {
+            let second = machine.pop_value()?;
+            let first = machine.pop_value()?;
+            let Some(&Value::PathProduct(left, right)) = core.value(term)
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let face = composite_face(
+                denotes(domain, first, left).and(denotes(domain, second, right)),
+                term,
+            );
+            machine
+                .values
+                .push(domain.value_path_product(first, second, face));
+            Ok(())
+        },
+        | Task::Transport => step_transport(core, domain, machine),
+        | Task::ProductTransport(path) => {
+            let value = machine.pop_value()?;
+            machine.values.extend([path, value]);
+            step_transport(core, domain, machine)
         },
         | Task::Pair { term } => {
             let second = machine.pop_value()?;
@@ -2001,6 +2111,18 @@ fn step_value(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
+        | Value::PathRefl(_) | Value::PathEquiv { .. } => {
+            machine
+                .values
+                .push(domain.value_path_certificate(term, TermFace::Source(term)));
+            Ok(())
+        },
+        | Value::PathProduct(first, second) => {
+            machine.tasks.push(Task::PathProduct(term));
+            machine.tasks.push(Task::Value { term: second, env });
+            machine.tasks.push(Task::Value { term: first, env });
+            Ok(())
+        },
         | Value::Variable { zone, index } => {
             let environment = machine.env(env)?;
             let bound = environment
@@ -2138,6 +2260,12 @@ fn step_comp(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
+        | Computation::Transport(path, value) => {
+            machine.tasks.push(Task::Transport);
+            machine.tasks.push(Task::Value { term: value, env });
+            machine.tasks.push(Task::Value { term: path, env });
+            Ok(())
+        },
         | Computation::Lambda(body) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
@@ -2243,7 +2371,7 @@ fn step_force(
             };
             let term = closure.body();
             let env = machine.hold_env(closure.environment().clone());
-            machine.tasks.push(Task::Comp { term, env });
+            machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
         | DomainValue::Neutral { neutral, .. } => {
@@ -2253,6 +2381,8 @@ fn step_force(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -2332,7 +2462,7 @@ fn step_apply(
             let mut extended = closure.environment().clone();
             extended.extend(Zone::Intuitionistic, argument);
             let env = machine.hold_env(extended);
-            machine.tasks.push(Task::Comp { term, env });
+            machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
         | DomainComp::Neutral { neutral, .. } => {
@@ -2431,6 +2561,8 @@ fn step_static_apply(
             machine.values.push(stood);
             Ok(())
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -2580,6 +2712,8 @@ fn step_case(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -2628,7 +2762,7 @@ fn step_bind_closure(
             let mut extended = closure.environment().clone();
             extended.extend(Zone::Intuitionistic, value);
             let env = machine.hold_env(extended);
-            machine.tasks.push(Task::Comp { term, env });
+            machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
         | DomainComp::Neutral { neutral, .. } => {
@@ -2685,7 +2819,7 @@ fn step_case_closures(
             let mut extended = closure.environment().clone();
             extended.extend(Zone::Intuitionistic, body);
             let env = machine.hold_env(extended);
-            machine.tasks.push(Task::Comp { term, env });
+            machine.tasks.push(Task::Body { body: term, env });
             Ok(())
         },
         | DomainValue::Neutral { neutral, .. } => {
@@ -2695,6 +2829,8 @@ fn step_case_closures(
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
             Ok(())
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -2702,6 +2838,97 @@ fn step_case_closures(
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
         | DomainValue::StaticLambda { .. } => Err(EvalFault::CasedNonInjection),
+    }
+}
+
+/// Apply a native path using the same iterative evaluation stack as CBPV.
+///
+/// # Specification
+/// - requires: the value stack holds a path followed by its source operand.
+/// - ensures: reflexivity returns unchanged; equivalence invokes the forward
+///   map; product transport uses ordinary bind closures, including neutral
+///   cases.
+/// - fails: dangling nodes, non-path operands, or existing evaluation faults.
+/// - panics: none.
+///
+/// # Errors
+/// An `EvalFault`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — product components sequence and reflexivity preserves
+///   values.
+/// - witness: `eval::tests::native_transport_sequences_product_components`
+fn step_transport(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+) -> Result<(), EvalFault>
+{
+    let value = machine.pop_value()?;
+    let path = machine.pop_value()?;
+    match domain
+        .value(path)
+        .copied()
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        | DomainValue::PathCertificate { certificate, .. } => match core.value(certificate) {
+            | Some(&Value::PathRefl(_)) => {
+                machine
+                    .comps
+                    .push(domain.comp_return(value, CompTermFace::Reduced));
+                Ok(())
+            },
+            | Some(&Value::PathEquiv { forward, .. }) => {
+                machine.values.push(value);
+                machine.tasks.push(Task::Apply);
+                machine.tasks.push(Task::Force);
+                machine.tasks.push(Task::Value {
+                    term: forward,
+                    env: Machine::root_env(),
+                });
+                Ok(())
+            },
+            | _ => Err(EvalFault::DanglingTerm),
+        },
+        | DomainValue::PathProduct { first, second, .. } => {
+            match domain
+                .value(value)
+                .copied()
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+            {
+                | DomainValue::Pair {
+                    first: left,
+                    second: right,
+                    ..
+                } => {
+                    let continuation =
+                        domain.transport_continuation(crate::closure::CompBody::TransportPair {
+                            path: second,
+                            value: right,
+                        });
+                    machine.tasks.push(Task::BindClosure(continuation));
+                    machine.tasks.push(Task::Transport);
+                    machine.values.extend([first, left]);
+                    Ok(())
+                },
+                | DomainValue::Neutral { neutral, .. } => {
+                    let grown = extend_spine(domain, neutral, Elimination::ProductTransport(path))?;
+                    machine
+                        .comps
+                        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+                    Ok(())
+                },
+                | _ => Err(EvalFault::TransportedNonPath),
+            }
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::Transport(value))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | _ => Err(EvalFault::TransportedNonPath),
     }
 }
 
@@ -3224,6 +3451,139 @@ mod tests
             "and the returner it built no longer denotes its own source, because the \
              occurrence resolved"
         );
+    }
+
+    #[test]
+    fn native_certificate_conversion_retains_map_syntax()
+    {
+        let mut core = CoreArena::new();
+        let unit_type = core.value_type_unit();
+        let code = core.value_quote(unit_type);
+        let path_type = core.value_type_path_universe(code, code);
+        let variable = core.value_variable(Zone::Intuitionistic, innermost());
+        let returned = core.computation_return(variable);
+        let direct = core.computation_lambda(returned);
+        let direct = core.value_thunk(direct);
+        let sequenced = core.computation_bind(returned, returned);
+        let expanded = core.computation_lambda(sequenced);
+        let expanded = core.value_thunk(expanded);
+        let proof = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
+            source: Vec::from([Vec::new()]),
+            target: Vec::from([Vec::new()]),
+        });
+        let first =
+            core.value_path_equiv(path_type, direct, direct, alloc::sync::Arc::clone(&proof));
+        let other = core.value_path_equiv(path_type, direct, expanded, proof);
+        let altered = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
+            source: Vec::from([Vec::from([
+                gandr_kernel_conversion_trace::ConversionDecision::ComparedShared {
+                    left: (),
+                    right: (),
+                },
+            ])]),
+            target: Vec::from([Vec::new()]),
+        });
+        let evidence_only = core.value_path_equiv(path_type, direct, direct, altered);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let first = eval_value(&core, &mut domain, definitions, ample(), first)
+            .expect("closed certificate");
+        let other = eval_value(&core, &mut domain, definitions, ample(), other)
+            .expect("closed certificate");
+        let evidence_only = eval_value(&core, &mut domain, definitions, ample(), evidence_only)
+            .expect("closed syntax");
+        assert_eq!(
+            Ok(crate::conv::Convertibility::Distinct),
+            crate::conv::convert_values(&core, &domain, first, other).map(Settlement::verdict),
+            "extensionally equal maps do not identify certificate programs"
+        );
+        assert_eq!(
+            Ok(crate::conv::Convertibility::Convertible),
+            crate::conv::convert_values(&core, &domain, first, evidence_only)
+                .map(Settlement::verdict),
+            "comparison erases evidence; only kernel admission can certify it"
+        );
+    }
+
+    #[test]
+    fn native_transport_sequences_product_components()
+    {
+        for (first_stuck, second_stuck) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let mut core = CoreArena::new();
+            let unit = core.value_unit();
+            let unit_type = core.value_type_unit();
+            let boolean = core.value_type_sum(unit_type, unit_type);
+            let code = core.value_quote(boolean);
+            let refl = core.value_path_refl(code);
+            let first_path = if first_stuck {
+                core.value_constant(ConstantIndex::from(0_usize))
+            }
+            else {
+                refl
+            };
+            let second_path = if second_stuck {
+                core.value_constant(ConstantIndex::from(1_usize))
+            }
+            else {
+                refl
+            };
+            let path = core.value_path_product(first_path, second_path);
+            let left = core.value_injection(Side::Left, unit);
+            let right = core.value_injection(Side::Right, unit);
+            let operand = core.value_pair(left, right);
+            let transported = core.computation_transport(path, operand);
+            let first = if first_stuck {
+                core.value_variable(
+                    Zone::Intuitionistic,
+                    DeBruijnIndex::from(u32::from(second_stuck)),
+                )
+            }
+            else {
+                left
+            };
+            let second = if second_stuck {
+                core.value_variable(Zone::Intuitionistic, innermost())
+            }
+            else {
+                right
+            };
+            let pair = core.value_pair(first, second);
+            let mut expected = core.computation_return(pair);
+            if second_stuck {
+                let transport = core.computation_transport(second_path, right);
+                expected = core.computation_bind(transport, expected);
+            }
+            if first_stuck {
+                let transport = core.computation_transport(first_path, left);
+                expected = core.computation_bind(transport, expected);
+            }
+            let expected = core.value_thunk(expected);
+            let (chain, environment) = nothing_unfolds();
+            let definitions = Definitions::new(&chain, &environment, environment.root());
+            let mut domain = DomainArena::new();
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), transported)
+                .expect("neutral components suspend; reflexivity returns");
+            for mode in [ReadbackMode::ZeroUnfold, ReadbackMode::Unfolding] {
+                let normal = crate::readback::readback_computation(
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    mode,
+                    ample(),
+                    evaluated,
+                )
+                .expect("captured product continuations reopen under binders");
+                let normal = core.value_thunk(normal);
+                assert!(
+                    gandr_core_term::equal_certificate_syntax(&core, normal, expected)
+                        == gandr_core_term::CertificateEquality::Equal,
+                    "product sequencing preserves both coordinates and binder depths: {first_stuck:?}, {second_stuck:?}, {mode:?}"
+                );
+            }
+        }
     }
 
     #[test]

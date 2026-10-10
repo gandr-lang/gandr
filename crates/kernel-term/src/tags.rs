@@ -34,17 +34,16 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | initial formers, contiguous from zero                                |
+//! | frozen block  | `0x00–0x1F` | the original native formers, contiguous from zero                   |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
-//! | empty block   | `0x28–0x29` | Empty value type and checking-only absurd computation                |
-//!
+//! | empty fragment | `0x28–0x29` | Empty value type and checking-only absurd computation |
+//! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
-//! [`NODE_VT_ELEMENT`] is the universe-decoding former, and it is the one tag
-//! whose child crosses from a type to a *term*: everything the dependent arrow
-//! can say depends on a type being able to mention a value, and this is the
-//! former that lets it. [`NODE_CT_ELEMENT`] is its computation-family twin.
+//! [`NODE_VT_ELEMENT`] and [`NODE_VT_PATH_UNIVERSE`] carry value codes in
+//! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
+//! path endpoints remain closed first-order value codes.
 //!
 //! The universe families took four tags from the growth room at once, one
 //! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
@@ -59,8 +58,8 @@
 //! static Pi [`NODE_VT_STATIC_PI`] among the value types and the static
 //! application [`NODE_V_STATIC_APPLICATION`] among the values. The static
 //! lambda takes none, because the kernel never represents it: a producer
-//! normalizes it away before export. Empty resumes above
-//! [`SHARING_BLOCK_LAST`], with [`NODE_VT_EMPTY`] and [`NODE_C_ABSURD`].
+//! normalizes it away before export. The growth room is spent, so the next
+//! former resumes above [`SHARING_BLOCK_LAST`].
 //!
 //! The sharing block is **reserved and unassigned**: four per-family sharing
 //! formers so polarity stays recoverable from the tag alone, and four held
@@ -226,6 +225,21 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
 /// which the explicit weakening form would take one family at a time.
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
+
+/// Node tag: universe paths, over source and target codes.
+pub const NODE_VT_PATH_UNIVERSE: WireTag = WireTag(0x2A);
+
+/// Node tag: reflexivity, over its code.
+pub const NODE_V_PATH_REFL: WireTag = WireTag(0x2B);
+
+/// Node tag: equivalence, with inline evidence and classifier/map children.
+pub const NODE_V_PATH_EQUIV: WireTag = WireTag(0x2C);
+
+/// Node tag: componentwise product of paths.
+pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
+
+/// Node tag: transport, over a path and its source value.
+pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
 /// Node tag: the empty value type, with no children.
 pub const NODE_VT_EMPTY: WireTag = WireTag(0x28);
 /// Node tag: empty elimination, over one value scrutinee.
@@ -415,7 +429,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 34] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 39] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -456,33 +470,16 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 34] = [
     unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
     bounded_alias(NODE_VT_EMPTY, TokenCount(1)),
     unbounded(NODE_C_ABSURD, ChildArity(1)),
+    unbounded(NODE_VT_PATH_UNIVERSE, ChildArity(2)),
+    unbounded(NODE_V_PATH_REFL, ChildArity(1)),
+    unbounded(NODE_V_PATH_EQUIV, ChildArity(3)),
+    unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
+    unbounded(NODE_C_TRANSPORT, ChildArity(2)),
 ];
 
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
-    use alloc::vec::Vec;
-
-    use super::NODE_TAG_TABLE;
-    use super::NodeTagVerdict;
-    use crate::arena::AnyNode;
-    use crate::arena::TermArena;
-    use crate::base::BaseType;
-    use crate::base::FractionDigits;
-    use crate::base::IntegerLiteral;
-    use crate::base::Literal;
-    use crate::base::Magnitude;
-    use crate::base::NumericLiteral;
-    use crate::base::Sign;
-    use crate::base::StringLiteral;
-    use crate::term::ConstantIndex;
-    use crate::term::DeBruijnIndex;
-    use crate::term::Side;
-    use crate::types::GroundSort;
-    use crate::wire::WireTag;
-
     /// One node of every former, in the tag table's order, in a fresh arena.
     ///
     /// # Specification
@@ -536,6 +533,12 @@ mod tests
         let static_application = arena.value_static_application(constant, quote);
         let empty = arena.value_type_empty();
         let absurd = arena.computation_absurd(variable);
+        let path_type = arena.value_type_path_universe(quote, quote);
+        let refl = arena.value_path_refl(quote);
+        let map = arena.value_thunk(lambda);
+        let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
+        let product_path = arena.value_path_product(refl, refl);
+        let transport = arena.computation_transport(product_path, pair);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -571,6 +574,11 @@ mod tests
             AnyNode::Value(static_application),
             AnyNode::ValueType(empty),
             AnyNode::Computation(absurd),
+            AnyNode::ValueType(path_type),
+            AnyNode::Value(refl),
+            AnyNode::Value(equiv),
+            AnyNode::Value(product_path),
+            AnyNode::Computation(transport),
         ];
         (arena, nodes)
     }

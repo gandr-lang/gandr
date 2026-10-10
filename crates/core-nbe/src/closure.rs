@@ -344,6 +344,24 @@ impl ValueClosure
     }
 }
 
+/// A suspended body, either source syntax or a native transport continuation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CompBody
+{
+    /// An ordinary core computation.
+    Source(ComputationId),
+    /// After the first component returned, transport the second component.
+    TransportPair
+    {
+        /// The second component's path.
+        path: DomainValueId,
+        /// The second component's operand.
+        value: DomainValueId,
+    },
+    /// Return a pair of the held first component and the newly bound second.
+    Pair(DomainValueId),
+}
+
 /// A suspended **computation** body with the environment its free variables
 /// stand in: what a lambda, a thunk, a bind continuation and a case branch all
 /// become.
@@ -351,7 +369,7 @@ impl ValueClosure
 pub struct CompClosure
 {
     /// The core computation body, unevaluated.
-    body: ComputationId,
+    body: CompBody,
     /// What the body's free variables stand for.
     environment: Environment,
 }
@@ -373,7 +391,7 @@ impl CompClosure
     #[inline]
     #[must_use]
     pub(crate) fn new(
-        body: ComputationId,
+        body: CompBody,
         environment: Environment,
     ) -> Self
     {
@@ -386,7 +404,7 @@ impl CompClosure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn body(&self) -> ComputationId
+    pub fn body(&self) -> CompBody
     {
         self.body
     }

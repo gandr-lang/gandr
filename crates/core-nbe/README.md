@@ -23,6 +23,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Conversion machine](#conversion-machine)
 - [Codes](#codes)
 - [Static operators](#static-operators)
+- [Native universe paths](#native-universe-paths)
 - [Termination](#termination)
 - [Process re-sharing](#process-re-sharing)
 - [The cached word](#the-cached-word)
@@ -156,7 +157,7 @@ A stuck value and a stuck computation share a head and differ in what is stacked
 
 ## Closure spaces
 
-`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures, and a quote and a static lambda are the formers that produce a value closure ([Codes](#codes), [Static operators](#static-operators)). Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
+`ValueClosure` suspends a value body. `CompClosure::body` is `CompBody`: ordinary `Source` syntax or a native product-transport continuation (`TransportPair` or `Pair`) holding domain operands. Lambda, thunk, bind and case use source bodies; suspended product transports sequence components without allocating synthetic core syntax during evaluation. Both spaces capture the two-zone `Environment`; entering a closure extends that environment and evaluates its body. Entries are `Copy` ids, so capturing an environment clones two flat vectors.
 
 ## Per-run arena
 
@@ -239,6 +240,12 @@ Alternatives:
 - η for operators, which needs a static-Pi-typed comparison the untyped machine does not have.
 
 Reversal: a measured family where the decline at a lambda against a neutral costs a refusal a typed η would have answered. Conversion then becomes typed at static Pis.
+
+## Native universe paths
+
+Closed reflexivity and equivalence certificates retain their raw source syntax. Product paths evaluate their children and keep a source face only when both children still denote the original children. Certificate conversion erases evidence but does not normalize maps. Transport applies the forward map, returns its input for reflexivity, or sequences component transports for a pair. Neutral paths and neutral product inputs remain eliminations on a spine.
+
+Readback reconstructs suspended product sequencing with the correct binder depth in both modes. `native_transport_sequences_product_components` distinguishes all four canonical/neutral component combinations; `native_certificate_conversion_retains_map_syntax` distinguishes computational map equality from certificate identity. **Choice:** ordinary CBPV evaluation and explicit continuations, not Rust translator closures or a second evaluator. **Reversal:** a larger code or elimination fragment must first define the kernel rules that replay these computations.
 
 ## Termination
 

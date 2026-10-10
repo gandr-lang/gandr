@@ -113,14 +113,26 @@ pub fn unfolded(
         }
         match node {
             | CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
+                | Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                } => pending.extend([
+                    CoreNode::ValueType(path_type),
+                    CoreNode::Value(forward),
+                    CoreNode::Value(backward),
+                ]),
                 | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
                 },
-                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                | Value::PathProduct(first, second)
+                | Value::Pair(first, second)
+                | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
                 },
                 | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
-                | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                | Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
                 | Value::Thunk(body) => pending.push(CoreNode::Computation(body)),
@@ -132,6 +144,9 @@ pub fn unfolded(
                     .computation(id)
                     .expect("an erased computation resolves")
                 {
+                    | Computation::Transport(path, value) => {
+                        pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
+                    },
                     | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
                     | Computation::Application(head, argument) => {
                         pending.push(CoreNode::Computation(head));
@@ -160,6 +175,9 @@ pub fn unfolded(
                     .value_type(id)
                     .expect("an erased value type resolves")
                 {
+                    | ValueType::PathUniverse(source, target) => {
+                        pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
+                    },
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }

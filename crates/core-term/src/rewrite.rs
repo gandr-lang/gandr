@@ -438,7 +438,18 @@ impl<'arena> Engine<'arena>
                     | &Value::Literal(_),
                 )
                 | None => {},
-                | Some(&Value::Pair(first, second)) => {
+                | Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    children.push((Node::ValueType(path_type), depth));
+                    children.push((Node::Value(forward), depth));
+                    children.push((Node::Value(backward), depth));
+                },
+                | Some(&Value::PathRefl(code)) => children.push((Node::Value(code), depth)),
+                | Some(&Value::PathProduct(first, second) | &Value::Pair(first, second)) => {
                     children.push((Node::Value(first), depth));
                     children.push((Node::Value(second), depth));
                 },
@@ -460,6 +471,10 @@ impl<'arena> Engine<'arena>
             },
             | Node::Computation(id) => match self.arena.computation(id) {
                 | None => {},
+                | Some(&Computation::Transport(path, value)) => {
+                    children.push((Node::Value(path), depth));
+                    children.push((Node::Value(value), depth));
+                },
                 | Some(&Computation::Lambda(body)) => {
                     children.push((Node::Computation(body), depth.deeper()));
                 },
@@ -502,6 +517,10 @@ impl<'arena> Engine<'arena>
                 ) => {
                     children.push((Node::ValueType(first), depth));
                     children.push((Node::ValueType(second), depth));
+                },
+                | Some(&ValueType::PathUniverse(source, target)) => {
+                    children.push((Node::Value(source), depth));
+                    children.push((Node::Value(target), depth));
                 },
                 | Some(&ValueType::Thunk(body)) => children.push((Node::CompType(body), depth)),
                 | Some(&ValueType::Lift { inner, .. }) => {
@@ -652,6 +671,49 @@ impl<'arena> Engine<'arena>
             return id;
         };
         match node {
+            | Value::PathRefl(code) => {
+                let rewritten = self.value(code);
+                if rewritten == code {
+                    id
+                }
+                else {
+                    self.arena.value_path_refl(rewritten)
+                }
+            },
+            | Value::PathProduct(first, second) => {
+                let rewritten_second = self.value(second);
+                let rewritten_first = self.value(first);
+                if (rewritten_first, rewritten_second) == (first, second) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_path_product(rewritten_first, rewritten_second)
+                }
+            },
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                evidence,
+            } => {
+                let rewritten_backward = self.value(backward);
+                let rewritten_forward = self.value(forward);
+                let rewritten_type = self.value_type(path_type);
+                if (rewritten_type, rewritten_forward, rewritten_backward)
+                    == (path_type, forward, backward)
+                {
+                    id
+                }
+                else {
+                    self.arena.value_path_equiv(
+                        rewritten_type,
+                        rewritten_forward,
+                        rewritten_backward,
+                        evidence,
+                    )
+                }
+            },
             | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
             | Value::Pair(first, second) => {
                 let rewritten_second = self.value(second);
@@ -745,6 +807,17 @@ impl<'arena> Engine<'arena>
             return id;
         };
         match node {
+            | Computation::Transport(path, value) => {
+                let rewritten_value = self.value(value);
+                let rewritten_path = self.value(path);
+                if (rewritten_path, rewritten_value) == (path, value) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_transport(rewritten_path, rewritten_value)
+                }
+            },
             | Computation::Lambda(body) => {
                 let rewritten = self.computation(body);
                 if rewritten == body {
@@ -831,6 +904,17 @@ impl<'arena> Engine<'arena>
             return id;
         };
         match node {
+            | ValueType::PathUniverse(source, target) => {
+                let rewritten_target = self.value(target);
+                let rewritten_source = self.value(source);
+                if (rewritten_source, rewritten_target) == (source, target) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_path_universe(rewritten_source, rewritten_target)
+                }
+            },
             | ValueType::Base(_)
             | ValueType::Unit
             | ValueType::Universe { .. }

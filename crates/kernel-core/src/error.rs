@@ -40,6 +40,8 @@ use crate::env::OutstandingCount;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ValueTypeHead
 {
+    /// A universe-path classifier.
+    PathUniverse,
     /// A rigid base-type atom.
     Base,
     /// The unit type.
@@ -77,6 +79,7 @@ impl ValueTypeHead
     pub const fn of(value_type: &ValueType) -> Self
     {
         match *value_type {
+            | ValueType::PathUniverse(..) => Self::PathUniverse,
             | ValueType::Base(_) => Self::Base,
             | ValueType::Unit => Self::Unit,
             | ValueType::Empty => Self::Empty,
@@ -233,6 +236,8 @@ impl CompTypeWitness
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ExpectedValueShape
 {
+    /// A universe path, for transport or a product-path component.
+    PathUniverse,
     /// A product, for a pair.
     Product,
     /// A sum, for an injection or a case scrutinee.
@@ -456,6 +461,8 @@ impl CompTypeMismatch
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelError
 {
+    /// A native universe-path formation or replay obligation failed.
+    Path(crate::path_universe::PathError),
     /// A value variable's de Bruijn index escaped the typing context.
     UnboundVariable
     {
@@ -645,6 +652,7 @@ impl core::fmt::Display for KernelError
     ) -> core::fmt::Result
     {
         match *self {
+            | Self::Path(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
             | Self::UnboundConstant { .. } => {
                 f.write_str("a constant named no admitted declaration")

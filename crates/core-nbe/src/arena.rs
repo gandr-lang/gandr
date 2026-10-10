@@ -633,7 +633,10 @@ impl DomainArena
                     ])
                 },
                 | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
-                | Elimination::Bind(_) | Elimination::Case { .. } => return Guard::Flexible,
+                | Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Bind(_)
+                | Elimination::Case { .. } => return Guard::Flexible,
             };
         }
         word
@@ -820,7 +823,27 @@ impl DomainArena
     ) -> CompClosureId
     {
         let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
-        self.comp_closures.push(CompClosure::new(body, environment));
+        self.comp_closures.push(CompClosure::new(
+            crate::closure::CompBody::Source(body),
+            environment,
+        ));
+        id
+    }
+
+    /// Hold a native transport continuation without manufacturing source
+    /// syntax.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn transport_continuation(
+        &mut self,
+        body: crate::closure::CompBody,
+    ) -> CompClosureId
+    {
+        let id = CompClosureId(id_index(ArenaLength(self.comp_closures.len())).0);
+        self.comp_closures
+            .push(CompClosure::new(body, Environment::new()));
         id
     }
 
@@ -991,6 +1014,45 @@ impl DomainArena
     ) -> DomainValueId
     {
         self.alloc_value(DomainValue::Code { code, face }, Guard::Flexible)
+    }
+
+    /// Preserve a closed native certificate as syntax, without evaluating maps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_certificate(
+        &mut self,
+        certificate: ValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::PathCertificate { certificate, face },
+            Guard::Flexible,
+        )
+    }
+
+    /// Build a semantic product path from its evaluated components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: DomainValueId,
+        second: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::PathProduct {
+                first,
+                second,
+                face,
+            },
+            Guard::Flexible,
+        )
     }
 
     /// Mint a type operator over an already-allocated value closure whose body

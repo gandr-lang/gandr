@@ -99,6 +99,12 @@ impl Source for ContentTable<'_>
             return Former::Unreadable;
         };
         match *content {
+            | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
+            | ContentNode::PathRefl(code) => Former::PathRefl(code),
+            | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
+            | ContentNode::PathEquiv {
+                forward, backward, ..
+            } => Former::PathEquiv(forward, backward),
             | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             | ContentNode::Constant(ref reference) => named(reference, Former::Constant),
             | ContentNode::Unit => Former::Unit,
@@ -109,6 +115,7 @@ impl Source for ContentTable<'_>
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
+            | ContentNode::Transport(..)
             | ContentNode::Lambda(_)
             | ContentNode::Application(..)
             | ContentNode::Return(_)

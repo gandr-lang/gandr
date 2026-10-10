@@ -40,7 +40,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi`, the two universe towers `ValueType::Universe`, the quotes `Value::Quote` and `Value::QuoteComputation`, the code-reading formers `ValueType::Element` and `CompType::Element`, and the static operators `ValueType::StaticPi`, `Value::StaticLambda` and `Value::StaticApplication`.
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to`.
@@ -48,6 +48,8 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
 - `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
 - `FailureClass`: `UserAbsence`, `Unrepresentable`, `MalformedSource` and `EngineFault`, the classes a lowering refusal and a checking refusal are each classified into by their own crate's classifier.
+
+Native path certificates share the kernel's portable `PathEvidence` vocabulary. Arena identity and content hashing retain evidence; `equal_certificate_syntax` compares raw certificate syntax while erasing evidence only. It does not turn computationally equivalent maps into identical certificates. Binder rewrites traverse classifier codes and translator bodies normally. **Choice:** mirror native syntax rather than maintain a second path arena. **Reversal:** extending the closed code fragment requires corresponding kernel admission and replay rules, not a syntax-only frontend permission.
 
 ## Expected features
 

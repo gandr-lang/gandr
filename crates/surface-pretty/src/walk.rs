@@ -157,6 +157,7 @@ enum Kind
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
 {
     match *former {
+        | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::UnitType
         | Former::Product(..)
@@ -171,6 +172,9 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Arrow { .. }
         | Former::Pi { .. }
         | Former::ComputationElement(_) => Kind::CompType,
+        | Former::PathRefl(_)
+        | Former::PathProduct(..)
+        | Former::PathEquiv(..)
         | Former::Variable { .. }
         | Former::Constant(_)
         | Former::Unit
@@ -316,7 +320,11 @@ where
             slot(domain, Admits::ValueType),
             slot(codomain, Admits::CompType),
         ),
-        | Former::Pair(first, second) | Former::StaticApplication(first, second) => {
+        | Former::PathUniverse(first, second)
+        | Former::PathProduct(first, second)
+        | Former::PathEquiv(first, second)
+        | Former::Pair(first, second)
+        | Former::StaticApplication(first, second) => {
             Children::Two(slot(first, Admits::Value), slot(second, Admits::Value))
         },
         | Former::ThunkType(child) | Former::QuoteComputation(child) => {
@@ -325,6 +333,7 @@ where
         | Former::Returner(child) | Former::Quote(child) => {
             Children::One(slot(child, Admits::ValueType))
         },
+        | Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
         | Former::Injection(_, child)
@@ -471,6 +480,14 @@ impl Infix
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Bracket
 {
+    /// A native path classifier.
+    PathUniverse,
+    /// Native reflexivity.
+    PathRefl,
+    /// A native equivalence's maps.
+    PathEquiv,
+    /// A native product path.
+    PathProduct,
     /// A pair `(a, b)`.
     Pair,
     /// A left injection `Inl(v)`.
@@ -1116,6 +1133,22 @@ impl Walk<'_, '_, '_>
             }
             | Former::Computation
             | Former::Unreadable => return self.approximate(Glyphs("?")),
+            | Former::PathUniverse(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::PathUniverse))
+            },
+            | Former::PathRefl(_) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::PathRefl))
+            },
+            | Former::PathEquiv(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::PathEquiv))
+            },
+            | Former::PathProduct(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::PathProduct))
+            },
             | Former::Product(..) => Some(Join::Infix(Infix::Product)),
             | Former::Sum(..) => Some(Join::Infix(Infix::Sum)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
@@ -1357,22 +1390,36 @@ impl Walk<'_, '_, '_>
             | Join::Bracket(bracket) => {
                 let mut items = Vec::new();
                 match bracket {
+                    | Bracket::PathUniverse
+                    | Bracket::PathEquiv
+                    | Bracket::PathProduct
                     | Bracket::Pair => {
                         let second = self.pop()?;
                         let first = self.pop()?;
-                        let opener = self.leaf(Glyphs("("))?;
+                        let opener = self.leaf(Glyphs(match bracket {
+                            | Bracket::PathUniverse => "Path_U(",
+                            | Bracket::PathEquiv => "equiv(",
+                            | Bracket::PathProduct => "pathProduct(",
+                            | Bracket::Pair
+                            | Bracket::PathRefl
+                            | Bracket::Left
+                            | Bracket::Right => "(",
+                        }))?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
-                    | Bracket::Left | Bracket::Right => {
+                    | Bracket::PathRefl | Bracket::Left | Bracket::Right => {
                         let body = self.pop()?;
-                        let opener = self.leaf(if bracket == Bracket::Left {
-                            Glyphs("Inl(")
-                        }
-                        else {
-                            Glyphs("Inr(")
-                        })?;
+                        let opener = self.leaf(Glyphs(match bracket {
+                            | Bracket::PathRefl => "refl(",
+                            | Bracket::Left => "Inl(",
+                            | Bracket::Right
+                            | Bracket::Pair
+                            | Bracket::PathUniverse
+                            | Bracket::PathEquiv
+                            | Bracket::PathProduct => "Inr(",
+                        }))?;
                         items.extend([opener, body.doc]);
                     },
                 }

@@ -2101,6 +2101,8 @@ where
                     let forced = self.domain.comp_neutral(grown, CompTermFace::Reduced);
                     Self::set_side(goal, side, Slot::Ready(Glued::Computation(forced)));
                 },
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
@@ -3286,7 +3288,13 @@ mod tests
                 | Value::Literal(_)
                 | Value::Quote(_)
                 | Value::QuoteComputation(_) => Vec::new(),
-                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                | Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
+                | Value::PathEquiv {
+                    forward, backward, ..
+                } => Vec::from([CoreTerm::Value(forward), CoreTerm::Value(backward)]),
+                | Value::PathProduct(first, second)
+                | Value::Pair(first, second)
+                | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
                 | Value::StaticLambda(body) => Vec::from([CoreTerm::Value(body)]),
@@ -3300,6 +3308,9 @@ mod tests
                     .computation(id)
                     .expect("a reached computation resolves")
                 {
+                    | Computation::Transport(path, value) => {
+                        Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
+                    },
                     | Computation::Lambda(body) => Vec::from([CoreTerm::Computation(body)]),
                     | Computation::Application(head, argument) => {
                         Vec::from([CoreTerm::Computation(head), CoreTerm::Value(argument)])
@@ -3371,6 +3382,21 @@ mod tests
                         | CoreTerm::Value(id) => {
                             let key =
                                 match core.value(id).expect("a reached value resolves").clone() {
+                                    | Value::PathRefl(code) => Value::PathRefl(value(code)),
+                                    | Value::PathProduct(first, second) => {
+                                        Value::PathProduct(value(first), value(second))
+                                    },
+                                    | Value::PathEquiv {
+                                        path_type,
+                                        forward,
+                                        backward,
+                                        evidence,
+                                    } => Value::PathEquiv {
+                                        path_type,
+                                        forward: value(forward),
+                                        backward: value(backward),
+                                        evidence,
+                                    },
                                     | Value::Pair(first, second) => {
                                         Value::Pair(value(first), value(second))
                                     },
@@ -3406,6 +3432,9 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Transport(path, argument) => {
+                                    Computation::Transport(value(path), value(argument))
+                                },
                                 | Computation::Lambda(body) => {
                                     Computation::Lambda(computation(body))
                                 },
@@ -3651,11 +3680,16 @@ mod tests
                                     target: target.clone(),
                                     body: value(0),
                                 },
+                                | Value::PathRefl(_)
+                                | Value::PathProduct(..)
+                                | Value::PathEquiv { .. }
                                 | Value::Quote(_)
                                 | Value::QuoteComputation(_)
                                 | Value::StaticLambda(_)
                                 | Value::StaticApplication(..) => {
-                                    panic!("the duplication fixtures carry no quote or operator")
+                                    panic!(
+                                        "the duplication fixtures carry no quote, operator or path"
+                                    )
                                 },
                             };
                             OverlayId::Value(
@@ -3669,6 +3703,9 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Transport(..) => {
+                                    panic!("the duplication fixtures carry no transport")
+                                },
                                 | Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
                                 | Computation::Application(..) => {
                                     CompGraft::Application(computation(0), value(1))
@@ -3857,7 +3894,19 @@ mod tests
             match node {
                 | Node::Value(value) => {
                     match core.value(value).expect("a fixture value resolves") {
-                        | &(Value::Pair(first, second)
+                        | &Value::PathRefl(code) => Vec::from([Node::Value(code)]),
+                        | &Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ..
+                        } => Vec::from([
+                            Node::ValueType(path_type),
+                            Node::Value(forward),
+                            Node::Value(backward),
+                        ]),
+                        | &(Value::PathProduct(first, second)
+                        | Value::Pair(first, second)
                         | Value::StaticApplication(first, second)) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
@@ -3879,6 +3928,9 @@ mod tests
                         .computation(computation)
                         .expect("a fixture computation resolves")
                     {
+                        | &Computation::Transport(path, value) => {
+                            Vec::from([Node::Value(path), Node::Value(value)])
+                        },
                         | &Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
                         | &Computation::Application(head, argument) => {
                             Vec::from([Node::Computation(head), Node::Value(argument)])
@@ -3905,6 +3957,9 @@ mod tests
                         .value_type(value_type)
                         .expect("a fixture type resolves")
                     {
+                        | ValueType::PathUniverse(source, target) => {
+                            Vec::from([Node::Value(source), Node::Value(target)])
+                        },
                         | ValueType::Product(first, second)
                         | ValueType::Sum(first, second)
                         | ValueType::StaticPi {
@@ -3969,6 +4024,30 @@ mod tests
                         | &Value::Constant(constant) => self.arena.value_constant(constant),
                         | &Value::Unit => self.arena.value_unit(),
                         | &Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
+                        | &Value::PathRefl(code) => {
+                            let code = value(self, code);
+                            self.arena.value_path_refl(code)
+                        },
+                        | &Value::PathProduct(first, second) => {
+                            let (first, second) = (value(self, first), value(self, second));
+                            self.arena.value_path_product(first, second)
+                        },
+                        | &Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ref evidence,
+                        } => {
+                            let path_type =
+                                *self.value_types.get(&path_type).expect("children first");
+                            let (forward, backward) = (value(self, forward), value(self, backward));
+                            self.arena.value_path_equiv(
+                                path_type,
+                                forward,
+                                backward,
+                                alloc::sync::Arc::clone(evidence),
+                            )
+                        },
                         | &Value::Pair(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_pair(first, second)
@@ -4008,6 +4087,10 @@ mod tests
                         .computation(id)
                         .expect("a fixture computation resolves")
                     {
+                        | Computation::Transport(path, argument) => {
+                            let (path, argument) = (value(self, path), value(self, argument));
+                            self.arena.computation_transport(path, argument)
+                        },
                         | Computation::Lambda(body) => {
                             let body = computation(self, body);
                             self.arena.computation_lambda(body)
@@ -4049,6 +4132,10 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.value_type(id).expect("a fixture type resolves") {
+                        | ValueType::PathUniverse(source, target) => {
+                            let (source, target) = (value(self, source), value(self, target));
+                            self.arena.value_type_path_universe(source, target)
+                        },
                         | ValueType::Base(base) => self.arena.value_type_base(base),
                         | ValueType::Unit => self.arena.value_type_unit(),
                         | ValueType::Product(first, second) => {
