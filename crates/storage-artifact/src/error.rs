@@ -39,6 +39,17 @@ impl fmt::Display for ManifestField
     /// - provides: the field a manifest refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all seven fields observes pairwise distinct names
+    ///   and exact first-write refusal. It distinguishes collapsed fields and
+    ///   swallowed errors without pinning diagnostic wording or exercising
+    ///   alternate formatter modes.
+    /// - witness: `error::tests::every_manifest_field_renders_apart`
     #[inline]
     fn fmt(
         &self,
@@ -181,6 +192,18 @@ impl fmt::Display for ArtifactError
     ///   [`Error`] rendering the implementation below inherits.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on one representative of all eleven variants observes
+    ///   complete payload renderings, distinct messages and first-write sink
+    ///   refusal. Indices reach the usize ceiling; the matrix distinguishes
+    ///   lost or narrowed payloads, collapsed variants and swallowed errors. It
+    ///   does not pin prose, exhaust payloads or sample later-write failure.
+    /// - witness: `error::tests::every_refusal_renders_apart`
     #[inline]
     fn fmt(
         &self,
@@ -241,9 +264,7 @@ impl Error for ArtifactError
 #[cfg(test)]
 mod tests
 {
-    use alloc::collections::BTreeSet;
-    use alloc::string::String;
-    use alloc::string::ToString;
+    use alloc::string::ToString as _;
 
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DecodeError;
@@ -255,53 +276,112 @@ mod tests
     use super::ArtifactError;
     use super::ManifestField;
 
-    /// Every refusal renders its own sentence, so an operator can tell any two
-    /// apart from the text alone.
+    /// A sink that refuses the first formatted write.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses any offered text.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatting error.
+        /// - provides: the refusal observer for every display branch.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always returns the formatting error.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on every artifact-error variant and manifest field
+        ///   observes exact first-write refusal, distinguishing a sink that
+        ///   accepts text. Later writes are not sampled by this observer.
+        /// - witness: `error::tests::every_refusal_renders_apart`
+        /// - witness: `error::tests::every_manifest_field_renders_apart`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _s: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    /// Every refusal retains its diagnostic payload and remains
+    /// distinguishable.
     #[test]
     fn every_refusal_renders_apart()
     {
-        let refusals = [
-            ArtifactError::Kernel {
-                refusal: DecodeError::Truncated,
-            },
-            ArtifactError::Records {
-                refusal: RecordTreeError::UnknownNode {
-                    hash: NodeHash::from([0_u8; 32]),
+        let kernel = DecodeError::Truncated;
+        let records = RecordTreeError::UnknownNode {
+            hash: NodeHash::from([0xa7; 32]),
+        };
+        let key = ConstantIndex::from(usize::MAX);
+        let first = RecordIndex::from(usize::MAX - 1);
+        let second = RecordIndex::from(usize::MAX - 2);
+        let found = FormatVersion(0x1234);
+        let kernel_text = kernel.to_string();
+        let records_text = records.to_string();
+        let key_text = usize::from(key).to_string();
+        let first_text = first.to_string();
+        let second_text = second.to_string();
+        let format_text = found.to_string();
+        let malformed_field = ManifestField::Commitment.to_string();
+        let truncated_field = ManifestField::RootNode.to_string();
+        let cases: [(ArtifactError, &[&str]); 11] = [
+            (ArtifactError::Kernel { refusal: kernel }, &[&kernel_text]),
+            (ArtifactError::Records { refusal: records }, &[
+                &records_text,
+            ]),
+            (
+                ArtifactError::DuplicateAdmissionKey { key, first, second },
+                &[&key_text, &first_text, &second_text],
+            ),
+            (
+                ArtifactError::MalformedManifest {
+                    field: ManifestField::Commitment,
                 },
-            },
-            ArtifactError::DuplicateAdmissionKey {
-                key: ConstantIndex::from(3_usize),
-                first: RecordIndex::from(0_usize),
-                second: RecordIndex::from(1_usize),
-            },
-            ArtifactError::MalformedManifest {
-                field: ManifestField::Domain,
-            },
-            ArtifactError::TruncatedManifest {
-                field: ManifestField::Domain,
-            },
-            ArtifactError::TrailingManifestBytes,
-            ArtifactError::UnsupportedKernelFormat {
-                found: FormatVersion(1),
-            },
-            ArtifactError::IncompatibleProfile,
-            ArtifactError::TreeMismatch,
-            ArtifactError::MisplacedRecord {
-                position: RecordIndex::from(1_usize),
-            },
-            ArtifactError::SegmentBoundary {
-                position: RecordIndex::from(1_usize),
-            },
+                &[&malformed_field],
+            ),
+            (
+                ArtifactError::TruncatedManifest {
+                    field: ManifestField::RootNode,
+                },
+                &[&truncated_field],
+            ),
+            (ArtifactError::TrailingManifestBytes, &[]),
+            (ArtifactError::UnsupportedKernelFormat { found }, &[
+                &format_text,
+            ]),
+            (ArtifactError::IncompatibleProfile, &[]),
+            (ArtifactError::TreeMismatch, &[]),
+            (ArtifactError::MisplacedRecord { position: first }, &[
+                &first_text,
+            ]),
+            (ArtifactError::SegmentBoundary { position: second }, &[
+                &second_text,
+            ]),
         ];
-        let rendered: BTreeSet<String> = refusals.iter().map(ToString::to_string).collect();
-        assert_eq!(
-            refusals.len(),
-            rendered.len(),
-            "each refusal renders a sentence no other one does"
-        );
+        let rendered = cases.each_ref().map(|case| case.0.to_string());
+        for (index, (error, payloads)) in cases.into_iter().enumerate() {
+            for payload in payloads {
+                assert!(
+                    rendered[index].contains(payload),
+                    "{error:?} omitted {payload}"
+                );
+            }
+            assert!(!rendered[.. index].contains(&rendered[index]));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{error}")),
+                Err(core::fmt::Error)
+            );
+        }
     }
 
-    /// Every manifest field renders its own phrase.
+    /// Every manifest field retains its identity without fixing its prose.
     #[test]
     fn every_manifest_field_renders_apart()
     {
@@ -314,11 +394,13 @@ mod tests
             ManifestField::RecordCount,
             ManifestField::RootNode,
         ];
-        let rendered: BTreeSet<String> = fields.iter().map(ToString::to_string).collect();
-        assert_eq!(
-            fields.len(),
-            rendered.len(),
-            "each field renders a phrase no other one does"
-        );
+        let rendered = fields.map(|field| field.to_string());
+        for (index, field) in fields.into_iter().enumerate() {
+            assert!(!rendered[.. index].contains(&rendered[index]));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{field}")),
+                Err(core::fmt::Error)
+            );
+        }
     }
 }
