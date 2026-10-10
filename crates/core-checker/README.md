@@ -330,6 +330,8 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 
 `template` implements [guarded equation families](docs/staging.md).
 
+The [adapter](src/template/admission.rs) exposes families to guarded admission; its [observer](docs/staging.md#guarded-admission-observer) is measurement scaffolding.
+
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.
