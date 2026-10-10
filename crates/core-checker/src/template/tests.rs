@@ -81,6 +81,7 @@ fn a_template_is_emitted_only_below_its_expansion_factor()
                 &arena,
                 ProgramId(0),
                 &family,
+                PriceGate::Unmemoized,
                 &mut cache,
                 &mut Budget(1_000_000),
             )
@@ -96,6 +97,9 @@ fn a_template_is_emitted_only_below_its_expansion_factor()
             let cost = produced.cost();
             assert_eq!(usize::from(cost.plain_size), plain);
             match produced {
+                | Production::WorkBoundExceeded { .. } => {
+                    panic!("the original gate has no memoized allowance")
+                },
                 | Production::Go(_) => {
                     let size = usize::from(cost.template_size);
                     assert!(size < plain.checked_div(size).unwrap());
@@ -118,6 +122,7 @@ fn every_member_admits_as_its_plain_replay()
         &arena,
         ProgramId(0),
         &family,
+        PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
         &mut Budget(1_000_000),
     )
@@ -177,6 +182,7 @@ fn every_member_admits_as_its_plain_replay()
                     &arena,
                     family.program,
                     &family.members,
+                    PriceGate::Unmemoized,
                     &mut cache,
                     &mut Budget(10_000_000),
                 )
@@ -229,7 +235,7 @@ fn a_skeleton_divergent_family_yields_no_template()
     family.last_mut().unwrap().rule = Rule::QuoteSplice;
     let mut cache = InheritanceCache::new();
     assert!(
-        matches!(produce(&arena, ProgramId(0), &family, &mut cache, &mut Budget(1_000_000)).unwrap(), Production::Plain { reason: TemplateRefusal::SkeletonDivergence { member }, .. } if usize::from(member) == 63)
+        matches!(produce(&arena, ProgramId(0), &family, PriceGate::Unmemoized, &mut cache, &mut Budget(1_000_000)).unwrap(), Production::Plain { reason: TemplateRefusal::SkeletonDivergence { member }, .. } if usize::from(member) == 63)
     );
     assert_eq!(usize::from(cache.checked()), 0);
 }
@@ -249,6 +255,7 @@ fn an_entry_a_decision_discriminates_on_yields_no_template()
             &arena,
             ProgramId(0),
             &family,
+            PriceGate::Unmemoized,
             &mut cache,
             &mut Budget(1_000_000)
         )
@@ -270,6 +277,7 @@ fn a_family_with_no_shared_content_yields_no_template()
             &arena,
             ProgramId(0),
             &family,
+            PriceGate::Unmemoized,
             &mut cache,
             &mut Budget(1_000_000)
         )
@@ -291,6 +299,7 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
         &arena,
         ProgramId(0),
         &family,
+        PriceGate::Unmemoized,
         &mut cache,
         &mut Budget(1_000_000),
     )
@@ -298,7 +307,15 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
     assert!(matches!(first, Production::Go(_)));
     assert_eq!(usize::from(first.cost().triples_checked), 2);
     assert_eq!(usize::from(first.cost().cache_hits), 62);
-    let second = produce(&arena, ProgramId(0), &family, &mut cache, &mut Budget(0)).unwrap();
+    let second = produce(
+        &arena,
+        ProgramId(0),
+        &family,
+        PriceGate::Unmemoized,
+        &mut cache,
+        &mut Budget(0),
+    )
+    .unwrap();
     assert_eq!(usize::from(second.cost().triples_checked), 0);
     assert_eq!(usize::from(second.cost().cache_hits), 64);
     assert_eq!(usize::from(cache.distinct_triples()), 2);
@@ -306,6 +323,7 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
         &arena,
         ProgramId(1),
         &family,
+        PriceGate::Unmemoized,
         &mut cache,
         &mut Budget(1_000_000),
     )
@@ -342,6 +360,7 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
             &arena,
             ProgramId(0),
             &family,
+            PriceGate::Unmemoized,
             &mut cache,
             &mut Budget(1_000_000),
         )
@@ -352,7 +371,9 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
                 reason: TemplateRefusal::NotInherited { key, .. },
                 ..
             } => cache.record(key, InheritanceVerdict::Inherited),
-            | result @ Production::Plain { .. } => panic!("unexpected refusal: {result:?}"),
+            | result @ (Production::Plain { .. } | Production::WorkBoundExceeded { .. }) => {
+                panic!("unexpected refusal: {result:?}")
+            },
         }
     };
     let honest = family.first().unwrap();
@@ -379,6 +400,7 @@ fn peak_choices_are_correlated()
         &arena,
         ProgramId(0),
         &family,
+        PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
         &mut Budget(1_000_000),
     )
@@ -417,6 +439,7 @@ fn peak_choices_are_correlated()
         &arena,
         ProgramId(0),
         &family,
+        PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
         &mut Budget(1_000_000),
     )
@@ -487,6 +510,7 @@ fn cache_keys_include_classifier_content()
             &arena,
             ProgramId(0),
             &family,
+            PriceGate::Unmemoized,
             &mut cache,
             &mut Budget(100_000),
         )
@@ -575,6 +599,7 @@ fn independent_points_are_checked_with_other_points_rigid()
         &arena,
         ProgramId(0),
         &family,
+        PriceGate::Unmemoized,
         &mut cache,
         &mut Budget(1_000_000),
     )
@@ -598,5 +623,456 @@ fn independent_points_are_checked_with_other_points_rigid()
             template.admit(&arena, step.source, &mut Budget(100_000)),
             plain.map(|_| ())
         );
+    }
+}
+
+/// Literal-count probes; each target records the proposed predecessor
+/// explicitly.
+///
+/// # Specification
+/// - ensures: repeats the supplied outer or inner numeral pairs without
+///   deriving their relation in the fixture; ordinary replay supplies the
+///   positive oracle.
+/// - panics: fixture allocation failure or an empty pair set.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — wrong offsets, zero and inner numerals distinguish the
+///   producer's one allowed relation from arbitrary numeric generalization.
+/// - witness: `template::tests::outer_predecessors_share_one_peak_point_and_replay`
+/// - witness: `template::tests::predecessor_discovery_refuses_zero_inner_and_other_offsets`
+fn numeral_successors(
+    stage: Stage,
+    pairs: &[(Natural, Natural)],
+    members: Members,
+) -> (Arena, Vec<Step>)
+{
+    let mut arena = Arena::default();
+    let nat = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+    let variable = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let identity = arena.alloc(Term::Lambda(nat, variable)).unwrap();
+    let initial = arena
+        .alloc(Term::Natural(Stage::Outer, Natural(0)))
+        .unwrap();
+    let mut family = Vec::with_capacity(members.0);
+    for index in 0 .. members.0 {
+        let (source_count, target_count) = pairs[index.checked_rem(pairs.len()).unwrap()];
+        let source_count = arena.alloc(Term::Natural(stage, source_count)).unwrap();
+        let target_count = arena.alloc(Term::Natural(stage, target_count)).unwrap();
+        let source = arena
+            .alloc(Term::Iterate(source_count, initial, identity))
+            .unwrap();
+        let recursive = arena
+            .alloc(Term::Iterate(target_count, initial, identity))
+            .unwrap();
+        let target = arena.alloc(Term::Apply(identity, recursive)).unwrap();
+        family.push(Step {
+            source,
+            target,
+            rule: Rule::IterateSuccessor,
+        });
+    }
+    (arena, family)
+}
+
+#[test]
+fn outer_predecessors_share_one_peak_point_and_replay()
+{
+    let pairs: Vec<_> = (1 ..= 8).map(|n| (Natural(n), Natural(n - 1))).collect();
+    let (mut arena, family) = numeral_successors(Stage::Outer, &pairs, Members(36));
+    let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    else {
+        panic!("uniform family");
+    };
+    assert_eq!(candidate.points().count(), 1);
+    assert_eq!(usize::from(candidate.prices().triples), 8);
+    assert!(candidate.prices().unmemoized.is_err());
+    assert!(candidate.prices().memoized.is_ok());
+    let mut cache = InheritanceCache::new();
+    let Production::Go(template) = candidate
+        .produce(PriceGate::Memoized, &mut cache, &mut Budget(100_000))
+        .unwrap()
+    else {
+        panic!("the numeral family inherits");
+    };
+    assert_eq!(usize::from(cache.checked()), 8);
+    assert_eq!(usize::from(cache.hits()), 28);
+    for step in &family {
+        let certificate = Certificate {
+            source: step.source,
+            target: step.target,
+            steps: Vec::from([*step]),
+        };
+        let plain =
+            gandr_kernel_core::stage::replay(&mut arena, &[], &certificate, &mut Budget(100_000));
+        assert!(plain.is_ok());
+        assert_eq!(
+            template.admit(&arena, step.source, &mut Budget(100_000)),
+            plain.map(|_| ())
+        );
+        let substitution = template.peak_substitution(&arena, step.source).unwrap();
+        let (projected, projected_step) = template.instantiate(&substitution).unwrap();
+        let mut actual_graph = Graph::default();
+        let actual_roots = actual_graph
+            .import(&arena, &[step.source, step.target])
+            .unwrap();
+        let mut projected_graph = Graph::default();
+        let projected_roots = projected_graph
+            .import(&projected, &[projected_step.source, projected_step.target])
+            .unwrap();
+        for (a, b) in actual_roots.into_iter().zip(projected_roots) {
+            actual_graph.compare(a, &projected_graph, b).unwrap();
+        }
+    }
+}
+
+#[test]
+fn predecessor_discovery_refuses_zero_inner_and_other_offsets()
+{
+    let inner: Vec<_> = (1 ..= 8).map(|n| (Natural(n), Natural(n - 1))).collect();
+    let zero: Vec<_> = (0_usize .. 8)
+        .map(|n| (Natural(n), Natural(n.saturating_sub(1))))
+        .collect();
+    let offset: Vec<_> = (2 ..= 9).map(|n| (Natural(n), Natural(n - 2))).collect();
+    let mut mixed = inner.clone();
+    mixed.last_mut().unwrap().1 = Natural(6);
+    for (stage, pairs) in [
+        (Stage::Inner(Model(0)), inner),
+        (Stage::Outer, zero),
+        (Stage::Outer, offset),
+        (Stage::Outer, mixed),
+    ] {
+        let (arena, family) = numeral_successors(stage, &pairs, Members(64));
+        let mut cache = InheritanceCache::new();
+        let produced = produce(
+            &arena,
+            ProgramId(0),
+            &family,
+            PriceGate::Memoized,
+            &mut cache,
+            &mut Budget(100_000),
+        )
+        .unwrap();
+        assert!(matches!(produced, Production::Plain {
+            reason: TemplateRefusal::EntryOutsidePeak { .. },
+            ..
+        }));
+        assert_eq!(usize::from(cache.checked()), 0);
+    }
+}
+
+#[test]
+fn memoized_checks_respect_the_priced_allowance()
+{
+    let mut arena = Arena::default();
+    let nat = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+    let variable = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let identity = arena.alloc(Term::Lambda(nat, variable)).unwrap();
+    let argument = arena
+        .alloc(Term::Natural(Stage::Outer, Natural(9)))
+        .unwrap();
+    let source = arena.alloc(Term::Apply(identity, argument)).unwrap();
+    let family = alloc::vec![Step { source, target: argument, rule: Rule::Beta }; 64];
+    let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    else {
+        panic!("uniform ground family");
+    };
+    let cap = usize::from(candidate.prices().check_bound);
+    assert_eq!(usize::from(candidate.prices().triples), 1);
+    assert!(candidate.prices().memoized.is_ok());
+    let mut cache = InheritanceCache::new();
+    let mut budget = Budget(100_000);
+    let produced = candidate
+        .produce(PriceGate::Memoized, &mut cache, &mut budget)
+        .unwrap();
+    assert!(matches!(produced, Production::WorkBoundExceeded { .. }));
+    assert_eq!(100_000 - budget.0, cap);
+    assert_eq!(usize::from(cache.distinct_triples()), 0);
+    assert_eq!(
+        produce(
+            &arena,
+            ProgramId(0),
+            &family,
+            PriceGate::Memoized,
+            &mut cache,
+            &mut Budget(0)
+        )
+        .unwrap_err(),
+        StageError::Exhausted
+    );
+    let original = produce(
+        &arena,
+        ProgramId(0),
+        &family,
+        PriceGate::Unmemoized,
+        &mut cache,
+        &mut Budget(100_000),
+    )
+    .unwrap();
+    assert!(matches!(original, Production::Go(_)));
+    let cached = produce(
+        &arena,
+        ProgramId(0),
+        &family,
+        PriceGate::Memoized,
+        &mut cache,
+        &mut Budget(0),
+    )
+    .unwrap();
+    assert!(matches!(cached, Production::Go(_)));
+    assert_eq!(usize::from(cached.cost().triples_checked), 0);
+}
+
+/// Read a natural payload from the observer's actual JSON image.
+///
+/// # Specification
+/// - ensures: retains the exact unsigned payload, without an estimated size.
+/// - panics: a non-natural or machine-unrepresentable fixture payload.
+///
+/// # Adequacy
+/// - hypothesis: L2 — kernel replay and original-syntax comparison observe the
+///   decoded literals, classifiers and references rather than serializer
+///   echoes.
+/// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
+fn image_natural(value: &serde_json::Value) -> Natural
+{
+    Natural(usize::try_from(value.as_u64().unwrap()).unwrap())
+}
+
+/// Read the outer tag or an inner model from an image.
+///
+/// # Specification
+/// - ensures: preserves the represented stage and model.
+/// - panics: malformed fixture tags or payloads.
+///
+/// # Adequacy
+/// - hypothesis: L2 — typed replay and source comparison reject a changed
+///   stage.
+/// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
+fn image_stage(value: &serde_json::Value) -> Stage
+{
+    if value == "outer" {
+        Stage::Outer
+    }
+    else {
+        assert_eq!(value[0], "inner");
+        Stage::Inner(Model(image_natural(&value[1]).0))
+    }
+}
+
+/// Independent flat-image reader used only as a semantic measurement witness.
+///
+/// # Specification
+/// - requires: a complete equation image, entry dictionary and one guard row.
+/// - ensures: rebuilds all represented syntax, selecting point arms and
+///   computing only positive outer predecessors. The caller replays and
+///   compares it.
+/// - panics: invalid fixture schema, references, guards or predecessor
+///   payloads.
+///
+/// # Adequacy
+/// - hypothesis: L2 — ordinary replay and original-input comparison distinguish
+///   omitted classifiers, stale compacted addresses and wrong member choices.
+/// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
+fn decode_equation_image(
+    equation: &serde_json::Value,
+    entries: &serde_json::Value,
+    choices: &serde_json::Value,
+) -> (Arena, Step)
+{
+    let mut arena = Arena::default();
+    let mut types = BTreeMap::new();
+    for pair in equation["graph"][0].as_array().unwrap() {
+        let body = &pair[1];
+        let ty = match body[0].as_str().unwrap() {
+            | "nat" => Type::Nat(image_stage(&body[1])),
+            | "in" => Type::In(Model(image_natural(&body[1]).0)),
+            | "universe" => Type::Universe(Model(image_natural(&body[1]).0)),
+            | "arrow" => Type::Arrow(
+                types[&image_natural(&body[1]).0],
+                types[&image_natural(&body[2]).0],
+            ),
+            | "lift" => Type::Lift(types[&image_natural(&body[1]).0]),
+            | tag => panic!("unexpected classifier {tag}"),
+        };
+        types.insert(image_natural(&pair[0]).0, arena.alloc_type(ty).unwrap());
+    }
+    let mut terms = Vec::new();
+    for node in equation["graph"][1].as_array().unwrap() {
+        let head = &node["head"];
+        let tag = head.as_str().unwrap_or_else(|| head[0].as_str().unwrap());
+        let child = |slot| terms[image_natural(&node["children"][slot]).0];
+        if tag == "point" {
+            let point = image_natural(&head[1]).0;
+            let entry = entries
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| image_natural(&entry[0]).0 == point)
+                .unwrap();
+            let arm = entry[1]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|arm| arm[1] == choices[point])
+                .unwrap();
+            terms.push(terms[image_natural(&arm[0]).0]);
+            continue;
+        }
+        let term = match tag {
+            | "variable" => Term::Variable(Index(image_natural(&head[1]).0)),
+            | "outer-natural" => Term::Natural(Stage::Outer, image_natural(&head[1])),
+            | "inner-natural" => Term::Natural(
+                Stage::Inner(Model(image_natural(&head[1]).0)),
+                image_natural(&head[2]),
+            ),
+            | "code" => Term::Code(types[&image_natural(&head[1]).0]),
+            | "lambda" => Term::Lambda(types[&image_natural(&head[1]).0], child(0)),
+            | "eliminate" => Term::Eliminate(child(0), types[&image_natural(&head[1]).0]),
+            | "apply" => Term::Apply(child(0), child(1)),
+            | "multiply" => Term::Multiply(child(0), child(1)),
+            | "quote" => Term::Quote(child(0)),
+            | "splice" => Term::Splice(child(0)),
+            | "iterate" => Term::Iterate(child(0), child(1), child(2)),
+            | "pred" => {
+                let Term::Natural(Stage::Outer, Natural(n)) = arena.term(child(0)).unwrap()
+                else {
+                    panic!("outer predecessor");
+                };
+                Term::Natural(Stage::Outer, Natural(n.checked_sub(1).unwrap()))
+            },
+            | name => panic!("unexpected constructor {name}"),
+        };
+        terms.push(arena.alloc(term).unwrap());
+    }
+    let rule = match equation["rule"].as_str().unwrap() {
+        | "beta" => Rule::Beta,
+        | "congruence" => Rule::Congruence,
+        | "iterate-zero" => Rule::IterateZero,
+        | "iterate-successor" => Rule::IterateSuccessor,
+        | "splice-quote" => Rule::SpliceQuote,
+        | "quote-splice" => Rule::QuoteSplice,
+        | "eliminate" => Rule::Eliminate,
+        | tag => panic!("unexpected rule {tag}"),
+    };
+    let step = Step {
+        source: terms[image_natural(&equation["sides"][0]).0],
+        target: terms[image_natural(&equation["sides"][1]).0],
+        rule,
+    };
+    (arena, step)
+}
+
+#[test]
+fn serialized_images_reconstruct_the_original_equations()
+{
+    let pairs: Vec<_> = (1 ..= 8).map(|n| (Natural(n), Natural(n - 1))).collect();
+    let mut fixtures = Vec::from([
+        (
+            numeral_successors(Stage::Outer, &pairs, Members(36)),
+            Model(0),
+        ),
+        (cancellations(Members(64), Arms(2)), Model(0)),
+    ]);
+    let mut arena = Arena::default();
+    let token = arena.alloc_type(Type::In(Model(7))).unwrap();
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(7)))).unwrap();
+    let variable = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let outer_number = arena
+        .alloc(Term::Natural(Stage::Outer, Natural(usize::MAX)))
+        .unwrap();
+    let inner_number = arena
+        .alloc(Term::Natural(Stage::Inner(Model(7)), Natural(6789)))
+        .unwrap();
+    let code = arena.alloc(Term::Code(inner)).unwrap();
+    let function = arena.alloc(Term::Lambda(inner, variable)).unwrap();
+    let quoted = arena.alloc(Term::Quote(inner_number)).unwrap();
+    let eliminated = arena.alloc(Term::Eliminate(inner_number, inner)).unwrap();
+    let mut family = Vec::new();
+    for argument in [
+        outer_number,
+        inner_number,
+        code,
+        function,
+        quoted,
+        eliminated,
+        variable,
+    ] {
+        let ty =
+            gandr_kernel_core::stage::infer(&mut arena, &[token], argument, &mut Budget(100_000))
+                .unwrap();
+        let identity = arena.alloc(Term::Lambda(ty, variable)).unwrap();
+        let source = arena.alloc(Term::Apply(identity, argument)).unwrap();
+        family.push(Step {
+            source,
+            target: argument,
+            rule: Rule::Beta,
+        });
+    }
+    fixtures.push(((arena, family), Model(7)));
+    for ((mut original, family), model) in fixtures {
+        let Analysis::Candidate(candidate) = analyze(&original, ProgramId(0), &family).unwrap()
+        else {
+            panic!("uniform image family");
+        };
+        let encoded = serde_json::to_vec(&candidate.image().unwrap()).unwrap();
+        let image: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        let rows: Vec<serde_json::Value> = candidate
+            .substitutions()
+            .map(|row| {
+                let bytes = serde_json::to_vec(&row).unwrap();
+                serde_json::from_slice(&bytes).unwrap()
+            })
+            .collect();
+        assert_eq!(rows.len(), family.len());
+        for (step, choices) in family.iter().zip(&rows) {
+            let bytes = serde_json::to_vec(&plain_image(&original, step).unwrap()).unwrap();
+            let plain: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let empty = serde_json::json!([]);
+            for (equation, entries, choices) in [
+                (&image["equation"], &image["entries"], choices),
+                (&plain, &empty, &empty),
+            ] {
+                let (mut decoded, decoded_step) = decode_equation_image(equation, entries, choices);
+                assert_eq!(decoded_step.rule, step.rule);
+                let token = decoded.alloc_type(Type::In(model)).unwrap();
+                let certificate = Certificate {
+                    source: decoded_step.source,
+                    target: decoded_step.target,
+                    steps: Vec::from([decoded_step]),
+                };
+                let classifier = gandr_kernel_core::stage::replay(
+                    &mut decoded,
+                    &[token],
+                    &certificate,
+                    &mut Budget(100_000),
+                )
+                .unwrap();
+                let original_token = original.alloc_type(Type::In(model)).unwrap();
+                let expected = gandr_kernel_core::stage::infer(
+                    &mut original,
+                    &[original_token],
+                    step.source,
+                    &mut Budget(100_000),
+                )
+                .unwrap();
+                let mut reference = Graph::default();
+                let original_code = original.alloc(Term::Code(expected)).unwrap();
+                let original_roots = reference
+                    .import(&original, &[step.source, step.target, original_code])
+                    .unwrap();
+                let mut observed = reference.member();
+                let decoded_code = decoded.alloc(Term::Code(classifier)).unwrap();
+                let decoded_roots = observed
+                    .import(&decoded, &[
+                        decoded_step.source,
+                        decoded_step.target,
+                        decoded_code,
+                    ])
+                    .unwrap();
+                for (left, right) in original_roots.into_iter().zip(decoded_roots) {
+                    reference.compare(left, &observed, right).unwrap();
+                }
+            }
+        }
     }
 }

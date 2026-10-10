@@ -312,7 +312,7 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 `stage::compile`, `Program::admit` and `Program::execute` implement
 [certified first-order residual readmission](../kernel-core/README.md#experimental-stage-readmission).
 
-`template` adds [guarded equation families](src/template.rs), with peak-rooted instantiation and ordinary replay as authority. Run the `staging_templates` release example for strict-staging costs, replay differentials and scoped heap residency; its [measurement notes](examples/staging_templates.rs) state the limits.
+`template` provides [guarded equation families](src/template.rs): original and memo-aware prices, producer-only predecessor sharing, and kernel-authoritative replay. The [`staging_templates` observer](examples/staging_templates.rs) specifies the Serde/JSON choice and measures bytes, time and residency.
 
 ## License
 

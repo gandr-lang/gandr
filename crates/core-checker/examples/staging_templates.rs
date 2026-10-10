@@ -8,6 +8,28 @@
 //! regenerated source/member at a time. Production peak is reported separately
 //! because discovering a family still materializes its input certificates.
 //!
+//! Both gates get fresh caches. Candidate JSON and every substitution are
+//! serialized outside timing/allocation scopes; plain bytes sum independent
+//! reachable-graph equations, with no normalization intermediates. Refused
+//! candidates' byte rows describe syntax, not accepted templates. JSON images
+//! include classifier tables, constructor payloads and edges, roots, rules and
+//! all guarded arms. A substitution is a guard row in declared point order.
+//! ADMISSION measures a template clone and one admission's scratch while
+//! borrowing fixture sources; unlike RESIDENCY it does not charge source input.
+//! The work price combines template nodes and a kernel-fuel allowance, not
+//! elapsed time; `checks_fuel` is observed from the caller's consumed budget.
+//! A candidate image owns a compacted graph; borrowed wrappers encode its
+//! classifiers and guards without a parallel recursive syntax tree. Interning
+//! maps and cache counters are excluded. These are format-specific observations
+//! against independent per-equation DAGs, not optimal cross-member
+//! deduplication and not a persistence or decoding API.
+//!
+//! The byte observer reuses the workspace's default-off Serde and dev-only
+//! `serde_json`. Debug output and node counts are not serialized byte lengths;
+//! a binary codec would answer a different format-specific size question.
+//! Revisit JSON if a persistence or interchange contract chooses another
+//! format.
+//!
 //! Allocation counting uses allocation-counter 0.8.1, defaults disabled: a
 //! synchronous, thread-local System wrapper with no runtime dependencies or
 //! backtrace capture. DHAT provides richer profiles but adds its backtrace and
@@ -20,9 +42,15 @@ use std::io;
 use std::io::Write as _;
 use std::time::Instant;
 
+use gandr_core_checker::template::Analysis;
+use gandr_core_checker::template::Family;
+use gandr_core_checker::template::FamilyPrices;
+use gandr_core_checker::template::PriceGate;
 use gandr_core_checker::template::Production;
 use gandr_core_checker::template::ProgramId;
+use gandr_core_checker::template::analyze;
 use gandr_core_checker::template::harvest;
+use gandr_core_checker::template::plain_image;
 use gandr_core_checker::template::produce;
 use gandr_core_checker::template::readmit;
 use gandr_kernel_term::stage::Arena;
@@ -387,6 +415,115 @@ fn template_residency(
     Ok(info)
 }
 
+/// An actual serialized byte length, never a node-count estimate.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct ImageSize(usize);
+
+/// Kernel work units actually consumed during inheritance.
+#[repr(transparent)]
+struct KernelFuel(usize);
+
+/// Format-specific observations, made outside timed and allocator scopes.
+struct FamilyObservation
+{
+    /// Prices are cold-cache prices for both routes.
+    prices: FamilyPrices,
+    /// Generalized point nodes, including any target-only points.
+    points: gandr_theory_deep_inference::NodeCount,
+    /// Complete candidate image, including every guarded arm.
+    template: ImageSize,
+    /// Sum of independently encoded member substitution rows.
+    substitutions: ImageSize,
+    /// Sum of independent reachable-graph equation images.
+    plain: ImageSize,
+}
+
+/// Charge actual compact JSON images for both representations.
+///
+/// # Specification
+/// - ensures: charges all substitutions even for a refused candidate, whose
+///   bytes are descriptive rather than an admission claim.
+/// - fails: syntax, serialization, uniform-family or size-overflow failure.
+/// - panics: none.
+///
+/// # Errors
+/// Propagates the original observer error.
+///
+/// # Adequacy
+/// - hypothesis: L2 — real serializer output, with literals and classifiers,
+///   separates stored bytes from the node-cost model.
+/// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
+fn observe_family(
+    arena: &Arena,
+    family: &Family,
+) -> Result<FamilyObservation, Box<dyn core::error::Error>>
+{
+    let Analysis::Candidate(candidate) = analyze(arena, family.program, &family.members)?
+    else {
+        return Err(StageError::InvalidCertificate.into());
+    };
+    let image = candidate.image()?;
+    let template = serde_json::to_vec(&image)?.len();
+    let mut substitutions = 0_usize;
+    for substitution in candidate.substitutions() {
+        substitutions = substitutions
+            .checked_add(serde_json::to_vec(&substitution)?.len())
+            .ok_or(StageError::Overflow)?;
+    }
+    let mut plain = 0_usize;
+    for step in &family.members {
+        let image = plain_image(arena, step)?;
+        plain = plain
+            .checked_add(serde_json::to_vec(&image)?.len())
+            .ok_or(StageError::Overflow)?;
+    }
+    Ok(FamilyObservation {
+        prices: candidate.prices(),
+        points: gandr_theory_deep_inference::NodeCount::from(candidate.points().count()),
+        template: ImageSize(template),
+        substitutions: ImageSize(substitutions),
+        plain: ImageSize(plain),
+    })
+}
+
+/// Measure template plus one admission's scratch, with fixture sources
+/// borrowed.
+///
+/// # Specification
+/// - ensures: the template clone remains resident while each admission's
+///   independent materialization and replay is released before the next one.
+/// - fails: any projection or replay failure.
+/// - panics: none.
+///
+/// # Errors
+/// Propagates the actual admission error.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the witness checks the admitted equations against plain
+///   replay. Allocator peaks are observations of the executable, not pinned
+///   test values; the borrowed fixture arena is explicitly excluded.
+/// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+fn admission_residency(
+    template: &gandr_core_checker::template::Template,
+    arena: &Arena,
+    family: &[gandr_kernel_term::stage::Step],
+) -> Result<allocation_counter::AllocationInfo, StageError>
+{
+    let mut result = Ok(());
+    let mut retained = None;
+    let info = allocation_counter::measure(|| {
+        retained = Some(template.clone());
+        if let Some(ref owned) = retained {
+            result = family
+                .iter()
+                .try_for_each(|step| owned.admit(arena, step.source, &mut Budget(10_000_000)));
+        }
+    });
+    result?;
+    Ok(info)
+}
+
 /// Emit reproducible cost rows and exercise the actual strict-staging APIs.
 ///
 /// # Specification
@@ -408,7 +545,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>>
     let mut output = io::BufWriter::new(io::stdout().lock());
     writeln!(
         output,
-        "class,family,rule,k,F,s,f,checks,hits,inheritance_steps,plain_steps,admissions,instance_steps,verdict"
+        "class,gate,family,rule,k,F,s,f,points,T,c,combined,old_price,memo_price,template_bytes,substitution_bytes,total_bytes,plain_bytes,checks,hits,checks_fuel,inheritance_steps,plain_steps,admissions,instance_steps,verdict"
     )?;
     let cases = (0 ..= 8)
         .map(|n| Case::Power(Natural(n)))
@@ -423,111 +560,176 @@ fn main() -> Result<(), Box<dyn core::error::Error>>
     for case in cases {
         let mut input = fixture(case)?;
         let families = harvest(&input.arena, ProgramId(0), &input.certificates)?;
-        let mut cache = InheritanceCache::new();
-        let mut productions = Vec::new();
-        let mut error: Result<(), StageError> = Ok(());
-        let start = Instant::now();
-        let production_heap = allocation_counter::measure(|| {
-            error = families.iter().try_for_each(|family| {
-                let production = produce(
-                    &input.arena,
-                    family.program,
-                    &family.members,
-                    &mut cache,
-                    &mut Budget(10_000_000),
-                )?;
-                productions.push(production);
-                Ok(())
+        let observations = families
+            .iter()
+            .map(|family| observe_family(&input.arena, family))
+            .collect::<Result<Vec<_>, _>>()?;
+        for gate in [PriceGate::Unmemoized, PriceGate::Memoized] {
+            let gate_name = match gate {
+                | PriceGate::Unmemoized => "unmemoized",
+                | PriceGate::Memoized => "memoized",
+            };
+            let mut cache = InheritanceCache::new();
+            let mut productions = Vec::new();
+            let mut fuels = Vec::with_capacity(families.len());
+            let mut error: Result<(), StageError> = Ok(());
+            let start = Instant::now();
+            let production_heap = allocation_counter::measure(|| {
+                error = families.iter().try_for_each(|family| {
+                    let mut budget = Budget(10_000_000);
+                    let production = produce(
+                        &input.arena,
+                        family.program,
+                        &family.members,
+                        gate,
+                        &mut cache,
+                        &mut budget,
+                    )?;
+                    fuels.push(KernelFuel(
+                        10_000_000_usize
+                            .checked_sub(budget.0)
+                            .ok_or(StageError::Overflow)?,
+                    ));
+                    productions.push(production);
+                    Ok(())
+                });
             });
-        });
-        error?;
-        let production_time = start.elapsed();
-        for (index, (family, production)) in families.iter().zip(&productions).enumerate() {
-            let mut cost = production.cost();
-            let mut admissions = 0_usize;
-            if let Production::Go(ref template) = *production {
-                for step in &family.members {
-                    template.admit(&input.arena, step.source, &mut Budget(10_000_000))?;
-                    admissions = admissions.checked_add(1).ok_or(StageError::Overflow)?;
+            error?;
+            let production_time = start.elapsed();
+            for (index, (((family, production), observation), fuel)) in families
+                .iter()
+                .zip(&productions)
+                .zip(&observations)
+                .zip(&fuels)
+                .enumerate()
+            {
+                let mut cost = production.cost();
+                let mut admissions = 0_usize;
+                if let Production::Go(ref template) = *production {
+                    for step in &family.members {
+                        template.admit(&input.arena, step.source, &mut Budget(10_000_000))?;
+                        admissions = admissions.checked_add(1).ok_or(StageError::Overflow)?;
+                    }
+                }
+                cost.admissions = gandr_theory_deep_inference::AdmissionCount::from(admissions);
+                let rule = family.members.first().ok_or(StageError::Unbalanced)?.rule;
+                let rule = match rule {
+                    | gandr_kernel_term::stage::Rule::Congruence => "congruence",
+                    | gandr_kernel_term::stage::Rule::Beta => "beta",
+                    | gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
+                    | gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
+                    | gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
+                    | gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
+                    | gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
+                };
+                let verdict = match *production {
+                    | Production::Go(_) => "pays",
+                    | Production::WorkBoundExceeded { .. } => "no-pay:check-bound",
+                    | Production::Plain { reason, .. } => match reason {
+                        | gandr_theory_deep_inference::TemplateRefusal::DoesNotPay { .. } => {
+                            "no-pay:price"
+                        },
+                        | gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak {
+                            ..
+                        } => "no-pay:target-only-point",
+                        | gandr_theory_deep_inference::TemplateRefusal::NotInherited { .. } => {
+                            "no-pay:inheritance"
+                        },
+                        | gandr_theory_deep_inference::TemplateRefusal::EmptyFamily => {
+                            "no-pay:empty"
+                        },
+                        | gandr_theory_deep_inference::TemplateRefusal::SkeletonDivergence {
+                            ..
+                        } => "no-pay:divergence",
+                        | gandr_theory_deep_inference::TemplateRefusal::Ungeneralizable => {
+                            "no-pay:anti-unification"
+                        },
+                        | gandr_theory_deep_inference::TemplateRefusal::ArmAddressCollision {
+                            ..
+                        } => "no-pay:collision",
+                    },
+                };
+                writeln!(
+                    output,
+                    "{case},{gate_name},{index},{rule},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{verdict}",
+                    usize::from(cost.members),
+                    usize::from(cost.plain_size),
+                    usize::from(cost.template_size),
+                    usize::from(cost.expansion_factor),
+                    usize::from(observation.points),
+                    usize::from(observation.prices.triples),
+                    usize::from(observation.prices.check_bound),
+                    usize::from(observation.prices.triples)
+                        .checked_mul(usize::from(observation.prices.check_bound))
+                        .and_then(|work| work.checked_add(usize::from(cost.template_size)))
+                        .ok_or(StageError::Overflow)?,
+                    if observation.prices.unmemoized.is_ok() {
+                        "pass"
+                    }
+                    else {
+                        "refuse"
+                    },
+                    if observation.prices.memoized.is_ok() {
+                        "pass"
+                    }
+                    else {
+                        "refuse"
+                    },
+                    observation.template.0,
+                    observation.substitutions.0,
+                    observation
+                        .template
+                        .0
+                        .checked_add(observation.substitutions.0)
+                        .ok_or(StageError::Overflow)?,
+                    observation.plain.0,
+                    usize::from(cost.triples_checked),
+                    usize::from(cost.cache_hits),
+                    fuel.0,
+                    usize::from(cost.replayed_steps),
+                    usize::from(cost.plain_replayed_steps),
+                    usize::from(cost.admissions),
+                    admissions
+                )?;
+            }
+            let (plain_time, guarded_time) = replay_times(&input, &productions)?;
+            let plain_heap = plain_residency(&input)?;
+            writeln!(
+                output,
+                "RUN,{case},{gate_name},equations={},families={},production_ns={},plain_ns_25={},guarded_ns_25={},production_peak={},plain_peak={},plain_live_end={}",
+                input
+                    .certificates
+                    .iter()
+                    .map(|certificate| certificate.steps.len())
+                    .sum::<usize>(),
+                families.len(),
+                production_time.as_nanos(),
+                plain_time.as_nanos(),
+                guarded_time.as_nanos(),
+                production_heap.bytes_max,
+                plain_heap.bytes_max,
+                plain_heap.bytes_current
+            )?;
+            if let Case::Generated { members, arms } = case
+                && let Some(production @ &Production::Go(_)) = productions.first()
+            {
+                let heap = template_residency(production, members, arms)?;
+                writeln!(
+                    output,
+                    "RESIDENCY,{case},{gate_name},template_peak={},template_live_end={}",
+                    heap.bytes_max, heap.bytes_current
+                )?;
+            }
+            for (index, (family, production)) in families.iter().zip(&productions).enumerate() {
+                if let Production::Go(ref template) = *production {
+                    let heap = admission_residency(template, &input.arena, &family.members)?;
+                    writeln!(
+                        output,
+                        "ADMISSION,{case},{gate_name},family={index},working_peak={},template_live_end={}",
+                        heap.bytes_max, heap.bytes_current
+                    )?;
                 }
             }
-            cost.admissions = gandr_theory_deep_inference::AdmissionCount::from(admissions);
-            let rule = family.members.first().ok_or(StageError::Unbalanced)?.rule;
-            let rule = match rule {
-                | gandr_kernel_term::stage::Rule::Congruence => "congruence",
-                | gandr_kernel_term::stage::Rule::Beta => "beta",
-                | gandr_kernel_term::stage::Rule::SpliceQuote => "splice-quote",
-                | gandr_kernel_term::stage::Rule::QuoteSplice => "quote-splice",
-                | gandr_kernel_term::stage::Rule::IterateZero => "iterate-zero",
-                | gandr_kernel_term::stage::Rule::IterateSuccessor => "iterate-successor",
-                | gandr_kernel_term::stage::Rule::Eliminate => "eliminate",
-            };
-            let verdict = match *production {
-                | Production::Go(_) => "pays",
-                | Production::Plain { reason, .. } => match reason {
-                    | gandr_theory_deep_inference::TemplateRefusal::DoesNotPay { .. } => {
-                        "no-pay:price"
-                    },
-                    | gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. } => {
-                        "no-pay:target-only-point"
-                    },
-                    | gandr_theory_deep_inference::TemplateRefusal::NotInherited { .. } => {
-                        "no-pay:inheritance"
-                    },
-                    | gandr_theory_deep_inference::TemplateRefusal::EmptyFamily => "no-pay:empty",
-                    | gandr_theory_deep_inference::TemplateRefusal::SkeletonDivergence {
-                        ..
-                    } => "no-pay:divergence",
-                    | gandr_theory_deep_inference::TemplateRefusal::Ungeneralizable => {
-                        "no-pay:anti-unification"
-                    },
-                    | gandr_theory_deep_inference::TemplateRefusal::ArmAddressCollision {
-                        ..
-                    } => "no-pay:collision",
-                },
-            };
-            writeln!(
-                output,
-                "{case},{index},{rule},{},{},{},{},{},{},{},{},{},{},{verdict}",
-                usize::from(cost.members),
-                usize::from(cost.plain_size),
-                usize::from(cost.template_size),
-                usize::from(cost.expansion_factor),
-                usize::from(cost.triples_checked),
-                usize::from(cost.cache_hits),
-                usize::from(cost.replayed_steps),
-                usize::from(cost.plain_replayed_steps),
-                usize::from(cost.admissions),
-                admissions
-            )?;
-        }
-        let (plain_time, guarded_time) = replay_times(&input, &productions)?;
-        let plain_heap = plain_residency(&input)?;
-        writeln!(
-            output,
-            "RUN,{case},equations={},families={},production_ns={},plain_ns_25={},guarded_ns_25={},production_peak={},plain_peak={},plain_live_end={}",
-            input
-                .certificates
-                .iter()
-                .map(|certificate| certificate.steps.len())
-                .sum::<usize>(),
-            families.len(),
-            production_time.as_nanos(),
-            plain_time.as_nanos(),
-            guarded_time.as_nanos(),
-            production_heap.bytes_max,
-            plain_heap.bytes_max,
-            plain_heap.bytes_current
-        )?;
-        if let Case::Generated { members, arms } = case
-            && let Some(production @ &Production::Go(_)) = productions.first()
-        {
-            let heap = template_residency(production, members, arms)?;
-            writeln!(
-                output,
-                "RESIDENCY,{case},template_peak={},template_live_end={}",
-                heap.bytes_max, heap.bytes_current
-            )?;
         }
         if matches!(case, Case::Power(_) | Case::PowerSeries) {
             for (index, certificate) in input.certificates.iter().enumerate() {

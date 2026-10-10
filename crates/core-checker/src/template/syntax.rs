@@ -1,5 +1,7 @@
 //! Flat, content-interned syntax for staging equation families.
 
+mod serialization;
+
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -21,7 +23,7 @@ use gandr_theory_deep_inference::NodeCount;
 
 /// An address in a pattern graph, distinct from a staging arena address.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(super) struct Id(pub usize);
 
 /// A constructor's nonrecursive payload, including opaque template points.
@@ -52,15 +54,17 @@ pub(super) enum Head
     Eliminate(TypeId),
     /// One jointly generalized occurrence column.
     Point(EntryIndex),
+    /// Producer-only predecessor of the source's outer-numeral point.
+    Predecessor,
 }
 
 /// Fixed-capacity children; unused slots are absent, not sentinel addresses.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(super) struct Children(pub [Option<Id>; 3]);
 
 /// One flat constructor node.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub(super) struct Node
 {
     /// Constructor and rigid payload.
@@ -171,13 +175,17 @@ impl Graph
         &self,
         arena: &mut Arena,
         bindings: &BTreeMap<EntryIndex, Id>,
-    ) -> Result<BTreeMap<EntryIndex, TypeId>, StageError>
+    ) -> Result<BTreeMap<Id, TypeId>, StageError>
     {
         let points = self
             .nodes
             .iter()
-            .filter_map(|node| match node.head {
-                | Head::Point(point) if !bindings.contains_key(&point) => Some(point),
+            .enumerate()
+            .filter_map(|(index, node)| match node.head {
+                | Head::Point(point) if !bindings.contains_key(&point) => Some(Id(index)),
+                | Head::Predecessor if node.children.0.first().copied().flatten()
+                    .and_then(|id| self.nodes.get(id.0))
+                    .is_some_and(|child| matches!(child.head, Head::Point(point) if !bindings.contains_key(&point))) => Some(Id(index)),
                 | _ => None,
             })
             .collect::<BTreeSet<_>>();
@@ -590,7 +598,7 @@ impl Graph
                     }
                 }
                 else {
-                    let ty = *skolems.get(&entry).ok_or(StageError::Unbalanced)?;
+                    let ty = *skolems.get(&id).ok_or(StageError::Unbalanced)?;
                     let value = arena.alloc(Term::Code(ty))?;
                     known.insert(id, value);
                 }
@@ -614,6 +622,35 @@ impl Graph
                     *target = Child::Present(*known.get(&source).ok_or(StageError::Unbalanced)?);
                 }
             }
+            if node.head == Head::Predecessor {
+                let point = node
+                    .children
+                    .0
+                    .first()
+                    .copied()
+                    .flatten()
+                    .ok_or(StageError::Unbalanced)?;
+                let Head::Point(entry) = self.node(point)?.head
+                else {
+                    return Err(StageError::Unbalanced);
+                };
+                let term = if bindings.contains_key(&entry) {
+                    let value = *known.get(&point).ok_or(StageError::Unbalanced)?;
+                    let Term::Natural(Stage::Outer, Natural(value)) = arena.term(value)?
+                    else {
+                        return Err(StageError::InvalidCertificate);
+                    };
+                    let value = value.checked_sub(1).ok_or(StageError::InvalidCertificate)?;
+                    Term::Natural(Stage::Outer, Natural(value))
+                }
+                else {
+                    let ty = *skolems.get(&id).ok_or(StageError::Unbalanced)?;
+                    Term::Code(ty)
+                };
+                let value = arena.alloc(term)?;
+                known.insert(id, value);
+                continue;
+            }
             let dummy = TermId(0);
             let term = match node.head {
                 | Head::Variable(index) => Term::Variable(index),
@@ -631,7 +668,7 @@ impl Graph
                 | Head::Eliminate(ty) => {
                     Term::Eliminate(dummy, *types.get(&ty).ok_or(StageError::Unbalanced)?)
                 },
-                | Head::Point(_) => return Err(StageError::Unbalanced),
+                | Head::Point(_) | Head::Predecessor => return Err(StageError::Unbalanced),
             };
             let term = term.rebuild(children)?;
             known.insert(id, arena.alloc(term)?);

@@ -404,6 +404,8 @@ dependencies = [
  "gandr-theory-deep-inference",
  "proptest",
  "quenchant-shape",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

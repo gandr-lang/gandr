@@ -154,6 +154,84 @@ pub fn price_family(
     }
 }
 
+/// Why the distinct-triple price cannot establish both strict bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoizedPriceRefusal
+{
+    /// Sizes, triple count and per-check cost must all be positive.
+    EmptyCost,
+    /// The supplied per-check bound exceeds the template's node bound.
+    CheckExceedsTemplate,
+    /// Machine arithmetic cannot represent the conservative charge.
+    Overflow,
+    /// Template storage plus distinct-triple work reaches the plain cost.
+    DoesNotPay
+    {
+        /// Combined storage and check-work charge.
+        charged: NodeCount,
+        /// Plain family cost.
+        plain_size: NodeCount,
+    },
+}
+
+/// Price storage and cold-cache inheritance work without replacing the original
+/// gate.
+///
+/// # Specification
+/// - requires: `check_bound` bounds one inheritance check in the caller's
+///   declared node-cost model; `triples` counts every distinct obligation
+///   before replay.
+/// - ensures: succeeds exactly when all costs are positive, c <= s, and s + T*c
+///   < F with representable arithmetic. The result is s + T*c. Hence both s < F
+///   and T*c < F hold strictly.
+/// - fails: named zero-cost, invalid-bound, overflow or strict-price refusal.
+/// - panics: none.
+/// - intension: this price assumes a run-local memo that checks each triple at
+///   most once; it discounts no triple merely because the cache is warm.
+///
+/// # Errors
+/// Returns `MemoizedPriceRefusal` with the failed boundary.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — an independent widened-arithmetic observer checks both
+///   inequalities; equality, invalid bounds and machine overflow refuse.
+/// - witness: `template::tests::memoized_price_preserves_strict_storage_and_work_bounds`
+#[spec(ensures: |output| {
+    let s = usize::from(template_size);
+    let c = usize::from(check_bound);
+    let t = usize::from(triples);
+    output.is_ok() == (s > 0 && c > 0 && t > 0 && c <= s
+        && t.checked_mul(c).and_then(|work| s.checked_add(work))
+            .is_some_and(|charged| charged < usize::from(plain_size)))
+})]
+#[inline]
+pub fn price_family_memoized(
+    template_size: NodeCount,
+    plain_size: NodeCount,
+    triples: TripleCount,
+    check_bound: NodeCount,
+) -> Result<NodeCount, MemoizedPriceRefusal>
+{
+    let s = usize::from(template_size);
+    let c = usize::from(check_bound);
+    let t = usize::from(triples);
+    if s == 0 || c == 0 || t == 0 {
+        return Err(MemoizedPriceRefusal::EmptyCost);
+    }
+    if c > s {
+        return Err(MemoizedPriceRefusal::CheckExceedsTemplate);
+    }
+    let work = t.checked_mul(c).ok_or(MemoizedPriceRefusal::Overflow)?;
+    let charged = s.checked_add(work).ok_or(MemoizedPriceRefusal::Overflow)?;
+    if charged >= usize::from(plain_size) {
+        return Err(MemoizedPriceRefusal::DoesNotPay {
+            charged: NodeCount::from(charged),
+            plain_size,
+        });
+    }
+    Ok(NodeCount::from(charged))
+}
+
 /// The triple an inheritance check is memoized under: a template region, one
 /// of its entries, and the body of one arm at that entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1314,6 +1392,78 @@ mod tests
                 );
             }
         }
+    }
+
+    #[test]
+    fn memoized_price_preserves_strict_storage_and_work_bounds()
+    {
+        use super::MemoizedPriceRefusal;
+        use super::NodeCount;
+        use super::TripleCount;
+        use super::price_family_memoized;
+        for s in 0_usize ..= 16 {
+            for c in 0_usize ..= 16 {
+                for t in 0_usize ..= 8 {
+                    for f in 0_usize ..= 128 {
+                        let total = u128::try_from(s).unwrap()
+                            + u128::try_from(t).unwrap() * u128::try_from(c).unwrap();
+                        let expected =
+                            s > 0 && c > 0 && t > 0 && c <= s && total < u128::try_from(f).unwrap();
+                        let result = price_family_memoized(
+                            NodeCount::from(s),
+                            NodeCount::from(f),
+                            TripleCount::from(t),
+                            NodeCount::from(c),
+                        );
+                        assert_eq!(result.is_ok(), expected);
+                        if let Ok(charged) = result {
+                            assert_eq!(u128::try_from(usize::from(charged)).unwrap(), total);
+                            assert!(s < f && t * c < f);
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(63),
+                NodeCount::from(1116),
+                TripleCount::from(8),
+                NodeCount::from(63)
+            ),
+            Ok(NodeCount::from(567))
+        );
+        assert!(super::price_family(NodeCount::from(63), NodeCount::from(1116)).is_err());
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(4),
+                NodeCount::from(12),
+                TripleCount::from(2),
+                NodeCount::from(4)
+            ),
+            Err(MemoizedPriceRefusal::DoesNotPay {
+                charged: NodeCount::from(12),
+                plain_size: NodeCount::from(12)
+            })
+        );
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(1),
+                NodeCount::from(9),
+                TripleCount::from(1),
+                NodeCount::from(2)
+            ),
+            Err(MemoizedPriceRefusal::CheckExceedsTemplate)
+        );
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(usize::MAX),
+                NodeCount::from(usize::MAX),
+                TripleCount::from(2),
+                NodeCount::from(usize::MAX)
+            ),
+            Err(MemoizedPriceRefusal::Overflow)
+        );
     }
 
     use super::ArmAddress;
