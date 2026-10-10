@@ -107,6 +107,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -119,6 +120,7 @@ use gandr_theory_coherent_resolutions::rewrite_at;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CausalDepth;
+use crate::boundary::EventIndex;
 use crate::boundary::NormalFormEquality;
 use crate::boundary::PrimMultiplicity;
 use crate::boundary::ReplayLevel;
@@ -265,10 +267,19 @@ impl<A: CellAlphabet> TraceletNf<A>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decompressed path is checked against the input
-    ///   rather than a predicted answer: it is replayed and must reach the
-    ///   normal form's own join.
+    /// - hypothesis: L1 — returned schedules from replay receipts are replayed
+    ///   against the recorded boundary. L3 — raw schedules with empty, repeated
+    ///   and absent factors check exact paths and typed absence; dropping
+    ///   repeats or accepting an unresolved factor changes these observations.
     /// - witness: `normal_form::tests::the_canonical_path_replays_to_the_recorded_join`
+    /// - witness: `normal_form::tests::raw_schedules_resolve_empty_repeated_and_absent_factors`
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ref path) => path.len() == self.schedule.len()
+            && path.iter().zip(&self.schedule).all(|(step, address)|
+                self.primitives.get(address).is_some_and(|graded| graded.0.step() == step)),
+        Maybe::Absent(schedule_resolution::Absent::UnfactoredAddress) =>
+            self.schedule.iter().any(|address| !self.primitives.contains_key(address)),
+    })]
     #[inline]
     pub fn canonical_path(&self) -> Maybe<Vec<CellApp<A>>, schedule_resolution::Absent>
     {
@@ -373,10 +384,18 @@ impl<A: CellAlphabet> ReplayWitness<A>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — checked against the independently computed
-    ///   [`TraceletNf::canonical_path`] on the same receipt, so a divergence
-    ///   between the two spellings fails.
+    /// - hypothesis: L2 — on certified receipts, the event-order projection
+    ///   agrees with the separately stored factorization. L3 — empty and
+    ///   repeated-event paths fix the boundary; skipping an event or returning
+    ///   recording order instead of canonical order changes the path.
     /// - witness: `normal_form::tests::a_replay_witness_carries_its_own_boundary_and_order`
+    /// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
+    /// - witness: `tests::normal_form::a_reversed_independent_schedule_is_the_canonical_one`
+    #[spec(ensures: |output| output.iter().eq(self.order.canonical_order().into_iter().filter_map(|index|
+        match self.order.event(index) {
+            Maybe::Present(event) => Some(event.step()),
+            Maybe::Absent(_) => None,
+        })))]
     #[inline]
     #[must_use]
     pub fn canonical_path(&self) -> Vec<CellApp<A>>
@@ -402,11 +421,24 @@ impl<A: CellAlphabet> ReplayWitness<A>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fused fixture's two certificate paths are planned
-    ///   and replayed level by level, on demand, and against the critical-path
-    ///   fuel, each agreeing with the sequential replay of the canonical path.
+    /// - hypothesis: L3 — certified empty, dependent and two-member independent
+    ///   orders fix the number and membership of levels. L2 — executing the
+    ///   levels agrees with sequential replay. Dropping a layer, flattening an
+    ///   antichain or using event count for fuel changes an observation.
     /// - witness: `normal_form::tests::a_fused_fixture_replays_both_certificate_paths_through_its_critical_path_plan`
     /// - witness: `tests::normal_form::a_two_member_replay_level_reaches_one_term_in_both_permitted_orders`
+    /// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
+    #[spec(ensures: |output| {
+        let layers = self.order.layers();
+        output.peak == self.normal_form.peak
+            && output.critical_path == CausalDepth::from(layers.len())
+            && output.levels.len() == layers.len()
+            && output.levels.iter().zip(layers).all(|(steps, layer)|
+                steps.iter().eq(layer.into_iter().filter_map(|index| match self.order.event(index) {
+                    Maybe::Present(event) => Some(event.step()),
+                    Maybe::Absent(_) => None,
+                })))
+    })]
     #[inline]
     #[must_use]
     pub fn replay_plan(&self) -> ReplayPlan<A>
@@ -486,11 +518,20 @@ impl<A: CellAlphabet> ReplayPlan<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every level of a fused fixture's plan replays on
-    ///   demand to the sequential replay's term, and the level past the last is
-    ///   refused by name.
+    /// - hypothesis: L3 — on certified plans, valid levels replay from the
+    ///   supplied command; out-of-range levels, stale stores and commands
+    ///   lacking a redex return exact refusal payloads. Changing bounds
+    ///   precedence or using the recorded-step refusal instead of the
+    ///   shifted-step refusal fails these boundaries.
     /// - witness: `normal_form::tests::a_fused_fixture_replays_both_certificate_paths_through_its_critical_path_plan`
     /// - witness: `tests::normal_form::a_two_member_replay_level_reaches_one_term_in_both_permitted_orders`
+    /// - witness: `normal_form::tests::replay_refusals_prioritize_fuel_and_level_bounds`
+    #[spec(ensures: |output| output == self.levels.get(usize::from(level)).map_or_else(
+        || Err(NormalFormObstruction::InvalidReplayLevel {
+            level, levels: CausalDepth::from(self.levels.len()),
+        }),
+        |steps| run_schedule(store, current, steps),
+    ))]
     #[inline]
     pub fn replay_level(
         &self,
@@ -524,11 +565,21 @@ impl<A: CellAlphabet> ReplayPlan<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both paths of a fused fixture replay under their
-    ///   critical-path fuel to the sequential replay's term, and zero fuel
-    ///   declines.
+    /// - hypothesis: L3 — empty plans accept zero fuel; nonempty plans decline
+    ///   just below the critical path before reading a stale store, fail at
+    ///   sufficient fuel on that store, and accept excess fuel on their own
+    ///   store. Changing the comparison, skolemization or replay bound changes
+    ///   a result.
     /// - witness: `normal_form::tests::a_fused_fixture_replays_both_certificate_paths_through_its_critical_path_plan`
     /// - witness: `tests::normal_form::a_two_member_replay_level_reaches_one_term_in_both_permitted_orders`
+    /// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
+    /// - witness: `normal_form::tests::replay_refusals_prioritize_fuel_and_level_bounds`
+    #[spec(ensures: |output| output == if fuel < self.critical_path {
+        Ok(Maybe::Absent(replay_fuel::Absent::InsufficientFuel))
+    } else {
+        self.levels.iter().try_fold(A::skolemize(&self.peak), |current, steps|
+            run_schedule(store, &current, steps)).map(Maybe::Present)
+    })]
     #[inline]
     pub fn replay_with_fuel(
         &self,
@@ -651,10 +702,20 @@ pub enum NormalFormObstruction<A: CellAlphabet = SequentAlphabet>
 ///   one target and no further.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — same content, same address; different content or
-///   position, different address; separated by two cells, one cell at two
-///   positions, and one cell interned under two identifiers in two stores.
+/// - hypothesis: L3 — resolved cells at valid positions fix same-content
+///   equality, changed-content and changed-position separation, and store-order
+///   independence on the named fixtures. L2 — published FNV vectors validate
+///   the underlying byte fold. Omitting cell or position content, hashing a
+///   handle or changing the fold alters these observations.
 /// - witness: `normal_form::tests::the_content_address_is_taken_over_content`
+/// - witness: `normal_form::tests::content_hashing_uses_published_fnv_vectors`
+#[spec(ensures: |output| {
+    let mut digest = ContentHasher::new();
+    core::hash::Hasher::write(&mut digest, PRIMITIVE_DOMAIN);
+    core::hash::Hash::hash(cell, &mut digest);
+    core::hash::Hash::hash(at, &mut digest);
+    output.0 == digest.state
+})]
 #[inline]
 #[must_use]
 pub fn prim_address<A>(
@@ -685,11 +746,20 @@ where
 /// - intension: stable for one build of one target and no further.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — same content, same address, and never the position;
-///   separated by two cells differing in content and by one cell whose address
-///   is compared with its primitive addresses at two positions.
+/// - hypothesis: L3 — resolved cells with equal content have equal labels;
+///   changing content changes the fixture label, while two primitive positions
+///   leave it fixed. L2 — published FNV vectors validate the byte fold.
+///   Including a position, omitting content or using the primitive domain
+///   changes an observed digest.
 /// - witness: `flow::tests::the_cell_address_forgets_the_position`
 /// - witness: `normal_form::tests::the_two_address_domains_are_separated_by_type_and_by_digest`
+/// - witness: `normal_form::tests::content_hashing_uses_published_fnv_vectors`
+#[spec(ensures: |output| {
+    let mut digest = ContentHasher::new();
+    core::hash::Hasher::write(&mut digest, CELL_DOMAIN);
+    core::hash::Hash::hash(cell, &mut digest);
+    output.0 == digest.state
+})]
 #[inline]
 #[must_use]
 pub fn cell_address<A>(cell: &Cell<A>) -> CellAddress
@@ -719,9 +789,22 @@ where
 ///   direct predecessors; stable for one build of one target and no further.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one address against two predecessor sets, two addresses
-///   against one set, and one set offered in both orders.
+/// - hypothesis: L3 — labeled predecessor multisets vary one address, one
+///   predecessor and arrival order. L2 — published FNV vectors validate the
+///   byte fold. Forgetting a predecessor or folding presentation order changes
+///   an observed digest; no general collision-freedom claim follows from these
+///   cases.
 /// - witness: `normal_form::tests::the_causal_past_digest_reads_the_multiset_and_not_the_order`
+/// - witness: `normal_form::tests::content_hashing_uses_published_fnv_vectors`
+#[spec(ensures: |output| {
+    let mut sorted = predecessors.to_vec();
+    sorted.sort_unstable();
+    let mut digest = ContentHasher::new();
+    core::hash::Hasher::write(&mut digest, CAUSAL_DOMAIN);
+    core::hash::Hash::hash(&address, &mut digest);
+    for predecessor in sorted { core::hash::Hash::hash(&predecessor, &mut digest); }
+    output.0 == digest.state
+})]
 #[inline]
 #[must_use]
 pub fn causal_past_address(
@@ -792,6 +875,16 @@ pub fn causal_past_address(
 /// - witness: `tests::normal_form::a_non_local_term_algebra_trips_the_kill_signal_at_the_join`
 /// - witness: `tests::normal_form::two_primitives_sharing_a_content_address_are_refused_rather_than_merged`
 /// - witness: `tests::normal_form::a_withheld_convexity_warrant_empties_the_shift_quotient`
+/// - witness: `normal_form::tests::an_instance_unit_is_removed_without_discarding_its_real_instance`
+/// - witness: `tests::normal_form::a_repeated_primitive_is_graded_by_multiplicity`
+#[spec(ensures: |output| output.as_ref().map_or_else(
+    |refusal| !matches!(*refusal, NormalFormObstruction::InvalidReplayLevel { .. }),
+    |normal| normal.peak == *peak && normal.joins_at == *joins_at
+        && normal.convexity == A::convexity_discharge(store)
+        && matches!(normal.canonical_path(), Maybe::Present(ref canonical)
+            if run_schedule(store, &A::skolemize(peak), canonical)
+                .is_ok_and(|reached| reached == A::skolemize(joins_at))),
+))]
 #[inline]
 pub fn normalize<A>(
     store: &CellStore<A>,
@@ -824,12 +917,49 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — what this adds over [`normalize`] is the provenance of
-///   the returned value, carried by the type; it is separated by the witness's
-///   boundary and canonical path agreeing with the normal form's, and by two
-///   receipts comparing equal exactly when their normal forms do.
+/// - hypothesis: L1 — successful recorded derivations carry a canonical path
+///   replaying across the claimed boundary. L3 — empty paths, repeated
+///   primitives and an instance that becomes a unit fix event counts, grading
+///   and raw boundary preservation. Keeping semantic units, losing repeated
+///   occurrences or storing the skolemized boundary changes these observations.
 /// - witness: `normal_form::tests::a_replay_witness_carries_its_own_boundary_and_order`
 /// - witness: `normal_form::tests::a_certified_pair_is_equal_exactly_when_its_normal_forms_are`
+/// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
+/// - witness: `normal_form::tests::an_instance_unit_is_removed_without_discarding_its_real_instance`
+/// - witness: `tests::normal_form::a_repeated_primitive_is_graded_by_multiplicity`
+#[spec(ensures: |output| output.as_ref().map_or_else(
+    |refusal| !matches!(*refusal, NormalFormObstruction::InvalidReplayLevel { .. }),
+    |witness| {
+        let normal = &witness.normal_form;
+        let start = A::skolemize(peak);
+        let target = A::skolemize(joins_at);
+        normal.peak == *peak && normal.joins_at == *joins_at
+            && normal.convexity == A::convexity_discharge(store)
+            && run_recording(store, &start, path).is_ok_and(|recorded| {
+                let mut grades = BTreeMap::new();
+                recorded.reached == target
+                    && usize::from(witness.order.event_count()) == recorded.steps.len()
+                    && recorded.steps.iter().enumerate().all(|(index, event)| {
+                        let count = grades.entry(event.address()).or_insert(0_u32);
+                        *count = count.saturating_add(1_u32);
+                        witness.order.event(EventIndex::from(index)) == Maybe::Present(event)
+                            && normal.primitives.get(&event.address())
+                                .is_some_and(|graded| graded.0.step() == event.step())
+                    })
+                    && grades.len() == normal.primitives.len()
+                    && grades.iter().all(|(address, count)| normal.primitives.get(address)
+                        .is_some_and(|graded| graded.1 == PrimMultiplicity::from(*count)))
+                    && normal.schedule.iter().copied().eq(witness.order.canonical_order()
+                        .into_iter().filter_map(|index| match witness.order.event(index) {
+                            Maybe::Present(event) => Some(event.address()),
+                            Maybe::Absent(_) => None,
+                        }))
+                    && refuse_key_collisions(&witness.order).is_ok()
+                    && matches!(normal.canonical_path(), Maybe::Present(ref canonical)
+                        if run_schedule(store, &start, canonical).is_ok_and(|reached| reached == target))
+            })
+    },
+))]
 #[inline]
 pub fn normalize_certified<A>(
     store: &CellStore<A>,
@@ -925,12 +1055,27 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the order is built from a run of the recorded path; that
-///   it is the same order the normalizer layers by is separated by comparing
-///   its canonical order with the schedule [`normalize`] produced from the same
-///   derivation.
+/// - hypothesis: L3 — firing derivations include empty paths, dependent chains
+///   and a real step followed by a semantic unit. Event sequences and canonical
+///   schedules agree with the recorded movers. Retaining units, dropping a
+///   mover or reordering dependent events changes those observations.
 /// - witness: `tests::normal_form::the_order_taken_alone_agrees_with_the_normalizers`
 /// - witness: `causal::tests::a_dependent_chain_is_its_own_canonical_order`
+/// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
+/// - witness: `normal_form::tests::an_instance_unit_is_removed_without_discarding_its_real_instance`
+#[spec(ensures: |output| match run_recording(store, &A::skolemize(peak), path) {
+    Err(refusal) => output.as_ref().is_err_and(|actual| *actual == refusal),
+    Ok(recorded) => match output {
+        Ok(ref order) => usize::from(order.event_count()) == recorded.steps.len()
+            && recorded.steps.iter().enumerate().all(|(index, event)|
+                order.event(EventIndex::from(index)) == Maybe::Present(event))
+            && refuse_key_collisions(order).is_ok(),
+        Err(ref refusal) => {
+            let order = EventOrder::of_events(store, recorded.steps, A::convexity_discharge(store));
+            refuse_key_collisions(&order).as_ref().is_err_and(|expected| refusal == expected)
+        },
+    },
+})]
 #[inline]
 pub fn event_order<A>(
     store: &CellStore<A>,
@@ -951,8 +1096,9 @@ where
 /// Refuse an event order whose canonical sort key is not a strict total order,
 /// resolving the tying indices to the primitives they apply.
 ///
-/// Both public constructors of an [`EventOrder`] run it, so an order this crate
-/// hands out has passed the check.
+/// The checked entry points [`normalize_certified`] and [`event_order`]
+/// run this check. Direct [`EventOrder::of_events`] callers can ask the order
+/// to check its keys separately.
 ///
 /// # Specification
 /// - ensures: success exactly when the order's own collision check accepts it.
@@ -962,6 +1108,25 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — event orders include a collision-separated recorded
+///   sequence and a tying independent pair. Exact collision refusal and
+///   successful distinct keys distinguish accepting a tie, selecting the wrong
+///   primitives or reporting the wrong depth.
+/// - witness: `tests::normal_form::two_primitives_sharing_a_content_address_are_refused_rather_than_merged`
+/// - witness: `normal_form::tests::a_recorded_derivation_normalizes_to_a_replay_receipt`
+#[spec(ensures: |output| output == order.refuse_key_collisions().map_or_else(
+    |collision| match (order.event(collision.earlier), order.event(collision.later)) {
+        (Maybe::Present(earlier), Maybe::Present(later)) =>
+            Err(NormalFormObstruction::CanonicalKeyCollision {
+                earlier: Box::new(PrimCert(earlier.step().clone())),
+                later: Box::new(PrimCert(later.step().clone())), depth: collision.depth,
+            }),
+        _ => Ok(()),
+    },
+    |()| Ok(()),
+))]
 fn refuse_key_collisions<A>(order: &EventOrder<A>) -> Result<(), NormalFormObstruction<A>>
 where
     A: CellAlphabet,
@@ -994,15 +1159,17 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the positive direction is confirmed by replay, the
-///   negative is pinned as uninformative by a pair that is replay-equal and
-///   normal-form-distinct, and the peak conjunct by an erasing rule carrying
-///   two peaks to one join under one schedule. Dropping the join, the
-///   factorization or the warrant is an equivalent mutation against one store
-///   and is not claimed separable.
+/// - hypothesis: L3 — replay receipts from one store include an identical
+///   derivation, replay-equal paths with different factorizations, and two
+///   peaks erased to one join under the same schedule. Constant answers or
+///   dropping the peak distinction change an observation. No field-by-field
+///   mutation campaign is claimed.
 /// - witness: `normal_form::tests::one_derivation_is_nf_equal_to_itself`
 /// - witness: `normal_form::tests::replay_equal_derivations_may_be_nf_distinct`
 /// - witness: `tests::normal_form::a_derivation_from_a_different_peak_is_nf_distinct`
+#[spec(ensures: |output| output == NormalFormEquality::from(left.peak == right.peak
+    && left.joins_at == right.joins_at && left.convexity == right.convexity
+    && left.primitives == right.primitives && left.schedule == right.schedule))]
 #[inline]
 #[must_use]
 pub fn nf_equal<A>(
@@ -1028,9 +1195,12 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the oracle is [`nf_equal`] on the projected normal forms,
-///   separated by a receipt pair that agrees and one that does not.
+/// - hypothesis: L3 — receipts from one store include an identical boundary and
+///   its proper prefix. Positive and negative equality are checked directly;
+///   constant answers or comparing only the shared peak change an observation.
+///   No independent implementation is claimed for the forwarding call.
 /// - witness: `normal_form::tests::a_certified_pair_is_equal_exactly_when_its_normal_forms_are`
+#[spec(ensures: |output| output == NormalFormEquality::from(left.normal_form == right.normal_form))]
 #[inline]
 #[must_use]
 pub fn certified_nf_equal<A>(
@@ -1082,6 +1252,34 @@ where
 /// - witness: `normal_form::tests::across_stores_agrees_with_nf_equal_on_one_store`
 /// - witness: `normal_form::tests::two_stores_holding_different_cells_at_one_handle_compare_unequal`
 /// - witness: `normal_form::tests::a_factor_naming_an_absent_cell_is_refused_across_stores`
+#[spec(ensures: |output| output.as_ref().map_or_else(
+    |refusal| match *refusal {
+        NormalFormObstruction::UnknownCell { cell } =>
+            left.primitives.values().any(|graded| graded.0.step().cell == cell
+                && matches!(left_store.get(cell), Maybe::Absent(_)))
+            || right.primitives.values().any(|graded| graded.0.step().cell == cell
+                && matches!(right_store.get(cell), Maybe::Absent(_))),
+        _ => false,
+    },
+    |equality| {
+        let same_boundary = left.peak == right.peak && left.joins_at == right.joins_at
+            && left.convexity == right.convexity && left.schedule == right.schedule
+            && left.primitives.len() == right.primitives.len();
+        if bool::from(*equality) {
+            same_boundary && left.primitives.iter().all(|(address, graded)|
+                right.primitives.get(address).is_some_and(|other|
+                    graded.1 == other.1 && graded.0.step().at == other.0.step().at
+                        && matches!((left_store.get(graded.0.step().cell), right_store.get(other.0.step().cell)),
+                            (Maybe::Present(held), Maybe::Present(offered)) if held == offered)))
+        } else {
+            !same_boundary || left.primitives.iter().any(|(address, graded)|
+                right.primitives.get(address).is_none_or(|other|
+                    graded.1 != other.1 || graded.0.step().at != other.0.step().at
+                        || matches!((left_store.get(graded.0.step().cell), right_store.get(other.0.step().cell)),
+                            (Maybe::Present(held), Maybe::Present(offered)) if held != offered)))
+        }
+    },
+))]
 #[inline]
 pub fn nf_equal_across_stores<A>(
     left_store: &CellStore<A>,
@@ -1154,6 +1352,12 @@ where
 /// - witness: `tests::normal_form::every_nf_equal_pair_is_replay_equivalent`
 /// - witness: `tests::normal_form::a_certificate_that_does_not_replay_is_not_certified`
 /// - witness: `tests::normal_form::a_tracelet_pair_agreeing_only_on_its_first_leg_is_not_certified`
+#[spec(ensures: |output| output == NormalFormEquality::from([
+    (&left.path_a, &right.path_a), (&left.path_b, &right.path_b),
+].into_iter().all(|(left_path, right_path)|
+    normalize(store, &left.overlap.peak, &left.joins_at, left_path).ok()
+        .zip(normalize(store, &right.overlap.peak, &right.joins_at, right_path).ok())
+        .is_some_and(|(left_normal, right_normal)| left_normal == right_normal))))]
 #[inline]
 #[must_use]
 pub fn tracelets_nf_equal<A>(
@@ -1205,13 +1409,38 @@ struct RunSurvivors<A: CellAlphabet>
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the unit test is separated by a reflexive cell that fires
-///   and moves nothing beside one that moves the term, on both alphabets; the
-///   failure modes by a fabricated identifier and a position carrying no redex.
+/// - hypothesis: L3 — firing paths include reflexive cells, real moves and a
+///   non-reflexive rule whose second instance is a unit. The surviving path and
+///   reached term distinguish syntactic unit detection, dropped movers and
+///   retained no-ops; stale identifiers and missing redexes distinguish refusal
+///   variants.
 /// - witness: `normal_form::tests::a_unit_step_is_eliminated`
 /// - witness: `normal_form::tests::an_unknown_cell_identifier_is_refused`
 /// - witness: `normal_form::tests::a_step_that_does_not_fire_is_refused`
 /// - witness: `tests::normal_form::a_unit_step_is_eliminated_over_the_toy_alphabet`
+/// - witness: `normal_form::tests::an_instance_unit_is_removed_without_discarding_its_real_instance`
+#[spec(ensures: |output| {
+    let mut consistent = true;
+    let mut surviving = output.as_ref().ok().map(|actual| actual.steps.iter());
+    let replayed = path.iter().try_fold(start.clone(), |current, step| {
+        let Maybe::Present(cell) = store.get(step.cell) else {
+            return Err(NormalFormObstruction::UnknownCell { cell: step.cell });
+        };
+        let Maybe::Present(next) = rewrite_at(cell, &current, &step.at) else {
+            return Err(NormalFormObstruction::StepDoesNotFire { step: Box::new(step.clone()) });
+        };
+        if next != current {
+            consistent &= surviving.as_mut().and_then(Iterator::next).is_some_and(|event|
+                event.step() == step && event.address() == prim_address(cell, &step.at));
+        }
+        Ok(next)
+    });
+    replayed.as_ref().map_or_else(
+        |refusal| output.as_ref().is_err_and(|actual| actual == refusal),
+        |reached| output.as_ref().is_ok_and(|actual| actual.reached == *reached
+            && consistent && surviving.as_mut().is_some_and(|remaining| remaining.next().is_none())),
+    )
+})]
 fn run_recording<A>(
     store: &CellStore<A>,
     start: &A::Cmd,
@@ -1262,12 +1491,25 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — reachable only over an adversarial alphabet, since over
-///   an honest position order the canonical schedule always fires; the
-///   witnesses assert the exact variant, so degrading the kill signal to an
-///   ordinary non-firing refusal fails them.
+/// - hypothesis: L3 — valid schedules reach the recorded join, while a stale
+///   store or a supplied command lacking the redex returns its exact refusal.
+///   Adversarial normalization additionally separates the shifted-schedule kill
+///   signal from an ordinary recorded-step refusal; changing the variant or
+///   payload fails these cases.
 /// - witness: `tests::normal_form::an_alphabet_that_calls_nesting_incomparable_trips_the_kill_signal`
 /// - witness: `tests::normal_form::a_non_local_term_algebra_trips_the_kill_signal_at_the_join`
+/// - witness: `normal_form::tests::replay_refusals_prioritize_fuel_and_level_bounds`
+#[spec(ensures: |output| output == schedule.iter().try_fold(start.clone(), |current, step| {
+    let Maybe::Present(cell) = store.get(step.cell) else {
+        return Err(NormalFormObstruction::UnknownCell { cell: step.cell });
+    };
+    match rewrite_at(cell, &current, &step.at) {
+        Maybe::Present(next) => Ok(next),
+        Maybe::Absent(_) => Err(NormalFormObstruction::ShiftedScheduleDoesNotFire {
+            step: Box::new(step.clone()),
+        }),
+    }
+}))]
 fn run_schedule<A>(
     store: &CellStore<A>,
     start: &A::Cmd,
@@ -1346,7 +1588,16 @@ impl core::hash::Hasher for ContentHasher
     /// The digest folded to the width the trait reports.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the low 64 bits of the state XOR its high 64 bits.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — after the published multi-byte FNV input, a fixed
+    ///   folded value observes both halves. Returning either half alone or
+    ///   combining them by addition changes the result.
+    /// - witness: `normal_form::tests::content_hashing_uses_published_fnv_vectors`
+    #[spec(ensures: |output| output == u64::try_from((self.state ^ self.state.wrapping_shr(64_u32))
+        & u128::from(u64::MAX)).unwrap_or_default())]
     #[inline]
     fn finish(&self) -> u64
     {
@@ -1357,7 +1608,21 @@ impl core::hash::Hasher for ContentHasher
     /// Mixes `bytes` into the digest, one FNV-1a round per byte.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: each byte updates the previous state by XOR followed by
+    ///   wrapping multiplication by the 128-bit FNV prime, in input order; an
+    ///   empty write leaves the state unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — published FNV-128 vectors cover empty, single-byte,
+    ///   multi-byte and zero-terminated byte sequences. Splitting the
+    ///   multi-byte input across writes checks state continuity. Resetting on a
+    ///   chunk, dropping zero bytes or changing the round order changes a known
+    ///   digest.
+    /// - witness: `normal_form::tests::content_hashing_uses_published_fnv_vectors`
+    #[spec(captures: previous = self.state, ensures:
+        self.state == bytes.iter().fold(previous, |state, byte|
+            (state ^ u128::from(*byte)).wrapping_mul(CONTENT_PRIME)))]
     #[inline]
     fn write(
         &mut self,
@@ -1384,6 +1649,9 @@ mod tests
     use gandr_theory_cell_complexes::ProdPat;
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
     use gandr_theory_coherent_resolutions::OverlapKind;
     use gandr_theory_coherent_resolutions::derive_fused;
     use gandr_theory_coherent_resolutions::enumerate_overlaps;
@@ -1444,7 +1712,15 @@ mod tests
     /// The cell `id` names in `store`.
     ///
     /// # Specification
+    /// - ensures: the returned cell is the one `id` resolves to in `store`.
     /// - panics: when the store holds no such cell, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fixture-issued identifiers resolve to the rule whose
+    ///   content address is compared across stores. Returning a different cell
+    ///   or ignoring the identifier changes the observed content relationship.
+    /// - witness: `normal_form::tests::the_content_address_is_taken_over_content`
+    #[spec(ensures: |output| matches!(store.get(id), Maybe::Present(cell) if output == cell))]
     fn stored(
         store: &CellStore,
         id: CellId,
@@ -1460,8 +1736,18 @@ mod tests
     /// The fused-cell store and the tracelet `derive_fused` certifies.
     ///
     /// # Specification
+    /// - ensures: a composition certificate whose two paths replay across its
+    ///   boundary in the returned store.
     /// - panics: when the composition is not found or does not fuse, which is a
     ///   fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the composition fixture carries two paths checked by
+    ///   replay against its own store and boundary. Wrong cell selection or a
+    ///   mismatched boundary breaks that validation.
+    /// - witness: `normal_form::tests::a_fused_fixture_replays_both_certificate_paths_through_its_critical_path_plan`
+    #[spec(ensures: |output| output.1.overlap.kind == OverlapKind::Composition
+        && bool::from(output.1.replay(&output.0)))]
     fn fused_fixture() -> (CellStore, Tracelet)
     {
         let mut store = CellStore::new();
@@ -1911,7 +2197,16 @@ mod tests
     /// Run a recorded path from `start`.
     ///
     /// # Specification
+    /// - ensures: the term reached by firing the complete path from `start`.
     /// - panics: when a step does not fire, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the valid two-step fixture path reaches the
+    ///   independently recorded chain boundary, which is reused across
+    ///   differently numbered stores. Skipping a step or replaying from another
+    ///   command changes that boundary.
+    /// - witness: `normal_form::tests::one_derivation_built_in_two_stores_compares_equal_across_them`
+    #[spec(ensures: |output| run_schedule(store, start, path).is_ok_and(|reached| output == reached))]
     fn run_path(
         store: &CellStore,
         start: &CmdPat,
@@ -1925,7 +2220,20 @@ mod tests
     /// under `add`: the peak, the join the two root steps reach, and the steps.
     ///
     /// # Specification
+    /// - ensures: the fixed chain peak, two root steps using `add`, and the
+    ///   term their replay reaches in the returned store.
     /// - panics: when the chain does not fire, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — stores holding add-S at their supplied identifier
+    ///   yield the same two-step boundary and different handles after a decoy.
+    ///   Changing the root position, identifier or reached term breaks boundary
+    ///   or cross-store equality.
+    /// - witness: `normal_form::tests::one_derivation_built_in_two_stores_compares_equal_across_them`
+    #[spec(ensures: |output| output.1 == chain_peak()
+        && output.3.iter().all(|step| step.cell == add && step.at == Pos::root())
+        && run_schedule(&output.0, &SequentAlphabet::skolemize(&output.1), &output.3)
+            .is_ok_and(|reached| output.2 == reached))]
     fn finish_chain(
         store: CellStore,
         add: CellId,
@@ -1951,7 +2259,22 @@ mod tests
     /// the rule takes the first identifier the store hands out.
     ///
     /// # Specification
+    /// - ensures: the two-step add-S chain and its reached boundary.
     /// - panics: when the chain does not fire, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the add-S-only fixture and the decoy-prefixed store
+    ///   share a boundary and rule content but not handles. Omitting a move or
+    ///   using the decoy rule changes the cross-store observation.
+    /// - witness: `normal_form::tests::one_derivation_built_in_two_stores_compares_equal_across_them`
+    #[spec(ensures: |output| {
+        let rule = add_s();
+        output.1 == chain_peak()
+            && output.3.iter().all(|step| step.at == Pos::root()
+                && matches!(output.0.get(step.cell), Maybe::Present(cell) if *cell == rule))
+            && run_schedule(&output.0, &SequentAlphabet::skolemize(&output.1), &output.3)
+                .is_ok_and(|reached| output.2 == reached)
+    })]
     fn chain_fixture() -> (CellStore, CmdPat, CmdPat, [CellApp; 2])
     {
         let mut store = CellStore::new();
@@ -1966,7 +2289,23 @@ mod tests
     /// one rule set, which is what the cross-store comparison is about.
     ///
     /// # Specification
+    /// - ensures: the same add-S chain and boundary, with its rule issued after
+    ///   the distinct reflexive decoy.
     /// - panics: when the chain does not fire, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — prefixing a distinct reflexive cell changes the add-S
+    ///   handle without changing its content or two-step boundary. Omitting the
+    ///   decoy or applying it instead of add-S changes those observations.
+    /// - witness: `normal_form::tests::one_derivation_built_in_two_stores_compares_equal_across_them`
+    #[spec(ensures: |output| {
+        let rule = add_s();
+        output.1 == chain_peak()
+            && output.3.iter().all(|step| step.at == Pos::root()
+                && matches!(output.0.get(step.cell), Maybe::Present(cell) if *cell == rule))
+            && run_schedule(&output.0, &SequentAlphabet::skolemize(&output.1), &output.3)
+                .is_ok_and(|reached| output.2 == reached)
+    })]
     fn chain_fixture_behind_a_decoy() -> (CellStore, CmdPat, CmdPat, [CellApp; 2])
     {
         let mut store = CellStore::new();
@@ -2095,11 +2434,6 @@ mod tests
             !bool::from(certified_nf_equal(&left, &short)),
             "and a derivation reaching a different join does not"
         );
-        assert_eq!(
-            nf_equal(left.normal_form(), short.normal_form()),
-            certified_nf_equal(&left, &short),
-            "the certified equality delegates rather than deciding again"
-        );
     }
 
     #[test]
@@ -2190,6 +2524,168 @@ mod tests
         assert!(
             matches!(refusal, Err(NormalFormObstruction::UnknownCell { .. })),
             "a factor whose identifier resolves to nothing is refused, not answered"
+        );
+    }
+
+    #[test]
+    fn raw_schedules_resolve_empty_repeated_and_absent_factors()
+    {
+        let (store, peak, join, steps) = chain_fixture();
+        let mut normal = normalize(&store, &peak, &join, &steps).expect("the chain normalizes");
+        normal.schedule.clear();
+        assert_eq!(Maybe::Present(Vec::new()), normal.canonical_path());
+        let step = steps.first().expect("the chain has a first step").clone();
+        let address = prim_address(stored(&store, step.cell), &step.at);
+        normal.schedule = alloc::vec![address, address, address];
+        assert_eq!(
+            Maybe::Present(alloc::vec![step.clone(), step.clone(), step]),
+            normal.canonical_path()
+        );
+        normal.primitives.remove(&address);
+        assert_eq!(
+            Maybe::Absent(schedule_resolution::Absent::UnfactoredAddress),
+            normal.canonical_path()
+        );
+    }
+
+    #[test]
+    fn empty_certificates_replay_skolemized_peaks_without_fuel()
+    {
+        let store = CellStore::<SequentAlphabet>::new();
+        let peak = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("x"),
+            ConsPat::meta("alpha"),
+        );
+        let ground = SequentAlphabet::skolemize(&peak);
+        assert_ne!(peak, ground);
+        let witness = normalize_certified(&store, &peak, &peak, &[])
+            .expect("the empty recording preserves its boundary");
+        assert_eq!(&peak, witness.peak());
+        assert_eq!(&peak, witness.joins_at());
+        assert_eq!(BTreeMap::new(), witness.normal_form().primitives);
+        assert_eq!(Vec::<PrimId>::new(), witness.normal_form().schedule);
+        assert_eq!(Vec::<CellApp>::new(), witness.canonical_path());
+        assert_eq!(
+            EventCount::from(0_usize),
+            event_order(&store, &peak, &[])
+                .expect("the empty order has no collision")
+                .event_count()
+        );
+        let plan = witness.replay_plan();
+        let no_levels: &[Vec<CellApp>] = &[];
+        assert_eq!(no_levels, plan.levels());
+        assert_eq!(CausalDepth::from(0_usize), plan.critical_path());
+        assert_eq!(
+            Ok(Maybe::Present(ground)),
+            plan.replay_with_fuel(&store, CausalDepth::from(0_usize))
+        );
+        assert_eq!(
+            Err(NormalFormObstruction::InvalidReplayLevel {
+                level: ReplayLevel::from(0_usize),
+                levels: CausalDepth::from(0_usize)
+            }),
+            plan.replay_level(&store, &peak, ReplayLevel::from(0_usize))
+        );
+    }
+
+    #[test]
+    fn replay_refusals_prioritize_fuel_and_level_bounds()
+    {
+        let (store, peak, join, steps) = chain_fixture();
+        let witness = normalize_certified(&store, &peak, &join, &steps)
+            .expect("the dependent chain certifies");
+        let plan = witness.replay_plan();
+        let empty = CellStore::new();
+        let first = steps.first().expect("the first level has a step");
+        assert_eq!(
+            Ok(Maybe::Absent(replay_fuel::Absent::InsufficientFuel)),
+            plan.replay_with_fuel(&empty, CausalDepth::from(1_usize))
+        );
+        assert_eq!(
+            Err(NormalFormObstruction::UnknownCell { cell: first.cell }),
+            plan.replay_with_fuel(&empty, CausalDepth::from(2_usize))
+        );
+        assert_eq!(
+            Err(NormalFormObstruction::InvalidReplayLevel {
+                level: ReplayLevel::from(2_usize),
+                levels: CausalDepth::from(2_usize)
+            }),
+            plan.replay_level(&empty, &peak, ReplayLevel::from(2_usize))
+        );
+        assert_eq!(
+            Err(NormalFormObstruction::ShiftedScheduleDoesNotFire {
+                step: Box::new(first.clone())
+            }),
+            plan.replay_level(&store, &join, ReplayLevel::from(0_usize))
+        );
+        assert_eq!(
+            Ok(Maybe::Present(SequentAlphabet::skolemize(&join))),
+            plan.replay_with_fuel(&store, CausalDepth::from(3_usize))
+        );
+    }
+
+    #[test]
+    fn an_instance_unit_is_removed_without_discarding_its_real_instance()
+    {
+        let mut store = CellStore::new();
+        let rule = toy_cell(Toy::succ(Toy::var("x")), Toy::succ(Toy::zero()));
+        assert_ne!(rule.lhs(), rule.rhs());
+        let address = prim_address(&rule, &ToyAlphabet::root_position());
+        let cell = store.insert(rule);
+        let peak = Toy::succ(Toy::succ(Toy::zero()));
+        let join = Toy::succ(Toy::zero());
+        let step = CellApp {
+            cell,
+            at: ToyAlphabet::root_position(),
+        };
+        let path = [step.clone(), step.clone()];
+        let normal = normalize(&store, &peak, &join, &path)
+            .expect("the first instance moves and the second is a unit");
+        assert_eq!(alloc::vec![address], normal.schedule);
+        assert_eq!(
+            BTreeMap::from([(address, (PrimCert(step), PrimMultiplicity::from(1_u32)))]),
+            normal.primitives
+        );
+        assert_eq!(
+            EventCount::from(1_usize),
+            event_order(&store, &peak, &path)
+                .expect("the surviving event is unique")
+                .event_count()
+        );
+    }
+
+    #[test]
+    fn content_hashing_uses_published_fnv_vectors()
+    {
+        // FNV-128 vectors: https://www.ietf.org/archive/id/draft-eastlake-fnv-25.html#section-6.2
+        let mut single = ContentHasher::new();
+        core::hash::Hasher::write(&mut single, &[]);
+        assert_eq!(
+            0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128,
+            single.digest().0
+        );
+        core::hash::Hasher::write(&mut single, b"a");
+        assert_eq!(
+            0xd228_cb69_6f1a_8caf_7891_2b70_4e4a_8964_u128,
+            single.digest().0
+        );
+        let mut split = ContentHasher::new();
+        core::hash::Hasher::write(&mut split, b"foo");
+        core::hash::Hasher::write(&mut split, &[]);
+        core::hash::Hasher::write(&mut split, b"bar");
+        assert_eq!(
+            0x343e_1662_793c_64bf_6f0d_3597_ba44_6f18_u128,
+            split.digest().0
+        );
+        assert_eq!(
+            0x5b33_23f5_c378_0ba7_u64,
+            core::hash::Hasher::finish(&split)
+        );
+        core::hash::Hasher::write(&mut split, &[0_u8]);
+        assert_eq!(
+            0xe01f_cf9a_454f_f78d_a540_f1b2_3234_b288_u128,
+            split.digest().0
         );
     }
 }

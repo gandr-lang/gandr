@@ -23,6 +23,7 @@
 //! separate it), and flow equality sits inside it on the discharge class, so
 //! flow equality is strictly finer than the quotient.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::ConvexityDischarge;
@@ -50,6 +51,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::fixture::add_s;
 use crate::fixture::add_z;
+use crate::fixture::c_cell;
 use crate::fixture::cong2_body;
 use crate::fixture::cong2_pair;
 use crate::fixture::cong2_store;
@@ -64,7 +66,27 @@ use crate::fixture::tracelet_over;
 /// implementation rather than a matching algorithm.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: every bijection of the vertex indices occurs exactly once,
+///   including the empty bijection for an empty flow; no order is promised.
+/// - panics: none apart from allocation failure.
+///
+/// # Adequacy
+/// - hypothesis: L1 — finite fixture flows of zero through three vertices.
+///   Bijection membership, pairwise uniqueness and factorial cardinality
+///   validate completeness without assuming enumeration order. Positive
+///   relabelings and negative causal shapes expose an omitted permutation or a
+///   fabricated match.
+/// - witness: `tests::flow::the_games_oracle_separates_missing_labels_and_causal_shapes`
+/// - witness: `tests::flow::flow_equality_sits_inside_the_games_quotient_on_the_discharge_class`
+#[spec(ensures: |output| {
+    let count = flow.labels.len();
+    (1_usize ..= count).try_fold(1_usize, usize::checked_mul) == Some(output.len())
+        && output.iter().enumerate().all(|(ordinal, permutation)| {
+            permutation.len() == count && !output[..ordinal].contains(permutation)
+                && permutation.iter().enumerate().all(|(index, vertex)|
+                    usize::from(*vertex) < count && !permutation[..index].contains(vertex))
+        })
+})]
 fn index_permutations(flow: &Flow) -> Vec<Vec<FlowVertexIndex>>
 {
     let mut permutations: Vec<Vec<FlowVertexIndex>> = vec![Vec::new()];
@@ -88,7 +110,29 @@ fn index_permutations(flow: &Flow) -> Vec<Vec<FlowVertexIndex>>
 /// projection.
 ///
 /// # Specification
-/// trivial.
+/// - requires: both queried vertices and every vertex endpoint belong to the
+///   flow's label list.
+/// - ensures: strict reachability by vertex-to-vertex threads, ignoring
+///   boundary ends; a vertex does not strictly precede itself.
+/// - panics: none apart from allocation failure.
+///
+/// # Adequacy
+/// - hypothesis: L3 — projected acyclic flows with isolated, serial and
+///   branching vertices. Forward transitivity, reverse refusal and self-refusal
+///   separate direct-edge-only lookup, reversed threads and reflexive
+///   reachability; the predicate enforces index validity and the direct-edge
+///   boundary.
+/// - witness: `tests::flow::the_games_oracle_separates_missing_labels_and_causal_shapes`
+#[spec(requires: usize::from(earlier) < flow.labels.len() && usize::from(later) < flow.labels.len()
+    && flow.threads.iter().all(|thread| [thread.up, thread.lo].into_iter().all(|end| match end {
+        FlowEnd::Vertex { vertex, .. } => usize::from(vertex) < flow.labels.len(),
+        FlowEnd::Peak { .. } | FlowEnd::Join => true,
+    })), ensures: |output| (earlier != later || !bool::from(output))
+    && (earlier == later || !flow.threads.iter().any(|thread| matches!(
+        (thread.up, thread.lo),
+        (FlowEnd::Vertex { vertex: up, .. }, FlowEnd::Vertex { vertex: lo, .. })
+            if up == earlier && lo == later
+    )) || bool::from(output)))]
 fn depends_before(
     flow: &Flow,
     earlier: FlowVertexIndex,
@@ -124,7 +168,29 @@ fn depends_before(
 /// leg's steps indexed exactly as the quotient reads them.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: true exactly when the two vertex sets have a label-preserving
+///   bijection preserving strict dependence in both directions. Peak anchors
+///   and ports are not part of this relation.
+/// - panics: none apart from allocation failure; vertex endpoints must be valid
+///   as required by `depends_before`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — projected empty, differently labeled, serial and
+///   branching flows, plus permutations of independent steps. The bijection
+///   observer and separating counterexamples reject equality by label count
+///   alone, one-way dependence preservation and treating empty flows as
+///   unequal.
+/// - witness: `tests::flow::the_games_oracle_separates_missing_labels_and_causal_shapes`
+/// - witness: `tests::flow::the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form`
+#[spec(ensures: |output| bool::from(output) == (left.labels.len() == right.labels.len()
+    && index_permutations(left).iter().any(|permutation| {
+        permutation.iter().enumerate().all(|(index, mapped)|
+            left.labels.get(index) == right.labels.get(usize::from(*mapped)))
+            && permutation.iter().enumerate().all(|(first, mapped_first)|
+                permutation.iter().enumerate().all(|(second, mapped_second)|
+                    depends_before(left, FlowVertexIndex::from(first), FlowVertexIndex::from(second))
+                        == depends_before(right, *mapped_first, *mapped_second)))
+    })))]
 fn games_equivalent(
     left: &Flow,
     right: &Flow,
@@ -742,4 +808,77 @@ fn a_leg_that_lands_off_the_join_has_no_certificate_flow()
         obstruction,
         "and the refusal carries where the leg actually landed"
     );
+}
+
+#[test]
+fn the_games_oracle_separates_missing_labels_and_causal_shapes()
+{
+    let (store, f, g) = cong2_store();
+    let empty = project_flow(&store, &Toy::zero(), &[]).expect("an empty leg projects");
+    let one_f = project_flow(&store, &Toy::succ(Toy::zero()), &[CellApp {
+        cell: f,
+        at: at![],
+    }])
+    .expect("f fires at its root");
+    let one_g = project_flow(&store, &Toy::succ(Toy::succ(Toy::zero())), &[CellApp {
+        cell: g,
+        at: at![],
+    }])
+    .expect("g fires at its root");
+    assert!(bool::from(games_equivalent(&empty, &empty)));
+    assert!(!bool::from(games_equivalent(&empty, &one_f)));
+    assert!(!bool::from(games_equivalent(&one_f, &one_g)));
+
+    let mut store = CellStore::new();
+    let c = store.insert(c_cell());
+    let chain_peak = Toy::add(
+        Toy::add(Toy::add(Toy::zero(), Toy::zero()), Toy::zero()),
+        Toy::zero(),
+    );
+    let chain = project_flow(&store, &chain_peak, &[
+        CellApp {
+            cell: c,
+            at: at![0, 0],
+        },
+        CellApp {
+            cell: c,
+            at: at![0],
+        },
+        CellApp { cell: c, at: at![] },
+    ])
+    .expect("three nested collapses fire in order");
+    let fork_peak = Toy::add(
+        Toy::add(Toy::zero(), Toy::zero()),
+        Toy::add(Toy::zero(), Toy::zero()),
+    );
+    let fork = project_flow(&store, &fork_peak, &[
+        CellApp {
+            cell: c,
+            at: at![0],
+        },
+        CellApp {
+            cell: c,
+            at: at![1],
+        },
+        CellApp { cell: c, at: at![] },
+    ])
+    .expect("independent children collapse before their parent");
+    assert_eq!(chain.labels, fork.labels);
+    assert!(bool::from(depends_before(
+        &chain,
+        FlowVertexIndex::from(0),
+        FlowVertexIndex::from(2)
+    )));
+    assert!(!bool::from(depends_before(
+        &chain,
+        FlowVertexIndex::from(2),
+        FlowVertexIndex::from(0)
+    )));
+    assert!(!bool::from(depends_before(
+        &chain,
+        FlowVertexIndex::from(1),
+        FlowVertexIndex::from(1)
+    )));
+    assert!(!bool::from(games_equivalent(&chain, &fork)));
+    assert!(!bool::from(games_equivalent(&fork, &chain)));
 }

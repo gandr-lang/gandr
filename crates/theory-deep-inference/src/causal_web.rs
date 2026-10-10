@@ -17,6 +17,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use quenchant_shape::shape::Maybe;
 
@@ -88,6 +89,7 @@ impl DependenceBits
     /// - witness: `causal_web::tests::a_dependent_pair_is_a_green_edge`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == self.rows.get(usize::from(earlier)).and_then(|row| row.get(usize::from(later))).copied().unwrap_or(false))]
     pub fn contains(
         &self,
         earlier: WebVertex,
@@ -121,8 +123,12 @@ impl DependenceBits
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a web whose event list was emptied under a two-vertex
-    ///   relation is refused as malformed.
+    ///   relation is refused as malformed. A ragged relation with the correct
+    ///   row count still fails; the empty square is valid. Ignoring any column
+    ///   length changes the shape verdict.
     /// - witness: `causal_web::tests::a_malformed_web_refuses_structural_comparison`
+    /// - witness: `causal_web::tests::empty_and_ragged_matrices_separate_shape_from_lookup`
+    #[spec(ensures: |output| bool::from(output) == (self.rows.len() == usize::from(count) && self.rows.iter().all(|row| row.len() == usize::from(count))))]
     fn has_shape(
         &self,
         count: WebVertexCount,
@@ -155,11 +161,26 @@ impl DependenceBits
     /// - hypothesis: L3 — an independent pair builds no edge, a dependent pair
     ///   builds its one direction, a precedence reached only through an
     ///   intermediate event is folded in, and a chain far longer than a small
-    ///   stack is materialized end to end.
+    ///   stack is materialized end to end. The supplied coordinates may select,
+    ///   repeat or reverse valid event indices. Omitting unselected ancestors
+    ///   or assuming coordinate order changes the projected bits.
     /// - witness: `causal_web::tests::a_tracelet_fixture_builds_the_two_colour_web`
     /// - witness: `causal_web::tests::a_dependent_pair_is_a_green_edge`
     /// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
     /// - witness: `tests::deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack`
+    /// - witness: `causal_web::tests::precedence_projection_preserves_repeated_and_reversed_coordinates`
+    #[spec(requires: canonical.iter().all(|index| usize::from(*index) < order.events().len()), ensures: |output|
+        output.rows.len() == canonical.len() && (canonical.is_empty() || {
+            let direct: Vec<&[EventIndex]> = (0..order.events().len()).map(|index| order.direct_dependences(EventIndex::from(index))).collect();
+            output.rows.iter().zip(canonical).all(|(row, source)| {
+                let mut reached = alloc::vec![false; order.events().len()];
+                for later in usize::from(*source).saturating_add(1_usize)..order.events().len() {
+                    let inherited = direct.get(later).copied().unwrap_or_default().iter().rev().any(|prior| prior == source || reached.get(usize::from(*prior)).copied().unwrap_or(false));
+                    if let Some(slot) = reached.get_mut(later) { *slot = inherited; }
+                }
+                row.len() == canonical.len() && row.iter().zip(canonical).all(|(bit, target)| *bit == reached.get(usize::from(*target)).copied().unwrap_or(false))
+            })
+        }))]
     fn from_order<A>(
         order: &EventOrder<A>,
         canonical: &[EventIndex],
@@ -254,10 +275,12 @@ impl CausalWeb
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the one-event web's vertex reads back the key its
-    ///   source order holds for its one canonical event.
+    /// - hypothesis: L3 — a one-event web returns its source key at the valid
+    ///   coordinate and a typed absence at the next coordinate. Shifting the
+    ///   lookup or returning a key for absence changes this boundary.
     /// - witness: `causal_web::tests::a_single_event_is_the_boundary_web`
     #[inline]
+    #[spec(ensures: |output| self.events.get(usize::from(vertex)).map_or_else(|| output == Maybe::Absent(web_lookup::Absent::OutOfRange), |key| output == Maybe::Present(key)))]
     pub fn event(
         &self,
         vertex: WebVertex,
@@ -287,6 +310,11 @@ impl CausalWeb
     /// - witness: `causal_web::tests::a_dependent_pair_is_a_green_edge`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output == if left == right || usize::from(left) >= self.events.len() || usize::from(right) >= self.events.len() {
+    WebRelation::Missing
+} else if bool::from(self.precedes.contains(left, right)) { WebRelation::Precedes }
+else if bool::from(self.precedes.contains(right, left)) { WebRelation::Follows }
+else { WebRelation::Independent })]
     pub fn relation(
         &self,
         left: WebVertex,
@@ -314,12 +342,16 @@ impl CausalWeb
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the oracle is [`Self::relation`] on the same pair,
-    ///   over an independent pair and a dependent one.
+    /// - hypothesis: L3 — distinct independent and dependent pairs, plus an
+    ///   empty web, distinguish white edges from green edges and missing
+    ///   vertices. Complementing precedence without rejecting missing vertices
+    ///   changes the decision.
     /// - witness: `causal_web::tests::a_tracelet_fixture_builds_the_two_colour_web`
     /// - witness: `causal_web::tests::a_dependent_pair_is_a_green_edge`
+    /// - witness: `causal_web::tests::empty_and_ragged_matrices_separate_shape_from_lookup`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == (self.relation(left, right) == WebRelation::Independent))]
     pub fn independent(
         &self,
         left: WebVertex,
@@ -338,8 +370,12 @@ impl CausalWeb
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a web whose event list was emptied under a two-vertex
-    ///   relation is refused as malformed.
+    ///   relation is refused as malformed. A short row with the correct event
+    ///   count is also refused, whichever operand holds it; the empty web
+    ///   remains a valid boundary.
     /// - witness: `causal_web::tests::a_malformed_web_refuses_structural_comparison`
+    /// - witness: `causal_web::tests::empty_and_ragged_matrices_separate_shape_from_lookup`
+    #[spec(ensures: |output| bool::from(output) == (self.precedes.rows.len() == self.events.len() && self.precedes.rows.iter().all(|row| row.len() == self.events.len())))]
     fn has_valid_shape(&self) -> WebShapeValidity
     {
         self.precedes.has_shape(self.vertex_count())
@@ -376,6 +412,11 @@ impl CausalWeb
 /// - witness: `tests::deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| {
+    let canonical = order.canonical_order();
+    output.events.len() == canonical.len() && output.events.iter().zip(&canonical).all(|(key, index)| order.key(*index) == Maybe::Present(*key))
+        && output.precedes == DependenceBits::from_order(order, &canonical)
+})]
 pub fn causal_web<A>(order: &EventOrder<A>) -> CausalWeb
 where
     A: CellAlphabet,
@@ -516,15 +557,51 @@ pub enum RefinementVerdict
 /// - hypothesis: L3 — pointwise over every verdict: an equal web is the empty
 ///   chain, one added edge is one licensed step, a lost edge is the separating
 ///   pair, and a malformed shape, an equal-cardinality label mismatch and a
-///   cardinality mismatch are each refused by their own name.
+///   cardinality mismatch are each refused by their own name. A reverse
+///   weakening retains its direction, and a lost pair after a preserved pair
+///   retains canonical scan priority. Missing a row-length check, reversing an
+///   added edge or choosing a later counterexample changes the observer.
 /// - witness: `causal_web::tests::an_equal_web_is_the_empty_slice_chain`
 /// - witness: `causal_web::tests::an_independence_to_order_change_is_licensed`
 /// - witness: `causal_web::tests::a_lost_precedence_is_a_negative_witness`
 /// - witness: `causal_web::tests::a_malformed_web_refuses_structural_comparison`
 /// - witness: `causal_web::tests::a_label_mismatch_refuses_edge_strengthening_simulation`
 /// - witness: `causal_web::tests::a_cardinality_mismatch_refuses_open_h_down`
+/// - witness: `causal_web::tests::reverse_weakening_and_first_losses_preserve_pair_order`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| {
+    if !bool::from(finer.has_valid_shape()) || !bool::from(coarser.has_valid_shape()) {
+        output == RefinementVerdict::Refused { obstruction: HomomorphismFrontier::MalformedWeb }
+    } else if finer.events.len() != coarser.events.len() {
+        output == RefinementVerdict::Refused { obstruction: HomomorphismFrontier::OpenHDownHomomorphism }
+    } else if finer.events != coarser.events {
+        output == RefinementVerdict::Refused { obstruction: HomomorphismFrontier::EdgeStrengtheningSimulation }
+    } else {
+        let pairs = (0_usize..finer.events.len()).flat_map(|left| (left.saturating_add(1_usize)..finer.events.len()).map(move |right| {
+            let left = WebVertex::from(left); let right = WebVertex::from(right);
+            (left, right, coarser.relation(left, right), finer.relation(left, right))
+        }));
+        let failed = pairs.clone().find(|pair| !matches!((pair.2, pair.3),
+            (WebRelation::Precedes, WebRelation::Precedes) | (WebRelation::Follows, WebRelation::Follows)
+            | (WebRelation::Independent, WebRelation::Independent | WebRelation::Precedes | WebRelation::Follows)));
+        failed.map_or_else(|| {
+            let steps = pairs.filter_map(|(left, right, required, observed)| match (required, observed) {
+                (WebRelation::Independent, WebRelation::Precedes) => Some(SliceStep { earlier: left, later: right }),
+                (WebRelation::Independent, WebRelation::Follows) => Some(SliceStep { earlier: right, later: left }),
+                _ => None,
+            });
+            matches!(output, RefinementVerdict::Refines { ref witness } if witness.steps.iter().copied().eq(steps))
+        }, |(left, right, required, observed)| {
+            if required == WebRelation::Missing {
+                output == RefinementVerdict::Refused { obstruction: HomomorphismFrontier::MalformedWeb }
+            } else {
+                let (earlier, later) = if required == WebRelation::Follows { (right, left) } else { (left, right) };
+                matches!(output, RefinementVerdict::DoesNotRefine { ref witness } if witness.earlier == earlier && witness.later == later && witness.required == required && witness.observed == observed)
+            }
+        })
+    }
+})]
 pub fn refines(
     finer: &CausalWeb,
     coarser: &CausalWeb,
@@ -626,7 +703,19 @@ mod tests
     /// `Add(Succ(Zero), Succ(Zero))`: two events at incomparable positions.
     ///
     /// # Specification
+    /// - requires: the supplied cell fires on and changes Succ(Zero).
+    /// - ensures: two surviving events at the two child sites, carrying the
+    ///   supplied cell’s primitive addresses.
     /// - panics: when the two steps do not replay, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — cells that change the ground redex yield exactly two
+    ///   surviving events at distinct child sites; their web separates
+    ///   independence from changed labels. Dropping an event or substituting
+    ///   the rule identity changes these observations.
+    /// - witness: `causal_web::tests::a_tracelet_fixture_builds_the_two_colour_web`
+    /// - witness: `causal_web::tests::a_label_mismatch_refuses_edge_strengthening_simulation`
+    #[spec(requires: { let redex = Toy::succ(Toy::zero()); matches!(gandr_theory_coherent_resolutions::rewrite_at(&cell, &redex, &at![]), Maybe::Present(ref after) if *after != redex) }, captures: addresses = [crate::normal_form::prim_address(&cell, &at![0]), crate::normal_form::prim_address(&cell, &at![1])], ensures: |output| output.events().len() == 2 && output.events().iter().zip(addresses).enumerate().all(|(index, (event, address))| event.address() == address && event.step().at == ToyAlphabet::position_at_path(&[gandr_theory_cell_complexes::PositionStep::from(index)])))]
     fn two_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
     {
         let mut store = CellStore::new();
@@ -639,7 +728,17 @@ mod tests
     /// The order of `cell` fired once at the root of `Succ(Zero)`.
     ///
     /// # Specification
+    /// - requires: the supplied cell fires on and changes Succ(Zero).
+    /// - ensures: one surviving root event carrying the supplied cell’s
+    ///   primitive address.
     /// - panics: when the step does not replay, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cell changing the ground root yields one event with
+    ///   that cell’s address; the valid vertex and first missing vertex
+    ///   separate lookup, cardinality and wrong-site mutations.
+    /// - witness: `causal_web::tests::a_single_event_is_the_boundary_web`
+    #[spec(requires: { let redex = Toy::succ(Toy::zero()); matches!(gandr_theory_coherent_resolutions::rewrite_at(&cell, &redex, &at![]), Maybe::Present(ref after) if *after != redex) }, captures: address = crate::normal_form::prim_address(&cell, &at![]), ensures: |output| output.events().len() == 1 && output.events().first().is_some_and(|event| event.address() == address && event.step().at == at![]))]
     fn one_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
     {
         let mut store = CellStore::new();
@@ -654,7 +753,16 @@ mod tests
     /// so the two events are dependent.
     ///
     /// # Specification
+    /// - ensures: two root events with the second directly dependent on the
+    ///   first.
     /// - panics: when the two steps do not replay, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the concrete two-root-step derivation yields one
+    ///   forward precedence and no reverse precedence. Flattening the
+    ///   dependency or reversing its direction changes the two-colour observer.
+    /// - witness: `causal_web::tests::a_dependent_pair_is_a_green_edge`
+    #[spec(ensures: |output| output.events().len() == 2 && output.events().iter().all(|event| event.step().at == at![]) && bool::from(output.depends_directly(EventIndex::from(1_usize), EventIndex::from(0_usize))))]
     fn dependent_order() -> EventOrder<ToyAlphabet>
     {
         let mut store = CellStore::new();
@@ -831,6 +939,162 @@ mod tests
                 obstruction: HomomorphismFrontier::MalformedWeb,
             },
             refines(&malformed, &source),
+        );
+    }
+
+    #[test]
+    fn empty_and_ragged_matrices_separate_shape_from_lookup()
+    {
+        let order = EventOrder::<ToyAlphabet>::of_events(
+            &CellStore::new(),
+            Vec::new(),
+            gandr_theory_cell_complexes::ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+        );
+        let empty = causal_web(&order);
+        assert_eq!(WebVertexCount::from(0_usize), empty.vertex_count());
+        assert!(bool::from(empty.has_valid_shape()));
+        assert_eq!(
+            WebRelation::Missing,
+            empty.relation(WebVertex::from(0_usize), WebVertex::from(1_usize))
+        );
+        assert!(!bool::from(empty.independent(
+            WebVertex::from(0_usize),
+            WebVertex::from(1_usize)
+        )));
+        let RefinementVerdict::Refines { witness } = refines(&empty, &empty)
+        else {
+            panic!("the empty web refines itself");
+        };
+        assert!(witness.steps().is_empty());
+        let source = causal_web(&two_event_order(f_cell()));
+        let ragged = DependenceBits {
+            rows: vec![
+                vec![false].into_boxed_slice(),
+                vec![true, false].into_boxed_slice(),
+            ]
+            .into_boxed_slice(),
+        };
+        assert!(!bool::from(ragged.has_shape(WebVertexCount::from(2_usize))));
+        assert!(bool::from(
+            ragged.contains(WebVertex::from(1_usize), WebVertex::from(0_usize))
+        ));
+        assert!(!bool::from(
+            ragged.contains(WebVertex::from(0_usize), WebVertex::from(1_usize))
+        ));
+        assert!(!bool::from(
+            ragged.contains(WebVertex::from(2_usize), WebVertex::from(0_usize))
+        ));
+        let malformed = CausalWeb {
+            events: source.events.clone(),
+            precedes: ragged,
+        };
+        assert_eq!(
+            RefinementVerdict::Refused {
+                obstruction: HomomorphismFrontier::MalformedWeb
+            },
+            refines(&malformed, &source)
+        );
+        assert_eq!(
+            RefinementVerdict::Refused {
+                obstruction: HomomorphismFrontier::MalformedWeb
+            },
+            refines(&source, &malformed)
+        );
+    }
+
+    #[test]
+    fn precedence_projection_preserves_repeated_and_reversed_coordinates()
+    {
+        let mut store = CellStore::new();
+        let cell = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        let peak = Toy::succ(Toy::succ(Toy::succ(Toy::zero())));
+        let step = CellApp { cell, at: at![] };
+        let order = event_order(&store, &peak, &[step.clone(), step.clone(), step])
+            .expect("the three root reductions fire");
+        let projected = DependenceBits::from_order(&order, &[
+            EventIndex::from(2_usize),
+            EventIndex::from(0_usize),
+            EventIndex::from(2_usize),
+        ]);
+        assert_eq!(
+            vec![
+                vec![false, false, false].into_boxed_slice(),
+                vec![true, false, true].into_boxed_slice(),
+                vec![false, false, false].into_boxed_slice()
+            ]
+            .into_boxed_slice(),
+            projected.rows
+        );
+        assert!(DependenceBits::from_order(&order, &[]).rows.is_empty());
+    }
+
+    #[test]
+    fn reverse_weakening_and_first_losses_preserve_pair_order()
+    {
+        let coarser = causal_web(&two_event_order(f_cell()));
+        let mut reversed = coarser.clone();
+        reversed.precedes.rows[1][0] = true;
+        let RefinementVerdict::Refines { witness } = refines(&reversed, &coarser)
+        else {
+            panic!("a reverse white-to-green edge is licensed");
+        };
+        assert_eq!(
+            &[SliceStep {
+                earlier: WebVertex::from(1_usize),
+                later: WebVertex::from(0_usize)
+            }],
+            witness.steps()
+        );
+        let mut store = CellStore::new();
+        let cell = store.insert(f_cell());
+        let redex = Toy::succ(Toy::zero());
+        let peak = Toy::add(redex.clone(), Toy::add(redex.clone(), redex));
+        let path = [
+            CellApp { cell, at: at![0] },
+            CellApp {
+                cell,
+                at: at![1, 0],
+            },
+            CellApp {
+                cell,
+                at: at![1, 1],
+            },
+        ];
+        let order =
+            event_order(&store, &peak, &path).expect("the three independent reductions fire");
+        let mut required = causal_web(&order);
+        let mut supplied = required.clone();
+        *required
+            .precedes
+            .rows
+            .get_mut(0)
+            .expect("first vertex")
+            .get_mut(2)
+            .expect("third coordinate") = true;
+        *required
+            .precedes
+            .rows
+            .get_mut(1)
+            .expect("second vertex")
+            .get_mut(2)
+            .expect("third coordinate") = true;
+        *supplied
+            .precedes
+            .rows
+            .get_mut(1)
+            .expect("second vertex")
+            .get_mut(2)
+            .expect("third coordinate") = true;
+        assert_eq!(
+            RefinementVerdict::DoesNotRefine {
+                witness: RefinementCounterexample {
+                    earlier: WebVertex::from(0_usize),
+                    later: WebVertex::from(2_usize),
+                    required: WebRelation::Precedes,
+                    observed: WebRelation::Independent
+                }
+            },
+            refines(&supplied, &required)
         );
     }
 }

@@ -4,6 +4,7 @@
 //! incomparable positions, which no sequent term can. Every fixture here is a
 //! first-order rule over `Zero`, `Succ` and `Add`.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -133,7 +134,18 @@ pub fn cong2_pair(
 /// The cell `id` names in `store`.
 ///
 /// # Specification
+/// - requires: `store` holds `id`.
+/// - ensures: the cell stored under that identifier, not another rule.
 /// - panics: when `store` holds no such cell, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — identifiers issued by the fixture store, including
+///   distinct rules in one derivation. The retrieved cell and the exact
+///   collapse to Zero separate a wrong identifier from the requested rule;
+///   absent identifiers are outside this helper’s domain.
+/// - witness: `tests::normal_form::a_layered_derivation_keeps_its_dependent_step_last`
+#[spec(requires: matches!(store.get(id), Maybe::Present(_)),
+    ensures: |output| store.get(id) == Maybe::Present(output))]
 pub fn stored<A>(
     store: &CellStore<A>,
     id: CellId,
@@ -152,9 +164,19 @@ where
 ///
 /// # Specification
 /// - ensures: the term after `step`'s cell fires at its recorded position.
+/// - requires: `step.cell` names a cell in `store`.
 /// - provides: the engine's reason when the cell does not fire there.
 /// - panics: when `step` names a cell `store` does not hold, which is a fixture
 ///   defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — firing steps whose identifiers belong to the supplied
+///   store, including a dependent root step after its two children. The
+///   stepwise rewrite observer and exact final Zero reject selecting another
+///   stored rule or dropping a position.
+/// - witness: `tests::normal_form::a_layered_derivation_keeps_its_dependent_step_last`
+#[spec(requires: matches!(store.get(step.cell), Maybe::Present(_)),
+    ensures: |output| output == rewrite_at(stored(store, step.cell), term, &step.at))]
 pub fn fire<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -175,6 +197,22 @@ where
 /// - ensures: the term every step of `path` reaches, fired in order.
 /// - panics: when a step names an unstored cell or does not fire at its
 ///   recorded position, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — recorded paths that fire completely, also over
+///   adversarial alphabets. A fold of the underlying rewrite relation validates
+///   the ordered result; the layered collapse and non-local counterexample
+///   distinguish dropped steps, reversed dependence and silently assuming
+///   locality.
+/// - witness: `tests::normal_form::a_layered_derivation_keeps_its_dependent_step_last`
+/// - witness: `tests::normal_form::a_non_local_term_algebra_trips_the_kill_signal_at_the_join`
+#[spec(ensures: |output| path.iter().try_fold(start.clone(), |current, step| {
+    let Maybe::Present(cell) = store.get(step.cell) else { return None; };
+    match rewrite_at(cell, &current, &step.at) {
+        Maybe::Present(next) => Some(next),
+        Maybe::Absent(_) => None,
+    }
+}).is_some_and(|expected| output == expected))]
 pub fn run<A>(
     store: &CellStore<A>,
     start: &A::Cmd,
@@ -201,7 +239,19 @@ where
 /// left-hand side, so the pair composes at a seam.
 ///
 /// # Specification
+/// - ensures: a composition overlap whose two cells are held by the returned
+///   store.
 /// - panics: when the composition is not enumerated, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the fixed add-S/add-Z fixture. Composition kind, stored
+///   legs and subsequent fused replay reject selecting a confluence or
+///   returning an overlap from another store. The split and fused derivations
+///   have a common join but different flows.
+/// - witness: `tests::flow::replay_equivalent_certificates_can_carry_different_flows`
+#[spec(ensures: |output| output.1.kind == OverlapKind::Composition
+    && matches!(output.0.get(output.1.left), Maybe::Present(_))
+    && matches!(output.0.get(output.1.right), Maybe::Present(_)))]
 pub fn fusion_fixture() -> (CellStore<ToyAlphabet>, Overlap<ToyAlphabet>)
 {
     let mut store = CellStore::new();
