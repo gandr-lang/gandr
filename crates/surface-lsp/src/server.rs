@@ -184,16 +184,25 @@ impl Server
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — the capabilities and the token streams of a known
-    ///   document are asserted whole; L3 — the lifecycle's decision surfaces,
-    ///   each range shape, and a refused document's publication, each asserted
-    ///   at its exact messages.
+    /// - hypothesis: L2 — pinned capability and token objects distinguish wrong
+    ///   answers for the known document. L3 — lifecycle boundaries, range
+    ///   shapes, refusal publications and ignored messages distinguish wrong
+    ///   codes, extra replies and forbidden document mutations.
     /// - witness: `server::tests::initialize_advertises_the_token_legend`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
     /// - witness: `server::tests::a_refused_program_is_published_as_an_editor_diagnostic`
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+    /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+    #[anodized::spec(
+        captures: phase = self.phase,
+        ensures: |ret| ret.messages.len() <= 1
+            && (self.phase == phase || matches!((phase, self.phase),
+                (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
+            && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
+                ret.messages.is_empty() && ending == self.closed() },
+    )]
     #[inline]
     #[must_use]
     pub fn handle(
@@ -225,6 +234,8 @@ impl Server
     /// - hypothesis: L3 — `exit` before and after `shutdown`, each asserted at
     ///   its exact ending.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
+    #[anodized::spec(ensures: |ret| matches!((self.phase, ret),
+        (Phase::ShuttingDown, Served::Clean) | (Phase::Waiting | Phase::Running, Served::Abrupt)))]
     #[inline]
     #[must_use]
     pub const fn closed(&self) -> Served
@@ -238,7 +249,42 @@ impl Server
     /// The response to the request `id` calling `method` with `params`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: initialization and shutdown advance the lifecycle once; other
+    ///   requests preserve it and every request preserves open documents. The
+    ///   response echoes the identifier and carries the method result or its
+    ///   lifecycle, unknown-method or invalid-parameter error.
+    /// - provides: one response per request.
+    /// - fails: refusals are error responses, never Rust errors.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every lifecycle boundary and invalid parameters are
+    ///   observed through response identifiers, exact error codes and session
+    ///   ending; L2 — token responses agree with pinned streams.
+    /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
+    /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    #[anodized::spec(
+        captures: [phase = self.phase, documents = self.documents.len()],
+        ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
+            (Phase::Waiting, "initialize") => self.phase == Phase::Running
+                && matches!(ret, Outgoing::Success { result: Answer::Initialize(_), .. }),
+            (Phase::Waiting, _) => self.phase == phase && matches!(ret,
+                Outgoing::Failure { ref error, .. } if error.code == ErrorCode::SERVER_NOT_INITIALIZED),
+            (Phase::Running, "shutdown") => self.phase == Phase::ShuttingDown
+                && matches!(ret, Outgoing::Success { result: Answer::Nothing, .. }),
+            (Phase::Running, "initialize") | (Phase::ShuttingDown, _) => self.phase == phase
+                && matches!(ret, Outgoing::Failure { ref error, .. } if error.code == ErrorCode::INVALID_REQUEST),
+            (Phase::Running, "textDocument/semanticTokens/full" | "textDocument/semanticTokens/range") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, _) => self.phase == phase && matches!(ret,
+                Outgoing::Failure { ref error, .. } if error.code == ErrorCode::METHOD_NOT_FOUND),
+        },
+    )]
     fn request(
         &mut self,
         id: RequestId,
@@ -302,7 +348,44 @@ impl Server
     /// What the notification calling `method` with `params` produces.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: notifications preserve the lifecycle and never send
+    ///   responses. Exit ends the session; running-state opens and changes
+    ///   publish the held document at its supplied version, with the last
+    ///   full-text change winning. An empty change list preserves text. Close
+    ///   forgets the named document and publishes a versionless empty
+    ///   diagnostic list, even for an unknown URI. Unknown, malformed and
+    ///   out-of-phase notifications leave documents alone.
+    /// - provides: document synchronization and termination.
+    /// - fails: unreadable parameters and changes to unknown documents are
+    ///   ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — open/change/close, empty change lists, unknown URIs,
+    ///   malformed notifications and each lifecycle phase distinguish extra
+    ///   responses, wrong versions and destructive updates through exact token
+    ///   streams, publications and endings.
+    /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+    /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
+    /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+    #[anodized::spec(
+        captures: [phase = self.phase, count = self.documents.len()],
+        ensures: |ret| self.phase == phase && ret.messages.len() <= 1
+            && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
+            && if ret.messages.is_empty() { self.documents.len() == count } else {
+                phase == Phase::Running && ret.messages.iter().all(|message| match *message {
+                    Outgoing::Notification { ref params, .. } => match method.as_ref() {
+                        "textDocument/didOpen" | "textDocument/didChange" =>
+                            self.documents.get(&params.uri).is_some_and(|document| params.version == Some(document.version)),
+                        "textDocument/didClose" => params.version.is_none() && params.diagnostics.is_empty()
+                            && !self.documents.contains_key(&params.uri),
+                        _ => false,
+                    },
+                    _ => false,
+                })
+            },
+    )]
     fn notification(
         &mut self,
         method: &Method,
@@ -364,7 +447,30 @@ impl Server
     /// The tokens of the document at `uri` in `window`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an unknown URI and any range are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document yields a
+    ///   token stream, restricted to overlapping whole spans for a range
+    ///   request. Empty and inverted ranges yield an empty stream, not Nothing.
+    /// - provides: full and range token answers in document coordinates.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — known/unknown documents and empty, inverted, partial
+    ///   and whole ranges distinguish null from empty, clipping and delta
+    ///   shifts through exact wire streams for the known three-token document.
+    /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
+    /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
+    /// - witness: `server::tests::an_empty_range_yields_no_tokens`
+    /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
+    #[anodized::spec(ensures: |ret| match ret {
+        Answer::Nothing => !self.documents.contains_key(uri),
+        Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
+            && tokens.data.as_ref().len().is_multiple_of(5)
+            && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
+        Answer::Initialize(_) => false,
+    })]
     fn tokens(
         &self,
         uri: &DocumentUri,
@@ -393,7 +499,22 @@ impl Server
 /// The notification publishing the diagnostics of `document`, open at `uri`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a diagnostic notification names the supplied URI and held
+///   version, with the diagnostics obtained by rechecking the whole text.
+/// - provides: the publication shared by open and change notifications.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — opening and changing the known document, including a
+///   refusal and an empty change list, distinguish wrong URI, version and stale
+///   text through exact publications and subsequent token streams.
+/// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+/// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+#[anodized::spec(ensures: |ret| matches!(ret,
+    Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
+        if params.uri == *uri && params.version == Some(document.version)))]
 fn published(
     uri: &DocumentUri,
     document: &Document,
@@ -420,6 +541,9 @@ fn published(
 /// - fails: the first [`TransportFault`] of either stream, and
 ///   [`TransportFault::Encode`] for a message that does not encode.
 /// - panics: none.
+/// - executable: none — generic streams expose neither their consumed nor
+///   emitted transcript; the returned ending or fault cannot reconstruct
+///   lifecycle transitions, frame order or the failing stream operation.
 ///
 /// # Errors
 /// [`TransportFault`], as above.
@@ -475,7 +599,23 @@ mod tests
     /// The text `json` spells, parsed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: text is valid JSON accepted by the decoder.
+    /// - ensures: the decoded value preserves its JSON kind and content.
+    /// - provides: independent wire goldens for protocol assertions.
+    /// - fails: never in the valid domain.
+    /// - panics: rejected JSON violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — object and array goldens in lifecycle and token tests
+    ///   distinguish wrong shapes and values; primitive fields are read
+    ///   exactly.
+    /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
+    /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    #[anodized::spec(ensures: |ret| match text.trim_start().as_bytes().first().copied() {
+        Some(b'[') => ret.is_array(), Some(b'{') => ret.is_object(),
+        Some(b'"') => ret.is_string(), Some(b't' | b'f') => ret.is_boolean(),
+        Some(b'n') => ret.is_null(), _ => ret.is_number(),
+    })]
     fn wire(Json(text): Json<'_>) -> Value
     {
         serde_json::from_str(text).expect("a test's JSON parses")
@@ -485,7 +625,22 @@ mod tests
     /// JSON array.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; malformed bodies are admitted.
+    /// - ensures: serialized outgoing messages remain in order, with at most
+    ///   one response or publication and JSON-RPC version 2.0.
+    /// - provides: the protocol-visible result of one state-machine step.
+    /// - fails: never for the current serializable outgoing variants.
+    /// - panics: an unencodable outgoing value violates the serialization
+    ///   premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — capability, token, lifecycle and synchronization
+    ///   goldens distinguish lost, duplicate and misidentified messages.
+    /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
+    /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
+    #[anodized::spec(ensures: |ret| ret.as_array().is_some_and(|messages|
+        messages.len() <= 1 && messages.iter().all(|message|
+            message.get("jsonrpc").and_then(Value::as_str) == Some("2.0"))))]
     fn send(
         server: &mut Server,
         Json(text): Json<'_>,
@@ -505,7 +660,17 @@ mod tests
     /// A server that has answered `initialize`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the server is running with no open documents.
+    /// - provides: a session ready for document operations.
+    /// - fails: never.
+    /// - panics: an incorrect initialization response fails the witness.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — subsequent known-document requests distinguish a
+    ///   waiting or closed fixture from the required running state.
+    /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    #[anodized::spec(ensures: |ret| ret.phase == super::Phase::Running && ret.documents.is_empty())]
     fn initialized() -> Server
     {
         let mut server = Server::default();
@@ -525,7 +690,22 @@ mod tests
     /// declared name and a number, with `=` and `;` unclassified.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the running server holds only the known three-token document
+    ///   at its specified URI and text.
+    /// - provides: a fixed source for range and synchronization witnesses.
+    /// - fails: never.
+    /// - panics: an initialization failure fails the fixture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a pinned full token stream distinguishes changed text
+    ///   or an unopened fixture; range goldens distinguish incorrect URI
+    ///   lookup.
+    /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
+    #[anodized::spec(ensures: |ret| ret.phase == super::Phase::Running
+        && ret.documents.len() == 1
+        && ret.documents.values().all(|document| document.text == "def f = 42 ;\n"))]
     fn server_over_the_known_document() -> Server
     {
         let mut server = initialized();
@@ -543,7 +723,25 @@ mod tests
     /// The token stream a range request over the known document answers.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: range decodes as a protocol Range.
+    /// - ensures: the known document answers a token array in five-integer
+    ///   groups; the range selects whole overlapping spans in document
+    ///   coordinates.
+    /// - provides: the wire observation of a range request.
+    /// - fails: never in the valid domain.
+    /// - panics: a malformed range violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — whole, partial, touching, empty and inverted ranges
+    ///   distinguish clipping, shifted deltas and null answers through exact
+    ///   arrays.
+    /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
+    /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
+    /// - witness: `server::tests::an_empty_range_yields_no_tokens`
+    /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
+    #[anodized::spec(requires: serde_json::from_str::<crate::position::Range>(range).is_ok(),
+        ensures: |ret| ret.as_array().is_some_and(|integers|
+            integers.len().is_multiple_of(5) && integers.iter().all(Value::is_u64)))]
     fn ranged(Json(range): Json<'_>) -> Value
     {
         let mut server = server_over_the_known_document();
@@ -703,129 +901,127 @@ mod tests
     fn a_refused_program_is_published_as_an_editor_diagnostic()
     {
         let mut server = initialized();
-        assert_eq!(
-            send(
-                &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
-                        {"uri":"file:///tmp/refused.gandr","languageId":"gandr","version":3,
-                         "text":"def answer = 42 ;\ndef broken = missing ;\n"}}}"#
-                ),
+        let mut publication = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                {"uri":"file:///tmp/refused.gandr","languageId":"gandr","version":3,
+                 "text":"def answer = 42 ;\ndef broken = missing ;\n"}}}"#,
             ),
+        );
+        publication
+            .pointer_mut("/0/params/diagnostics/0")
+            .and_then(Value::as_object_mut)
+            .expect("a diagnostic object")
+            .remove("message");
+        assert_eq!(
+            publication,
             wire(Json(
                 r#"[{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{
-                    "uri":"file:///tmp/refused.gandr",
-                    "version":3,
-                    "diagnostics":[{
-                        "range":{"start":{"line":1,"character":13},
-                                 "end":{"line":1,"character":20}},
-                        "severity":1,
-                        "code":"UnresolvedName",
-                        "source":"gandr",
-                        "message":"no declaration or binder answers `missing` at 31..38"}]}}]"#
-            )),
-            "the refusal is one error at the name, coded with its vocabulary name"
+                "uri":"file:///tmp/refused.gandr","version":3,"diagnostics":[{
+                    "range":{"start":{"line":1,"character":13},"end":{"line":1,"character":20}},
+                    "severity":1,"code":"UnresolvedName","source":"gandr"}]}}]"#,
+            ))
         );
     }
 
     #[test]
     fn the_lifecycle_admits_requests_in_the_protocol_order()
     {
+        let assert_error = |messages: Value, id: Value, code: i64| {
+            assert_eq!(messages.as_array().map(Vec::len), Some(1_usize));
+            assert_eq!(
+                messages.pointer("/0/jsonrpc").and_then(Value::as_str),
+                Some("2.0")
+            );
+            assert_eq!(messages.pointer("/0/id"), Some(&id));
+            assert_eq!(
+                messages.pointer("/0/error/code").and_then(Value::as_i64),
+                Some(code)
+            );
+            assert!(messages.pointer("/0/result").is_none());
+        };
         let mut server = Server::default();
-        assert_eq!(
+        assert_error(
             send(
                 &mut server,
-                Json(r#"{"jsonrpc":"2.0","id":1,"method":"shutdown"}"#)
+                Json(r#"{"jsonrpc":"2.0","id":1,"method":"shutdown"}"#),
             ),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":1,"error":{"code":-32002,
-                     "message":"`shutdown` arrived before `initialize`"}}]"#
-            )),
-            "a request before initialize is refused as not initialized"
+            serde_json::json!(1_i32),
+            -32_002,
         );
         assert_eq!(
             send(
                 &mut server,
-                Json(r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{}}"#),
+                Json(r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{}}"#)
             ),
-            wire(Json("[]")),
-            "a notification before initialize is dropped"
+            serde_json::json!([])
         );
-        let _answered = send(
+        let initialized = send(
             &mut server,
-            Json(r#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{}}"#),
+            Json(r#"{"jsonrpc":"2.0","id":2,"method":"initialize"}"#),
         );
+        assert_eq!(
+            initialized
+                .pointer("/0/result/capabilities/positionEncoding")
+                .and_then(Value::as_str),
+            Some("utf-16")
+        );
+        for (request, id, code) in [
+            (
+                r#"{"jsonrpc":"2.0","id":3,"method":"initialize"}"#,
+                serde_json::json!(3_i32),
+                -32_600_i64,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full","params":{}}"#,
+                serde_json::json!(4_i32),
+                -32_602,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":5,"method":"textDocument/semanticTokens/range","params":{}}"#,
+                serde_json::json!(5_i32),
+                -32_602,
+            ),
+            (
+                r#"{"jsonrpc":"2.0","id":"correlation","method":"unknown"}"#,
+                serde_json::json!("correlation"),
+                -32_601,
+            ),
+        ] {
+            assert_error(send(&mut server, Json(request)), id, code);
+        }
+        assert_eq!(server.closed(), Served::Abrupt);
         assert_eq!(
             send(
                 &mut server,
-                Json(r#"{"jsonrpc":"2.0","id":3,"method":"initialize","params":{}}"#),
+                Json(r#"{"jsonrpc":"2.0","id":8,"method":"shutdown","params":null}"#)
             ),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":3,"error":{"code":-32600,
-                     "message":"`initialize` was already answered"}}]"#
-            )),
-            "a second initialize is an invalid request"
+            serde_json::json!([{"jsonrpc":"2.0","id":8_i32,"result":null}])
         );
-        assert_eq!(
+        assert_error(
             send(
                 &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":4,"method":"textDocument/semanticTokens/full",
-                        "params":{}}"#
-                ),
+                Json(r#"{"jsonrpc":"2.0","id":9,"method":"initialize"}"#),
             ),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":4,"error":{"code":-32602,
-                     "message":"missing field `textDocument`"}}]"#
-            )),
-            "parameters the method cannot read are invalid"
+            serde_json::json!(9_i32),
+            -32_600,
         );
-        assert_eq!(
-            send(
-                &mut server,
-                Json(r#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":4}}"#),
-            ),
-            wire(Json("[]")),
-            "a `$/` notification is ignored"
-        );
-        assert_eq!(
-            server.closed(),
-            Served::Abrupt,
-            "closing before shutdown is abrupt"
-        );
-        assert_eq!(
-            send(
-                &mut server,
-                Json(r#"{"jsonrpc":"2.0","id":5,"method":"shutdown","params":null}"#)
-            ),
-            wire(Json(r#"[{"jsonrpc":"2.0","id":5,"result":null}]"#)),
-            "shutdown answers null"
-        );
-        assert_eq!(
-            send(
-                &mut server,
-                Json(
-                    r#"{"jsonrpc":"2.0","id":6,"method":"textDocument/semanticTokens/full",
-                        "params":{}}"#
-                ),
-            ),
-            wire(Json(
-                r#"[{"jsonrpc":"2.0","id":6,"error":{"code":-32600,
-                     "message":"`textDocument/semanticTokens/full` arrived after `shutdown`"}}]"#
-            )),
-            "a request after shutdown is an invalid request"
-        );
+        assert_eq!(server.closed(), Served::Clean);
         let exit = Body::from(br#"{"jsonrpc":"2.0","method":"exit"}"#.to_vec());
-        assert_eq!(
-            server.handle(&exit).flow,
-            Flow::Exit(Served::Clean),
-            "exit after shutdown ends the session cleanly"
-        );
-        assert_eq!(
-            Server::default().handle(&exit).flow,
-            Flow::Exit(Served::Abrupt),
-            "exit before shutdown ends it abruptly"
-        );
+        for (phase, expected) in [
+            (super::Phase::Waiting, Served::Abrupt),
+            (super::Phase::Running, Served::Abrupt),
+            (super::Phase::ShuttingDown, Served::Clean),
+        ] {
+            let mut server = Server {
+                phase,
+                ..Server::default()
+            };
+            let outcome = server.handle(&exit);
+            assert_eq!(outcome.flow, Flow::Exit(expected));
+            assert!(outcome.messages.is_empty());
+        }
     }
 
     #[test]
@@ -875,5 +1071,76 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
         );
+    }
+    #[test]
+    fn ignored_messages_and_empty_changes_preserve_document_text()
+    {
+        let mut server = server_over_the_known_document();
+        let tokens = Json(
+            r#"{"jsonrpc":"2.0","id":9,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#,
+        );
+        let expected = wire(Json("[0,0,3,0,0,0,4,1,2,1,0,4,2,9,0]"));
+        for ignored in [
+            r#"{"jsonrpc":"2.0","id":10,"result":null}"#,
+            r#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":9}}"#,
+            r#"{"jsonrpc":"2.0","method":"unknown"}"#,
+            r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/example.gandr","version":2,"text":3}}}"#,
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/example.gandr","version":2},"contentChanges":3}}"#,
+            r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/unknown.gandr","version":2},"contentChanges":[{"text":""}]}}"#,
+            r#"{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":3}}}"#,
+        ] {
+            assert_eq!(send(&mut server, Json(ignored)), serde_json::json!([]));
+            assert_eq!(
+                send(&mut server, tokens).pointer("/0/result/data"),
+                Some(&expected)
+            );
+        }
+        let changed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/example.gandr","version":17},"contentChanges":[]}}"#,
+            ),
+        );
+        assert_eq!(
+            changed.pointer("/0/params/version"),
+            Some(&serde_json::json!(17_i32))
+        );
+        assert_eq!(
+            changed.pointer("/0/params/diagnostics"),
+            Some(&serde_json::json!([]))
+        );
+        assert_eq!(
+            send(&mut server, tokens).pointer("/0/result/data"),
+            Some(&expected)
+        );
+        let closed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":"file:///tmp/unknown.gandr"}}}"#,
+            ),
+        );
+        assert_eq!(
+            closed.pointer("/0/params/diagnostics"),
+            Some(&serde_json::json!([]))
+        );
+        assert!(closed.pointer("/0/params/version").is_none());
+        assert_eq!(
+            send(&mut server, tokens).pointer("/0/result/data"),
+            Some(&expected)
+        );
+        let _shutdown = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":11,"method":"shutdown"}"#),
+        );
+        assert_eq!(
+            send(
+                &mut server,
+                Json(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/new.gandr","version":1,"text":""}}}"#
+                )
+            ),
+            serde_json::json!([])
+        );
+        assert_eq!(server.closed(), Served::Clean);
     }
 }
