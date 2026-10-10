@@ -17,6 +17,7 @@
 //! - `an_eta_step_replays` pins that a recorded η step re-executes, so the cell
 //!   is inside the replay discipline rather than beside it.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellProvenance;
 use gandr_theory_cell_complexes::CellStore;
@@ -212,7 +213,20 @@ fn an_eta_step_replays()
 /// loop rather than a short ceiling.
 ///
 /// # Specification
-/// - panics: when the budget runs out, which is a fixture defect.
+/// - ensures: returns the completed normalization, never an exhausted prefix.
+/// - panics: when normalization exhausts its fixture budget.
+///
+/// # Adequacy
+/// - hypothesis: L3 over positive and negative eta peaks observes independently
+///   equal normal forms and replayed traces. The predicate rejects an exhausted
+///   prefix; the witnesses distinguish treating an intermediate term as a
+///   normal form. No unbounded termination claim is made.
+/// - witness: `tests::eta::the_two_routes_out_of_the_eta_redex_agree`
+/// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+/// - witness: `tests::eta::the_eta_cell_reaches_a_redex_the_projection_route_cannot`
+#[spec(
+    ensures: |ret| !bool::from(ret.exhausted),
+)]
 fn normal(
     store: &CellStore,
     term: &CmdPat,
@@ -244,7 +258,37 @@ fn eta_redex(polarity: Polarity) -> CmdPat
 /// takes the η route.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: copies each selected live cell once, in first-selection order,
+///   then every unselected cell in insertion order; stale selections are
+///   ignored.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact cell order with empty, duplicate and stale
+///   selections, then the resulting eta-first reduction route. These boundaries
+///   distinguish omitted cells, repeated cells, reordered remainder and
+///   stale-identifier insertion.
+/// - witness: `tests::eta::the_two_routes_out_of_the_eta_redex_agree`
+/// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+/// - witness: `tests::eta::the_eta_cell_reaches_a_redex_the_projection_route_cannot`
+/// - witness: `tests::eta::store_helpers_preserve_subset_order_and_ignore_repeated_ids`
+#[spec(
+    ensures: |ret| {
+    let selected = eta_ids
+        .iter()
+        .enumerate()
+        .filter(|&(index, id)| eta_ids.iter().take(index).all(|earlier| earlier != id))
+        .filter_map(|(_, &id)| match store.get(id) {
+            Maybe::Present(cell) => Some(cell),
+            Maybe::Absent(_) => None,
+        });
+    let rest = store
+        .iter()
+        .filter(|&(id, _)| !eta_ids.contains(&id))
+        .map(|(_, cell)| cell);
+    ret.iter().map(|(_, cell)| cell).eq(selected.chain(rest))
+},
+)]
 fn store_with_eta_first(
     store: &CellStore,
     eta_ids: &[CellId],
@@ -267,7 +311,28 @@ fn store_with_eta_first(
 /// A copy of `store` without the cells at `dropped`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: copies exactly the cells whose identifiers are not selected,
+///   retaining insertion order; stale and repeated selections have no
+///   additional effect.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact retained cells for empty, duplicate and
+///   stale selections, then the eta-free projection route. Extra deletion,
+///   retained selected cells and remainder reversal change the observed
+///   sequence or normal form.
+/// - witness: `tests::eta::the_two_routes_out_of_the_eta_redex_agree`
+/// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+/// - witness: `tests::eta::the_eta_cell_reaches_a_redex_the_projection_route_cannot`
+/// - witness: `tests::eta::store_helpers_preserve_subset_order_and_ignore_repeated_ids`
+#[spec(
+    ensures: |ret| {
+    ret
+        .iter()
+        .map(|(_, cell)| cell)
+        .eq(store.iter().filter(|&(id, _)| !dropped.contains(&id)).map(|(_, cell)| cell))
+},
+)]
 fn store_without(
     store: &CellStore,
     dropped: &[CellId],
@@ -285,7 +350,25 @@ fn store_without(
 /// The identifier of the store's η cell.
 ///
 /// # Specification
-/// - panics: when the store holds none, which is a fixture defect.
+/// - ensures: returns the first stored eta cell identifier.
+/// - panics: when the store has no eta cell.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the eta identifier before and after reordering a
+///   store and the ensuing rewrite at both polarities. Returning a frame or
+///   projection cell changes the selected step; an eta-free store must refuse
+///   the fixture lookup.
+/// - witness: `tests::eta::a_data_eta_cell_does_not_fire_at_a_negative_cut`
+/// - witness: `tests::eta::a_codata_eta_cell_does_not_fire_at_a_positive_cut`
+/// - witness: `tests::eta::store_helpers_preserve_subset_order_and_ignore_repeated_ids`
+#[spec(
+    ensures: |ret| {
+    store
+        .iter()
+        .find(|&(_, cell)| matches!(cell.provenance(), CellProvenance::Eta(_)))
+        .is_some_and(|(id, _)| id == ret)
+},
+)]
 fn eta_id(store: &CellStore) -> CellId
 {
     store
@@ -299,8 +382,44 @@ fn eta_id(store: &CellStore) -> CellId
 /// `unwrap` operation carries the inverse face, with the η cells it minted.
 ///
 /// # Specification
-/// - panics: when the declaration does not elaborate whole or mints no η cell,
-///   which is a fixture defect.
+/// - ensures: returns the complete wrapper declaration store and its one eta
+///   identifier, with all cells at the declaration polarity.
+/// - panics: when elaboration declines a member or does not license eta.
+///
+/// # Adequacy
+/// - hypothesis: L3 over both declaration polarities observes exact eta and
+///   projection normal forms, replay and opposite-polarity refusal. Missing
+///   licences, wrong identifiers and a fixed positive polarity violate these
+///   consumers.
+/// - witness: `tests::eta::the_two_routes_out_of_the_eta_redex_agree`
+/// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+/// - witness: `tests::eta::the_eta_cell_reaches_a_redex_the_projection_route_cannot`
+/// - witness: `tests::eta::a_data_eta_cell_does_not_fire_at_a_negative_cut`
+/// - witness: `tests::eta::a_codata_eta_cell_does_not_fire_at_a_positive_cut`
+#[spec(
+    ensures: |ret| {
+    ret.1.len() == 1
+        && ret
+            .1
+            .iter()
+            .all(|&id| {
+                matches!(
+                    ret.0.get(id), Maybe::Present(cell) if matches!(cell.provenance(),
+                    CellProvenance::Eta(_))
+                )
+            })
+        && ret
+            .0
+            .iter()
+            .all(|(_, cell)| {
+                cell.polarity()
+                    == match polarity {
+                        DeclPolarity::Data => Polarity::Positive,
+                        DeclPolarity::Codata => Polarity::Negative,
+                    }
+            })
+},
+)]
 fn wrapper_store(polarity: DeclPolarity) -> (CellStore, Vec<CellId>)
 {
     let desc: SignDesc<Ungraded> = SignDesc::new(
@@ -337,4 +456,35 @@ fn wrapper_store(polarity: DeclPolarity) -> (CellStore, Vec<CellId>)
         );
     };
     (elaborated.store, eta)
+}
+
+#[test]
+fn store_helpers_preserve_subset_order_and_ignore_repeated_ids()
+{
+    let (store, ids) = wrapper_store(DeclPolarity::Data);
+    let mut cells = store.iter();
+    let (frame_id, frame) = cells.next().expect("constructor frame");
+    let (rule_id, rule) = cells.next().expect("projection rule");
+    let (eta, eta_cell) = cells.next().expect("eta law");
+    assert_eq!(ids, [eta]);
+    let missing = CellId::from(usize::MAX);
+    let reordered = store_with_eta_first(&store, &[eta, eta, missing]);
+    assert!(
+        reordered
+            .iter()
+            .map(|(_, cell)| cell)
+            .eq([eta_cell, frame, rule])
+    );
+    assert_eq!(CellId::from(0_usize), eta_id(&reordered));
+    assert_eq!(store, store_with_eta_first(&store, &[]));
+    assert_eq!(store, store_without(&store, &[]));
+    assert!(
+        store_without(&store, &[rule_id, rule_id, missing])
+            .iter()
+            .map(|(_, cell)| cell)
+            .eq([frame, eta_cell])
+    );
+    let no_eta = store_without(&store, &[eta, frame_id]);
+    assert!(no_eta.iter().map(|(_, cell)| cell).eq([rule]));
+    assert!(std::panic::catch_unwind(|| eta_id(&no_eta)).is_err());
 }

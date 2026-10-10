@@ -59,6 +59,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellProvenance;
@@ -66,12 +67,14 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CellVariance;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
+use gandr_theory_cell_complexes::ConsView;
 use gandr_theory_cell_complexes::EtaKind;
 use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_cell_complexes::NonLinearPattern;
 use gandr_theory_cell_complexes::Orientation;
 use gandr_theory_cell_complexes::Polarity;
 use gandr_theory_cell_complexes::ProdPat;
+use gandr_theory_cell_complexes::ProdView;
 use gandr_theory_cell_complexes::Sym;
 use gandr_theory_cell_complexes::admit_linear_cell;
 use gandr_theory_cell_complexes::frame_defining_cell;
@@ -96,13 +99,58 @@ use crate::boundary::OperationInputCount;
 
 /// The reserved return-continuation hole a rule's cut binds; the `$` prefix
 /// keeps it apart from every conventionally spelled pattern variable.
+///
+/// # Specification
+/// - provides: the return continuation is distinct from the eta producer hole
+///   and may conflict with a written producer variable only through the
+///   mixed-polarity admission refusal.
+/// - executable: none — a constant has no callable boundary; collision
+///   rejection and generated-hole separation are checked by the admission and
+///   eta predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 compares an ordinary producer variable with a variable
+///   using the reserved continuation spelling. Exact mixed-polarity refusal and
+///   eta faces distinguish accidental aliasing and using the return hole as the
+///   observed producer.
+/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+/// - witness: `elaborate::tests::a_wrapper_description_mints_its_eta_cell`
 const RETURN_CONT: &str = "$ret";
 
 /// The reserved producer hole an η cell observes and hands back.
+///
+/// # Specification
+/// - provides: eta cells use one producer hole distinct from the return
+///   continuation, preserving it across both faces.
+/// - executable: none — a constant has no callable boundary; the eta-cell
+///   predicate checks its role and separation from the return continuation.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact data and codata eta faces: the producer hole
+///   survives contraction and differs from the return hole. A swapped or
+///   conflated role changes the command tree or its mixed-polarity metadata.
+/// - witness: `elaborate::tests::a_wrapper_description_mints_its_eta_cell`
+/// - witness: `elaborate::tests::a_codata_declaration_mints_its_eta_cell_at_a_negative_cut`
 const ETA_OBSERVED: &str = "$eta";
 
 /// Why a face could not be elaborated into a command cell, or could not be
 /// admitted once elaborated.
+///
+/// # Specification
+/// - provides: face admission distinguishes operation gates, fragment shapes,
+///   copying and mixed polarity; circuit admission checks composite existence
+///   first.
+/// - executable: none — the error value lacks the originating face, store and
+///   earlier-stage verdicts needed to validate its classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes typed refusals on competing bad face shapes,
+///   copying and mixed-polarity holes, and a non-composite circuit with a bad
+///   sphere. Exact variants and payloads distinguish collapsed error classes
+///   and reversed stage precedence.
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+/// - witness: `elaborate::tests::circuit_composite_refusal_precedes_a_bad_sphere`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ElaborateError
 {
@@ -163,6 +211,20 @@ impl From<MixedPolarityHole> for ElaborateError
 /// The hole is the first of the cell's holes whose occurrences include both a
 /// producer and a consumer, across both faces. Its rendering names the hole and
 /// the respelling, as the copy diagnostic does.
+///
+/// # Specification
+/// - provides: the admission refusal identifies the first mixed hole in
+///   metadata occurrence order, not name order.
+/// - executable: none — the refusal holds a name, not the source cell or its
+///   occurrence order; its producer checks that relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the refusal from a cell with both faults and from
+///   two mixed names whose occurrence order opposes lexical order. Exact hole
+///   identity distinguishes copy/polarity confusion, sorting and
+///   last-occurrence selection.
+/// - witness: `elaborate::tests::mixed_polarity_refusal_names_the_first_occurrence`
+/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MixedPolarityHole
@@ -190,15 +252,21 @@ impl fmt::Display for MixedPolarityHole
     /// Names the hole and the respelling.
     ///
     /// # Specification
-    /// - ensures: the rendering names the hole, states that it joins a pattern
-    ///   variable to a continuation, names the reserved spellings that reach
-    ///   the seam, and says to rename the variable.
+    /// - ensures: renders the mixed hole and explains the producer/consumer
+    ///   conflict and reserved-name remedy; propagates the formatting sink’s
+    ///   refusal.
     /// - panics: none.
+    /// - executable: none — Formatter exposes neither emitted text nor the sink
+    ///   state; a postcondition cannot inspect the output or predict its write
+    ///   refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the rendering of one refused seam is asserted to name
-    ///   the hole and the respelling, and to differ from the copy diagnostic.
-    /// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+    /// - hypothesis: L3 observes discriminating hole, identifier and
+    ///   constructor-count payloads through a string sink and error propagation
+    ///   through a refusing sink. The two eta reasons are exercised separately;
+    ///   punctuation and explanatory wording are intentionally unconstrained by
+    ///   tests.
+    /// - witness: `elaborate::tests::diagnostics_retain_payloads_and_propagate_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -227,6 +295,21 @@ impl core::error::Error for MixedPolarityHole
 /// operation frame expresses: one frame carries exactly one producer-argument
 /// list and exactly one return continuation, so the only arity it holds is the
 /// one-monomial, one-output shape.
+///
+/// # Specification
+/// - provides: operation admission distinguishes zero, multiple and singly
+///   aggregated outputs in that order.
+/// - executable: none — the refusal carries no source arity table from which to
+///   decide its case; `admit_op` checks the classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes zero, one and multiple outputs and zero, one and
+///   multiple monomials. Exact refusal variants distinguish collapsed arity
+///   classes; the admitted zero-input boundary separates signature admission
+///   from face elaboration.
+/// - witness: `elaborate::tests::an_aggregating_arity_and_an_outputless_one_are_declined_apart`
+/// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
+/// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OpElaborateError
 {
@@ -245,9 +328,24 @@ pub enum OpElaborateError
 /// A declared operation the cell layer admits: the symbol its applications
 /// cut against, and how many input ports it reads.
 ///
-/// The elaborated operation frame carries one fewer producer argument than
-/// `inputs`, because a rule's first argument is the matched producer the cut is
-/// against.
+/// A nonempty operation application cuts its first producer against the
+/// frame; remaining producers become frame arguments. A zero-input signature
+/// can pass arity admission, but its empty application has no matched producer.
+///
+/// # Specification
+/// - provides: an admitted operation retains its declared symbol and input
+///   count; admissible output arity does not guarantee a nonempty operation
+///   application.
+/// - executable: none — the record lacks its source operation and arity table;
+///   `admit_op` checks symbol and input-count preservation.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes admitted symbols and declared input counts on
+///   zero-input and binary signatures. Dropped arguments or treating arity
+///   admission as proof of an inhabitable operation cut changes the boundary
+///   outcome.
+/// - witness: `elaborate::tests::an_admitted_operation_reports_its_declared_inputs`
+/// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OpFrame
 {
@@ -258,6 +356,21 @@ pub struct OpFrame
 }
 
 /// One circuit rule member's elaboration, in declaration order.
+///
+/// # Specification
+/// - provides: an elaboration report retains the admitted sphere identifier and
+///   body composite, or the earliest refusal.
+/// - executable: none — the outcome alone lacks the store and circuit body
+///   needed to validate its identifier, composite or refusal precedence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes an admitted single-redex composite and refusals
+///   for two redexes and a bad sphere. Stored identity, retained composite and
+///   unchanged store distinguish partial admission and sphere-before-composite
+///   evaluation.
+/// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
+/// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
+/// - witness: `elaborate::tests::circuit_composite_refusal_precedes_a_bad_sphere`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CircuitElaboration
 {
@@ -279,6 +392,20 @@ pub enum CircuitElaboration
 /// An η law says a destructor and the constructor it inverts cancel. A
 /// declaration licenses one only when it states both halves, so each variant
 /// names a missing half rather than a failure to elaborate.
+///
+/// # Specification
+/// - provides: eta licensing first distinguishes non-singleton constructor
+///   counts, then the absence of an admitted inverse operation.
+/// - executable: none — the error lacks the declaration and operation-admission
+///   results needed to validate the missing licence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact constructor-count payloads at zero and two
+///   constructors, and a one-constructor description with no inverse face.
+///   Wrong counts and checking inverse faces before constructor cardinality
+///   change the refusal.
+/// - witness: `elaborate::tests::eta_licences_preserve_operation_order_and_decline_atomically`
+/// - witness: `elaborate::tests::a_multi_constructor_description_declines_its_eta_cell`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EtaElaborateError
 {
@@ -296,7 +423,21 @@ impl fmt::Display for EtaElaborateError
     /// Names the missing half of the η licence.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: explains the missing eta licence, retaining a non-singleton
+    ///   constructor count when present; propagates the formatting sink’s
+    ///   refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes neither emitted text nor the sink
+    ///   state; a postcondition cannot inspect the output or predict its write
+    ///   refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes discriminating hole, identifier and
+    ///   constructor-count payloads through a string sink and error propagation
+    ///   through a refusing sink. The two eta reasons are exercised separately;
+    ///   punctuation and explanatory wording are intentionally unconstrained by
+    ///   tests.
+    /// - witness: `elaborate::tests::diagnostics_retain_payloads_and_propagate_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -325,6 +466,20 @@ impl core::error::Error for EtaElaborateError
 }
 
 /// The η cells a declaration minted, or why it minted none.
+///
+/// # Specification
+/// - provides: successful eta licensing reports a nonempty list of stored cell
+///   identifiers in operation order, with structural identity reuse.
+/// - executable: none — the identifier list lacks its store and declaration, so
+///   it cannot validate membership, polarity or licensing on its own.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes one and multiple licensed operations, a declined
+///   operation with an inverse-shaped face, and repeated minting. Exact
+///   identifiers and order distinguish omitted licences, duplicate insertion
+///   and minted cells outside the store.
+/// - witness: `elaborate::tests::eta_licences_preserve_operation_order_and_decline_atomically`
+/// - witness: `elaborate::tests::a_wrapper_description_mints_its_eta_cell`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EtaElaboration
 {
@@ -336,6 +491,21 @@ pub enum EtaElaboration
 
 /// The cell-layer elaboration of one whole description: what reached the
 /// store, and everything that did not.
+///
+/// # Specification
+/// - provides: elaboration reports admitted cells and operations beside every
+///   indexed refusal and one circuit outcome per member, preserving declaration
+///   order.
+/// - executable: none — the record lacks the originating declaration needed to
+///   validate completeness, indices and declaration order.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes empty and mixed declarations plus data/codata
+///   circuit and eta cells. Indexed declines, retained operation order and
+///   exact store membership distinguish dropped members, renumbered refusals
+///   and polarity collapse.
+/// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
+/// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DescElaboration
 {
@@ -389,21 +559,50 @@ pub struct DescElaboration
 ///   bypass the admission seam.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the operation pass is separated from the face pass by a
-///   description whose only operation is admitted and one whose only operation
-///   is many-out; the face refusals are separated pointwise (fragment shape,
-///   operation gate, copy, mixed polarity, circuit composite); the polarity
-///   clause by a `codata` declaration whose every cell cuts negative and whose
-///   η critical pair joins.
+/// - hypothesis: L3 over unchecked descriptions observes operation partition,
+///   indexed declines, circuit cardinality, cell identities and both cut
+///   polarities. Empty descriptions, mixed accepted/refused operations and
+///   faces, duplicate cells, and data/codata eta licences separate omission,
+///   reordering, wrong indices and wrong-polarity mutations. Runtime predicates
+///   check report shape and polarity; exact cell witnesses cover content and
+///   admission order.
 /// - witness: `elaborate::tests::a_whole_description_elaborates_frame_and_rule_cells`
 /// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
-/// - witness: `elaborate::tests::an_admitted_operation_reports_its_declared_inputs`
-/// - witness: `elaborate::tests::a_description_whose_rule_copies_a_hole_is_refused`
-/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
 /// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
 /// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
-/// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+/// - witness: `elaborate::tests::empty_descriptions_and_mixed_reports_preserve_declaration_indices`
+#[spec(
+    ensures: |ret| {
+    ret.opers.len().saturating_add(ret.declined_opers.len()) == desc.opers.len()
+        && ret.circuits.len() == desc.circuits.len()
+        && ret
+            .declined_opers
+            .iter()
+            .all(|&(index, _)| usize::from(index) < desc.opers.len())
+        && ret
+            .declined_faces
+            .iter()
+            .all(|&(index, _)| usize::from(index) < desc.rules.len())
+        && ret
+            .declined_opers
+            .iter()
+            .zip(ret.declined_opers.iter().skip(1))
+            .all(|(left, right)| left.0 < right.0)
+        && ret
+            .declined_faces
+            .iter()
+            .zip(ret.declined_faces.iter().skip(1))
+            .all(|(left, right)| left.0 < right.0)
+        && ret
+            .store
+            .iter()
+            .all(|(_, cell)| {
+                cell.lhs().polarity() == cut_polarity(desc.polarity)
+                    && cell.rhs().polarity() == cut_polarity(desc.polarity)
+            })
+},
+)]
 #[inline]
 #[must_use]
 pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
@@ -462,6 +661,33 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over supported and refused faces observes exact inserted
+///   cells, deduplication and an unchanged nonempty store on refusal. Declined
+///   operations, bad outer shape, copied holes and mixed polarity separate
+///   stage precedence and partial insertion; the predicate checks atomicity and
+///   successful-cell metadata.
+/// - witness: `elaborate::tests::face_admission_is_atomic_and_deduplicates`
+/// - witness: `elaborate::tests::operation_gate_precedes_shape_and_scans_both_faces`
+/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+#[spec(
+    captures: before = usize::from(store.len()),
+    ensures: |ret| {
+    if ret.is_err() {
+        usize::from(store.len()) == before
+    } else {
+        (usize::from(store.len()) == before
+            || usize::from(store.len()) == before.saturating_add(1))
+            && store
+                .iter()
+                .any(|(_, cell)| {
+                    cell.provenance() == CellProvenance::SurfaceRule
+                        && cell.polarity() == cut_polarity(polarity)
+                })
+    }
+},
+)]
 fn admit_face(
     store: &mut CellStore,
     face: &RuleFace,
@@ -490,14 +716,31 @@ fn admit_face(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the composite condition is decided before the face
-///   conditions, so a two-redex body whose sphere would elaborate and a
-///   frames-only body whose sphere copies a hole separate the two halves, and a
-///   body over a declined operation reaches the operation gate.
+/// - hypothesis: L3 over single-composite and rejected circuit bodies observes
+///   the stored sphere, retained composite and unchanged store on decline.
+///   Single/two-redex bodies, copied sphere and declined operation separate
+///   composite-before-sphere precedence, partial insertion and wrong-cell
+///   metadata. Concrete witnesses compare the admitted identity and composite.
 /// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
 /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
 /// - witness: `elaborate::tests::a_circuit_rule_whose_boundary_copies_a_hole_is_refused`
 /// - witness: `elaborate::tests::a_circuit_rule_applying_a_declined_operation_is_declined_at_the_gate`
+/// - witness: `elaborate::tests::circuit_composite_refusal_precedes_a_bad_sphere`
+#[spec(
+    captures: before = usize::from(store.len()),
+    ensures: |ret| match ret {
+    CircuitElaboration::Admitted { cell, .. } => {
+        matches!(
+            store.get(cell), quenchant_shape::shape::Maybe::Present(stored) if stored
+            .provenance() == CellProvenance::SurfaceRule && stored.polarity() ==
+            cut_polarity(polarity)
+        )
+            && (usize::from(store.len()) == before
+                || usize::from(store.len()) == before.saturating_add(1))
+    }
+    CircuitElaboration::Declined(_) => usize::from(store.len()) == before,
+},
+)]
 fn admit_circuit_rule(
     store: &mut CellStore,
     rule: &CircuitRule,
@@ -548,16 +791,42 @@ fn admit_circuit_rule(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the two declines are separated by a description with two
-///   constructors and one with a single constructor whose operation carries no
-///   inverse face; minting by a single-constructor description whose operation
-///   carries it, at both polarities, whose cell is shown joinable with the
-///   projection route at each.
+/// - hypothesis: L3 over descriptions with zero, one and multiple constructors
+///   observes exact licence refusals, minted identifiers, operation order,
+///   polarity and unchanged stores on decline. Missing, rejected and multiple
+///   inverse operations separate invented eta laws, skipped licences and
+///   wrong-kind mutations. Syntactic inverse recognition is distinct from
+///   admission of its written face.
 /// - witness: `elaborate::tests::a_wrapper_description_mints_its_eta_cell`
 /// - witness: `elaborate::tests::a_codata_declaration_mints_its_eta_cell_at_a_negative_cut`
 /// - witness: `elaborate::tests::a_multi_constructor_description_declines_its_eta_cell`
 /// - witness: `elaborate::tests::an_operation_with_no_inverse_face_licenses_no_eta_cell`
-/// - witness: `tests::eta::the_two_routes_out_of_the_eta_redex_agree`
+/// - witness: `elaborate::tests::the_inverse_face_is_recognized_by_its_shape_and_nothing_looser`
+/// - witness: `elaborate::tests::eta_licences_preserve_operation_order_and_decline_atomically`
+#[spec(
+    captures: before = usize::from(store.len()),
+    ensures: |ret| match ret {
+    EtaElaboration::Minted(ref ids) => {
+        desc.ctors.len() == 1 && !ids.is_empty()
+            && ids
+                .iter()
+                .all(|&id| {
+                    matches!(
+                        store.get(id), quenchant_shape::shape::Maybe::Present(cell) if
+                        cell.provenance() == CellProvenance::Eta(eta_kind(desc.polarity))
+                        && cell.polarity() == cut_polarity(desc.polarity)
+                    )
+                })
+    }
+    EtaElaboration::Declined(EtaElaborateError::NotSingleConstructor(count)) => {
+        usize::from(count) == desc.ctors.len() && desc.ctors.len() != 1
+            && usize::from(store.len()) == before
+    }
+    EtaElaboration::Declined(EtaElaborateError::NoInverseFace) => {
+        desc.ctors.len() == 1 && usize::from(store.len()) == before
+    }
+},
+)]
 fn mint_eta_cells<G>(
     store: &mut CellStore,
     desc: &SignDesc<G>,
@@ -595,6 +864,21 @@ fn mint_eta_cells<G>(
 /// - ensures: positive exactly when some face is the inverse face
 ///   ([`is_inverse_face`]).
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 over empty, non-inverse and mixed face lists observes
+///   existence for the requested operation and constructor. Multiple inverse
+///   operations and rejected shapes distinguish universal quantification,
+///   wrong-name lookup and first-face-only mutations.
+/// - witness: `elaborate::tests::the_inverse_face_is_recognized_by_its_shape_and_nothing_looser`
+/// - witness: `elaborate::tests::eta_licences_preserve_operation_order_and_decline_atomically`
+/// - witness: `elaborate::tests::an_operation_with_no_inverse_face_licenses_no_eta_cell`
+#[spec(
+    ensures: |ret| {
+    bool::from(ret)
+        == desc.rules.iter().any(|face| bool::from(is_inverse_face(face, op, ctor)))
+},
+)]
 fn inverts<G>(
     desc: &SignDesc<G>,
     op: &Name,
@@ -617,11 +901,41 @@ fn inverts<G>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the licence is a shape, so each way a face can miss it is
-///   separated pointwise: another operation, a variable or another constructor
-///   as the argument, a non-variable field, another or a non-variable result, a
-///   second operation argument, and a second constructor field.
+/// - hypothesis: L3 over arbitrary faces observes the exact unary
+///   operation/constructor/variable identity relation. Wrong heads, zero or
+///   multiple arguments, non-variable fields and unequal results distinguish
+///   each dropped conjunct; an inverse face with a reserved spelling separates
+///   syntactic licensing from the admission seam.
 /// - witness: `elaborate::tests::the_inverse_face_is_recognized_by_its_shape_and_nothing_looser`
+/// - witness: `elaborate::tests::inverse_licensing_rejects_nullary_and_nonoperation_faces`
+#[spec(
+    ensures: |ret| {
+    bool::from(ret)
+        == match (face.lhs.view(), face.rhs.view()) {
+            (
+                TermView::Op { name, mut args },
+                TermView::Var(result),
+            ) if name == op && args.len() == 1 => {
+                args.next()
+                    .is_some_and(|argument| match argument.view() {
+                        TermView::Ctor {
+                            name,
+                            mut args,
+                        } if name == ctor && args.len() == 1 => {
+                            args.next()
+                                .is_some_and(|field| {
+                                    matches!(
+                                        field.view(), TermView::Var(variable) if variable == result
+                                    )
+                                })
+                        }
+                        _ => false,
+                    })
+            }
+            _ => false,
+        }
+},
+)]
 fn is_inverse_face(
     face: &RuleFace,
     op: &Name,
@@ -666,6 +980,40 @@ fn is_inverse_face(
 ///   right-hand side drops both, whose cut is `kind`'s required polarity, and
 ///   whose provenance is [`CellProvenance::Eta`] at `kind`.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 at both eta kinds observes exact producer identity,
+///   operation and constructor frames, return continuation, orientation and
+///   provenance. Data/codata firings and opposite-polarity refusals distinguish
+///   swapped symbols, expanded rather than contracted faces and wrong-kind
+///   licences.
+/// - witness: `elaborate::tests::a_wrapper_description_mints_its_eta_cell`
+/// - witness: `elaborate::tests::a_codata_declaration_mints_its_eta_cell_at_a_negative_cut`
+/// - witness: `tests::eta::a_data_eta_cell_does_not_fire_at_a_negative_cut`
+/// - witness: `tests::eta::a_codata_eta_cell_does_not_fire_at_a_positive_cut`
+#[spec(
+    ensures: |ret| {
+    ret.orient() == Orientation::PolarityDerived
+        && ret.provenance() == CellProvenance::Eta(kind)
+        && ret.lhs().polarity() == kind.required_polarity()
+        && ret.rhs().polarity() == kind.required_polarity()
+        && matches!(
+            ret.lhs().producer().view(), ProdView::Meta(var) if var.hole().as_ref() ==
+            ETA_OBSERVED
+        ) && ret.lhs().producer() == ret.rhs().producer()
+        && matches!(
+            ret.rhs().consumer().view(), ConsView::Meta(var) if var.hole().as_ref() ==
+            RETURN_CONT
+        )
+        && matches!(
+            ret.lhs().consumer().view(), ConsView::Op { op : applied, args, ret :
+            continuation } if applied == op && args.len() == 0 && matches!(continuation
+            .view(), ConsView::Frame { ctor : built, ret : tail } if built == ctor &&
+            matches!(tail.view(), ConsView::Meta(var) if var.hole().as_ref() ==
+            RETURN_CONT))
+        )
+},
+)]
 fn eta_cell(
     op: &Sym,
     ctor: &Sym,
@@ -704,11 +1052,24 @@ fn eta_cell(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the positive cell is compared whole against the cell
-///   layer's own, and a `codata` declaration's negative frame cell is what
-///   joins its η critical pair.
+/// - hypothesis: L2 compares the positive cell with the cell-layer reference;
+///   L3 observes negative frame participation in an independently normalized
+///   eta critical pair. Exact faces, orientation and provenance separate field
+///   loss; both cut polarities separate a one-face-only override.
 /// - witness: `elaborate::tests::the_positive_frame_cell_is_the_frame_defining_cell`
 /// - witness: `tests::eta::a_codata_eta_cell_joins_the_projection_route_at_its_negative_cut`
+#[spec(
+    ensures: |ret| {
+    let reference = frame_defining_cell(ctor);
+    ret.lhs().polarity() == polarity && ret.rhs().polarity() == polarity
+        && ret.orient() == reference.orient()
+        && ret.provenance() == reference.provenance()
+        && ret.lhs().producer() == reference.lhs().producer()
+        && ret.lhs().consumer() == reference.lhs().consumer()
+        && ret.rhs().producer() == reference.rhs().producer()
+        && ret.rhs().consumer() == reference.rhs().consumer()
+},
+)]
 fn frame_cell(
     ctor: &Sym,
     polarity: Polarity,
@@ -729,7 +1090,25 @@ fn frame_cell(
 /// cut polarity is read from.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: maps data to data eta and codata to codata eta.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all frame, written-rule, circuit and eta cells
+///   under both declaration polarities. Opposite-polarity firing refusals
+///   distinguish swapped or collapsed cases; the predicates remain usable in
+///   const functions.
+/// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
+/// - witness: `tests::eta::a_data_eta_cell_does_not_fire_at_a_negative_cut`
+/// - witness: `tests::eta::a_codata_eta_cell_does_not_fire_at_a_positive_cut`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        (polarity, ret), (DeclPolarity::Data, EtaKind::Data) | (DeclPolarity::Codata,
+        EtaKind::Codata)
+    )
+},
+)]
 const fn eta_kind(polarity: DeclPolarity) -> EtaKind
 {
     match polarity {
@@ -742,7 +1121,25 @@ const fn eta_kind(polarity: DeclPolarity) -> EtaKind
 /// polarity its η law requires.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: maps data to positive cuts and codata to negative cuts.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all frame, written-rule, circuit and eta cells
+///   under both declaration polarities. Opposite-polarity firing refusals
+///   distinguish swapped or collapsed cases; the predicates remain usable in
+///   const functions.
+/// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
+/// - witness: `tests::eta::a_data_eta_cell_does_not_fire_at_a_negative_cut`
+/// - witness: `tests::eta::a_codata_eta_cell_does_not_fire_at_a_positive_cut`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        (polarity, ret), (DeclPolarity::Data, Polarity::Positive) |
+        (DeclPolarity::Codata, Polarity::Negative)
+    )
+},
+)]
 const fn cut_polarity(polarity: DeclPolarity) -> Polarity
 {
     eta_kind(polarity).required_polarity()
@@ -763,11 +1160,29 @@ const fn cut_polarity(polarity: DeclPolarity) -> Polarity
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an admitted operation, a many-out one, an aggregating one
-///   and an outputless one separate the three refusals and the admission.
+/// - hypothesis: L3 over arity tables observes exact admission and refusal
+///   variant plus symbol and declared input count. Zero, one and multiple
+///   outputs and zero, one and multiple monomials distinguish each gate and its
+///   precedence. A zero-input signature may pass this arity gate while an empty
+///   operation application fails face elaboration.
 /// - witness: `elaborate::tests::an_admitted_operation_reports_its_declared_inputs`
 /// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
 /// - witness: `elaborate::tests::an_aggregating_arity_and_an_outputless_one_are_declined_apart`
+/// - witness: `elaborate::tests::a_zero_input_signature_does_not_supply_a_matched_producer`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(ref frame) => {
+        op.arity.outputs.len() == 1 && usize::from(op.arity.monomials()) == 1
+            && frame.op.as_ref() == op.name.as_ref()
+            && usize::from(frame.inputs) == op.arity.inputs.len()
+    }
+    Err(OpElaborateError::NoOutput) => op.arity.outputs.is_empty(),
+    Err(OpElaborateError::ManyOutput) => op.arity.outputs.len() > 1,
+    Err(OpElaborateError::AggregatedOutput) => {
+        op.arity.outputs.len() == 1 && usize::from(op.arity.monomials()) != 1
+    }
+},
+)]
 fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
 {
     match *op.arity.outputs {
@@ -798,10 +1213,36 @@ fn admit_op(op: &OperDesc) -> Result<OpFrame, OpElaborateError>
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a face over a declined operation is declined and a face
-///   over an admitted operation beside a declined one survives.
-/// - witness: `elaborate::tests::a_many_out_operation_is_declined_and_declines_its_faces`
+/// - hypothesis: L3 over both face trees observes refusal exactly for operation
+///   applications whose names are declined. Nested applications on either side,
+///   constructors with the same spelling, empty declined sets and a bad outer
+///   face separate shallow search, namespace confusion and gate-order
+///   mutations. Iterative traversal is exercised at bounded depth, not proved
+///   for all depths.
 /// - witness: `elaborate::tests::a_face_over_an_admitted_operation_survives_the_gate`
+/// - witness: `elaborate::tests::operation_gate_precedes_shape_and_scans_both_faces`
+/// - witness: `elaborate::tests::deep_constructor_elaboration_preserves_the_boundary_without_recursion`
+#[spec(
+    ensures: |ret| {
+    let mut pending = alloc::vec![face.lhs.to_node(), face.rhs.to_node()];
+    let mut mentioned = false;
+    while let Some(term) = pending.pop() {
+        match term.view() {
+            TermView::Var(_) => {}
+            TermView::Ctor { args, .. } => pending.extend(args),
+            TermView::Op { name, args } => {
+                mentioned |= declined.contains(&name);
+                pending.extend(args);
+            }
+        }
+    }
+    if mentioned {
+        matches!(ret, Err(ElaborateError::UnrepresentableOperation))
+    } else {
+        ret.is_ok()
+    }
+},
+)]
 fn declined_operation(
     face: &RuleFace,
     declined: &[&Name],
@@ -839,11 +1280,37 @@ fn declined_operation(
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a copying face, a face whose variable spells the reserved
-///   continuation, and a face with both faults separate the two refusals and
-///   their order; a linear neighbour still lands.
+/// - hypothesis: L3 over linear, copying and mixed-polarity cells observes
+///   exact stored content, identity reuse and an unchanged nonempty store on
+///   refusal. A cell with both faults distinguishes copy-before-polarity
+///   precedence; two mixed holes distinguish first-occurrence order from
+///   lexical order. The capture preserves the consumed cell only in enforcing
+///   builds.
 /// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
-/// - witness: `tests::linearity::a_refused_face_does_not_stop_its_linear_neighbours`
+/// - witness: `elaborate::tests::face_admission_is_atomic_and_deduplicates`
+/// - witness: `elaborate::tests::mixed_polarity_refusal_names_the_first_occurrence`
+#[spec(
+    captures: before = (usize::from(store.len()), cell.clone()),
+    ensures: |ret| {
+    let admission = admit_linear_cell(&before.1)
+        .map_err(ElaborateError::from)
+        .and_then(|()| single_polarity_holes(&before.1).map_err(ElaborateError::from));
+    match (admission, ret.as_ref()) {
+        (Ok(()), Ok(id)) => {
+            matches!(
+                store.get(* id), quenchant_shape::shape::Maybe::Present(stored) if *
+                stored == before.1
+            )
+                && (usize::from(store.len()) == before.0
+                    || usize::from(store.len()) == before.0.saturating_add(1))
+        }
+        (Err(expected), Err(actual)) => {
+            expected == *actual && usize::from(store.len()) == before.0
+        }
+        _ => false,
+    }
+},
+)]
 fn admit_cell(
     store: &mut CellStore,
     cell: Cell,
@@ -865,6 +1332,25 @@ fn admit_cell(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over metadata with no, one and multiple mixed holes
+///   observes the exact refusal name in first-occurrence order. A lexically
+///   later hole encountered first distinguishes sorted-name and last-hole
+///   mutations; linear and copying-only cells separate polarity from
+///   multiplicity.
+/// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+/// - witness: `elaborate::tests::mixed_polarity_refusal_names_the_first_occurrence`
+#[spec(
+    ensures: |ret| match (
+    cell.meta().vars().iter().find(|var| var.variance() == CellVariance::Mixed),
+    ret.as_ref(),
+) {
+    (None, Ok(&())) => true,
+    (Some(var), Err(error)) => error.hole() == var.var().hole(),
+    _ => false,
+},
+)]
 fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
 {
     for var in cell.meta().vars() {
@@ -896,13 +1382,39 @@ fn single_polarity_holes(cell: &Cell) -> Result<(), MixedPolarityHole>
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the direct case, the flattening case and a non-operation
-///   left-hand side separate the arms; a `codata` declaration's rule cell is
-///   pinned at the negative cut its η cell sits at.
+/// - hypothesis: L3 over arbitrary face shapes observes exact command faces,
+///   metadata and typed refusals at both polarities. Variables and constructors
+///   on the left, empty applications, nested operations in producer position,
+///   multi-argument wrappers and unary flattening separate each fragment
+///   boundary and left-before-right failure. Predicates check outer-shape
+///   refusal and successful metadata; literal command witnesses check the
+///   translation.
 /// - witness: `elaborate::tests::add_zero_elaborates_to_a_cut_against_the_operation_frame`
 /// - witness: `elaborate::tests::add_succ_flattens_the_wrapping_constructor_into_a_frame`
 /// - witness: `elaborate::tests::a_non_operation_lhs_is_declined`
 /// - witness: `elaborate::tests::a_codata_declarations_cells_all_cut_at_its_eta_polarity`
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+/// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+#[spec(
+    ensures: |ret| {
+    if matches!(face.lhs.view(), TermView::Op { .. }) {
+        match ret.as_ref() {
+            Ok(cell) => {
+                cell.orient() == Orientation::PolarityDerived
+                    && cell.provenance() == CellProvenance::SurfaceRule
+                    && cell.lhs().polarity() == cut_polarity(polarity)
+                    && cell.rhs().polarity() == cut_polarity(polarity)
+            }
+            Err(&(ElaborateError::EmptyOperation | ElaborateError::UnsupportedShape)) => {
+                true
+            }
+            _ => false,
+        }
+    } else {
+        matches!(ret, Err(ElaborateError::LhsNotOperation))
+    }
+},
+)]
 #[inline]
 pub fn elaborate_rule(
     face: &RuleFace,
@@ -935,6 +1447,33 @@ pub fn elaborate_rule(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over empty, unary and multi-argument applications observes
+///   the first producer, ordered remaining producers and retained continuation.
+///   Operations in the first or a later producer position separate head, tail
+///   and emptiness checks; both polarities and nested frames separate dropped
+///   continuations. The predicate checks arity, frame symbol, polarity and
+///   continuation size.
+/// - witness: `elaborate::tests::add_zero_elaborates_to_a_cut_against_the_operation_frame`
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+/// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+#[spec(
+    captures: before = (args.len(), usize::from(cont.size())),
+    ensures: |ret| match ret.as_ref() {
+    Ok(cut) => {
+        before.0 > 0 && cut.polarity() == polarity
+            && matches!(
+                cut.consumer().view(), ConsView::Op { op, args, ret : continuation } if
+                op.as_ref() == name.as_ref() && args.len() == before.0.saturating_sub(1)
+                && usize::from(continuation.size()) == before.1
+            )
+    }
+    Err(&ElaborateError::EmptyOperation) => before.0 == 0,
+    Err(&ElaborateError::UnsupportedShape) => before.0 > 0,
+    _ => false,
+},
+)]
 fn operation_cut(
     name: &Name,
     mut args: TermArgs<'_>,
@@ -970,6 +1509,29 @@ fn operation_cut(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over variables, pure constructors, tail operations and
+///   unary wrappers observes exact producer and consumer trees at both
+///   polarities. Multi-argument wrappers containing an operation and empty tail
+///   applications separate the two refusals; nested wrappers distinguish
+///   reversed frames and lost continuations. A bounded deep unary chain
+///   witnesses the iterative path, not an unbounded complexity theorem.
+/// - witness: `elaborate::tests::add_succ_flattens_the_wrapping_constructor_into_a_frame`
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+/// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+/// - witness: `elaborate::tests::deep_constructor_elaboration_preserves_the_boundary_without_recursion`
+#[spec(
+    captures: continuation_size = usize::from(cont.size()),
+    ensures: |ret| match ret.as_ref() {
+    Ok(cut) => {
+        cut.polarity() == polarity
+            && usize::from(cut.consumer().size()) >= continuation_size
+    }
+    Err(&(ElaborateError::UnsupportedShape | ElaborateError::EmptyOperation)) => true,
+    _ => false,
+},
+)]
 fn elaborate_result(
     term: TermNode<'_>,
     cont: ConsPat,
@@ -1018,9 +1580,73 @@ fn elaborate_result(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over variable and constructor trees observes every
+///   constructor name, variable spelling, arity and child order against the
+///   source; an operation anywhere must refuse. Empty constructors, mixed-depth
+///   siblings and a deep unary chain distinguish dropped, reversed and
+///   misattached children. The executable structural validator uses paired
+///   borrowed trees rather than reconstructing an expected producer.
+/// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+/// - witness: `elaborate::tests::deep_constructor_elaboration_preserves_the_boundary_without_recursion`
+#[spec(
+    ensures: |ret| match ret.as_ref() {
+    Ok(producer) => {
+        let mut pending = alloc::vec![(term, producer.to_ref())];
+        let mut agrees = true;
+        while let Some((source, target)) = pending.pop() {
+            match (source.view(), target.view()) {
+                (TermView::Var(name), ProdView::Meta(var)) => {
+                    agrees &= name.as_ref() == var.hole().as_ref();
+                }
+                (
+                    TermView::Ctor { name, args },
+                    ProdView::Ctor { ctor, args: children },
+                ) => {
+                    agrees
+                        &= name.as_ref() == ctor.as_ref()
+                            && args.len() == children.len();
+                    pending.extend(args.zip(children));
+                }
+                _ => agrees = false,
+            }
+        }
+        agrees
+    }
+    Err(&ElaborateError::UnsupportedShape) => {
+        let mut pending = alloc::vec![term];
+        let mut operation = false;
+        while let Some(source) = pending.pop() {
+            match source.view() {
+                TermView::Var(_) => {}
+                TermView::Ctor { args, .. } => pending.extend(args),
+                TermView::Op { .. } => operation = true,
+            }
+        }
+        operation
+    }
+    _ => false,
+},
+)]
 fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
 {
     /// A constructor whose arguments are being elaborated.
+    ///
+    /// # Specification
+    /// - provides: a suspended constructor retains its source name, unprocessed
+    ///   suffix and elaborated prefix in source order.
+    /// - executable: none — the record lacks the enclosing constructor walk and
+    ///   original argument prefix needed to validate suspended progress.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes mixed-depth constructor siblings and a
+    ///   512-layer unary tree on a 256 KiB stack. Exact child names, arities,
+    ///   order and leaf identity distinguish attaching a completed child to the
+    ///   wrong suspended constructor; the depth bound is finite.
+    /// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+    /// - witness: `elaborate::tests::deep_constructor_elaboration_preserves_the_boundary_without_recursion`
     struct Pending<'term>
     {
         /// The constructor's name.
@@ -1078,6 +1704,23 @@ fn elaborate_producer(term: TermNode<'_>) -> Result<ProdPat, ElaborateError>
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over empty, singleton and mixed-depth argument lists
+///   observes exact producer order and refusal on an operation in an early or
+///   late argument. Distinct variable and constructor siblings separate
+///   omissions and reversal; the predicate checks total arity, with each
+///   producer validated structurally by its own predicate.
+/// - witness: `elaborate::tests::producer_order_and_nested_result_frames_are_exact`
+/// - witness: `elaborate::tests::fragment_refusals_preserve_left_before_right_precedence`
+#[spec(
+    captures: expected_count = terms.len(),
+    ensures: |ret| match ret.as_ref() {
+    Ok(producers) => producers.len() == expected_count,
+    Err(&ElaborateError::UnsupportedShape) => expected_count > 0,
+    _ => false,
+},
+)]
 fn elaborate_producers(terms: TermArgs<'_>) -> Result<Vec<ProdPat>, ElaborateError>
 {
     let mut out = Vec::with_capacity(terms.len());
@@ -1109,6 +1752,7 @@ fn hole(name: &Name) -> HoleName
 #[cfg(test)]
 mod tests
 {
+    extern crate std;
     use alloc::boxed::Box;
     use alloc::string::ToString as _;
     use alloc::vec;
@@ -1320,17 +1964,7 @@ mod tests
             both.copied(),
             "a cell with both faults is refused for the copy"
         );
-        let copy_text = copy.to_string();
-        let seam_text = seam.to_string();
-        assert!(
-            seam_text.contains("mixed-polarity hole: `$ret`")
-                && seam_text.contains("Give the variable a name of its own"),
-            "the seam diagnostic names the hole and the respelling: {seam_text}"
-        );
-        assert!(
-            copy_text.contains("non-linear cell pattern") && !seam_text.contains("non-linear"),
-            "and the two diagnostics are distinct: {copy_text} / {seam_text}"
-        );
+
         assert_eq!(
             CellCount::from(1_usize),
             elaborated.store.len(),
@@ -1914,6 +2548,512 @@ mod tests
         );
     }
 
+    #[test]
+    fn empty_descriptions_and_mixed_reports_preserve_declaration_indices()
+    {
+        let mut empty = nat_with([], []);
+        empty.ctors = [].into();
+        let report = elaborate_data_desc(&empty);
+        assert!(bool::from(report.store.is_empty()));
+        assert!(
+            report.opers.is_empty()
+                && report.declined_opers.is_empty()
+                && report.declined_faces.is_empty()
+                && report.circuits.is_empty()
+        );
+        assert_eq!(
+            EtaElaboration::Declined(EtaElaborateError::NotSingleConstructor(
+                ConstructorCount::from(0_usize)
+            )),
+            report.eta
+        );
+        let outputless =
+            OperDesc::new("sink", BridgeArity::new([], [], [], [], []), Attrs::empty());
+        let desc = nat_with(
+            [
+                outputless,
+                add_op(),
+                divmod_op(),
+                op("id", [SortRef::new("x", "Nat")]),
+            ],
+            [
+                face(FreeTerm::var("x"), FreeTerm::var("x")),
+                add_zero_face(),
+                face(FreeTerm::op("id", []), FreeTerm::var("x")),
+                add_zero_face(),
+            ],
+        );
+        let report = elaborate_data_desc(&desc);
+        assert_eq!(
+            [
+                OpFrame {
+                    op: Sym::from("add"),
+                    inputs: OperationInputCount::from(2_usize)
+                },
+                OpFrame {
+                    op: Sym::from("id"),
+                    inputs: OperationInputCount::from(1_usize)
+                }
+            ],
+            *report.opers
+        );
+        assert_eq!(
+            [
+                (DeclinedOpIndex::from(0_usize), OpElaborateError::NoOutput),
+                (DeclinedOpIndex::from(2_usize), OpElaborateError::ManyOutput)
+            ],
+            *report.declined_opers
+        );
+        assert_eq!(
+            [
+                (
+                    DeclinedFaceIndex::from(0_usize),
+                    ElaborateError::LhsNotOperation
+                ),
+                (
+                    DeclinedFaceIndex::from(2_usize),
+                    ElaborateError::EmptyOperation
+                )
+            ],
+            *report.declined_faces
+        );
+        assert_eq!(CellCount::from(3_usize), report.store.len());
+    }
+
+    #[test]
+    fn face_admission_is_atomic_and_deduplicates()
+    {
+        let mut store = CellStore::new();
+        store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
+        let good = add_zero_face();
+        assert_eq!(
+            Ok(()),
+            admit_face(&mut store, &good, DeclPolarity::Data, &[])
+        );
+        let before = store.clone();
+        assert_eq!(
+            Ok(()),
+            admit_face(&mut store, &good, DeclPolarity::Data, &[])
+        );
+        assert_eq!(before, store);
+        for refused in [
+            face(FreeTerm::var("x"), FreeTerm::var("x")),
+            face(FreeTerm::op("f", []), FreeTerm::var("x")),
+            face(
+                FreeTerm::op("f", [FreeTerm::var("x"), FreeTerm::var("x")]),
+                FreeTerm::var("x"),
+            ),
+            face(
+                FreeTerm::op("f", [FreeTerm::var(RETURN_CONT)]),
+                FreeTerm::ctor("Zero", []),
+            ),
+        ] {
+            assert!(admit_face(&mut store, &refused, DeclPolarity::Data, &[]).is_err());
+            assert_eq!(before, store);
+        }
+        assert_eq!(CellCount::from(2_usize), store.len());
+    }
+
+    #[test]
+    fn operation_gate_precedes_shape_and_scans_both_faces()
+    {
+        let blocked = Name::from("ban");
+        for input in [
+            face(
+                FreeTerm::op("f", [FreeTerm::ctor("Wrap", [FreeTerm::op("ban", [
+                    FreeTerm::var("x"),
+                ])])]),
+                FreeTerm::var("x"),
+            ),
+            face(
+                FreeTerm::var("x"),
+                FreeTerm::ctor("Wrap", [FreeTerm::op("ban", [FreeTerm::var("x")])]),
+            ),
+        ] {
+            assert_eq!(
+                Err(ElaborateError::UnrepresentableOperation),
+                declined_operation(&input, &[&blocked])
+            );
+            assert_eq!(Ok(()), declined_operation(&input, &[]));
+            let mut store = CellStore::new();
+            assert_eq!(
+                Err(ElaborateError::UnrepresentableOperation),
+                admit_face(&mut store, &input, DeclPolarity::Data, &[&blocked])
+            );
+            assert!(bool::from(store.is_empty()));
+        }
+        let constructor = face(
+            FreeTerm::op("f", [FreeTerm::ctor("ban", [])]),
+            FreeTerm::ctor("ban", []),
+        );
+        assert_eq!(Ok(()), declined_operation(&constructor, &[&blocked]));
+    }
+
+    #[test]
+    fn circuit_composite_refusal_precedes_a_bad_sphere()
+    {
+        let body = CircuitBody::new(
+            [
+                CircuitNode::Redex(CircuitRedex::new(
+                    "p",
+                    FreeTerm::var("x"),
+                    FreeTerm::var("a"),
+                    "a",
+                )),
+                CircuitNode::Redex(CircuitRedex::new(
+                    "q",
+                    FreeTerm::var("a"),
+                    FreeTerm::var("b"),
+                    "b",
+                )),
+            ],
+            "b",
+        );
+        let rule = CircuitRule::new(
+            "sequential",
+            face(FreeTerm::var("x"), FreeTerm::var("b")),
+            body,
+        );
+        let mut store = CellStore::new();
+        store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
+        let before = store.clone();
+        assert!(matches!(
+            admit_circuit_rule(&mut store, &rule, DeclPolarity::Data, &[]),
+            CircuitElaboration::Declined(ElaborateError::NoCircuitComposite(_))
+        ));
+        assert_eq!(before, store);
+    }
+
+    #[test]
+    fn eta_licences_preserve_operation_order_and_decline_atomically()
+    {
+        let mut desc = wrapper(DeclPolarity::Data);
+        desc.opers = [
+            op("unwrap", [SortRef::new("w", "Wrap")]),
+            op("inspect", [SortRef::new("w", "Wrap")]),
+            divmod_op(),
+        ]
+        .into();
+        desc.rules = ["inspect", "unwrap", "divmod"]
+            .map(|name| {
+                face(
+                    FreeTerm::op(name, [FreeTerm::ctor("MkWrap", [FreeTerm::var("x")])]),
+                    FreeTerm::var("x"),
+                )
+            })
+            .into();
+        let blocked = Name::from("divmod");
+        let mut store = CellStore::new();
+        store.insert(frame_cell(&Sym::from("Seed"), Polarity::Positive));
+        let expected =
+            EtaElaboration::Minted(alloc::vec![CellId::from(1_usize), CellId::from(2_usize)]);
+        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &[&blocked]));
+        for ((_, cell), name) in store.iter().skip(1).zip(["unwrap", "inspect"]) {
+            assert!(
+                matches!(cell.lhs().consumer().view(), ConsView::Op { op, .. } if op.as_ref() == name)
+            );
+            assert_eq!(CellProvenance::Eta(EtaKind::Data), cell.provenance());
+        }
+        let before = store.clone();
+        assert_eq!(expected, mint_eta_cells(&mut store, &desc, &[&blocked]));
+        assert_eq!(before, store);
+        desc.rules = [].into();
+        assert_eq!(
+            EtaElaboration::Declined(EtaElaborateError::NoInverseFace),
+            mint_eta_cells(&mut store, &desc, &[&blocked])
+        );
+        assert_eq!(before, store);
+        desc.ctors = [].into();
+        assert_eq!(
+            EtaElaboration::Declined(EtaElaborateError::NotSingleConstructor(
+                ConstructorCount::from(0_usize)
+            )),
+            mint_eta_cells(&mut store, &desc, &[&blocked])
+        );
+        assert_eq!(before, store);
+    }
+
+    #[test]
+    fn inverse_licensing_rejects_nullary_and_nonoperation_faces()
+    {
+        let op = Name::from("f");
+        let ctor = Name::from("K");
+        for lhs in [
+            FreeTerm::var("x"),
+            FreeTerm::ctor("K", [FreeTerm::var("x")]),
+            FreeTerm::op("f", []),
+            FreeTerm::op("f", [FreeTerm::ctor("K", [])]),
+        ] {
+            assert!(!bool::from(is_inverse_face(
+                &face(lhs, FreeTerm::var("x")),
+                &op,
+                &ctor
+            )));
+        }
+    }
+
+    #[test]
+    fn a_zero_input_signature_does_not_supply_a_matched_producer()
+    {
+        let nullary = op("nil", []);
+        assert_eq!(
+            Ok(OpFrame {
+                op: Sym::from("nil"),
+                inputs: OperationInputCount::from(0_usize)
+            }),
+            admit_op(&nullary)
+        );
+        assert_eq!(
+            Err(ElaborateError::EmptyOperation),
+            elaborate_rule(
+                &face(FreeTerm::op("nil", []), FreeTerm::ctor("Zero", [])),
+                DeclPolarity::Data
+            )
+        );
+    }
+
+    #[test]
+    fn mixed_polarity_refusal_names_the_first_occurrence()
+    {
+        let cell = Cell::new(
+            CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::ctor("Pair", [ProdPat::meta("z"), ProdPat::meta("a")]),
+                ConsPat::meta("z"),
+            ),
+            CmdPat::cut(Polarity::Positive, ProdPat::meta("z"), ConsPat::meta("a")),
+            Orientation::PolarityDerived,
+            CellProvenance::SurfaceRule,
+        );
+        assert_eq!(
+            Err(MixedPolarityHole {
+                hole: HoleName::from("z")
+            }),
+            single_polarity_holes(&cell)
+        );
+        let mut store = CellStore::new();
+        assert_eq!(
+            Err(ElaborateError::MixedPolarity(MixedPolarityHole {
+                hole: HoleName::from("z")
+            })),
+            admit_cell(&mut store, cell)
+        );
+        assert!(bool::from(store.is_empty()));
+    }
+
+    #[test]
+    fn fragment_refusals_preserve_left_before_right_precedence()
+    {
+        let cases = [
+            (
+                face(FreeTerm::var("x"), FreeTerm::op("g", [])),
+                ElaborateError::LhsNotOperation,
+            ),
+            (
+                face(FreeTerm::ctor("K", []), FreeTerm::op("g", [])),
+                ElaborateError::LhsNotOperation,
+            ),
+            (
+                face(FreeTerm::op("f", []), FreeTerm::var("x")),
+                ElaborateError::EmptyOperation,
+            ),
+            (
+                face(
+                    FreeTerm::op("f", [FreeTerm::op("g", [])]),
+                    FreeTerm::op("g", []),
+                ),
+                ElaborateError::UnsupportedShape,
+            ),
+            (
+                face(
+                    FreeTerm::op("f", [FreeTerm::var("x"), FreeTerm::op("g", [])]),
+                    FreeTerm::var("x"),
+                ),
+                ElaborateError::UnsupportedShape,
+            ),
+            (
+                face(
+                    FreeTerm::op("f", [FreeTerm::var("x")]),
+                    FreeTerm::op("g", []),
+                ),
+                ElaborateError::EmptyOperation,
+            ),
+            (
+                face(
+                    FreeTerm::op("f", [FreeTerm::var("x")]),
+                    FreeTerm::ctor("Pair", [
+                        FreeTerm::op("g", [FreeTerm::var("x")]),
+                        FreeTerm::var("y"),
+                    ]),
+                ),
+                ElaborateError::UnsupportedShape,
+            ),
+        ];
+        for polarity in [DeclPolarity::Data, DeclPolarity::Codata] {
+            for case in &cases {
+                assert_eq!(Err(&case.1), elaborate_rule(&case.0, polarity).as_ref());
+            }
+        }
+    }
+
+    #[test]
+    fn producer_order_and_nested_result_frames_are_exact()
+    {
+        let pure = FreeTerm::ctor("Root", [
+            FreeTerm::ctor("Pair", [FreeTerm::var("x"), FreeTerm::var("y")]),
+            FreeTerm::var("z"),
+            FreeTerm::ctor("Empty", []),
+        ]);
+        assert_eq!(
+            Ok(ProdPat::ctor("Root", [
+                ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("y")]),
+                ProdPat::meta("z"),
+                ProdPat::ctor("Empty", [])
+            ])),
+            elaborate_producer(pure.to_node())
+        );
+        let empty = FreeTerm::op("args", []);
+        let TermView::Op { args, .. } = empty.view()
+        else {
+            panic!("operation fixture");
+        };
+        assert_eq!(Ok(Vec::new()), elaborate_producers(args));
+        let input = face(
+            FreeTerm::op("f", [
+                FreeTerm::ctor("Pair", [FreeTerm::var("a"), FreeTerm::ctor("Zero", [])]),
+                FreeTerm::var("b"),
+                FreeTerm::ctor("Tail", [FreeTerm::var("c")]),
+            ]),
+            FreeTerm::ctor("Outer", [FreeTerm::ctor("Inner", [FreeTerm::op("g", [
+                FreeTerm::var("c"),
+                FreeTerm::var("b"),
+                FreeTerm::var("a"),
+            ])])]),
+        );
+        for (declared, cut) in [
+            (DeclPolarity::Data, Polarity::Positive),
+            (DeclPolarity::Codata, Polarity::Negative),
+        ] {
+            let expected = Cell::new(
+                CmdPat::cut(
+                    cut,
+                    ProdPat::ctor("Pair", [ProdPat::meta("a"), ProdPat::ctor("Zero", [])]),
+                    ConsPat::op(
+                        "f",
+                        [
+                            ProdPat::meta("b"),
+                            ProdPat::ctor("Tail", [ProdPat::meta("c")]),
+                        ],
+                        ConsPat::meta(RETURN_CONT),
+                    ),
+                ),
+                CmdPat::cut(
+                    cut,
+                    ProdPat::meta("c"),
+                    ConsPat::op(
+                        "g",
+                        [ProdPat::meta("b"), ProdPat::meta("a")],
+                        ConsPat::frame(
+                            "Inner",
+                            ConsPat::frame("Outer", ConsPat::meta(RETURN_CONT)),
+                        ),
+                    ),
+                ),
+                Orientation::PolarityDerived,
+                CellProvenance::SurfaceRule,
+            );
+            assert_eq!(Ok(expected), elaborate_rule(&input, declared));
+        }
+    }
+
+    #[test]
+    fn deep_constructor_elaboration_preserves_the_boundary_without_recursion()
+    {
+        std::thread::Builder::new().stack_size(0x4_0000).spawn(|| {
+            let depth = 512_usize;
+            let mut pure = FreeTerm::var("x");
+            let mut framed = FreeTerm::op("g", [FreeTerm::var("x")]);
+            for _ in 0..depth {
+                pure = FreeTerm::ctor("Wrap", [pure]);
+                framed = FreeTerm::ctor("Wrap", [framed]);
+            }
+            let producer = elaborate_producer(pure.to_node()).expect("pure constructors");
+            assert_eq!(depth.saturating_add(1), usize::from(producer.size()));
+            let mut node = producer.to_ref();
+            for _ in 0..depth {
+                let ProdView::Ctor { ctor, mut args } = node.view() else { panic!("one constructor per source layer"); };
+                assert_eq!(&Sym::from("Wrap"), ctor);
+                assert_eq!(1, args.len());
+                node = args.next().expect("one child");
+            }
+            assert!(matches!(node.view(), ProdView::Meta(var) if var.hole().as_ref() == "x"));
+            let result = elaborate_result(framed.to_node(), ConsPat::meta(RETURN_CONT), Polarity::Negative).expect("unary wrapping");
+            assert_eq!(Polarity::Negative, result.polarity());
+            assert_eq!(&ProdPat::meta("x"), result.producer());
+            let ConsView::Op { op, args, ret: mut continuation } = result.consumer().view() else { panic!("tail operation"); };
+            assert_eq!(&Sym::from("g"), op);
+            assert_eq!(0, args.len());
+            for _ in 0..depth {
+                let ConsView::Frame { ctor, ret } = continuation.view() else { panic!("one return frame per wrapper"); };
+                assert_eq!(&Sym::from("Wrap"), ctor);
+                continuation = ret;
+            }
+            assert!(matches!(continuation.view(), ConsView::Meta(var) if var.hole().as_ref() == RETURN_CONT));
+            let blocked = Name::from("g");
+            assert_eq!(Err(ElaborateError::UnrepresentableOperation), declined_operation(&face(pure, framed), &[&blocked]));
+        }).expect("bounded-stack worker").join().expect("iterative elaboration");
+    }
+
+    /// A formatting sink that refuses every write.
+    struct RefusingWriter;
+
+    impl fmt::Write for RefusingWriter
+    {
+        /// Refuse without accepting text.
+        ///
+        /// # Specification
+        /// - ensures: every write returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 observes formatting through all diagnostic
+        ///   variants; a swallowed sink error or successful write violates the
+        ///   outcome.
+        /// - witness: `elaborate::tests::diagnostics_retain_payloads_and_propagate_sink_refusal`
+        #[spec(
+            ensures: |ret| ret.is_err(),
+        )]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> fmt::Result
+        {
+            Err(fmt::Error)
+        }
+    }
+
+    #[test]
+    fn diagnostics_retain_payloads_and_propagate_sink_refusal()
+    {
+        use core::fmt::Write as _;
+
+        let missing = crate::CellInstantiationError::UnknownCell {
+            cell: CellId::from(73_usize),
+        };
+        let count = EtaElaborateError::NotSingleConstructor(ConstructorCount::from(37_usize));
+        let no_inverse = EtaElaborateError::NoInverseFace;
+        let mixed = MixedPolarityHole {
+            hole: HoleName::from("chosen-seam"),
+        };
+        assert!(missing.to_string().contains("73"));
+        assert!(count.to_string().contains("37"));
+        assert!(mixed.to_string().contains("chosen-seam"));
+        let diagnostics: [&dyn fmt::Display; 4] = [&missing, &count, &no_inverse, &mixed];
+        for diagnostic in diagnostics {
+            assert!(write!(RefusingWriter, "{diagnostic}").is_err());
+        }
+    }
+
     /// A face over two terms, with no derived metadata and an empty span.
     ///
     /// # Specification
@@ -2007,8 +3147,26 @@ mod tests
     /// as the surface route supplies it.
     ///
     /// # Specification
+    /// - ensures: the sphere is the boundary pair derived from the retained
+    ///   circuit body.
     /// - panics: when the body derives no boundary pair, which is a fixture
     ///   defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over single- and two-redex fixture bodies observes
+    ///   admission versus composite refusal and the retained composite. The
+    ///   predicate additionally checks the derived sphere; malformed fixture
+    ///   construction remains a test defect.
+    /// - witness: `elaborate::tests::a_single_redex_circuit_rule_reaches_the_store`
+    /// - witness: `elaborate::tests::a_two_redex_circuit_rule_is_declined_its_composite`
+    #[spec(
+        ensures: |ret| {
+    derive_boundaries(&ret.body)
+        .is_ok_and(|derived| {
+            ret.sphere.lhs == derived.source && ret.sphere.rhs == derived.target
+        })
+},
+    )]
     fn rule_over<N>(
         name: N,
         body: CircuitBody,

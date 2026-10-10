@@ -15,6 +15,7 @@
 
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellProvenance;
 use gandr_theory_cell_complexes::CellStore;
@@ -166,7 +167,31 @@ enum FaceShape
 /// The consumer shape of `cmd`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: classifies only an immediately adjacent constructor/operation
+///   frame pair, retaining its order; every other consumer is Other.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes both fusion orientations and consumers with no
+///   adjacent mixed frame pair. Bare continuations, empty operation frames and
+///   an extra intervening constructor frame distinguish swapped, overbroad and
+///   recursive classification.
+/// - witness: `tests::order::completion_derives_the_fusion_cell_the_size_order_could_not_orient`
+/// - witness: `tests::order::fusion_shape_classifies_only_adjacent_frames`
+#[spec(
+    ensures: |ret| {
+    (matches!(ret, FaceShape::FrameOutsideOperation)
+        == matches!(
+            cmd.consumer().view(), ConsView::Frame { ret, .. } if matches!(ret.view(),
+            ConsView::Op { .. })
+        ))
+        && (matches!(ret, FaceShape::OperationOutsideFrame)
+            == matches!(
+                cmd.consumer().view(), ConsView::Op { ret, .. } if matches!(ret.view(),
+                ConsView::Frame { .. })
+            ))
+},
+)]
 fn shape(cmd: &CmdPat) -> FaceShape
 {
     match cmd.consumer().view() {
@@ -250,8 +275,37 @@ fn store_faces(store: &CellStore) -> Vec<CmdPat>
 /// and `double`, and their four written faces.
 ///
 /// # Specification
-/// - panics: when the description does not elaborate whole, which is a fixture
-///   defect.
+/// - ensures: the corpus contains two constructor-frame cells followed by four
+///   written-rule cells, all at positive cuts.
+/// - panics: when a declared operation or face is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the complete six-cell corpus through oriented
+///   equal-size pairs and the independently stated fusion cell produced by
+///   completion. Missing frames or rules, changed provenance and wrong polarity
+///   invalidate the corpus or certificate; no wider order-completeness claim
+///   follows.
+/// - witness: `tests::order::the_path_order_orients_pairs_the_size_order_left_as_obstructions`
+/// - witness: `tests::order::completion_derives_the_fusion_cell_the_size_order_could_not_orient`
+#[spec(
+    ensures: |ret| {
+    usize::from(ret.len()) == 6
+        && ret
+            .iter()
+            .take(2)
+            .all(|(_, cell)| cell.provenance() == CellProvenance::FrameDefining)
+        && ret
+            .iter()
+            .skip(2)
+            .all(|(_, cell)| cell.provenance() == CellProvenance::SurfaceRule)
+        && ret
+            .iter()
+            .all(|(_, cell)| {
+                cell.lhs().polarity() == Polarity::Positive
+                    && cell.rhs().polarity() == Polarity::Positive
+            })
+},
+)]
 fn description_route_store() -> CellStore
 {
     let operation = |name: &str, inputs: &[&str]| {
@@ -311,4 +365,29 @@ fn description_route_store() -> CellStore
         "the corpus description elaborates whole, so the measurement runs over real rules"
     );
     elaborated.store
+}
+
+#[test]
+fn fusion_shape_classifies_only_adjacent_frames()
+{
+    assert_eq!(FaceShape::FrameOutsideOperation, shape(&fusion_before()));
+    assert_eq!(FaceShape::OperationOutsideFrame, shape(&fusion_after()));
+    for consumer in [
+        ConsPat::top(),
+        ConsPat::meta("k"),
+        ConsPat::op("f", [], ConsPat::top()),
+        ConsPat::frame(
+            "K",
+            ConsPat::frame("L", ConsPat::op("f", [], ConsPat::top())),
+        ),
+    ] {
+        assert_eq!(
+            FaceShape::Other,
+            shape(&CmdPat::cut(
+                Polarity::Positive,
+                ProdPat::meta("x"),
+                consumer
+            ))
+        );
+    }
 }
