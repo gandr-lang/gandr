@@ -12,6 +12,7 @@ extern crate alloc;
 mod boundary;
 pub mod compose;
 pub mod pathway;
+pub mod transport;
 
 pub use crate::boundary::PathwayCandidateBudget;
 pub use crate::boundary::PathwayCandidateCount;

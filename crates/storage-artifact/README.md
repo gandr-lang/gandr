@@ -14,6 +14,7 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 - [The only storage crate that reads the kernel](#the-only-storage-crate-that-reads-the-kernel)
 - [The declaration is the record grain](#the-declaration-is-the-record-grain)
 - [Scope of the mechanized bounds](#scope-of-the-mechanized-bounds)
+- [Certificate transport](#certificate-transport)
 - [Laws and their witnesses](#laws-and-their-witnesses)
 - [License](#license)
 
@@ -38,6 +39,7 @@ Kernel artifacts on the authenticated record plane: one record per declaration s
 - `build`: the commit path, writing the record tree into a `BlockStore` and returning its `ArtifactManifest`.
 - `ArtifactManifest`: `encode`, `decode` and `identity` give a manifest one byte image under `MANIFEST_DOMAIN` and one `ArtifactIdentity` over it; `read_under` reads the artifact back through the kernel's decoder.
 - `ArtifactError` and `ManifestField`: every refusal by name — the kernel's, the record plane's, a repeated key, each manifest field, a foreign format or commitment, a tree mismatch, a misplaced record and a record off a segment boundary.
+- `transport`: canonical certificate-step encoding, durable `TransportStepId` readback and collision-checked graded factorization.
 
 ## Expected features
 
@@ -165,6 +167,20 @@ The checked lemmas that bound a node's storage tokens under LoCalMem's boundary 
 | Misplaced keys and records off a segment boundary are refused | `artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`, `artifact_contract::records_cut_off_a_segment_boundary_are_refused` |
 
 The `artifact_contract` witnesses live in `tests/artifact_contract.rs`, module `artifact_contract`.
+
+## Certificate transport
+
+`transport_step_id` hashes resolved sequent-cell content together with its application position. `TransportStepId` is a 32-byte BLAKE3 digest, with exact-width readback and no conversion to or from a build-local `PrimId`. Compile-fail witnesses enforce the type boundary; a 16-byte local-label image is refused. Hash equality identifies bytes, not proof validity.
+
+The preimage is `gandr:transport-step:v1` followed by the borrowed fields from `theory-decomposition-spaces::transport::step_fields`. `StepIdEncoder` frames tags and checked counts as big-endian u64 values, and names as a checked u64 byte length followed by their UTF-8 bytes. It hashes incrementally without allocating a preimage. Cell content and position determine the result; allocation, insertion order and local labels do not.
+
+`transport_step_index` resolves every normal-form primitive in the supplied store and preserves its grading under a durable key. Equal recorded factors sum multiplicities with u32 saturation; distinct factors at one digest refuse with both factors retained in the error. Unknown cells and unrepresentable widths refuse the entire result. Index values retain local replay handles: only the keys are portable, and an index is not a serialized certificate or a replay-validity witness.
+
+**Choice.** Theory supplies borrowed structural fields; storage owns canonical framing and transport identity. The v1 format fixes widths and byte order independently of `Hash`. BLAKE3 uses the workspace dependency with defaults off and no additional features. **Alternatives.** Build-local hashes cannot address transport bytes; a byte buffer adds allocation per digest; a theory-to-storage dependency reverses layering. **Reversal.** A changed structural encoding needs a distinct versioned domain; a second alphabet can extend the structural field surface.
+
+`tests/certificate_transport.rs::tests::a_publicly_composed_tracelet_round_trips_its_step_identities` composes through the public theory API, normalizes, encodes twice, decodes the identity images, resolves their factors and replays the reconstructed schedule. The two golden identities pin framing and the complete frame-defining cell. Six framing/width witnesses and ten identity/index witnesses form the compatibility floor, with no deferred rows. The 32-bit ceiling witness models a u32 source on every host; its successor witness runs on 64-bit targets.
+
+The standalone mutation backlog covers the transport modules introduced after `1793bad` by `feat(storage): add certificate transport identities`. Target faults: omitted fields, reordered traversal, native-width encoding, lost byte-length prefixes, accepted non-32-byte images, merged unequal factors and dropped multiplicities. Observers are literal fields, pinned digest goldens, exact refusals and replay through decoded identities; finite witnesses do not establish collision resistance.
 
 ## License
 
