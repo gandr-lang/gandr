@@ -51,11 +51,33 @@
 //! carries the thinnest headroom of the three, so it is the first to want
 //! raising.
 
+use anodized::spec;
+
 /// The global index of one entry in the artifact's subterm table.
 ///
 /// It is not an arena id and not an admission position. The table's index space
 /// runs across declaration segments, which is where cross-declaration sharing
 /// lives, and an entry's children are always strictly earlier in it.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GlobalIndex(pub u32);
@@ -91,6 +113,26 @@ impl From<GlobalIndex> for u32
 ///
 /// It is not a byte offset and not an arena id, and the wrapper is what keeps
 /// the three from being interchangeable at a signature.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EntryOffset(pub usize);
@@ -108,6 +150,17 @@ impl GlobalIndex
     ///   saturated offset lies past every vector the decoder builds, so a
     ///   checked read rejects it rather than wrapping into a live entry.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes exact widening, the successor at zero and both
+    ///   sides of the u32 ceiling, and sums around the u64 ceiling against a
+    ///   widened reference. The cases separate wraparound, premature saturation
+    ///   and shifted indices; target-width refusal is conditional on the
+    ///   executing platform.
+    /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+    #[spec(
+        ensures: |ret| ret.0 == usize::try_from(self.0).unwrap_or(usize::MAX),
+    )]
     #[inline]
     pub(crate) fn offset(self) -> EntryOffset
     {
@@ -124,6 +177,19 @@ impl GlobalIndex
     ///   index repeats rather than wrapping to zero, so an exhausted table
     ///   cannot alias entry zero.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes exact widening, the successor at zero and both
+    ///   sides of the u32 ceiling, and sums around the u64 ceiling against a
+    ///   widened reference. The cases separate wraparound, premature saturation
+    ///   and shifted indices; target-width refusal is conditional on the
+    ///   executing platform.
+    /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+    #[spec(
+        ensures: |ret| ret.0 >= self.0
+                && if self.0 == u32::MAX { ret.0 == u32::MAX }
+            else { ret.0.saturating_sub(self.0) == 1 },
+    )]
     #[inline]
     pub(crate) const fn next(self) -> Self
     {
@@ -132,6 +198,26 @@ impl GlobalIndex
 }
 
 /// The number of entries in a decoded subterm table.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TableEntryCount(pub usize);
@@ -167,7 +253,22 @@ impl core::fmt::Display for TableEntryCount
     /// Writes the count as a decimal number.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a formatter accepting or refusing writes.
+    /// - ensures: writes the carried quantity in decimal form.
+    /// - provides: a numeric observation without changing the quantity.
+    /// - fails: propagates refusal by the destination formatter.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes no readable output or
+    ///   sink-refusal state; checking either here would require wrapping or
+    ///   replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes decimal representations at zero, ordinary
+    ///   values and numeric ceilings, plus refusal by a real exhausted byte
+    ///   sink. It separates truncation, alternate-radix formatting and
+    ///   swallowed sink errors without pinning incidental diagnostic wording.
+    /// - witness: `budget::tests::the_metric_wrappers_render_their_quantities`
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -183,6 +284,26 @@ impl core::fmt::Display for TableEntryCount
 /// Saturation is the point rather than a convenience: the quantity being
 /// measured is exactly the one an attacker wants to make astronomical, so a
 /// wrapping sum would report a small number for the largest input.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExpandedWork(pub u64);
@@ -218,7 +339,22 @@ impl core::fmt::Display for ExpandedWork
     /// Writes the quantity as a decimal number.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a formatter accepting or refusing writes.
+    /// - ensures: writes the carried quantity in decimal form.
+    /// - provides: a numeric observation without changing the quantity.
+    /// - fails: propagates refusal by the destination formatter.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes no readable output or
+    ///   sink-refusal state; checking either here would require wrapping or
+    ///   replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes decimal representations at zero, ordinary
+    ///   values and numeric ceilings, plus refusal by a real exhausted byte
+    ///   sink. It separates truncation, alternate-radix formatting and
+    ///   swallowed sink errors without pinning incidental diagnostic wording.
+    /// - witness: `budget::tests::the_metric_wrappers_render_their_quantities`
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -245,6 +381,17 @@ impl ExpandedWork
     ///   one an attacker wants to make astronomical, and a wrapping sum would
     ///   report a small number for the largest input.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes exact widening, the successor at zero and both
+    ///   sides of the u32 ceiling, and sums around the u64 ceiling against a
+    ///   widened reference. The cases separate wraparound, premature saturation
+    ///   and shifted indices; target-width refusal is conditional on the
+    ///   executing platform.
+    /// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+    #[spec(
+        ensures: |ret| match self.0.checked_add(other.0) { Some(sum) => ret.0 == sum, None => ret.0 == u64::MAX },
+    )]
     #[inline]
     pub(crate) const fn saturating_add(
         self,
@@ -256,6 +403,26 @@ impl ExpandedWork
 }
 
 /// A level atom's successor offset, as it arrives on the wire.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LevelAtomOffset(pub u64);
@@ -292,6 +459,23 @@ impl From<LevelAtomOffset> for u64
 /// while its wire image is a few dozen bytes. It sits above the deepest
 /// artifact the kernel round-trips with headroom, and above twice
 /// [`MAX_TABLE_ENTRIES`], so a maximal flat table stays under it.
+///
+/// # Specification
+/// - requires: the decoder uses the matching resource axis.
+/// - ensures: bounds expanded work per declaration root and exceeds twice the
+///   distinct-entry cap.
+/// - panics: none.
+/// - executable: none — this policy constant is not callable; the decoder
+///   compares the observed quantity against it.
+///
+/// # Adequacy
+/// - hypothesis: L3 derives accepted and refused artifacts from the policy
+///   bound and observes exact admission or the named resource refusal. Changing
+///   the bound is permitted; reversing the comparison, changing strictness or
+///   using the wrong axis is distinguished. The deepest small-stack round trip
+///   witnesses retained headroom.
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_EXPANDED_TERM_WORK: ExpandedWork = ExpandedWork(1 << 20);
 
 /// The cap on the number of subterm-table entries in an artifact, enforced as
@@ -301,6 +485,22 @@ pub const MAX_EXPANDED_TERM_WORK: ExpandedWork = ExpandedWork(1 << 20);
 /// since sharing makes expanded work exceed the distinct-entry count, and it is
 /// input-linear — each entry costs at least one wire byte — so it carries no
 /// amplification of its own.
+///
+/// # Specification
+/// - requires: the decoder uses the matching resource axis.
+/// - ensures: bounds the number of distinct table entries as the table grows.
+/// - panics: none.
+/// - executable: none — this policy constant is not callable; the decoder
+///   compares the observed quantity against it.
+///
+/// # Adequacy
+/// - hypothesis: L3 derives accepted and refused artifacts from the policy
+///   bound and observes exact admission or the named resource refusal. Changing
+///   the bound is permitted; reversing the comparison, changing strictness or
+///   using the wrong axis is distinguished. The deepest small-stack round trip
+///   witnesses retained headroom.
+/// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_TABLE_ENTRIES: TableEntryCount = TableEntryCount(1 << 18);
 
 /// The cap on the artifact-total expanded tree work: the saturating sum over
@@ -309,6 +509,23 @@ pub const MAX_TABLE_ENTRIES: TableEntryCount = TableEntryCount(1 << 18);
 /// It closes the residual no per-declaration bound can see — many cheap
 /// segments all referencing one near-cap root — and is reader acceptance policy
 /// only, with no wire-format or canonicality consequence.
+///
+/// # Specification
+/// - requires: the decoder uses the matching resource axis.
+/// - ensures: bounds total declaration work, including repeated references to a
+///   shared root.
+/// - panics: none.
+/// - executable: none — this policy constant is not callable; the decoder
+///   compares the observed quantity against it.
+///
+/// # Adequacy
+/// - hypothesis: L3 derives accepted and refused artifacts from the policy
+///   bound and observes exact admission or the named resource refusal. Changing
+///   the bound is permitted; reversing the comparison, changing strictness or
+///   using the wrong axis is distinguished. The deepest small-stack round trip
+///   witnesses retained headroom.
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_ARTIFACT_EXPANDED_WORK: ExpandedWork = ExpandedWork(1 << 24);
 
 /// The cap on a level atom's successor offset.
@@ -320,6 +537,23 @@ pub const MAX_ARTIFACT_EXPANDED_WORK: ExpandedWork = ExpandedWork(1 << 24);
 /// at decode. Real universe levels carry variable offsets of zero or one; a
 /// level beyond the cap is a documented non-round-tripping case, liftable when
 /// the oracle exposes a constant-time offset constructor.
+///
+/// # Specification
+/// - requires: the decoder uses the matching resource axis.
+/// - ensures: excludes variable-atom successor offsets at or above this
+///   ceiling.
+/// - panics: none.
+/// - executable: none — this policy constant is not callable; the decoder
+///   compares the observed quantity against it.
+///
+/// # Adequacy
+/// - hypothesis: L3 derives accepted and refused artifacts from the policy
+///   bound and observes exact admission or the named resource refusal. Changing
+///   the bound is permitted; reversing the comparison, changing strictness or
+///   using the wrong axis is distinguished. The deepest small-stack round trip
+///   witnesses retained headroom.
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_artifact_round_trips_byte_identically`
 pub const MAX_DECODED_LEVEL_OFFSET: LevelAtomOffset = LevelAtomOffset(4096);
 
 /// The deterministic decode-budget metrics of an artifact.
@@ -329,6 +563,26 @@ pub const MAX_DECODED_LEVEL_OFFSET: LevelAtomOffset = LevelAtomOffset(4096);
 /// the same memoized forward scan the budget check rides — a read from an
 /// already-computed vector, never a second descent — so exposing them costs
 /// nothing beyond the check already paid.
+///
+/// # Specification
+/// - requires: the quantity is interpreted in its named coordinate or work
+///   domain.
+/// - ensures: carries that quantity without proving that an index exists or a
+///   budget is admitted; the decoder performs those checks.
+/// - panics: none.
+/// - executable: none — this quantity or report is a data declaration;
+///   arithmetic and decoder admission are its executable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes index and sum ceilings; L2 compares decoded table
+///   counts and expanded work with independent graph expectations. Named
+///   cap-adjacent artifacts distinguish field confusion and inclusive/exclusive
+///   boundary changes. Nominal type separation is L0, not a runtime kill claim.
+/// - witness: `budget::tests::index_and_work_boundaries_match_widened_arithmetic`
+/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DecodeMetrics
 {
@@ -350,6 +604,21 @@ impl DecodeMetrics
     /// - provides: the deterministic budget report the subsequent admission
     ///   check and the telemetry a caller keeps both read.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares decoded shared-graph metrics with closed-form
+    ///   expanded-work expectations, including repeated roots across
+    ///   declaration segments. L3 cap-adjacent artifacts distinguish swapped
+    ///   quantities and omitted declaration contributions; the tests do not
+    ///   validate arbitrary graphs exhaustively.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+    #[spec(
+        ensures: |ret| ret.table_entries.0 == table_entries.0
+                && ret.max_declaration_expanded_work.0 == max_declaration_expanded_work.0
+                && ret.artifact_expanded_work.0 == artifact_expanded_work.0,
+    )]
     #[inline]
     #[must_use]
     pub(crate) const fn new(
@@ -442,5 +711,46 @@ mod tests
     {
         assert_eq!(String::from("17"), format!("{}", TableEntryCount::from(17)));
         assert_eq!(String::from("23"), format!("{}", ExpandedWork::from(23)));
+    }
+
+    #[test]
+    fn index_and_work_boundaries_match_widened_arithmetic()
+    {
+        for (index, next) in [
+            (0u32, 1u32),
+            (1, 2),
+            (u32::MAX.saturating_sub(1), u32::MAX),
+            (u32::MAX, u32::MAX),
+        ] {
+            let global = super::GlobalIndex(index);
+            assert_eq!(next, global.next().0);
+            let expected =
+                u128::from(index).min(u128::try_from(usize::MAX).expect("pointer width fits u128"));
+            assert_eq!(
+                expected,
+                u128::try_from(global.offset().0).expect("pointer width fits u128")
+            );
+        }
+        for left in [
+            0u64,
+            1,
+            u64::MAX.div_euclid(2),
+            u64::MAX.saturating_sub(1),
+            u64::MAX,
+        ] {
+            for right in [
+                0u64,
+                1,
+                u64::MAX.div_euclid(2),
+                u64::MAX.saturating_sub(1),
+                u64::MAX,
+            ] {
+                let expected = u128::from(left)
+                    .saturating_add(u128::from(right))
+                    .min(u128::from(u64::MAX));
+                let actual = ExpandedWork(left).saturating_add(ExpandedWork(right));
+                assert_eq!(expected, u128::from(actual.0));
+            }
+        }
     }
 }

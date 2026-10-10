@@ -17,17 +17,17 @@
 //! the flat-representation rule: recursive owned data is id-addressed, so the
 //! type plane has no owning-pointer cycle to reject.
 //!
-//! # The two disciplines, both enforced rather than documented
+//! # Constructor and admission disciplines
 //!
-//! - **Constructor-only minting.** An id is produced only by a [`TermArena`]
-//!   constructor over already-allocated children, so a child id always resolves
-//!   and is always strictly less than its parent's — acyclic by construction,
-//!   and the same strictly-earlier invariant the subterm table relies on.
-//! - **The admission watermark.** [`TermArena::watermark`] snapshots the four
-//!   family lengths and [`TermArena::truncate_to`] restores them, so a
-//!   checker's intermediates allocate past a mark and are dropped after the
-//!   verdict — on rejection and on success alike, leaving the persistent arena
-//!   holding only admitted content.
+//! - **Constructor-only minting.** A constructor appends to one family over
+//!   caller-supplied live children. Within that family, a new index follows its
+//!   children while the family length fits u32; cross-family ids have no common
+//!   ordering. Ids carry no arena provenance or reuse generation.
+//! - **The admission watermark.** [`TermArena::watermark`] snapshots four
+//!   family lengths. [`TermArena::truncate_to`] removes suffixes but cannot
+//!   grow a shorter family or restore overwritten nodes. The caller keeps
+//!   removed ids unreachable from retained content and pairs each mark with its
+//!   arena; these obligations are not encoded in the mark.
 //!
 //! # The honest cost
 //!
@@ -55,29 +55,161 @@ use crate::types::ValueType;
 
 /// The id of a [`Value`] node in a [`TermArena`].
 ///
-/// Minted only by a [`TermArena`] constructor over already-allocated children,
-/// so it always resolves and is strictly greater than every child id.
+/// A family ordinal minted by a [`TermArena`] constructor. It can dangle after
+/// truncation or alias a reminted or foreign ordinal; it carries no arena
+/// provenance. Only same-family children share its allocation order.
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current values family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ValueId(u32);
 
 /// The id of a [`Computation`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current computations family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ComputationId(u32);
 
 /// The id of a [`ValueType`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current value-type family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ValueTypeId(u32);
 
+// The const projection lives beside the id representation so its predicate
+// can compare private ordinals without exposing a scalar observer.
+impl crate::decl::DeclarationContent
+{
+    /// The declared value-type root: the declared type of a definition or an
+    /// axiom, and the kind of an abstract type.
+    ///
+    /// The three share one accessor because they share one well-formedness
+    /// obligation — whatever the root is, it must form. What differs is what
+    /// admission additionally demands of it, which is not this crate's plane.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the declared value-type root, whichever of the three
+    ///   forms the content takes.
+    /// - provides: the one root every form owes well-formedness for, so a
+    ///   consumer checking that obligation cannot reach a form it forgot.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 checks distinct selected roots across all content forms
+    ///   and evaluates each projection in a const context. This separates
+    ///   wrong-variant selection and incorrect root ordinals without claiming
+    ///   that the root is well formed.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+    #[spec(
+        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared } => declared.0 },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn declared_id(&self) -> ValueTypeId
+    {
+        match *self {
+            | Self::Def { declared, .. }
+            | Self::Axiom { declared }
+            | Self::AbstractType { kind: declared } => declared,
+        }
+    }
+}
+
 /// The id of a [`CompType`] node in a [`TermArena`].
+///
+/// # Specification
+/// - requires: all ordinals are representable; resolution depends on the
+///   selected arena’s current computation-type family.
+/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
+///   reuse generation.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes all four family prefixes before and after
+///   truncation, stale marks, dangling ids, reminting and a foreign id with a
+///   coincident ordinal. Exact retained variants and dense indices separate
+///   prefix damage, accidental growth, wrong-family lookup and
+///   generation/provenance assumptions. Allocation at the u32 ceiling is not
+///   exercised; its conversion is checked separately.
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CompTypeId(u32);
 
 /// A cross-family node reference: the work item every walk over the arena's
 /// edge relation carries.
+///
+/// # Specification
+/// - requires: all four typed node ids are admitted, including dangling ones.
+/// - ensures: retains the node family together with its ordinal; no
+///   cross-family allocation ordering is implied.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AnyNode
 {
@@ -92,26 +224,68 @@ pub enum AnyNode
 }
 
 /// The number of nodes allocated in one arena family.
+///
+/// # Specification
+/// - requires: all usize counts are representable.
+/// - ensures: distinguishes a host family length or offset from a compact
+///   ordinal.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ArenaLength(usize);
 
 /// The stored index of one node within its arena family.
+///
+/// # Specification
+/// - requires: all u32 ordinals are representable.
+/// - ensures: distinguishes the compact id width from a host family length.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct ArenaIndex(u32);
 
-/// Widen an arena length to the `u32` an id wraps, saturating at the ceiling.
+/// Convert an arena length to the `u32` an id wraps, saturating at the ceiling.
 ///
 /// # Specification
 /// - requires: `length` is a family length within an arena.
-/// - ensures: the equal index, or the `u32` ceiling when the arena exceeded the
-///   id space — about four billion nodes, far above the decode entry cap, so
-///   the saturation is a documented ceiling rather than a reachable path.
-/// - provides: the total, panic-free length-to-index widening. Arena provenance
-///   stays prose: the length carries no arena identity.
+/// - ensures: the equal index when representable, otherwise the u32 ceiling.
+///   The decode entry cap stays below this ceiling; unrestricted constructor
+///   calls have no corresponding allocation cap.
+/// - provides: a total, panic-free length-to-index conversion, without arena
+///   provenance.
 /// - fails: never; it saturates.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[inline]
 #[spec(ensures: |ret| ret.0 == u32::try_from(length.0).unwrap_or(u32::MAX))]
 fn id_index(length: ArenaLength) -> ArenaIndex
@@ -119,16 +293,25 @@ fn id_index(length: ArenaLength) -> ArenaIndex
     ArenaIndex(u32::try_from(length.0).unwrap_or(u32::MAX))
 }
 
-/// Narrow an id's index to the offset a checked vector read takes.
+/// Convert an id's index to the offset a checked vector read takes.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the equal offset, lossless on every supported platform of at
 ///   least 32 bits.
-/// - provides: the total, panic-free index-to-offset narrowing.
+/// - provides: the total, panic-free index-to-offset conversion.
 /// - fails: never; it saturates at the offset ceiling, which a checked read
 ///   then rejects.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[inline]
 #[spec(ensures: |ret| ret.0 == usize::try_from(index.0).unwrap_or(usize::MAX))]
 fn id_offset(index: ArenaIndex) -> ArenaLength
@@ -139,17 +322,26 @@ fn id_offset(index: ArenaIndex) -> ArenaLength
 /// Clamp one family length into an inclusive length interval.
 ///
 /// # Specification
-/// - requires: nothing — a `low` above `high` is admissible and resolves to
-///   `low`, so the result is defined on every input rather than on a
-///   precondition the caller carries.
-/// - ensures: `low` when `value` is below it, `high` when `value` is above it,
-///   and `value` otherwise.
-/// - provides: the per-family step of [`ArenaWatermark::clamped_into`]. The
-///   const API stays unannotated: the pinned `anodized` expansion calls a
-///   non-const evaluator (`E0015`).
+/// - requires: all lengths and both ordered and inverted bounds are admitted.
+/// - ensures: returns low for an inverted interval; otherwise returns low below
+///   the interval, high above it and value inside it.
+/// - provides: the total per-coordinate clamp used by [`ArenaWatermark`].
 /// - fails: never.
-/// - panics: none — unlike the standard clamp, which panics on an inverted
-///   interval.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+#[spec(
+    ensures: |ret| ret.0 == if low.0 >= high.0 || value.0 < low.0 { low.0 }
+        else if value.0 > high.0 { high.0 }
+        else { value.0 },
+)]
 #[inline]
 const fn clamp_length(
     value: ArenaLength,
@@ -163,9 +355,27 @@ const fn clamp_length(
 
 /// A snapshot of the four family lengths: the admission watermark.
 ///
-/// Restoring an arena to a watermark drops exactly the nodes allocated after
-/// it, as four flat vector truncations. The default is the empty arena's
-/// watermark, which is the floor an environment starts at.
+/// Truncation removes a suffix from each family without growing a shorter
+/// family or restoring overwritten content. The default is the empty
+/// arena's watermark, which is the floor an environment starts at.
+///
+/// # Specification
+/// - requires: each coordinate is an independent host length; no relation to a
+///   particular arena is encoded.
+/// - ensures: carries four family lengths; the default coordinates are zero and
+///   clamping is componentwise.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds over
+///   zero, small values and the usize ceiling, with different coordinates in
+///   each watermark. Widened numeric observations cover id conversion at zero,
+///   the u32 ceiling and the target ceiling without allocating huge arenas.
+///   These separate wraparound, min/max reversal and coordinate substitution;
+///   hypothetical pointer widths are not emulated.
+/// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArenaWatermark
 {
@@ -192,23 +402,39 @@ impl ArenaWatermark
     /// behind when the content-start mark is not the one the arena grew from.
     ///
     /// # Specification
-    /// - requires: nothing — every combination is defined, including a `low`
-    ///   above `high`, which yields `low`, so no caller carries an ordering
-    ///   precondition.
-    /// - ensures: each family length is `low`'s when this one is below it,
-    ///   `high`'s when this one is above it, and this one otherwise; `self`
-    ///   unchanged when it lies within the interval in every family.
-    /// - provides: the rejection rollback mark of an admission choke point. The
-    ///   const API stays unannotated: the pinned `anodized` expansion calls a
-    ///   non-const evaluator (`E0015`).
+    /// - requires: all component values and both ordered and inverted bounds
+    ///   are admitted.
+    /// - ensures: clamps each coordinate independently into its inclusive
+    ///   interval; an inverted coordinate interval returns its low component.
+    /// - provides: the rejection rollback mark without changing any arena or
+    ///   allocating a snapshot.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — four independent clamps with one decision surface
-    ///   each, separated by a below-interval, an above-interval, an
-    ///   inside-interval and an inverted-interval mark, each asserted exactly.
+    /// - hypothesis: L3 enumerates ordered, equal and inverted clamp bounds
+    ///   over zero, small values and the usize ceiling, with different
+    ///   coordinates in each watermark. Widened numeric observations cover id
+    ///   conversion at zero, the u32 ceiling and the target ceiling without
+    ///   allocating huge arenas. These separate wraparound, min/max reversal
+    ///   and coordinate substitution; hypothetical pointer widths are not
+    ///   emulated.
+    /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
     /// - witness: `arena::tests::a_watermark_clamps_into_its_interval`
+    #[spec(
+        ensures: |ret| ret.values == if low.values >= high.values || self.values < low.values { low.values }
+            else if self.values > high.values { high.values }
+            else { self.values }
+                && ret.computations == if low.computations >= high.computations || self.computations < low.computations { low.computations }
+            else if self.computations > high.computations { high.computations }
+            else { self.computations }
+                && ret.value_types == if low.value_types >= high.value_types || self.value_types < low.value_types { low.value_types }
+            else if self.value_types > high.value_types { high.value_types }
+            else { self.value_types }
+                && ret.comp_types == if low.comp_types >= high.comp_types || self.comp_types < low.comp_types { low.comp_types }
+            else if self.comp_types > high.comp_types { high.comp_types }
+            else { self.comp_types },
+    )]
     #[inline]
     #[must_use]
     pub const fn clamped_into(
@@ -252,6 +478,31 @@ impl ArenaWatermark
 /// ids into the same arena. The node enums derive shallow clone and drop, so
 /// cloning or dropping a whole arena is a flat per-family vector operation,
 /// total on any term depth.
+///
+/// # Specification
+/// - requires: callers retain only live reachable ids when truncating and
+///   supply live children to constructors.
+/// - ensures: stores four flat family vectors; construction does not hash-cons,
+///   provenance is external and truncation permits index reuse.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof. L3 observes all four family
+///   prefixes before and after truncation, stale marks, dangling ids, reminting
+///   and a foreign id with a coincident ordinal. Exact retained variants and
+///   dense indices separate prefix damage, accidental growth, wrong-family
+///   lookup and generation/provenance assumptions. Allocation at the u32
+///   ceiling is not exercised; its conversion is checked separately.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TermArena
 {
@@ -288,6 +539,21 @@ impl TermArena
     ///   after a verdict. The mark carries no arena identity, so pairing it
     ///   with the arena it came from is the caller's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| ret.values == self.values.len()
+                && ret.computations == self.computations.len()
+                && ret.value_types == self.value_types.len()
+                && ret.comp_types == self.comp_types.len(),
+    )]
     #[inline]
     #[must_use]
     pub fn watermark(&self) -> ArenaWatermark
@@ -324,16 +590,21 @@ impl TermArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the truncation has one decision surface per family,
-    ///   separated by a mark below the current length and a mark at it, with
-    ///   the post-truncation lookup of a dropped id asserted to be absent.
-    /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
-    #[inline]
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
     #[spec(
-        captures: entry_watermark = self.watermark(),
-        ensures: self.watermark()
-            == watermark.clamped_into(ArenaWatermark::default(), entry_watermark),
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.min(watermark.values)
+                && self.computations.len() == before.computations.min(watermark.computations)
+                && self.value_types.len() == before.value_types.min(watermark.value_types)
+                && self.comp_types.len() == before.comp_types.min(watermark.comp_types),
     )]
+    #[inline]
     pub fn truncate_to(
         &mut self,
         watermark: ArenaWatermark,
@@ -355,6 +626,18 @@ impl TermArena
     /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
     ///   unchecked resolution path exists.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.values.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
     #[inline]
     #[must_use]
     pub fn value(
@@ -374,6 +657,18 @@ impl TermArena
     /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
     ///   unchecked resolution path exists.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.computations.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
     #[inline]
     #[must_use]
     pub fn computation(
@@ -393,6 +688,18 @@ impl TermArena
     /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
     ///   unchecked resolution path exists.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.value_types.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
     #[inline]
     #[must_use]
     pub fn value_type(
@@ -412,6 +719,18 @@ impl TermArena
     /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
     ///   unchecked resolution path exists.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all four family prefixes before and after
+    ///   truncation, stale marks, dangling ids, reminting and a foreign id with
+    ///   a coincident ordinal. Exact retained variants and dense indices
+    ///   separate prefix damage, accidental growth, wrong-family lookup and
+    ///   generation/provenance assumptions. Allocation at the u32 ceiling is
+    ///   not exercised; its conversion is checked separately.
+    /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
+    #[spec(
+        ensures: |ret| match (ret, self.comp_types.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+    )]
     #[inline]
     #[must_use]
     pub fn comp_type(
@@ -437,6 +756,26 @@ impl TermArena
     ///   before it; and above the ceiling [`id_index`] saturates at, the
     ///   returned id no longer names the appended node.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match value { Value::Pair(first, second) | Value::StaticApplication(first, second) => self.value(first).is_some()
+                && self.value(second).is_some(), Value::Injection(_, body) | Value::Lift { body, .. } => self.value(body).is_some(), Value::Thunk(body) => self.computation(body).is_some(), Value::Quote(quoted) => self.value_type(quoted).is_some(), Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(), Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
+        ensures: |ret| self.values.len() == entry.0.values.saturating_add(1)
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.values).unwrap_or(u32::MAX)
+                && self.values.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
     #[inline]
     fn alloc_value(
         &mut self,
@@ -458,6 +797,29 @@ impl TermArena
     ///   computation id currently live in this arena.
     /// - provides: the single minting site for a [`ComputationId`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match computation { Computation::Lambda(body) => self.computation(body).is_some(), Computation::Application(head, argument) => self.computation(head).is_some()
+                && self.value(argument).is_some(), Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(), Computation::Bind(bound, body) => self.computation(bound).is_some()
+                && self.computation(body).is_some(), Computation::Case { scrutinee, on_left, on_right } => self.value(scrutinee).is_some()
+                && self.computation(on_left).is_some()
+                && self.computation(on_right).is_some() }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations.saturating_add(1)
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.computations).unwrap_or(u32::MAX)
+                && self.computations.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
     #[inline]
     fn alloc_computation(
         &mut self,
@@ -479,6 +841,26 @@ impl TermArena
     ///   value-type id currently live in this arena.
     /// - provides: the single minting site for a [`ValueTypeId`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match value_type { ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some()
+                && self.value_type(second).is_some(), ValueType::Thunk(body) => self.comp_type(body).is_some(), ValueType::Lift { inner, .. } => self.value_type(inner).is_some(), ValueType::Element { code, .. } => self.value(code).is_some(), ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => true }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types.saturating_add(1)
+                && self.comp_types.len() == entry.0.comp_types
+                && ret.0 == u32::try_from(entry.0.value_types).unwrap_or(u32::MAX)
+                && self.value_types.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
     #[inline]
     fn alloc_value_type(
         &mut self,
@@ -500,6 +882,26 @@ impl TermArena
     ///   every computation-type id currently live in this arena.
     /// - provides: the single minting site for a [`CompTypeId`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: match comp_type { CompType::Returner(result) => self.value_type(result).is_some(), CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), CompType::Element { code, .. } => self.value(code).is_some() }, captures: entry = (self.watermark(), core::mem::discriminant(&comp_type)),
+        ensures: |ret| self.values.len() == entry.0.values
+                && self.computations.len() == entry.0.computations
+                && self.value_types.len() == entry.0.value_types
+                && self.comp_types.len() == entry.0.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(entry.0.comp_types).unwrap_or(u32::MAX)
+                && self.comp_types.last().map(core::mem::discriminant) == Some(entry.1),
+    )]
     #[inline]
     fn alloc_comp_type(
         &mut self,
@@ -511,8 +913,8 @@ impl TermArena
         id
     }
 
-    // Value constructors. Each mints over already-allocated children, which is
-    // what makes a child id strictly less than its parent's.
+    // Value constructors mint over live children. Only same-family indices
+    // share an order, and the returned index saturates at the u32 ceiling.
 
     /// Mint a bound value variable.
     ///
@@ -525,6 +927,25 @@ impl TermArena
     ///   currently live in this arena.
     /// - provides: the only way to obtain a [`ValueId`] for a bound variable.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Variable(actual)) if actual == index),
+    )]
     #[inline]
     pub fn value_variable(
         &mut self,
@@ -547,6 +968,25 @@ impl TermArena
     /// - provides: the only way to obtain a [`ValueId`] for a constant
     ///   reference.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Constant(actual)) if actual == index),
+    )]
     #[inline]
     pub fn value_constant(
         &mut self,
@@ -566,6 +1006,25 @@ impl TermArena
     ///   currently live in this arena.
     /// - provides: the only way to obtain a [`ValueId`] for the unit value.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Unit)),
+    )]
     #[inline]
     pub fn value_unit(&mut self) -> ValueId
     {
@@ -583,6 +1042,25 @@ impl TermArena
     ///   currently live in this arena.
     /// - provides: the only way to obtain a [`ValueId`] for a literal.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = (self.watermark(), literal.base_type()),
+        ensures: |ret| self.values.len() == before.0.values.saturating_add(1)
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
+                && self.values.last().is_some_and(|node| match *node { Value::Literal(ref actual) => actual.base_type() == before.1, _ => false }),
+    )]
     #[inline]
     pub fn value_literal(
         &mut self,
@@ -603,6 +1081,27 @@ impl TermArena
     /// - provides: the pair node, acyclic by construction; the id ordering is
     ///   what the subterm table's strictly-earlier invariant rests on.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(first).is_some()
+                && self.value(second).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Pair(left, right)) if left == first
+                && right == second),
+    )]
     #[inline]
     pub fn value_pair(
         &mut self,
@@ -624,6 +1123,26 @@ impl TermArena
     /// - provides: the injection node, acyclic by construction; which summand
     ///   the side selects is a typing fact.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Injection(actual_side, actual_body)) if actual_side == side
+                && actual_body == body),
+    )]
     #[inline]
     pub fn value_injection(
         &mut self,
@@ -646,6 +1165,25 @@ impl TermArena
     ///   rather than runs it. The child crosses families, so the two ids share
     ///   no allocation order and none is claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Thunk(actual)) if actual == body),
+    )]
     #[inline]
     pub fn value_thunk(
         &mut self,
@@ -667,6 +1205,26 @@ impl TermArena
     /// - provides: the written lift; there is no implicit cumulativity, so a
     ///   lift exists only where a producer minted one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(body).is_some(), captures: before = (self.watermark(), target.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values.saturating_add(1)
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Lift { ref target, body: actual }) if actual == body
+                && target.constant_part() == before.1),
+    )]
     #[inline]
     pub fn value_lift(
         &mut self,
@@ -686,6 +1244,25 @@ impl TermArena
     /// - provides: the quote `⌜A⌝`; its universe level is formation's to read.
     ///   The child crosses families, so the two ids share no allocation order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(quoted).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::Quote(actual)) if actual == quoted),
+    )]
     #[inline]
     pub fn value_quote(
         &mut self,
@@ -704,6 +1281,25 @@ impl TermArena
     /// - provides: the quote `⌜C⌝` of a computation type, which is a value like
     ///   every code.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.comp_type(quoted).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::QuoteComputation(actual)) if actual == quoted),
+    )]
     #[inline]
     pub fn value_quote_computation(
         &mut self,
@@ -729,11 +1325,26 @@ impl TermArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an operator constant at a quoted code, encoded and
-    ///   decoded back in wire order under the decode that reads it.
-    /// - witness: `sharing_format::sharing_format::a_static_family_round_trips_in_wire_order`
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(head).is_some()
+                && self.value(argument).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values.saturating_add(1)
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
+                && matches!(self.values.last(), Some(&Value::StaticApplication(left, right)) if left == head
+                && right == argument),
+    )]
     #[inline]
-    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
     pub fn value_static_application(
         &mut self,
         head: ValueId,
@@ -756,6 +1367,25 @@ impl TermArena
     /// - provides: the lambda node, acyclic by construction; the binder is
     ///   positional, so no name is represented.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Lambda(actual)) if actual == body),
+    )]
     #[inline]
     pub fn computation_lambda(
         &mut self,
@@ -777,6 +1407,27 @@ impl TermArena
     /// - provides: the application node; whether the argument matches the
     ///   head's domain is a typing fact.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(head).is_some()
+                && self.value(argument).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Application(left, right)) if left == head
+                && right == argument),
+    )]
     #[inline]
     pub fn computation_application(
         &mut self,
@@ -798,6 +1449,25 @@ impl TermArena
     /// - provides: the returner node. The child crosses families, so the two
     ///   ids share no allocation order and none is claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(value).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Return(actual)) if actual == value),
+    )]
     #[inline]
     pub fn computation_return(
         &mut self,
@@ -818,6 +1488,27 @@ impl TermArena
     /// - provides: the sequencing node; the value `bound` returns is bound
     ///   positionally in `body`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(bound).is_some()
+                && self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Bind(left, right)) if left == bound
+                && right == body),
+    )]
     #[inline]
     pub fn computation_bind(
         &mut self,
@@ -839,6 +1530,25 @@ impl TermArena
     /// - provides: the force node. Whether `value` is a thunk is a typing fact,
     ///   and the child crosses families, so no id ordering is claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(value).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Force(actual)) if actual == value),
+    )]
     #[inline]
     pub fn computation_force(
         &mut self,
@@ -862,6 +1572,29 @@ impl TermArena
     ///   injected value bound, which is a typing fact rather than a
     ///   representation one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(scrutinee).is_some()
+                && self.computation(on_left).is_some()
+                && self.computation(on_right).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Case { scrutinee: actual, on_left: left, on_right: right }) if actual == scrutinee
+                && left == on_left
+                && right == on_right),
+    )]
     #[inline]
     pub fn computation_case(
         &mut self,
@@ -889,6 +1622,25 @@ impl TermArena
     ///   value-type id currently live in this arena.
     /// - provides: the only way to obtain a [`ValueTypeId`] for a base type.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Base(actual)) if actual == base),
+    )]
     #[inline]
     pub fn value_type_base(
         &mut self,
@@ -908,6 +1660,25 @@ impl TermArena
     ///   value-type id currently live in this arena.
     /// - provides: the only way to obtain a [`ValueTypeId`] for the unit type.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Unit)),
+    )]
     #[inline]
     pub fn value_type_unit(&mut self) -> ValueTypeId
     {
@@ -924,6 +1695,27 @@ impl TermArena
     ///   both child ids, which the precondition keeps live.
     /// - provides: the product type, acyclic by construction.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(first).is_some()
+                && self.value_type(second).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Product(left, right)) if left == first
+                && right == second),
+    )]
     #[inline]
     pub fn value_type_product(
         &mut self,
@@ -945,6 +1737,27 @@ impl TermArena
     /// - provides: the sum type, acyclic by construction; the summand order is
     ///   the order the two arguments are given in.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(first).is_some()
+                && self.value_type(second).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Sum(left, right)) if left == first
+                && right == second),
+    )]
     #[inline]
     pub fn value_type_sum(
         &mut self,
@@ -966,6 +1779,25 @@ impl TermArena
     /// - provides: the thunk type `U C`. The child crosses families, so the two
     ///   ids share no allocation order and none is claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.comp_type(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Thunk(actual)) if actual == body),
+    )]
     #[inline]
     pub fn value_type_thunk(
         &mut self,
@@ -985,6 +1817,26 @@ impl TermArena
     ///   value-type id currently live in this arena.
     /// - provides: the universe of `sort` at that level.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = (self.watermark(), level.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Universe { sort: actual, ref level }) if actual == sort
+                && level.constant_part() == before.1),
+    )]
     #[inline]
     pub fn value_type_universe(
         &mut self,
@@ -1012,6 +1864,25 @@ impl TermArena
     /// - provides: the reference to a sealed abstract type, representable
     ///   whether or not the position is admitted.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Abstract(actual)) if actual == atom),
+    )]
     #[inline]
     pub fn value_type_abstract(
         &mut self,
@@ -1047,9 +1918,25 @@ impl TermArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decoding arm and the minting arm, separated by a
-    ///   value quote and by a computation quote, which decodes nothing here.
-    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(code).is_some(), captures: before = (self.watermark(), match self.value(code) { Some(&Value::Quote(quoted)) => Some(quoted), _ => None }, target.constant_part()),
+        ensures: |ret| match before.1 { Some(quoted) => ret == quoted
+                && self.watermark() == before.0, None => self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Element { code: actual, ref target }) if actual == code
+                && target.constant_part() == before.2) },
+    )]
     #[inline]
     pub fn value_type_element(
         &mut self,
@@ -1077,11 +1964,26 @@ impl TermArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a static Pi from the value universe to the
-    ///   computation universe, encoded and decoded back in wire order.
-    /// - witness: `sharing_format::sharing_format::a_static_family_round_trips_in_wire_order`
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.value_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types.saturating_add(1)
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::StaticPi { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
     #[inline]
-    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::StaticPi { domain, codomain }))]
     pub fn value_type_static_pi(
         &mut self,
         domain: ValueTypeId,
@@ -1102,6 +2004,26 @@ impl TermArena
     /// - provides: the written type-level lift; whether `inner`'s level sits
     ///   below `target` is a typing fact.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(inner).is_some(), captures: before = (self.watermark(), target.constant_part()),
+        ensures: |ret| self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types.saturating_add(1)
+                && self.comp_types.len() == before.0.comp_types
+                && ret.0 == u32::try_from(before.0.value_types).unwrap_or(u32::MAX)
+                && matches!(self.value_types.last(), Some(&ValueType::Lift { inner: actual, ref target }) if actual == inner
+                && target.constant_part() == before.1),
+    )]
     #[inline]
     pub fn value_type_lift(
         &mut self,
@@ -1125,6 +2047,25 @@ impl TermArena
     /// - provides: the returner type `F A`. The child crosses families, so the
     ///   two ids share no allocation order and none is claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(result).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Returner(actual)) if actual == result),
+    )]
     #[inline]
     pub fn comp_type_returner(
         &mut self,
@@ -1146,6 +2087,27 @@ impl TermArena
     /// - provides: the non-dependent arrow, where the codomain does not read
     ///   the domain's binder.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Arrow { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
     #[inline]
     pub fn comp_type_arrow(
         &mut self,
@@ -1175,6 +2137,27 @@ impl TermArena
     ///   binder is the producer's obligation, not a representation one, so a
     ///   codomain that ignores it is still representable.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value_type(domain).is_some()
+                && self.comp_type(codomain).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Pi { domain: left, codomain: right }) if left == domain
+                && right == codomain),
+    )]
     #[inline]
     pub fn comp_type_pi(
         &mut self,
@@ -1201,10 +2184,25 @@ impl TermArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decoding arm and the minting arm, separated by a
-    ///   computation quote and by a value quote, which is a different family
-    ///   and decodes nothing.
-    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.value(code).is_some(), captures: before = (self.watermark(), match self.value(code) { Some(&Value::QuoteComputation(quoted)) => Some(quoted), _ => None }, target.constant_part()),
+        ensures: |ret| match before.1 { Some(quoted) => ret == quoted
+                && self.watermark() == before.0, None => self.values.len() == before.0.values
+                && self.computations.len() == before.0.computations
+                && self.value_types.len() == before.0.value_types
+                && self.comp_types.len() == before.0.comp_types.saturating_add(1)
+                && ret.0 == u32::try_from(before.0.comp_types).unwrap_or(u32::MAX)
+                && matches!(self.comp_types.last(), Some(&CompType::Element { code: actual, ref target }) if actual == code
+                && target.constant_part() == before.2) },
+    )]
     #[inline]
     pub fn comp_type_element(
         &mut self,
@@ -1222,25 +2220,25 @@ impl TermArena
     /// them.
     ///
     /// # Specification
-    /// - requires: nothing — a dangling id is admissible input.
-    /// - ensures: the node's child ids in wire order, each strictly less than
-    ///   the node's own id under the minting invariant; the empty list for a
-    ///   leaf and for a dangling id, which is the fail-closed reading.
-    /// - provides: the edge relation every walk over the arena follows, and the
-    ///   arities the node-tag table is pinned against. The clause checks the
-    ///   exact wire-ordered children without allocation. Strictly-earlier
-    ///   minting stays prose: ids from different families have no shared
-    ///   allocation-order index.
-    /// - fails: never.
+    /// - requires: all family ids are admitted, including dangling ids.
+    /// - ensures: returns exactly the resolved node’s children in wire-field
+    ///   order, retaining their family and multiplicity; leaves and dangling
+    ///   nodes return an empty vector.
+    /// - provides: cross-family edges for the encoder, budget walk and arity
+    ///   oracle. Numeric ordering applies only within a family, under the
+    ///   constructor and truncation disciplines.
+    /// - fails: never; a missing node has no observable children.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the tag table's declared arities are differentially
-    ///   compared against this function over one node of every former, so a
-    ///   dropped or reordered child arm changes an arity or a wire image; the
-    ///   L3 residue is the dangling id, asserted to yield no child.
-    /// - witness: `arena::tests::a_dangling_node_has_no_children`
-    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children, nonzero levels and literal payloads, observes the exact
+    ///   stored nodes and ordered edges, and checks each operation changes only
+    ///   its own family length. Quote decoding covers matching, crossed and
+    ///   non-quote codes without allocating an alias node. These distinguish
+    ///   child permutations, payload loss, wrong-family minting and accidental
+    ///   hash-consing; the probes are not a typing or arena-provenance proof.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[must_use]
     #[spec(ensures: |ret| match node {
         AnyNode::Value(id) => match self.value(id) {
@@ -1385,6 +2383,525 @@ mod tests
     use super::ArenaWatermark;
     use super::TermArena;
     use super::ValueId;
+
+    #[test]
+    fn scalar_clamps_and_index_ceilings_match_widened_models()
+    {
+        let selected = const {
+            [
+                crate::decl::DeclarationContent::Def {
+                    declared: super::ValueTypeId(7),
+                    body: ValueId(99),
+                }
+                .declared_id()
+                .0,
+                crate::decl::DeclarationContent::Axiom {
+                    declared: super::ValueTypeId(11),
+                }
+                .declared_id()
+                .0,
+                crate::decl::DeclarationContent::AbstractType {
+                    kind: super::ValueTypeId(17),
+                }
+                .declared_id()
+                .0,
+            ]
+        };
+        assert_eq!(selected, [7_u32, 11, 17]);
+        let lengths = [0_usize, 1, 7, usize::MAX.saturating_sub(1), usize::MAX];
+        for value in lengths {
+            for low in lengths {
+                for high in lengths {
+                    let model = if low > high {
+                        low
+                    }
+                    else {
+                        value.clamp(low, high)
+                    };
+                    assert_eq!(
+                        super::clamp_length(
+                            super::ArenaLength(value),
+                            super::ArenaLength(low),
+                            super::ArenaLength(high)
+                        )
+                        .0,
+                        model
+                    );
+                    let input = ArenaWatermark {
+                        values: value,
+                        computations: low,
+                        value_types: high,
+                        comp_types: usize::MAX.saturating_sub(value),
+                    };
+                    let floor = ArenaWatermark {
+                        values: low,
+                        computations: high,
+                        value_types: value,
+                        comp_types: 0,
+                    };
+                    let ceiling = ArenaWatermark {
+                        values: high,
+                        computations: value,
+                        value_types: low,
+                        comp_types: usize::MAX,
+                    };
+                    let actual = input.clamped_into(floor, ceiling);
+                    for (observed, scalar, lower, upper) in [
+                        (actual.values, input.values, floor.values, ceiling.values),
+                        (
+                            actual.computations,
+                            input.computations,
+                            floor.computations,
+                            ceiling.computations,
+                        ),
+                        (
+                            actual.value_types,
+                            input.value_types,
+                            floor.value_types,
+                            ceiling.value_types,
+                        ),
+                        (
+                            actual.comp_types,
+                            input.comp_types,
+                            floor.comp_types,
+                            ceiling.comp_types,
+                        ),
+                    ] {
+                        assert_eq!(
+                            observed,
+                            if lower > upper {
+                                lower
+                            }
+                            else {
+                                scalar.clamp(lower, upper)
+                            }
+                        );
+                    }
+                }
+            }
+        }
+        for length in lengths
+            .into_iter()
+            .chain([usize::try_from(u32::MAX).unwrap_or(usize::MAX)])
+        {
+            let widened = u128::try_from(length).expect("host lengths fit u128");
+            assert_eq!(
+                u128::from(super::id_index(super::ArenaLength(length)).0),
+                widened.min(u128::from(u32::MAX))
+            );
+        }
+        for index in [0_u32, 1, u32::MAX.saturating_sub(1), u32::MAX] {
+            let observed = super::id_offset(super::ArenaIndex(index)).0;
+            assert_eq!(
+                u128::try_from(observed).expect("host offsets fit u128"),
+                u128::from(index).min(u128::try_from(usize::MAX).expect("host ceiling fits u128"))
+            );
+        }
+    }
+
+    #[test]
+    fn truncation_preserves_prefixes_reuses_indices_and_checks_all_families()
+    {
+        let mut arena = TermArena::new();
+        let value = arena.value_variable(super::DeBruijnIndex::from(3_u32));
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_base(super::BaseType::Integer);
+        let comp_type = arena.comp_type_returner(value_type);
+        let kept = arena.clone();
+        let low = arena.watermark();
+        let removed_value = arena.value_unit();
+        let removed_computation = arena.computation_force(value);
+        let removed_value_type = arena.value_type_unit();
+        let removed_comp_type = arena.comp_type_arrow(value_type, comp_type);
+        let stale = arena.watermark();
+        arena.truncate_to(low);
+        assert_eq!(arena, kept);
+        assert_eq!(arena.value(removed_value), None);
+        assert_eq!(arena.computation(removed_computation), None);
+        assert_eq!(arena.value_type(removed_value_type), None);
+        assert_eq!(arena.comp_type(removed_comp_type), None);
+        for node in [
+            AnyNode::Value(removed_value),
+            AnyNode::Computation(removed_computation),
+            AnyNode::ValueType(removed_value_type),
+            AnyNode::CompType(removed_comp_type),
+        ] {
+            assert_eq!(arena.children_of(node), alloc::vec![]);
+        }
+        arena.truncate_to(stale);
+        assert_eq!(arena, kept, "a stale high mark cannot grow a family");
+        assert_eq!(
+            arena.value_variable(super::DeBruijnIndex::from(9_u32)),
+            removed_value
+        );
+        assert_eq!(arena.computation_lambda(computation), removed_computation);
+        assert_eq!(
+            arena.value_type_base(super::BaseType::String),
+            removed_value_type
+        );
+        assert_eq!(arena.comp_type_pi(value_type, comp_type), removed_comp_type);
+        assert_eq!(
+            arena.value(removed_value),
+            Some(&super::Value::Variable(super::DeBruijnIndex::from(9_u32)))
+        );
+        assert_eq!(
+            arena.computation(removed_computation),
+            Some(&super::Computation::Lambda(computation))
+        );
+        assert_eq!(
+            arena.value_type(removed_value_type),
+            Some(&super::ValueType::Base(super::BaseType::String))
+        );
+        assert_eq!(
+            arena.comp_type(removed_comp_type),
+            Some(&super::CompType::Pi {
+                domain: value_type,
+                codomain: comp_type
+            })
+        );
+        let mut foreign = TermArena::new();
+        let foreign_value = foreign.value_unit();
+        let foreign_computation = foreign.computation_force(foreign_value);
+        let foreign_value_type = foreign.value_type_unit();
+        let foreign_comp_type = foreign.comp_type_returner(foreign_value_type);
+        assert_eq!(arena.value(foreign_value), kept.value(value));
+        assert_eq!(
+            arena.computation(foreign_computation),
+            kept.computation(computation)
+        );
+        assert_eq!(
+            arena.value_type(foreign_value_type),
+            kept.value_type(value_type)
+        );
+        assert_eq!(
+            arena.comp_type(foreign_comp_type),
+            kept.comp_type(comp_type)
+        );
+        arena.truncate_to(ArenaWatermark::default());
+        assert_eq!(arena, TermArena::new());
+    }
+
+    #[test]
+    fn ordered_edges_preserve_distinct_children_and_quote_boundaries()
+    {
+        use super::CompType;
+        use super::Computation;
+        use super::GroundSort;
+        use super::Value;
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let v0 = arena.value_variable(super::DeBruijnIndex::from(u32::MAX));
+        let v1 = arena.value_variable(super::DeBruijnIndex::from(7_u32));
+        let c0 = arena.computation_return(v0);
+        let c1 = arena.computation_force(v1);
+        let t0 = arena.value_type_unit();
+        let t1 = arena.value_type_base(super::BaseType::Integer);
+        let k0 = arena.comp_type_returner(t0);
+        let k1 = arena.comp_type_returner(t1);
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            values: 2,
+            computations: 2,
+            value_types: 2,
+            comp_types: 2
+        });
+        let level =
+            gandr_kernel_strata::Level::constant(gandr_kernel_strata::LevelConstant::from(7_u64))
+                .max(&gandr_kernel_strata::Level::var(
+                    gandr_kernel_strata::LevelVar::new(gandr_kernel_strata::LevelVarIndex::from(
+                        2_u32,
+                    )),
+                ));
+        let literal = super::Literal::Text(crate::base::StringLiteral::new(
+            alloc::string::String::from("a\0é"),
+        ));
+        let start = arena.watermark();
+        let values: &[(super::ValueId, Value, &[AnyNode])] = &[
+            (
+                arena.value_variable(super::DeBruijnIndex::from(u32::MAX)),
+                Value::Variable(super::DeBruijnIndex::from(u32::MAX)),
+                &[],
+            ),
+            (
+                arena.value_constant(super::ConstantIndex::from(usize::MAX)),
+                Value::Constant(super::ConstantIndex::from(usize::MAX)),
+                &[],
+            ),
+            (arena.value_unit(), Value::Unit, &[]),
+            (
+                arena.value_literal(literal.clone()),
+                Value::Literal(literal),
+                &[],
+            ),
+            (arena.value_pair(v0, v1), Value::Pair(v0, v1), &[
+                AnyNode::Value(v0),
+                AnyNode::Value(v1),
+            ]),
+            (
+                arena.value_injection(super::Side::Left, v0),
+                Value::Injection(super::Side::Left, v0),
+                &[AnyNode::Value(v0)],
+            ),
+            (
+                arena.value_injection(super::Side::Right, v1),
+                Value::Injection(super::Side::Right, v1),
+                &[AnyNode::Value(v1)],
+            ),
+            (arena.value_thunk(c1), Value::Thunk(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (
+                arena.value_lift(level.clone(), v1),
+                Value::Lift {
+                    target: level.clone(),
+                    body: v1,
+                },
+                &[AnyNode::Value(v1)],
+            ),
+            (arena.value_quote(t1), Value::Quote(t1), &[
+                AnyNode::ValueType(t1),
+            ]),
+            (
+                arena.value_quote_computation(k1),
+                Value::QuoteComputation(k1),
+                &[AnyNode::CompType(k1)],
+            ),
+            (
+                arena.value_static_application(v0, v1),
+                Value::StaticApplication(v0, v1),
+                &[AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in values.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.values.saturating_add(offset)
+            );
+            assert_eq!(arena.value(id), Some(expected));
+            assert_eq!(arena.children_of(AnyNode::Value(id)).as_slice(), children);
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            values: start.values.saturating_add(values.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let computations: &[(super::ComputationId, Computation, &[AnyNode])] = &[
+            (arena.computation_lambda(c1), Computation::Lambda(c1), &[
+                AnyNode::Computation(c1),
+            ]),
+            (
+                arena.computation_application(c0, v1),
+                Computation::Application(c0, v1),
+                &[AnyNode::Computation(c0), AnyNode::Value(v1)],
+            ),
+            (arena.computation_return(v1), Computation::Return(v1), &[
+                AnyNode::Value(v1),
+            ]),
+            (
+                arena.computation_bind(c0, c1),
+                Computation::Bind(c0, c1),
+                &[AnyNode::Computation(c0), AnyNode::Computation(c1)],
+            ),
+            (arena.computation_force(v0), Computation::Force(v0), &[
+                AnyNode::Value(v0),
+            ]),
+            (
+                arena.computation_case(v1, c0, c1),
+                Computation::Case {
+                    scrutinee: v1,
+                    on_left: c0,
+                    on_right: c1,
+                },
+                &[
+                    AnyNode::Value(v1),
+                    AnyNode::Computation(c0),
+                    AnyNode::Computation(c1),
+                ],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in computations.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.computations.saturating_add(offset)
+            );
+            assert_eq!(arena.computation(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::Computation(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            computations: start.computations.saturating_add(computations.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let value_types: &[(super::ValueTypeId, ValueType, &[AnyNode])] = &[
+            (
+                arena.value_type_base(super::BaseType::String),
+                ValueType::Base(super::BaseType::String),
+                &[],
+            ),
+            (arena.value_type_unit(), ValueType::Unit, &[]),
+            (
+                arena.value_type_product(t0, t1),
+                ValueType::Product(t0, t1),
+                &[AnyNode::ValueType(t0), AnyNode::ValueType(t1)],
+            ),
+            (arena.value_type_sum(t1, t0), ValueType::Sum(t1, t0), &[
+                AnyNode::ValueType(t1),
+                AnyNode::ValueType(t0),
+            ]),
+            (arena.value_type_thunk(k1), ValueType::Thunk(k1), &[
+                AnyNode::CompType(k1),
+            ]),
+            (
+                arena.value_type_universe(GroundSort::Value, level.clone()),
+                ValueType::Universe {
+                    sort: GroundSort::Value,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (
+                arena.value_type_universe(GroundSort::Computation, level.clone()),
+                ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (
+                arena.value_type_abstract(super::ConstantIndex::from(usize::MAX)),
+                ValueType::Abstract(super::ConstantIndex::from(usize::MAX)),
+                &[],
+            ),
+            (
+                arena.value_type_element(v1, level.clone()),
+                ValueType::Element {
+                    code: v1,
+                    target: level.clone(),
+                },
+                &[AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_type_static_pi(t0, t1),
+                ValueType::StaticPi {
+                    domain: t0,
+                    codomain: t1,
+                },
+                &[AnyNode::ValueType(t0), AnyNode::ValueType(t1)],
+            ),
+            (
+                arena.value_type_lift(t1, level.clone()),
+                ValueType::Lift {
+                    inner: t1,
+                    target: level.clone(),
+                },
+                &[AnyNode::ValueType(t1)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in value_types.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.value_types.saturating_add(offset)
+            );
+            assert_eq!(arena.value_type(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::ValueType(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            value_types: start.value_types.saturating_add(value_types.len()),
+            ..start
+        });
+        let start = arena.watermark();
+        let comp_types: &[(super::CompTypeId, CompType, &[AnyNode])] = &[
+            (arena.comp_type_returner(t1), CompType::Returner(t1), &[
+                AnyNode::ValueType(t1),
+            ]),
+            (
+                arena.comp_type_arrow(t0, k1),
+                CompType::Arrow {
+                    domain: t0,
+                    codomain: k1,
+                },
+                &[AnyNode::ValueType(t0), AnyNode::CompType(k1)],
+            ),
+            (
+                arena.comp_type_pi(t1, k0),
+                CompType::Pi {
+                    domain: t1,
+                    codomain: k0,
+                },
+                &[AnyNode::ValueType(t1), AnyNode::CompType(k0)],
+            ),
+            (
+                arena.comp_type_element(v0, level.clone()),
+                CompType::Element {
+                    code: v0,
+                    target: level.clone(),
+                },
+                &[AnyNode::Value(v0)],
+            ),
+        ];
+        for (offset, &(id, ref expected, children)) in comp_types.iter().enumerate() {
+            assert_eq!(
+                usize::try_from(id.0).expect("small id"),
+                start.comp_types.saturating_add(offset)
+            );
+            assert_eq!(arena.comp_type(id), Some(expected));
+            assert_eq!(
+                arena.children_of(AnyNode::CompType(id)).as_slice(),
+                children
+            );
+        }
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            comp_types: start.comp_types.saturating_add(comp_types.len()),
+            ..start
+        });
+        let quote = arena.value_quote(t0);
+        let quote_computation = arena.value_quote_computation(k0);
+        let before = arena.watermark();
+        assert_eq!(
+            arena.value_type_element(quote, gandr_kernel_strata::Level::zero()),
+            t0
+        );
+        assert_eq!(
+            arena.comp_type_element(quote_computation, gandr_kernel_strata::Level::zero()),
+            k0
+        );
+        assert_eq!(
+            arena.watermark(),
+            before,
+            "matching quotes discard the written target without minting"
+        );
+        let crossed = arena.comp_type_element(quote, level.clone());
+        assert_eq!(
+            arena.comp_type(crossed),
+            Some(&CompType::Element {
+                code: quote,
+                target: level.clone()
+            })
+        );
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            comp_types: before.comp_types.saturating_add(1),
+            ..before
+        });
+        let before = arena.watermark();
+        let crossed = arena.value_type_element(quote_computation, level.clone());
+        assert_eq!(
+            arena.value_type(crossed),
+            Some(&ValueType::Element {
+                code: quote_computation,
+                target: level
+            })
+        );
+        assert_eq!(arena.watermark(), ArenaWatermark {
+            value_types: before.value_types.saturating_add(1),
+            ..before
+        });
+    }
 
     #[test]
     fn a_child_id_is_strictly_below_its_parent()

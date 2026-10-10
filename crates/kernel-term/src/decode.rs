@@ -1,44 +1,32 @@
-//! The validating decoder: canonical bytes back to a shared arena and an
-//! admission-ordered declaration sequence.
+//! Structural and canonical-wire validation into a shared arena.
 //!
-//! # Decode is arena construction
+//! # Table rows and arena identity
 //!
-//! Each subterm-table entry is validated as it accrues and minted **once** into
-//! the arena, and post-order completion is allocation order — so **decode
-//! retains sharing**: a table index referenced twice reuses one arena id and
-//! never expands. That is the whole reason the representation and the format
-//! stop being two designs; a table entry *is* an arena id.
+//! Each complete wire entry appends one global row. A row resolves to a
+//! family-specific arena id; it is not that id's numeric ordinal. Repeated
+//! references reuse the same id. Element normalization can reuse a quoted
+//! type's existing id instead of allocating another node; the final comparison
+//! then rejects the reducible spelling.
 //!
-//! # What every entry is checked for, before anything downstream sees it
+//! Entry decoding checks the frozen tag, strictly earlier child references,
+//! slot polarity and table cap before committing its row. A failed entry leaves
+//! the table unchanged, but a failed segment can retain earlier completed rows.
+//! No partially decoded artifact is returned to the caller.
 //!
-//! - a tag inside the frozen block, otherwise a named refusal at a named site;
-//! - each child index **strictly earlier** than the entry's own global index,
-//!   which is acyclicity and topological order at once;
-//! - each child of the polarity its parent's slot requires, decided by a table
-//!   lookup rather than by an expectation threaded through the parser;
-//! - the entry cap, enforced as entries accrue so a refusal truncates early.
+//! # Acceptance and its limits
 //!
-//! Then one forward scan computes every entry's memoized expanded size and the
-//! two work budgets refuse an over-budget artifact **before any consumer sees
-//! it**, and the whole-artifact re-encode-compare refuses a non-canonical one.
+//! A forward scan computes saturating expanded sizes from the wire edges and
+//! checks both structural-work caps. The header's claimed atom positions are
+//! compared with the decoded declaration kinds. Finally, the shared encoder
+//! must reproduce the input bytes exactly: minimal integers, normalized
+//! payloads, maximal sharing, first-completion order and absence of dead rows.
 //!
-//! # Canonical form is enforced by re-encoding, not by inspection
-//!
-//! An artifact is canonical exactly when: every variable-length integer is
-//! minimal, every inline level canonical, every literal canonical; the table is
-//! maximally shared, since otherwise re-encoding merges two entries and the
-//! byte count differs; entries are in post-order first-completion order, since
-//! any permutation re-encodes to a different index assignment; there are no
-//! dead entries, since an unreferenced entry re-encodes away; and every child
-//! index is strictly less than its own, which is checked structurally here
-//! before re-encoding.
-//!
-//! The mechanism needed no separate implementation, because **the maximal-
-//! sharing encoder is the re-encoder** — and that encoder is itself
-//! sharing-aware, which is the sharpening not to miss: a re-encoder walking the
-//! graph as a tree would turn the canonical check into an amplification vector.
-//! The work budget runs first and bounds it, and the encoder is graph-aware on
-//! its own terms besides.
+//! This comparison is an implementation-level acceptance criterion, not an
+//! independent proof of the format; literal fixtures constrain the shared
+//! codec. It does not validate typing, parameter coverage, admission claims or
+//! provenance truth. Structural expansion bounds are not bounds on evaluation
+//! or all inline-payload work. Graph handling is iterative, while normalization
+//! and ordered-map operations contribute their own costs.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -119,6 +107,23 @@ enum Family
 }
 
 /// A decoded entry's arena id, tagged by family.
+///
+/// # Specification
+/// - requires: nothing; ids alone do not certify arena membership.
+/// - ensures: distinguishes the four id families without implying that a global
+///   table index is an arena ordinal.
+/// - provides: family-tagged resolution results used by child and root checks.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
 #[derive(Clone, Copy, Debug)]
 enum DecodedNode
 {
@@ -134,6 +139,26 @@ enum DecodedNode
 
 /// The running decode state for the global subterm table: the arena entries
 /// mint into, and per-entry parallel vectors indexed by global index.
+///
+/// # Specification
+/// - requires: decoding operations keep the parallel vectors aligned; child
+///   indices describe the wire graph and are strictly earlier than their row.
+/// - ensures: retains global-to-arena resolution, recorded families and ordered
+///   wire children; normalized element rows may resolve to an existing arena
+///   id.
+/// - provides: the state shared by segment decoding, reference checks and the
+///   expanded-work scan.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
 struct Table
 {
     /// The arena every entry mints into, sharing retained.
@@ -157,6 +182,21 @@ impl Table
     /// - provides: the accumulator one artifact's entries fill; no state from
     ///   an earlier decode is reachable from it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 distinguishes all four reference families, exact
+    ///   ordered child appends, self and forward references, polarity refusals
+    ///   and complete former payloads against literal entries. It observes
+    ///   sharing through resolved ids rather than assuming global indices equal
+    ///   arena ordinals.
+    /// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+    /// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+    #[spec(
+        ensures: |ret| ret.nodes.is_empty()
+                && ret.families.is_empty()
+                && ret.children.is_empty()
+                && ret.arena.watermark() == crate::arena::ArenaWatermark::default(),
+    )]
     #[inline]
     fn new() -> Self
     {
@@ -178,6 +218,21 @@ impl Table
     ///   decoded; the saturated index cannot alias entry zero, and the entry
     ///   cap is reached long before it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 distinguishes all four reference families, exact
+    ///   ordered child appends, self and forward references, polarity refusals
+    ///   and complete former payloads against literal entries. It observes
+    ///   sharing through resolved ids rather than assuming global indices equal
+    ///   arena ordinals. The entry cap prevents a decoded table from reaching
+    ///   ordinal saturation; the scalar conversion boundary is separately
+    ///   modeled in the arena witness.
+    /// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+    /// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+    /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
+    #[spec(
+        ensures: |ret| u32::from(ret) == u32::try_from(self.nodes.len()).unwrap_or(u32::MAX),
+    )]
     #[inline]
     fn next_index(&self) -> GlobalIndex
     {
@@ -204,6 +259,31 @@ enum DeclKind
 
 /// Per-declaration metadata gathered during decode, resolved to declarations
 /// once the arena is built.
+///
+/// # Specification
+/// - requires: nothing; this carrier alone does not validate roots or producer
+///   claims.
+/// - ensures: holds the decoded kind, mark, name, level interface, roots and
+///   provenance until assembly. Individual consumers establish their own root
+///   requirements.
+/// - provides: declaration metadata kept separate from table construction and
+///   final root resolution.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 literal artifact fixtures and named malformed-input
+///   boundaries observe header and segment framing, sharing, producer claims
+///   and refusal precedence. Generated round trips show codec agreement, not an
+///   independent proof of the format or arbitrary-input totality; small-stack
+///   depth witnesses cover iterative graph handling.
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 struct DeclMeta
 {
     /// The admission mark.
@@ -231,6 +311,29 @@ struct DeclMeta
 /// for the first — to its own end. The offsets are the reader's: a consumer
 /// that stores the segments apart takes their boundaries from a decode, never
 /// from the writer that handed it the bytes.
+///
+/// # Specification
+/// - requires: nothing; a default layout has no source image.
+/// - ensures: a decode-produced layout records the header and strictly
+///   increasing declaration ends in its source image; the default is zero with
+///   no declaration ends.
+/// - provides: reader-derived segment boundaries, not an independently
+///   authenticated image association.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 literal artifact fixtures and named malformed-input
+///   boundaries observe header and segment framing, sharing, producer claims
+///   and refusal precedence. Generated round trips show codec agreement, not an
+///   independent proof of the format or arbitrary-input totality; small-stack
+///   depth witnesses cover iterative graph handling.
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SegmentLayout
 {
@@ -272,6 +375,30 @@ impl SegmentLayout
 /// It holds the arena its declarations' content lives in, the
 /// admission-ordered declaration sequence addressing it, the deterministic
 /// budget metrics computed en route, and where each segment sat in the bytes.
+///
+/// # Specification
+/// - requires: nothing; Default constructs empty state rather than evidence
+///   that input bytes were accepted.
+/// - ensures: decode-produced values hold the checked structural graph,
+///   declaration claims, metrics and source boundaries; producer typing and
+///   admission claims remain unverified.
+/// - provides: the decoder result container; successful decode, not this type
+///   alone, establishes acceptance.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 literal artifact fixtures and named malformed-input
+///   boundaries observe header and segment framing, sharing, producer claims
+///   and refusal precedence. Generated round trips show codec agreement, not an
+///   independent proof of the format or arbitrary-input totality; small-stack
+///   depth witnesses cover iterative graph handling.
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DecodedArtifact
 {
@@ -336,52 +463,48 @@ impl DecodedArtifact
 /// Decode an artifact image into its declaration sequence and shared arena.
 ///
 /// # Specification
-/// - requires: nothing — `image` may be arbitrary or adversarial.
-/// - ensures: an artifact is returned exactly when the bytes are the canonical
-///   encoding of a sequence whose every entry validates — a tag inside the
-///   frozen block, strictly-earlier and polarity-correct children, the entry
-///   cap respected, both expanded-work budgets respected — and whose levels,
-///   constraints and literals rebuild through their constructors. The returned
-///   arena retains the format's sharing, so a table index referenced twice
-///   resolves to one id; the metrics are functions of the canonical bytes
-///   alone; the segment layout holds one end per declaration, each strictly
-///   past the one before it, the first strictly past the header's, and the last
-///   — the header's when there is no declaration — at the image's end.
-/// - provides: the re-checkable decode: a total parser over a closed vocabulary
-///   whose acceptance is a bounded-work guarantee for everything downstream.
-///   The clause checks the returned work bounds and the segment layout's shape.
-///   Full canonical acceptance, sharing and metric derivation stay prose:
-///   replaying decode would recurse, and re-encoding would allocate another
-///   image rather than independently validate the graph-to-bytes relation.
-/// - fails: [`DecodeError`] — the rejection triple, a reserved declaration
-///   kind, a reserved slot or a refuted minted-atom table, or an unsupported
-///   version. It never panics and never loops unboundedly.
-/// - panics: none.
-/// - intension: the whole decode is iterative over the flat entry list and the
-///   budget scan is a single forward pass, so the cost is linear in the entry
-///   count and the recursion depth is zero at every input depth.
+/// - requires: nothing; image may be arbitrary or adversarial.
+/// - ensures: success yields a complete structural parse with supported header,
+///   live tags, earlier polarity-correct references, bounded table size and
+///   expanded work, a refuted minted-atom table and bytes identical to
+///   re-encoding the normalized graph. Sharing is retained. Segment ends are
+///   strictly increasing, one per declaration, with the final end equal to the
+///   input length.
+/// - provides: structural and canonical-wire acceptance, not typing,
+///   producer-admission evidence, provenance truth or an overall evaluator-work
+///   bound. The predicate checks returned metrics and layout; literal fixtures
+///   independently constrain the encoder shared by the final comparison.
+/// - fails: a named `DecodeError` for the first observed header, field,
+///   reference, structural-budget, atom-table or canonical-form refusal.
+/// - panics: none for representable input storage under successful allocation.
+/// - intension: term-table parsing and the expanded-work scan are iterative.
+///   Inline-payload normalization and tree-map re-encoding have their own
+///   payload-dependent costs; the whole operation is not linear in entry count
+///   alone.
 ///
 /// # Errors
 /// Any [`DecodeError`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the round-trip differential pins acceptance of every
-///   genuine artifact with its sharing, and the totality property pins that
-///   truncation at every prefix and arbitrary bytes return rather than panic;
-///   the L3 residues are each named refusal — the version, the four
-///   canonical-form violations, both work budgets, the entry cap and the level
-///   offset — pinned by goldens whose shape is derived from the constants.
-/// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - hypothesis: L3 literal artifact fixtures and named malformed-input
+///   boundaries observe header and segment framing, sharing, producer claims
+///   and refusal precedence. Generated round trips show codec agreement, not an
+///   independent proof of the format or arbitrary-input totality; small-stack
+///   depth witnesses cover iterative graph handling.
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
 /// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
 /// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+/// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
+/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
 /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
 /// - witness: `sharing_format::sharing_format::a_mis_ordered_table_is_refused_as_non_canonical`
 /// - witness: `sharing_format::sharing_format::a_dead_entry_is_refused_as_non_canonical`
 /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
-/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
-/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
     artifact.metrics.table_entries() <= MAX_TABLE_ENTRIES
@@ -455,6 +578,16 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 ///   recomputed as a predicate.
 /// - fails: never — a saturating scan is total.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares a small topological graph with explicit path
+///   expansion rather than the memoized recurrence. L3 checks repeated roots,
+///   missing roots, saturating diamonds and exact work-cap refusal precedence.
+///   These observations concern structural wire expansion, not evaluator work
+///   or inline-payload cost.
+/// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
+/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
 #[spec(
     requires: table.children.iter().enumerate().all(|(parent, children)|
         children.iter().all(|child| child.offset().0 < parent)),
@@ -498,18 +631,31 @@ fn budget_report(
 /// Refuse an artifact whose expanded work exceeds either work budget.
 ///
 /// # Specification
-/// - requires: `metrics` is the budget report of the decoded table.
-/// - ensures: acceptance exactly when the maximum per-declaration-root expanded
-///   size is within the per-declaration cap and the artifact-total expanded
-///   size is within the artifact cap.
-/// - provides: the checker-time bound, enforced structurally on the table and
-///   before any consumer is handed the artifact.
-/// - fails: [`DecodeError::Malformed`] at the per-declaration site first, which
-///   is the tighter and more specific refusal, then at the artifact-total site.
+/// - requires: nothing; metrics is the supplied report and this helper checks
+///   its two work quantities only.
+/// - ensures: accepts exactly when both work quantities are within their
+///   respective caps, with per-root expanded work taking refusal precedence
+///   over artifact-total work.
+/// - provides: the structural-work comparison; table-entry limits are checked
+///   separately as rows accrue.
+/// - fails: `DecodeError::Malformed` at `MalformedSite::ExpandedWork` first,
+///   then `MalformedSite::ArtifactExpandedWork`.
 /// - panics: none.
-#[spec(ensures: |ret| ret.is_ok()
-    == (metrics.max_declaration_expanded_work() <= MAX_EXPANDED_TERM_WORK
-        && metrics.artifact_expanded_work() <= MAX_ARTIFACT_EXPANDED_WORK))]
+///
+/// # Adequacy
+/// - hypothesis: L2 compares a small topological graph with explicit path
+///   expansion rather than the memoized recurrence. L3 checks repeated roots,
+///   missing roots, saturating diamonds and exact work-cap refusal precedence.
+///   These observations concern structural wire expansion, not evaluator work
+///   or inline-payload cost.
+/// - witness: `decode::tests::budget_scan_matches_explicit_expansion_and_saturating_boundaries`
+/// - witness: `sharing_format::sharing_format::a_repeated_diamond_is_refused_before_any_consumer`
+/// - witness: `sharing_format::sharing_format::many_cheap_segments_sharing_one_root_are_refused`
+#[spec(
+    ensures: |ret| if metrics.max_declaration_expanded_work() > MAX_EXPANDED_TERM_WORK { ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::ExpandedWork }) }
+        else if metrics.artifact_expanded_work() > MAX_ARTIFACT_EXPANDED_WORK { ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::ArtifactExpandedWork }) }
+        else { ret.is_ok() },
+)]
 fn check_budget(metrics: DecodeMetrics) -> Result<(), DecodeError>
 {
     if metrics.max_declaration_expanded_work() > MAX_EXPANDED_TERM_WORK {
@@ -560,8 +706,14 @@ fn check_budget(metrics: DecodeMetrics) -> Result<(), DecodeError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a well-formed sealed artifact round-trips; the L3
-///   residues are the three refutations, pinned by hand-mutated tables.
+/// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
+///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
+///   and maximal declared counts. It checks exact values, refusal sites and
+///   cursor positions; it does not claim name normalization, atom truth or
+///   typing. Separate sealed-artifact fixtures refute repeated, omitted and
+///   non-minting positions against the decoded sequence, not against an assumed
+///   admission history.
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 /// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 /// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
 /// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
@@ -596,6 +748,17 @@ fn check_minted_atom_table(
 /// - provides: the family-checked root resolution, so a declaration claiming a
 ///   value type cannot be handed a node of another polarity.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    ensures: |ret| ret == match nodes.get(global.offset().0) { Some(&DecodedNode::ValueType(id)) => Some(id), _ => None },
+)]
 #[inline]
 fn value_type_id_at(
     nodes: &[DecodedNode],
@@ -616,6 +779,17 @@ fn value_type_id_at(
 ///   index names no entry and when the entry there is of another family.
 /// - provides: the family-checked root resolution for a definition's body.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    ensures: |ret| ret == match nodes.get(global.offset().0) { Some(&DecodedNode::Value(id)) => Some(id), _ => None },
+)]
 #[inline]
 fn value_id_at(
     nodes: &[DecodedNode],
@@ -631,34 +805,40 @@ fn value_id_at(
 /// Resolve each declaration's roots to arena ids and build the sequence.
 ///
 /// # Specification
-/// - ensures: one marked declaration per meta, its content roots addressing
-///   `table.arena` and its structured name taken out of the meta, in admission
-///   order.
-/// - provides: the decoded sequence, which is also the re-encode input the
-///   canonical-form comparison runs over.
-/// - fails: never — a family mismatch cannot survive decode's checks, and a
-///   fresh unit leaf is the fail-safe fallback rather than a panic.
-/// - panics: none.
+/// - requires: declared roots resolve to live value types; exactly definitions
+///   have a body root, and each such root resolves to a live value. The segment
+///   decoder establishes these conditions.
+/// - ensures: returns one declaration per metadata record in order, preserving
+///   its mark, kind, roots and levels. Definition provenance is retained; other
+///   forms have none. Names move to the declarations and leave empty source
+///   names. The arena is unchanged.
+/// - provides: assembly from already validated references, not recovery of
+///   malformed root metadata or proof of producer claims.
+/// - fails: never within the validated-root domain.
+/// - panics: none within that domain.
+///
+/// # Adequacy
+/// - hypothesis: L3 assembles all three declaration forms over distinguishable
+///   shared prefix roots, preserving full level interfaces, marks and
+///   definition provenance while moving empty and Unicode names out of the
+///   metadata. A complete arena snapshot detects accidental reminting or prefix
+///   mutation; this does not establish typing or producer-claim truth.
+/// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 #[spec(
-    requires: metas.iter().all(|meta|
-        value_type_id_at(&table.nodes, meta.root_declared)
-            .is_some_and(|id| table.arena.value_type(id).is_some())
-        && meta.root_body.is_none_or(|root|
-            value_id_at(&table.nodes, root)
-                .is_some_and(|id| table.arena.value(id).is_some()))),
-    ensures: |ret| ret.len() == metas.len()
-        && ret.iter().zip(metas.iter()).all(|(marked, meta)|
-            marked.mark() == meta.mark
-            && Some(marked.declaration().declared_id())
-                == value_type_id_at(&table.nodes, meta.root_declared)
-            && match (*marked.declaration().content(), meta.kind, meta.root_body) {
-                (DeclarationContent::Def { body, .. }, DeclKind::Def, Some(root)) =>
-                    Some(body) == value_id_at(&table.nodes, root),
-                (DeclarationContent::Axiom { .. }, DeclKind::Axiom, _)
-                | (DeclarationContent::Axiom { .. }, DeclKind::Def, None)
-                | (DeclarationContent::AbstractType { .. }, DeclKind::AbstractType, _) => true,
-                _ => false,
-            }),
+    requires: metas.iter().all(|meta| value_type_id_at(&table.nodes, meta.root_declared).is_some_and(|id| table.arena.value_type(id).is_some())
+            && match (meta.kind, meta.root_body) { (DeclKind::Def, Some(root)) => value_id_at(&table.nodes, root).is_some_and(|id| table.arena.value(id).is_some()), (DeclKind::Axiom | DeclKind::AbstractType, None) => true, _ => false }), captures: entry = (table.arena.watermark(), metas.iter().fold(0_usize,
+        |total, meta| total.saturating_add(meta.name.segments().len()))),
+    ensures: |ret| table.arena.watermark() == entry.0
+            && ret.len() == metas.len()
+            && metas.iter().all(|meta| meta.name.segments().is_empty())
+            && ret.iter().fold(0_usize,
+        |total, marked| total.saturating_add(marked.declaration().name().segments().len())) == entry.1
+            && ret.iter().zip(metas.iter()).all(|(marked, meta)| marked.mark() == meta.mark
+            && marked.declaration().levels() == &meta.levels
+            && Some(marked.declaration().declared_id()) == value_type_id_at(&table.nodes, meta.root_declared)
+            && match (*marked.declaration().content(), meta.kind, meta.root_body) { (DeclarationContent::Def { body, .. }, DeclKind::Def, Some(root)) => Some(body) == value_id_at(&table.nodes, root)
+            && marked.declaration().provenance() == meta.provenance.as_slice(), (DeclarationContent::Axiom { .. }, DeclKind::Axiom, None) | (DeclarationContent::AbstractType { .. }, DeclKind::AbstractType, None) => marked.declaration().provenance().is_empty(), _ => false }),
 )]
 fn build_declarations(
     table: &mut Table,
@@ -677,9 +857,9 @@ fn build_declarations(
                 builder.sealed_def(meta.levels.clone(), declared, body, meta.provenance.clone())
             },
             | (DeclKind::AbstractType, _) => builder.abstract_type(meta.levels.clone(), declared),
-            // A definition whose body root failed to resolve degrades to an
-            // axiom rather than fabricating a body — the same fail-safe the unit
-            // fallbacks above take, and unreachable after decode's checks.
+            // A missing body reaches this arm only outside the validated
+            // metadata domain. A present but unresolved id takes the unit
+            // fallback above; enabled preconditions reject both states.
             | (DeclKind::Def | DeclKind::Axiom, _) => builder.axiom(meta.levels.clone(), declared),
         };
         declarations.push(MarkedDeclaration::new(
@@ -692,6 +872,24 @@ fn build_declarations(
 
 /// A forward byte cursor with bounds-checked reads: the decoder's totality
 /// substrate, where an over-read surfaces as truncation rather than a panic.
+///
+/// # Specification
+/// - requires: the private cursor stays within its borrowed image.
+/// - ensures: retains one immutable image and a forward cursor; individual
+///   reads specify whether failure consumes a prefix.
+/// - provides: bounds-checked borrowed input and observable field-consumption
+///   state.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; its
+///   decoding, construction and lookup operations carry the predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 compares cursor values, exact consumed offsets and borrowed
+///   slice identity at empty, complete, truncated and overflowing ranges.
+///   Header fixtures distinguish all-or-nothing magic reads from partial
+///   version consumption. These finite boundaries do not prove every parser
+///   composition.
+/// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
 pub struct ByteReader<'bytes>
 {
     /// The artifact bytes.
@@ -710,6 +908,18 @@ impl<'bytes> ByteReader<'bytes>
     /// - provides: the one reading position over an image; every read advances
     ///   it, so no byte is read twice and none is skipped.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        ensures: |ret| ret.position.0 == 0
+                && core::ptr::eq(&raw const *ret.image.as_ref(), &raw const *image.as_ref()),
+    )]
     #[inline]
     pub(crate) fn new(image: ArtifactImage<'bytes>) -> Self
     {
@@ -731,6 +941,20 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: [`DecodeError::Truncated`] at the end of the image, and on an
     ///   offset increment that would not be representable.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| match self.image.byte_at(start) { Some(byte) => ret.as_ref() == Ok(&byte)
+                && self.position.0 == start.0.saturating_add(1), None => ret.as_ref() == Err(&DecodeError::Truncated)
+                && self.position == start },
+    )]
     #[inline]
     fn next_byte(&mut self) -> Result<WireByte, DecodeError>
     {
@@ -758,6 +982,20 @@ impl<'bytes> ByteReader<'bytes>
     ///   alone.
     /// - fails: [`DecodeError::Truncated`] at the end of the image.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| match self.image.byte_at(start) { Some(byte) => ret.as_ref() == Ok(&WireTag::from(byte))
+                && self.position.0 == start.0.saturating_add(1), None => ret.as_ref() == Err(&DecodeError::Truncated)
+                && self.position == start },
+    )]
     #[inline]
     fn next_tag(&mut self) -> Result<WireTag, DecodeError>
     {
@@ -776,6 +1014,20 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: [`DecodeError::Truncated`] when fewer than `count` bytes
     ///   remain, and on an offset sum that would not be representable.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| match start.0.checked_add(count.0).and_then(|end| self.image.as_ref().get(start.0 .. end)) { Some(bytes) => ret.as_ref().is_ok_and(|image| core::ptr::eq(&raw const *image.as_ref(), &raw const *bytes))
+                && self.position.0 == start.0.saturating_add(count.0), None => ret.as_ref() == Err(&DecodeError::Truncated)
+                && self.position == start },
+    )]
     #[inline]
     fn take(
         &mut self,
@@ -807,6 +1059,21 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: [`DecodeError::Truncated`] on fewer than four bytes;
     ///   [`DecodeError::Malformed`] at the header site when the bytes differ.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        requires: self.position.0 == 0, captures: start = self.position,
+        ensures: |ret| match self.image.as_ref().get(start.0 .. start.0.saturating_add(tags::MAGIC.len())) { Some(bytes) => self.position.0 == start.0.saturating_add(tags::MAGIC.len())
+                && if bytes == tags::MAGIC { ret.is_ok() }
+            else { ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::Header }) }, None => self.position == start
+                && ret.as_ref() == Err(&DecodeError::Truncated) },
+    )]
     #[inline]
     fn expect_magic(&mut self) -> Result<(), DecodeError>
     {
@@ -833,6 +1100,23 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: [`DecodeError::Truncated`] on fewer than two bytes;
     ///   [`DecodeError::UnsupportedVersion`] carrying the version found.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    #[spec(
+        requires: self.position.0 == tags::MAGIC.len(), captures: start = self.position,
+        ensures: |ret| match (self.image.byte_at(start), self.image.byte_at(ByteOffset::from(start.0.saturating_add(1)))) { (Some(low), Some(high)) => { let found = FormatVersion::from(u16::from_le_bytes([u8::from(low), u8::from(high)]));
+            self.position.0 == start.0.saturating_add(2)
+                && if found == tags::FORMAT_VERSION { ret.is_ok() }
+            else { ret.as_ref() == Err(&DecodeError::UnsupportedVersion { found }) } }, (Some(_), None) => self.position.0 == start.0.saturating_add(1)
+                && ret.as_ref() == Err(&DecodeError::Truncated), (None, _) => self.position == start
+                && ret.as_ref() == Err(&DecodeError::Truncated) },
+    )]
     #[inline]
     fn expect_version(&mut self) -> Result<(), DecodeError>
     {
@@ -853,8 +1137,8 @@ impl<'bytes> ByteReader<'bytes>
     /// Only the integers are read here; the table's truth is decided once the
     /// declarations have been decoded independently, because a claim checked
     /// against nothing is not checked. No capacity is reserved from the
-    /// declared count, so an adversarial count costs one truncation rather
-    /// than an allocation.
+    /// declared count. Allocation follows only positions actually decoded
+    /// before a refusal.
     ///
     /// # Specification
     /// - requires: the cursor is positioned at the minted-atom table.
@@ -863,11 +1147,37 @@ impl<'bytes> ByteReader<'bytes>
     ///   table.
     /// - provides: the declared table, read but not believed: its truth is
     ///   decided later against the decoded declarations, and no capacity is
-    ///   reserved from the declared count, so an adversarial count costs one
-    ///   truncation rather than an allocation.
+    ///   reserved from the declared count; storage grows only after a position
+    ///   has been decoded.
     /// - fails: [`DecodeError::Truncated`] when the bytes run out;
     ///   [`DecodeError::Malformed`] at the varint or index-range site.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 uses literal record bytes with empty and nonempty
+    ///   names, Unicode, out-of-order provenance, occupied reserved slots,
+    ///   invalid UTF-8 and maximal declared counts. It checks exact values,
+    ///   refusal sites and cursor positions; it does not claim name
+    ///   normalization, atom truth or typing.
+    /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| self.position >= start
+                && self.position <= self.image.length()
+                && ret.as_ref().ok().is_none_or(|atoms| { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
+            ({ let scalar = count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && atoms.iter().try_fold((start.0).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |position, &atom| { let ordinal = u64::try_from(usize::from(atom)).unwrap_or(u64::MAX);
+            ({ let scalar = ordinal;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(self.position.0) }),
+    )]
     fn read_minted_atom_table(&mut self) -> Result<Vec<MintedAtom>, DecodeError>
     {
         let count = self.read_uvarint()?;
@@ -896,11 +1206,14 @@ impl<'bytes> ByteReader<'bytes>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the round-trip differential over the encoder pins
-    ///   every accepted value; the L3 residues are the group boundary, the
-    ///   overlong trailing zero group, and the beyond-64-bit encoding.
-    /// - witness: `wire::tests::uvarint_round_trips_through_the_reader`
+    /// - hypothesis: L2 compares integer reads with an independent
+    ///   division-based byte model at each seven-bit boundary; L3 pins
+    ///   truncation, redundant groups, the tenth-bit limit and narrowing
+    ///   refusal without losing consumed offsets. It does not infer
+    ///   arbitrary-input totality from a round trip.
+    /// - witness: `decode::tests::integer_fields_match_independent_boundary_bytes`
     /// - witness: `decode::tests::an_overlong_varint_is_refused`
+    /// - witness: `decode::tests::a_truncated_varint_is_refused_as_truncation`
     #[spec(
         captures: entry_position = self.position,
         ensures: |ret| ret.as_ref().ok().is_none_or(|value|
@@ -964,6 +1277,29 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: the varint read's own failures, and [`DecodeError::Malformed`]
     ///   at the index-range site when the value exceeds `u32::MAX`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares integer reads with an independent
+    ///   division-based byte model at each seven-bit boundary; L3 pins
+    ///   truncation, redundant groups, the tenth-bit limit and narrowing
+    ///   refusal without losing consumed offsets. It does not infer
+    ///   arbitrary-input totality from a round trip.
+    /// - witness: `decode::tests::integer_fields_match_independent_boundary_bytes`
+    /// - witness: `decode::tests::an_overlong_varint_is_refused`
+    /// - witness: `decode::tests::a_truncated_varint_is_refused_as_truncation`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| self.position >= start
+                && self.position <= self.image.length()
+                && self.position.0 <= start.0.saturating_add(11)
+                && ret.as_ref().ok().is_none_or(|value| { let value_word = u64::from(u32::from(*value));
+            self.position.0 == start.0.saturating_add(usize::try_from(64_u32.saturating_sub((value_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))
+                && ({ let scalar = value_word;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) }),
+    )]
     #[inline]
     fn read_u32(&mut self) -> Result<WireU32, DecodeError>
     {
@@ -986,6 +1322,29 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: the varint read's own failures, and [`DecodeError::Malformed`]
     ///   at the index-range site when the value exceeds `usize::MAX`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares integer reads with an independent
+    ///   division-based byte model at each seven-bit boundary; L3 pins
+    ///   truncation, redundant groups, the tenth-bit limit and narrowing
+    ///   refusal without losing consumed offsets. It does not infer
+    ///   arbitrary-input totality from a round trip.
+    /// - witness: `decode::tests::integer_fields_match_independent_boundary_bytes`
+    /// - witness: `decode::tests::an_overlong_varint_is_refused`
+    /// - witness: `decode::tests::a_truncated_varint_is_refused_as_truncation`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| self.position >= start
+                && self.position <= self.image.length()
+                && self.position.0 <= start.0.saturating_add(11)
+                && ret.as_ref().ok().is_none_or(|value| { let value_word = u64::try_from(usize::from(*value)).unwrap_or(u64::MAX);
+            self.position.0 == start.0.saturating_add(usize::try_from(64_u32.saturating_sub((value_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))
+                && ({ let scalar = value_word;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) }),
+    )]
     #[inline]
     fn read_usize(&mut self) -> Result<WireUsize, DecodeError>
     {
@@ -1007,6 +1366,29 @@ impl<'bytes> ByteReader<'bytes>
     ///   with a count at a signature.
     /// - fails: the 32-bit read's own failures.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares integer reads with an independent
+    ///   division-based byte model at each seven-bit boundary; L3 pins
+    ///   truncation, redundant groups, the tenth-bit limit and narrowing
+    ///   refusal without losing consumed offsets. It does not infer
+    ///   arbitrary-input totality from a round trip.
+    /// - witness: `decode::tests::integer_fields_match_independent_boundary_bytes`
+    /// - witness: `decode::tests::an_overlong_varint_is_refused`
+    /// - witness: `decode::tests::a_truncated_varint_is_refused_as_truncation`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| self.position >= start
+                && self.position <= self.image.length()
+                && self.position.0 <= start.0.saturating_add(11)
+                && ret.as_ref().ok().is_none_or(|value| { let value_word = u64::from(u32::from(*value));
+            self.position.0 == start.0.saturating_add(usize::try_from(64_u32.saturating_sub((value_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))
+                && ({ let scalar = value_word;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) }),
+    )]
     #[inline]
     fn read_global(&mut self) -> Result<GlobalIndex, DecodeError>
     {
@@ -1025,6 +1407,30 @@ impl<'bytes> ByteReader<'bytes>
     /// - fails: the length and bulk reads' own failures, and
     ///   [`DecodeError::Malformed`] at `site` on invalid UTF-8.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 compares cursor values, exact consumed offsets and
+    ///   borrowed slice identity at empty, complete, truncated and overflowing
+    ///   ranges. Header fixtures distinguish all-or-nothing magic reads from
+    ///   partial version consumption. These finite boundaries do not prove
+    ///   every parser composition. Counted-text fixtures also pin UTF-8
+    ///   validation, caller-selected refusal sites and byte rather than
+    ///   character lengths.
+    /// - witness: `decode::tests::cursor_reads_preserve_borrows_and_refusal_positions`
+    /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+    #[spec(
+        captures: start = self.position,
+        ensures: |ret| self.position >= start
+                && self.position <= self.image.length()
+                && ret.as_ref().ok().is_none_or(|text| { let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+            self.position.0 == start.0.saturating_add(usize::try_from(64_u32.saturating_sub((length).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(text.len())
+                && ({ let scalar = length;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && self.image.as_ref().get(self.position.0.saturating_sub(text.len()) .. self.position.0) == Some(text.as_bytes()) }),
+    )]
     #[inline]
     fn read_text(
         &mut self,
@@ -1042,24 +1448,34 @@ impl<'bytes> ByteReader<'bytes>
 /// Decode one declaration segment: its header, its entries, and its roots.
 ///
 /// # Specification
-/// - requires: nothing — the bytes may be adversarial; `table` holds every
-///   entry the earlier segments introduced, since the table's index space runs
-///   across segments.
-/// - ensures: the segment's entries are appended to `table` in wire order, and
-///   the returned metadata carries the admission mark, the live kind, the
-///   structured name, the level signature, the roots resolved to
-///   already-decoded entries of the required family, and the sealing-provenance
-///   atoms a definition carried.
-/// - provides: the per-segment step of the artifact decode. The clause checks
-///   the returned roots' table membership and polarity. Wire-order appends and
-///   metadata fidelity stay prose: the parser exposes no independent segment
-///   view, and replaying it would mint a second graph.
-/// - fails: [`DecodeError::ReservedDeclarationKind`] on a reserved kind;
-///   [`DecodeError::Malformed`] at the name-segment site on a segment that is
-///   not UTF-8 or holds the separator; [`DecodeError::ReservedSlotOccupied`] on
-///   an occupied reserved slot; [`DecodeError::UnknownTag`] at the admission or
-///   declaration-kind site; and whatever the entry and root decoders refuse.
+/// - requires: table is the running aligned state from earlier segments; input
+///   bytes may be arbitrary.
+/// - ensures: success appends this segment’s entries in wire order and returns
+///   its mark, kind, name, level interface, family-correct live roots and
+///   definition provenance. Exactly definitions have a body root.
+/// - provides: segment parsing, not semantic validation of producer claims. On
+///   failure the cursor and previously completed entries may have advanced;
+///   this operation does not roll back an entire segment.
+/// - fails: reserved or unknown kinds and marks, malformed names, occupied
+///   reserved slots, and entry, level or root refusals.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 literal artifact fixtures and named malformed-input
+///   boundaries observe header and segment framing, sharing, producer claims
+///   and refusal precedence. Generated round trips show codec agreement, not an
+///   independent proof of the format or arbitrary-input totality; small-stack
+///   depth witnesses cover iterative graph handling. The declaration-assembly
+///   witness separately observes metadata transfer, and the entry fixtures
+///   prove local failure atomicity; a later segment failure can retain rows
+///   from its earlier successful entries.
+/// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
+/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
+/// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
+/// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
+/// - witness: `adversarial_depth::adversarial_depth::a_deep_decoded_graph_tears_down_inside_a_small_stack_thread`
+/// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
         && table.families.get(meta.root_declared.offset().0) == Some(&Family::ValueType)
@@ -1120,6 +1536,14 @@ fn decode_declaration(
 ///   names no already-decoded entry, and at the polarity site when the entry it
 ///   names is of another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|index|
     *index < table.next_index() && table.families.get(index.offset().0) == Some(&required)))]
 fn decode_root(
@@ -1153,11 +1577,18 @@ fn decode_root(
 /// - fails: [`DecodeError::Malformed`] at the child-order site on a forward,
 ///   self, or out-of-range index.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    ensures: |ret| match (index < table.next_index(), table.families.get(index.offset().0)) { (true, Some(family)) => ret.as_ref() == Ok(family), _ => ret.as_ref() == Err(&DecodeError::Malformed { site: MalformedSite::ChildOrder }) },
+)]
 #[inline]
-#[spec(ensures: |ret| match (index < table.next_index(), table.families.get(index.offset().0)) {
-    (true, Some(family)) => ret.as_ref() == Ok(family),
-    _ => ret.is_err(),
-})]
 fn family_at(
     table: &Table,
     index: GlobalIndex,
@@ -1180,36 +1611,44 @@ fn family_at(
 /// Decode one subterm-table entry, minting it into the arena.
 ///
 /// # Specification
-/// - requires: nothing — the bytes may be adversarial.
-/// - ensures: the entry cap holds, the tag lies in the frozen block, every
-///   child index is strictly earlier and of the required polarity, and the node
-///   is minted once into the arena with its family and children recorded.
-/// - provides: the arena-construction step that makes decode retain sharing.
-///   The clause checks the cap, frozen tag, single append and earlier children.
-///   Slot-specific polarity is checked by `read_child`; payload fidelity and
-///   arena-node identity stay prose because the parser exposes no independent
-///   decoded-entry view to compare without minting again.
-/// - fails: [`DecodeError::Malformed`] at the table-size, child-order or
-///   polarity site; [`DecodeError::UnknownTag`] at the node site; and whatever
-///   the inline payload decoders refuse.
+/// - requires: the running table’s vectors are aligned; input bytes may be
+///   arbitrary.
+/// - ensures: success appends one global row with its correct family and
+///   ordered earlier children, resolving to a live arena id. Element
+///   normalization may reuse an existing id rather than allocate a fresh node.
+///   Failure leaves the table and arena unchanged, though the byte cursor may
+///   advance.
+/// - provides: sharing-preserving entry construction and an atomic table
+///   update. Predicates check the row frame and live family; literal fixtures
+///   check payloads and ordered child fields.
+/// - fails: table-size, child-order or polarity faults; an unknown node tag; or
+///   any inline field’s named refusal.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+///   Every proper entry prefix and every unassigned node byte also check that
+///   refusal leaves the table and arena unchanged.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
 #[spec(
-    captures: [
-        entry_count = table.nodes.len(),
-        entry_family_count = table.families.len(),
-        entry_children_count = table.children.len(),
-        entry_index = table.next_index(),
-        entry_tag = reader.image.byte_at(reader.position).map(WireTag::from),
-    ],
-    ensures: |ret| ret.is_err()
-        || (TableEntryCount::from(table.nodes.len()) <= MAX_TABLE_ENTRIES
-            && table.nodes.len() == entry_count.saturating_add(1)
-            && table.families.len() == entry_family_count.saturating_add(1)
-            && table.children.len() == entry_children_count.saturating_add(1)
-            && entry_tag.is_some_and(|tag|
-                tags::NODE_TAG_TABLE.iter().any(|description| description.tag == tag))
-            && table.children.last().is_some_and(|children|
-                children.iter().all(|child| *child < entry_index))),
+    captures: entry = (table.nodes.len(), table.families.len(), table.children.len(), table.next_index(), reader.image.byte_at(reader.position).map(WireTag::from), table.arena.watermark(), reader.position),
+    ensures: |ret| reader.position >= entry.6
+            && reader.position <= reader.image.length()
+            && if ret.is_err() { table.nodes.len() == entry.0
+            && table.families.len() == entry.1
+            && table.children.len() == entry.2
+            && table.arena.watermark() == entry.5 }
+        else { TableEntryCount::from(table.nodes.len()) <= MAX_TABLE_ENTRIES
+            && table.nodes.len() == entry.0.saturating_add(1)
+            && table.families.len() == entry.1.saturating_add(1)
+            && table.children.len() == entry.2.saturating_add(1)
+            && entry.4.is_some_and(|tag| tags::NODE_TAG_TABLE.iter().any(|description| description.tag == tag))
+            && table.children.last().is_some_and(|children| children.iter().all(|child| *child < entry.3))
+            && match (table.nodes.last().copied(), table.families.last().copied()) { (Some(DecodedNode::ValueType(id)), Some(Family::ValueType)) => table.arena.value_type(id).is_some(), (Some(DecodedNode::CompType(id)), Some(Family::CompType)) => table.arena.comp_type(id).is_some(), (Some(DecodedNode::Value(id)), Some(Family::Value)) => table.arena.value(id).is_some(), (Some(DecodedNode::Computation(id)), Some(Family::Computation)) => table.arena.computation(id).is_some(), _ => false } },
 )]
 fn decode_entry(
     reader: &mut ByteReader<'_>,
@@ -1439,11 +1878,19 @@ fn decode_entry(
 ///   forward, or out-of-range index, and at the polarity site when the named
 ///   entry belongs to another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
 #[inline]
 #[spec(
     requires: this == table.next_index(),
     captures: entry_children_count = children.len(),
-    ensures: |ret| ret.as_ref().ok().is_none_or(|node|
+    ensures: |ret| (ret.is_ok() || children.len() == entry_children_count) && ret.as_ref().ok().is_none_or(|node|
         children.len() == entry_children_count.saturating_add(1)
             && children.last().is_some_and(|index|
                 *index < this && table.families.get(index.offset().0) == Some(&required)
@@ -1504,6 +1951,25 @@ fn read_child(
 /// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
 ///   the polarity site when the entry is of another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    requires: this == table.next_index(), captures: start = (children.len(), reader.position),
+    ensures: |ret| reader.position >= start.1
+            && reader.position <= reader.image.length()
+            && children.len() >= start.0
+            && children.len() <= start.0.saturating_add(1)
+            && ret.as_ref().ok().is_none_or(|id| children.len() == start.0.saturating_add(1)
+            && children.last().is_some_and(|index| *index < this
+            && table.families.get(index.offset().0) == Some(&Family::ValueType)
+            && match table.nodes.get(index.offset().0) { Some(&DecodedNode::ValueType(found)) => *id == found, _ => false })),
+)]
 #[inline]
 fn read_value_type(
     reader: &mut ByteReader<'_>,
@@ -1532,6 +1998,25 @@ fn read_value_type(
 /// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
 ///   the polarity site when the entry is of another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    requires: this == table.next_index(), captures: start = (children.len(), reader.position),
+    ensures: |ret| reader.position >= start.1
+            && reader.position <= reader.image.length()
+            && children.len() >= start.0
+            && children.len() <= start.0.saturating_add(1)
+            && ret.as_ref().ok().is_none_or(|id| children.len() == start.0.saturating_add(1)
+            && children.last().is_some_and(|index| *index < this
+            && table.families.get(index.offset().0) == Some(&Family::CompType)
+            && match table.nodes.get(index.offset().0) { Some(&DecodedNode::CompType(found)) => *id == found, _ => false })),
+)]
 #[inline]
 fn read_comp_type(
     reader: &mut ByteReader<'_>,
@@ -1560,6 +2045,25 @@ fn read_comp_type(
 /// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
 ///   the polarity site when the entry is of another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    requires: this == table.next_index(), captures: start = (children.len(), reader.position),
+    ensures: |ret| reader.position >= start.1
+            && reader.position <= reader.image.length()
+            && children.len() >= start.0
+            && children.len() <= start.0.saturating_add(1)
+            && ret.as_ref().ok().is_none_or(|id| children.len() == start.0.saturating_add(1)
+            && children.last().is_some_and(|index| *index < this
+            && table.families.get(index.offset().0) == Some(&Family::Value)
+            && match table.nodes.get(index.offset().0) { Some(&DecodedNode::Value(found)) => *id == found, _ => false })),
+)]
 #[inline]
 fn read_value(
     reader: &mut ByteReader<'_>,
@@ -1588,6 +2092,25 @@ fn read_value(
 /// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
 ///   the polarity site when the entry is of another family.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinguishes all four reference families, exact ordered
+///   child appends, self and forward references, polarity refusals and complete
+///   former payloads against literal entries. It observes sharing through
+///   resolved ids rather than assuming global indices equal arena ordinals.
+/// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+/// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+#[spec(
+    requires: this == table.next_index(), captures: start = (children.len(), reader.position),
+    ensures: |ret| reader.position >= start.1
+            && reader.position <= reader.image.length()
+            && children.len() >= start.0
+            && children.len() <= start.0.saturating_add(1)
+            && ret.as_ref().ok().is_none_or(|id| children.len() == start.0.saturating_add(1)
+            && children.last().is_some_and(|index| *index < this
+            && table.families.get(index.offset().0) == Some(&Family::Computation)
+            && match table.nodes.get(index.offset().0) { Some(&DecodedNode::Computation(found)) => *id == found, _ => false })),
+)]
 #[inline]
 fn read_computation(
     reader: &mut ByteReader<'_>,
@@ -1608,13 +2131,28 @@ fn read_computation(
 /// Decode a declaration's admission mark.
 ///
 /// # Specification
-/// - requires: the cursor is positioned at a declaration's admission mark.
-/// - ensures: on `Ok`, returns the mark the tag named and advances past it.
-/// - provides: the mark a consumer reads to tell a checked declaration from one
-///   admitted by bypass; the two are distinct bytes rather than a default.
-/// - fails: [`DecodeError::Truncated`] at the end of the image;
-///   [`DecodeError::UnknownTag`] at the admission site on any other byte.
+/// - requires: the cursor is at a declaration’s admission-mark field.
+/// - ensures: returns the mark named by the next byte and consumes that byte,
+///   or reports its exact refusal.
+/// - provides: the producer’s checked or bypass claim. Reading a checked mark
+///   neither runs a checker nor proves that admission occurred.
+/// - fails: `DecodeError::Truncated` at the end; `DecodeError::UnknownTag` at
+///   the admission site for every unassigned byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&AdmissionMark::Checked), Some(1) => ret.as_ref() == Ok(&AdmissionMark::UncheckedBypass), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::Admission, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
 #[inline]
 fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, DecodeError>
 {
@@ -1643,6 +2181,17 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   reserved kinds; [`DecodeError::UnknownTag`] at the declaration-kind site
 ///   on any other byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    ensures: |ret| match u8::from(kind) { 0 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+)]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
@@ -1672,8 +2221,8 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 /// Decode the structured-name record: a segment count, then each segment as
 /// length-prefixed UTF-8.
 ///
-/// No capacity is reserved from the declared count, so an adversarial count
-/// costs one truncation rather than an allocation.
+/// No capacity is reserved from the declared count; storage grows only after a
+/// complete segment has been decoded.
 ///
 /// # Specification
 /// - requires: the cursor is positioned at the structured-name record.
@@ -1689,12 +2238,36 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a segment holding the separator, and one whose bytes are
-///   not UTF-8, are each refused at the name-segment site beside the bare
-///   segment they differ from, which decodes; the L2 round trip carries every
-///   generated list.
+/// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
+///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
+///   and maximal declared counts. It checks exact values, refusal sites and
+///   cursor positions; it does not claim name normalization, atom truth or
+///   typing.
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
 /// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
 /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|name| { let count = u64::try_from(name.segments().len()).unwrap_or(u64::MAX);
+        ({ let scalar = count;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && name.segments().iter().try_fold(start.0.saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+        |position, segment| { let text: &str = segment.as_ref();
+        let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+        let payload = position.saturating_add(usize::try_from(64_u32.saturating_sub((length).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+        let end = payload.saturating_add(text.len());
+        (({ let scalar = length;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && reader.image.as_ref().get(payload .. end) == Some(text.as_bytes())).then_some(end) }) == Some(reader.position.0) }),
+)]
 fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName, DecodeError>
 {
     let count = reader.read_uvarint()?;
@@ -1737,6 +2310,34 @@ fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName,
 ///   [`DecodeError::ReservedSlotOccupied`] naming whichever reserved slot was
 ///   occupied.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
+///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
+///   and maximal declared counts. It checks exact values, refusal sites and
+///   cursor positions; it does not claim name normalization, atom truth or
+///   typing.
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|atoms| reader.image.as_ref().get(start.0 .. start.0.saturating_add(2)) == Some([0_u8, 0].as_slice())
+            && reader.image.byte_at(ByteOffset::from(reader.position.0.saturating_sub(1))) == Some(WireByte::from(0_u8))
+            && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
+        ({ let scalar = count;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0.saturating_add(2)) .. (start.0.saturating_add(2)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && atoms.iter().try_fold((start.0.saturating_add(2)).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+        |position, &atom| { let ordinal = u64::try_from(usize::from(atom)).unwrap_or(u64::MAX);
+        ({ let scalar = ordinal;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(reader.position.0.saturating_sub(1)) }),
+)]
 #[inline]
 fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIndex>, DecodeError>
 {
@@ -1757,6 +2358,22 @@ fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIn
 /// - fails: the count read's own failures, and
 ///   [`DecodeError::ReservedSlotOccupied`] naming `slot`.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
+///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
+///   and maximal declared counts. It checks exact values, refusal sites and
+///   cursor positions; it does not claim name normalization, atom truth or
+///   typing.
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.is_ok() == (reader.image.byte_at(start) == Some(WireByte::from(0_u8)))
+            && (ret.is_err() || reader.position.0 == start.0.saturating_add(1))
+            && ret.as_ref().err().is_none_or(|error| match *error { DecodeError::ReservedSlotOccupied { slot: found } => found == slot, DecodeError::Truncated | DecodeError::Malformed { site: MalformedSite::Varint } => true, _ => false }),
+)]
 #[inline]
 fn expect_empty_slot(
     reader: &mut ByteReader<'_>,
@@ -1774,18 +2391,43 @@ fn expect_empty_slot(
 
 /// Decode the sealing-provenance slot: a count followed by admission positions.
 ///
-/// No capacity is reserved from the declared count, so an adversarial count
-/// costs one truncation rather than an allocation.
+/// No capacity is reserved from the declared count; storage grows only after a
+/// position has been decoded.
 ///
 /// # Specification
 /// - requires: the cursor is positioned at the sealing-provenance slot.
 /// - ensures: on `Ok`, returns exactly the declared number of admission
 ///   positions, in wire order, and advances past the slot.
 /// - provides: the slot's atoms; no capacity is reserved from the declared
-///   count, so an adversarial count costs one truncation rather than an
-///   allocation.
+///   count; storage grows only after a position has been decoded.
 /// - fails: the count and position reads' own failures.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 uses literal record bytes with empty and nonempty names,
+///   Unicode, out-of-order provenance, occupied reserved slots, invalid UTF-8
+///   and maximal declared counts. It checks exact values, refusal sites and
+///   cursor positions; it does not claim name normalization, atom truth or
+///   typing.
+/// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|atoms| { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
+        ({ let scalar = count;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && atoms.iter().try_fold((start.0).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+        |position, &atom| { let ordinal = u64::try_from(usize::from(atom)).unwrap_or(u64::MAX);
+        ({ let scalar = ordinal;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(reader.position.0) }),
+)]
 #[inline]
 fn decode_sealing_provenance(reader: &mut ByteReader<'_>)
 -> Result<Vec<ConstantIndex>, DecodeError>
@@ -1805,20 +2447,42 @@ fn decode_sealing_provenance(reader: &mut ByteReader<'_>)
 /// constructor.
 ///
 /// # Specification
-/// - requires: nothing — the declared parameter count and constraint count may
-///   be adversarial; no capacity is reserved from either.
-/// - ensures: the parameter count and the declared constraints in wire order,
-///   every constraint rebuilt through [`LandmarkConstraint`]'s constructors so
-///   a non-variable-only side is unrepresentable rather than merely refused.
-/// - provides: the level interface of one declaration segment. The
-///   wire-to-constraint relation stays prose: the result contains normalized
-///   constraints, not their source encodings, and checking it would replay the
-///   allocating level parser. Constructor-enforced shape adds no predicate.
-/// - fails: [`DecodeError::Truncated`]; [`DecodeError::UnknownTag`] at the
-///   constraint-relation site; [`DecodeError::Malformed`] at the
-///   constraint-form site when a side is not variable-only, and at the sites
-///   the level decoder names.
+/// - requires: nothing; parameter and constraint counts may be adversarial.
+/// - ensures: returns the parameter count and successfully rebuilt constraints
+///   in wire order; the cursor follows the last constraint.
+/// - provides: a decoded interface, not proof that its parameters cover every
+///   referenced variable. Predicates check the two wire counts; normalization
+///   and relation semantics are witnessed separately.
+/// - fails: integer and level-read failures, unknown constraint relations, or
+///   malformed non-variable-only constraint sides.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|signature| { let params = u64::from(u32::from(signature.params()));
+        let count = u64::try_from(signature.constraints().len()).unwrap_or(u64::MAX);
+        ({ let scalar = params;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && ({ let scalar = count;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0.saturating_add(usize::try_from(64_u32.saturating_sub((params).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (start.0.saturating_add(usize::try_from(64_u32.saturating_sub((params).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && reader.position.0 >= start.0.saturating_add(usize::try_from(64_u32.saturating_sub((params).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) }),
+)]
 fn decode_level_signature(reader: &mut ByteReader<'_>) -> Result<LevelSignature, DecodeError>
 {
     let params = reader.read_u32()?;
@@ -1855,6 +2519,20 @@ fn decode_level_signature(reader: &mut ByteReader<'_>) -> Result<LevelSignature,
 ///   [`DecodeError::UnknownTag`] at the constraint-relation site on any other
 ///   byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&ConstraintRelation::Leq), Some(1) => ret.as_ref() == Ok(&ConstraintRelation::Eq), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::ConstraintRelation, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
 #[inline]
 fn decode_relation(reader: &mut ByteReader<'_>) -> Result<ConstraintRelation, DecodeError>
 {
@@ -1875,22 +2553,32 @@ fn decode_relation(reader: &mut ByteReader<'_>) -> Result<ConstraintRelation, De
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an always-canonical level, when the constant, the atom count and
-///   each variable-and-offset pair decode and no offset meets the decode cap.
-/// - provides: the level decoder for universes, lifts and constraint sides.
-///   Canonicality is enforced by `Level`'s private representation and smart
-///   constructors. Wire acceptance stays prose: checking it would replay this
-///   allocating parser; a type-invariant-only clause would add no observation.
-/// - fails: [`DecodeError::Truncated`]; [`DecodeError::Malformed`] at the
-///   level-offset site on an over-cap offset or an overflow, and at the
-///   index-range site on an out-of-range variable.
+/// - ensures: returns the normalized maximum of the supplied constant and
+///   variable-offset atoms when every field decodes and every atom offset is
+///   below the decode cap.
+/// - provides: local level normalization, not acceptance of the original byte
+///   spelling. Duplicate, dominated or reordered source atoms are rejected
+///   later if re-encoding differs.
+/// - fails: truncation, invalid integer encodings, out-of-range variable
+///   indices, and an over-cap atom offset.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the round-trip differential pins every level an artifact
-///   carries; the L3 residue is the offset cap, asserted just under and just
-///   over with the exact refusal.
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
 /// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|level| reader.position.0 >= start.0.saturating_add(2)
+            && level.atoms().all(|(_, amount)| LevelAtomOffset::from(u64::from(amount)) < MAX_DECODED_LEVEL_OFFSET)),
+)]
 fn decode_level(reader: &mut ByteReader<'_>) -> Result<Level, DecodeError>
 {
     let constant = reader.read_uvarint()?;
@@ -1930,10 +2618,20 @@ fn decode_level(reader: &mut ByteReader<'_>) -> Result<Level, DecodeError>
 /// - panics: none.
 /// - intension: the reconstruction is an explicit loop over the offset, never
 ///   host recursion, so its depth is zero at every offset.
+///
+/// # Adequacy
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+/// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
 #[inline]
 #[spec(
     requires: LevelAtomOffset::from(u64::from(offset)) < MAX_DECODED_LEVEL_OFFSET,
-    ensures: |ret| ret.as_ref().ok().is_none_or(|atom|
+    ensures: |ret| ret.as_ref().is_ok_and(|atom|
         u64::from(atom.constant_part()) == 0
             && atom.atoms().map(|(found, amount)|
                 (u32::from(found.index()), u64::from(amount)))
@@ -1964,6 +2662,20 @@ fn build_variable_atom(
 /// - fails: [`DecodeError::Truncated`] at the end of the image;
 ///   [`DecodeError::UnknownTag`] at the base-type site on any other byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
 {
@@ -1988,6 +2700,20 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 /// - fails: [`DecodeError::Truncated`] at the end of the image;
 ///   [`DecodeError::UnknownTag`] at the side site on any other byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&Side::Left), Some(1) => ret.as_ref() == Ok(&Side::Right), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::Side, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
 #[inline]
 fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
 {
@@ -2014,6 +2740,38 @@ fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
 /// - fails: the payload reads' own failures, and [`DecodeError::UnknownTag`] at
 ///   the literal-kind site on any other kind byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|literal| { let kind = reader.image.byte_at(start).map(u8::from);
+        let sign = reader.image.byte_at(ByteOffset::from(start.0.saturating_add(1))).map(u8::from);
+        match *literal { Literal::Integer(ref value) => kind == Some(0)
+            && if value.magnitude().as_ref() == "0" { value.sign() == Sign::NonNegative }
+        else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Text(ref value) => { let text: &str = value.as_ref();
+        let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+        kind == Some(1)
+            && reader.position.0 == start.0.saturating_add(1).saturating_add(usize::try_from(64_u32.saturating_sub((length).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(text.len())
+            && ({ let scalar = length;
+        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+        reader.image.as_ref().get((start.0.saturating_add(1)) .. (start.0.saturating_add(1)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Numeric(ref value) => kind == Some(2)
+            && if value.integer_part().as_ref() == "0"
+            && value.fraction().as_ref().is_empty() { value.sign() == Sign::NonNegative }
+        else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) } } }),
+)]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
     let tag = reader.next_tag()?;
@@ -2053,6 +2811,20 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 /// - fails: [`DecodeError::Truncated`] at the end of the image;
 ///   [`DecodeError::UnknownTag`] at the sign site on any other byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks. Reserved declaration kinds remain distinct from
+///   unassigned bytes. This proves the finite alphabets, not surrounding record
+///   validity.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&Sign::NonNegative), Some(1) => ret.as_ref() == Ok(&Sign::Negative), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::Sign, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
 #[inline]
 fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 {
@@ -2070,14 +2842,32 @@ fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 /// Decode a canonical magnitude through its smart constructor.
 ///
 /// # Specification
-/// - requires: the cursor is positioned at a magnitude's digit text.
-/// - ensures: on `Ok`, returns the canonical magnitude the digits denote.
-/// - provides: the canonicalizing read; a padded or empty spelling is refused
-///   here rather than stored, so a magnitude in the arena is canonical by
-///   construction.
-/// - fails: the text read's own failures, and [`DecodeError::Malformed`] at the
-///   literal-payload site when the text is not decimal digits.
+/// - requires: the cursor is at the magnitude’s length-prefixed digit text.
+/// - ensures: returns nonempty ASCII decimal digits after removing leading
+///   zeros; an all-zero input becomes the single zero.
+/// - provides: local normalization. Padded digit spellings normalize here and
+///   are rejected by the enclosing artifact comparison if re-encoding differs.
+/// - fails: text and integer-read failures, or a malformed literal payload for
+///   empty text or any non-decimal character.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|digits| reader.image.as_ref().get(start.0 .. reader.position.0).and_then(|bytes| { let prefix = bytes.iter().position(|byte| byte & 0x80 == 0)?.saturating_add(1);
+        core::str::from_utf8(bytes.get(prefix ..)?).ok() }).is_some_and(|text| { let normalized = text.trim_start_matches('0');
+        !text.is_empty() && digits.as_ref() == if normalized.is_empty() { "0" }
+        else { normalized } })),
+)]
 #[inline]
 fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeError>
 {
@@ -2090,14 +2880,32 @@ fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeErro
 /// Decode a canonical fraction through its smart constructor.
 ///
 /// # Specification
-/// - requires: the cursor is positioned at a fraction's digit text.
-/// - ensures: on `Ok`, returns the canonical fraction the digits denote.
-/// - provides: the canonicalizing read; a trailing-zero spelling is refused
-///   here rather than stored, so a fraction in the arena is canonical by
-///   construction.
-/// - fails: the text read's own failures, and [`DecodeError::Malformed`] at the
-///   literal-payload site when the text is not decimal digits.
+/// - requires: the cursor is at the fraction’s length-prefixed digit text.
+/// - ensures: returns the decimal fraction after removing trailing zeros; empty
+///   or all-zero input becomes the empty fraction.
+/// - provides: local normalization. A noncanonical spelling is not refused
+///   here; the enclosing artifact comparison rejects bytes that re-encode
+///   differently.
+/// - fails: text and integer-read failures, or a malformed literal payload when
+///   the text contains a non-decimal character.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 contrasts local normalization with whole-artifact wire
+///   acceptance: padded magnitudes, empty or trailing-zero fractions, negative
+///   zero, repeated or dominated level atoms and reordered atoms normalize
+///   locally but their noncanonical source bytes must not pass the final
+///   re-encode comparison. Literal and interface fixtures also distinguish
+///   malformed digits, invalid constraint sides and offset refusal.
+/// - witness: `decode::tests::normalized_levels_and_literals_are_not_wire_acceptance`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| reader.position >= start
+            && reader.position <= reader.image.length()
+            && ret.as_ref().ok().is_none_or(|digits| reader.image.as_ref().get(start.0 .. reader.position.0).and_then(|bytes| { let prefix = bytes.iter().position(|byte| byte & 0x80 == 0)?.saturating_add(1);
+        core::str::from_utf8(bytes.get(prefix ..)?).ok() }).is_some_and(|text| { let normalized = text.trim_end_matches('0');
+        digits.as_ref() == normalized })),
+)]
 #[inline]
 fn decode_fraction(reader: &mut ByteReader<'_>) -> Result<FractionDigits, DecodeError>
 {
@@ -2116,6 +2924,1448 @@ mod tests
     use crate::error::DecodeError;
     use crate::error::MalformedSite;
     use crate::wire::ArtifactImage;
+
+    #[test]
+    fn cursor_reads_preserve_borrows_and_refusal_positions()
+    {
+        let bytes = [0x10_u8, 0, 0xfe, 0x7f];
+        for start in 0 ..= bytes.len() {
+            for count in [0_usize, 1, 2, 4, 5, usize::MAX] {
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                reader.position = super::ByteOffset::from(start);
+                let result = reader.take(super::ByteCount::from(count));
+                if count <= bytes.len().saturating_sub(start) {
+                    let end = start.saturating_add(count);
+                    let expected = bytes.get(start .. end).expect("bounded range");
+                    let actual = result.expect("available bytes");
+                    assert!(core::ptr::eq(
+                        &raw const *actual.as_ref(),
+                        &raw const *expected
+                    ));
+                    assert_eq!(reader.position, super::ByteOffset::from(end));
+                }
+                else {
+                    assert_eq!(result, Err(DecodeError::Truncated));
+                    assert_eq!(reader.position, super::ByteOffset::from(start));
+                }
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            reader.position = super::ByteOffset::from(start);
+            let expected = bytes.get(start).copied().ok_or(DecodeError::Truncated);
+            assert_eq!(reader.next_byte().map(u8::from), expected);
+            assert_eq!(
+                reader.position.0,
+                start.saturating_add(usize::from(expected.is_ok()))
+            );
+        }
+        let magic = *b"GKX1";
+        for length in 0 ..= magic.len() {
+            let prefix = magic.get(.. length).expect("bounded prefix");
+            let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+            if length == 4 {
+                assert_eq!(reader.expect_magic(), Ok(()));
+                assert_eq!(reader.position.0, 4);
+            }
+            else {
+                assert_eq!(reader.expect_magic(), Err(DecodeError::Truncated));
+                assert_eq!(reader.position.0, 0);
+            }
+        }
+        let mut foreign = ByteReader::new(ArtifactImage::from(b"BAD!tail".as_slice()));
+        assert_eq!(
+            foreign.expect_magic(),
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Header
+            })
+        );
+        assert_eq!(foreign.position.0, 4);
+        for version in [0_u16, 1, 2, 3, 0x0200, u16::MAX] {
+            let mut image = magic.to_vec();
+            image.extend_from_slice(&version.to_le_bytes());
+            let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
+            reader.expect_magic().expect("valid header");
+            let expected = if version == 2 {
+                Ok(())
+            }
+            else {
+                Err(DecodeError::UnsupportedVersion {
+                    found: super::FormatVersion::from(version),
+                })
+            };
+            assert_eq!(reader.expect_version(), expected);
+            assert_eq!(reader.position.0, 6);
+        }
+        for suffix in [&[][..], &[2_u8][..]] {
+            let mut image = magic.to_vec();
+            image.extend_from_slice(suffix);
+            let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
+            reader.expect_magic().expect("valid header");
+            assert_eq!(reader.expect_version(), Err(DecodeError::Truncated));
+            assert_eq!(reader.position.0, 4_usize.saturating_add(suffix.len()));
+        }
+    }
+
+    #[test]
+    fn integer_fields_match_independent_boundary_bytes()
+    {
+        let reference = |mut value: u64| {
+            let mut bytes = vec![];
+            loop {
+                let digit = u8::try_from(value.rem_euclid(128)).expect("seven-bit remainder");
+                value = value.div_euclid(128);
+                bytes.push(digit | if value == 0 { 0 } else { 0x80 });
+                if value == 0 {
+                    break;
+                }
+            }
+            bytes
+        };
+        let mut values = vec![
+            0_u64,
+            1,
+            u64::from(u32::MAX),
+            u64::from(u32::MAX).saturating_add(1),
+            u64::MAX,
+        ];
+        for shift in [7_u32, 14, 21, 28, 35, 42, 49, 56, 63] {
+            let boundary = 1_u64.checked_shl(shift).expect("bounded shift");
+            values.extend([
+                boundary.saturating_sub(1),
+                boundary,
+                boundary.saturating_add(1),
+            ]);
+        }
+        for value in values {
+            let digits = reference(value);
+            let mut bytes = vec![0xaa_u8];
+            bytes.extend_from_slice(&digits);
+            bytes.push(0x55);
+            let end = 1_usize.saturating_add(digits.len());
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            reader.next_byte().expect("prefix");
+            assert_eq!(reader.read_uvarint().map(u64::from), Ok(value));
+            assert_eq!(reader.position.0, end);
+            assert_eq!(reader.next_byte().map(u8::from), Ok(0x55));
+            let narrow = u32::try_from(value).map_err(|_error| DecodeError::Malformed {
+                site: MalformedSite::IndexRange,
+            });
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            reader.next_byte().expect("prefix");
+            assert_eq!(reader.read_u32().map(u32::from), narrow);
+            assert_eq!(reader.position.0, end);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            reader.next_byte().expect("prefix");
+            assert_eq!(reader.read_global().map(u32::from), narrow);
+            assert_eq!(reader.position.0, end);
+            let host = usize::try_from(value).map_err(|_error| DecodeError::Malformed {
+                site: MalformedSite::IndexRange,
+            });
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            reader.next_byte().expect("prefix");
+            assert_eq!(reader.read_usize().map(usize::from), host);
+            assert_eq!(reader.position.0, end);
+        }
+        for count in 0_usize ..= 10 {
+            let bytes = vec![0x80_u8; count];
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            assert_eq!(reader.read_uvarint(), Err(DecodeError::Truncated));
+            assert_eq!(reader.position.0, count);
+        }
+        for mut bytes in [vec![0x81_u8, 0], vec![0x80_u8; 11], vec![
+            0x80_u8, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 2,
+        ]] {
+            let end = bytes.len();
+            bytes.push(0x55);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            assert_eq!(
+                reader.read_uvarint(),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::Varint
+                })
+            );
+            assert_eq!(reader.position.0, end);
+            assert_eq!(reader.next_byte().map(u8::from), Ok(0x55));
+        }
+    }
+
+    #[test]
+    fn tag_alphabets_partition_every_byte()
+    {
+        for byte in 0_u8 ..= u8::MAX {
+            let bytes = [byte, 0x55];
+            let unknown = |site| DecodeError::UnknownTag {
+                site,
+                tag: super::WireTag::from(byte),
+            };
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let admission = match byte {
+                | 0 => Ok(super::AdmissionMark::Checked),
+                | 1 => Ok(super::AdmissionMark::UncheckedBypass),
+                | _ => Err(unknown(super::TagSite::Admission)),
+            };
+            assert_eq!(super::decode_admission(&mut reader), admission);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let relation = match byte {
+                | 0 => Ok(super::ConstraintRelation::Leq),
+                | 1 => Ok(super::ConstraintRelation::Eq),
+                | _ => Err(unknown(super::TagSite::ConstraintRelation)),
+            };
+            assert_eq!(super::decode_relation(&mut reader), relation);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let base = match byte {
+                | 0 => Ok(super::BaseType::Integer),
+                | 1 => Ok(super::BaseType::String),
+                | 2 => Ok(super::BaseType::Numeric),
+                | _ => Err(unknown(super::TagSite::BaseType)),
+            };
+            assert_eq!(super::decode_base_type(&mut reader), base);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let side = match byte {
+                | 0 => Ok(super::Side::Left),
+                | 1 => Ok(super::Side::Right),
+                | _ => Err(unknown(super::TagSite::Side)),
+            };
+            assert_eq!(super::decode_side(&mut reader), side);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let sign = match byte {
+                | 0 => Ok(super::Sign::NonNegative),
+                | 1 => Ok(super::Sign::Negative),
+                | _ => Err(unknown(super::TagSite::Sign)),
+            };
+            assert_eq!(super::decode_sign(&mut reader), sign);
+            assert_eq!(reader.position.0, 1);
+            let kind = match byte {
+                | 0 => Ok(super::DeclKind::Def),
+                | 1 => Ok(super::DeclKind::Axiom),
+                | 2 => Ok(super::DeclKind::AbstractType),
+                | 3 => Err(DecodeError::ReservedDeclarationKind {
+                    kind: super::ReservedKind::ModuleSig,
+                }),
+                | 4 => Err(DecodeError::ReservedDeclarationKind {
+                    kind: super::ReservedKind::ModuleDef,
+                }),
+                | 5 => Err(DecodeError::ReservedDeclarationKind {
+                    kind: super::ReservedKind::FunctorDef,
+                }),
+                | _ => Err(unknown(super::TagSite::DeclarationKind)),
+            };
+            assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
+            if byte > 2 {
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                assert_eq!(
+                    super::decode_literal(&mut reader),
+                    Err(unknown(super::TagSite::LiteralKind))
+                );
+                assert_eq!(reader.position.0, 1);
+            }
+        }
+        let image = ArtifactImage::from([].as_slice());
+        assert_eq!(
+            super::decode_admission(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_relation(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_base_type(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_side(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_sign(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_literal(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+    }
+
+    #[test]
+    fn counted_records_validate_content_and_consumption()
+    {
+        let positions = [3_u8, 0x81, 1, 0, 0x80, 1, 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(positions.as_slice()));
+        let atoms = reader.read_minted_atom_table().expect("well-framed claims");
+        assert!(atoms.into_iter().map(usize::from).eq([129_usize, 0, 128]));
+        assert_eq!(reader.position.0, 6);
+        let mut reader = ByteReader::new(ArtifactImage::from(positions.as_slice()));
+        let atoms = super::decode_sealing_provenance(&mut reader).expect("well-framed claims");
+        assert!(atoms.into_iter().map(usize::from).eq([129_usize, 0, 128]));
+        assert_eq!(reader.position.0, 6);
+        let names = [3_u8, 0, 2, 0xc3, 0xa9, 3, 0xef, 0xbc, 0x8e, 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(names.as_slice()));
+        let name = super::decode_structured_name(&mut reader).expect("separator-free segments");
+        assert!(
+            name.segments()
+                .iter()
+                .map(AsRef::as_ref)
+                .eq(["", "é", "．"])
+        );
+        assert_eq!(reader.position.0, 9);
+        for bytes in [&[1_u8, 1, b'.'][..], &[1_u8, 1, 0xff][..]] {
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_structured_name(&mut reader),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::NameSegment
+                })
+            );
+            assert_eq!(reader.position.0, 3);
+        }
+        for (bytes, end) in [
+            (&[1_u8, 2, b'a'][..], 2_usize),
+            (&[2_u8, 1, b'a'][..], 3_usize),
+        ] {
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_structured_name(&mut reader),
+                Err(DecodeError::Truncated)
+            );
+            assert_eq!(reader.position.0, end);
+        }
+        let text = [4_u8, 0xc3, 0xa9, 0, b'a', 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(text.as_slice()));
+        assert_eq!(
+            reader.read_text(MalformedSite::LiteralPayload).as_deref(),
+            Ok("é\0a")
+        );
+        assert_eq!(reader.position.0, 5);
+        for site in [MalformedSite::LiteralPayload, MalformedSite::NameSegment] {
+            let invalid = [1_u8, 0xff];
+            let mut reader = ByteReader::new(ArtifactImage::from(invalid.as_slice()));
+            assert_eq!(reader.read_text(site), Err(DecodeError::Malformed { site }));
+            assert_eq!(reader.position.0, 2);
+            let short = [3_u8, b'a'];
+            let mut reader = ByteReader::new(ArtifactImage::from(short.as_slice()));
+            assert_eq!(reader.read_text(site), Err(DecodeError::Truncated));
+            assert_eq!(reader.position.0, 1);
+        }
+        for slot in [
+            super::ReservedSlot::ErasureAnnotation,
+            super::ReservedSlot::ModeGradeAnnotation,
+            super::ReservedSlot::DirectednessVariance,
+            super::ReservedSlot::MintedAtomTable,
+        ] {
+            for (bytes, expected) in [
+                (&[0_u8][..], Ok(())),
+                (&[1_u8][..], Err(DecodeError::ReservedSlotOccupied { slot })),
+                (
+                    &[0x80_u8, 1][..],
+                    Err(DecodeError::ReservedSlotOccupied { slot }),
+                ),
+                (
+                    &[0x80_u8, 0][..],
+                    Err(DecodeError::Malformed {
+                        site: MalformedSite::Varint,
+                    }),
+                ),
+                (&[0x80_u8][..], Err(DecodeError::Truncated)),
+            ] {
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+                assert_eq!(super::expect_empty_slot(&mut reader, slot), expected);
+                assert_eq!(reader.position.0, bytes.len());
+            }
+        }
+        let slots = [0_u8, 0, 3, 0x81, 1, 0, 0x80, 1, 0, 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(slots.as_slice()));
+        assert!(
+            super::decode_definition_slots(&mut reader)
+                .expect("empty reserved fields")
+                .into_iter()
+                .map(usize::from)
+                .eq([129_usize, 0, 128])
+        );
+        assert_eq!(reader.position.0, 9);
+        for (bytes, slot) in [
+            (&[1_u8][..], super::ReservedSlot::ErasureAnnotation),
+            (&[0_u8, 1][..], super::ReservedSlot::ModeGradeAnnotation),
+            (
+                &[0_u8, 0, 0, 1][..],
+                super::ReservedSlot::DirectednessVariance,
+            ),
+        ] {
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            assert_eq!(
+                super::decode_definition_slots(&mut reader),
+                Err(DecodeError::ReservedSlotOccupied { slot })
+            );
+            assert_eq!(reader.position.0, bytes.len());
+        }
+        let maximal_count = [0xff_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1];
+        let image = ArtifactImage::from(maximal_count.as_slice());
+        let mut reader = ByteReader::new(image);
+        assert_eq!(reader.read_minted_atom_table(), Err(DecodeError::Truncated));
+        assert_eq!(reader.position.0, 10);
+        let mut reader = ByteReader::new(image);
+        assert_eq!(
+            super::decode_structured_name(&mut reader),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(reader.position.0, 10);
+        let mut reader = ByteReader::new(image);
+        assert_eq!(
+            super::decode_sealing_provenance(&mut reader),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(reader.position.0, 10);
+    }
+
+    /// A fixed prefix with two distinguishable nodes of each family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: globals zero through seven alternate value type, value,
+    ///   computation type and computation, with distinct family-local ids.
+    /// - provides: live earlier roots for polarity and ordered-edge witnesses.
+    /// - panics: if the literal seed entries cease to decode.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 uses both same-family roots in ordered entry fixtures
+    ///   and distinguishes every matching and mismatching reference family.
+    /// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
+    /// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
+    #[anodized::spec(ensures: |ret| ret.nodes.len() == 8
+        && ret.children.len() == 8
+        && ret.families.as_slice() == [super::Family::ValueType, super::Family::Value,
+            super::Family::CompType, super::Family::Computation, super::Family::ValueType,
+            super::Family::Value, super::Family::CompType, super::Family::Computation])]
+    fn four_family_table() -> super::Table
+    {
+        let bytes = [1_u8, 0x0b, 7, 0, 0x13, 1, 0, 1, 9, 7, 7, 4, 0x15, 5];
+        let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+        let mut table = super::Table::new();
+        for _entry in 0_u8 .. 8 {
+            super::decode_entry(&mut reader, &mut table).expect("literal earlier-child seed");
+        }
+        table
+    }
+
+    #[test]
+    fn reference_families_preserve_order_and_failure_precedence()
+    {
+        let table = four_family_table();
+        let families = [
+            super::Family::ValueType,
+            super::Family::Value,
+            super::Family::CompType,
+            super::Family::Computation,
+        ];
+        let nodes_equal =
+            |first: super::DecodedNode, second: super::DecodedNode| match (first, second) {
+                | (super::DecodedNode::ValueType(first), super::DecodedNode::ValueType(second)) => {
+                    first == second
+                },
+                | (super::DecodedNode::Value(first), super::DecodedNode::Value(second)) => {
+                    first == second
+                },
+                | (super::DecodedNode::CompType(first), super::DecodedNode::CompType(second)) => {
+                    first == second
+                },
+                | (
+                    super::DecodedNode::Computation(first),
+                    super::DecodedNode::Computation(second),
+                ) => first == second,
+                | _ => false,
+            };
+        for index in 0_u8 ..= 9 {
+            let global = super::GlobalIndex::from(u32::from(index));
+            let bytes = [index];
+            let family = families
+                .get(usize::from(index).rem_euclid(4))
+                .copied()
+                .expect("four-way remainder");
+            let expected_family = if index < 8 {
+                Ok(family)
+            }
+            else {
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::ChildOrder,
+                })
+            };
+            assert_eq!(super::family_at(&table, global), expected_family);
+            for required in families {
+                let expected = if index >= 8 {
+                    Err(DecodeError::Malformed {
+                        site: MalformedSite::ChildOrder,
+                    })
+                }
+                else if required != family {
+                    Err(DecodeError::Malformed {
+                        site: MalformedSite::Polarity,
+                    })
+                }
+                else {
+                    Ok(global)
+                };
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                assert_eq!(super::decode_root(&mut reader, &table, required), expected);
+                assert_eq!(reader.position.0, 1);
+                let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+                let prefix = [
+                    super::GlobalIndex::from(6_u32),
+                    super::GlobalIndex::from(4_u32),
+                ];
+                let mut children = prefix.to_vec();
+                let next = table.next_index();
+                let result = match required {
+                    | super::Family::ValueType => {
+                        super::read_value_type(&mut reader, &table, next, &mut children)
+                            .map(super::DecodedNode::ValueType)
+                    },
+                    | super::Family::Value => {
+                        super::read_value(&mut reader, &table, next, &mut children)
+                            .map(super::DecodedNode::Value)
+                    },
+                    | super::Family::CompType => {
+                        super::read_comp_type(&mut reader, &table, next, &mut children)
+                            .map(super::DecodedNode::CompType)
+                    },
+                    | super::Family::Computation => {
+                        super::read_computation(&mut reader, &table, next, &mut children)
+                            .map(super::DecodedNode::Computation)
+                    },
+                };
+                assert_eq!(reader.position.0, 1);
+                match (result, expected) {
+                    | (Ok(node), Ok(_)) => {
+                        let stored = table
+                            .nodes
+                            .get(usize::from(index))
+                            .copied()
+                            .expect("live row");
+                        assert!(nodes_equal(node, stored));
+                        let mut expected_children = prefix.to_vec();
+                        expected_children.push(global);
+                        assert_eq!(children, expected_children);
+                    },
+                    | (Err(actual), Err(expected)) => {
+                        assert_eq!(actual, expected);
+                        assert_eq!(children, prefix);
+                    },
+                    | _ => panic!("reference family or refusal precedence changed"),
+                }
+            }
+            let expected_type = match table.nodes.get(usize::from(index)).copied() {
+                | Some(super::DecodedNode::ValueType(id)) => Some(id),
+                | _ => None,
+            };
+            let expected_value = match table.nodes.get(usize::from(index)).copied() {
+                | Some(super::DecodedNode::Value(id)) => Some(id),
+                | _ => None,
+            };
+            assert_eq!(super::value_type_id_at(&table.nodes, global), expected_type);
+            assert_eq!(super::value_id_at(&table.nodes, global), expected_value);
+        }
+        let mut reader = ByteReader::new(ArtifactImage::from([].as_slice()));
+        let mut children = vec![super::GlobalIndex::from(4_u32)];
+        assert!(matches!(
+            super::read_child(
+                &mut reader,
+                &table,
+                table.next_index(),
+                super::Family::Value,
+                &mut children
+            ),
+            Err(DecodeError::Truncated)
+        ));
+        assert_eq!(reader.position.0, 0);
+        assert_eq!(children, [super::GlobalIndex::from(4_u32)]);
+    }
+
+    #[test]
+    fn budget_scan_matches_explicit_expansion_and_saturating_boundaries()
+    {
+        let report = |edges: &[alloc::vec::Vec<usize>], roots: &[usize]| {
+            let mut table = super::Table::new();
+            for children in edges {
+                let resolve = |index: usize| match table.nodes.get(index).copied() {
+                    | Some(super::DecodedNode::ValueType(id)) => id,
+                    | _ => panic!("fixture child must be an earlier value type"),
+                };
+                let first = children.first().copied().map(resolve);
+                let second = children.get(1).copied().map(resolve);
+                let id = match (first, second) {
+                    | (None, _) => table.arena.value_type_unit(),
+                    | (Some(first), None) => {
+                        table.arena.value_type_lift(first, super::Level::zero())
+                    },
+                    | (Some(first), Some(second)) => table.arena.value_type_product(first, second),
+                };
+                table.nodes.push(super::DecodedNode::ValueType(id));
+                table.families.push(super::Family::ValueType);
+                table.children.push(
+                    children
+                        .iter()
+                        .map(|&index| {
+                            super::GlobalIndex::from(u32::try_from(index).expect("small fixture"))
+                        })
+                        .collect(),
+                );
+            }
+            let metas: alloc::vec::Vec<_> = roots
+                .iter()
+                .map(|&root| super::DeclMeta {
+                    mark: super::AdmissionMark::Checked,
+                    kind: super::DeclKind::Axiom,
+                    name: super::StructuredName::default(),
+                    levels: super::LevelSignature::monomorphic(),
+                    root_declared: super::GlobalIndex::from(
+                        u32::try_from(root).expect("small fixture"),
+                    ),
+                    root_body: None,
+                    provenance: vec![],
+                })
+                .collect();
+            super::budget_report(&table, &metas)
+        };
+        let edges = [
+            vec![],
+            vec![0_usize],
+            vec![0_usize, 0],
+            vec![1_usize, 2],
+            vec![2_usize, 3],
+            vec![4_usize, 4],
+        ];
+        let roots = [5_usize, 3, 5];
+        let mut maximum = 0_u128;
+        let mut total = 0_u128;
+        for root in roots {
+            let mut pending = vec![root];
+            let mut expanded = 0_u128;
+            while let Some(index) = pending.pop() {
+                expanded = expanded.checked_add(1).expect("small explicit expansion");
+                pending.extend(
+                    edges
+                        .get(index)
+                        .expect("earlier fixture child")
+                        .iter()
+                        .copied(),
+                );
+            }
+            maximum = maximum.max(expanded);
+            total = total
+                .checked_add(expanded)
+                .expect("small explicit expansion");
+        }
+        let metrics = report(&edges, &roots);
+        assert_eq!(usize::from(metrics.table_entries()), edges.len());
+        assert_eq!(
+            u128::from(u64::from(metrics.max_declaration_expanded_work())),
+            maximum
+        );
+        assert_eq!(
+            u128::from(u64::from(metrics.artifact_expanded_work())),
+            total
+        );
+        let empty = report(&edges, &[]);
+        assert_eq!(usize::from(empty.table_entries()), edges.len());
+        assert_eq!(u64::from(empty.max_declaration_expanded_work()), 0);
+        assert_eq!(u64::from(empty.artifact_expanded_work()), 0);
+        let missing = report(&edges, &[99_usize]);
+        assert_eq!(u64::from(missing.max_declaration_expanded_work()), u64::MAX);
+        assert_eq!(u64::from(missing.artifact_expanded_work()), u64::MAX);
+        let mut diamonds = vec![vec![]];
+        for index in 1_usize ..= 64 {
+            let child = index.saturating_sub(1);
+            diamonds.push(vec![child, child]);
+        }
+        for root in [0_usize, 1, 31, 62, 63, 64] {
+            let shift = u32::try_from(root.saturating_add(1)).expect("small exponent");
+            let expanded = 1_u128
+                .checked_shl(shift)
+                .expect("widened arithmetic")
+                .saturating_sub(1);
+            let expected = u64::try_from(expanded).unwrap_or(u64::MAX);
+            let metrics = report(&diamonds, &[root, root]);
+            assert_eq!(u64::from(metrics.max_declaration_expanded_work()), expected);
+            assert_eq!(
+                u64::from(metrics.artifact_expanded_work()),
+                u64::try_from(expanded.saturating_mul(2)).unwrap_or(u64::MAX)
+            );
+        }
+        let table = four_family_table();
+        let meta = super::DeclMeta {
+            mark: super::AdmissionMark::Checked,
+            kind: super::DeclKind::Def,
+            name: super::StructuredName::default(),
+            levels: super::LevelSignature::monomorphic(),
+            root_declared: super::GlobalIndex::from(0_u32),
+            root_body: Some(super::GlobalIndex::from(5_u32)),
+            provenance: vec![],
+        };
+        let metrics = super::budget_report(&table, &[meta]);
+        assert_eq!(u64::from(metrics.max_declaration_expanded_work()), 1);
+        assert_eq!(u64::from(metrics.artifact_expanded_work()), 2);
+        let root_cap = u64::from(super::MAX_EXPANDED_TERM_WORK);
+        let artifact_cap = u64::from(super::MAX_ARTIFACT_EXPANDED_WORK);
+        for root in [
+            root_cap.saturating_sub(1),
+            root_cap,
+            root_cap.saturating_add(1),
+        ] {
+            for total in [
+                artifact_cap.saturating_sub(1),
+                artifact_cap,
+                artifact_cap.saturating_add(1),
+            ] {
+                let metrics = super::DecodeMetrics::new(
+                    super::TableEntryCount::from(0_usize),
+                    super::ExpandedWork::from(root),
+                    super::ExpandedWork::from(total),
+                );
+                let expected = if root > root_cap {
+                    Err(DecodeError::Malformed {
+                        site: MalformedSite::ExpandedWork,
+                    })
+                }
+                else if total > artifact_cap {
+                    Err(DecodeError::Malformed {
+                        site: MalformedSite::ArtifactExpandedWork,
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(super::check_budget(metrics), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_levels_and_literals_are_not_wire_acceptance()
+    {
+        let literal_artifact = |base: u8, literal: &[u8]| {
+            let mut bytes = vec![
+                b'G', b'K', b'X', b'1', 2, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+            ];
+            bytes.extend_from_slice(literal);
+            bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
+            bytes
+        };
+        let integer_cases: &[(&[u8], &[u8], super::Sign, &str)] = &[
+            (
+                &[0, 1, 1, b'0'],
+                &[0, 0, 1, b'0'],
+                super::Sign::NonNegative,
+                "0",
+            ),
+            (
+                &[0, 0, 3, b'0', b'0', b'7'],
+                &[0, 0, 1, b'7'],
+                super::Sign::NonNegative,
+                "7",
+            ),
+            (
+                &[0, 1, 3, b'0', b'0', b'7'],
+                &[0, 1, 1, b'7'],
+                super::Sign::Negative,
+                "7",
+            ),
+        ];
+        for &(raw, canonical, sign, digits) in integer_cases {
+            let mut reader = ByteReader::new(ArtifactImage::from(raw));
+            let super::Literal::Integer(value) =
+                super::decode_literal(&mut reader).expect("decimal payload")
+            else {
+                panic!("integer kind");
+            };
+            assert_eq!(value.sign(), sign);
+            assert_eq!(value.magnitude().as_ref(), digits);
+            assert_eq!(reader.position.0, raw.len());
+            let raw = literal_artifact(0, raw);
+            assert_eq!(
+                super::decode(ArtifactImage::from(raw.as_slice())),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::NonCanonical
+                })
+            );
+            let canonical = literal_artifact(0, canonical);
+            let decoded = super::decode(ArtifactImage::from(canonical.as_slice()))
+                .expect("canonical partner");
+            assert_eq!(decoded.declarations().len(), 1);
+            assert_eq!(
+                decoded.metrics().table_entries(),
+                super::TableEntryCount::from(2_usize)
+            );
+        }
+        let numeric_cases = [
+            (
+                &[2_u8, 1, 3, b'0', b'0', b'7', 4, b'1', b'2', b'0', b'0'][..],
+                &[2_u8, 1, 1, b'7', 2, b'1', b'2'][..],
+                super::Sign::Negative,
+                "7",
+                "12",
+            ),
+            (
+                &[2_u8, 1, 1, b'0', 2, b'0', b'0'][..],
+                &[2_u8, 0, 1, b'0', 0][..],
+                super::Sign::NonNegative,
+                "0",
+                "",
+            ),
+        ];
+        for (raw, canonical, sign, integer, fraction) in numeric_cases {
+            let mut reader = ByteReader::new(ArtifactImage::from(raw));
+            let super::Literal::Numeric(value) =
+                super::decode_literal(&mut reader).expect("decimal payload")
+            else {
+                panic!("numeric kind");
+            };
+            assert_eq!(value.sign(), sign);
+            assert_eq!(value.integer_part().as_ref(), integer);
+            assert_eq!(value.fraction().as_ref(), fraction);
+            assert_eq!(reader.position.0, raw.len());
+            let raw = literal_artifact(2, raw);
+            assert_eq!(
+                super::decode(ArtifactImage::from(raw.as_slice())),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::NonCanonical
+                })
+            );
+            let canonical = literal_artifact(2, canonical);
+            let decoded = super::decode(ArtifactImage::from(canonical.as_slice()))
+                .expect("canonical partner");
+            assert_eq!(
+                decoded.metrics().table_entries(),
+                super::TableEntryCount::from(2_usize)
+            );
+        }
+        let text = [1_u8, 4, 0xc3, 0xa9, 0, b'a'];
+        let mut reader = ByteReader::new(ArtifactImage::from(text.as_slice()));
+        let super::Literal::Text(value) = super::decode_literal(&mut reader).expect("UTF-8 text")
+        else {
+            panic!("text kind");
+        };
+        assert_eq!(value.as_ref(), "é\0a");
+        assert_eq!(reader.position.0, text.len());
+        for text in [
+            &[0_u8][..],
+            &[1_u8, b'+'][..],
+            &[3_u8, 0xef, 0xbc, 0x97][..],
+        ] {
+            let mut reader = ByteReader::new(ArtifactImage::from(text));
+            assert_eq!(
+                super::decode_magnitude(&mut reader),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::LiteralPayload
+                })
+            );
+            assert_eq!(reader.position.0, text.len());
+        }
+        let empty_fraction = [0_u8];
+        let mut reader = ByteReader::new(ArtifactImage::from(empty_fraction.as_slice()));
+        assert_eq!(
+            super::decode_fraction(&mut reader)
+                .expect("empty fraction")
+                .as_ref(),
+            ""
+        );
+        let bad_fraction = [1_u8, b'-'];
+        let mut reader = ByteReader::new(ArtifactImage::from(bad_fraction.as_slice()));
+        assert_eq!(
+            super::decode_fraction(&mut reader),
+            Err(DecodeError::Malformed {
+                site: MalformedSite::LiteralPayload
+            })
+        );
+        let level_artifact = |level: &[u8]| {
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 2, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            bytes.extend_from_slice(level);
+            bytes.push(0);
+            bytes
+        };
+        let level_cases = [
+            (
+                &[0_u8, 2, 0, 0, 0, 0][..],
+                &[0_u8, 1, 0, 0][..],
+                &[(0_u32, 0_u64)][..],
+            ),
+            (
+                &[0_u8, 2, 0, 1, 0, 0][..],
+                &[0_u8, 1, 0, 1][..],
+                &[(0_u32, 1_u64)][..],
+            ),
+            (
+                &[0_u8, 2, 2, 0, 0, 1][..],
+                &[0_u8, 2, 0, 1, 2, 0][..],
+                &[(0_u32, 1_u64), (2_u32, 0_u64)][..],
+            ),
+        ];
+        for (raw, canonical, atoms) in level_cases {
+            let mut reader = ByteReader::new(ArtifactImage::from(raw));
+            let level = super::decode_level(&mut reader).expect("normalizable level");
+            assert_eq!(u64::from(level.constant_part()), 0);
+            assert!(
+                level
+                    .atoms()
+                    .map(|(variable, amount)| (u32::from(variable.index()), u64::from(amount)))
+                    .eq(atoms.iter().copied())
+            );
+            assert_eq!(reader.position.0, raw.len());
+            let raw = level_artifact(raw);
+            assert_eq!(
+                super::decode(ArtifactImage::from(raw.as_slice())),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::NonCanonical
+                })
+            );
+            let canonical = level_artifact(canonical);
+            let decoded = super::decode(ArtifactImage::from(canonical.as_slice()))
+                .expect("canonical level partner");
+            assert_eq!(
+                decoded.metrics().table_entries(),
+                super::TableEntryCount::from(1_usize)
+            );
+        }
+        let cap = u64::from(super::MAX_DECODED_LEVEL_OFFSET);
+        for variable in [0_u32, 1, u32::MAX] {
+            for offset in [0_u64, 1, cap.saturating_sub(1)] {
+                let atom = super::build_variable_atom(
+                    super::WireU32::from(variable),
+                    super::WireU64::from(offset),
+                )
+                .expect("offset below cap");
+                assert_eq!(u64::from(atom.constant_part()), 0);
+                assert!(
+                    atom.atoms()
+                        .map(|(found, amount)| (u32::from(found.index()), u64::from(amount)))
+                        .eq([(variable, offset)])
+                );
+            }
+        }
+        let x = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+        let y = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(1_u32)));
+        for relation in [0_u8, 1] {
+            let bytes = [2_u8, 1, relation, 0, 1, 0, 0, 0, 1, 1, 0];
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let signature =
+                super::decode_level_signature(&mut reader).expect("variable-only constraint");
+            let expected = if relation == 0 {
+                super::LandmarkConstraint::leq(x.clone(), y.clone())
+            }
+            else {
+                super::LandmarkConstraint::equal(x.clone(), y.clone())
+            }
+            .expect("valid sides");
+            assert_eq!(u32::from(signature.params()), 2);
+            assert_eq!(signature.constraints(), [expected]);
+            assert_eq!(reader.position.0, bytes.len());
+        }
+        let invalid_side = [0_u8, 1, 0, 1, 0, 0, 1, 0, 0];
+        let mut reader = ByteReader::new(ArtifactImage::from(invalid_side.as_slice()));
+        assert_eq!(
+            super::decode_level_signature(&mut reader),
+            Err(DecodeError::Malformed {
+                site: MalformedSite::ConstraintForm
+            })
+        );
+        assert_eq!(reader.position.0, invalid_side.len());
+        let unknown_relation = [0_u8, 1, 3];
+        let mut reader = ByteReader::new(ArtifactImage::from(unknown_relation.as_slice()));
+        assert_eq!(
+            super::decode_level_signature(&mut reader),
+            Err(DecodeError::UnknownTag {
+                site: super::TagSite::ConstraintRelation,
+                tag: super::WireTag::from(3_u8)
+            })
+        );
+        assert_eq!(reader.position.0, 3);
+        let maximal_count = [
+            0_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1,
+        ];
+        let mut reader = ByteReader::new(ArtifactImage::from(maximal_count.as_slice()));
+        assert_eq!(
+            super::decode_level_signature(&mut reader),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(reader.position.0, maximal_count.len());
+    }
+
+    #[test]
+    fn decoded_entries_preserve_every_former_and_child_position()
+    {
+        let mut table = four_family_table();
+        let &[
+            super::DecodedNode::ValueType(vt0),
+            super::DecodedNode::Value(v0),
+            super::DecodedNode::CompType(ct0),
+            super::DecodedNode::Computation(c0),
+            super::DecodedNode::ValueType(vt1),
+            super::DecodedNode::Value(v1),
+            super::DecodedNode::CompType(ct1),
+            super::DecodedNode::Computation(c1),
+        ] = table.nodes.as_slice()
+        else {
+            panic!("four-family seed");
+        };
+        let level = super::Level::constant(super::LevelConstant::from(7_u64));
+        let value_types: &[(&[u8], crate::types::ValueType, &[u32])] = &[
+            (
+                &[0, 0],
+                crate::types::ValueType::Base(super::BaseType::Integer),
+                &[],
+            ),
+            (
+                &[0, 1],
+                crate::types::ValueType::Base(super::BaseType::String),
+                &[],
+            ),
+            (
+                &[0, 2],
+                crate::types::ValueType::Base(super::BaseType::Numeric),
+                &[],
+            ),
+            (&[1], crate::types::ValueType::Unit, &[]),
+            (
+                &[2, 7, 0],
+                crate::types::ValueType::Universe {
+                    sort: super::GroundSort::Value,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (&[3, 4, 0], crate::types::ValueType::Product(vt1, vt0), &[
+                4, 0,
+            ]),
+            (&[4, 0, 4], crate::types::ValueType::Sum(vt0, vt1), &[0, 4]),
+            (&[5, 6], crate::types::ValueType::Thunk(ct1), &[6]),
+            (
+                &[6, 7, 0, 4],
+                crate::types::ValueType::Lift {
+                    inner: vt1,
+                    target: level.clone(),
+                },
+                &[4],
+            ),
+            (
+                &[0x17, 0x81, 1],
+                crate::types::ValueType::Abstract(super::ConstantIndex::from(129_usize)),
+                &[],
+            ),
+            (
+                &[0x19, 7, 0, 5],
+                crate::types::ValueType::Element {
+                    code: v1,
+                    target: level.clone(),
+                },
+                &[5],
+            ),
+            (
+                &[0x1a, 7, 0],
+                crate::types::ValueType::Universe {
+                    sort: super::GroundSort::Computation,
+                    level: level.clone(),
+                },
+                &[],
+            ),
+            (
+                &[0x1e, 4, 0],
+                crate::types::ValueType::StaticPi {
+                    domain: vt1,
+                    codomain: vt0,
+                },
+                &[4, 0],
+            ),
+        ];
+        for &(bytes, ref expected, children) in value_types {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+                assert_eq!(table.families.len(), count);
+                assert_eq!(table.children.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal complete entry");
+            assert_eq!(reader.position.0, bytes.len());
+            assert_eq!(table.nodes.len(), count.saturating_add(1));
+            assert_eq!(table.families.last(), Some(&super::Family::ValueType));
+            let super::DecodedNode::ValueType(id) =
+                table.nodes.last().copied().expect("appended row")
+            else {
+                panic!("wrong node family");
+            };
+            assert_eq!(table.arena.value_type(id), Some(expected));
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        let comp_types: &[(&[u8], crate::types::CompType, &[u32])] = &[
+            (&[7, 4], crate::types::CompType::Returner(vt1), &[4]),
+            (
+                &[8, 4, 2],
+                crate::types::CompType::Arrow {
+                    domain: vt1,
+                    codomain: ct0,
+                },
+                &[4, 2],
+            ),
+            (
+                &[0x18, 0, 6],
+                crate::types::CompType::Pi {
+                    domain: vt0,
+                    codomain: ct1,
+                },
+                &[0, 6],
+            ),
+            (
+                &[0x1b, 7, 0, 5],
+                crate::types::CompType::Element {
+                    code: v1,
+                    target: level.clone(),
+                },
+                &[5],
+            ),
+        ];
+        for &(bytes, ref expected, children) in comp_types {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+                assert_eq!(table.families.len(), count);
+                assert_eq!(table.children.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal complete entry");
+            assert_eq!(reader.position.0, bytes.len());
+            assert_eq!(table.nodes.len(), count.saturating_add(1));
+            assert_eq!(table.families.last(), Some(&super::Family::CompType));
+            let super::DecodedNode::CompType(id) =
+                table.nodes.last().copied().expect("appended row")
+            else {
+                panic!("wrong node family");
+            };
+            assert_eq!(table.arena.comp_type(id), Some(expected));
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        let values: &[(&[u8], crate::term::Value, &[u32])] = &[
+            (
+                &[9, 0x81, 1],
+                crate::term::Value::Variable(super::DeBruijnIndex::from(129_u32)),
+                &[],
+            ),
+            (
+                &[0x0a, 0x81, 1],
+                crate::term::Value::Constant(super::ConstantIndex::from(129_usize)),
+                &[],
+            ),
+            (&[0x0b], crate::term::Value::Unit, &[]),
+            (
+                &[0x0c, 0, 1, 1, b'7'],
+                crate::term::Value::Literal(super::Literal::Integer(super::IntegerLiteral::new(
+                    super::Sign::Negative,
+                    super::Magnitude::from_decimal_text(alloc::string::String::from("7"))
+                        .expect("decimal fixture"),
+                ))),
+                &[],
+            ),
+            (&[0x0d, 5, 1], crate::term::Value::Pair(v1, v0), &[5, 1]),
+            (
+                &[0x0e, 0, 1],
+                crate::term::Value::Injection(super::Side::Left, v0),
+                &[1],
+            ),
+            (
+                &[0x0e, 1, 5],
+                crate::term::Value::Injection(super::Side::Right, v1),
+                &[5],
+            ),
+            (&[0x0f, 7], crate::term::Value::Thunk(c1), &[7]),
+            (
+                &[0x10, 7, 0, 5],
+                crate::term::Value::Lift {
+                    target: level,
+                    body: v1,
+                },
+                &[5],
+            ),
+            (&[0x1c, 4], crate::term::Value::Quote(vt1), &[4]),
+            (&[0x1d, 6], crate::term::Value::QuoteComputation(ct1), &[6]),
+            (
+                &[0x1f, 5, 1],
+                crate::term::Value::StaticApplication(v1, v0),
+                &[5, 1],
+            ),
+        ];
+        for &(bytes, ref expected, children) in values {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+                assert_eq!(table.families.len(), count);
+                assert_eq!(table.children.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal complete entry");
+            assert_eq!(reader.position.0, bytes.len());
+            assert_eq!(table.nodes.len(), count.saturating_add(1));
+            assert_eq!(table.families.last(), Some(&super::Family::Value));
+            let super::DecodedNode::Value(id) = table.nodes.last().copied().expect("appended row")
+            else {
+                panic!("wrong node family");
+            };
+            assert_eq!(table.arena.value(id), Some(expected));
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        let computations: &[(&[u8], crate::term::Computation, &[u32])] = &[
+            (&[0x11, 7], crate::term::Computation::Lambda(c1), &[7]),
+            (
+                &[0x12, 7, 5],
+                crate::term::Computation::Application(c1, v1),
+                &[7, 5],
+            ),
+            (&[0x13, 5], crate::term::Computation::Return(v1), &[5]),
+            (&[0x14, 7, 3], crate::term::Computation::Bind(c1, c0), &[
+                7, 3,
+            ]),
+            (&[0x15, 5], crate::term::Computation::Force(v1), &[5]),
+            (
+                &[0x16, 5, 7, 3],
+                crate::term::Computation::Case {
+                    scrutinee: v1,
+                    on_left: c1,
+                    on_right: c0,
+                },
+                &[5, 7, 3],
+            ),
+        ];
+        for &(bytes, ref expected, children) in computations {
+            let before = table.arena.watermark();
+            let count = table.nodes.len();
+            for end in 0 .. bytes.len() {
+                let prefix = bytes.get(.. end).expect("proper prefix");
+                let mut reader = ByteReader::new(ArtifactImage::from(prefix));
+                assert_eq!(
+                    super::decode_entry(&mut reader, &mut table),
+                    Err(DecodeError::Truncated)
+                );
+                assert_eq!(table.arena.watermark(), before);
+                assert_eq!(table.nodes.len(), count);
+                assert_eq!(table.families.len(), count);
+                assert_eq!(table.children.len(), count);
+            }
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes));
+            super::decode_entry(&mut reader, &mut table).expect("literal complete entry");
+            assert_eq!(reader.position.0, bytes.len());
+            assert_eq!(table.nodes.len(), count.saturating_add(1));
+            assert_eq!(table.families.last(), Some(&super::Family::Computation));
+            let super::DecodedNode::Computation(id) =
+                table.nodes.last().copied().expect("appended row")
+            else {
+                panic!("wrong node family");
+            };
+            assert_eq!(table.arena.computation(id), Some(expected));
+            assert!(
+                table
+                    .children
+                    .last()
+                    .expect("ordered edges")
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .eq(children.iter().copied())
+            );
+        }
+        let count = table.nodes.len();
+        let watermark = table.arena.watermark();
+        for tag in 0x20_u8 ..= u8::MAX {
+            let bytes = [tag];
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            assert_eq!(
+                super::decode_entry(&mut reader, &mut table),
+                Err(DecodeError::UnknownTag {
+                    site: super::TagSite::Node,
+                    tag: super::WireTag::from(tag)
+                })
+            );
+            assert_eq!(reader.position.0, 1);
+            assert_eq!(table.nodes.len(), count);
+            assert_eq!(table.arena.watermark(), watermark);
+        }
+        assert_eq!(
+            table.arena.value_type(vt0),
+            Some(&crate::types::ValueType::Unit)
+        );
+        assert_eq!(
+            table.arena.value_type(vt1),
+            Some(&crate::types::ValueType::Base(super::BaseType::String))
+        );
+        assert_eq!(table.arena.value(v0), Some(&crate::term::Value::Unit));
+        assert_eq!(
+            table.arena.value(v1),
+            Some(&crate::term::Value::Variable(super::DeBruijnIndex::from(
+                7_u32
+            )))
+        );
+        assert_eq!(
+            table.arena.comp_type(ct0),
+            Some(&crate::types::CompType::Returner(vt0))
+        );
+        assert_eq!(
+            table.arena.comp_type(ct1),
+            Some(&crate::types::CompType::Returner(vt1))
+        );
+        assert_eq!(
+            table.arena.computation(c0),
+            Some(&crate::term::Computation::Return(v0))
+        );
+        assert_eq!(
+            table.arena.computation(c1),
+            Some(&crate::term::Computation::Force(v1))
+        );
+    }
+
+    #[test]
+    fn declaration_assembly_preserves_claims_and_consumes_names()
+    {
+        let mut table = four_family_table();
+        let declared = super::value_type_id_at(&table.nodes, super::GlobalIndex::from(4_u32))
+            .expect("string type");
+        let unit = super::value_type_id_at(&table.nodes, super::GlobalIndex::from(0_u32))
+            .expect("unit type");
+        let body = super::value_id_at(&table.nodes, super::GlobalIndex::from(5_u32))
+            .expect("variable body");
+        let name = |parts: &[&str]| {
+            super::StructuredName::from(
+                parts
+                    .iter()
+                    .map(|&part| {
+                        super::NameSegment::from_text(alloc::string::String::from(part))
+                            .expect("separator-free fixture")
+                    })
+                    .collect::<alloc::vec::Vec<_>>(),
+            )
+        };
+        let variable =
+            |index| super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(index)));
+        let levels = super::LevelSignature::new(super::LevelParamCount::from(2_u32), vec![
+            super::LandmarkConstraint::leq(variable(0_u32), variable(1_u32))
+                .expect("variable-only sides"),
+        ]);
+        let mut metas = [
+            super::DeclMeta {
+                mark: super::AdmissionMark::UncheckedBypass,
+                kind: super::DeclKind::Def,
+                name: name(&["definition", "é"]),
+                levels,
+                root_declared: super::GlobalIndex::from(4_u32),
+                root_body: Some(super::GlobalIndex::from(5_u32)),
+                provenance: vec![
+                    super::ConstantIndex::from(129_usize),
+                    super::ConstantIndex::from(0_usize),
+                    super::ConstantIndex::from(128_usize),
+                ],
+            },
+            super::DeclMeta {
+                mark: super::AdmissionMark::Checked,
+                kind: super::DeclKind::Axiom,
+                name: name(&[""]),
+                levels: super::LevelSignature::monomorphic(),
+                root_declared: super::GlobalIndex::from(0_u32),
+                root_body: None,
+                provenance: vec![],
+            },
+            super::DeclMeta {
+                mark: super::AdmissionMark::Checked,
+                kind: super::DeclKind::AbstractType,
+                name: name(&[]),
+                levels: super::LevelSignature::new(super::LevelParamCount::from(1_u32), vec![]),
+                root_declared: super::GlobalIndex::from(4_u32),
+                root_body: None,
+                provenance: vec![],
+            },
+        ];
+        let arena_before = table.arena.clone();
+        let declarations = super::build_declarations(&mut table, &mut metas);
+        assert_eq!(table.arena, arena_before);
+        let expected = [
+            super::DeclarationContent::Def { declared, body },
+            super::DeclarationContent::Axiom { declared: unit },
+            super::DeclarationContent::AbstractType { kind: declared },
+        ];
+        let names: &[&[&str]] = &[&["definition", "é"], &[""], &[]];
+        assert_eq!(declarations.len(), 3);
+        for (((marked, meta), content), &parts) in declarations
+            .iter()
+            .zip(metas.iter())
+            .zip(expected)
+            .zip(names)
+        {
+            assert_eq!(marked.mark(), meta.mark);
+            assert_eq!(marked.declaration().content(), &content);
+            assert_eq!(marked.declaration().levels(), &meta.levels);
+            assert_eq!(marked.declaration().provenance(), meta.provenance);
+            assert!(
+                marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .eq(parts.iter().copied())
+            );
+            assert!(meta.name.segments().is_empty());
+        }
+        let empty = super::build_declarations(&mut table, &mut []);
+        assert_eq!(empty, []);
+        assert_eq!(table.arena, arena_before);
+    }
 
     #[test]
     fn an_overlong_varint_is_refused()
