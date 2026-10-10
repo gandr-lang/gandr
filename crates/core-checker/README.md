@@ -314,6 +314,8 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 
 `template` provides [guarded equation families](src/template.rs): original and memo-aware prices, producer-only predecessor sharing, and kernel-authoritative replay. The [`staging_templates` observer](examples/staging_templates.rs) specifies the Serde/JSON choice and measures bytes, time and residency.
 
+The [admission adapter](src/template/admission.rs) exposes replay-free local equations.
+
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

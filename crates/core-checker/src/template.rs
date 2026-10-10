@@ -39,6 +39,8 @@
 //! Revisit the single relation only with a separately specified producer rule
 //! whose instances ordinary replay can still check.
 
+mod admission;
+pub use admission::AdmissionCandidate;
 mod harvest;
 mod image;
 mod syntax;

@@ -37,6 +37,9 @@
 //! choice for multithreaded measurements, a security advisory or maintenance
 //! loss.
 
+#[path = "staging_templates/admission.rs"]
+mod admission;
+
 use core::time::Duration;
 use std::io;
 use std::io::Write as _;
@@ -755,6 +758,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>>
             }
         }
     }
+    admission::run(&mut output)?;
     output.flush()?;
     Ok(())
 }

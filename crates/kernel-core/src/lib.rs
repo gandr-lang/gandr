@@ -63,6 +63,7 @@
 
 extern crate alloc;
 
+pub mod admission;
 pub mod census;
 pub mod check;
 pub mod conv;

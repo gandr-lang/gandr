@@ -281,13 +281,15 @@ The end-to-end witness independently interprets the admitted CBPV body and compa
 
 ## Guarded admission judgments
 
-The experimental compressed judgment has three distinct premises. These specifications state proof obligations before implementation supplies admission authority. Ordinary `stage::replay` remains unchanged.
+The experimental `admission` module checks a guarded local equation with three judgments: `Schema::check`, `Schema::substitute`, and `Substitution::admit`. Ordinary `stage::replay`, endpoint typing, certificate connectivity and all stage modules remain unchanged. No complete-certificate speedup is claimed by local equation admission.
 
 ### Schema judgment
 
-`Schema(T)` requires a finite backward-referencing skeleton, source-rooted points, exact classifier content, and one recorded rule at each step. Each distinct region/entry/body obligation is checked with other points represented by pairwise fresh rigid constants. A ground schema owes one check. A producer cache never establishes this judgment.
+`Schema(T)` requires a canonical backward-referencing skeleton, source-rooted points, exact classifier-vocabulary content, and one recorded local rule. Each distinct region/entry/body obligation is checked with other points represented by pairwise fresh rigid constants. A ground schema owes one check. A producer cache never establishes this judgment. The vocabulary binds classifier syntax, not an inferred type for an open point.
 
 Inheritance alone is insufficient. Discrimination transparency requires that every constructor or payload inspected by a recorded rule is rigid or fixed by its guard. For iteration this includes the count's stage and zero versus positive classification; for beta it includes the application and lambda heads and the binding behavior of every substituted body. A family allowing both zero and positive counts cannot inherit one iteration rule. A changed step must fail at schema validation, before any instance is considered.
+
+Beta arms must be closed, so substituting them preserves the rigid binding skeleton. Structural cancellation does not inspect its body. Iteration requires outer-natural guard arms in one zero/positive class; predecessor is defined only for positive arms. These explicit observations, together with replay of each distinct inheritance obligation, justify substitution closure for the admitted rule fragment.
 
 ### Admissible-substitution judgment
 
@@ -297,13 +299,21 @@ Inheritance alone is insufficient. Discrimination transparency requires that eve
 
 `Schema(T)` and `T ⊢ σ admissible` entail the local derivation `T[σ]` by substitution closure and discrimination transparency, without executing the derivation again. Connecting its sides to a consumer's claim is a separate obligation. Local equations do not establish endpoint typing or the connectivity of a complete certificate. Those premises remain required.
 
-Let `D(T, σ)` count distinct skeleton constructors above changed points. A bottom-up digest skeleton costs `O(|σ| + D(T, σ))`, not generally `O(|σ| + depth(T))`: one point can occur beneath many distinct parents in a shallow DAG. A depth-only bound requires an additional bounded-sensitivity premise on the representation. Hash equality alone also cannot establish exact agreement under this kernel's [content-key discipline](#key-derivation). An exact comparison against materialized sides must charge their distinct reachable nodes; digest disagreement may only accelerate refusal.
+Let `D(T, σ)` count distinct rigid skeleton constructors above changed points. The schema pre-interns fixed constructor and classifier records exactly. Each member evaluates only its dependent plan into a private record overlay; predecessor expressions add one record per used point. Both instance roots and consumer roots receive content ids in that same namespace. Equality is exact record interning, never hash agreement. No term, rule reduct, or complete member certificate is materialized.
+
+The member's abstract record work is `O(|σ| + D(T, σ) + A)`, where `A` is the distinct materialized term/classifier content supplied by the consumer and traversed once. Ordered maps add logarithmic CPU cost. `D` is not generally depth: one point can occur beneath many distinct parents in a shallow DAG. The fanout witness measures this distinction. `Admission` separates row choices, dependent rigid constructors, instantiated records, consumer term records and consumer classifier records.
 
 ### Work and parallelism obligations
 
 For a family of independent rows, the advertised compressed bound must price schema validation once, every distinct inheritance obligation, all row validation, and side comparison separately. Repeating a body check for each guard is real work even when the encoding shares that body. Counting only row bytes cannot hide this work. No theorem here grants a compressed cannot-lose bound from measured compression ratios.
 
+Schema validation has a separate input-sized work ceiling: one charged node operation per byte of its native fixed-width proposal image (node, classifier, arm-index and descriptor slices). Every traversal and inheritance replay consumes that allowance; exhaustion returns `SchemaWorkBound`, never a partial capability. This is an operation bound, not a CPU-time promise: exact ordered tables add logarithmic lookup cost. Materialized instance admission charges term and classifier comparisons explicitly. The native image is an experimental accounting format, not a wire format.
+
 Members form an antichain. A validated immutable schema and independent per-member scratch permit scoped threads without interior mutability. Any parallel measurement must retain the same verdict at every thread count, report thread creation separately or include it on both sides, and distinguish local equation admission from complete typed certificate admission.
+
+The `staging_templates` release example reports every paying family from the unchanged memo-aware producer at 1, 2, 4 and 8 requested workers. Local plain replay uses the same reflexive-endpoint wrapper as inheritance; complete typed replay is reported separately. Both parallel paths include thread creation and exclude arena cloning. Row validation, exact-content instantiation and materialized-side comparison all remain in the admission interval.
+
+The permanent witnesses cover corrupt steps, unknown arms, missing points, conflicting correlations, classifier content under reused coordinates, side mismatch, zero/positive rule changes, the schema work ceiling, fanout, and scheduling independence. A standalone mutation campaign should target these admission predicates and content-record domains; no mutation score is claimed.
 
 ## License
 
