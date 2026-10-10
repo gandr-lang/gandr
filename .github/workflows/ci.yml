@@ -368,7 +368,7 @@ jobs:
         if: *plain-flavor
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --locked --workspace --no-deps --document-private-items --profile test
+        run: cargo doc --locked --workspace --all-features --no-deps --document-private-items --profile test
       - *upload-test-report
       - *archive-build-state
       - *upload-build-state

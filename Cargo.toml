@@ -12,6 +12,7 @@ members = [
   "crates/kernel-core",
   "crates/kernel-strata",
   "crates/kernel-term",
+  "crates/runtime-compile-host",
   "crates/storage-artifact",
   "crates/storage-chunker",
   "crates/storage-records",
@@ -93,6 +94,7 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
+# - runtime-compile-host
 # - storage-artifact
 # - storage-chunker
 # - storage-records
@@ -168,6 +170,7 @@ default-features = false
 # obligation ledger and the refusal vocabulary.
 # consumers:
 # - core-incremental
+# - runtime-compile-host
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -199,6 +202,7 @@ path = "crates/core-nbe"
 # The sequent intermediate language and the L machine: focusing a core term
 # into commands, running a command, and reading a run's terminal back.
 # consumers:
+# - runtime-compile-host (dev)
 # - surface-dispatcher
 [workspace.dependencies.gandr-core-sequent]
 path = "crates/core-sequent"
@@ -211,6 +215,7 @@ path = "crates/core-sequent"
 # - core-nbe
 # - core-sequent
 # - kernel-core (dev)
+# - runtime-compile-host
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -276,6 +281,7 @@ path = "crates/kernel-strata"
 # - core-session
 # - core-term
 # - kernel-core
+# - runtime-compile-host
 # - storage-artifact
 # - surface-corpus
 # - surface-dispatcher
@@ -287,6 +293,16 @@ path = "crates/kernel-strata"
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 default-features = false
+
+# Compile-host preparation, activated only by its own development targets.
+# features:
+# - compile-host: exercise the optional Rust surface in tests and policy gates
+# consumers:
+# - runtime-compile-host (dev)
+[workspace.dependencies.gandr-runtime-compile-host]
+path = "crates/runtime-compile-host"
+default-features = false
+features = ["compile-host"]
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
