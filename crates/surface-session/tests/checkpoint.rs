@@ -149,7 +149,7 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
     {
         let store = FileCheckpointStore::open(scratch.path()).expect("the directory opens");
         let mut writer = Session::new(
-            grammar().clone(),
+            grammar(),
             SourceRoot::Strict,
             store,
             InMemoryBlockStore::default(),
@@ -164,7 +164,7 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
 
     let store = FileCheckpointStore::open(scratch.path()).expect("the directory reopens");
     let reopened = Session::reopen(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         store,
         InMemoryBlockStore::default(),
@@ -195,7 +195,7 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
         ItemCount::from(2_usize),
         "the next submission adopts both restored checkpoints"
     );
-    let program = SurfaceItems::new(grammar().clone())
+    let program = SurfaceItems::new(grammar())
         .items(&Revision::from(APPENDED))
         .expect("the appended revision is offered");
     assert_eq!(
@@ -209,7 +209,7 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
 fn a_store_holding_nothing_reopens_fresh()
 {
     let empty = Session::reopen(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),
@@ -230,7 +230,7 @@ fn a_store_holding_nothing_reopens_fresh()
     );
 
     let other = Session::reopen(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         session.into_store(),
         InMemoryBlockStore::default(),
@@ -245,7 +245,7 @@ fn a_store_holding_nothing_reopens_fresh()
     );
 
     let refused = Session::reopen(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         other.into_session().into_store(),
         InMemoryBlockStore::default(),
@@ -264,7 +264,7 @@ fn a_store_holding_nothing_reopens_fresh()
 fn a_store_failure_is_reported_and_the_session_still_resumes()
 {
     let mut session = Session::new(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         Refusing,
         InMemoryBlockStore::default(),
@@ -291,7 +291,7 @@ fn a_store_failure_is_reported_and_the_session_still_resumes()
 fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
 {
     let mut writer = Session::new(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),
@@ -335,7 +335,7 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
     let store = writer.into_store();
 
     let reopened = Session::reopen(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         store,
         blocks,
@@ -353,7 +353,7 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
     );
 
     let elsewhere = Session::new(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),
@@ -374,7 +374,7 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
 fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
 {
     let mut writer = Session::new(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),
@@ -408,7 +408,7 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     );
 
     let reader = Session::new(
-        grammar().clone(),
+        grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
         blocks,
