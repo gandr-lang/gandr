@@ -21,6 +21,7 @@
 use core::error::Error;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
@@ -44,11 +45,30 @@ quenchant_shape::reason_enum! {
 }
 
 /// The refusal this crate raises.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   vocabulary it represents.
+/// - ensures: Records an expectation rejected by root admission, preserving its
+///   schema and source span.
+/// - panics: none.
+/// - executable: none — The enum carries neither its root nor source text;
+///   `CorpusRoot::admit` establishes refusal policy and the formatting witness
+///   observes the retained location.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one inhabitant per producer variant, independently stated
+///   spellings and classes, and source-level refusal settlement. Exact
+///   identities and locations distinguish wrong-stage interpretation, altered
+///   spelling and lost payloads; arbitrary source provenance is a caller
+///   premise.
+/// - witness: `root::tests::the_admission_table_is_pinned`
+/// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CorpusRefusal
 {
     /// An `owes` or `refuses` attribute on a declaration under the strict
-    /// root, which admits `checks` alone.
+    /// root, which admits `checks` and `runs`.
     ExpectationOutsideFixtureRoot
     {
         /// The schema the attribute names.
@@ -71,9 +91,14 @@ impl CorpusRefusal
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one variant, asserted at its pinned class in the
-    ///   vocabulary table.
+    /// - hypothesis: L3 — the corpus refusal appears in the producer table with
+    ///   its exact class. The real strict-root admission refusal additionally
+    ///   retains both admitted alternatives and its source position.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+    /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
+    #[spec(
+        ensures: |ret| matches!(ret, FailureClass::MalformedSource),
+    )]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
@@ -89,7 +114,24 @@ impl fmt::Display for CorpusRefusal
     /// Writes the refusal and the attribute it refuses.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the rejected schema and source span, and names both
+    ///   schemas admitted by the strict root.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; the witnesses observe semantic text and a
+    ///   refusing sink instead of writing twice.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all canonical names, plus a strict-root refusal at a
+    ///   nonempty span. Exact identifiers, admitted alternatives, the source
+    ///   range and sink errors distinguish lost or changed payloads and
+    ///   swallowed failures without fixing sentence wording.
+    /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
     #[inline]
     fn fmt(
         &self,
@@ -99,7 +141,7 @@ impl fmt::Display for CorpusRefusal
         match *self {
             | Self::ExpectationOutsideFixtureRoot { schema, span } => write!(
                 f,
-                "`{schema}` at {span} states an expectation the strict root refuses; only `checks` is admitted outside the fixture root"
+                "`{schema}` at {span} states an expectation the strict root refuses; only `checks` and `runs` are admitted outside the fixture root"
             ),
         }
     }
@@ -110,6 +152,24 @@ impl Error for CorpusRefusal
 }
 
 /// The spelling of a refusal name, as a `refuses` payload writes it.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   vocabulary it represents.
+/// - ensures: Values supplied by `RefusalName::spelling` name exactly one
+///   member of the closed vocabulary, byte for byte.
+/// - panics: none.
+/// - executable: none — The carrier has no invocation; `RefusalName::spelling`
+///   establishes its closed-name invariant with a const byte-pattern predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one inhabitant per producer variant, independently stated
+///   spellings and classes, and source-level refusal settlement. Exact
+///   identities and locations distinguish wrong-stage interpretation, altered
+///   spelling and lost payloads; arbitrary source provenance is a caller
+///   premise.
+/// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+/// - witness: `refusal::tests::a_near_miss_names_no_refusal`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RefusalSpelling(&'static str);
@@ -132,7 +192,23 @@ impl fmt::Display for RefusalSpelling
     /// Writes the spelling.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the canonical refusal spelling unchanged.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; the witnesses observe semantic text and a
+    ///   refusing sink instead of writing twice.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all canonical names, plus a strict-root refusal at a
+    ///   nonempty span. Exact identifiers, admitted alternatives, the source
+    ///   range and sink errors distinguish lost or changed payloads and
+    ///   swallowed failures without fixing sentence wording.
+    /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     #[inline]
     fn fmt(
         &self,
@@ -145,6 +221,23 @@ impl fmt::Display for RefusalSpelling
 
 /// One name of the closed refusal vocabulary: every refusal the lowering, the
 /// checker and this crate raise, named by its variant.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   vocabulary it represents.
+/// - ensures: Distinguishes the closed refusal names; producer variants share a
+///   name only where the vocabulary identifies them.
+/// - panics: none.
+/// - executable: none — The enum alone has no producer or spelling input;
+///   naming, spelling and parsing methods carry the executable correspondences.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one inhabitant per producer variant, independently stated
+///   spellings and classes, and source-level refusal settlement. Exact
+///   identities and locations distinguish wrong-stage interpretation, altered
+///   spelling and lost payloads; arbitrary source provenance is a caller
+///   premise.
+/// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RefusalName
 {
@@ -231,6 +324,21 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: contains each closed refusal name exactly once.
+    /// - panics: none.
+    /// - executable: none — the constant has no invocation for a specification
+    ///   attribute. Its consumer witness compares complete name sets and checks
+    ///   that the vocabulary has no duplicate member.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all producer refusals supply the independently
+    ///   constructed name set. Set equality and uniqueness distinguish
+    ///   omission, foreign names and duplicates without fixing enumeration
+    ///   order.
+    /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     pub const VOCABULARY: [Self; 39_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
@@ -286,10 +394,45 @@ impl RefusalName
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the vocabulary is a finite class, every name reached
-    ///   from a producer's refusal and asserted at its exact spelling, so a
-    ///   swapped or misspelt arm breaks its row.
+    /// - hypothesis: L3 — every closed name is reached from a producer refusal
+    ///   and compared with an independently written exact identifier in the
+    ///   fixture table. A changed name, case, spelling or sibling selection
+    ///   changes the observation; byte patterns keep the predicate const
+    ///   without an auxiliary representation.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+    #[spec(
+        ensures: |ret| {
+    matches!(
+        (self, ret.0.as_bytes()), (Self::UnresolvedName, b"UnresolvedName") |
+        (Self::UnresolvedTypeHead, b"UnresolvedTypeHead") | (Self::DuplicateSignature,
+        b"DuplicateSignature") | (Self::DuplicateDefinition, b"DuplicateDefinition") |
+        (Self::DuplicateImportAlias, b"DuplicateImportAlias") | (Self::ShadowedBuiltin,
+        b"ShadowedBuiltin") | (Self::OutOfFragment, b"OutOfFragment") |
+        (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
+        b"MalformedLiteral") | (Self::MalformedForm, b"MalformedForm") |
+        (Self::UnknownAttribute, b"UnknownAttribute") | (Self::DuplicateAttribute,
+        b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
+        (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
+        b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
+        (Self::UnknownMember, b"UnknownMember") | (Self::UnreadAscription,
+        b"UnreadAscription") | (Self::LowercaseModuleName, b"LowercaseModuleName") |
+        (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
+        b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
+        b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
+        (Self::NotSynthesisable, b"NotSynthesisable") | (Self::UnknownConstant,
+        b"UnknownConstant") | (Self::UnboundIndex, b"UnboundIndex") |
+        (Self::DanglingNode, b"DanglingNode") | (Self::AdmissionOrder, b"AdmissionOrder")
+        | (Self::MachineInvariant, b"MachineInvariant") | (Self::SortMismatch,
+        b"SortMismatch") | (Self::LevelMismatch, b"LevelMismatch") |
+        (Self::DependentBind, b"DependentBind") | (Self::Undecided, b"Undecided") |
+        (Self::FamilyArity, b"FamilyArity") | (Self::FamilyArgumentClassifier,
+        b"FamilyArgumentClassifier") | (Self::StaticLambdaArgument,
+        b"StaticLambdaArgument") | (Self::StaticClassifierExpected,
+        b"StaticClassifierExpected") | (Self::ExpectationOutsideFixtureRoot,
+        b"ExpectationOutsideFixtureRoot")
+    )
+},
+    )]
     #[inline]
     #[must_use]
     pub const fn spelling(self) -> RefusalSpelling
@@ -349,12 +492,20 @@ impl RefusalName
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every name's own spelling asserted to name it, and
-    ///   the match separated from looser ones by a dropped letter, a case
-    ///   shift, padding, a suffix and the empty text, each asserted to name
-    ///   nothing.
+    /// - hypothesis: L3 — every canonical name resolves, while dropped letters,
+    ///   changed case, leading and trailing space, a suffix and empty text do
+    ///   not. Exact variants and typed absence distinguish permissive matching
+    ///   and a missing name.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     /// - witness: `refusal::tests::a_near_miss_names_no_refusal`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(name) => name.spelling().0 == literal.as_ref(),
+    Maybe::Absent(refusal_name::Absent::Unnamed) => {
+        Self::VOCABULARY.iter().all(|name| name.spelling().0 != literal.as_ref())
+    }
+},
+    )]
     #[inline]
     pub fn named_by(literal: &StringLiteral) -> Maybe<Self, refusal_name::Absent>
     {
@@ -371,7 +522,23 @@ impl fmt::Display for RefusalName
     /// Writes the name's spelling.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the canonical refusal spelling unchanged.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; the witnesses observe semantic text and a
+    ///   refusing sink instead of writing twice.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all canonical names, plus a strict-root refusal at a
+    ///   nonempty span. Exact identifiers, admitted alternatives, the source
+    ///   range and sink errors distinguish lost or changed payloads and
+    ///   swallowed failures without fixing sentence wording.
+    /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     #[inline]
     fn fmt(
         &self,
@@ -383,6 +550,25 @@ impl fmt::Display for RefusalName
 }
 
 /// A refusal, whichever producer raised it.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   vocabulary it represents.
+/// - ensures: Retains the producing stage and its refusal; naming and
+///   classification preserve that producer’s interpretation.
+/// - panics: none.
+/// - executable: none — The carrier has no invocation or original declaration
+///   to validate; `name` and `classify` state the observable interpretation at
+///   call boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one inhabitant per producer variant, independently stated
+///   spellings and classes, and source-level refusal settlement. Exact
+///   identities and locations distinguish wrong-stage interpretation, altered
+///   spelling and lost payloads; arbitrary source provenance is a caller
+///   premise.
+/// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal<'source>
 {
@@ -409,12 +595,80 @@ impl Refusal<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every variant of the three producers, one inhabitant
-    ///   each, asserted at its exact name, so an arm naming a sibling breaks
-    ///   its row; the source-reached refusals are also settled end to end
-    ///   against fixtures naming them.
+    /// - hypothesis: L3 — one independently constructed inhabitant of each
+    ///   producer variant, including the names shared by lowering and checking.
+    ///   Exact spellings and source-level refusal settlement distinguish
+    ///   sibling substitutions and dispatch to the wrong producer.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+    #[spec(
+        ensures: |ret| {
+    matches!(
+        (* self, ret), (Self::Lowering(LoweringRefusal::UnresolvedName { .. }),
+        RefusalName::UnresolvedName) |
+        (Self::Lowering(LoweringRefusal::UnresolvedTypeHead { .. }),
+        RefusalName::UnresolvedTypeHead) |
+        (Self::Lowering(LoweringRefusal::DuplicateSignature { .. }),
+        RefusalName::DuplicateSignature) |
+        (Self::Lowering(LoweringRefusal::DuplicateDefinition { .. }),
+        RefusalName::DuplicateDefinition) |
+        (Self::Lowering(LoweringRefusal::DuplicateImportAlias { .. }),
+        RefusalName::DuplicateImportAlias) |
+        (Self::Lowering(LoweringRefusal::ShadowedBuiltin { .. }),
+        RefusalName::ShadowedBuiltin) | (Self::Lowering(LoweringRefusal::OutOfFragment {
+        .. }) | Self::Checking(CheckRefusal::OutOfFragment { .. }),
+        RefusalName::OutOfFragment) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
+        }), RefusalName::GradedBridge) |
+        (Self::Lowering(LoweringRefusal::MalformedLiteral { .. }),
+        RefusalName::MalformedLiteral) | (Self::Lowering(LoweringRefusal::MalformedForm {
+        .. }), RefusalName::MalformedForm) |
+        (Self::Lowering(LoweringRefusal::UnknownAttribute { .. }),
+        RefusalName::UnknownAttribute) |
+        (Self::Lowering(LoweringRefusal::DuplicateAttribute { .. }),
+        RefusalName::DuplicateAttribute) |
+        (Self::Lowering(LoweringRefusal::MissingPayload { .. }),
+        RefusalName::MissingPayload) | (Self::Lowering(LoweringRefusal::NonValuePayload {
+        .. }), RefusalName::NonValuePayload) |
+        (Self::Lowering(LoweringRefusal::IllTypedPayload { .. }),
+        RefusalName::IllTypedPayload) |
+        (Self::Lowering(LoweringRefusal::ForwardMemberReference { .. }),
+        RefusalName::ForwardMemberReference) |
+        (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
+        RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::UnreadAscription {
+        .. }), RefusalName::UnreadAscription) |
+        (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
+        RefusalName::LowercaseModuleName) |
+        (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
+        Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
+        | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
+        RefusalName::GrammarMismatch) | (Self::Lowering(LoweringRefusal::UnknownMold { ..
+        }), RefusalName::UnknownMold) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
+        RefusalName::TypeMismatch) | (Self::Checking(CheckRefusal::ShapeMismatch { .. }),
+        RefusalName::ShapeMismatch) | (Self::Checking(CheckRefusal::NotSynthesisable { ..
+        }), RefusalName::NotSynthesisable) |
+        (Self::Checking(CheckRefusal::UnknownConstant { .. }),
+        RefusalName::UnknownConstant) | (Self::Checking(CheckRefusal::UnboundIndex { ..
+        }), RefusalName::UnboundIndex) | (Self::Checking(CheckRefusal::DanglingNode { ..
+        }), RefusalName::DanglingNode) | (Self::Checking(CheckRefusal::AdmissionOrder {
+        .. }), RefusalName::AdmissionOrder) |
+        (Self::Checking(CheckRefusal::MachineInvariant), RefusalName::MachineInvariant) |
+        (Self::Checking(CheckRefusal::SortMismatch { .. }), RefusalName::SortMismatch) |
+        (Self::Checking(CheckRefusal::LevelMismatch { .. }), RefusalName::LevelMismatch)
+        | (Self::Checking(CheckRefusal::DependentBind { .. }),
+        RefusalName::DependentBind) | (Self::Checking(CheckRefusal::Undecided { .. }),
+        RefusalName::Undecided) | (Self::Checking(CheckRefusal::FamilyArity { .. }),
+        RefusalName::FamilyArity) |
+        (Self::Checking(CheckRefusal::FamilyArgumentClassifier { .. }),
+        RefusalName::FamilyArgumentClassifier) |
+        (Self::Checking(CheckRefusal::StaticLambdaArgument { .. }),
+        RefusalName::StaticLambdaArgument) |
+        (Self::Checking(CheckRefusal::StaticClassifierExpected { .. }),
+        RefusalName::StaticClassifierExpected) |
+        (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
+        RefusalName::ExpectationOutsideFixtureRoot)
+    )
+},
+    )]
     #[inline]
     #[must_use]
     pub const fn name(&self) -> RefusalName
@@ -438,10 +692,26 @@ impl Refusal<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one inhabitant per variant of each producer, asserted
-    ///   at its pinned class, so routing one producer through another's
-    ///   classifier, or pinning a class, breaks a row.
+    /// - hypothesis: L3 — every producer variant is represented by a fixture
+    ///   with an independently stated failure class. The observer distinguishes
+    ///   class swaps and constant classification; the predicate also preserves
+    ///   the owning producer’s classifier for arbitrary payloads.
     /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+    #[spec(
+        ensures: |ret| {
+    let expected = match *self {
+        Self::Lowering(ref refusal) => refusal.classify(),
+        Self::Checking(ref refusal) => refusal.classify(),
+        Self::Corpus(ref refusal) => refusal.classify(),
+    };
+    matches!(
+        (expected, ret), (FailureClass::UserAbsence, FailureClass::UserAbsence) |
+        (FailureClass::Unrepresentable, FailureClass::Unrepresentable) |
+        (FailureClass::MalformedSource, FailureClass::MalformedSource) |
+        (FailureClass::EngineFault, FailureClass::EngineFault)
+    )
+},
+    )]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
@@ -457,7 +727,47 @@ impl Refusal<'_>
 /// The vocabulary name of a lowering refusal.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the vocabulary name of the producer variant,
+///   independently of its payload.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one independently constructed inhabitant per producer
+///   variant, with an exact identifier and class. Choosing another variant’s
+///   name changes its observation; source-reachable cases are also exercised
+///   through settlement.
+/// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        (refusal, ret), (LoweringRefusal::UnresolvedName { .. },
+        RefusalName::UnresolvedName) | (LoweringRefusal::UnresolvedTypeHead { .. },
+        RefusalName::UnresolvedTypeHead) | (LoweringRefusal::DuplicateSignature { .. },
+        RefusalName::DuplicateSignature) | (LoweringRefusal::DuplicateDefinition { .. },
+        RefusalName::DuplicateDefinition) | (LoweringRefusal::DuplicateImportAlias { ..
+        }, RefusalName::DuplicateImportAlias) | (LoweringRefusal::ShadowedBuiltin { .. },
+        RefusalName::ShadowedBuiltin) | (LoweringRefusal::OutOfFragment { .. },
+        RefusalName::OutOfFragment) | (LoweringRefusal::GradedBridge { .. },
+        RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
+        RefusalName::MalformedLiteral) | (LoweringRefusal::MalformedForm { .. },
+        RefusalName::MalformedForm) | (LoweringRefusal::UnknownAttribute { .. },
+        RefusalName::UnknownAttribute) | (LoweringRefusal::DuplicateAttribute { .. },
+        RefusalName::DuplicateAttribute) | (LoweringRefusal::MissingPayload { .. },
+        RefusalName::MissingPayload) | (LoweringRefusal::NonValuePayload { .. },
+        RefusalName::NonValuePayload) | (LoweringRefusal::IllTypedPayload { .. },
+        RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
+        RefusalName::ForwardMemberReference) | (LoweringRefusal::UnknownMember { .. },
+        RefusalName::UnknownMember) | (LoweringRefusal::UnreadAscription { .. },
+        RefusalName::UnreadAscription) | (LoweringRefusal::LowercaseModuleName { .. },
+        RefusalName::LowercaseModuleName) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
+        RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
+        RefusalName::UnknownMold)
+    )
+},
+)]
 const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 {
     match refusal {
@@ -489,7 +799,43 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
 /// The vocabulary name of a checker refusal.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the vocabulary name of the producer variant,
+///   independently of its payload.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one independently constructed inhabitant per producer
+///   variant, with an exact identifier and class. Choosing another variant’s
+///   name changes its observation; source-reachable cases are also exercised
+///   through settlement.
+/// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        (refusal, ret), (CheckRefusal::TypeMismatch(_), RefusalName::TypeMismatch) |
+        (CheckRefusal::ShapeMismatch { .. }, RefusalName::ShapeMismatch) |
+        (CheckRefusal::NotSynthesisable { .. }, RefusalName::NotSynthesisable) |
+        (CheckRefusal::UnknownConstant { .. }, RefusalName::UnknownConstant) |
+        (CheckRefusal::OutOfFragment { .. }, RefusalName::OutOfFragment) |
+        (CheckRefusal::UnboundIndex { .. }, RefusalName::UnboundIndex) |
+        (CheckRefusal::BudgetExceeded { .. }, RefusalName::BudgetExceeded) |
+        (CheckRefusal::DanglingNode { .. }, RefusalName::DanglingNode) |
+        (CheckRefusal::AdmissionOrder { .. }, RefusalName::AdmissionOrder) |
+        (CheckRefusal::MachineInvariant, RefusalName::MachineInvariant) |
+        (CheckRefusal::SortMismatch { .. }, RefusalName::SortMismatch) |
+        (CheckRefusal::LevelMismatch { .. }, RefusalName::LevelMismatch) |
+        (CheckRefusal::DependentBind { .. }, RefusalName::DependentBind) |
+        (CheckRefusal::Undecided { .. }, RefusalName::Undecided) |
+        (CheckRefusal::FamilyArity { .. }, RefusalName::FamilyArity) |
+        (CheckRefusal::FamilyArgumentClassifier { .. },
+        RefusalName::FamilyArgumentClassifier) | (CheckRefusal::StaticLambdaArgument { ..
+        }, RefusalName::StaticLambdaArgument) | (CheckRefusal::StaticClassifierExpected {
+        .. }, RefusalName::StaticClassifierExpected)
+    )
+},
+)]
 const fn checking_name(refusal: CheckRefusal) -> RefusalName
 {
     match refusal {
@@ -517,9 +863,13 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
     use alloc::string::String;
+    use alloc::string::ToString as _;
     use alloc::vec::Vec;
+    use core::fmt;
 
+    use anodized::spec;
     use gandr_core_checker::ArgumentPosition;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
@@ -552,6 +902,7 @@ mod tests
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
     use quenchant_shape::shape::Maybe;
@@ -562,13 +913,40 @@ mod tests
     use super::RefusalSpelling;
     use super::refusal_name;
     use crate::expectation::ExpectationSchema;
+    use crate::fixture::RefusingWriter;
     use crate::fixture::empty_span;
+    use crate::fixture::span;
+    use crate::root::CorpusRoot;
 
     /// One inhabitant of every refusal variant of every producer, beside the
     /// spelling its name must have and the class it must carry.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the language registry retains its canonical `owes`
+    ///   attribute.
+    /// - ensures: each fixture row associates a producer refusal with its
+    ///   canonical spelling and class; the rows cover every closed refusal
+    ///   name.
+    /// - panics: if the required fixture registry entry is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture table supplies one inhabitant of each
+    ///   producer variant and independent expected spellings and classes. Its
+    ///   consumer checks the exact correspondence and closed-name coverage,
+    ///   without treating registry or vocabulary ordering as semantics.
+    /// - witness: `refusal::tests::every_refusal_is_named_by_its_variant`
+    #[spec(
+        ensures: |ret| {
+    ret
+        .iter()
+        .all(|&(refusal, spelled, class)| {
+            refusal.name().spelling() == spelled && refusal.classify() == class
+        })
+        && RefusalName::VOCABULARY
+            .iter()
+            .all(|name| ret.iter().any(|&(refusal, _, _)| refusal.name() == *name))
+},
+    )]
     fn vocabulary() -> Vec<(Refusal<'static>, RefusalSpelling, FailureClass)>
     {
         let empty = empty_span();
@@ -951,6 +1329,15 @@ mod tests
         for &(refusal, spelled, class) in &rows {
             let name = refusal.name();
             assert_eq!(
+                name.to_string(),
+                spelled.as_ref(),
+                "rendered names remain valid vocabulary payloads"
+            );
+            assert_eq!(
+                fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{name}")),
+                Err(fmt::Error)
+            );
+            assert_eq!(
                 name.spelling(),
                 spelled,
                 "a refusal's name is spelled as its own variant"
@@ -966,14 +1353,39 @@ mod tests
                 "`{spelled}` carries its producer's class"
             );
         }
-        let mut named: Vec<RefusalName> =
+        let named: BTreeSet<RefusalName> =
             rows.iter().map(|&(refusal, ..)| refusal.name()).collect();
-        named.sort_unstable();
-        named.dedup();
+        let vocabulary: BTreeSet<RefusalName> = RefusalName::VOCABULARY.into_iter().collect();
         assert_eq!(
-            named,
-            RefusalName::VOCABULARY.to_vec(),
-            "the producers' refusals reach every name of the vocabulary, and nothing else"
+            vocabulary.len(),
+            RefusalName::VOCABULARY.len(),
+            "no vocabulary name is duplicated"
+        );
+        assert_eq!(
+            named, vocabulary,
+            "producer refusals cover exactly the closed vocabulary"
+        );
+    }
+
+    #[test]
+    fn root_refusal_names_every_admitted_schema()
+    {
+        let at = span(ByteOffset::from(11_usize), ByteOffset::from(29_usize));
+        let refusal = CorpusRoot::Strict
+            .admit(ExpectationSchema::Owes, at)
+            .expect_err("owes is forbidden under the strict root");
+        let rendered = refusal.to_string();
+        for admitted in [ExpectationSchema::Checks, ExpectationSchema::Runs] {
+            assert_eq!(CorpusRoot::Strict.admit(admitted, at), Ok(()));
+            assert!(
+                rendered.contains(&admitted.to_string()),
+                "the diagnostic must name each admitted schema: {admitted}"
+            );
+        }
+        assert!(rendered.contains(&at.to_string()));
+        assert_eq!(
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{refusal}")),
+            Err(fmt::Error)
         );
     }
 

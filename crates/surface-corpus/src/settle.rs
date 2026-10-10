@@ -21,6 +21,7 @@ use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Verdict;
@@ -76,6 +77,23 @@ quenchant_shape::reason_enum! {
 }
 
 /// Whether what was stated was produced.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   counts represented.
+/// - ensures: A declaration settles exactly when it states a verdict equal to
+///   its produced outcome; malformed expectations do not settle.
+/// - panics: none.
+/// - executable: none — The state carries no compared declarations;
+///   `DeclarationReport::settlement` supplies the executable comparison.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matched and mismatched source expectations, missing or
+///   shifted verdicts, and guarded and run-producing declarations. Exact
+///   classifications, identities, counts and fault positions distinguish lost
+///   or swapped fields at their consuming boundaries.
+/// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+/// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Settlement
 {
@@ -91,7 +109,24 @@ impl fmt::Display for Settlement
     /// Writes `settled` or `unsettled`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes distinct settled and unsettled states.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; output payloads and a refusing sink are observed
+    ///   by the witness.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both settlement states, distinct residual counts,
+    ///   every alignment/payload fault, and owed, refused and checked source
+    ///   declarations. Required semantic fields and exact sink refusals
+    ///   distinguish erased metadata and swallowed failures without fixing
+    ///   sentences.
+    /// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -106,6 +141,24 @@ impl fmt::Display for Settlement
 }
 
 /// What a declaration produced.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   counts represented.
+/// - ensures: Retains the checker verdict, lowering refusal or overriding
+///   corpus guard with its producing stage.
+/// - panics: none.
+/// - executable: none — The carrier has no original source or arena to
+///   validate; `settle` establishes correspondence and `refusal` specifies
+///   stage selection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matched and mismatched source expectations, missing or
+///   shifted verdicts, and guarded and run-producing declarations. Exact
+///   classifications, identities, counts and fault positions distinguish lost
+///   or swapped fields at their consuming boundaries.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+/// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Produced<'source>
 {
@@ -133,11 +186,26 @@ impl<'source> Produced<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every producer's refusal is settled against a fixture
-    ///   naming it, and every unrefused verdict kind against a fixture stating
-    ///   a refusal, which a misrouted arm would settle.
+    /// - hypothesis: L3 — source-reached refusals from every producing stage,
+    ///   and checked, synthesised and owed controls. Exact names, classes and
+    ///   the strict guard’s nonempty span distinguish wrong routing, fabricated
+    ///   refusals and lost guard metadata. The const predicate observes tags;
+    ///   source witnesses observe payloads.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+    /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+    #[spec(
+        ensures: |ret| {
+    matches!(
+        (* self, ret), (Self::Judged(Verdict::Refused(_)),
+        Maybe::Present(Refusal::Checking(_))) | (Self::Judged(Verdict::Checked { .. } |
+        Verdict::Synthesised { .. } | Verdict::Owed(_)),
+        Maybe::Absent(produced_refusal::Absent::Unrefused)) | (Self::Unlowered(_),
+        Maybe::Present(Refusal::Lowering(_))) | (Self::Guarded(_),
+        Maybe::Present(Refusal::Corpus(_)))
+    )
+},
+    )]
     #[inline]
     pub const fn refusal(&self) -> Maybe<Refusal<'source>, produced_refusal::Absent>
     {
@@ -153,6 +221,25 @@ impl<'source> Produced<'source>
 }
 
 /// The obligations one declaration leaves unsettled.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   counts represented.
+/// - ensures: Keeps undeclared production and unproduced declarations in
+///   separate count channels. Per-declaration residuals have at most one
+///   nonzero channel; aggregated residuals may have both.
+/// - panics: none.
+/// - executable: none — The counts do not retain original stated and owed
+///   obligations; the per-declaration predicate and tally aggregation establish
+///   their arithmetic interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matched and mismatched source expectations, missing or
+///   shifted verdicts, and guarded and run-producing declarations. Exact
+///   classifications, identities, counts and fault positions distinguish lost
+///   or swapped fields at their consuming boundaries.
+/// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+/// - witness: `report::tests::absorbing_a_tally_sums_every_count`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Surviving
 {
@@ -210,7 +297,24 @@ impl fmt::Display for Surviving
     /// Writes both counts.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes both residual count channels.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; output payloads and a refusing sink are observed
+    ///   by the witness.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both settlement states, distinct residual counts,
+    ///   every alignment/payload fault, and owed, refused and checked source
+    ///   declarations. Required semantic fields and exact sink refusals
+    ///   distinguish erased metadata and swallowed failures without fixing
+    ///   sentences.
+    /// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -226,6 +330,26 @@ impl fmt::Display for Surviving
 }
 
 /// One declared name, settled: what it states beside what it produced.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   counts represented.
+/// - ensures: A settlement-produced report retains source identity, admission
+///   position, stated and produced outcomes, owed obligations and the requested
+///   run outcome.
+/// - panics: none.
+/// - executable: none — The record has no module, original attributes or
+///   checker report; `settle` and the report’s comparison methods carry the
+///   executable relationships.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matched and mismatched source expectations, missing or
+///   shifted verdicts, and guarded and run-producing declarations. Exact
+///   classifications, identities, counts and fault positions distinguish lost
+///   or swapped fields at their consuming boundaries.
+/// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
+/// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+/// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeclarationReport<'source>
 {
@@ -339,11 +463,27 @@ impl<'source> DeclarationReport<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every arm is driven against a stated verdict of
-    ///   another arm and of its own, so a swapped arm or a constant count
-    ///   unsettles a control row or settles a mismatched one.
+    /// - hypothesis: L3 — checked, owed, refused, guarded and requested-run
+    ///   declarations beside mismatching expectations. Exact outcome variants,
+    ///   counts and text distinguish changed precedence, erased obligations and
+    ///   altered run spelling; the predicate borrows text rather than cloning a
+    ///   second outcome.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+    /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+    #[spec(
+        ensures: |ret| match self.produced.refusal() {
+    Maybe::Present(refusal) => ret == Outcome::Refuses(refusal.name()),
+    Maybe::Absent(produced_refusal::Absent::Unrefused) => {
+        match self.ran {
+            Maybe::Present(ref spelled) => {
+                matches!(ret, Outcome::Runs(ref actual) if actual == spelled)
+            }
+            Maybe::Absent(_) => ret == Outcome::Checks(self.owed),
+        }
+    }
+},
+    )]
     #[inline]
     #[must_use]
     pub fn outcome(&self) -> Outcome
@@ -371,21 +511,64 @@ impl<'source> DeclarationReport<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each axis is driven wrong in both directions beside a
-    ///   corrected control: a refusal stated and none produced, one produced
-    ///   and none stated, another refusal produced than stated, more and fewer
-    ///   obligations than stated, another run outcome than stated, and a
-    ///   malformed expectation.
+    /// - hypothesis: L3 — refusals and obligation counts mismatched in either
+    ///   direction, matching and mismatching run spellings, and malformed
+    ///   expectations. Exact settlement distinguishes variant-only comparison,
+    ///   ignored payloads and accepting a malformed expectation; the predicate
+    ///   compares borrowed text without another allocation.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
     /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
+    /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
     /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+    #[spec(
+        ensures: |ret| {
+    (ret == Settlement::Settled)
+        == match self.stated {
+            Stated::Malformed(_) => false,
+            Stated::Verdict(Outcome::Refuses(name)) => {
+                matches!(
+                    self.produced.refusal(), Maybe::Present(refusal) if refusal.name() ==
+                    name
+                )
+            }
+            Stated::Verdict(Outcome::Checks(count)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Absent(_)) && count == self.owed
+            }
+            Stated::Verdict(Outcome::Runs(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(
+                        self.ran, Maybe::Present(ref actual) if actual == expected
+                    )
+            }
+        }
+},
+    )]
     #[inline]
     #[must_use]
     pub fn settlement(&self) -> Settlement
     {
-        match self.stated {
-            | Stated::Verdict(ref stated) if *stated == self.outcome() => Settlement::Settled,
-            | Stated::Verdict(_) | Stated::Malformed(_) => Settlement::Unsettled,
+        let agrees = match self.stated {
+            | Stated::Malformed(_) => false,
+            | Stated::Verdict(Outcome::Refuses(name)) => matches!(
+                self.produced.refusal(),
+                Maybe::Present(refusal) if refusal.name() == name
+            ),
+            | Stated::Verdict(Outcome::Checks(count)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Absent(_))
+                    && count == self.owed
+            },
+            | Stated::Verdict(Outcome::Runs(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
+            },
+        };
+        if agrees {
+            Settlement::Settled
+        }
+        else {
+            Settlement::Unsettled
         }
     }
 
@@ -403,10 +586,25 @@ impl<'source> DeclarationReport<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an owed hole with no declaration, a declared
-    ///   obligation with no hole, and a declared hole are asserted at their
-    ///   exact counts.
+    /// - hypothesis: L3 — owed and declared counts equal, below and above one
+    ///   another, with checked, refused and run outcomes. Exact directional
+    ///   residuals distinguish swapped channels, unsaturated subtraction and
+    ///   counting a non-count expectation as obligations.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+    /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+    #[spec(
+        ensures: |ret| {
+    let declared = match self.stated {
+        Stated::Verdict(Outcome::Checks(count)) => usize::from(count),
+        _ => 0_usize,
+    };
+    let owed = usize::from(self.owed);
+    usize::from(ret.undeclared) == owed.saturating_sub(declared)
+        && usize::from(ret.unproduced) == declared.saturating_sub(owed)
+        && (usize::from(ret.undeclared) == 0_usize
+            || usize::from(ret.unproduced) == 0_usize)
+},
+    )]
     #[inline]
     #[must_use]
     pub fn surviving(&self) -> Surviving
@@ -432,7 +630,26 @@ impl fmt::Display for DeclarationReport<'_>
     /// that survive when any do.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the declaration’s settlement, name, span, stated and
+    ///   produced outcomes, refusal class when present, and nonzero residual
+    ///   obligations.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; output payloads and a refusing sink are observed
+    ///   by the witness.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both settlement states, distinct residual counts,
+    ///   every alignment/payload fault, and owed, refused and checked source
+    ///   declarations. Required semantic fields and exact sink refusals
+    ///   distinguish erased metadata and swallowed failures without fixing
+    ///   sentences.
+    /// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -460,6 +677,25 @@ impl fmt::Display for DeclarationReport<'_>
 }
 
 /// Why verdicts cannot be settled against a module.
+///
+/// # Specification
+/// - requires: the producer establishes correspondence with the source or
+///   counts represented.
+/// - ensures: Distinguishes missing, misaligned and surplus checker verdicts
+///   from unreadable expectation payloads, retaining the admission positions or
+///   source span of the fault.
+/// - panics: none.
+/// - executable: none — The enum does not retain the attempted module, verdict
+///   sequence or arena; `settle` establishes the fault relation at its call
+///   boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matched and mismatched source expectations, missing or
+///   shifted verdicts, and guarded and run-producing declarations. Exact
+///   classifications, identities, counts and fault positions distinguish lost
+///   or swapped fields at their consuming boundaries.
+/// - witness: `settle::tests::verdicts_that_are_not_the_modules_own_are_refused`
+/// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SettleFault
 {
@@ -497,7 +733,25 @@ impl fmt::Display for SettleFault
     /// Writes the fault and the positions or bytes it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the fault kind and every admission position or source
+    ///   span it carries.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither emitted text nor
+    ///   readable sink state; output payloads and a refusing sink are observed
+    ///   by the witness.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both settlement states, distinct residual counts,
+    ///   every alignment/payload fault, and owed, refused and checked source
+    ///   declarations. Required semantic fields and exact sink refusals
+    ///   distinguish erased metadata and swallowed failures without fixing
+    ///   sentences.
+    /// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -537,21 +791,21 @@ impl Error for SettleFault
 /// payloads out of `arena` and asking `runner` for each run outcome stated.
 ///
 /// # Specification
-/// - requires: `verdicts` are the checker's report for the declarations of
-///   `module` the lowering did not refuse, in admission order, `arena` is the
-///   arena the lowering minted `module` into, and `runner` runs the
-///   declarations `verdicts` accepted.
-/// - ensures: one report per declared name, in admission order: what the name's
-///   attributes state under `root`, beside the verdict paired with it by
-///   admission position, its lowering refusal, or — overriding both — the
-///   root's refusal of an expectation it does not admit; a name stating a run
-///   outcome whose verdict is checked or synthesised carries the outcome
-///   `runner` spells for it, and `runner` is asked for no other name; the
-///   report's ledger size is the size of `verdicts`' ledger.
-/// - provides: the settle comparison a corpus run is gated on.
-/// - fails: [`SettleFault`] when a verdict is missing, misaligned or left over,
-///   or an expectation payload is unreadable in `arena`.
-/// - panics: none.
+/// - requires: `runner` supplies the toolchain outcome for each requested
+///   accepted declaration. The caller owns source provenance: module and
+///   verdict identifiers are interpreted in the supplied arena; structural
+///   checks do not establish arena or source identity.
+/// - ensures: on success, one report per declaration in module order, retaining
+///   its name, span and admission position. A lowering refusal consumes no
+///   checker verdict; other declarations pair with the checker by admission
+///   position. Root guards override produced verdicts without dropping their
+///   owed obligations. Only accepted declarations stating a run outcome call
+///   `runner`, once each in order; the report preserves the checker ledger
+///   count.
+/// - fails: `SettleFault` for the first missing or misaligned verdict, an
+///   unreadable expectation payload, or a verdict left after the module ends.
+///   Calls made to the runner before a later fault are not rolled back.
+/// - panics: none for a conforming runner.
 ///
 /// # Errors
 /// [`SettleFault::MissingVerdict`], [`SettleFault::MisalignedVerdict`] and
@@ -560,16 +814,147 @@ impl Error for SettleFault
 /// expectation's payload.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every fault is driven by verdicts or an arena from
-///   another module beside the module's own, and the pairing is exercised
-///   across a lowering-refused declaration, whose missing verdict a consumer
-///   that paired by list position would misalign; the runner is observed asked
-///   for exactly the accepted names stating a run outcome.
+/// - hypothesis: L3 — aligned, missing, shifted and surplus checker reports;
+///   unreadable payloads; a lowering refusal before checked names; strict
+///   guards retaining obligations; and accepted versus unaccepted run requests.
+///   Exact records and typed fault positions distinguish pairing, precedence
+///   and ledger errors. Callback positions are observed by the witnesses; the
+///   postcondition never calls or replays the runner.
 /// - witness: `settle::tests::verdicts_that_are_not_the_modules_own_are_refused`
 /// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
-/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
+/// - witness: `settle::tests::a_later_alignment_fault_does_not_replay_or_extend_runner_calls`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(ref report) => {
+        report.root() == root && report.ledger() == verdicts.ledger().count()
+            && report.declarations().len() == module.declarations().len()
+            && report
+                .declarations()
+                .iter()
+                .zip(module.declarations())
+                .all(|(declaration, lowered)| {
+                    declaration.name == lowered.name()
+                        && declaration.span == lowered.span()
+                        && declaration.constant == lowered.constant()
+                        && match declaration.produced {
+                            Produced::Guarded(
+                                CorpusRefusal::ExpectationOutsideFixtureRoot { schema, .. },
+                            ) => {
+                                root == CorpusRoot::Strict
+                                    && matches!(
+                                        schema, expectation::ExpectationSchema::Owes |
+                                        expectation::ExpectationSchema::Refuses
+                                    ) && declaration.stated == expectation::owing_nothing()
+                            }
+                            Produced::Unlowered(refusal) => {
+                                matches!(
+                                    lowered.outcome(), DeclarationOutcome::Refused(expected) if
+                                    expected == refusal
+                                ) && usize::from(declaration.owed) == 0_usize
+                            }
+                            Produced::Judged(_) => {
+                                !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                            }
+                        }
+                        && match declaration.ran {
+                            Maybe::Present(_) => {
+                                matches!(
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                )
+                                    && matches!(
+                                        declaration.produced, Produced::Judged(Verdict::Checked { ..
+                                        } | Verdict::Synthesised { .. })
+                                    )
+                            }
+                            Maybe::Absent(ran::Absent::Unaccepted) => {
+                                matches!(
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                )
+                                    && !matches!(
+                                        declaration.produced, Produced::Judged(Verdict::Checked { ..
+                                        } | Verdict::Synthesised { .. })
+                                    )
+                            }
+                            Maybe::Absent(ran::Absent::Unstated) => {
+                                !matches!(
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                )
+                            }
+                        }
+                })
+            && module
+                .declarations()
+                .iter()
+                .filter(|lowered| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .count() == verdicts.judged().len()
+            && report
+                .declarations()
+                .iter()
+                .zip(module.declarations())
+                .filter(|&(_, lowered)| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .zip(verdicts.judged())
+                .all(|((declaration, lowered), answer)| {
+                    lowered.constant() == answer.constant()
+                        && usize::from(declaration.owed)
+                            == usize::from(matches!(answer.verdict(), Verdict::Owed(_)))
+                        && (declaration.produced == Produced::Judged(answer.verdict())
+                            || matches!(declaration.produced, Produced::Guarded(_)))
+                })
+    }
+    Err(SettleFault::MissingVerdict { constant }) => {
+        module
+            .declarations()
+            .iter()
+            .filter(|lowered| {
+                !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+            })
+            .nth(verdicts.judged().len())
+            .is_some_and(|lowered| lowered.constant() == constant)
+    }
+    Err(SettleFault::MisalignedVerdict { declared, judged }) => {
+        module
+            .declarations()
+            .iter()
+            .filter(|lowered| {
+                !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+            })
+            .zip(verdicts.judged())
+            .find(|&(lowered, answer)| lowered.constant() != answer.constant())
+            .is_some_and(|(lowered, answer)| {
+                lowered.constant() == declared && answer.constant() == judged
+            })
+    }
+    Err(SettleFault::SurplusVerdict { constant }) => {
+        verdicts
+            .judged()
+            .get(
+                module
+                    .declarations()
+                    .iter()
+                    .filter(|lowered| {
+                        !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                    })
+                    .count(),
+            )
+            .is_some_and(|answer| answer.constant() == constant)
+    }
+    Err(SettleFault::UnreadablePayload { span }) => {
+        module
+            .declarations()
+            .iter()
+            .any(|lowered| {
+                attributes(module.attributes(), lowered)
+                    .any(|entry| entry.span() == span)
+            })
+    }
+},
+)]
 #[inline]
 pub fn settle<'source>(
     root: CorpusRoot,
@@ -661,33 +1046,76 @@ pub fn settle<'source>(
 /// tail, has its attributes read once.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing; a declaration half with no table entry contributes no
+///   attributes.
+/// - ensures: yields the signature’s entries followed by the definition’s
+///   entries in their stored order, but reads a shared signature/definition
+///   origin only once.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separate signature and definition expectations produce a
+///   conflict with ordered spans; a single attributed signed function settles
+///   without a duplicated expectation; an unattributed declaration has no
+///   entries. The predicate traverses a cheap clone of the private iterator,
+///   leaving the returned iterator unconsumed.
+/// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
+/// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+#[spec(
+    ensures: |ret| {
+    let signature = lowered.signature();
+    let definition = lowered.definition();
+    let first = match signature {
+        Maybe::Present(digest) => table.entries(digest),
+        Maybe::Absent(_) => &[],
+    };
+    let second = if signature == definition {
+        &[][..]
+    } else {
+        match definition {
+            Maybe::Present(digest) => table.entries(digest),
+            Maybe::Absent(_) => &[],
+        }
+    };
+    ret.clone().eq(first.iter().chain(second.iter()))
+},
+)]
 fn attributes<'table>(
     table: &'table AttributeTable,
     lowered: &LoweredDeclaration<'_>,
-) -> impl Iterator<Item = &'table AttributeEntry>
+) -> core::iter::Chain<
+    core::slice::Iter<'table, AttributeEntry>,
+    core::slice::Iter<'table, AttributeEntry>,
+>
 {
     let signature = lowered.signature();
-    let definition = match lowered.definition() {
-        | Maybe::Present(digest) if signature == Maybe::Present(digest) => None,
-        | written => Some(written),
+    let definition = lowered.definition();
+    let first = match signature {
+        | Maybe::Present(digest) => table.entries(digest),
+        | Maybe::Absent(_) => &[],
     };
-    [Some(signature), definition]
-        .into_iter()
-        .flatten()
-        .filter_map(|half| match half {
-            | Maybe::Present(digest) => Some(digest),
-            | Maybe::Absent(_) => None,
-        })
-        .flat_map(move |digest| table.entries(digest))
+    let second = if signature == definition {
+        &[][..]
+    }
+    else {
+        match definition {
+            | Maybe::Present(digest) => table.entries(digest),
+            | Maybe::Absent(_) => &[],
+        }
+    };
+    first.iter().chain(second.iter())
 }
 
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
     use alloc::format;
+    use alloc::string::ToString as _;
     use alloc::vec::Vec;
+    use core::fmt;
 
+    use anodized::spec;
     use gandr_core_checker::ObligationCount;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
@@ -708,6 +1136,7 @@ mod tests
     use crate::expectation::Outcome;
     use crate::expectation::Stated;
     use crate::expectation::owing_nothing;
+    use crate::fixture::RefusingWriter;
     use crate::fixture::checked;
     use crate::fixture::ran_at;
     use crate::fixture::settled;
@@ -721,7 +1150,29 @@ mod tests
     /// The one declaration `report` holds.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture report contains exactly one declaration.
+    /// - ensures: returns that declaration by reference.
+    /// - panics: when the fixture violates the one-declaration premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same-suite single-declaration source fixtures
+    ///   observe exact stated verdicts, refusals, counts and spans through the
+    ///   borrowed declaration. The predicate states cardinality and reference
+    ///   identity; invalid fixture shapes are outside its domain.
+    /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+    /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+    #[spec(
+        requires: report.declarations().len() == 1_usize,
+        ensures: |ret| {
+    report
+        .declarations()
+        .first()
+        .is_some_and(|first| core::ptr::eq(
+            core::ptr::from_ref(ret),
+            core::ptr::from_ref(first),
+        ))
+},
+    )]
     fn only<'report, 'source>(
         report: &'report SettleReport<'source>
     ) -> &'report DeclarationReport<'source>
@@ -1193,6 +1644,152 @@ mod tests
             Settlement::Settled,
             "every name settles"
         );
+    }
+
+    #[test]
+    fn a_later_alignment_fault_does_not_replay_or_extend_runner_calls()
+    {
+        let all = checked(SourceText::from(
+            r#"@[ runs("ran at 0") ] def a = 3 ; @[ runs("ran at 1") ] def b = 4 ;"#,
+        ));
+        let one = checked(SourceText::from(r#"@[ runs("ran at 0") ] def a = 3 ;"#));
+        let shifted = checked(SourceText::from("def a = absent ; def b = 4 ;"));
+        let zero = ConstantIndex::from(0_usize);
+        let one_position = ConstantIndex::from(1_usize);
+        for (module, verdicts, fault, expected_calls) in [
+            (
+                &all,
+                &one.verdicts,
+                SettleFault::MissingVerdict {
+                    constant: one_position,
+                },
+                &[zero][..],
+            ),
+            (
+                &one,
+                &all.verdicts,
+                SettleFault::SurplusVerdict {
+                    constant: one_position,
+                },
+                &[zero][..],
+            ),
+            (
+                &all,
+                &shifted.verdicts,
+                SettleFault::MisalignedVerdict {
+                    declared: zero,
+                    judged: one_position,
+                },
+                &[][..],
+            ),
+        ] {
+            let mut calls = Vec::new();
+            let mut runner = |constant| {
+                calls.push(constant);
+                ran_at(constant)
+            };
+            let result = settle(
+                CorpusRoot::Fixture,
+                &module.arena,
+                &module.module,
+                verdicts,
+                &mut runner,
+            );
+            assert_eq!(result, Err(fault));
+            assert_eq!(
+                calls, expected_calls,
+                "failed settlement must neither replay earlier work nor run later declarations"
+            );
+        }
+    }
+
+    #[test]
+    fn settlement_formatters_retain_fields_and_sink_refusals()
+    {
+        assert_ne!(
+            Settlement::Settled.to_string(),
+            Settlement::Unsettled.to_string()
+        );
+        for settlement in [Settlement::Settled, Settlement::Unsettled] {
+            assert_eq!(
+                fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{settlement}")),
+                Err(fmt::Error)
+            );
+        }
+        let residual = Surviving::new(
+            ObligationCount::from(17_usize),
+            ObligationCount::from(29_usize),
+        );
+        let rendered = residual.to_string();
+        assert!(rendered.contains("17") && rendered.contains("29"));
+        assert_eq!(
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{residual}")),
+            Err(fmt::Error)
+        );
+        let at = span(ByteOffset::from(43_usize), ByteOffset::from(61_usize));
+        let at_spelled = at.to_string();
+        let mut distinct = BTreeSet::new();
+        for (fault, payloads) in [
+            (
+                SettleFault::MissingVerdict {
+                    constant: ConstantIndex::from(17_usize),
+                },
+                &["17"][..],
+            ),
+            (
+                SettleFault::MisalignedVerdict {
+                    declared: ConstantIndex::from(17_usize),
+                    judged: ConstantIndex::from(29_usize),
+                },
+                &["17", "29"][..],
+            ),
+            (
+                SettleFault::SurplusVerdict {
+                    constant: ConstantIndex::from(17_usize),
+                },
+                &["17"][..],
+            ),
+            (
+                SettleFault::UnreadablePayload { span: at },
+                &[at_spelled.as_str()][..],
+            ),
+        ] {
+            let rendered = fault.to_string();
+            for payload in payloads {
+                assert!(rendered.contains(payload));
+            }
+            assert!(
+                distinct.insert(rendered),
+                "distinct faults remain distinguishable"
+            );
+            assert_eq!(
+                fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{fault}")),
+                Err(fmt::Error)
+            );
+        }
+        for source in [
+            "@[ owes(17) ] def owing_record : Integer ;",
+            r#"@[ refuses("UnresolvedName") ] def refused_record = absent_record ;"#,
+            "def unmarked_record = 3 ;",
+        ] {
+            let report = settled(CorpusRoot::Fixture, SourceText::from(source));
+            let declaration = only(&report);
+            let rendered = declaration.to_string();
+            assert!(rendered.contains(declaration.name().as_ref()));
+            assert!(rendered.contains(&declaration.span().to_string()));
+            assert!(rendered.contains(&declaration.stated().to_string()));
+            assert!(rendered.contains(&declaration.outcome().to_string()));
+            if let Maybe::Present(refusal) = declaration.produced().refusal() {
+                assert!(rendered.contains(&refusal.classify().to_string()));
+            }
+            if declaration.surviving() != Surviving::default() {
+                assert!(rendered.contains(&declaration.surviving().to_string()));
+            }
+            assert_eq!(
+                fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{declaration}")),
+                Err(fmt::Error)
+            );
+        }
     }
 
     #[test]
