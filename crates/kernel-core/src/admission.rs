@@ -40,6 +40,18 @@ pub struct Guard(pub usize);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Work(pub usize);
 
+/// Research scratch: runs `count` independent jobs and returns their results
+/// in job order, whatever order they ran in. The driver owns the threads.
+pub trait Fork: Sync
+{
+    /// Run jobs `0 .. count`.
+    fn run(
+        &self,
+        count: usize,
+        job: &(dyn Fn(usize) -> Result<[usize; 2], Refusal> + Sync),
+    ) -> Vec<Result<[usize; 2], Refusal>>;
+}
+
 /// A backward-referencing pattern node; term children index this node table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Node
@@ -313,6 +325,21 @@ impl Schema
         fast: bool,
     ) -> Result<Self, Refusal>
     {
+        Self::observed_with(proposal, budget, observe, fast, None)
+    }
+
+    /// Research scratch: `check_observed` with an optional obligation fork.
+    ///
+    /// # Errors
+    /// Returns the named `Refusal`.
+    fn observed_with(
+        proposal: Proposal,
+        budget: &mut Budget,
+        observe: &mut dyn FnMut(Phase),
+        fast: bool,
+        fork: Option<&dyn Fork>,
+    ) -> Result<Self, Refusal>
+    {
         let bytes = core::mem::size_of_val(proposal.nodes.as_slice())
             .saturating_add(core::mem::size_of_val(proposal.classifiers.as_slice()))
             .saturating_add(core::mem::size_of_val(proposal.arms.as_slice()))
@@ -322,7 +349,7 @@ impl Schema
         });
         let available = budget.0.min(bytes);
         let mut limited = Budget(available);
-        let result = Self::check_limited(proposal, &mut limited, observe, fast);
+        let result = Self::check_limited(proposal, &mut limited, observe, fast, fork);
         budget.0 = budget.0.saturating_sub(available.saturating_sub(limited.0));
         if result
             .as_ref()
@@ -350,6 +377,26 @@ impl Schema
         Self::check_observed(proposal, budget, &mut |_| {}, false)
     }
 
+    /// Research scratch: the fast schema with its obligations run by `fork`
+    /// and committed in obligation order.
+    ///
+    /// # Specification
+    /// - ensures: the verdict, checks and replay work of the serial fast path:
+    ///   each obligation runs under the whole allowance, and the commit charges
+    ///   them in order; one whose consumption exceeds what the serial run would
+    ///   have had left is rerun at that exact allowance.
+    ///
+    /// # Errors
+    /// Returns the first refusal in obligation order.
+    pub fn check_forked(
+        proposal: Proposal,
+        budget: &mut Budget,
+        fork: &dyn Fork,
+    ) -> Result<Self, Refusal>
+    {
+        Self::observed_with(proposal, budget, &mut |_| {}, true, Some(fork))
+    }
+
     /// Validate under the input-sized allowance selected by `check`.
     ///
     /// # Specification
@@ -368,6 +415,7 @@ impl Schema
         budget: &mut Budget,
         observe: &mut dyn FnMut(Phase),
         fast: bool,
+        fork: Option<&dyn Fork>,
     ) -> Result<Self, Refusal>
     {
         let mut vocabulary = Arena::default();
@@ -502,6 +550,37 @@ impl Schema
                 content::Prepared::build(content::Dependencies(dependent), &reached, budget)?;
             schema.base = Some(schema.base_probe(budget)?);
             observe(Phase::Probed);
+            if let Some(fork) = fork {
+                let jobs: Vec<Option<(Point, TermId)>> = if obligations.is_empty() {
+                    Vec::from([None])
+                }
+                else {
+                    obligations.iter().copied().map(Some).collect()
+                };
+                let available = budget.0;
+                let shared = &schema;
+                let results = fork.run(jobs.len(), &|index| {
+                    let mut local = Budget(available);
+                    let binding = jobs.get(index).copied().flatten();
+                    let fuel = shared.obligation_fast(binding, &mut local)?;
+                    Ok([fuel, available.saturating_sub(local.0)])
+                });
+                for (index, result) in results.into_iter().enumerate() {
+                    let fuel = match result {
+                        | Ok([fuel, consumed]) if consumed <= budget.0 => {
+                            budget.0 = budget.0.saturating_sub(consumed);
+                            fuel
+                        },
+                        | _ => {
+                            schema.obligation_fast(jobs.get(index).copied().flatten(), budget)?
+                        },
+                    };
+                    schema.count(fuel);
+                    observe(Phase::Replayed);
+                }
+                observe(Phase::Built);
+                return Ok(schema);
+            }
             if obligations.is_empty() {
                 let fuel = schema.obligation_fast(None, budget)?;
                 schema.count(fuel);

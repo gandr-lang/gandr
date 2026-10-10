@@ -483,6 +483,35 @@ pub fn analyze(
     family: &[Step],
 ) -> Result<Analysis, StageError>
 {
+    analyze_observed(arena, program, family, &mut |_| {})
+}
+
+/// Research scratch: anti-unification phase boundaries for an observer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnalyzePhase
+{
+    /// Every member's sides are imported into the shared graph.
+    Imported,
+    /// Every member's plain size is summed.
+    Sized,
+    /// The peak and join columns are generalized.
+    Generalized,
+    /// Points, template size and triples are counted.
+    Counted,
+}
+
+/// Research scratch: [`analyze`] with phase callbacks.
+///
+/// # Errors
+/// As [`analyze`].
+#[inline]
+pub fn analyze_observed(
+    arena: &Arena,
+    program: ProgramId,
+    family: &[Step],
+    observe: &mut dyn FnMut(AnalyzePhase),
+) -> Result<Analysis, StageError>
+{
     let mut cost = FamilyCostReport {
         members: MemberCount::from(family.len()),
         plain_replayed_steps: ReplayStepCount::from(family.len()),
@@ -514,6 +543,7 @@ pub fn analyze(
         .flat_map(|step| [step.source, step.target])
         .collect::<Vec<_>>();
     let roots = generalizer.graph.import(arena, &roots)?;
+    observe(AnalyzePhase::Imported);
     let mut peaks = Vec::with_capacity(family.len());
     let mut joins = Vec::with_capacity(family.len());
     let mut plain = family.len();
@@ -531,10 +561,12 @@ pub fn analyze(
             .saturating_add(usize::from(join_size));
     }
     cost.plain_size = NodeCount::from(plain);
+    observe(AnalyzePhase::Sized);
     let peak = generalizer.column(peaks, EntryIndex::from(0))?;
     let source_points = EntryIndex::from(generalizer.entries.len());
     let join = generalizer.column(joins, source_points)?;
     let sides = [peak, join];
+    observe(AnalyzePhase::Generalized);
     let mut points = BTreeSet::new();
     let mut seen = BTreeSet::new();
     let mut pending = Vec::from([peak]);
@@ -575,6 +607,7 @@ pub fn analyze(
         .iter()
         .find(|entry| !points.contains(&entry.point))
         .map_or(PeakRoots::Complete, |entry| PeakRoots::Missing(entry.point));
+    observe(AnalyzePhase::Counted);
     let Generalizer {
         graph,
         entries,

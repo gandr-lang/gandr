@@ -41,6 +41,7 @@ allocation-counter.workspace = true
 crossbeam-channel.workspace = true
 crossbeam-deque.workspace = true
 proptest.workspace = true
+rayon = { version = "1.11.0", default-features = false }
 ringbuf.workspace = true
 rtrb.workspace = true
 serde_json.workspace = true

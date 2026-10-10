@@ -597,6 +597,18 @@ impl Readmission
         &self.readmitted
     }
 
+    /// Research scratch: the declarations the kernel admitted, as staged, in
+    /// admission order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn admitted(&self) -> &[KernelDeclaration]
+    {
+        &self.admitted
+    }
+
     /// What the artifact rests on.
     ///
     /// # Specification

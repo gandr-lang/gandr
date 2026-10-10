@@ -29,6 +29,7 @@ quenchant-shape.workspace = true
 [dev-dependencies]
 gandr-theory-cell-complexes-tools.workspace = true
 proptest.workspace = true
+rayon = { version = "1.11.0", default-features = false }
 
 [lints]
 workspace = true

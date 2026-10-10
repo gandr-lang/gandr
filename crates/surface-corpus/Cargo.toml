@@ -33,10 +33,12 @@ quenchant-shape.workspace = true
 # The kernel export suite commits each corpus source's kernel artifact as
 # records and reads it back through the record plane.
 [dev-dependencies]
+gandr-kernel-core.workspace = true
 gandr-storage-artifact.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
+rayon = { version = "1.11.0", default-features = false }
 
 [lints]
 workspace = true
