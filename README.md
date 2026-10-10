@@ -34,6 +34,8 @@ CI builds every target under `profile.test`, which inherits size-optimized `rele
 
 Build-state archives contain the test artifacts from both target directories, compressed with zstd and uploaded without recompression. Complete archives are cached separately from Cargo dependencies so integration-test binaries survive cache cleanup. Cargo validates source checksums rather than checkout timestamps. Main promotes queue artifacts into shared caches; hosted manual test runs warm branch-local caches. Mise caches installed tools by locked pins, including sizelint, so warm CI installs reuse binaries.
 
+Archive creation stops the job if either tar or zstd fails.
+
 `mise run ci:act` runs the committed Linux CI workflow in a disposable checkout. Two host-wide slots bound concurrent gates across repositories and worktrees; further invocations wait until a slot frees. Dead holders are reclaimed. Each invocation uses distinct container names. Cached actions run without GitHub fetches; missing actions download on first use.
 
 Completed and interrupted gates remove their containers, networks and volumes. Before starting, each gate reaps resources from abandoned runs whose workflow process is gone; live runs and the shared `act-toolcache` volume remain untouched.
