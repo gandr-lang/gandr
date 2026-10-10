@@ -117,6 +117,57 @@ fn negation_transport_computes()
             HigherError::Boundary
         ));
     }
+    let long_input = list(&mut arena, &vec![boolean.truth; 128]);
+    let long_output = list(&mut arena, &vec![boolean.falsity; 128]);
+    let applied = apply(&mut arena, boolean.not, boolean.truth);
+    let returned = arena.computation_return(boolean.falsity);
+    let (claim, dialogue) = engine(&arena, applied, returned);
+    assert_eq!(claim, EngineClaim::Convertible);
+    let heads = vec![dialogue; 128];
+    let evidence = TransportEvidence {
+        output: &long_output,
+        heads: &heads,
+    };
+    let refused = lifted
+        .replay(
+            &mut arena,
+            &long_input,
+            evidence,
+            ReplayBudget::from(256_u64),
+        )
+        .expect_err("finite observation cap");
+    assert!(matches!(refused.reason, HigherError::DepthBound));
+    assert_eq!(refused.progress, Progress {
+        depth: Depth(128),
+        steps: Steps(256)
+    });
+    assert_eq!(
+        lifted
+            .replay(
+                &mut arena,
+                &long_input,
+                evidence,
+                ReplayBudget::from(258_u64)
+            )
+            .expect("exact cap"),
+        Progress {
+            depth: Depth(129),
+            steps: Steps(258)
+        }
+    );
+    let nil = list(&mut arena, &[]);
+    let mismatch = TransportEvidence {
+        output: &nil,
+        heads: &heads,
+    };
+    let refused = lifted
+        .replay(&mut arena, &long_input, mismatch, budget)
+        .expect_err("constructor mismatch");
+    assert!(matches!(refused.reason, HigherError::Boundary));
+    assert_eq!(refused.progress, Progress {
+        depth: Depth(0),
+        steps: Steps(2)
+    });
     let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
     let bad = arena.value_path_equiv(
         classifier,

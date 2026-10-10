@@ -82,10 +82,10 @@ impl Relation
     ///
     /// # Specification
     /// - ensures: interprets the relation at `(value, value)` and constructs
-    ///   Unit/pair evidence when computed. A neutral sum retains the structural
-    ///   diagonal program: case on the index, then the corresponding payload
-    ///   diagonal. This operation never installs a relation at an abstract
-    ///   type.
+    ///   Unit/pair evidence or native path reflexivity. A neutral sum retains
+    ///   the structural diagonal program: case on the index, then the
+    ///   corresponding payload diagonal. This operation never installs a
+    ///   relation at an abstract type.
     /// - fails: `NonFibrant` for a bridge, `HigherEvaluationRequired` at a
     ///   function fibre, or an index-checking error. Function reflexivity uses
     ///   `function_reflexivity` with a producer-supplied higher introduction.
@@ -93,7 +93,9 @@ impl Relation
     ///
     /// # Errors
     /// `NonFibrant`, `Typing`, `Arena`, or `Evidence` for an impossible empty
-    /// diagonal; `HigherEvaluationRequired` at a function fibre.
+    /// diagonal; `HigherEvaluationRequired` at a function fibre and
+    /// `HigherFieldRequired` at a certificate fibre; native path formation
+    /// errors.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — Unit, Base and Product diagonals compute; a neutral
@@ -101,6 +103,7 @@ impl Relation
     ///   constructor.
     /// - witness: `identity_recursion::tests::reflexivity_and_transport_compute`
     /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
+    /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     #[inline]
     pub fn reflexivity(
         &self,
@@ -172,9 +175,12 @@ impl Relation
     /// - ensures: checks both identities and their middle boundary, then gives
     ///   evidence at the composite endpoints. Product fibres compose through
     ///   both component fibres; sum fibres keep their common injection. Base
-    ///   fibres compose discrete equality. A diagonal supplies either unit law.
+    ///   fibres compose discrete equality. A suspended structural diagonal
+    ///   supplies either unit law without constructing a new certificate.
     /// - fails: `Boundary` for a wrong middle endpoint; `NonFibrant` for
-    ///   bridges; an evidence-checking error for invalid proofs.
+    ///   bridges; `CertificateOperationRequired` if a code-level composite
+    ///   needs explicit certificate evidence; checking errors on invalid
+    ///   proofs.
     /// - panics: none.
     ///
     /// # Errors
@@ -186,6 +192,7 @@ impl Relation
     ///   product coordinates; its result inhabits the independently computed
     ///   fibre.
     /// - witness: `identity_recursion::tests::product_transport_composes_componentwise`
+    /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     #[inline]
     pub fn compose(
         &self,
@@ -206,6 +213,13 @@ impl Relation
         if matches!(second.proof, Proof::Diagonal) {
             return Ok(first.clone());
         }
+        if self
+            .nodes
+            .iter()
+            .any(|node| matches!(node.clause, super::Clause::Universe))
+        {
+            return Err(RelationError::CertificateOperationRequired);
+        }
         let fiber = self.fiber(arena, context, first.left, second.right)?;
         let proof = fiber.inhabitant(arena)?;
         self.witness(arena, context, first.left, second.right, proof)
@@ -217,8 +231,9 @@ impl Relation
     /// - ensures: forms `motive` under the identity's element binder, checks
     ///   the source argument, and instantiates both fibres by capture-free
     ///   substitution. Reflexive endpoint syntax returns the exact supplied
-    ///   value. Otherwise the dependent elimination remains a typed neutral,
-    ///   not a guessed value.
+    ///   value only if any universe coordinates also carry structural
+    ///   reflexivity. Otherwise dependent elimination remains a typed neutral;
+    ///   native code transport consumes the retained path by translator replay.
     /// - fails: `NonFibrant` or a proof, family, or argument typing failure.
     /// - panics: none.
     ///
@@ -230,6 +245,7 @@ impl Relation
     ///   unchanged; ill-typed arguments refuse; neutral Unit indices do not
     ///   license unchecked conversion of a dependent family.
     /// - witness: `identity_recursion::tests::reflexivity_and_transport_compute`
+    /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     #[inline]
     pub fn transport(
         &self,
@@ -254,7 +270,24 @@ impl Relation
         let source = return_type(arena, source)?;
         let target = return_type(arena, target)?;
         check_value(arena, context, value, source)?;
-        if equal_values(arena, identity.left, identity.right) == Convertibility::Convertible {
+        let certificate_diagonal = if !matches!(identity.proof, Proof::Diagonal)
+            && self
+                .nodes
+                .iter()
+                .any(|node| matches!(node.clause, super::Clause::Universe))
+        {
+            let diagonal = self
+                .fiber(arena, context, identity.left, identity.left)?
+                .inhabitant(arena);
+            matches!((&identity.proof, diagonal), (Proof::Native(proof), Ok(diagonal))
+                if equal_values(arena, *proof, diagonal) == Convertibility::Convertible)
+        }
+        else {
+            true
+        };
+        if certificate_diagonal
+            && equal_values(arena, identity.left, identity.right) == Convertibility::Convertible
+        {
             check_value(arena, context, value, target)?;
             Ok(Transport::Return(value))
         }
@@ -342,12 +375,14 @@ impl Relation
 
 impl Fibers
 {
-    /// Construct evidence for Unit/product fibres, preserving every coordinate.
+    /// Construct diagonal evidence without erasing a certificate coordinate.
     ///
     /// # Specification
-    /// - ensures: a native inhabitant constructed from Unit and pairing.
+    /// - ensures: Unit, pairs and checked native path reflexivity are
+    ///   constructive; code syntax inequality never establishes Empty.
     /// - fails: `Evidence` on Empty, `NeutralFiber` on a residual, `Arena` on
-    ///   an invalid local address.
+    ///   invalid addresses; named higher or explicit-certificate requirements
+    ///   and native path formation errors retain their causes.
     /// - panics: none.
     ///
     /// # Errors
@@ -357,6 +392,7 @@ impl Fibers
     /// - hypothesis: L3 — the composition witness has the computed product
     ///   fibre and cannot erase an empty coordinate.
     /// - witness: `identity_recursion::tests::product_transport_composes_componentwise`
+    /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     pub(super) fn inhabitant(
         &self,
         arena: &mut TermArena,
@@ -396,6 +432,20 @@ impl Fibers
                     let fiber = self.get(id)?;
                     match fiber {
                         | Fiber::Unit => arena.value_unit(),
+                        | Fiber::Universe(left, right) => {
+                            let (left, right) = self.native_indices(left, right)?;
+                            if equal_values(arena, left, right) != Convertibility::Convertible {
+                                return Err(RelationError::CertificateOperationRequired);
+                            }
+                            let proof = arena.value_path_refl(left);
+                            super::Interpretation::UniverseIdentity.path(
+                                arena,
+                                proof,
+                                crate::replay::ReplayBudget::DEFAULT,
+                            )?;
+                            proof
+                        },
+                        | Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
                         | Fiber::Product(left, right) => {
                             pending.push(Task::Pair);
                             pending.push(Task::Visit(right));

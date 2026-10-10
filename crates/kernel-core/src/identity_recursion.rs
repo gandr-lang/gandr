@@ -14,7 +14,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompType;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -34,6 +36,7 @@ mod function;
 pub mod recursive;
 #[cfg(test)]
 mod tests;
+mod universe;
 
 pub use evaluation::Fiber;
 pub use evaluation::FiberId;
@@ -122,6 +125,10 @@ enum Clause
     Empty,
     /// Discrete equality of canonical base data, residual on neutral inputs.
     Discrete,
+    /// Native certified paths between level-zero value codes.
+    Universe,
+    /// Identity of certificates is observed through its higher record fields.
+    Certificate,
     /// Related product coordinates, independently.
     Product(RelationId, RelationId),
     /// Matching injections recurse; different injections have empty fibre.
@@ -222,6 +229,11 @@ pub enum RelationError
     Evaluation(Component, EvaluationSide, crate::replay::KernelVerdict),
     /// Recursive inhabitants require the guarded observation interface.
     RecursiveObservationRequired,
+    /// A certificate identity requires its higher record observation.
+    HigherFieldRequired,
+    /// Non-discrete code identities require explicit native certificate
+    /// evidence.
+    CertificateOperationRequired,
     /// Symbolic coverage exhausted its work allowance.
     Budget,
 }
@@ -271,6 +283,12 @@ impl fmt::Display for RelationError
                 )
             },
             | Self::Budget => f.write_str("relation work allowance exhausted"),
+            | Self::HigherFieldRequired => {
+                f.write_str("certificate identity requires higher fields")
+            },
+            | Self::CertificateOperationRequired => {
+                f.write_str("explicit universe certificate operation required")
+            },
             | Self::RecursiveObservationRequired => {
                 f.write_str("recursive identity requires guarded observation")
             },
@@ -287,8 +305,10 @@ impl core::error::Error for RelationError
 /// # Specification
 /// - requires: codes and their types belong to `arena`.
 /// - ensures: Unit, Base, Sum, Product, List and pure function thunks each
-///   contribute one clause in either mode; Abstract refuses before nominal
-///   comparison. Codes selects certified paths or indexed relation families.
+///   contribute one clause in either mode. Identity additionally reaches the
+///   level-zero value universe as native paths and path certificates as higher
+///   fields. Abstract refuses before nominal comparison. Codes selects
+///   certified paths or indexed relation families.
 /// - provides: a flat iterative fold; it never compares endpoint elements.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `AbstractInterface`, `Arena`.
 /// - panics: none.
@@ -302,6 +322,7 @@ impl core::error::Error for RelationError
 /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
 /// - witness: `identity_recursion::tests::abstract_is_an_interface_obstruction`
 /// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
+/// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
 #[inline]
 pub fn interpret(
     arena: &TermArena,
@@ -329,6 +350,11 @@ pub fn interpret(
         let node = arena.value_type(ty).ok_or(RelationError::Arena)?;
         let clause = match *node {
             | ValueType::Unit => Clause::Unit,
+            | ValueType::Universe {
+                sort: GroundSort::Value,
+                ref level,
+            } if mode == Mode::Identity && *level == Level::zero() => Clause::Universe,
+            | ValueType::PathUniverse(..) if mode == Mode::Identity => Clause::Certificate,
 
             | ValueType::Base(_) => Clause::Discrete,
             | ValueType::Sum(left, right) | ValueType::Product(left, right) => {

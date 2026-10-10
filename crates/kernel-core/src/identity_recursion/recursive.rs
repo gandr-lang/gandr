@@ -230,7 +230,7 @@ impl<'graph> Cursor<'graph>
     ) -> Result<Constructor, Refusal>
     {
         loop {
-            if !self.unguarded.insert(self.current) {
+            if self.unguarded.contains(&self.current) {
                 return Err(meter.refuse(HigherError::NonProductive(self.current)));
             }
             meter.charge()?;
@@ -240,7 +240,10 @@ impl<'graph> Cursor<'graph>
                 .get(self.current.0)
                 .ok_or_else(|| meter.refuse(HigherError::UnknownLayer(self.current)))?;
             match *layer {
-                | Layer::Redirect(next) => self.current = next,
+                | Layer::Redirect(next) => {
+                    let _fresh = self.unguarded.insert(self.current);
+                    self.current = next;
+                },
                 | Layer::Guard { evidence, tail } => {
                     let Some(&Value::Injection(side, payload)) = arena.value(evidence)
                     else {

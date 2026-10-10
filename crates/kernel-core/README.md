@@ -284,18 +284,20 @@ The seven witnesses in `path_universe::tests` submit native declarations and use
 
 ## Identity and bridge recursion
 
-The experimental `identity_recursion` module folds one closed, level-zero code vocabulary with `Mode::Identity` or `Mode::Bridge`. It is an in-memory rule language beside `path_universe`, not a persisted element-identity syntax. Endpoints are ordinary typed values in an open context; unsupported codes are refused before interpretation.
+The experimental `identity_recursion` module folds a closed code vocabulary with `Mode::Identity` or `Mode::Bridge`. Identity also reaches the level-zero value universe, including occurrences beneath the admitted formers. It is an in-memory rule language beside `path_universe`, not a persisted element-identity syntax. Endpoints are ordinary typed values in an open context; unsupported codes are refused before interpretation.
 
 `Interpretation::path` consumes an ordinary native `ValueId`, synthesizes it through the declaration checker’s closed-value boundary and decodes the checked `PathUniverse` classifier. Native typing failures retain `KernelError` inside `RelationError::Typing`; endpoint failures retain `PathError`. No auxiliary path arena or formation cache participates.
 
-| Code | Both modes | Identity structure |
-| ---- | ---------- | ------------------ |
+| Code | Relation clause | Identity structure |
+| ---- | --------------- | ------------------ |
 | Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. |
 | Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
 | Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
 | Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
 | Thunk `U (A → F B)` | Suspended product `Π a₀ a₁. Rel(A,a₀,a₁) → Rel(B,force f a₀,force g a₁)`, with the same mode on both premises. | Higher-evaluation reflexivity and pointwise introduction; application transport replays both returners. |
 | List A | Lazy constructor relation; each Cons applies the already-folded element clause and delays its tail. | A complete finite observation records Unit or a distinguishing Empty fibre, depth and instruction count. |
+| Value universe at level zero | Identity only: native `PathUniverse` of the two indexed codes. | Native path reflexivity and certified translator replay. |
+| `PathUniverse` | Identity only: the higher record of two native certificates. | Pointwise forward/backward fields and both round-trip coherence obligations, observed separately. |
 | Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. |
 | Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. |
 
@@ -303,7 +305,13 @@ The experimental `identity_recursion` module folds one closed, level-zero code v
 
 `Relation::constant` and `Relation::cases` construct heterogeneous indexed bridge families. The distinguishing witness is `Br_U Unit Bool` with fibre Unit at `((), inl ())` and Empty at `((), inr ())`. It requires no equality on arbitrary elements and is not an equivalence. This refutes the broad claim that a relational bridge necessarily needs strict element equality beyond canonical data, **for this direct first-order construction**. It does not turn an arbitrary span into a relation: that translation would require endpoint fibres and their reindexing laws. Nor does it establish the full model laws of [Internal Parametricity, without an Interval](https://doi.org/10.1145/3632920).
 
-Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This relation module does not provide J, arbitrary dependent motives, a general fibrancy theorem or a nested universe. The separate higher-field module consumes its native evidence.
+Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the first-order identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces structural reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This relation module does not provide J, arbitrary dependent motives, a general fibrancy theorem or an unrestricted universe hierarchy.
+
+**Universe boundary.** The clause at a quoted `U₀` lowers to the existing native `Path_U`, subject to that former’s closed first-order endpoint stratum. It never interprets two code values as discrete syntax equality. Its diagonal is `PathRefl`; arbitrary evidence is checked as a native path, and code transport uses `path_universe::replay_transport`. Equal endpoint codes do not make a negation certificate reflexive: generic dependent transport stays neutral unless its proof is structural reflexivity. Generic first-order composition refuses code-level certificate composition with `CertificateOperationRequired` rather than replacing the composite by reflexivity. Explicit native certificates remain usable as evidence.
+
+At a quoted `PathUniverse`, the same fold yields a certificate fibre. `Fibers::certificate` reuses `higher_field::unfold`, exposing the four existing obligations without deciding them. Lowering this record to a native first-order type returns `HigherFieldRequired`. This is the stopping point, not a claim of infinite coherence. Nested universe bridges, higher universe levels and an extensional conversion rule are not introduced.
+
+**Universe choice.** Reusing the native former keeps path checking and replay authoritative; a second equivalence arena or discrete comparison would erase the certified map. **Reversal.** A broader native endpoint stratum or a checked certificate-composition language can expand the clause without changing its interpretation.
 
 At a thunk code, the fold records argument and result relations without comparing functions. `apply_related` checks two independently supplied arguments and their relation evidence. It crosses each `U` seam with `force`, applies the function, and relates the values returned through `F`. A variable or stuck application retains a function fibre and both application computations. It never becomes Empty because evaluation is stuck.
 
@@ -317,7 +325,7 @@ Universal introductions cover closed functions with first-order arguments and na
 
 **Function choice.** A lazy related-input product preserves the observational definition, including distinct related Unit arguments. Native function conversion would impose a stronger equality test; finite literal sampling would not establish the universal premise. Replaying ordinary CBPV evaluation reuses the existing trusted machine. **Reversal.** Higher-order introductions require a quantified evidence language that checks relation assumptions and nested function evidence; complete dependent funext additionally requires its substitution and fibrancy laws.
 
-Computed fibres lower to native Unit, Empty and Product types. Empty is the separate native extension: it forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the parent experiment's closed vocabulary.
+Computed fibres lower to native Unit, Empty, Product and universe-path types. Empty forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the parent experiment’s closed vocabulary.
 
 The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty, List codes and universe paths; no receipt admits element-relation, higher-field or function-identity programs or guarded list inhabitants.
 
@@ -351,7 +359,6 @@ The negation and case-inlined triple-negation certificates satisfy all four fiel
 **Choice.** A first-order cyclic program makes guards and back edges inspectable and bounds each replay. Eager towers cannot represent infinite higher data; closures hide productivity obligations and allocate opaque continuations. The graph stores no checking verdict and adds no dependency or wire tag. **Reversal.** A native higher identity language would replace the auxiliary representation only with checked substitution, reduction and persistence rules. Function codes, universe and recursive codes, J and Flow are outside this module.
 
 **Mutation scope.** The higher-field module and its native-evidence projection: removed guards, uncharged redirects, early depth success, forged fibre evidence, dropped product coordinates, wrong square boundaries, substituted translator outputs and omitted round-trip coherence. The four witnesses target these boundaries without claiming a mutation campaign or metatheorem about infinite coherence.
-
 
 ## Recursive code observations
 

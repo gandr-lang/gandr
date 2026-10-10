@@ -7,6 +7,9 @@ mod higher_field_tests;
 #[path = "../identity_recursion/recursive/transport_tests.rs"]
 mod recursive_transport_tests;
 
+#[path = "../identity_recursion/universe_tests.rs"]
+mod universe_fold_tests;
+
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;

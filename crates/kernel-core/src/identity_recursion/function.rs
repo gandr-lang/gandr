@@ -302,6 +302,8 @@ impl Relation
                 },
                 | Clause::Function(..) => return Err(RelationError::NeutralFiber),
                 | Clause::List(_) => return Err(RelationError::RecursiveObservationRequired),
+                | Clause::Universe => return Err(RelationError::CertificateOperationRequired),
+                | Clause::Certificate => return Err(RelationError::HigherFieldRequired),
                 | Clause::Empty | Clause::CaseLeft(..) | Clause::CaseRight(..) => {
                     return Err(RelationError::Classifier);
                 },

@@ -49,6 +49,10 @@ pub enum Fiber
     Empty,
     /// Both component fibres, without dropping either coordinate.
     Product(FiberId, FiberId),
+    /// Native certified equivalence between the indexed codes, not Unit.
+    Universe(IndexId, IndexId),
+    /// Four higher obligations between two native equivalence certificates.
+    Certificate(IndexId, IndexId),
     /// Discrete equality on neutral base indices remains a type.
     Discrete(IndexId, IndexId),
     /// A case-indexed relation awaiting an injection at an index.
@@ -193,6 +197,8 @@ impl Relation
                     match node.clause {
                         | Clause::Unit => Fiber::Unit,
                         | Clause::Empty => Fiber::Empty,
+                        | Clause::Universe => Fiber::Universe(left, right),
+                        | Clause::Certificate => Fiber::Certificate(left, right),
                         | Clause::Discrete => result.discrete(arena, left, right)?,
                         | Clause::List(_) => {
                             return Err(RelationError::RecursiveObservationRequired);
@@ -346,11 +352,12 @@ impl Fibers
     /// Lower a fully computed fibre to the native value-type vocabulary.
     ///
     /// # Specification
-    /// - ensures: Unit, Empty and Product fibres become native types; a
-    ///   residual is refused rather than interpreted as either truth or
-    ///   falsity.
-    /// - fails: `NeutralFiber` if any fibre is residual; `Arena` on invalid
-    ///   edges.
+    /// - ensures: Unit, Empty, Product and universe fibres become native types.
+    ///   Universe endpoints pass the existing path decoder; residuals are not
+    ///   interpreted as either truth or falsity.
+    /// - fails: `NeutralFiber` on a residual, `HigherFieldRequired` on a
+    ///   certificate identity, `Path` outside native endpoint formation, or
+    ///   `Arena` on invalid edges.
     /// - panics: none.
     ///
     /// # Errors
@@ -361,6 +368,7 @@ impl Fibers
     ///   base equality never does.
     /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
     #[inline]
     pub fn native(
         &self,
@@ -380,6 +388,18 @@ impl Fibers
             let ty = match node {
                 | Fiber::Unit => arena.value_type_unit(),
                 | Fiber::Empty => arena.value_type_empty(),
+                | Fiber::Universe(left, right) => {
+                    let (left, right) = self.native_indices(left, right)?;
+                    let ty = arena.value_type_path_universe(left, right);
+                    crate::path_universe::endpoints(
+                        arena,
+                        ty,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(|error| RelationError::Path(alloc::boxed::Box::new(error)))?;
+                    ty
+                },
+                | Fiber::Certificate(..) => return Err(RelationError::HigherFieldRequired),
                 | Fiber::Product(left, right) => {
                     let left = *types.get(left.0).ok_or(RelationError::Arena)?;
                     let right = *types.get(right.0).ok_or(RelationError::Arena)?;
