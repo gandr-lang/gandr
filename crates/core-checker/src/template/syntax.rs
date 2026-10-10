@@ -420,6 +420,49 @@ impl Graph
         Ok(id)
     }
 
+    /// Name the coordinate the next newly interned node receives.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn end(&self) -> Id
+    {
+        Id(self.nodes.len())
+    }
+
+    /// Drop every node interned at or after `end`, keeping every classifier.
+    ///
+    /// Children precede their parents, so no retained node refers to a dropped
+    /// one.
+    ///
+    /// # Specification
+    /// - requires: the caller holds no coordinate at or after `end`.
+    /// - ensures: exactly the nodes below `end` remain, each interned at its
+    ///   coordinate with its size and address unchanged; interning a dropped
+    ///   node's content mints it again.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pattern nodes interned over an import and then
+    ///   dropped distinguish a full truncation from one that leaves the
+    ///   interning map, sizes or addresses holding dropped coordinates.
+    /// - witness: `template::tests::truncation_restores_the_imported_graph`
+    #[spec(captures: [before = self.nodes.len()], ensures: self.nodes.len() == before.min(end.0)
+        && self.sizes.len() == self.nodes.len() && self.addresses.len() == self.nodes.len()
+        && self.ids.len() == self.nodes.len()
+        && self.nodes.iter().enumerate().all(|(index, node)| self.ids.get(node) == Some(&Id(index))))]
+    pub(super) fn truncate(
+        &mut self,
+        end: Id,
+    )
+    {
+        let kept = end.0.min(self.nodes.len());
+        for node in self.nodes.drain(kept ..) {
+            self.ids.remove(&node);
+        }
+        self.sizes.truncate(kept);
+        self.addresses.truncate(kept);
+    }
+
     /// Copy all classifier dependencies of a term payload.
     ///
     /// # Specification
