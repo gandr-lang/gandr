@@ -17,6 +17,7 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 - [The transport is written here](#the-transport-is-written-here)
 - [Document URIs](#document-uris)
 - [Methods the server does not serve](#methods-the-server-does-not-serve)
+- [Specification evidence](#specification-evidence)
 - [License](#license)
 
 <!-- tocstop -->
@@ -37,9 +38,9 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 
 ## Provided features
 
-- `serve` and `Served`: one session over a stream pair, ending cleanly at `exit` after `shutdown` and abruptly at `exit` before it or at a stream closed without `exit`. Witnesses: `session::session::a_session_round_trips_over_in_memory_streams`, `session::session::a_stream_closed_without_exit_ends_abruptly`, `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`.
+- `serve` and `Served`: one session over a stream pair, ending cleanly at `exit` or boundary EOF after `shutdown`, and abruptly before shutdown. Witnesses: `session::session::a_session_round_trips_over_in_memory_streams`, `session::session::a_stream_closed_without_exit_ends_abruptly`, `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`.
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body. Witnesses: `transport::tests::a_round_trip_preserves_the_payload`, `transport::tests::eof_at_a_boundary_is_clean`, `transport::tests::a_header_block_the_framing_cannot_read_is_refused`.
-- The envelope: a request, a notification and a response told apart, a body that is not JSON answered with a parse error, and a batch or any other message refused as an invalid request. Witnesses: `rpc::tests::a_request_is_classified`, `rpc::tests::a_batch_is_rejected`.
+- The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error, including invalid UTF-8 and exceeded number or nesting limits; a decoded batch or other invalid message refused as an invalid request. Witnesses: `rpc::tests::a_request_is_classified`, `rpc::tests::a_batch_is_rejected`, `rpc::tests::decoder_rejections_keep_the_parse_error_class`.
 - Published diagnostics: one per report the renderer gives the document's step, at its range, under its code, with its related information; republished at every change, cleared at close. Witnesses: `server::tests::a_refused_program_is_published_as_an_editor_diagnostic`, `server::tests::synchronisation_publishes_and_close_clears`, `recheck::tests::causal_contexts_become_lsp_related_information`, `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`, `recheck::tests::a_fault_is_published_at_the_origin`, `session::session::a_refusal_is_published_where_the_renderer_renders_it`, `session::session::every_corpus_report_is_published_where_the_walk_renders_it`.
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend. Witnesses: `tokens::tests::every_classified_role_maps_inside_the_legend`, `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`, `tokens::tests::a_one_line_keyword_encodes_as_five_integers`, `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`, `server::tests::semantic_tokens_full_answers_a_known_document`, `server::tests::a_range_returns_only_the_tokens_it_covers`, `server::tests::a_range_over_the_whole_document_agrees_with_the_full_stream`, `server::tests::a_token_straddling_the_range_edge_is_returned_whole`, `server::tests::an_inverted_range_yields_no_tokens`, `server::tests::an_empty_range_yields_no_tokens`, `recheck::tests::a_definition_produces_semantic_tokens`, `session::session::corpus_tokens_cover_the_highlighted_bytes`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped. Witnesses: `position::tests::utf16_counts_an_astral_character_as_two_units`, `position::tests::a_line_past_the_end_clamps`.
@@ -134,7 +135,7 @@ The tokens are the highlighter's `HlSpan`s, sorted and disjoint, delta-encoded a
 | `Hole`, `Directive` | `macro` | |
 | `Label` | `label` | |
 
-A range request restricts which tokens are sent, never the coordinates they are sent in: the deltas still chain from the document's origin, and a token overlapping either edge of the range is sent whole rather than clipped, so a client can merge a range answer into a full one. An inverted or empty range answers no token. A request for a document the server does not hold answers `null`.
+A range request restricts which tokens are sent, never the coordinates they are sent in: the deltas still chain from the document's origin, and a token sharing at least one byte with the half-open range is sent whole rather than clipped, so a client can merge a range answer into a full one. Empty spans never intersect. An inverted or empty range answers no token. A request for a document the server does not hold answers `null`.
 
 ## Positions count UTF-16 code units
 
@@ -149,8 +150,8 @@ The server advertises `positionEncoding: "utf-16"` and counts every range, relat
 | running | a method the server does not serve | `-32601` method not found |
 | running | a served method with parameters it cannot read | `-32602` invalid params |
 | after `shutdown` | any | `-32600` invalid request |
-| any | a body that is not JSON | `-32700` parse error, under a null id |
-| any | JSON that is not a request, notification or response, a batch included | `-32600` invalid request |
+| any | a body outside the decoder-supported JSON fragment | `-32700` parse error, under a null id |
+| any | decoded JSON that is not a request, notification or response, a batch included | `-32600` invalid request |
 
 Before `initialize` every notification but `exit` is dropped. A notification is never answered: one whose parameters the server cannot read is dropped, a change to a document the server does not hold is dropped, and `$/` notifications and every other unknown one are ignored, as the protocol admits. A response from the client is read and discarded, since the server sends no request.
 
@@ -165,7 +166,7 @@ The framing, the envelope and the protocol types the server reads and writes are
 | `ls-types` 0.0.6 | a 0.0 pre-release; the same whole-protocol surface for the same few types |
 | `tower-lsp-server` 0.24.0-rc.1, `async-lsp` 0.2.4 | an async runtime and a service stack for a server that answers each request in order on one thread |
 
-A written transport carries its own ceilings: a header line holds at most 1 KiB and a body at most 64 MiB, so a broken or hostile length cannot allocate before the body arrives. The choice reverses when the server serves enough of the protocol that the types it writes outgrow a maintained crate's surface, or when a request must be answered concurrently with a recheck: then `ls-types`, or the async stack over it, is next.
+The reader limits an incoming header line to 1 KiB and an incoming body to 64 MiB, allocating body storage as bytes arrive rather than trusting the declared length. The writer emits the supplied body without applying those reader limits. The choice reverses when the server serves enough of the protocol that the types it writes outgrow a maintained crate's surface, or when a request must be answered concurrently with a recheck: then `ls-types`, or the async stack over it, is next.
 
 ## Document URIs
 
@@ -182,6 +183,14 @@ A document's URI is kept as the client spelled it, as the key it is synchronised
 | formatting | the printer, once the surface has one |
 
 None is advertised: a capability with nothing behind it would invite requests the server can only refuse.
+
+## Specification evidence
+
+Executable predicates cover UTF-16 projection and errors, token kinds and grouping, half-open overlap, diagnostic shape, decoded URI bytes, request classification, lifecycle transitions and document publication. Captures retain only phase or counts; predicates do not clone server state, reparse documents or compose them twice.
+
+Adequacy separates bounded observations from broader obligations. The overlap witness exhausts ordered spans and all query endpoint pairs in a five-offset domain, preserving input order and rejecting empty intersections. Other witnesses cover Unicode and line endings, framing ceilings, partial writes and flush failures, decoder refusals, lifecycle errors and ignored updates. The corpus observers independently walk the checked-in sources and compare diagnostics, causal labels and token bytes with the dispatcher and renderer; agreement is evidence over that corpus, not a proof for all programs.
+
+Two effects cannot be observed by a useful return-value predicate: `serve` owns opaque generic input/output streams, and `Capabilities::fmt` writes through an opaque formatter. Their explicit exemptions are witnessed by framed sessions, the advertised JSON and a refused-write sink. Semantic diagnostic fields are asserted directly; diagnostic prose is compared with its renderer rather than pinned as English wording.
 
 ## License
 

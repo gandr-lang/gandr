@@ -87,6 +87,12 @@ impl Position
     ///   exact position or refusal.
     /// - witness: `position::tests::utf16_counts_an_astral_character_as_two_units`
     /// - witness: `position::tests::a_line_past_the_end_clamps`
+    #[anodized::spec(ensures: |ret| match index.utf16_pos_of_byte(byte) {
+        Ok(expected) => ret.as_ref().is_ok_and(|actual|
+            actual.line.0 == u32::try_from(usize::from(expected.row)).unwrap_or(u32::MAX)
+                && actual.character.0 == u32::try_from(usize::from(expected.col)).unwrap_or(u32::MAX)),
+        Err(expected) => ret.as_ref().is_err_and(|actual| actual == &expected),
+    })]
     #[inline]
     pub fn of_byte(
         index: &LineIndex<'_>,
@@ -119,6 +125,10 @@ impl Position
     ///   exact offset.
     /// - witness: `position::tests::utf16_counts_an_astral_character_as_two_units`
     /// - witness: `position::tests::a_line_past_the_end_clamps`
+    #[anodized::spec(ensures: |ret| ret == index.byte_of_utf16_pos(Utf16Pos {
+        row: PositionRow::from(usize::try_from(self.line.0).unwrap_or(usize::MAX)),
+        col: Utf16Column::from(usize::try_from(self.character.0).unwrap_or(usize::MAX)),
+    }))]
     #[inline]
     #[must_use]
     pub fn byte(
@@ -159,9 +169,16 @@ impl Range
     /// [`PosOfByteError`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every report a corpus source raises is published at
-    ///   the range its span projects to.
+    /// - hypothesis: L2 — corpus reports agree with their renderer ranges. L3 —
+    ///   an astral character, every protocol line terminator, reversed and
+    ///   empty ranges, and invalid endpoints distinguish swapped ends, UTF-8
+    ///   byte counts and lost or reordered projection errors.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `position::tests::ranges_preserve_endpoint_order_and_projection_failures`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map(|range| (range.start, range.end))
+        == Position::of_byte(index, start)
+            .and_then(|first| Position::of_byte(index, end).map(|last| (first, last)))
+            .as_ref().copied())]
     #[inline]
     pub fn of_bytes(
         index: &LineIndex<'_>,
@@ -256,5 +273,33 @@ mod tests
             Ok(at(At(1, 2))),
             "an offset past the end is the position after the last character"
         );
+    }
+    #[test]
+    fn ranges_preserve_endpoint_order_and_projection_failures()
+    {
+        let index = LineIndex::new(SourceText::from("a𝄞\r\nb\rc\n"));
+        for (start, end, first, last) in [
+            (0_usize, 5_usize, At(0, 0), At(0, 3)),
+            (7, 8, At(1, 0), At(1, 1)),
+            (9, 7, At(2, 0), At(1, 0)),
+            (5, 5, At(0, 3), At(0, 3)),
+            (11, usize::MAX, At(3, 0), At(3, 0)),
+        ] {
+            assert_eq!(
+                super::Range::of_bytes(&index, ByteOffset::from(start), ByteOffset::from(end)),
+                Ok(super::Range {
+                    start: at(first),
+                    end: at(last)
+                }),
+            );
+        }
+        for (start, end, invalid) in [(2_usize, 4_usize, 2_usize), (0, 3, 3), (4, 2, 4)] {
+            assert_eq!(
+                super::Range::of_bytes(&index, ByteOffset::from(start), ByteOffset::from(end)),
+                Err(PosOfByteError {
+                    byte: ByteOffset::from(invalid)
+                }),
+            );
+        }
     }
 }

@@ -96,11 +96,16 @@ impl fmt::Display for Capabilities
     /// - fails: propagates the formatter's own write failure, and reports one
     ///   for a result that does not encode.
     /// - panics: none.
+    /// - executable: none — the generic formatter exposes neither its written
+    ///   bytes nor the underlying writer; unit success and `fmt::Error` cannot
+    ///   distinguish the required output or a refused write.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — the line is decoded and compared whole with the
-    ///   legend the crate exports.
+    /// - hypothesis: L2 — a pinned decoded capability object distinguishes
+    ///   wrong protocol fields. L3 — a refusing formatter distinguishes a
+    ///   swallowed write failure by the returned `fmt::Error`.
     /// - witness: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`
+    /// - witness: `capabilities::capabilities::a_refused_capabilities_write_is_propagated`
     #[inline]
     fn fmt(
         &self,

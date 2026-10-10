@@ -172,13 +172,20 @@ impl core::error::Error for TransportFault
 /// Each [`TransportFault`] but [`TransportFault::Encode`], as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are a frame and the next one across
-///   a written stream, a close at a boundary and inside a frame, a header block
-///   without a length, with a non-decimal length and past the ceiling, each
-///   separated by its exact body, absence or fault.
+/// - hypothesis: L3 — empty and consecutive frames, closed and cut streams,
+///   malformed and boundary-sized headers, body lengths at and above the
+///   ceiling, and injected I/O failures distinguish boundary shifts and
+///   misclassified errors through exact bodies, leftovers and fault kinds.
 /// - witness: `transport::tests::a_round_trip_preserves_the_payload`
 /// - witness: `transport::tests::eof_at_a_boundary_is_clean`
 /// - witness: `transport::tests::a_header_block_the_framing_cannot_read_is_refused`
+/// - witness: `transport::tests::framing_limits_and_empty_bodies_have_exact_boundaries`
+/// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
+#[anodized::spec(ensures: |ret| match ret {
+    Ok(Maybe::Present(ref body)) => body.as_ref().len() <= BODY_CEILING,
+    Err(TransportFault::Encode(_)) => false,
+    _ => true,
+})]
 #[inline]
 pub fn read_frame<Input>(
     input: &mut Input
@@ -261,7 +268,7 @@ where
 ///   of `body`, then is flushed, so the client reads the frame without waiting
 ///   on a buffer.
 /// - provides: the one writer of the server's stream; [`read_frame()`] reads
-///   back exactly the body written.
+///   back bodies no larger than its incoming-body ceiling.
 /// - fails: [`TransportFault::Io`] for a failed write or flush.
 /// - panics: none.
 ///
@@ -269,9 +276,13 @@ where
 /// [`TransportFault::Io`] as above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two frames written to one stream are read back body for
-///   body, the second starting where the first ends.
+/// - hypothesis: L3 — a two-byte non-ASCII body has a pinned byte-counted
+///   frame; failures before the header, after it, inside the body and at flush
+///   distinguish wrong lengths, dropped bytes, omitted flushes and swallowed
+///   errors by exact wire bytes, flush counts and fault kinds.
 /// - witness: `transport::tests::a_round_trip_preserves_the_payload`
+/// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
+#[anodized::spec(ensures: |ret| matches!(ret, Ok(()) | Err(TransportFault::Io(_))))]
 #[inline]
 pub fn write_frame<Output>(
     output: &mut Output,
@@ -290,7 +301,8 @@ where
 #[cfg(test)]
 mod tests
 {
-    use std::io::BufRead;
+    use std::io;
+    use std::io::Read as _;
 
     use quenchant_shape::shape::Maybe;
 
@@ -299,16 +311,130 @@ mod tests
     use super::read_frame;
     use super::write_frame;
 
-    /// The outcome of one read from `stream`, with its fault flattened to its
-    /// debug form so it compares.
-    ///
-    /// # Specification
-    /// trivial.
-    fn read<Input>(stream: &mut Input) -> Result<Maybe<Body, super::read_frame::Absent>, String>
-    where
-        Input: BufRead,
+    /// A stream whose next read fails with a connection reset.
+    struct Reset;
+
+    impl io::Read for Reset
     {
-        read_frame(stream).map_err(|fault| format!("{fault:?}"))
+        /// Refuse the read with the stream's connection-reset error.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: no bytes are accepted.
+        /// - provides: a failed underlying read at either framing stage.
+        /// - fails: a connection-reset I/O error on every call.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Returns `io::ErrorKind::ConnectionReset`.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — header and body read failures retain their exact
+        ///   connection-reset kind rather than becoming truncation or success.
+        /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
+        #[anodized::spec(ensures: |ret| matches!(ret, Err(ref error)
+            if error.kind() == io::ErrorKind::ConnectionReset))]
+        fn read(
+            &mut self,
+            _buffer: &mut [u8],
+        ) -> io::Result<usize>
+        {
+            Err(io::ErrorKind::ConnectionReset.into())
+        }
+    }
+
+    /// A writer exposing accepted bytes and flushes, with bounded failures.
+    struct Probe
+    {
+        /// Bytes accepted before a failure.
+        bytes: Vec<u8>,
+        /// Maximum accepted bytes before the stream breaks.
+        limit: usize,
+        /// Whether flushing fails after recording the flush.
+        fail_flush: bool,
+        /// Number of flush attempts.
+        flushes: usize,
+    }
+
+    impl io::Write for Probe
+    {
+        /// Accept the prefix fitting the limit, or report a broken stream.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: successful writes append exactly the accepted prefix; a
+        ///   full writer retains its bytes unchanged.
+        /// - provides: partial writes at either header or body boundaries.
+        /// - fails: a broken-pipe error when no capacity remains.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Returns `io::ErrorKind::BrokenPipe` at the limit.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — zero, header-complete, partial-body and unbounded
+        ///   capacities distinguish dropped prefixes, over-acceptance and lost
+        ///   write errors through exact bytes and error kinds.
+        /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
+        #[anodized::spec(
+            captures: before = self.bytes.len(),
+            ensures: |ret| match ret {
+                Ok(count) => count == self.limit.saturating_sub(before).min(buf.len())
+                    && self.bytes.get(before..) == buf.get(..count),
+                Err(ref error) => self.limit <= before && self.bytes.len() == before
+                    && error.kind() == io::ErrorKind::BrokenPipe,
+            },
+        )]
+        fn write(
+            &mut self,
+            buf: &[u8],
+        ) -> io::Result<usize>
+        {
+            let available = self.limit.saturating_sub(self.bytes.len());
+            if available == 0 {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            let count = available.min(buf.len());
+            self.bytes.extend_from_slice(&buf[.. count]);
+            Ok(count)
+        }
+
+        /// Record the flush and report its configured outcome.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: one flush attempt is recorded, saturating at
+        ///   `usize::MAX`.
+        /// - provides: observation of the frame's final flush.
+        /// - fails: permission denied exactly when `fail_flush` is set.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Returns `io::ErrorKind::PermissionDenied` when configured.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — successful and failed final flushes distinguish
+        ///   missing flushes and ignored errors by count and exact error kind.
+        /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
+        #[anodized::spec(
+            captures: before = self.flushes,
+            ensures: |ret| self.flushes == before.saturating_add(1_usize)
+                && match ret {
+                    Ok(()) => !self.fail_flush,
+                    Err(ref error) => self.fail_flush
+                        && error.kind() == io::ErrorKind::PermissionDenied,
+                },
+        )]
+        fn flush(&mut self) -> io::Result<()>
+        {
+            self.flushes = self.flushes.saturating_add(1_usize);
+            if self.fail_flush {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+            else {
+                Ok(())
+            }
+        }
     }
 
     #[test]
@@ -319,22 +445,18 @@ mod tests
         let mut written = Vec::new();
         write_frame(&mut written, &first).expect("a vector takes every write");
         write_frame(&mut written, &second).expect("a vector takes every write");
-        let written = Body::from(written);
-        let mut stream = written.as_ref();
+        let mut stream = written.as_slice();
         assert_eq!(
-            read(&mut stream),
-            Ok(Maybe::Present(first)),
-            "the first body"
+            read_frame(&mut stream).expect("first frame"),
+            Maybe::Present(first)
         );
         assert_eq!(
-            read(&mut stream),
-            Ok(Maybe::Present(second)),
-            "the second body starts where the first ends, its length in bytes"
+            read_frame(&mut stream).expect("second frame"),
+            Maybe::Present(second)
         );
         assert_eq!(
-            read(&mut stream),
-            Ok(Maybe::Absent(super::read_frame::Absent::Closed)),
-            "then the stream is closed"
+            read_frame(&mut stream).expect("frame boundary"),
+            Maybe::Absent(super::read_frame::Absent::Closed)
         );
     }
 
@@ -343,28 +465,26 @@ mod tests
     {
         let mut empty: &[u8] = &[];
         assert_eq!(
-            read(&mut empty),
-            Ok(Maybe::Absent(super::read_frame::Absent::Closed)),
-            "an empty stream closes at a boundary"
+            read_frame(&mut empty).expect("empty stream"),
+            Maybe::Absent(super::read_frame::Absent::Closed)
         );
         for cut in [
-            b"Content-Length: 5\r\n".to_vec(),
-            b"Content-Length: 5\r\n\r\nab".to_vec(),
-            b"Content-Len".to_vec(),
+            b"Content-Length: 5\r\n".as_slice(),
+            b"Content-Length: 5\r\n\r\nab".as_slice(),
+            b"Content-Len".as_slice(),
         ] {
-            let mut stream = cut.as_slice();
-            assert_eq!(
-                read(&mut stream),
-                Err(format!("{:?}", TransportFault::Truncated)),
-                "a stream cut inside a frame is truncated: {cut:?}"
-            );
+            let mut stream = cut;
+            assert!(matches!(
+                read_frame(&mut stream),
+                Err(TransportFault::Truncated)
+            ));
         }
     }
 
     #[test]
     fn a_header_block_the_framing_cannot_read_is_refused()
     {
-        let cases: [(&[u8], TransportFault); 5] = [
+        let cases: [(&[u8], TransportFault); 6] = [
             (b"Content-Type: x\r\n\r\n{}", TransportFault::MissingLength),
             (
                 b"Content-Length: two\r\n\r\n{}",
@@ -375,21 +495,96 @@ mod tests
                 TransportFault::Oversized,
             ),
             (b"no colon here\r\n\r\n", TransportFault::MalformedHeader),
+            (b"\xff: x\r\n\r\n", TransportFault::MalformedHeader),
             (&[b'x'; 1_024], TransportFault::LongHeader),
         ];
-        for (bytes, fault) in cases {
+        for (bytes, expected) in cases {
             let mut stream = bytes;
+            let actual = read_frame(&mut stream).expect_err("invalid frame");
             assert_eq!(
-                read(&mut stream),
-                Err(format!("{fault:?}")),
-                "the header block is refused as {fault}"
+                core::mem::discriminant(&actual),
+                core::mem::discriminant(&expected)
             );
         }
         let mut lower: &[u8] = b"content-length: 2\n\n{}";
         assert_eq!(
-            read(&mut lower),
-            Ok(Maybe::Present(Body::from(b"{}".to_vec()))),
-            "the name is matched case-insensitively and a bare newline ends a line"
+            read_frame(&mut lower).expect("lowercase header"),
+            Maybe::Present(Body::from(b"{}".to_vec()))
         );
+    }
+
+    #[test]
+    fn framing_limits_and_empty_bodies_have_exact_boundaries()
+    {
+        let mut empty: &[u8] = b"Content-Length: 0\r\n\r\nnext";
+        assert_eq!(
+            read_frame(&mut empty).expect("empty body"),
+            Maybe::Present(Body::default())
+        );
+        assert_eq!(empty, b"next");
+        let mut exact: &[u8] = b"Content-Length: 67108864\r\n\r\n";
+        assert!(matches!(
+            read_frame(&mut exact),
+            Err(TransportFault::Truncated)
+        ));
+        let mut header = vec![b'x'; super::HEADER_CEILING];
+        header[0] = b':';
+        header[super::HEADER_CEILING.saturating_sub(1)] = b'\n';
+        header.push(b'\n');
+        assert!(matches!(
+            read_frame(&mut header.as_slice()),
+            Err(TransportFault::MissingLength)
+        ));
+        header[super::HEADER_CEILING.saturating_sub(1)] = b'x';
+        assert!(matches!(
+            read_frame(&mut header.as_slice()),
+            Err(TransportFault::LongHeader)
+        ));
+    }
+
+    #[test]
+    fn stream_failures_keep_their_kind_and_write_progress()
+    {
+        for prefix in [b"".as_slice(), b"Content-Length: 1\r\n\r\n".as_slice()] {
+            let mut input = io::BufReader::new(io::Cursor::new(prefix).chain(Reset));
+            assert!(
+                matches!(read_frame(&mut input), Err(TransportFault::Io(ref error))
+                if error.kind() == io::ErrorKind::ConnectionReset)
+            );
+        }
+        let body = Body::from("é".as_bytes().to_vec());
+        let golden = b"Content-Length: 2\r\n\r\n\xc3\xa9";
+        for limit in [0_usize, 21, 22, usize::MAX] {
+            let mut output = Probe {
+                bytes: Vec::new(),
+                limit,
+                fail_flush: false,
+                flushes: 0,
+            };
+            let result = write_frame(&mut output, &body);
+            if limit == usize::MAX {
+                assert!(result.is_ok());
+                assert_eq!(output.bytes, golden);
+                assert_eq!(output.flushes, 1_usize);
+            }
+            else {
+                assert!(matches!(result, Err(TransportFault::Io(ref error))
+                    if error.kind() == io::ErrorKind::BrokenPipe));
+                assert_eq!(output.bytes, golden[.. limit]);
+                assert_eq!(output.flushes, 0_usize);
+            }
+        }
+        let mut output = Probe {
+            bytes: Vec::new(),
+            limit: usize::MAX,
+            fail_flush: true,
+            flushes: 0,
+        };
+        assert!(
+            matches!(write_frame(&mut output, &body), Err(TransportFault::Io(ref error))
+            if error.kind() == io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(output.bytes, golden);
+        assert_eq!(output.flushes, 1_usize);
     }
 }
