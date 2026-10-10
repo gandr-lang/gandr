@@ -15,8 +15,11 @@ publish.workspace = true
 # lowering's refusals and origin table, the checker's refusals and the failure
 # classes beneath them, and the source text spans are measured against. The
 # snippet backend stays behind the crate's API.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
 annotate-snippets.workspace = true
+anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true
 gandr-surface-corpus.workspace = true

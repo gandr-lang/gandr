@@ -13,7 +13,6 @@ use gandr_storage_chunker::ChunkerParams;
 use gandr_storage_chunker::GearTableVersion;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::NormalizationPolicy;
-use gandr_storage_chunker::PARAMETER_DOMAIN;
 use gandr_storage_chunker::ProfileField;
 use gandr_storage_chunker::RawDiscriminator;
 use gandr_storage_chunker::RecordBoundaryRule;
@@ -49,15 +48,9 @@ const fn unsupported(
 }
 
 #[test]
-fn the_domain_names_the_byte_language()
-{
-    assert_eq!(PARAMETER_DOMAIN, b"gandr:storage-chunker:params:v1");
-}
-
-#[test]
 fn the_typed_commitment_is_pinned()
 {
-    let mut expected = PARAMETER_DOMAIN.to_vec();
+    let mut expected = b"gandr:storage-chunker:params:v1".to_vec();
     expected.extend_from_slice(&[0x02, 0x00]);
     expected.extend_from_slice(&[0x07, 0, 0, 0, 0, 0, 0, 0]);
     expected.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0, 0]);
@@ -98,7 +91,7 @@ fn each_typed_constant_moves_the_commitment()
 #[test]
 fn the_default_record_safe_commitment_is_pinned()
 {
-    let mut expected = PARAMETER_DOMAIN.to_vec();
+    let mut expected = b"gandr:storage-chunker:params:v1".to_vec();
     expected.extend_from_slice(&[0x01, 0x00]);
     expected.extend_from_slice(&[0x01, 0x00]);
     expected.push(0x00);
@@ -196,49 +189,41 @@ fn a_public_salt_is_committed_in_the_clear()
 #[test]
 fn raw_discriminators_round_trip_and_refuse_by_field()
 {
-    for algorithm in [AlgorithmVersion::FastCdc2020, AlgorithmVersion::TypedCdc] {
-        let raw = u16::from(algorithm.discriminator());
-        assert_eq!(AlgorithmVersion::try_from(raw), Ok(algorithm));
-    }
-    for raw in [0x0000, 0x0003, 0xCAFE] {
-        assert_eq!(
-            AlgorithmVersion::try_from(raw),
-            Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw)))
-        );
-    }
-
-    assert_eq!(
-        GearTableVersion::try_from(0x0001_u16),
-        Ok(GearTableVersion::V1)
-    );
-    for raw in [0x0000, 0x0002, 0xBEEF] {
-        assert_eq!(
-            GearTableVersion::try_from(raw),
+    for raw in 0_u16 ..= u16::MAX {
+        let algorithm = match raw {
+            | 1 => Ok(AlgorithmVersion::FastCdc2020),
+            | 2 => Ok(AlgorithmVersion::TypedCdc),
+            | _ => Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw))),
+        };
+        assert_eq!(AlgorithmVersion::try_from(raw), algorithm);
+        let gear = if raw == 1 {
+            Ok(GearTableVersion::V1)
+        }
+        else {
             Err(unsupported(ProfileField::GearTable, RawDiscriminator(raw)))
-        );
+        };
+        assert_eq!(GearTableVersion::try_from(raw), gear);
     }
-
-    assert_eq!(
-        NormalizationPolicy::try_from(0x00_u8),
-        Ok(NormalizationPolicy::PreserveBytes)
-    );
-    assert_eq!(
-        NormalizationPolicy::try_from(0x01_u8),
-        Err(unsupported(
-            ProfileField::Normalization,
-            RawDiscriminator(0x01)
-        ))
-    );
-
-    assert_eq!(
-        RecordBoundaryRule::try_from(0x00_u8),
-        Ok(RecordBoundaryRule::BetweenRecords)
-    );
-    assert_eq!(
-        RecordBoundaryRule::try_from(0x01_u8),
-        Err(unsupported(
-            ProfileField::RecordBoundaryRule,
-            RawDiscriminator(0x01)
-        ))
-    );
+    for raw in 0_u8 ..= u8::MAX {
+        let normalization = if raw == 0 {
+            Ok(NormalizationPolicy::PreserveBytes)
+        }
+        else {
+            Err(unsupported(
+                ProfileField::Normalization,
+                RawDiscriminator::from(raw),
+            ))
+        };
+        assert_eq!(NormalizationPolicy::try_from(raw), normalization);
+        let rule = if raw == 0 {
+            Ok(RecordBoundaryRule::BetweenRecords)
+        }
+        else {
+            Err(unsupported(
+                ProfileField::RecordBoundaryRule,
+                RawDiscriminator::from(raw),
+            ))
+        };
+        assert_eq!(RecordBoundaryRule::try_from(raw), rule);
+    }
 }

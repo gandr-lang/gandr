@@ -70,12 +70,32 @@
 //! property that makes a sharing former's family a subtraction rather than a
 //! lookup — survives.
 
+use anodized::spec;
+
 use crate::wire::FormatVersion;
 use crate::wire::WireTag;
 
 /// The four-byte artifact magic. The trailing byte is a v-family marker,
 /// independent of the version field, which is a separate little-endian
 /// sixteen-bit field.
+///
+/// # Specification
+/// - requires: the value is interpreted in its declared framing or tag role.
+/// - ensures: identifies the artifact family independently of the fixed-width
+///   version field.
+/// - panics: none.
+/// - executable: none — this protocol constant is not callable; writer, reader
+///   and catalogue-boundary observations carry its evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact header/version framing and the boundary
+///   between frozen and reserved tags. Named version, magic and tag refusals
+///   separate field confusion and accidental acceptance; changing the protocol
+///   requires revising its conformance evidence.
+/// - witness: `sharing_format::sharing_format::a_foreign_magic_is_refused_at_the_header`
+/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 pub const MAGIC: [u8; 4] = *b"GKX1";
 
 /// The format version this crate writes and the only one it accepts.
@@ -86,6 +106,24 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
 /// reason.
+///
+/// # Specification
+/// - requires: the value is interpreted in its declared framing or tag role.
+/// - ensures: selects the one accepted format version, including its two-byte
+///   little-endian framing.
+/// - panics: none.
+/// - executable: none — this protocol constant is not callable; writer, reader
+///   and catalogue-boundary observations carry its evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact header/version framing and the boundary
+///   between frozen and reserved tags. Named version, magic and tag refusals
+///   separate field confusion and accidental acceptance; changing the protocol
+///   requires revising its conformance evidence.
+/// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 pub const FORMAT_VERSION: FormatVersion = FormatVersion(2);
 
 /// Admission mark: admitted through the checked choke point.
@@ -220,13 +258,69 @@ pub const NODE_SHARE_VALUE_TYPE: WireTag = WireTag(0x22);
 /// former.
 pub const NODE_SHARE_COMP_TYPE: WireTag = WireTag(0x23);
 /// The first tag of the reserved stored-sharing block.
+///
+/// # Specification
+/// - requires: the value is interpreted in its declared framing or tag role.
+/// - ensures: starts the reserved eight-tag sharing interval immediately after
+///   the frozen node block.
+/// - panics: none.
+/// - executable: none — this protocol constant is not callable; writer, reader
+///   and catalogue-boundary observations carry its evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact header/version framing and the boundary
+///   between frozen and reserved tags. Named version, magic and tag refusals
+///   separate field confusion and accidental acceptance; changing the protocol
+///   requires revising its conformance evidence.
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
 pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
 /// which the explicit weakening form would take one family at a time.
+///
+/// # Specification
+/// - requires: the value is interpreted in its declared framing or tag role.
+/// - ensures: ends the reserved eight-tag sharing interval without overlap with
+///   the frozen node block.
+/// - panics: none.
+/// - executable: none — this protocol constant is not callable; writer, reader
+///   and catalogue-boundary observations carry its evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes exact header/version framing and the boundary
+///   between frozen and reserved tags. Named version, magic and tag refusals
+///   separate field confusion and accidental acceptance; changing the protocol
+///   requires revising its conformance evidence.
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
 
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
+///
+/// # Specification
+/// - requires: the quantity or verdict is interpreted for its row and
+///   classification criterion.
+/// - ensures: retains the row observation without converting a token bound into
+///   a child count or collapsing the two classification criteria.
+/// - panics: none.
+/// - executable: none — this metadata carrier is not callable; row construction
+///   and the complete catalogue witnesses observe its meaning.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ChildArity(u8);
@@ -259,6 +353,28 @@ impl From<ChildArity> for usize
 
 /// A count of storage tokens: a tag's own contribution, or the finite bound on
 /// a tag together with its inline payload.
+///
+/// # Specification
+/// - requires: the quantity or verdict is interpreted for its row and
+///   classification criterion.
+/// - ensures: retains the row observation without converting a token bound into
+///   a child count or collapsing the two classification criteria.
+/// - panics: none.
+/// - executable: none — this metadata carrier is not callable; row construction
+///   and the complete catalogue witnesses observe its meaning.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenCount(u8);
@@ -284,6 +400,28 @@ impl From<TokenCount> for u8
 /// duplication bound fits a threshold the storage tier chooses; recording the
 /// verdict symbolically lets the storage tier choose without reopening this
 /// table.
+///
+/// # Specification
+/// - requires: the quantity or verdict is interpreted for its row and
+///   classification criterion.
+/// - ensures: retains the row observation without converting a token bound into
+///   a child count or collapsing the two classification criteria.
+/// - panics: none.
+/// - executable: none — this metadata carrier is not callable; row construction
+///   and the complete catalogue witnesses observe its meaning.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum NodeTagVerdict
 {
@@ -296,17 +434,30 @@ pub enum NodeTagVerdict
 /// The first-order shape and storage classification of one node tag.
 ///
 /// # Specification
-/// - requires: nothing — every field is an immutable description.
-/// - ensures: `tag` is one of the frozen node tags; `child_arity` is the number
-///   of child references the encoder emits after the inline payload, which the
-///   arena's own child relation is differentially compared against; and the two
-///   verdicts record the two storage classifications.
-/// - provides: the const protocol input the storage tier reads, without
-///   altering a single artifact byte. Table-wide protocol agreement stays
-///   prose: a data-item `#[spec]` does not check const construction or compare
-///   encoder and arena observations.
-/// - fails: never.
+/// - requires: when used as protocol metadata, the fields describe the
+///   corresponding frozen node former.
+/// - ensures: records the tag, child arity, one-token contribution, optional
+///   inline bound and the two distinct storage classifications.
+/// - provides: protocol metadata, not validation of arbitrary caller-authored
+///   records. The const row constructors carry local predicates; the complete
+///   catalogue is compared with arena observations.
 /// - panics: none.
+/// - executable: none — the record has no invocation boundary; const row
+///   constructors check its local fields and catalogue witnesses check
+///   cross-component agreement.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NodeTagDescription
 {
@@ -334,6 +485,29 @@ pub struct NodeTagDescription
 /// - provides: the one row constructor, so every row agrees that a tag
 ///   contributes exactly one storage token.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
+#[spec(
+    requires: tag.0 <= NODE_V_STATIC_APPLICATION.0
+            && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
+    ensures: |ret| ret.tag.0 == tag.0
+            && ret.child_arity.0 == child_arity.0
+            && ret.token_contribution.0 == 1
+            && match (ret.max_token_bound, max_token_bound) { (Some(actual), Some(expected)) => actual.0 == expected.0, (None, None) => true, _ => false }
+            && matches!((ret.alias_verdict, alias_verdict), (NodeTagVerdict::Alias, NodeTagVerdict::Alias) | (NodeTagVerdict::Boundary, NodeTagVerdict::Boundary))
+            && matches!((ret.threshold_verdict, threshold_verdict), (NodeTagVerdict::Alias, NodeTagVerdict::Alias) | (NodeTagVerdict::Boundary, NodeTagVerdict::Boundary)),
+)]
 const fn row(
     tag: WireTag,
     child_arity: ChildArity,
@@ -363,6 +537,29 @@ const fn row(
 /// - provides: the shorthand that keeps an unbounded payload from being
 ///   recorded as an alias by hand.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
+#[spec(
+    requires: tag.0 <= NODE_V_STATIC_APPLICATION.0
+            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT),
+    ensures: |ret| ret.tag.0 == tag.0
+            && ret.child_arity.0 == child_arity.0
+            && ret.token_contribution.0 == 1
+            && ret.max_token_bound.is_none()
+            && matches!(ret.alias_verdict, NodeTagVerdict::Boundary)
+            && matches!(ret.threshold_verdict, NodeTagVerdict::Boundary),
+)]
 const fn unbounded(
     tag: WireTag,
     child_arity: ChildArity,
@@ -388,6 +585,28 @@ const fn unbounded(
 /// - provides: the shorthand for the conservative alias case, so the zero-arity
 ///   and the finite bound cannot disagree in a hand-written row.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
+#[spec(
+    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
+    ensures: |ret| ret.tag.0 == tag.0
+            && ret.child_arity.0 == 0
+            && ret.token_contribution.0 == 1
+            && match ret.max_token_bound { Some(actual) => actual.0 == bound.0, None => false }
+            && matches!(ret.alias_verdict, NodeTagVerdict::Alias)
+            && matches!(ret.threshold_verdict, NodeTagVerdict::Alias),
+)]
 const fn bounded_alias(
     tag: WireTag,
     bound: TokenCount,
@@ -409,6 +628,29 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
+///
+/// # Specification
+/// - requires: the consumer interprets rows by their tag and keeps the two
+///   verdict criteria distinct.
+/// - ensures: lists each frozen former exactly once in tag order with its child
+///   arity, token contribution and storage classifications.
+/// - panics: none.
+/// - executable: none — this catalogue has no runtime invocation; its const
+///   constructors enforce local fields and the witnesses compare the complete
+///   protocol table.
+///
+/// # Adequacy
+/// - hypothesis: L2 compares all 32 frozen rows with independently constructed
+///   arena formers through their child relation. L3 observes the complete tag
+///   interval, the reserved sharing boundary, one-token contributions,
+///   finite/unbounded classifications and the base-atom split. These
+///   distinguish tag reuse, wrong arity and collapsed classification criteria;
+///   arbitrary extension vocabularies are outside this fixed catalogue.
+/// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+/// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
+/// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
+/// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
+/// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
     row(
         NODE_VT_BASE,
@@ -453,22 +695,20 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
+
     use alloc::vec::Vec;
+
+    use anodized::spec;
 
     use super::NODE_TAG_TABLE;
     use super::NodeTagVerdict;
     use crate::arena::AnyNode;
     use crate::arena::TermArena;
     use crate::base::BaseType;
-    use crate::base::FractionDigits;
     use crate::base::IntegerLiteral;
     use crate::base::Literal;
     use crate::base::Magnitude;
-    use crate::base::NumericLiteral;
     use crate::base::Sign;
-    use crate::base::StringLiteral;
     use crate::term::ConstantIndex;
     use crate::term::DeBruijnIndex;
     use crate::term::Side;
@@ -486,6 +726,20 @@ mod tests
     ///   rather than an untested row.
     /// - panics: panics only through the arena constructors it calls, none of
     ///   which is fallible.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares all 32 frozen rows with independently
+    ///   constructed arena formers through their child relation. L3 observes
+    ///   the complete tag interval, the reserved sharing boundary, one-token
+    ///   contributions, finite/unbounded classifications and the base-atom
+    ///   split. These distinguish tag reuse, wrong arity and collapsed
+    ///   classification criteria; arbitrary extension vocabularies are outside
+    ///   this fixed catalogue.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(
+        ensures: |ret| ret.1.len() == NODE_TAG_TABLE.len()
+                && ret.1.iter().zip(NODE_TAG_TABLE.iter()).all(|(&node, row)| match node { AnyNode::Value(id) => match ret.0.value(id) { Some(&crate::Value::Variable(_)) => row.tag.0 == super::NODE_V_VARIABLE.0, Some(&crate::Value::Constant(_)) => row.tag.0 == super::NODE_V_CONSTANT.0, Some(&crate::Value::Unit) => row.tag.0 == super::NODE_V_UNIT.0, Some(&crate::Value::Literal(_)) => row.tag.0 == super::NODE_V_LITERAL.0, Some(&crate::Value::Pair(_, _)) => row.tag.0 == super::NODE_V_PAIR.0, Some(&crate::Value::Injection(_, _)) => row.tag.0 == super::NODE_V_INJECTION.0, Some(&crate::Value::Thunk(_)) => row.tag.0 == super::NODE_V_THUNK.0, Some(&crate::Value::Lift { .. }) => row.tag.0 == super::NODE_V_LIFT.0, Some(&crate::Value::Quote(_)) => row.tag.0 == super::NODE_V_QUOTE.0, Some(&crate::Value::QuoteComputation(_)) => row.tag.0 == super::NODE_V_QUOTE_COMPUTATION.0, Some(&crate::Value::StaticApplication(_, _)) => row.tag.0 == super::NODE_V_STATIC_APPLICATION.0, None => false, }, AnyNode::Computation(id) => match ret.0.computation(id) { Some(&crate::Computation::Lambda(_)) => row.tag.0 == super::NODE_C_LAMBDA.0, Some(&crate::Computation::Application(_, _)) => row.tag.0 == super::NODE_C_APPLICATION.0, Some(&crate::Computation::Return(_)) => row.tag.0 == super::NODE_C_RETURN.0, Some(&crate::Computation::Bind(_, _)) => row.tag.0 == super::NODE_C_BIND.0, Some(&crate::Computation::Force(_)) => row.tag.0 == super::NODE_C_FORCE.0, Some(&crate::Computation::Case { .. }) => row.tag.0 == super::NODE_C_CASE.0, None => false, }, AnyNode::ValueType(id) => match ret.0.value_type(id) { Some(&crate::ValueType::Base(_)) => row.tag.0 == super::NODE_VT_BASE.0, Some(&crate::ValueType::Unit) => row.tag.0 == super::NODE_VT_UNIT.0, Some(&crate::ValueType::Product(_, _)) => row.tag.0 == super::NODE_VT_PRODUCT.0, Some(&crate::ValueType::Sum(_, _)) => row.tag.0 == super::NODE_VT_SUM.0, Some(&crate::ValueType::Thunk(_)) => row.tag.0 == super::NODE_VT_THUNK.0, Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag.0 == super::NODE_VT_UNIVERSE.0, Some(&crate::ValueType::Universe { sort: GroundSort::Computation, .. }) => row.tag.0 == super::NODE_VT_COMPUTATION_UNIVERSE.0, Some(&crate::ValueType::Lift { .. }) => row.tag.0 == super::NODE_VT_LIFT.0, Some(&crate::ValueType::Element { .. }) => row.tag.0 == super::NODE_VT_ELEMENT.0, Some(&crate::ValueType::Abstract(_)) => row.tag.0 == super::NODE_VT_ABSTRACT.0, Some(&crate::ValueType::StaticPi { .. }) => row.tag.0 == super::NODE_VT_STATIC_PI.0, None => false, }, AnyNode::CompType(id) => match ret.0.comp_type(id) { Some(&crate::CompType::Returner(_)) => row.tag.0 == super::NODE_CT_RETURNER.0, Some(&crate::CompType::Arrow { .. }) => row.tag.0 == super::NODE_CT_ARROW.0, Some(&crate::CompType::Pi { .. }) => row.tag.0 == super::NODE_CT_PI.0, Some(&crate::CompType::Element { .. }) => row.tag.0 == super::NODE_CT_ELEMENT.0, None => false, }, }),
+    )]
     fn one_node_per_former() -> (TermArena, Vec<AnyNode>)
     {
         let mut arena = TermArena::new();
@@ -693,25 +947,5 @@ mod tests
             base.threshold_verdict,
             "its bounded duplication makes it a threshold alias"
         );
-    }
-
-    #[test]
-    fn a_wire_tag_renders_as_its_byte()
-    {
-        assert_eq!(String::from("0x17"), format!("{}", WireTag::from(0x17)));
-    }
-
-    /// A literal of every kind is representable, which the encoder's literal
-    /// arm needs and no other test in this module reaches.
-    #[test]
-    fn every_literal_kind_is_representable()
-    {
-        let text = Literal::Text(StringLiteral::new(String::from("x")));
-        let numeric = Literal::Numeric(NumericLiteral::new(
-            Sign::Negative,
-            Magnitude::zero(),
-            FractionDigits::none(),
-        ));
-        assert_ne!(text, numeric, "the literal kinds are distinct payloads");
     }
 }

@@ -235,6 +235,14 @@ impl Checked
 /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth && match ret {
+        | Ok(synthesised) => context.arena().value_type(synthesised.produced().id()).is_some()
+            && usize::from(synthesised.conversions()) <= usize::from(context.budget()),
+        | Err(_) => true,
+    },
+)]
 #[inline]
 pub fn synthesise_value(
     context: &mut CheckingContext<'_>,
@@ -287,6 +295,11 @@ pub fn synthesise_value(
 /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth
+        && ret.as_ref().is_ok_and(|checked| usize::from(checked.conversions()) <= usize::from(context.budget())) == ret.is_ok(),
+)]
 #[inline]
 pub fn check_value(
     context: &mut CheckingContext<'_>,
@@ -332,6 +345,14 @@ pub fn check_value(
 /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth && match ret {
+        | Ok(synthesised) => context.arena().comp_type(synthesised.produced().id()).is_some()
+            && usize::from(synthesised.conversions()) <= usize::from(context.budget()),
+        | Err(_) => true,
+    },
+)]
 #[inline]
 pub fn synthesise_comp(
     context: &mut CheckingContext<'_>,
@@ -387,6 +408,11 @@ pub fn synthesise_comp(
 /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth
+        && ret.as_ref().is_ok_and(|checked| usize::from(checked.conversions()) <= usize::from(context.budget())) == ret.is_ok(),
+)]
 #[inline]
 pub fn check_comp(
     context: &mut CheckingContext<'_>,
@@ -409,6 +435,17 @@ pub fn check_comp(
 /// - fails: [`CheckRefusal::MachineInvariant`] when a check run produced a
 ///   type.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a check result and both type-result families expose check
+///   evidence or the exact machine fault; public checking also observes the
+///   retained conversion count.
+/// - witness: `judgement::tests::a_result_of_the_wrong_kind_is_a_machine_fault`
+/// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+#[spec(ensures: |ret| match produced {
+    | Produced::Checked => ret.is_ok(),
+    | Produced::ValueType(_) | Produced::CompType(_) => matches!(ret, Err(CheckRefusal::MachineInvariant)),
+})]
 const fn checked(
     produced: Produced,
     conversions: ConversionCount,
@@ -432,6 +469,18 @@ const fn checked(
 ///
 /// # Errors
 /// - [`CheckRefusal`] — the type is not formed.
+///
+/// # Adequacy
+/// - hypothesis: L1 over bounded generated type programs compares the exact
+///   classifier, with L3 every admitted or refused former and a dangling node;
+///   wrong formation decisions and scope leakage change those observations.
+/// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+/// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
+/// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: context.depth(Zone::Intuitionistic) == depth,
+)]
 pub fn form(
     context: &mut CheckingContext<'_>,
     node: TypeNode,
@@ -694,6 +743,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
     /// - witness: `judgement::tests::a_refusal_under_binders_leaves_the_context_as_found`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    #[spec(
+        captures: depth = context.depth(Zone::Intuitionistic),
+        ensures: |ret| context.depth(Zone::Intuitionistic) == depth && match ret {
+            | Ok((produced, conversions)) => usize::from(conversions) <= usize::from(context.budget())
+                && matches!((goal, produced),
+                    (Goal::Value { direction: Direction::Synthesise, .. }, Produced::ValueType(_))
+                        | (Goal::Computation { direction: Direction::Synthesise, .. }, Produced::CompType(_))
+                        | (Goal::Value { direction: Direction::Check(_), .. }
+                            | Goal::Computation { direction: Direction::Check(_), .. }
+                            | Goal::Form(_), Produced::Checked)),
+            | Err(_) => true,
+        },
+    )]
     fn run(
         context: &'context mut CheckingContext<'arena>,
         goal: Goal,
@@ -723,6 +785,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: the result handed out when the frame stack empties.
     /// - fails: as for [`Self::run`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — completing and budget-exhausted runs expose final
+    ///   results and retained scope; L1 bounded free terms compare the two
+    ///   faces. Premature completion or uncharged transitions changes these
+    ///   observations, not a claim about arbitrary malformed frame stacks.
+    /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
+    /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    #[spec(
+        captures: before = self.remaining,
+        ensures: |ret| self.remaining <= before && (ret.is_err() || self.frames.is_empty()),
+    )]
     fn drive(
         &mut self,
         goal: Goal,
@@ -745,9 +819,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one fewer step remains.
+    /// - ensures: on success one fewer step remains; refusal leaves zero.
     /// - fails: [`CheckRefusal::BudgetExceeded`] when none remains.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero and one remaining step expose exact exhaustion
+    ///   and the original allowance; complete judgements distinguish charging
+    ///   too early, too late or not at all.
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
+    #[spec(
+        captures: before = self.remaining,
+        ensures: |ret| match before.checked_sub(1) {
+            | Some(remaining) => ret == Ok(()) && self.remaining == remaining,
+            | None => self.remaining == 0 && ret == Err(CheckRefusal::BudgetExceeded { budget: self.context.budget() }),
+        },
+    )]
     fn charge(&mut self) -> Result<(), CheckRefusal>
     {
         let Some(remaining) = self.remaining.checked_sub(1_usize)
@@ -766,6 +854,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: the binders stand at or above `entry`.
     /// - ensures: the binders stand at `entry`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — refusal inside binders and explicit zero/one-scope
+    ///   transitions observe the original depth before the next judgement;
+    ///   incomplete unwinding or closing an outer binder changes the result.
+    /// - witness: `judgement::tests::a_refusal_under_binders_leaves_the_context_as_found`
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    #[spec(
+        requires: self.context.depth(Zone::Intuitionistic) >= entry,
+        ensures: self.context.depth(Zone::Intuitionistic) == entry,
+    )]
     fn unwind(
         &mut self,
         entry: BinderDepth,
@@ -785,6 +884,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: that binder is closed.
     /// - fails: [`CheckRefusal::MachineInvariant`] when no binder is open.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and one-binder scopes expose an exact machine
+    ///   fault or one removed binder; checked lambdas and binds observe that
+    ///   closing restores the surrounding context rather than an outer scope.
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
+    #[spec(
+        captures: before = usize::from(self.context.depth(Zone::Intuitionistic)),
+        ensures: |ret| match before.checked_sub(1) {
+            | Some(depth) => ret == Ok(()) && usize::from(self.context.depth(Zone::Intuitionistic)) == depth,
+            | None => ret == Err(CheckRefusal::MachineInvariant)
+                && self.context.depth(Zone::Intuitionistic) == BinderDepth::default(),
+        },
+    )]
     fn close(&mut self) -> Result<(), CheckRefusal>
     {
         match self.context.binders().close(Zone::Intuitionistic) {
@@ -801,6 +915,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   or the formation rule of the type's former.
     /// - fails: as that rule.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each former through each public direction exposes its
+    ///   result family or named refusal, with L1 bounded free terms comparing
+    ///   the faces; wrong dispatch or an unrelated ascent differs.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Step::Ascend(produced)) => matches!((goal, produced),
+            (Goal::Value { direction: Direction::Synthesise, .. }, Produced::ValueType(_))
+                | (Goal::Computation { direction: Direction::Synthesise, .. }, Produced::CompType(_))
+                | (Goal::Value { direction: Direction::Check(_), .. }
+                    | Goal::Computation { direction: Direction::Check(_), .. } | Goal::Form(_), Produced::Checked)),
+        | Ok(Step::Descend(_)) | Err(_) => true,
+    })]
     fn descend(
         &mut self,
         goal: Goal,
@@ -827,6 +957,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: the node `term` names.
     /// - fails: [`CheckRefusal::DanglingNode`] when the arena holds none.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — present value formers and a missing value id expose
+    ///   the exact node rule or exact dangling fault; these distinguish a wrong
+    ///   family, substituted node and omitted failure.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    #[spec(ensures: |ret| match (self.context.arena().value(term), ret) {
+        | (Some(expected), Ok(held)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(held)),
+        | (None, Err(refusal)) => refusal == CheckRefusal::DanglingNode { node: CoreNode::Term(TermNode::Value(term)) },
+        | _ => false,
+    })]
     fn value(
         &self,
         term: ValueId,
@@ -847,6 +989,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: the node `term` names.
     /// - fails: [`CheckRefusal::DanglingNode`] when the arena holds none.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — present computation formers and a missing computation
+    ///   id expose the selected rule or exact dangling fault; these separate a
+    ///   substituted node and a value-family diagnostic.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    #[spec(ensures: |ret| match (self.context.arena().computation(term), ret) {
+        | (Some(expected), Ok(held)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(held)),
+        | (None, Err(refusal)) => refusal == CheckRefusal::DanglingNode { node: CoreNode::Term(TermNode::Computation(term)) },
+        | _ => false,
+    })]
     fn computation(
         &self,
         term: ComputationId,
@@ -965,7 +1119,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// goal, with the quote's frame awaiting it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; formation answers a missing or unadmitted type.
+    /// - ensures: one quote frame awaits formation of exactly `quoted`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quotes of value and computation types expose their
+    ///   exact universe families and levels; a missing frame or wrong quoted
+    ///   node changes synthesis, within those admitted quote forms.
+    /// - witness: `judgement::tests::a_universe_classifies_one_level_up_in_the_positive_sort`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| self.frames.len().checked_sub(before) == Some(1)
+            && self.frames.last() == Some(&Frame::Quote(quoted))
+            && ret == Step::Descend(Goal::Form(quoted)),
+    )]
     fn quote(
         &mut self,
         quoted: TypeNode,
@@ -1194,6 +1362,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a return;
     ///   [`CheckRefusal::OutOfFragment`] for a case.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — force, application and bind expose their synthesised
+    ///   types while introductions and case expose exact refusals; L1 free
+    ///   pools compare the faces, separating wrong child goals and frames.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_)))
+            && self.frames.len().checked_sub(before) == Some(1)),
+    )]
     fn synthesise_comp(
         &mut self,
         term: ComputationId,
@@ -1246,6 +1426,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Judgement
     /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each computation former checks against its own shape
+    ///   or another, including dependent binders; exact acceptance or refusal
+    ///   separates wrong child directions and expected-type dispatch.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
+    /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before),
+    )]
     fn check_comp(
         &mut self,
         term: ComputationId,
@@ -1305,6 +1497,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_whose_type_mentions_its_binder_is_refused`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| self.frames.len().checked_sub(before) == Some(1)
+            && self.frames.last() == Some(&Frame::BindBound { at, bound, body, direction })
+            && ret == Step::Descend(Goal::Computation { term: bound, direction: Direction::Synthesise }),
+    )]
     fn bind(
         &mut self,
         at: ComputationId,
@@ -1338,6 +1536,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Judgement
     /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk checked against a thunk type and an atom
+    ///   exposes the selected body or exact shape refusal; defined-code
+    ///   conversion covers a head reached through unfolding.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
+    #[spec(ensures: |ret| match ret {
+        | Ok(body) => self.context.arena().comp_type(body).is_some()
+            && match value_type_view(self.context.arena(), expected) {
+                | Ok(ValueTypeView::Thunk(held)) => body == held,
+                | Ok(ValueTypeView::Element { .. }) => true,
+                | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit
+                    | ValueTypeView::Universe { .. } | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Product(..) | ValueTypeView::StaticPi { .. }) | Err(_) => false,
+            },
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Value(at)
+            && wanted == ExpectedShape::Thunk && found == TypeNode::Value(expected),
+        | Err(_) => true,
+    })]
     fn thunk_expected(
         &mut self,
         at: ValueId,
@@ -1481,6 +1699,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Judgement
     /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary and dependent lambdas expose checked bodies
+    ///   and exact shape failures; the dependent application case separates
+    ///   using the ambient codomain where substitution is required.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
+    #[spec(ensures: |ret| match ret {
+        | Ok((domain, codomain)) => self.context.arena().value_type(domain).is_some()
+            && self.context.arena().comp_type(codomain).is_some()
+            && match comp_type_view(self.context.arena(), expected) {
+                | Ok(CompTypeView::Pi { domain: held_domain, codomain: held_codomain }) => domain == held_domain && codomain == held_codomain,
+                | Ok(CompTypeView::Arrow { domain: held, .. }) => domain == held,
+                | Ok(CompTypeView::Element { .. }) => true,
+                | Ok(CompTypeView::Returner(_)) | Err(_) => false,
+            },
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
+            && wanted == ExpectedShape::Arrow && found == TypeNode::Computation(expected),
+        | Err(_) => true,
+    })]
     fn arrow_expected(
         &mut self,
         at: ComputationId,
@@ -1517,6 +1755,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Judgement
     /// - expected: `expected`
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returns against a returner and an arrow expose
+    ///   checking at the selected value type or the exact shape failure; a
+    ///   substituted result type or wrong node family changes these answers.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
+    #[spec(ensures: |ret| match ret {
+        | Ok(result) => self.context.arena().value_type(result).is_some()
+            && match comp_type_view(self.context.arena(), expected) {
+                | Ok(CompTypeView::Returner(held)) => result == held,
+                | Ok(CompTypeView::Element { .. }) => true,
+                | Ok(CompTypeView::Arrow { .. } | CompTypeView::Pi { .. }) | Err(_) => false,
+            },
+        | Err(CheckRefusal::ShapeMismatch { at: named, wanted, found }) => named == TermNode::Computation(at)
+            && wanted == ExpectedShape::Returner && found == TypeNode::Computation(expected),
+        | Err(_) => true,
+    })]
     fn returner_expected(
         &mut self,
         at: ComputationId,
@@ -1619,6 +1875,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   type.
     /// - fails: the view's refusal for a dangling id.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four computation-type formers expose exact
+    ///   classifiers, including a dependent codomain; wrong children, skipped
+    ///   domain formation or missing binder frames change those observations.
+    /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+    /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before),
+    )]
     fn form_comp_type(
         &mut self,
         at: CompTypeId,
@@ -1657,6 +1924,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   for a computation type, at [`level_of`] the type, minted.
     /// - fails: as [`level_of`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quotes of atoms, returners and universes expose exact
+    ///   sorts and natural levels; swapped quote families or a missing universe
+    ///   successor differs on these finite forms.
+    /// - witness: `judgement::tests::a_universe_classifies_one_level_up_in_the_positive_sort`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|universe|
+        matches!(value_type_view(self.context.arena(), universe), Ok(ValueTypeView::Universe { sort, .. })
+            if matches!((quoted, sort), (TypeNode::Value(_), GroundSort::Value) | (TypeNode::Computation(_), GroundSort::Computation)))))]
     fn quoted(
         &mut self,
         quoted: TypeNode,
@@ -1683,6 +1959,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`UnadmittedFormer::TypeLift`] otherwise;
     ///   [`CheckRefusal::MachineInvariant`] when `at` is no lift.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — targets below, equal to and above a nonzero natural
+    ///   level expose exact lift refusal or formation, separating non-strict
+    ///   comparison and wrong diagnostic identity; non-lifts fault explicitly.
+    /// - witness: `judgement::tests::lift_formation_distinguishes_below_equal_and_above`
+    /// - witness: `judgement::tests::machine_bookkeeping_preserves_zero_and_one_boundaries`
+    #[spec(ensures: |ret| match ret {
+        | Ok(()) => matches!(value_type_view(self.context.arena(), at), Ok(ValueTypeView::Lift { .. })),
+        | Err(CheckRefusal::OutOfFragment { at: named, former: UnadmittedFormer::TypeLift }) => named == CoreNode::Type(TypeNode::Value(at)),
+        | Err(_) => true,
+    })]
     fn raises(
         &self,
         at: ValueTypeId,
@@ -1773,6 +2061,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - fails: as [`decode_bridge`]; [`CheckRefusal::MachineInvariant`] when
     ///   `node` is no decode.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — value and computation decodes expose their exact
+    ///   classifier or sort/type refusal; these separate a wrong family, target
+    ///   level or missing conversion crossing within the fragment.
+    /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
+    /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+    /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+    #[spec(
+        captures: before = usize::from(self.conversions),
+        ensures: usize::from(self.conversions) == if match node {
+            | TypeNode::Value(at) => matches!(value_type_view(self.context.arena(), at), Ok(ValueTypeView::Element { .. })),
+            | TypeNode::Computation(at) => matches!(comp_type_view(self.context.arena(), at), Ok(CompTypeView::Element { .. })),
+        } { before.saturating_add(1) } else { before },
+    )]
     fn decodes(
         &mut self,
         node: TypeNode,
@@ -1825,6 +2128,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   at the universe the domain names.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary and dependent applications expose exact
+    ///   result types, with a dependent argument substituted into its codomain;
+    ///   retaining a bound variable or changing an ambient codomain differs.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
+    #[spec(ensures: |ret| match codomain {
+        | Codomain::Ambient(held) => ret == held,
+        | Codomain::Dependent(_) => self.context.arena().comp_type(ret).is_some(),
+    })]
     fn applied(
         &mut self,
         argument: ValueId,
@@ -2209,6 +2523,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
@@ -2974,10 +3289,107 @@ mod tests
         );
     }
 
+    #[test]
+    fn machine_bookkeeping_preserves_zero_and_one_boundaries()
+    {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let mut foreign = CoreArena::new();
+        let foreign_unit = foreign.value_unit();
+        let absent_comp = foreign.computation_return(foreign_unit);
+        let absent_value = dangling_value();
+        let budget = CheckBudget::from(1_usize);
+        let mut context = CheckingContext::new(&mut arena, budget);
+        let mut machine = Machine {
+            context: &mut context,
+            frames: Vec::new(),
+            conversions: ConversionCount::default(),
+            remaining: 1,
+        };
+        assert_eq!(machine.charge(), Ok(()));
+        assert_eq!(machine.remaining, 0);
+        assert_eq!(
+            machine.charge(),
+            Err(CheckRefusal::BudgetExceeded { budget })
+        );
+        assert_eq!(machine.remaining, 0);
+        assert_eq!(machine.close(), Err(CheckRefusal::MachineInvariant));
+        machine
+            .context
+            .binders()
+            .open(Zone::Intuitionistic, unit_type);
+        assert_eq!(machine.close(), Ok(()));
+        assert_eq!(
+            machine.context.depth(Zone::Intuitionistic),
+            BinderDepth::default()
+        );
+        machine
+            .context
+            .binders()
+            .open(Zone::Intuitionistic, unit_type);
+        machine.unwind(BinderDepth::default());
+        assert_eq!(
+            machine.context.depth(Zone::Intuitionistic),
+            BinderDepth::default()
+        );
+        assert_eq!(
+            machine.value(absent_value),
+            Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(absent_value))
+            })
+        );
+        assert_eq!(
+            machine.computation(absent_comp),
+            Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Computation(absent_comp))
+            })
+        );
+        assert_eq!(
+            machine.raises(unit_type),
+            Err(CheckRefusal::MachineInvariant)
+        );
+    }
+
+    #[test]
+    fn lift_formation_distinguishes_below_equal_and_above()
+    {
+        let mut arena = CoreArena::new();
+        let natural = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let below = arena.value_type_lift(natural, Level::zero());
+        let equal = arena.value_type_lift(natural, Level::constant(LevelConstant::from(1_u64)));
+        let above = arena.value_type_lift(natural, Level::constant(LevelConstant::from(2_u64)));
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        for at in [below, equal] {
+            assert_eq!(
+                form_value_type(&mut context, at),
+                Err(CheckRefusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::TypeLift
+                })
+            );
+        }
+        assert_eq!(
+            form_value_type(&mut context, above).map(crate::formation::FormedValueType::id),
+            Ok(above)
+        );
+    }
+
     /// The universe a judged type stands at, read off the arena.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `value_type` names a universe in the context arena.
+    /// - ensures: its stored sort and level, without changing either.
+    /// - panics: the id names no universe.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted atoms, returners and universes expose exact
+    ///   sorts and levels, separating wrong universe-family selection and
+    ///   successor loss within this finite quote table.
+    /// - witness: `judgement::tests::a_universe_classifies_one_level_up_in_the_positive_sort`
+    #[spec(
+        requires: matches!(context.arena().value_type(value_type), Some(ValueType::Universe { .. })),
+        ensures: |ret| matches!(context.arena().value_type(value_type), Some(ValueType::Universe { sort, level }) if ret.0 == *sort && ret.1 == *level),
+    )]
     fn universe_of(
         context: &CheckingContext<'_>,
         value_type: ValueTypeId,

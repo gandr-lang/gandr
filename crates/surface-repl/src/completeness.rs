@@ -1,6 +1,7 @@
 //! The completeness gate: a buffer is submitted once the parser expects no
 //! further token.
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::CompletionStatus;
 use gandr_surface_parser::MeldState;
@@ -28,12 +29,14 @@ use gandr_surface_syntax::SourceText;
 /// # Adequacy
 /// - hypothesis: L3 — the gate's two sides: an open form and a declaration
 ///   without its terminator wait; a bare atom, a hole, a terminated declaration
-///   and the empty buffer submit.
+///   and the empty buffer submit. The executable clause guards that empty
+///   boundary; it does not repeat the labeling and molding passes.
 /// - witness: `loop::tests::an_open_form_is_incomplete`
 /// - witness: `loop::tests::a_bare_atom_is_complete`
 /// - witness: `loop::tests::a_hole_is_complete`
 /// - witness: `loop::tests::a_declaration_waits_for_its_terminator`
-/// - witness: `loop::tests::unused_completion_status_name_stays_in_scope`
+/// - witness: `loop::tests::an_empty_buffer_is_complete`
+#[spec(ensures: |ret| !<&str>::from(buffer).is_empty() || bool::from(ret))]
 #[inline]
 #[must_use]
 pub fn completeness(

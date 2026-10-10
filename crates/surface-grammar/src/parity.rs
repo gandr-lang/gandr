@@ -15,6 +15,8 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
+
 use crate::surface::TREE_SITTER_NAMED_KINDS;
 
 /// The named kinds the file root realises rather than a structural form.
@@ -55,10 +57,12 @@ pub struct NamedKind<'kind>(pub &'kind str);
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 generative — every inventoried kind classified this way is
-///   realised: the file root by the item sequence, every other kind by a
-///   checked form with its provenance.
+/// - hypothesis: Across the committed kind inventory and explicit known,
+///   unknown and near-root spellings, L3 classification and semantic
+///   realization observations catch accidental file-root aliases and missing
+///   structural coverage; arbitrary user text is not exhausted.
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
+#[spec(ensures: |ret| if kind.0 == "source_file" { ret == NamedKindRealization::FileRoot } else { ret == NamedKindRealization::StructuralForms })]
 #[inline]
 #[must_use]
 pub fn named_kind_realization(kind: NamedKind<'_>) -> NamedKindRealization
@@ -80,9 +84,12 @@ pub fn named_kind_realization(kind: NamedKind<'_>) -> NamedKindRealization
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 generative — the inventory is exactly the committed kind
-///   list, and every entry is realised as classified.
+/// - hypothesis: The complete committed inventory is an L2 finite census:
+///   order, uniqueness, disjoint grammar-only kinds and realization
+///   observations catch dropped, duplicated or misclassified entries; this does
+///   not establish parser language equivalence.
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
+#[spec(ensures: |ret| ret.len() == TREE_SITTER_NAMED_KINDS.len() && ret.iter().zip(TREE_SITTER_NAMED_KINDS.iter()).all(|(entry, &kind)| entry.kind == kind && entry.realization == named_kind_realization(NamedKind(kind))))]
 #[inline]
 #[must_use]
 pub fn named_kind_parity() -> Vec<NamedKindEntry>

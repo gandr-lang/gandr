@@ -13,7 +13,7 @@ Content-defined chunk boundaries over canonical records or typed boundary events
 
 ## Synopsis
 
-**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate is dependency-free and uses `core` and `alloc` under `no_std`.
+**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate uses `core` and `alloc` under `no_std`; the anodized facade supplies executable specification checks.
 
 **Why.** Position-based cuts shift after an insertion, changing the identity of otherwise unchanged chunks. Content-defined cuts let boundaries resynchronize after an edit, enabling storage consumers to share unchanged chunks. Explicit parameter commitments let a root bind the rule that produced its partition.
 
@@ -74,11 +74,16 @@ fn main() -> Result<(), ChunkerError> {
 }
 ```
 
-Run the crate's tests from the repository root:
+Constant constructors, the wire discriminator, saturating token addition and the Gear table carry const-compatible specification predicates. They preserve constant evaluation; `anodized_panic` enforces the same predicates at runtime. Nominal equality observers keep primitive representations private without calling non-const trait methods.
+
+Run the crate's tests from the repository root, both normally and with executable specifications enabled:
 
 ```sh
 mise exec -- cargo test -p gandr-storage-chunker
+RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing mise exec -- cargo test -p gandr-storage-chunker
 ```
+
+Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Const operations carry executable predicates; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
 
 ## Two profiles
 

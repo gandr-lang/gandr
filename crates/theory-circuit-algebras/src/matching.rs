@@ -89,6 +89,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::interface::ComponentIndex;
@@ -145,6 +146,15 @@ impl MatchBudget
     /// - ensures: [`Spend::Spent`] and one step fewer when a step is left;
     ///   otherwise [`Spend::Exhausted`] and the budget unchanged.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-step allowance exposes both decrements and
+    ///   repeated exhaustion without underflow. Spending nothing, charging
+    ///   twice or wrapping at zero changes the transition; only this local
+    ///   counter is observed.
+    /// - witness: `matching::tests::budget_accounting_observes_each_step_and_exhaustion`
+    #[spec(captures: [prior = self.0], ensures: |result| self.0 == prior.saturating_sub(1)
+        && (result == Spend::Spent) == (prior > 0))]
     fn spend(&mut self) -> Spend
     {
         match self.0.checked_sub(1) {
@@ -162,6 +172,15 @@ impl MatchBudget
     /// - requires: this budget is what remains of `start`.
     /// - ensures: `start` less this budget.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, partial and exhausted allowances expose the
+    ///   exact number consumed. Reversing subtraction or reporting remaining
+    ///   allowance differs; the remaining budget cannot exceed its initial
+    ///   value.
+    /// - witness: `matching::tests::budget_accounting_observes_each_step_and_exhaustion`
+    /// - witness: `matching::tests::an_exhausted_budget_declines_rather_than_truncating`
+    #[spec(requires: self.0 <= start.0, ensures: |steps| steps.0 == start.0.saturating_sub(self.0))]
     fn spent_since(
         self,
         start: Self,
@@ -240,6 +259,17 @@ impl Embedding
     /// - provides: [`embedding_image::Absent::OutOfRange`] when `edge` is at or
     ///   past the image's length.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real multi-output match exposes first and last
+    ///   generator images and first-past refusal. Shifting the image index or
+    ///   inventing a boundary image differs; the observer does not validate a
+    ///   claimed certificate.
+    /// - witness: `matching::tests::a_multi_output_pattern_embeds`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(image) => self.image.get(usize::from(edge)) == Some(&image),
+        Maybe::Absent(embedding_image::Absent::OutOfRange) => usize::from(edge) >= self.image.len(),
+    })]
     #[inline]
     pub fn image_of(
         &self,
@@ -393,6 +423,39 @@ impl Embedding
     /// - witness: `matching::tests::a_certificate_with_a_forged_seam_is_refused`
     /// - witness: `matching::tests::a_certificate_with_an_unearned_warrant_is_refused`
     /// - witness: `matching::tests::a_non_convex_certificate_is_refused_with_the_offending_path`
+    #[spec(ensures: |ref result| match *result {
+        Ok(warrant) => warrant == self.convexity && self.image.len() == pattern.generators().len()
+            && usize::from(self.wires.pair_count()) == usize::from(pattern.wire_count())
+            && self.image.iter().enumerate().all(|entry| !self.image.iter().take(entry.0).any(|prior| prior == entry.1))
+            && pattern.wire_count().wires().all(|wire| matches!(self.wires.image_of(wire), Maybe::Present(image) if usize::from(image) < usize::from(target.wire_count())))
+            && pattern.generators().iter().zip(&self.image).all(|(from, image)| target.generators().get(usize::from(*image)).is_some_and(|onto|
+                from.label() == onto.label() && from.sources().len() == onto.sources().len() && from.targets().len() == onto.targets().len()
+                && from.sources().iter().zip(onto.sources()).chain(from.targets().iter().zip(onto.targets())).all(|(wire, expected)| self.wires.image_of(*wire) == Maybe::Present(*expected))))
+            && [(self.seam.inputs(), pattern.boundary().inputs()), (self.seam.outputs(), pattern.boundary().outputs())].into_iter().all(|(half, ports)|
+                usize::from(half.pair_count()) == ports.len() && ports.iter().all(|wire| half.image_of(*wire) == self.wires.image_of(*wire))),
+        Err(EmbeddingObstruction::ImageLength { expected, claimed }) => expected == pattern.edge_count() && usize::from(claimed) == self.image.len() && expected != claimed,
+        Err(EmbeddingObstruction::ImageOutOfRange { at, claimed }) => self.image.get(usize::from(at)) == Some(&claimed) && usize::from(claimed) >= target.generators().len(),
+        Err(EmbeddingObstruction::LabelMismatch { at, claimed }) => self.image.get(usize::from(at)) == Some(&claimed)
+            && pattern.generators().get(usize::from(at)).zip(target.generators().get(usize::from(claimed))).is_some_and(|(from, onto)| from.label() != onto.label()),
+        Err(EmbeddingObstruction::ArityMismatch { at, claimed }) => self.image.get(usize::from(at)) == Some(&claimed)
+            && pattern.generators().get(usize::from(at)).zip(target.generators().get(usize::from(claimed))).is_some_and(|(from, onto)| from.sources().len() != onto.sources().len() || from.targets().len() != onto.targets().len()),
+        Err(EmbeddingObstruction::IncidenceMismatch { at, wire, expected }) => pattern.generators().get(usize::from(at)).is_some_and(|from| from.sources().contains(&wire) || from.targets().contains(&wire))
+            && self.wires.image_of(wire) != Maybe::Present(expected),
+        Err(EmbeddingObstruction::NonInjectiveImage { first, second, claimed }) => first < second
+            && self.image.get(usize::from(first)) == Some(&claimed) && self.image.get(usize::from(second)) == Some(&claimed),
+        Err(EmbeddingObstruction::WireUnmapped { wire }) => usize::from(wire) < usize::from(pattern.wire_count()) && matches!(self.wires.image_of(wire), Maybe::Absent(_)),
+        Err(EmbeddingObstruction::WireImageOutOfRange { wire, claimed }) => self.wires.image_of(wire) == Maybe::Present(claimed) && usize::from(claimed) >= usize::from(target.wire_count()),
+        Err(EmbeddingObstruction::WireMapOverwide { expected, claimed }) => expected == pattern.wire_count() && claimed == self.wires.pair_count() && usize::from(claimed) > usize::from(expected),
+        Err(EmbeddingObstruction::SeamMismatch { half }) => {
+            let (claimed, ports) = match half { SeamHalf::Inputs => (self.seam.inputs(), pattern.boundary().inputs()), SeamHalf::Outputs => (self.seam.outputs(), pattern.boundary().outputs()) };
+            usize::from(claimed.pair_count()) != ports.len() || ports.iter().any(|wire| claimed.image_of(*wire) != self.wires.image_of(*wire))
+        },
+        Err(EmbeddingObstruction::UnearnedWarrant { connectivity }) => self.convexity == ConvexityWarrant::StronglyConnectedOverAcyclicTarget && matches!(connectivity, Connectivity::Disconnected { .. }),
+        Err(EmbeddingObstruction::NotConvex { escape, through, re_entry }) => !self.image.contains(&through)
+            && matches!(target.producer_of(escape), Maybe::Present(edge) if self.image.contains(&edge))
+            && matches!(target.consumer_of(re_entry), Maybe::Present(edge) if self.image.contains(&edge))
+            && target.producer_of(re_entry) == Maybe::Present(through),
+    })]
     #[inline]
     pub fn check(
         &self,
@@ -674,6 +737,15 @@ impl Matching
     /// - witness: `matching::tests::a_multi_admission_reports_its_first_divergences_in_order`
     /// - witness: `matching::tests::a_bare_wire_ambiguity_discriminates_on_the_wire`
     /// - witness: `matching::tests::two_orderings_of_port_free_generators_diverge_at_the_first_generator`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Absent(ambiguity::Absent::Unmatched) => self.admitted.is_empty(),
+        Maybe::Absent(ambiguity::Absent::Unique) => self.admitted.len() == 1,
+        Maybe::Present(ref report) => self.admitted.len() > 1 && report.admissions == self.admitted_count()
+            && report.divergences.len() == self.admitted.len().saturating_sub(1)
+            && report.divergences.iter().enumerate().all(|entry| entry.1.admitted.0 == entry.0.saturating_add(1)
+                && self.admitted.first().zip(self.admitted.get(entry.1.admitted.0)).is_some_and(|(first, later)|
+                    first_discriminator(first, later) == Maybe::Present(entry.1.discriminator))),
+    })]
     #[inline]
     pub fn ambiguity(&self) -> Maybe<Ambiguity, ambiguity::Absent>
     {
@@ -813,11 +885,33 @@ quenchant_shape::reason_enum! {
 /// The first assignment on which `representative` and `variant` disagree.
 ///
 /// # Specification
+/// - requires: both embeddings have the same generator positions and wire
+///   domain.
 /// - ensures: the first generator image, in pattern position order, on which
 ///   the two differ; failing that, the first wire image in pattern wire order.
 /// - provides: [`divergence::Absent::Identical`] when the two agree everywhere,
 ///   which two distinct admissions of one search never do.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal assignments, an equal generator prefix and
+///   simultaneous generator/wire differences expose absence or the exact first
+///   discriminator. Skipping the prefix, preferring wires or ignoring equality
+///   differs; the two assignments share one pattern domain.
+/// - witness: `matching::tests::discriminators_skip_equal_prefixes_and_prioritize_generators`
+/// - witness: `matching::tests::a_multi_admission_reports_its_first_divergences_in_order`
+/// - witness: `matching::tests::a_bare_wire_ambiguity_discriminates_on_the_wire`
+#[spec(requires: representative.image.len() == variant.image.len()
+    && representative.wires.pairs().map(|pair| pair.0).eq(variant.wires.pairs().map(|pair| pair.0)),
+ensures: |ref result| match *result {
+    Maybe::Present(Discriminator::Generator { at, representative: first, variant: other }) => first != other
+        && representative.image.get(usize::from(at)) == Some(&first) && variant.image.get(usize::from(at)) == Some(&other)
+        && representative.image.iter().zip(&variant.image).take(usize::from(at)).all(|pair| pair.0 == pair.1),
+    Maybe::Present(Discriminator::Wire { wire, representative: first, variant: other }) => first != other && representative.image == variant.image
+        && representative.wires.image_of(wire) == Maybe::Present(first) && variant.wires.image_of(wire) == Maybe::Present(other)
+        && representative.wires.pairs().take_while(|pair| pair.0 < wire).all(|(source, image)| variant.wires.image_of(source) == Maybe::Present(image)),
+    Maybe::Absent(divergence::Absent::Identical) => representative.image == variant.image && representative.wires == variant.wires,
+})]
 fn first_discriminator(
     representative: &Embedding,
     variant: &Embedding,
@@ -1060,6 +1154,14 @@ impl core::error::Error for EmbeddingObstruction
 ///   second output, named exactly) separate the decision.
 /// - witness: `matching::tests::a_spine_pattern_is_strongly_connected`
 /// - witness: `matching::tests::a_disconnected_pattern_is_not_strongly_connected`
+/// - boundary: the predicate checks boundary membership and necessary endpoint
+///   incidence without allocating another reachability walk; the witnesses
+///   establish the path decision and first missing pair.
+#[spec(ensures: |result| match result {
+    Connectivity::StronglyConnected => pattern.boundary().inputs().iter().all(|from| pattern.boundary().outputs().iter().all(|to|
+        from == to || (matches!(pattern.consumer_of(*from), Maybe::Present(_)) && matches!(pattern.producer_of(*to), Maybe::Present(_))))),
+    Connectivity::Disconnected { from, to } => from != to && pattern.boundary().inputs().contains(&from) && pattern.boundary().outputs().contains(&to),
+})]
 #[inline]
 #[must_use]
 pub fn connectivity(pattern: &Wiring) -> Connectivity
@@ -1092,6 +1194,10 @@ pub fn connectivity(pattern: &Wiring) -> Connectivity
 ///   — a disconnected pattern loses the discharge.
 /// - witness: `matching::tests::the_discharge_and_the_sweep_agree_where_both_apply`
 /// - witness: `matching::tests::a_disconnected_pattern_is_not_strongly_connected`
+/// - boundary: the predicate enforces vacuity and reflexivity; nontrivial path
+///   decisions are established by the differential and disconnected witnesses.
+#[spec(ensures: |result| result == ConvexityWarrant::StronglyConnectedOverAcyclicTarget
+    || pattern.boundary().inputs().iter().any(|from| pattern.boundary().outputs().iter().any(|to| from != to)))]
 #[inline]
 #[must_use]
 pub fn convexity_warrant(pattern: &Wiring) -> ConvexityWarrant
@@ -1159,6 +1265,15 @@ pub fn convexity_warrant(pattern: &Wiring) -> ConvexityWarrant
 /// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
 /// - witness: `matching::tests::an_exhausted_budget_declines_rather_than_truncating`
 /// - witness: `matching::tests::the_searches_certificates_verify_against_their_own_diagrams`
+#[spec(ensures: |ref result| match *result {
+    Err(MatchObstruction::BudgetExhausted { consumed }) => consumed.0 == budget.0,
+    Ok(ref matching) => matching.steps.0 <= budget.0
+        && matching.admitted.iter().all(|embedding| embedding.image.len() == pattern.generators().len()
+            && usize::from(embedding.wires.pair_count()) == usize::from(pattern.wire_count())
+            && embedding.image.iter().all(|edge| usize::from(*edge) < target.generators().len())
+            && embedding.wires.pairs().all(|(wire, image)| usize::from(wire) < usize::from(pattern.wire_count()) && usize::from(image) < usize::from(target.wire_count())))
+        && (usize::from(pattern.wire_count()) != 0 || !pattern.generators().is_empty() || (matching.admitted.len() == 1 && matching.refused.is_empty() && matching.steps.0 == 0)),
+})]
 #[inline]
 pub fn embeddings(
     pattern: &Wiring,
@@ -1188,6 +1303,16 @@ pub fn embeddings(
 ///   admitted by the sweep with no escape.
 /// - witness: `matching::tests::the_discharge_and_the_sweep_agree_where_both_apply`
 /// - witness: `matching::tests::a_cut_open_verdict_does_not_travel_to_the_re_closed_form`
+#[spec(ensures: |ref result| match *result {
+    Err(MatchObstruction::BudgetExhausted { consumed }) => consumed.0 == budget.0,
+    Ok(ref matching) => matching.steps.0 <= budget.0
+        && matching.admitted.iter().all(|embedding| embedding.convexity == ConvexityWarrant::SweptOverTheComplement
+            && embedding.image.len() == pattern.generators().len()
+            && usize::from(embedding.wires.pair_count()) == usize::from(pattern.wire_count())
+            && embedding.image.iter().all(|edge| usize::from(*edge) < target.generators().len())
+            && embedding.wires.pairs().all(|(wire, image)| usize::from(wire) < usize::from(pattern.wire_count()) && usize::from(image) < usize::from(target.wire_count())))
+        && (usize::from(pattern.wire_count()) != 0 || !pattern.generators().is_empty() || (matching.admitted.len() == 1 && matching.refused.is_empty() && matching.steps.0 == 0)),
+})]
 #[inline]
 pub fn embeddings_by_sweep(
     pattern: &Wiring,
@@ -1269,6 +1394,23 @@ struct Frame
 /// - panics: none.
 /// - intension: an explicit frontier bounded by a visited set, so the walk
 ///   neither recurses nor relies on acyclicity.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a branching diagram exposes forward closure, a single
+///   branch excludes its sibling, and a foreign seed remains reflexive.
+///   Reversed incidence, lost branches or fabricated reachability differ. The
+///   predicate characterizes closure and predecessor support on acyclic wiring
+///   without a second allocated walk.
+/// - witness: `matching::tests::reachability_keeps_branch_direction_and_reflexivity`
+/// - witness: `matching::tests::a_spine_pattern_is_strongly_connected`
+#[spec(ensures: |ref reached| reached.contains(&start) && reached.iter().all(|wire|
+    (*wire == start || match diagram.producer_of(*wire) {
+        Maybe::Present(edge) => diagram.generators().get(usize::from(edge)).is_some_and(|generator| generator.sources().iter().any(|source| reached.contains(source))),
+        Maybe::Absent(_) => false,
+    }) && match diagram.consumer_of(*wire) {
+        Maybe::Present(edge) => diagram.generators().get(usize::from(edge)).is_some_and(|generator| generator.targets().iter().all(|target| reached.contains(target))),
+        Maybe::Absent(_) => true,
+    }))]
 fn reachable_from(
     diagram: &Wiring,
     start: Wire,
@@ -1298,6 +1440,27 @@ fn reachable_from(
 ///   its lowest-positioned member, in component order; then one [`Seed::Wire`]
 ///   per wire incident to no generator, in wire order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — connected, disconnected, port-free and isolated-wire
+///   components expose exact seed representatives and ordering; the multi-root
+///   search exposes their cost. Omitting a component, reseeding one or
+///   interleaving bare wires differs. The local predicate checks bounds,
+///   ordering and the entire isolated-wire suffix; witnesses establish
+///   component minima.
+/// - witness: `matching::tests::seeds_order_components_before_isolated_wires`
+/// - witness: `matching::tests::a_multi_root_pattern_embeds`
+/// - witness: `matching::tests::the_empty_pattern_embeds_exactly_once`
+#[spec(ensures: |ref seeds| (pattern.generators().is_empty() || seeds.first() == Some(&Seed::Generator(Edge::from(0))))
+    && seeds.iter().all(|seed| match *seed { Seed::Generator(edge) => usize::from(edge) < pattern.generators().len(), Seed::Wire(wire) => usize::from(wire) < usize::from(pattern.wire_count()) })
+    && seeds.iter().zip(seeds.iter().skip(1)).all(|(left, right)| match (*left, *right) {
+        (Seed::Generator(first), Seed::Generator(second)) => first < second,
+        (Seed::Generator(_), Seed::Wire(_)) => true,
+        (Seed::Wire(first), Seed::Wire(second)) => first < second,
+        (Seed::Wire(_), Seed::Generator(_)) => false,
+    })
+    && seeds.iter().filter_map(|seed| match *seed { Seed::Wire(wire) => Some(wire), Seed::Generator(_) => None })
+        .eq(pattern.wire_count().wires().filter(|wire| matches!(pattern.producer_of(*wire), Maybe::Absent(_)) && matches!(pattern.consumer_of(*wire), Maybe::Absent(_)))))]
 fn seeds_of(pattern: &Wiring) -> Vec<Seed>
 {
     let components = pattern.components();
@@ -1329,6 +1492,28 @@ fn seeds_of(pattern: &Wiring) -> Vec<Seed>
 /// - panics: none.
 /// - intension: a worklist taken last in, first out; each resolved item spends
 ///   one step of `budget`, a repeat of an assignment already made included.
+///
+/// # Adequacy
+/// - hypothesis: L3 — propagation across ordered ports, shared generators and
+///   incompatible labels exposes consistency versus clash; direct replay spends
+///   one step, exhaustion spends no unavailable step and a conflicting replay
+///   preserves the existing assignment. Omitting charges or replacing an
+///   existing binding differs. A refusal may retain partial progress, not roll
+///   it back.
+/// - witness: `matching::tests::propagation_charges_replays_and_preserves_conflicting_bindings`
+/// - witness: `matching::tests::two_components_never_claim_one_generator`
+/// - witness: `matching::tests::port_order_is_preserved_so_a_swapped_target_is_not_a_match`
+#[spec(captures: [prior = budget.0, claimed = state.claimed.len(), pairs = state.wires.pair_count()],
+ensures: |result| budget.0 <= prior && (prior == 0 || budget.0 < prior)
+    && state.claimed.len() >= claimed && state.wires.pair_count() >= pairs
+    && match result {
+        Extension::Exhausted => budget.0 == 0,
+        Extension::Clash => prior > 0,
+        Extension::Consistent => prior > 0 && match seed {
+            Pending::Generator(source, image) => state.generators.get(usize::from(source)) == Some(&Some(image)),
+            Pending::Wire(source, image) => state.wires.image_of(source) == Maybe::Present(image),
+        },
+    })]
 fn extend(
     pattern: &Wiring,
     target: &Wiring,
@@ -1436,6 +1621,26 @@ enum Sweep
 ///   walk's refusal to step into the image never fires: a wire the walk reaches
 ///   whose consumer is in the image is an image input, reported as it is
 ///   reached.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the blocking shape, its near-miss, another image output
+///   and a multi-generator detour expose actual escape decisions and exact path
+///   endpoints. Starting at only one exit or stopping after one outside
+///   generator differs. The predicate checks endpoint incidence and complement
+///   membership; it does not allocate another sweep to reconstruct the interior
+///   path.
+/// - witness: `matching::tests::the_blocking_shape_is_refused_on_the_convexity_conjunct`
+/// - witness: `matching::tests::the_same_image_is_admitted_without_the_blocking_generator`
+/// - witness: `matching::tests::the_sweep_starts_from_every_image_output`
+/// - witness: `matching::tests::the_sweep_follows_a_path_through_more_than_one_outside_generator`
+#[spec(requires: image.iter().all(|edge| usize::from(*edge) < target.generators().len()),
+ensures: |result| match result {
+    Sweep::Convex => true,
+    Sweep::Escapes(detour) => !image.contains(&detour.through)
+        && matches!(target.producer_of(detour.escape), Maybe::Present(edge) if image.contains(&edge))
+        && matches!(target.consumer_of(detour.re_entry), Maybe::Present(edge) if image.contains(&edge))
+        && target.producer_of(detour.re_entry) == Maybe::Present(detour.through),
+})]
 fn sweep(
     target: &Wiring,
     image: &BTreeSet<Edge>,
@@ -1507,6 +1712,29 @@ fn sweep(
 ///
 /// # Errors
 /// [`MatchObstruction::BudgetExhausted`] when the budget runs out.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, bare-wire, disconnected and multi-root searches
+///   expose complete enumeration and exact budget exhaustion; changing seed
+///   order, skipping a component or returning a truncated success differs. L2 —
+///   forced sweeping agrees with the earned route where applicable. The
+///   predicate checks budget and certificate shape, while witnesses establish
+///   completeness and graph semantics.
+/// - witness: `matching::tests::the_empty_pattern_embeds_exactly_once`
+/// - witness: `matching::tests::a_bare_wire_pattern_embeds_on_every_target_wire`
+/// - witness: `matching::tests::a_disconnected_pattern_embeds_component_by_component`
+/// - witness: `matching::tests::an_exhausted_budget_declines_rather_than_truncating`
+/// - witness: `matching::tests::the_discharge_and_the_sweep_agree_where_both_apply`
+#[spec(ensures: |ref result| match *result {
+    Err(MatchObstruction::BudgetExhausted { consumed }) => consumed.0 == budget.0,
+    Ok(ref matching) => matching.steps.0 <= budget.0
+        && matching.admitted.iter().all(|embedding| embedding.convexity == warrant
+            && embedding.image.len() == pattern.generators().len()
+            && usize::from(embedding.wires.pair_count()) == usize::from(pattern.wire_count())
+            && embedding.image.iter().all(|edge| usize::from(*edge) < target.generators().len())
+            && embedding.wires.pairs().all(|(wire, image)| usize::from(wire) < usize::from(pattern.wire_count()) && usize::from(image) < usize::from(target.wire_count())))
+        && (usize::from(pattern.wire_count()) != 0 || !pattern.generators().is_empty() || (matching.admitted.len() == 1 && matching.refused.is_empty() && matching.steps.0 == 0)),
+})]
 fn search(
     pattern: &Wiring,
     target: &Wiring,
@@ -1585,7 +1813,8 @@ fn search(
 /// Turns complete assignments into admitted embeddings and refusals.
 ///
 /// # Specification
-/// - requires: each assignment is complete for `pattern`.
+/// - requires: each assignment with a total generator map is complete for
+///   `pattern`; incomplete generator maps may occur defensively.
 /// - ensures: an assignment whose generator map is not total is dropped, as no
 ///   embedding; one whose image is convex, by the discharge or by the sweep, is
 ///   admitted with its seam and warrant; one whose image is not is refused with
@@ -1594,6 +1823,24 @@ fn search(
 /// - intension: the totality check never fires for the search above, which
 ///   assigns every generator of every seeded component; it guards a search that
 ///   stopped doing so.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a total assignment and its incomplete neighbour expose
+///   the defensive drop and exact retained certificate; blocking and near-miss
+///   diagrams separate admission from refusal. Dropping a valid completion,
+///   keeping an incomplete one or changing its warrant differs. Inputs are
+///   structurally consistent assignments from search, not arbitrary forged
+///   certificates.
+/// - witness: `matching::tests::admission_drops_incomplete_generator_maps`
+/// - witness: `matching::tests::the_blocking_shape_is_refused_on_the_convexity_conjunct`
+/// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
+#[spec(requires: completions.iter().all(|completion| completion.generators.len() == pattern.generators().len()
+    && completion.generators.iter().flatten().all(|edge| usize::from(*edge) < target.generators().len())),
+captures: [complete = completions.iter().filter(|completion| completion.generators.iter().all(Option::is_some)).count()],
+ensures: |ref matching| matching.steps == steps && matching.admitted.len().saturating_add(matching.refused.len()) == complete
+    && matching.admitted.iter().all(|embedding| embedding.convexity == warrant && embedding.image.len() == pattern.generators().len())
+    && matching.refused.iter().all(|refusal| refusal.image.len() == pattern.generators().len())
+    && (warrant != ConvexityWarrant::StronglyConnectedOverAcyclicTarget || matching.refused.is_empty()))]
 fn admit(
     pattern: &Wiring,
     target: &Wiring,
@@ -1647,6 +1894,18 @@ fn admit(
 /// - ensures: each half carries exactly the pattern's ports of that side the
 ///   wire map assigns.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — complete embedding seams and a partial map with an
+///   unrelated source expose exact input/output restrictions. Inventing an
+///   unmapped port, swapping halves or retaining an unrelated wire differs;
+///   absent assignments are intentionally omitted.
+/// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
+/// - witness: `matching::tests::seams_restrict_partial_maps_to_each_boundary`
+#[spec(ensures: |ref seam| [(seam.inputs(), pattern.boundary().inputs()), (seam.outputs(), pattern.boundary().outputs())].into_iter().all(|(half, ports)|
+    usize::from(half.pair_count()) == ports.iter().filter(|wire| matches!(wires.image_of(**wire), Maybe::Present(_))).count()
+    && ports.iter().all(|wire| half.image_of(*wire) == wires.image_of(*wire))
+    && half.pairs().all(|(wire, image)| ports.contains(&wire) && wires.image_of(wire) == Maybe::Present(image))))]
 fn seam_of(
     pattern: &Wiring,
     wires: &PartialBijection,

@@ -6,6 +6,7 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
@@ -210,8 +211,13 @@ impl SessionLoop
     /// [`PbgError`] when the built-in grammar or its role table does not build.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every loop witness starts here.
+    /// - hypothesis: L3 — a fresh loop has no pending submission, so finishing
+    ///   it yields no transcript; its first open form changes the fresh prompt.
     /// - witness: `loop::tests::finishing_an_empty_loop_yields_nothing`
+    /// - witness: `loop::tests::an_open_form_continues`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|repl|
+        repl.accepted.is_empty() && repl.pending.is_empty() && repl.standings == Standings::default()
+            && repl.style == style && matches!(repl.session.last(), Maybe::Absent(_))))]
     #[inline]
     pub fn new(style: RenderStyle) -> Result<Self, PbgError>
     {
@@ -230,7 +236,16 @@ impl SessionLoop
     /// Which prompt a face shows before the next line.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: fresh exactly when no text is pending.
+    /// - provides: the prompt and command-admission state.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open form changes the prompt until it is closed.
+    /// - witness: `loop::tests::an_open_form_continues`
+    #[spec(ensures: |ret| (ret == Prompt::Fresh) == self.pending.is_empty())]
     #[inline]
     #[must_use]
     pub fn prompt(&self) -> Prompt
@@ -246,17 +261,30 @@ impl SessionLoop
     /// Drop the waiting buffer, as an interrupt at the prompt does.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: no text waits; accepted declarations remain available.
+    /// - provides: interruption without resetting the accepted session.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interrupting an open form prevents its echo while the
+    ///   next complete declaration is submitted normally, retaining
+    ///   declarations accepted before the interruption.
+    /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    /// - witness: `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations`
+    #[spec(captures: [accepted = self.accepted.len()],
+        ensures: self.pending.is_empty() && self.accepted.len() == accepted)]
     #[inline]
     pub fn discard(&mut self)
     {
         self.pending.clear();
     }
 
-    /// Take one line.
+    /// Take offered text, normally one line, including pasted line breaks.
     ///
     /// # Specification
-    /// - requires: `line` carries no line terminator.
+    /// - requires: nothing; embedded line terminators are preserved.
     /// - ensures: while no buffer waits, a line opening with `:` is a
     ///   meta-command and answered at once, and a blank line is passed over.
     ///   Any other line joins the buffer; once the buffer is parse-complete it
@@ -276,15 +304,24 @@ impl SessionLoop
     /// # Adequacy
     /// - hypothesis: L3 — the gate's continue and submit sides, each
     ///   meta-command, a refused chunk, a definition used on the next line, and
-    ///   a goal completed later are asserted at their exact events.
+    ///   a goal completed later are asserted at their exact events; pasted line
+    ///   breaks survive and pending text does not dispatch meta-commands.
     /// - witness: `loop::tests::an_open_form_continues`
     /// - witness: `loop::tests::a_complete_atom_submits`
     /// - witness: `loop::tests::quit_stops_the_loop`
     /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
     /// - witness: `loop::tests::a_refused_chunk_is_not_kept`
+    /// - witness: `loop::tests::multiline_and_interrupted_buffers_preserve_accepted_declarations`
     /// - witness: `loop::tests::the_meta_commands_answer`
     /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
     /// - witness: `loop::tests::a_loaded_file_is_one_chunk`
+    #[spec(captures: [accepted = self.accepted.len()],
+        ensures: |ret| match ret {
+            Ok(LoopEvent::Continue) => self.accepted.len() == accepted
+                && (self.pending.is_empty() || self.pending.ends_with(<&str>::from(line))),
+            Ok(LoopEvent::Quit) | Err(_) => self.pending.is_empty() && self.accepted.len() == accepted,
+            Ok(LoopEvent::Block(_)) => self.pending.is_empty(),
+        })]
     #[inline]
     pub fn offer(
         &mut self,
@@ -337,6 +374,16 @@ impl SessionLoop
     /// - witness: `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`
     /// - witness: `loop::tests::finishing_an_empty_loop_yields_nothing`
     /// - witness: `loop::tests::finishing_twice_reports_once`
+    #[spec(captures: [empty = self.pending.trim().is_empty(), accepted = self.accepted.len()],
+        ensures: |ret| self.pending.is_empty() && if empty {
+            self.accepted.len() == accepted && matches!(ret, Ok(Maybe::Absent(finished::Absent::Empty)))
+        } else {
+            match ret {
+                Ok(Maybe::Present(_)) => self.accepted.len() >= accepted,
+                Ok(Maybe::Absent(_)) => false,
+                Err(_) => self.accepted.len() == accepted,
+            }
+        })]
     #[inline]
     pub fn finish(&mut self) -> Result<Maybe<TranscriptBlock, finished::Absent>, LoopError>
     {
@@ -367,6 +414,27 @@ impl SessionLoop
     ///   each answer asserted exactly.
     /// - witness: `loop::tests::the_meta_commands_answer`
     /// - witness: `loop::tests::a_loaded_file_is_one_chunk`
+    #[spec(requires: self.pending.is_empty(),
+        captures: [accepted = self.accepted.len()],
+        ensures: |ret| self.pending.is_empty() && match ret {
+            Ok(LoopEvent::Quit) => matches!(command, Command::Quit) && self.accepted.len() == accepted,
+            Ok(LoopEvent::Continue) => false,
+            Ok(LoopEvent::Block(ref block)) => block.source == <&str>::from(line).trim()
+                && block.source_hl.is_empty() && match command {
+                    Command::Quit => false,
+                    Command::Reset => self.accepted.is_empty() && self.standings == Standings::default()
+                        && matches!(self.session.last(), Maybe::Absent(_))
+                        && matches!(block.lines.as_slice(), [(OutKind::Info, _)]),
+                    Command::Help => self.accepted.len() == accepted && block.lines.len() == HELP.len()
+                        && block.lines.iter().zip(HELP).all(|(row, expected)|
+                            row.0 == OutKind::Info && row.1 == expected),
+                    Command::Usage(_) | Command::Unknown(_) => self.accepted.len() == accepted
+                        && matches!(block.lines.as_slice(), [(OutKind::Info, _)]),
+                    Command::TypeOf(_) => self.accepted.len() == accepted,
+                    Command::Load(_) => self.accepted.len() >= accepted,
+                },
+            Err(_) => self.accepted.len() == accepted && matches!(command, Command::TypeOf(_) | Command::Load(_)),
+        })]
     fn meta(
         &mut self,
         line: SourceText<'_>,
@@ -445,6 +513,11 @@ impl SessionLoop
     /// - hypothesis: L3 — a probe after a declaration named `it` still answers
     ///   the expression's type.
     /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
+    #[spec(ensures: |ret|
+        self.standings.names(SourceFragment::from(ret.as_str())) == Naming::Free
+            && if self.standings.names(SourceFragment::from("it")) == Naming::Free { ret == "it" }
+            else { ret.strip_prefix("it").is_some_and(|suffix|
+                !suffix.starts_with('0') && suffix.parse::<usize>().is_ok_and(|number| number > 0)) })]
     fn probe_name(&self) -> String
     {
         let mut name = String::from("it");
@@ -473,6 +546,10 @@ impl SessionLoop
     /// - hypothesis: L3 — through [`Self::offer`]'s witnesses, the echo and its
     ///   spans asserted.
     /// - witness: `loop::tests::a_submission_carries_highlight_spans`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|block|
+        block.source == <&str>::from(chunk) && block.source_hl.iter().all(|span|
+            block.source.is_char_boundary(usize::from(span.range.start()))
+                && block.source.is_char_boundary(usize::from(span.range.end()))))) ]
     fn declarations(
         &mut self,
         chunk: SourceText<'_>,
@@ -505,6 +582,14 @@ impl SessionLoop
     ///   dropped chunk each asserted by what the next submission sees.
     /// - witness: `loop::tests::a_refused_chunk_is_not_kept`
     /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
+    #[spec(captures: [accepted = self.accepted.len()],
+        ensures: |ret| if ret.is_err() || matches!(subject, Subject::Probe { .. }) {
+            self.accepted.len() == accepted
+        } else {
+            self.accepted.len() == accepted
+                || (self.accepted.len() == accepted.saturating_add(<&str>::from(chunk).len()).saturating_add(1)
+                    && self.accepted.strip_suffix('\n').is_some_and(|text| text.ends_with(<&str>::from(chunk))))
+        })]
     fn submit(
         &mut self,
         echo: Echo,

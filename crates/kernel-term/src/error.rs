@@ -23,6 +23,23 @@ use crate::wire::WireTag;
 /// one of them into the kernel never renumbers a shipped format. A live kind,
 /// such as the abstract type, is written and decoded like a definition and has
 /// no variant here: this vocabulary lists only kinds the decoder refuses.
+///
+/// # Specification
+/// - requires: the value classifies a format refusal, not a typing judgement.
+/// - ensures: retains the named refusal category and its declared payload so
+///   distinct format causes remain observable.
+/// - panics: none.
+/// - executable: none — this closed classification is a data declaration;
+///   reader operations select it and formatting exposes its payload.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers every refusal category and site, all tag-byte
+///   spellings, version and quantity ceilings, the two sort literals, and
+///   refusal by a real exhausted byte sink. It observes distinct causes,
+///   complete numeric payloads and exact sink error kinds, separating collapsed
+///   classifications, lost high bits and swallowed failures. Diagnostic wording
+///   and nondefault formatter flags are outside the hypothesis.
+/// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReservedKind
 {
@@ -45,6 +62,19 @@ impl fmt::Display for ReservedKind
     ///   kind names itself rather than a numeric tag.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   its output nor refusal state; observing those effects here would
+    ///   require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -61,6 +91,23 @@ impl fmt::Display for ReservedKind
 
 /// A reserved slot or section that must be empty, or a live one whose content
 /// the decoder refuted.
+///
+/// # Specification
+/// - requires: the value classifies a format refusal, not a typing judgement.
+/// - ensures: retains the named refusal category and its declared payload so
+///   distinct format causes remain observable.
+/// - panics: none.
+/// - executable: none — this closed classification is a data declaration;
+///   reader operations select it and formatting exposes its payload.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers every refusal category and site, all tag-byte
+///   spellings, version and quantity ceilings, the two sort literals, and
+///   refusal by a real exhausted byte sink. It observes distinct causes,
+///   complete numeric payloads and exact sink error kinds, separating collapsed
+///   classifications, lost high bits and swallowed failures. Diagnostic wording
+///   and nondefault formatter flags are outside the hypothesis.
+/// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReservedSlot
 {
@@ -88,6 +135,19 @@ impl fmt::Display for ReservedSlot
     ///   reserved slot names itself.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   its output nor refusal state; observing those effects here would
+    ///   require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -104,6 +164,23 @@ impl fmt::Display for ReservedSlot
 }
 
 /// Where in the closed grammar an unknown tag byte was met.
+///
+/// # Specification
+/// - requires: the value classifies a format refusal, not a typing judgement.
+/// - ensures: retains the named refusal category and its declared payload so
+///   distinct format causes remain observable.
+/// - panics: none.
+/// - executable: none — this closed classification is a data declaration;
+///   reader operations select it and formatting exposes its payload.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers every refusal category and site, all tag-byte
+///   spellings, version and quantity ceilings, the two sort literals, and
+///   refusal by a real exhausted byte sink. It observes distinct causes,
+///   complete numeric payloads and exact sink error kinds, separating collapsed
+///   classifications, lost high bits and swallowed failures. Diagnostic wording
+///   and nondefault formatter flags are outside the hypothesis.
+/// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TagSite
 {
@@ -136,6 +213,19 @@ impl fmt::Display for TagSite
     ///   message says which alphabet the tag was read against.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   its output nor refusal state; observing those effects here would
+    ///   require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -156,6 +246,23 @@ impl fmt::Display for TagSite
 }
 
 /// Which structural invariant a malformed artifact violated.
+///
+/// # Specification
+/// - requires: the value classifies a format refusal, not a typing judgement.
+/// - ensures: retains the named refusal category and its declared payload so
+///   distinct format causes remain observable.
+/// - panics: none.
+/// - executable: none — this closed classification is a data declaration;
+///   reader operations select it and formatting exposes its payload.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers every refusal category and site, all tag-byte
+///   spellings, version and quantity ceilings, the two sort literals, and
+///   refusal by a real exhausted byte sink. It observes distinct causes,
+///   complete numeric payloads and exact sink error kinds, separating collapsed
+///   classifications, lost high bits and swallowed failures. Diagnostic wording
+///   and nondefault formatter flags are outside the hypothesis.
+/// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MalformedSite
 {
@@ -210,6 +317,19 @@ impl fmt::Display for MalformedSite
     ///   the message names the discipline the bytes broke.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   its output nor refusal state; observing those effects here would
+    ///   require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -238,6 +358,23 @@ impl fmt::Display for MalformedSite
 }
 
 /// Why decoding an artifact failed.
+///
+/// # Specification
+/// - requires: the value classifies a format refusal, not a typing judgement.
+/// - ensures: retains the named refusal category and its declared payload so
+///   distinct format causes remain observable.
+/// - panics: none.
+/// - executable: none — this closed classification is a data declaration;
+///   reader operations select it and formatting exposes its payload.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers every refusal category and site, all tag-byte
+///   spellings, version and quantity ceilings, the two sort literals, and
+///   refusal by a real exhausted byte sink. It observes distinct causes,
+///   complete numeric payloads and exact sink error kinds, separating collapsed
+///   classifications, lost high bits and swallowed failures. Diagnostic wording
+///   and nondefault formatter flags are outside the hypothesis.
+/// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DecodeError
 {
@@ -290,6 +427,19 @@ impl fmt::Display for DecodeError
     ///   nothing an attacker could not already infer.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   its output nor refusal state; observing those effects here would
+    ///   require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -322,8 +472,12 @@ impl Error for DecodeError
 #[cfg(test)]
 mod tests
 {
+    extern crate std;
+
     use alloc::format;
     use alloc::string::String;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     use super::DecodeError;
     use super::MalformedSite;
@@ -334,141 +488,140 @@ mod tests
     use crate::wire::WireTag;
 
     #[test]
-    fn every_refusal_renders_its_site_and_its_byte()
+    fn diagnostics_preserve_semantic_distinctions_and_sink_refusal()
     {
-        assert_eq!(
-            String::from("unknown tag 0x2a where a subterm-table node tag was expected"),
-            format!("{}", DecodeError::UnknownTag {
-                site: TagSite::Node,
-                tag: WireTag::from(0x2a),
-            })
-        );
-        assert_eq!(
-            String::from("malformed artifact: the bytes were not the canonical encoding"),
-            format!("{}", DecodeError::Malformed {
-                site: MalformedSite::NonCanonical,
-            })
-        );
-        assert_eq!(
-            String::from("the reserved declaration kind FunctorDef is not admitted"),
-            format!("{}", DecodeError::ReservedDeclarationKind {
-                kind: ReservedKind::FunctorDef,
-            })
-        );
-        assert_eq!(
-            String::from("the minted-atom table did not hold its required content"),
-            format!("{}", DecodeError::ReservedSlotOccupied {
-                slot: ReservedSlot::MintedAtomTable,
-            })
-        );
-        assert_eq!(
-            String::from("unsupported artifact format version 0"),
-            format!("{}", DecodeError::UnsupportedVersion {
-                found: FormatVersion::from(0),
-            })
-        );
-        assert_eq!(
-            String::from("the artifact ended mid-field"),
-            format!("{}", DecodeError::Truncated)
-        );
-    }
-
-    #[test]
-    fn every_tag_site_and_malformed_site_names_itself()
-    {
-        let sites = [
-            (TagSite::Admission, "an admission mark"),
-            (TagSite::DeclarationKind, "a declaration kind"),
-            (TagSite::Node, "a subterm-table node tag"),
-            (TagSite::BaseType, "a base-type atom"),
-            (TagSite::Sign, "a literal sign"),
-            (TagSite::LiteralKind, "a literal kind"),
-            (TagSite::Side, "an injection side"),
-            (TagSite::ConstraintRelation, "a constraint relation"),
-        ];
-        for (site, expected) in sites {
-            assert_eq!(String::from(expected), format!("{site}"));
+        let mut empty = [];
+        let refusal = self::std::io::Write::write_all(&mut empty.as_mut_slice(), b"x")
+            .expect_err("an exhausted byte sink refuses output")
+            .kind();
+        let check_sink = |value: &dyn core::fmt::Display| {
+            let mut storage = [];
+            let actual = self::std::io::Write::write_fmt(
+                &mut storage.as_mut_slice(),
+                format_args!("{value}"),
+            )
+            .expect_err("formatting propagates sink refusal");
+            assert_eq!(refusal, actual.kind());
+        };
+        let distinct = |texts: Vec<String>| {
+            for (index, text) in texts.iter().enumerate() {
+                for other in texts.iter().skip(index.saturating_add(1)) {
+                    assert_ne!(text, other, "different causes remain distinguishable");
+                }
+            }
+        };
+        let mut errors = vec![DecodeError::Truncated];
+        let mut names = Vec::new();
+        for kind in [
+            ReservedKind::ModuleSig,
+            ReservedKind::ModuleDef,
+            ReservedKind::FunctorDef,
+        ] {
+            names.push(format!("{kind}"));
+            check_sink(&kind);
+            let error = DecodeError::ReservedDeclarationKind { kind };
+            assert!(format!("{error}").contains(format!("{kind}").as_str()));
+            errors.push(error);
         }
-
-        let malformed = [
-            (MalformedSite::Header, "the artifact magic did not match"),
-            (
-                MalformedSite::Varint,
-                "a varint was overlong or out of range",
-            ),
-            (
-                MalformedSite::IndexRange,
-                "a decoded index did not fit its width",
-            ),
-            (
-                MalformedSite::LevelOffset,
-                "a level atom offset exceeded the decode cap",
-            ),
-            (
-                MalformedSite::ConstraintForm,
-                "a constraint side was not variable-only",
-            ),
-            (
-                MalformedSite::LiteralPayload,
-                "a literal payload was not reconstructible",
-            ),
-            (
-                MalformedSite::Polarity,
-                "a decoded node had the wrong polarity for its slot",
-            ),
-            (
-                MalformedSite::ChildOrder,
-                "a child index was not strictly earlier than its entry",
-            ),
-            (
-                MalformedSite::TableSize,
-                "the subterm table exceeded the entry cap",
-            ),
-            (
-                MalformedSite::ExpandedWork,
-                "a declaration's expanded size exceeded the work cap",
-            ),
-            (
-                MalformedSite::ArtifactExpandedWork,
-                "the artifact-total expanded size exceeded the artifact work cap",
-            ),
-            (
-                MalformedSite::NonCanonical,
-                "the bytes were not the canonical encoding",
-            ),
-            (
-                MalformedSite::TrailingBytes,
-                "bytes remained after a complete artifact",
-            ),
-        ];
-        for (site, expected) in malformed {
-            assert_eq!(String::from(expected), format!("{site}"));
+        distinct(names);
+        let mut names = Vec::new();
+        for slot in [
+            ReservedSlot::MintedAtomTable,
+            ReservedSlot::ErasureAnnotation,
+            ReservedSlot::ModeGradeAnnotation,
+            ReservedSlot::DirectednessVariance,
+        ] {
+            names.push(format!("{slot}"));
+            check_sink(&slot);
+            let error = DecodeError::ReservedSlotOccupied { slot };
+            assert!(format!("{error}").contains(format!("{slot}").as_str()));
+            errors.push(error);
         }
-
-        let slots = [
-            (
-                ReservedSlot::ErasureAnnotation,
-                "the erasure annotation slot",
-            ),
-            (
-                ReservedSlot::ModeGradeAnnotation,
-                "the modes-and-grades annotation slot",
-            ),
-            (
-                ReservedSlot::DirectednessVariance,
-                "the directedness-and-variance annotation slot",
-            ),
-        ];
-        for (slot, expected) in slots {
-            assert_eq!(String::from(expected), format!("{slot}"));
+        distinct(names);
+        let mut names = Vec::new();
+        for site in [
+            TagSite::Admission,
+            TagSite::DeclarationKind,
+            TagSite::Node,
+            TagSite::BaseType,
+            TagSite::Sign,
+            TagSite::LiteralKind,
+            TagSite::Side,
+            TagSite::ConstraintRelation,
+        ] {
+            names.push(format!("{site}"));
+            check_sink(&site);
+            for byte in [0u8, 127, 128, 255] {
+                let error = DecodeError::UnknownTag {
+                    site,
+                    tag: WireTag(byte),
+                };
+                let text = format!("{error}");
+                assert!(text.contains(format!("{site}").as_str()));
+                assert!(text.contains(format!("0x{byte:02x}").as_str()));
+                errors.push(error);
+            }
         }
-
-        let kinds = [
-            (ReservedKind::ModuleSig, "ModuleSig"),
-            (ReservedKind::ModuleDef, "ModuleDef"),
-        ];
-        for (kind, expected) in kinds {
-            assert_eq!(String::from(expected), format!("{kind}"));
+        distinct(names);
+        let mut names = Vec::new();
+        for site in [
+            MalformedSite::Header,
+            MalformedSite::Varint,
+            MalformedSite::IndexRange,
+            MalformedSite::LevelOffset,
+            MalformedSite::ConstraintForm,
+            MalformedSite::LiteralPayload,
+            MalformedSite::NameSegment,
+            MalformedSite::Polarity,
+            MalformedSite::ChildOrder,
+            MalformedSite::TableSize,
+            MalformedSite::ExpandedWork,
+            MalformedSite::ArtifactExpandedWork,
+            MalformedSite::NonCanonical,
+            MalformedSite::TrailingBytes,
+        ] {
+            names.push(format!("{site}"));
+            check_sink(&site);
+            let error = DecodeError::Malformed { site };
+            assert!(format!("{error}").contains(format!("{site}").as_str()));
+            errors.push(error);
+        }
+        distinct(names);
+        for version in [0u16, 1, u16::MAX] {
+            let wrapped = FormatVersion(version);
+            assert_eq!(format!("{version}"), format!("{wrapped}"));
+            check_sink(&wrapped);
+            let error = DecodeError::UnsupportedVersion { found: wrapped };
+            assert!(format!("{error}").contains(format!("{version}").as_str()));
+            errors.push(error);
+        }
+        let mut rendered = Vec::new();
+        for error in errors {
+            check_sink(&error);
+            rendered.push(format!("{error}"));
+        }
+        distinct(rendered);
+        for byte in 0u8 ..= u8::MAX {
+            let tag = WireTag(byte);
+            assert_eq!(format!("0x{byte:02x}"), format!("{tag}"));
+            check_sink(&tag);
+        }
+        for quantity in [0u64, 1, u64::MAX] {
+            let work = crate::ExpandedWork(quantity);
+            assert_eq!(format!("{quantity}"), format!("{work}"));
+            check_sink(&work);
+        }
+        for quantity in [0usize, 1, usize::MAX] {
+            let count = crate::TableEntryCount(quantity);
+            assert_eq!(format!("{quantity}"), format!("{count}"));
+            check_sink(&count);
+        }
+        for (sort, literal) in [
+            (crate::GroundSort::Value, "+"),
+            (crate::GroundSort::Computation, "-"),
+        ] {
+            assert_eq!(literal, format!("{sort}"));
+            check_sink(&sort);
         }
     }
 }

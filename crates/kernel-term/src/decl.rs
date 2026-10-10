@@ -21,6 +21,24 @@ use crate::arena::ValueTypeId;
 use crate::term::ConstantIndex;
 
 /// The number of prenex level parameters a declaration binds.
+///
+/// # Specification
+/// - requires: all u32 parameter counts are representable.
+/// - ensures: distinguishes a parameter count from a level variable index; no
+///   scope validation is implied.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers all four finishers over staged four-family graphs,
+///   with ordered level constraints, unchecked parameter counts, distinct roots
+///   and malformed sealing provenance. Full arena snapshots and metadata
+///   observations separate premature rollback, changed roots, reordered
+///   constraints and silently normalized producer claims. Both admission marks
+///   and replacement names are observed, but neither the tests nor this data
+///   layer prove admission, typing or the truth of provenance.
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LevelParamCount(u32);
@@ -59,6 +77,26 @@ impl From<LevelParamCount> for u32
 /// sequence, and the reader compares them against positions it re-derived. The
 /// wrapper is what stops one being crossed with a subterm-table index or a byte
 /// offset at a signature.
+///
+/// # Specification
+/// - requires: all host admission positions are representable.
+/// - ensures: distinguishes a claimed minted-atom position from a subterm-table
+///   index; the decoder validates the complete table against declarations.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L0 distinguishes a claimed admission position from wire
+///   indices. L3 takes a two-declaration artifact containing one abstract type
+///   and one definition, then replaces its atom table with a repeat, an
+///   omission or the definition’s position. Exact slot refusal and retained
+///   declaration kind separate unchecked claims and position confusion;
+///   host-width ceilings and longer tables are not covered by these fixtures.
+/// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+/// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
+/// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
+/// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MintedAtom(usize);
@@ -91,6 +129,25 @@ impl From<MintedAtom> for usize
 
 /// A declaration's prenex level interface: how many level parameters it binds
 /// and which landmark constraints it declares over them.
+///
+/// # Specification
+/// - requires: all parameter counts and ordered, individually well-formed
+///   landmark constraints are admitted.
+/// - ensures: retains the ordered producer interface without validating
+///   variable scope or consistency.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers all four finishers over staged four-family graphs,
+///   with ordered level constraints, unchecked parameter counts, distinct roots
+///   and malformed sealing provenance. Full arena snapshots and metadata
+///   observations separate premature rollback, changed roots, reordered
+///   constraints and silently normalized producer claims. Both admission marks
+///   and replacement names are observed, but neither the tests nor this data
+///   layer prove admission, typing or the truth of provenance.
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LevelSignature
 {
@@ -111,6 +168,21 @@ impl LevelSignature
     /// - provides: the one monomorphic signature, so a declaration that binds
     ///   nothing does not have to spell an empty constraint list.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        ensures: |ret| ret.params.0 == 0
+                && ret.constraints.is_empty(),
+    )]
     #[inline]
     #[must_use]
     pub fn monomorphic() -> Self
@@ -130,6 +202,17 @@ impl LevelSignature
     /// - provides: the level interface a declaration crosses the format with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     #[inline]
     #[must_use]
     #[spec(captures: [entry_constraint_count = constraints.len()], ensures: |ret| ret.params() == params && ret.constraints().len() == entry_constraint_count)]
@@ -171,6 +254,25 @@ impl LevelSignature
 ///
 /// The derived equality is child-id equality within one arena, never structural
 /// equality across arenas; code needing agreement across arenas re-encodes.
+///
+/// # Specification
+/// - requires: typed root ids are supplied; liveness and typing are external
+///   obligations.
+/// - ensures: distinguishes definitions, axioms and abstract types; derived
+///   equality compares root ids rather than recursively comparing arenas.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers all four finishers over staged four-family graphs,
+///   with ordered level constraints, unchecked parameter counts, distinct roots
+///   and malformed sealing provenance. Full arena snapshots and metadata
+///   observations separate premature rollback, changed roots, reordered
+///   constraints and silently normalized producer claims. Both admission marks
+///   and replacement names are observed, but neither the tests nor this data
+///   layer prove admission, typing or the truth of provenance.
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationContent
 {
@@ -205,40 +307,30 @@ pub enum DeclarationContent
     },
 }
 
-impl DeclarationContent
-{
-    /// The declared value-type root: the declared type of a definition or an
-    /// axiom, and the kind of an abstract type.
-    ///
-    /// The three share one accessor because they share one well-formedness
-    /// obligation — whatever the root is, it must form. What differs is what
-    /// admission additionally demands of it, which is not this crate's plane.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: returns the declared value-type root, whichever of the three
-    ///   forms the content takes.
-    /// - provides: the one root every form owes well-formedness for, so a
-    ///   consumer checking that obligation cannot reach a form it forgot.
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    pub const fn declared_id(&self) -> ValueTypeId
-    {
-        match *self {
-            | Self::Def { declared, .. }
-            | Self::Axiom { declared }
-            | Self::AbstractType { kind: declared } => declared,
-        }
-    }
-}
-
 /// One segment of a declaration's structured name: text holding no `.`.
 ///
 /// A name is a list of segments, never one dotted string. A segment holding the
 /// separator would let two different lists render as one string, so the
 /// constructor refuses it and the decoder refuses it on the wire; a namespace
 /// layer's dotted spelling cannot become an exported identity either way.
+///
+/// # Specification
+/// - requires: text contains no ASCII period; empty and arbitrary remaining
+///   UTF-8 text are admitted.
+/// - ensures: retains a separator-free segment without normalization.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 classifies empty segments, a period at each boundary and in
+///   the middle, NUL, line breaks, other punctuation, a fullwidth period and
+///   composed/decomposed Unicode. Exact accepted bytes and refusal
+///   classification separate a broadened delimiter set, invented normalization
+///   and accidental empty-segment rejection. This is a finite UTF-8 boundary
+///   domain, not an exhaustive Unicode proof.
+/// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
+/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NameSegment(String);
@@ -261,16 +353,25 @@ impl NameSegment
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a segment holding the separator at its start, middle
-    ///   and end is refused beside the bare segment it differs from by one
-    ///   character, which is accepted.
+    /// - hypothesis: L3 classifies empty segments, a period at each boundary
+    ///   and in the middle, NUL, line breaks, other punctuation, a fullwidth
+    ///   period and composed/decomposed Unicode. Exact accepted bytes and
+    ///   refusal classification separate a broadened delimiter set, invented
+    ///   normalization and accidental empty-segment rejection. This is a finite
+    ///   UTF-8 boundary domain, not an exhaustive Unicode proof.
+    /// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
     /// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+    #[spec(
+        captures: entry = (!text.contains(Self::SEPARATOR), text.len(), text.as_bytes().first().copied(), text.as_bytes().last().copied()),
+        ensures: |ret| ret.as_ref().map_or(!entry.0,
+            |segment| entry.0
+                && segment.0.len() == entry.1
+                && segment.0.as_bytes().first().copied() == entry.2
+                && segment.0.as_bytes().last().copied() == entry.3
+                && !segment.0.contains(Self::SEPARATOR)),
+    )]
     #[inline]
     #[must_use]
-    #[spec(
-        captures: entry_is_bare = !text.contains(Self::SEPARATOR),
-        ensures: |ret| ret.is_some() == entry_is_bare,
-    )]
     pub fn from_text(text: String) -> Option<Self>
     {
         if text.contains(Self::SEPARATOR) {
@@ -298,6 +399,26 @@ impl AsRef<str> for NameSegment
 /// The name is identity for a reader and nothing more. A reference reads the
 /// admission position of what it names, so a declaration carries no name until
 /// a producer gives it one, and no check reads it.
+///
+/// # Specification
+/// - requires: any ordered segment sequence is admitted, including no segments
+///   and empty segments.
+/// - ensures: retains the ordered reader identity; names do not participate in
+///   typing or admission-position references.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 classifies empty segments, a period at each boundary and in
+///   the middle, NUL, line breaks, other punctuation, a fullwidth period and
+///   composed/decomposed Unicode. Exact accepted bytes and refusal
+///   classification separate a broadened delimiter set, invented normalization
+///   and accidental empty-segment rejection. This is a finite UTF-8 boundary
+///   domain, not an exhaustive Unicode proof.
+/// - witness: `decl::tests::names_classify_the_separator_without_normalizing_unicode`
+/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StructuredName(Vec<NameSegment>);
@@ -331,6 +452,25 @@ impl From<Vec<NameSegment>> for StructuredName
 
 /// A declaration: a level interface, its content roots, its sealing
 /// provenance, and its structured name.
+///
+/// # Specification
+/// - requires: root ids and producer metadata are supplied; their admission
+///   obligations are external.
+/// - ensures: carries levels, content, provenance and an optional structured
+///   name without validating the producer’s claims.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers all four finishers over staged four-family graphs,
+///   with ordered level constraints, unchecked parameter counts, distinct roots
+///   and malformed sealing provenance. Full arena snapshots and metadata
+///   observations separate premature rollback, changed roots, reordered
+///   constraints and silently normalized producer claims. Both admission marks
+///   and replacement names are observed, but neither the tests nor this data
+///   layer prove admission, typing or the truth of provenance.
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration
 {
@@ -424,10 +564,26 @@ impl Declaration
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — generated names given to a definition, an axiom and
-    ///   an abstract type survive the round trip with the content beside them
-    ///   unchanged.
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+    #[spec(
+        captures: entry = (self.content, self.levels.params, self.levels.constraints.len(), self.provenance.len(), self.provenance.first().copied(), self.provenance.last().copied(), name.0.len()),
+        ensures: |ret| ret.content == entry.0
+                && ret.levels.params == entry.1
+                && ret.levels.constraints.len() == entry.2
+                && ret.provenance.len() == entry.3
+                && ret.provenance.first().copied() == entry.4
+                && ret.provenance.last().copied() == entry.5
+                && ret.name.0.len() == entry.6,
+    )]
     #[inline]
     #[must_use]
     pub fn named(
@@ -439,7 +595,7 @@ impl Declaration
     }
 }
 
-/// How a declaration was admitted in the environment that produced it.
+/// The producer’s claimed admission mode, not evidence of successful checking.
 ///
 /// One bit, never a trust lattice: either the checked choke point admitted it
 /// or a warned bypass did, and the artifact carries which so the audit survives
@@ -457,6 +613,24 @@ pub enum AdmissionMark
 ///
 /// This is the unit an artifact is a sequence of, in admission order, in both
 /// directions: the encoder takes a slice of them and the decoder returns one.
+///
+/// # Specification
+/// - requires: the caller pairs its claimed admission mode with a declaration.
+/// - ensures: retains both data components without providing evidence that
+///   checking occurred.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; constructors
+///   and consumers supply its executable observations.
+///
+/// # Adequacy
+/// - hypothesis: L3 covers all four finishers over staged four-family graphs,
+///   with ordered level constraints, unchecked parameter counts, distinct roots
+///   and malformed sealing provenance. Full arena snapshots and metadata
+///   observations separate premature rollback, changed roots, reordered
+///   constraints and silently normalized producer claims. Both admission marks
+///   and replacement names are observed, but neither the tests nor this data
+///   layer prove admission, typing or the truth of provenance.
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MarkedDeclaration
 {
@@ -471,12 +645,27 @@ impl MarkedDeclaration
     /// Pair an admission mark with a declaration.
     ///
     /// # Specification
-    /// - requires: `mark` is the mark admission issued for `declaration`.
+    /// - requires: a producer-supplied admission-mode claim; the relationship
+    ///   between the mark and declaration is not validated here.
     /// - ensures: returns the pair carrying both unchanged.
-    /// - provides: the marked declaration a consumer stores; the pairing is the
-    ///   caller's claim, since a mark carries no reference back to the
-    ///   declaration it was issued for.
+    /// - provides: the marked data a consumer stores, not evidence that
+    ///   admission occurred or succeeded.
+    /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        ensures: |ret| matches!((ret.mark, mark), (AdmissionMark::Checked, AdmissionMark::Checked) | (AdmissionMark::UncheckedBypass, AdmissionMark::UncheckedBypass)),
+    )]
     #[inline]
     #[must_use]
     pub const fn new(
@@ -532,19 +721,31 @@ impl MarkedDeclaration
 ///   each family to `min(current_len, content_start)`.
 /// - provides: the construction surface that ties content minting to the
 ///   watermark discipline, so the truncation is structural rather than a step a
-///   failure path has to remember. This lifecycle contract stays prose: a
-///   data-item `#[spec]` has no constructor-to-finisher or destructor
-///   observation.
+///   failure path has to remember. Constructor, finisher and destructor
+///   predicates observe their own boundaries; caller-visible rollback is
+///   witnessed after the mutable arena borrow ends.
 /// - fails: never — minting is total.
 /// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; predicates
+///   on new, arena, finishers and Drop observe its lifecycle locally.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the rollback has one decision surface, separated by the
-///   scope-exit abandonment, the explicit discard, and a finisher run, each
-///   with the surviving arena content asserted exactly.
+/// - hypothesis: L3 covers scope exit and explicit discard over nonempty
+///   four-family prefixes, then truncation below a saved mark. Whole-arena
+///   equality observes retained payloads as well as lengths and separates
+///   accidental growth, prefix damage and a forgotten rollback. Allocation
+///   failure and panic unwinding are outside these probes. L3 covers all four
+///   finishers over staged four-family graphs, with ordered level constraints,
+///   unchecked parameter counts, distinct roots and malformed sealing
+///   provenance. Full arena snapshots and metadata observations separate
+///   premature rollback, changed roots, reordered constraints and silently
+///   normalized producer claims. Both admission marks and replacement names are
+///   observed, but neither the tests nor this data layer prove admission,
+///   typing or the truth of provenance.
+/// - witness: `decl::tests::rollback_covers_all_families_and_never_regrows_a_truncated_prefix`
 /// - witness: `decl::tests::an_abandoned_builder_restores_the_arena`
 /// - witness: `decl::tests::a_discarded_builder_restores_the_arena`
-/// - witness: `decl::tests::a_finished_builder_keeps_its_content`
+/// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
 pub struct DeclarationBuilder<'arena>
 {
     /// The borrowed arena.
@@ -566,6 +767,30 @@ impl<'arena> DeclarationBuilder<'arena>
     ///   the arena, and dropping the builder before one truncates each family
     ///   to `min(current_len, content_start)`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers scope exit and explicit discard over nonempty
+    ///   four-family prefixes, then truncation below a saved mark. Whole-arena
+    ///   equality observes retained payloads as well as lengths and separates
+    ///   accidental growth, prefix damage and a forgotten rollback. Allocation
+    ///   failure and panic unwinding are outside these probes. L3 covers all
+    ///   four finishers over staged four-family graphs, with ordered level
+    ///   constraints, unchecked parameter counts, distinct roots and malformed
+    ///   sealing provenance. Full arena snapshots and metadata observations
+    ///   separate premature rollback, changed roots, reordered constraints and
+    ///   silently normalized producer claims. Both admission marks and
+    ///   replacement names are observed, but neither the tests nor this data
+    ///   layer prove admission, typing or the truth of provenance.
+    /// - witness: `decl::tests::rollback_covers_all_families_and_never_regrows_a_truncated_prefix`
+    /// - witness: `decl::tests::an_abandoned_builder_restores_the_arena`
+    /// - witness: `decl::tests::a_discarded_builder_restores_the_arena`
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        captures: entry = (arena.watermark(), &raw const *arena),
+        ensures: |ret| ret.content_start == entry.0
+                && ret.arena.watermark() == entry.0
+                && core::ptr::eq(&raw const *ret.arena, entry.1),
+    )]
     #[inline]
     #[must_use]
     pub fn new(arena: &'arena mut TermArena) -> Self
@@ -599,6 +824,21 @@ impl<'arena> DeclarationBuilder<'arena>
     ///   before a finisher truncates each family to `min(current_len,
     ///   content_start)`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers scope exit and explicit discard over nonempty
+    ///   four-family prefixes, then truncation below a saved mark. Whole-arena
+    ///   equality observes retained payloads as well as lengths and separates
+    ///   accidental growth, prefix damage and a forgotten rollback. Allocation
+    ///   failure and panic unwinding are outside these probes.
+    /// - witness: `decl::tests::rollback_covers_all_families_and_never_regrows_a_truncated_prefix`
+    /// - witness: `decl::tests::an_abandoned_builder_restores_the_arena`
+    /// - witness: `decl::tests::a_discarded_builder_restores_the_arena`
+    #[spec(
+        captures: entry = (self.arena.watermark(), &raw const *self.arena),
+        ensures: |ret| ret.watermark() == entry.0
+                && core::ptr::eq(&raw const *ret, entry.1),
+    )]
     #[inline]
     pub fn arena(&mut self) -> &mut TermArena
     {
@@ -622,6 +862,19 @@ impl<'arena> DeclarationBuilder<'arena>
     ///   changing this signature.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — rollback happens when the consumed builder drops,
+    ///   after normal-return checks; this signature exposes no safe post-drop
+    ///   arena borrow to the predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers scope exit and explicit discard over nonempty
+    ///   four-family prefixes, then truncation below a saved mark. Whole-arena
+    ///   equality observes retained payloads as well as lengths and separates
+    ///   accidental growth, prefix damage and a forgotten rollback. Allocation
+    ///   failure and panic unwinding are outside these probes.
+    /// - witness: `decl::tests::rollback_covers_all_families_and_never_regrows_a_truncated_prefix`
+    /// - witness: `decl::tests::an_abandoned_builder_restores_the_arena`
+    /// - witness: `decl::tests::a_discarded_builder_restores_the_arena`
     #[inline]
     pub fn discard(self)
     {
@@ -632,17 +885,36 @@ impl<'arena> DeclarationBuilder<'arena>
     /// Finalize a definition over an already-minted declared type and body.
     ///
     /// # Specification
-    /// - requires: `declared` and `body` were minted through this builder, and
-    ///   `levels` is the declaration's prenex interface. Whether the body
-    ///   inhabits the declared type is a typing fact, refused at the choke
-    ///   point rather than here.
-    /// - ensures: returns the definition over the two roots with empty
-    ///   provenance, and leaves the staged content in the arena rather than
-    ///   rolling it back.
-    /// - provides: the finisher that keeps a definition's content alive; the
-    ///   builder is consumed, so no second finisher and no rollback can follow
-    ///   it.
+    /// - requires: declared and body resolve in the borrowed arena, including
+    ///   roots that predate the builder’s saved mark. The level interface is a
+    ///   producer claim; typing is checked elsewhere.
+    /// - ensures: returns a definition over those roots with the supplied
+    ///   levels, empty provenance and no name; all staged arena content remains
+    ///   allocated.
+    /// - provides: a consuming finisher that permits shared prefix roots and
+    ///   suppresses rollback.
+    /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        requires: self.arena.value_type(declared).is_some()
+                && self.arena.value(body).is_some(), captures: entry = (levels.params, levels.constraints.len()),
+        ensures: |ret| ret.content == DeclarationContent::Def { declared, body }
+                && ret.levels.params == entry.0
+                && ret.levels.constraints.len() == entry.1
+                && ret.name.0.is_empty()
+                && ret.provenance.is_empty(),
+    )]
     #[inline]
     #[must_use]
     pub fn def(
@@ -673,10 +945,29 @@ impl<'arena> DeclarationBuilder<'arena>
     /// - provides: the sealed-member construction surface.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        captures: entry = (levels.params, levels.constraints.len(), provenance.len(), provenance.first().copied(), provenance.last().copied()),
+        ensures: |ret| ret.content == DeclarationContent::Def { declared, body }
+                && ret.levels.params == entry.0
+                && ret.levels.constraints.len() == entry.1
+                && ret.name.0.is_empty()
+                && ret.provenance.len() == entry.2
+                && ret.provenance.first().copied() == entry.3
+                && ret.provenance.last().copied() == entry.4,
+    )]
     #[inline]
     #[must_use]
-    #[spec(captures: [entry_provenance_count = provenance.len()], ensures: |ret| matches!(*ret.content(), DeclarationContent::Def { .. })
-        && ret.provenance().len() == entry_provenance_count)]
     pub fn sealed_def(
         self,
         levels: LevelSignature,
@@ -697,14 +988,35 @@ impl<'arena> DeclarationBuilder<'arena>
     /// Finalize an axiom over an already-minted declared type.
     ///
     /// # Specification
-    /// - requires: `declared` was minted through this builder, and `levels` is
-    ///   the declaration's prenex interface.
-    /// - ensures: returns the axiom over that root with empty provenance, and
-    ///   leaves the staged content in the arena rather than rolling it back.
-    /// - provides: the finisher for a declaration asserted without a body; the
-    ///   builder is consumed, so no second finisher and no rollback can follow
-    ///   it.
+    /// - requires: declared resolves in the borrowed arena, including a root
+    ///   that predates the builder’s saved mark. The level interface remains a
+    ///   producer claim.
+    /// - ensures: returns an axiom over that root with the supplied levels,
+    ///   empty provenance and no name; all staged arena content remains
+    ///   allocated.
+    /// - provides: a consuming, body-free finisher that permits shared prefix
+    ///   roots and suppresses rollback.
+    /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        requires: self.arena.value_type(declared).is_some(), captures: entry = (levels.params, levels.constraints.len()),
+        ensures: |ret| ret.content == DeclarationContent::Axiom { declared }
+                && ret.levels.params == entry.0
+                && ret.levels.constraints.len() == entry.1
+                && ret.name.0.is_empty()
+                && ret.provenance.is_empty(),
+    )]
     #[inline]
     #[must_use]
     pub fn axiom(
@@ -733,10 +1045,27 @@ impl<'arena> DeclarationBuilder<'arena>
     /// - provides: the atom-minting construction surface.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers all four finishers over staged four-family
+    ///   graphs, with ordered level constraints, unchecked parameter counts,
+    ///   distinct roots and malformed sealing provenance. Full arena snapshots
+    ///   and metadata observations separate premature rollback, changed roots,
+    ///   reordered constraints and silently normalized producer claims. Both
+    ///   admission marks and replacement names are observed, but neither the
+    ///   tests nor this data layer prove admission, typing or the truth of
+    ///   provenance.
+    /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
+    #[spec(
+        captures: entry = (levels.params, levels.constraints.len()),
+        ensures: |ret| ret.content == DeclarationContent::AbstractType { kind }
+                && ret.levels.params == entry.0
+                && ret.levels.constraints.len() == entry.1
+                && ret.name.0.is_empty()
+                && ret.provenance.is_empty(),
+    )]
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| matches!(*ret.content(), DeclarationContent::AbstractType { .. })
-        && ret.provenance().is_empty())]
     pub fn abstract_type(
         self,
         levels: LevelSignature,
@@ -765,6 +1094,20 @@ impl Drop for DeclarationBuilder<'_>
     /// - provides: the truncation that ends an abandoned staging scope, so no
     ///   failure path has to name the watermark itself.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers scope exit and explicit discard over nonempty
+    ///   four-family prefixes, then truncation below a saved mark. Whole-arena
+    ///   equality observes retained payloads as well as lengths and separates
+    ///   accidental growth, prefix damage and a forgotten rollback. Allocation
+    ///   failure and panic unwinding are outside these probes.
+    /// - witness: `decl::tests::rollback_covers_all_families_and_never_regrows_a_truncated_prefix`
+    /// - witness: `decl::tests::an_abandoned_builder_restores_the_arena`
+    /// - witness: `decl::tests::a_discarded_builder_restores_the_arena`
+    #[spec(
+        captures: entry = self.arena.watermark(),
+        ensures: |ret| self.arena.watermark() == self.content_start.clamped_into(ArenaWatermark::default(), entry),
+    )]
     #[inline]
     fn drop(&mut self)
     {
@@ -778,6 +1121,235 @@ mod tests
     use super::DeclarationBuilder;
     use super::LevelSignature;
     use crate::arena::TermArena;
+
+    #[test]
+    fn names_classify_the_separator_without_normalizing_unicode()
+    {
+        for (text, accepted) in [
+            ("", true),
+            ("a", true),
+            ("é", true),
+            ("e\u{301}", true),
+            ("．", true),
+            ("a/b", true),
+            ("a\\b", true),
+            ("a\0b", true),
+            ("\r\n", true),
+            (".", false),
+            (".a", false),
+            ("a.", false),
+            ("a.b", false),
+            ("a..b", false),
+            ("é.文", false),
+        ] {
+            let segment = super::NameSegment::from_text(alloc::string::String::from(text));
+            assert_eq!(segment.is_some(), accepted, "{text:?}");
+            if let Some(segment) = segment {
+                assert_eq!(segment.as_ref().as_bytes(), text.as_bytes());
+            }
+        }
+        let unnamed = super::StructuredName::default();
+        let empty_segment = super::StructuredName::from(alloc::vec![
+            super::NameSegment::from_text(alloc::string::String::new())
+                .expect("an empty segment has no separator")
+        ]);
+        let mut arena = TermArena::new();
+        let mut builder = DeclarationBuilder::new(&mut arena);
+        let declared = builder.arena().value_type_unit();
+        let body = builder.arena().value_unit();
+        let declaration = builder.def(LevelSignature::monomorphic(), declared, body);
+        let unnamed_bytes = crate::encode::encode(&arena, &[super::MarkedDeclaration::new(
+            super::AdmissionMark::Checked,
+            declaration.clone().named(unnamed.clone()),
+        )]);
+        let empty_segment_bytes = crate::encode::encode(&arena, &[super::MarkedDeclaration::new(
+            super::AdmissionMark::Checked,
+            declaration.named(empty_segment.clone()),
+        )]);
+        assert_ne!(
+            unnamed_bytes, empty_segment_bytes,
+            "no segments and one empty segment have distinct wire identities"
+        );
+        let unnamed_decoded =
+            crate::decode::decode(unnamed_bytes.as_image()).expect("unnamed declaration");
+        let empty_segment_decoded =
+            crate::decode::decode(empty_segment_bytes.as_image()).expect("empty named segment");
+        assert_eq!(
+            unnamed_decoded
+                .declarations()
+                .first()
+                .expect("one declaration")
+                .declaration()
+                .name(),
+            &unnamed
+        );
+        assert_eq!(
+            empty_segment_decoded
+                .declarations()
+                .first()
+                .expect("one declaration")
+                .declaration()
+                .name(),
+            &empty_segment
+        );
+    }
+
+    #[test]
+    fn rollback_covers_all_families_and_never_regrows_a_truncated_prefix()
+    {
+        for explicit in [false, true] {
+            for shortened in [false, true] {
+                let mut arena = TermArena::new();
+                let value = arena.value_variable(crate::term::DeBruijnIndex::from(7_u32));
+                let computation = arena.computation_return(value);
+                let value_type = arena.value_type_base(crate::base::BaseType::String);
+                let comp_type = arena.comp_type_returner(value_type);
+                let expected = if shortened {
+                    TermArena::new()
+                }
+                else {
+                    arena.clone()
+                };
+                let mut builder = DeclarationBuilder::new(&mut arena);
+                let _value = builder.arena().value_pair(value, value);
+                let _computation = builder.arena().computation_lambda(computation);
+                let _value_type = builder.arena().value_type_product(value_type, value_type);
+                let _comp_type = builder.arena().comp_type_arrow(value_type, comp_type);
+                if shortened {
+                    builder
+                        .arena()
+                        .truncate_to(crate::arena::ArenaWatermark::default());
+                }
+                if explicit {
+                    builder.discard();
+                }
+                else {
+                    drop(builder);
+                }
+                assert_eq!(arena, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn finishers_preserve_payloads_and_staged_graphs()
+    {
+        let x = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(0_u32),
+        ));
+        let y = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(1_u32),
+        ));
+        let constraints = alloc::vec![
+            gandr_kernel_strata::LandmarkConstraint::equal(y.clone(), x.clone())
+                .expect("variable-only sides"),
+            gandr_kernel_strata::LandmarkConstraint::leq(x, y).expect("variable-only sides"),
+        ];
+        let provenance = alloc::vec![
+            crate::term::ConstantIndex::from(usize::MAX),
+            crate::term::ConstantIndex::from(0_usize),
+            crate::term::ConstantIndex::from(usize::MAX)
+        ];
+        let mut arena = TermArena::new();
+        let _prefix_type = arena.value_type_base(crate::base::BaseType::Numeric);
+        let _prefix_value = arena.value_variable(crate::term::DeBruijnIndex::from(9_u32));
+        for supplied_count in [None, Some(0_u32), Some(1), Some(2), Some(u32::MAX)] {
+            for shape in 0_u8 .. 4 {
+                let levels = supplied_count.map_or_else(LevelSignature::monomorphic, |count| {
+                    LevelSignature::new(super::LevelParamCount::from(count), constraints.clone())
+                });
+                let expected_constraints = if supplied_count.is_none() {
+                    &[][..]
+                }
+                else {
+                    constraints.as_slice()
+                };
+                let mut builder = DeclarationBuilder::new(&mut arena);
+                let unit_type = builder.arena().value_type_unit();
+                let result_type = builder.arena().comp_type_returner(unit_type);
+                let thunk_type = builder.arena().value_type_thunk(result_type);
+                let unit_value = builder.arena().value_unit();
+                let returned = builder.arena().computation_return(unit_value);
+                let thunk = builder.arena().value_thunk(returned);
+                let declared = match shape {
+                    | 0 => thunk_type,
+                    | 1 => builder.arena().value_type_product(unit_type, thunk_type),
+                    | 2 => builder.arena().value_type_sum(unit_type, thunk_type),
+                    | _ => builder.arena().value_type_universe(
+                        crate::types::GroundSort::Value,
+                        gandr_kernel_strata::Level::zero(),
+                    ),
+                };
+                let body = if shape == 1 {
+                    builder.arena().value_pair(unit_value, thunk)
+                }
+                else {
+                    thunk
+                };
+                let staged = builder.arena().clone();
+                let expected_content = match shape {
+                    | 0 | 1 => super::DeclarationContent::Def { declared, body },
+                    | 2 => super::DeclarationContent::Axiom { declared },
+                    | _ => super::DeclarationContent::AbstractType { kind: declared },
+                };
+                let declaration = match shape {
+                    | 0 => builder.def(levels, declared, body),
+                    | 1 => builder.sealed_def(levels, declared, body, provenance.clone()),
+                    | 2 => builder.axiom(levels, declared),
+                    | _ => builder.abstract_type(levels, declared),
+                };
+                assert_eq!(arena, staged, "a finisher must not run rollback");
+                assert_eq!(declaration.content(), &expected_content);
+                assert_eq!(declaration.declared_id(), declared);
+                assert_eq!(
+                    declaration.levels().params(),
+                    super::LevelParamCount::from(supplied_count.unwrap_or(0))
+                );
+                assert_eq!(declaration.levels().constraints(), expected_constraints);
+                let expected_provenance = if shape == 1 {
+                    provenance.as_slice()
+                }
+                else {
+                    &[][..]
+                };
+                assert_eq!(declaration.provenance(), expected_provenance);
+                assert_eq!(declaration.name().segments(), &[]);
+                let first_name = super::StructuredName::from(alloc::vec![
+                    super::NameSegment::from_text(alloc::string::String::from("old"))
+                        .expect("bare name")
+                ]);
+                let replacement = super::StructuredName::from(alloc::vec![
+                    super::NameSegment::from_text(alloc::string::String::new())
+                        .expect("empty segment"),
+                    super::NameSegment::from_text(alloc::string::String::from("e\u{301}"))
+                        .expect("decomposed Unicode"),
+                    super::NameSegment::from_text(alloc::string::String::from("\0"))
+                        .expect("NUL segment"),
+                ]);
+                let named = declaration.named(first_name).named(replacement.clone());
+                assert_eq!(named.name(), &replacement);
+                assert_eq!(named.content(), &expected_content);
+                assert_eq!(
+                    named.levels().params(),
+                    super::LevelParamCount::from(supplied_count.unwrap_or(0))
+                );
+                assert_eq!(named.levels().constraints(), expected_constraints);
+                assert_eq!(named.provenance(), expected_provenance);
+                for mark in [
+                    super::AdmissionMark::Checked,
+                    super::AdmissionMark::UncheckedBypass,
+                ] {
+                    let marked = super::MarkedDeclaration::new(mark, named.clone());
+                    assert_eq!(marked.mark(), mark);
+                    assert_eq!(marked.declaration(), &named);
+                }
+                assert_eq!(
+                    arena, staged,
+                    "renaming and marking cannot alter staged content"
+                );
+            }
+        }
+    }
 
     #[test]
     fn an_abandoned_builder_restores_the_arena()

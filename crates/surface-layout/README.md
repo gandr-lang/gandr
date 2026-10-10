@@ -7,6 +7,7 @@ The document-layout engine every gandr printing face resolves through: a sealed 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
+- [Executable specifications](#executable-specifications)
 - [The document algebra](#the-document-algebra)
 - [Resolution and the cost order](#resolution-and-the-cost-order)
 - [Width taint](#width-taint)
@@ -34,10 +35,10 @@ The document-layout engine every gandr printing face resolves through: a sealed 
 
 - `arena`: the sealed `DocArena`, checked `DocId` handles that refuse a foreign or out-of-range identity, newline-free `TextSource`/`TextOwned` and opaque `VerbatimSource`/`VerbatimOwned` leaves that keep LF and CRLF endings byte for byte (`algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`).
 - `build`: `DocBuilder` with `text`, `verbatim`, `line`, `hard_line`, `concat`, `concat_all`, `nest`, `align`, `choice`, `flatten`, `group` and `finish`; identities are dense insertion ordinals that never move (`algebra::tests::identities_are_dense_insertion_ordinals_that_never_move`), and finalization is deterministic and idempotent (`algebra::tests::finalization_is_deterministic_across_runs`, `algebra::tests::flattening_is_idempotent`).
-- `resolve`: the least-cost layout of a root with its `LayoutCost` and `WidthTaint`, equal to a direct oracle on every small document (`algebra::tests::exhaustive_small_documents_match_the_direct_oracle`).
+- `resolve`: the least-cost layout of a root with its `LayoutCost` and `WidthTaint`; bounded choice fixtures agree with direct cost enumeration (`algebra::tests::exhaustive_small_documents_match_the_direct_oracle`), and every bag of up to three candidates over nine cost/column ranks agrees with a stable pairwise Pareto oracle (`resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`).
 - `render`: the complete output of that layout, its cost and its taint, never partial output (`algebra::tests::render_text_and_layout_metadata_are_exact`, `algebra::tests::render_limits_fail_without_partial_output`).
 - `limits`: `BuildLimits`/`BuildMeter` and `RenderLimits`/`RenderMeter`, each ceiling refusing exactly at its boundary (`algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`, `algebra::tests::render_limits_fail_at_each_exact_boundary`).
-- `error`: `BuildError` and `RenderError`, each failure naming its own ceiling, arithmetic site, store or invariant (`algebra::tests::every_checked_arithmetic_site_reports_its_own_operation`, `algebra::tests::an_allocation_failure_reports_its_own_store`).
+- `error`: `BuildError` and `RenderError`, with distinct causes, exact numeric ceilings and propagated output-sink failures, without fixing diagnostic wording (`error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`).
 - `units`: the nominal widths, columns, counts and ceilings every signature is stated in.
 
 ## Expected features
@@ -96,6 +97,18 @@ Run the crate's tests from the repository root:
 ```sh
 cargo nextest run -p gandr-surface-layout
 ```
+
+## Executable specifications
+
+Nontrivial items pair their specification clauses with `#[spec]` predicates and an adequacy argument naming concrete witnesses. Enforcing builds check arithmetic and refusal precedence, unchanged counters after refused charges, adopted allocation identities, handle namespaces, plan generations and ownership, taint contexts, resolver transitions, Pareto ordering and exact output accounting. Predicates use bounded snapshots or borrowed observations rather than cloning owned stores or replaying callbacks.
+
+Run the same witnesses with executable checks enabled:
+
+```sh
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-surface-layout
+```
+
+Each `executable: none` clause names an unavailable observation: data declarations have no call boundary, formatters expose write-only sinks, the small-stack witness consumes a one-shot callback, and opaque const projections lack const value observers. Their adequacy sections identify the runtime consumers that observe the obligation. Bounded exhaustive models are distinguished from selected graph fixtures; allocator exhaustion is not claimed as exercised.
 
 ## The document algebra
 

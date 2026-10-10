@@ -1,6 +1,7 @@
 //! The overlap enumerator, its completeness exception, and the support
 //! relation that schedules overlaps into independent batches.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet as _;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
@@ -45,6 +46,15 @@ fn frame_and_add() -> (CellStore, CellId, CellId)
 ///
 /// # Specification
 /// - panics: when the store has no such overlap, which is a fixture defect.
+/// - ensures: the requested ordered composition from the store-wide family.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the frame and successor composition has the expected peak
+///   and composite. Wrong order, kind or selection changes that boundary; a
+///   missing family panics.
+/// - witness: `tests::overlap::the_frame_and_add_cells_compose_into_the_commutation_cell`
+/// - witness: `tests::overlap::fixture_positions_keep_first_occurrences_and_reject_foreign_members`
+#[spec(ensures: |output| output.kind == OverlapKind::Composition && output.left == frame && output.right == add && enumerate_overlaps(store).contains(&output))]
 fn frame_into_add(
     store: &CellStore,
     frame: CellId,
@@ -82,7 +92,15 @@ fn critical_pair() -> CellStore
 /// The confluence entries of the store's overlap family, in its order.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the confluence-only subsequence, preserving enumeration order and
+///   multiplicity.
+///
+/// # Adequacy
+/// - hypothesis: L3 — three independent clusters retain six ordered confluence
+///   entries and a stable first-fit partition. Dropping or reordering a member,
+///   or admitting a composition, changes the expected batches.
+/// - witness: `tests::overlap::overlap_support_batches_are_pairwise_independent`
+#[spec(ensures: |output| output.iter().eq(enumerate_overlaps(store).iter().filter(|overlap| overlap.kind == OverlapKind::Confluence)))]
 fn confluence_family(store: &CellStore) -> Vec<Overlap>
 {
     enumerate_overlaps(store)
@@ -101,6 +119,16 @@ struct InputPosition(usize);
 /// # Specification
 /// - panics: when a batch member is not in `overlaps`, which the batching
 ///   contract excludes.
+/// - ensures: each output index is the first input occurrence of its batch
+///   member; batch shape and order are retained.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered and repeated members resolve to their first
+///   positions; empty batches remain empty and a foreign member panics.
+///   Last-occurrence lookup, dropping empties or substituting a position
+///   changes the result.
+/// - witness: `tests::overlap::fixture_positions_keep_first_occurrences_and_reject_foreign_members`
+#[spec(ensures: |output| output.len() == batches.len() && output.iter().zip(batches).all(|(positions, batch)| positions.len() == batch.len() && positions.iter().zip(batch).all(|(position, member)| overlaps.iter().position(|candidate| candidate == member) == Some(position.0))))]
 fn batch_input_positions(
     overlaps: &[Overlap],
     batches: &[Vec<Overlap>],
@@ -465,5 +493,33 @@ fn overlap_support_is_symmetric_and_certificate_memoized()
     assert_eq!(
         batched, split,
         "support is invariant under call partitioning"
+    );
+}
+
+#[test]
+fn fixture_positions_keep_first_occurrences_and_reject_foreign_members()
+{
+    let family = confluence_family(&independent_rule_clusters());
+    let a = family[0].clone();
+    let b = family[1].clone();
+    let input = [a.clone(), b.clone(), a.clone()];
+    let batches = vec![vec![b, a.clone(), a.clone()], Vec::new()];
+    assert_eq!(
+        vec![
+            vec![InputPosition(1), InputPosition(0), InputPosition(0)],
+            Vec::new()
+        ],
+        batch_input_positions(&input, &batches)
+    );
+    let mut foreign = a;
+    foreign.left = CellId::from(usize::MAX);
+    assert!(std::panic::catch_unwind(|| batch_input_positions(&input, &[vec![foreign]])).is_err());
+    assert!(
+        std::panic::catch_unwind(|| frame_into_add(
+            &CellStore::new(),
+            CellId::from(0_usize),
+            CellId::from(1_usize)
+        ))
+        .is_err()
     );
 }

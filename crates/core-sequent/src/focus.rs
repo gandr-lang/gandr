@@ -30,6 +30,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -107,8 +108,17 @@ impl Provenance
     /// - provides: the per-command un-sugaring lookup.
     /// - fails: `None` for a command no translation created.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and sparse increasing command tables, exact
+    ///   hits, an interior gap, the end and a truncated suffix distinguish
+    ///   wrong-key searches, wrong origins and stale entries.
+    /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == self.origins.iter()
+        .find(|&&(recorded, _)| recorded == command).map(|&(_, origin)| origin)
+    )]
     pub fn origin(
         &self,
         command: CommandId,
@@ -151,6 +161,16 @@ impl Provenance
     /// - provides: the one write of the table.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two increasing records with different origins are
+    ///   read independently; gap and truncation probes distinguish a skipped
+    ///   append, wrong key or overwritten origin.
+    /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
+    #[spec(
+        requires: self.origins.last().is_none_or(|&(previous, _)| previous < command),
+        ensures: self.origin(command) == Some(origin),
+    )]
     fn record(
         &mut self,
         command: CommandId,
@@ -248,17 +268,26 @@ impl From<MintRefusal> for FocusRefusal
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — focusing then unfocusing is the identity on generated
-///   closed core computations, over an L3 residue: one hand-built case per
-///   former, the refusal truncating to the entry marks, and two focusings of
-///   one term building identical arenas.
+/// - hypothesis: L2 — an independent decoder compares generated closed
+///   computations with their input, detecting wrong formers, child order and
+///   binder shifts within the bounded generator. L3 — hand-built former cases
+///   and exact refusal/rollback observations cover the directed residue;
+///   equal-input arena comparison observes deterministic minting only.
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
 /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
 /// - witness: `focus::tests::a_code_is_refused_by_name`
 /// - witness: `focus::tests::focusing_mints_no_name`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.command(id).is_some() && provenance.origin(id).is_some(),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
 pub fn focus_computation(
     core: &CoreArena,
     computation: ComputationId,
@@ -291,9 +320,19 @@ pub fn focus_computation(
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — as [`focus_computation`], over generated values.
+/// - hypothesis: L2 — the independent decoder compares generated values with
+///   their source, exposing wrong constructors and child order within the
+///   bounded generator. L3 — exact dangling-root rollback covers refusal.
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.producer(id).is_some_and(|node| !matches!(node, &ProducerNode::Mu { .. })),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
 pub fn focus_value(
     core: &CoreArena,
     value: ValueId,
@@ -326,7 +365,18 @@ pub fn focus_value(
 /// - hypothesis: L3 — a literal declaration focuses to one positive cut against
 ///   `★`, checked and recorded as a top value.
 /// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => provenance.origin(id) == Some(FocusOrigin::TopValue)
+            && arena.command(id).is_some_and(|node| matches!(node,
+                &crate::il::CommandNode::Cut { polarity: Polarity::Positive, consumer, .. }
+                    if arena.consumer(consumer) == Some(&ConsumerNode::Top))),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
 pub fn focus_top_value(
     core: &CoreArena,
     value: ValueId,
@@ -352,7 +402,8 @@ pub fn focus_top_value(
 /// entry marks if it is refused.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: `build` only appends nodes and origins; earlier entries are
+///   neither removed nor rewritten.
 /// - ensures: `build`'s answer; on refusal, `arena` and `provenance` are
 ///   exactly as on entry.
 /// - provides: the one rollback every entry point shares.
@@ -361,6 +412,18 @@ pub fn focus_top_value(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — partial builds and dangling roots through every entry
+///   point observe exact refusal payloads and retained earlier translations. A
+///   missing rollback or a rollback of one region only changes the
+///   arena/provenance observations.
+/// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ref ret| ret.is_ok() || (arena.watermark() == mark && provenance.len() == recorded),
+)]
 fn transactional<Answer, Build>(
     arena: &mut CommandArena,
     provenance: &mut Provenance,
@@ -500,6 +563,16 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(ensures: |ret| ret.is_err() || self.tasks.is_empty())]
     fn drive(&mut self) -> Result<(), FocusRefusal>
     {
         while let Some(task) = self.tasks.pop() {
@@ -520,6 +593,26 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: match &task {
+            | &Task::Pair => self.producers.len() >= 2,
+            | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
+            | &Task::Thunk | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
+            | &Task::Case => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::Value(_) | &Task::Computation { .. } => true,
+        },
+        ensures: |ret| ret.is_err() || (self.producers.last().is_none_or(|id| self.arena.producer(*id).is_some())
+            && self.commands.last().is_none_or(|id| self.arena.command(*id).is_some())),
+    )]
     fn step(
         &mut self,
         task: Task,
@@ -639,6 +732,25 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::a_code_is_refused_by_name`
+    /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    #[spec(
+        captures: [work = self.tasks.len(), results = self.producers.len()],
+        ensures: |ret| match self.core.value(id) {
+            | None => ret == Err(FocusRefusal::DanglingValue(id)),
+            | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
+            | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
+        },
+    )]
     fn value(
         &mut self,
         id: ValueId,
@@ -703,6 +815,22 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent decoding of bounded generated terms
+    ///   observes former choice, child order and binder shifts. L3 — one case
+    ///   per former and exact refusal/rollback probes cover directed
+    ///   boundaries.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| if self.core.computation(id).is_none() {
+            ret == Err(FocusRefusal::DanglingComputation(id))
+        } else { ret.is_err() || self.tasks.len() > work },
+    )]
     fn computation(
         &mut self,
         id: ComputationId,
@@ -793,6 +921,26 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independently decoded bind/case contexts distinguish
+    ///   copied continuations and shifted binders. L3 — named and tail
+    ///   continuations are observed at their exact consumer and scheduled cut.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `focus::tests::focusing_mints_no_name`
+    #[spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
+            if matches!(self.arena.consumer(continuation), Some(&ConsumerNode::Top | &ConsumerNode::Covariable(_))) {
+                id == continuation && self.tasks.len() == work
+            } else {
+                self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+                    && work.checked_add(1) == Some(self.tasks.len())
+                    && matches!(self.tasks.last(), Some(&Task::Name { origin: recorded, continuation: target, .. })
+                        if recorded == origin && target == continuation)
+            }),
+    )]
     fn share_or_name(
         &mut self,
         origin: FocusOrigin,
@@ -819,7 +967,24 @@ impl<'run> Focusing<'run>
     /// Mint the covariable `0`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: on success a new consumer names covariable `0`.
+    /// - provides: the return point of a newly opened covariable binder.
+    /// - fails: a refused consumer mint at the address ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A consumer-family allocation refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every focused covariable is read at its exact index,
+    ///   exposing shifted binders. The shared address helper witnesses the
+    ///   ceiling; no full-sized consumer arena is allocated.
+    /// - witness: `focus::tests::focusing_mints_no_name`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
+        self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+    ))]
     fn innermost_covariable(&mut self) -> Result<ConsumerId, FocusRefusal>
     {
         Ok(self
@@ -838,6 +1003,20 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — decoded generated values and one case per former
+    ///   observe constructor identity and ordered fields. Wrong tags, missing
+    ///   children and reversed pairs change the recovered source.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[spec(
+        requires: fields.len() == usize::from(tag.producer_arity()),
+        ensures: |ret| ret.is_err() || self.producers.last()
+            .and_then(|id| self.arena.producer(*id)).is_some_and(|node| matches!(*node,
+                ProducerNode::Constructor { ref producers, ref consumers, .. }
+                    if producers.as_ref() == fields && consumers.is_empty())),
+    )]
     fn constructor(
         &mut self,
         tag: ConstructorTag,
@@ -865,6 +1044,19 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independently decoded terms expose changed cut
+    ///   endpoints and polarity. L3 — the top-value entry observes its exact
+    ///   terminal continuation and origin.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
+    #[spec(
+        captures: [results = self.commands.len()],
+        ensures: |ret| ret.is_err() || (results.checked_add(1) == Some(self.commands.len())
+            && self.commands.last().is_some_and(|id| self.provenance.origin(*id) == Some(origin)
+                && self.arena.command(*id) == Some(&crate::il::CommandNode::Cut { polarity, producer, consumer }))),
+    )]
     fn cut(
         &mut self,
         origin: FocusOrigin,
@@ -882,7 +1074,26 @@ impl<'run> Focusing<'run>
     /// Pop a translated producer.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the last producer is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by finishing tasks.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two distinct results are popped in reverse order,
+    ///   then exact underflow is observed. Wrong-end removal, stale results and
+    ///   silent underflow change the answer.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        captures: [last = self.producers.last().copied(), length = self.producers.len()],
+        ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
+            && self.producers.len() == length.saturating_sub(1),
+    )]
     fn pop_producer(&mut self) -> Result<ProducerId, FocusRefusal>
     {
         self.producers
@@ -893,7 +1104,26 @@ impl<'run> Focusing<'run>
     /// Pop a translated command.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the last command is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by finishing tasks.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two distinct results are popped in reverse order,
+    ///   then exact underflow is observed. Wrong-end removal, stale results and
+    ///   silent underflow change the answer.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        captures: [last = self.commands.last().copied(), length = self.commands.len()],
+        ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
+            && self.commands.len() == length.saturating_sub(1),
+    )]
     fn pop_command(&mut self) -> Result<CommandId, FocusRefusal>
     {
         self.commands
@@ -912,6 +1142,18 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite product of zero, one and two results on
+    ///   each stack distinguishes missing, surplus and wrong-kind results. The
+    ///   observer is the exact singleton or invariant refusal.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        requires: self.tasks.is_empty(),
+        captures: [single = self.commands.len() == 1 && self.producers.is_empty(), last = self.commands.last().copied()],
+        ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
+            else { Err(FocusRefusal::TranslationInvariant) },
+    )]
     fn single_command(mut self) -> Result<CommandId, FocusRefusal>
     {
         let command = self.pop_command()?;
@@ -934,6 +1176,18 @@ impl<'run> Focusing<'run>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite product of zero, one and two results on
+    ///   each stack distinguishes missing, surplus and wrong-kind results. The
+    ///   observer is the exact singleton or invariant refusal.
+    /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
+    #[spec(
+        requires: self.tasks.is_empty(),
+        captures: [single = self.producers.len() == 1 && self.commands.is_empty(), last = self.producers.last().copied()],
+        ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
+            else { Err(FocusRefusal::TranslationInvariant) },
+    )]
     fn single_producer(mut self) -> Result<ProducerId, FocusRefusal>
     {
         let producer = self.pop_producer()?;
@@ -951,21 +1205,40 @@ mod tests
 {
     use super::*;
 
-    /// `λ. (return () to y. return d)` where `d` is an id the arena holds no
-    /// node for: the translation mints several nodes before it meets `d`.
+    /// A lambda whose sequenced body returns a type code outside the focusing
+    /// image.
     ///
     /// # Specification
-    /// trivial.
-    fn lambda_over_a_dangling_value(core: &mut CoreArena) -> ComputationId
+    /// - requires: nothing.
+    /// - ensures: a lambda sequences a returned unit before returning a valid
+    ///   type quote; all core references resolve, but focusing refuses the
+    ///   code.
+    /// - provides: a refusal after entering nested translation work without
+    ///   violating a core constructor's precondition.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — focusing this valid nested core graph after an
+    ///   earlier translation refuses the type code and preserves both
+    ///   destination marks and the earlier provenance. This distinguishes
+    ///   missing rollback and damage to the prefix; it covers this unsupported
+    ///   form, not an invalid source arena.
+    /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
+    #[spec(ensures: |ret| match core.computation(ret) {
+        | Some(&Computation::Lambda(bind)) => match core.computation(bind) {
+            | Some(&Computation::Bind(bound, body)) => matches!(core.computation(bound), Some(&Computation::Return(unit)) if core.value(unit) == Some(&Value::Unit))
+                && matches!(core.computation(body), Some(&Computation::Return(code)) if matches!(core.value(code), Some(&Value::Quote(quoted)) if core.value_type(quoted).is_some())),
+            | _ => false,
+        },
+        | _ => false,
+    })]
+    fn lambda_over_a_type_code(core: &mut CoreArena) -> ComputationId
     {
-        let mut elsewhere = CoreArena::new();
-        let mut dangling = elsewhere.value_unit();
-        for _ in 0_u32 .. 64_u32 {
-            dangling = elsewhere.value_unit();
-        }
         let unit = core.value_unit();
+        let quoted_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let code = core.value_quote(quoted_type);
         let bound = core.computation_return(unit);
-        let body = core.computation_return(dangling);
+        let body = core.computation_return(code);
         let bind = core.computation_bind(bound, body);
         core.computation_lambda(bind)
     }
@@ -977,7 +1250,7 @@ mod tests
     fn a_refused_focusing_leaves_the_arena_at_its_mark()
     {
         let mut core = CoreArena::new();
-        let refused = lambda_over_a_dangling_value(&mut core);
+        let refused = lambda_over_a_type_code(&mut core);
         let fine_value = core.value_unit();
         let fine = core.computation_return(fine_value);
 
@@ -990,8 +1263,8 @@ mod tests
 
         let outcome = focus_computation(&core, refused, &mut arena, &mut provenance);
         assert!(
-            matches!(outcome, Err(FocusRefusal::DanglingValue(_))),
-            "the dangling value is refused by name: {outcome:?}"
+            matches!(outcome, Err(FocusRefusal::Code(_))),
+            "the type code is refused by name: {outcome:?}"
         );
         assert_eq!(
             arena_mark,
@@ -1081,5 +1354,121 @@ mod tests
                 );
             }
         }
+    }
+
+    /// Sparse command origins distinguish a gap, an endpoint and a truncated
+    /// suffix.
+    #[test]
+    fn provenance_lookup_distinguishes_unrecorded_commands()
+    {
+        let mut provenance = Provenance::new();
+        let first = CommandId::from(0_u32);
+        let last = CommandId::from(2_u32);
+        assert_eq!(None, provenance.origin(first));
+        provenance.record(first, FocusOrigin::Return);
+        provenance.record(last, FocusOrigin::Case);
+        assert_eq!(Some(FocusOrigin::Return), provenance.origin(first));
+        assert_eq!(Some(FocusOrigin::Case), provenance.origin(last));
+        assert_eq!(None, provenance.origin(CommandId::from(1_u32)));
+        assert_eq!(None, provenance.origin(CommandId::from(3_u32)));
+        provenance.truncate_to(NodeCount::from(1_usize));
+        assert_eq!(Some(FocusOrigin::Return), provenance.origin(first));
+        assert_eq!(None, provenance.origin(last));
+    }
+
+    /// Each entry point reports the exact missing root and preserves earlier
+    /// translations.
+    #[test]
+    fn each_focus_entry_rolls_back_dangling_inputs()
+    {
+        let core = CoreArena::new();
+        let mut elsewhere = CoreArena::new();
+        let value = elsewhere.value_unit();
+        let computation = elsewhere.computation_return(value);
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let earlier = focus_computation(&elsewhere, computation, &mut arena, &mut provenance)
+            .expect("closed return");
+        let before = arena.clone();
+        let origins = provenance.clone();
+        assert_eq!(
+            Err(FocusRefusal::DanglingComputation(computation)),
+            focus_computation(&core, computation, &mut arena, &mut provenance)
+        );
+        assert_eq!(before, arena);
+        assert_eq!(origins, provenance);
+        assert_eq!(
+            Err(FocusRefusal::DanglingValue(value)),
+            focus_value(&core, value, &mut arena, &mut provenance)
+        );
+        assert_eq!(before, arena);
+        assert_eq!(origins, provenance);
+        assert_eq!(
+            Err(FocusRefusal::DanglingValue(value)),
+            focus_top_value(&core, value, &mut arena, &mut provenance)
+        );
+        assert_eq!(before, arena);
+        assert_eq!(origins, provenance);
+        assert_eq!(Some(FocusOrigin::Return), provenance.origin(earlier));
+    }
+
+    /// Both result stacks reject every non-singleton shape and pop in LIFO
+    /// order.
+    #[test]
+    fn result_stacks_enforce_singletons_and_lifo()
+    {
+        let core = CoreArena::new();
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let first = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let last = arena
+            .mint_producer(ProducerNode::Constant(1_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let before = arena
+            .mint_cut(Polarity::Positive, first, top)
+            .expect("live children");
+        let after = arena
+            .mint_cut(Polarity::Positive, last, top)
+            .expect("live children");
+        let producers = [first, last];
+        let commands = [before, after];
+        for producer_count in 0_usize ..= 2_usize {
+            for command_count in 0_usize ..= 2_usize {
+                let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+                run.producers
+                    .extend_from_slice(&producers[.. producer_count]);
+                run.commands.extend_from_slice(&commands[.. command_count]);
+                let expected = if producer_count == 1 && command_count == 0 {
+                    Ok(first)
+                }
+                else {
+                    Err(FocusRefusal::TranslationInvariant)
+                };
+                assert_eq!(expected, run.single_producer());
+                let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+                run.producers
+                    .extend_from_slice(&producers[.. producer_count]);
+                run.commands.extend_from_slice(&commands[.. command_count]);
+                let expected = if command_count == 1 && producer_count == 0 {
+                    Ok(before)
+                }
+                else {
+                    Err(FocusRefusal::TranslationInvariant)
+                };
+                assert_eq!(expected, run.single_command());
+            }
+        }
+        let mut run = Focusing::new(&core, &mut arena, &mut provenance);
+        run.producers.extend_from_slice(&producers);
+        run.commands.extend_from_slice(&commands);
+        assert_eq!(Ok(last), run.pop_producer());
+        assert_eq!(Ok(first), run.pop_producer());
+        assert_eq!(Err(FocusRefusal::TranslationInvariant), run.pop_producer());
+        assert_eq!(Ok(after), run.pop_command());
+        assert_eq!(Ok(before), run.pop_command());
+        assert_eq!(Err(FocusRefusal::TranslationInvariant), run.pop_command());
     }
 }

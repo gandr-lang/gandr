@@ -27,6 +27,8 @@
 
 use core::num::NonZeroU64;
 
+use anodized::spec;
+
 use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
@@ -45,6 +47,14 @@ use crate::units::TokenCount;
 /// - provides: a divisor the hash predicate can use without a zero check.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — the non-zero representation is enforced by the type;
+///   validation predicates belong to the raw-value constructor.
+///
+/// # Adequacy
+/// - hypothesis: L0 excludes a stored zero; L3 observes exact success values at
+///   one, an ordinary value and the maximum, and the zero refusal reason. These
+///   distinguish changed bounds, substituted values and wrong errors.
+/// - witness: `tests::typed::zero_constants_are_refused_by_reason`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Kappa(NonZeroU64);
@@ -65,6 +75,18 @@ impl TryFrom<u64> for Kappa
     ///
     /// # Errors
     /// [`ChunkerError::InvalidParameters`] — `raw` is zero.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over arbitrary raw integers, with zero, one, seven and
+    ///   the maximum as boundary witnesses; exact values and refusal reasons
+    ///   distinguish broadened rejection, accepted zero and substituted values.
+    /// - witness: `tests::typed::zero_constants_are_refused_by_reason`
+    #[spec(ensures: |ret| match ret {
+        Ok(value) => raw != 0 && value.0.get() == raw,
+        Err(error) => raw == 0 && error == ChunkerError::InvalidParameters {
+            reason: InvalidParameterReason::ZeroKappa,
+        },
+    })]
     #[inline]
     fn try_from(raw: u64) -> Result<Self, Self::Error>
     {
@@ -110,6 +132,14 @@ impl From<Kappa> for u64
 /// - provides: a cap the scanner can reach.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — the non-zero representation is enforced by the type;
+///   validation predicates belong to the raw-value constructor.
+///
+/// # Adequacy
+/// - hypothesis: L0 excludes a stored zero; L3 observes exact success values at
+///   one, an ordinary value and the maximum, and the zero refusal reason. These
+///   distinguish changed bounds, substituted values and wrong errors.
+/// - witness: `tests::typed::zero_constants_are_refused_by_reason`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenCap(NonZeroU64);
@@ -130,6 +160,18 @@ impl TryFrom<u64> for TokenCap
     ///
     /// # Errors
     /// [`ChunkerError::InvalidParameters`] — `raw` is zero.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over arbitrary raw integers, with zero, one, seven and
+    ///   the maximum as boundary witnesses; exact values and refusal reasons
+    ///   distinguish broadened rejection, accepted zero and substituted values.
+    /// - witness: `tests::typed::zero_constants_are_refused_by_reason`
+    #[spec(ensures: |ret| match ret {
+        Ok(value) => raw != 0 && value.0.get() == raw,
+        Err(error) => raw == 0 && error == ChunkerError::InvalidParameters {
+            reason: InvalidParameterReason::ZeroTokenCap,
+        },
+    })]
     #[inline]
     fn try_from(raw: u64) -> Result<Self, Self::Error>
     {
@@ -190,6 +232,8 @@ impl From<TokenCap> for TokenCount
 ///   bind. The postcondition stays prose: it relates two parameter sets.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — injectivity relates two complete parameter sets; a
+///   single construction has no second set to compare.
 ///
 /// # Adequacy
 /// - hypothesis: L2 agreement against a pinned golden written out field by
@@ -255,6 +299,24 @@ impl TypedChunkerParams
     ///   different cuts.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes a field-by-field golden for positive kappa and
+    ///   cap; L3 changes each independently and swaps them. Wrong framing,
+    ///   width, endian order, omission and field swaps change the byte image.
+    /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
+    /// - witness: `tests::commitment::each_typed_constant_moves_the_commitment`
+    #[spec(ensures: |ret| {
+        let bytes = ret.as_ref();
+        let domain = crate::commitment::PARAMETER_DOMAIN;
+        bytes.starts_with(domain)
+            && bytes.len() == domain.len().saturating_add(18)
+            && bytes.get(domain.len()..domain.len().saturating_add(2)) == Some([2, 0].as_slice())
+            && bytes.get(domain.len().saturating_add(2)..domain.len().saturating_add(10))
+                == Some(u64::from(self.kappa).to_le_bytes().as_slice())
+            && bytes.get(domain.len().saturating_add(10)..)
+                == Some(u64::from(self.cap).to_le_bytes().as_slice())
+    })]
     #[inline]
     #[must_use]
     pub fn commitment(&self) -> ParameterCommitment
@@ -291,6 +353,14 @@ impl BoundaryEvent
     /// - provides: the scanner's one input.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on ordered incremental events below, at and above the
+    ///   cap, with residues beside and on a multiple; decisions and pending
+    ///   counts distinguish swapped fields and cumulative double counting.
+    /// - witness: `tests::typed::the_cap_and_the_predicate_cut_at_their_boundaries`
+    /// - witness: `tests::typed::zero_token_events_still_observe_the_residue`
+    #[spec(ensures: |ret| matches!(ret.tokens.const_eq(tokens), crate::units::ConstEquality::Equal) && matches!(ret.residue.const_eq(residue), crate::units::ConstEquality::Equal))]
     #[inline]
     #[must_use]
     pub const fn new(
@@ -345,6 +415,17 @@ pub enum CutDecision
 ///   subtree induces travels with that subtree.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — absence of clocks, randomness and lookahead is a
+///   whole-execution property, not a predicate on one stored scanner.
+///
+/// # Adequacy
+/// - hypothesis: L3 on canonical event sequences at both cut boundaries; exact
+///   decisions and pending counts distinguish cap precedence changes, premature
+///   cuts and failure to reset. Finite executions witness these sequences, not
+///   universal determinism.
+/// - witness: `tests::typed::the_cap_and_the_predicate_cut_at_their_boundaries`
+/// - witness: `tests::typed::the_cap_takes_precedence_over_the_predicate`
+/// - witness: `tests::typed::a_saturated_count_still_cuts`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypedChunker
 {
@@ -413,9 +494,28 @@ impl TypedChunker
     ///   token under the cap against exactly the cap, a residue one off a
     ///   multiple of kappa against the multiple), with the precedence of the
     ///   cap over the predicate and the reset after each cut asserted.
+    ///   Zero-token events exercise the empty increment; overflow exercises
+    ///   saturation rather than wrapping below the cap.
     /// - witness: `tests::typed::the_cap_and_the_predicate_cut_at_their_boundaries`
     /// - witness: `tests::typed::the_cap_takes_precedence_over_the_predicate`
     /// - witness: `tests::typed::one_event_per_record_is_the_record_safe_degenerate_instance`
+    /// - witness: `tests::typed::a_saturated_count_still_cuts`
+    /// - witness: `tests::typed::zero_token_events_still_observe_the_residue`
+    #[spec(
+        captures: pending = self.pending.saturating_plus(event.tokens),
+        ensures: |ret| match ret {
+            CutDecision::Cut(BoundaryReason::MaxTokenCap) =>
+                pending >= TokenCount::from(self.params.cap) && self.pending == TokenCount::ZERO,
+            CutDecision::Cut(BoundaryReason::HashPredicate) =>
+                pending < TokenCount::from(self.params.cap)
+                    && u64::from(event.residue).is_multiple_of(u64::from(self.params.kappa))
+                    && self.pending == TokenCount::ZERO,
+            CutDecision::Continue => pending < TokenCount::from(self.params.cap)
+                && !u64::from(event.residue).is_multiple_of(u64::from(self.params.kappa))
+                && self.pending == pending,
+            CutDecision::Cut(_) => false,
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn on_boundary(

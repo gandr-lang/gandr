@@ -7,6 +7,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::DocArena;
@@ -28,6 +29,28 @@ use crate::units::PeakVmStack;
 const SPACES: &str = "                                                                ";
 
 /// Fallible output storage with an exact cumulative byte projection.
+///
+/// # Specification
+/// - requires: the buffer was reserved for a selected plan and receives metered
+///   UTF-8 fragments.
+/// - ensures: the stored byte count agrees with the emitted string, and refusal
+///   does not publish a partial buffer.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this private state carrier has no invocation boundary;
+///   reservation, append and execution carry its executable invariants.
+///
+/// # Adequacy
+/// - hypothesis: L3 — Unicode fragments at an exact cumulative byte ceiling,
+///   counter overflow, left-first sequences, stale and foreign identities,
+///   mismatched selected sizes and VM ceilings expose emitted bytes, typed
+///   first errors and meter frames. Dropped fragments, reordered children,
+///   charging after append or publishing an unreconciled buffer change those
+///   observations. Allocation-capacity overflow is deterministic; allocator
+///   exhaustion is not injected.
+/// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+/// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
+/// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
 #[derive(Debug)]
 pub(crate) struct OutputBuffer
 {
@@ -39,11 +62,13 @@ pub(crate) struct OutputBuffer
 
 impl OutputBuffer
 {
-    /// Reserves exactly the selected measure's output size once.
+    /// Requests the selected measure's output size in one fallible reservation.
     ///
     /// # Specification
     /// - requires: `capacity` is the checked output size of the selected plan.
-    /// - ensures: the buffer has one exact fallible reservation before appends.
+    /// - ensures: the empty buffer has at least the requested capacity after
+    ///   one fallible exact-reservation request; the allocator may provide
+    ///   more.
     /// - provides: output storage that cannot grow during machine execution.
     /// - fails: returns `AllocationFailed` when the output reservation fails,
     ///   or `ArithmeticOverflow` when the capacity cannot be represented.
@@ -53,10 +78,22 @@ impl OutputBuffer
     /// Returns a typed render allocation or arithmetic error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one selected output size gets one exact fallible
-    ///   reservation before any fragment append.
-    /// - witness: `algebra::tests::render_text_and_layout_metadata_are_exact`
-    /// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+    /// - hypothesis: L3 — Unicode fragments at an exact cumulative byte
+    ///   ceiling, counter overflow, left-first sequences, stale and foreign
+    ///   identities, mismatched selected sizes and VM ceilings expose emitted
+    ///   bytes, typed first errors and meter frames. Dropped fragments,
+    ///   reordered children, charging after append or publishing an
+    ///   unreconciled buffer change those observations. Allocation-capacity
+    ///   overflow is deterministic; allocator exhaustion is not injected.
+    /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+    /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
+    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    #[spec(
+        ensures: |ret| match usize::try_from(u64::from(capacity)) { Err(_error) => matches!(ret, Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::OutputBytes })), Ok(requested) => ret.as_ref().map_or_else(|error| *error == RenderError::AllocationFailed { site: RenderAllocationSite::Output },
+            |buffer| buffer.text.is_empty()
+                && u64::from(buffer.bytes) == 0
+                && buffer.text.capacity() >= requested) }
+    )]
     pub(crate) fn try_new(capacity: OutputBytes) -> Result<Self, RenderError>
     {
         let capacity = usize::try_from(u64::from(capacity)).map_err(|_error| {
@@ -82,6 +119,23 @@ impl OutputBuffer
     /// - ensures: ownership moves without another allocation.
     /// - provides: the exact rendered bytes.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — Unicode fragments at an exact cumulative byte
+    ///   ceiling, counter overflow, left-first sequences, stale and foreign
+    ///   identities, mismatched selected sizes and VM ceilings expose emitted
+    ///   bytes, typed first errors and meter frames. Dropped fragments,
+    ///   reordered children, charging after append or publishing an
+    ///   unreconciled buffer change those observations. Allocation-capacity
+    ///   overflow is deterministic; allocator exhaustion is not injected.
+    /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+    /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
+    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    #[spec(
+        captures: before = (self.text.as_ptr(), self.text.len()),
+        ensures: |ret| ret.as_ptr() == before.0
+                && ret.len() == before.1
+    )]
     pub(crate) fn into_text(self) -> RenderedText
     {
         RenderedText::from(self.text)
@@ -103,10 +157,31 @@ impl OutputBuffer
     /// or the named output limit when the meter refuses the append.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every concrete fragment advances output accounting
-    ///   before its bytes become observable.
-    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
-    /// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+    /// - hypothesis: L3 — Unicode fragments at an exact cumulative byte
+    ///   ceiling, counter overflow, left-first sequences, stale and foreign
+    ///   identities, mismatched selected sizes and VM ceilings expose emitted
+    ///   bytes, typed first errors and meter frames. Dropped fragments,
+    ///   reordered children, charging after append or publishing an
+    ///   unreconciled buffer change those observations. Allocation-capacity
+    ///   overflow is deterministic; allocator exhaustion is not injected.
+    /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+    /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
+    /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+    #[spec(
+        captures: before = (self.text.len(), self.text.as_ptr(), self.text.capacity(), self.bytes, meter.usage()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.text.len() == before.0
+                && self.text.as_ptr() == before.1
+                && self.text.capacity() == before.2
+                && self.bytes == before.3
+                && meter.usage() == before.4,
+            |&()| before.0.checked_add(fragment.0.len()) == Some(self.text.len())
+                && self.text.ends_with(fragment.0)
+                && u64::try_from(self.text.len()) == Ok(u64::from(self.bytes))
+                && u64::try_from(fragment.0.len()).ok().and_then(|amount| u64::from(before.3).checked_add(amount)) == Some(u64::from(self.bytes))
+                && u64::try_from(fragment.0.len()).ok().and_then(|amount| u64::from(before.4.output_bytes).checked_add(amount)) == Some(u64::from(meter.usage().output_bytes))
+                && (self.text.len() > before.2 || (self.text.as_ptr() == before.1
+                && self.text.capacity() == before.2)))
+    )]
     fn append(
         &mut self,
         meter: &mut RenderMeter,
@@ -153,13 +228,24 @@ struct Fragment<'bytes>(&'bytes str);
 /// output append, or counter/measure disagreement.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the left-first sequence order, the
-///   complete output of a tainted plan, the stack ceiling checked before any
-///   output and the exact byte reconciliation, each asserted on rendered text
-///   or a named limit.
-/// - witness: `algebra::tests::render_tainted_root_preserves_promise_columns_and_indentation`
-/// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+/// - hypothesis: L3 — Unicode fragments at an exact cumulative byte ceiling,
+///   counter overflow, left-first sequences, stale and foreign identities,
+///   mismatched selected sizes and VM ceilings expose emitted bytes, typed
+///   first errors and meter frames. Dropped fragments, reordered children,
+///   charging after append or publishing an unreconciled buffer change those
+///   observations. Allocation-capacity overflow is deterministic; allocator
+///   exhaustion is not injected.
+/// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+/// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
 /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
+#[spec(
+    captures: before = meter.usage(),
+    ensures: |ret| ret.as_ref().map_or(true,
+        |buffer| buffer.bytes == expected
+            && u64::try_from(buffer.text.len()) == Ok(u64::from(expected))
+            && u64::from(before.output_bytes).checked_add(u64::from(expected)) == Some(u64::from(meter.usage().output_bytes))
+            && u64::from(meter.usage().vm_steps) > u64::from(before.vm_steps))
+)]
 pub(crate) fn execute(
     arena: &DocArena,
     plans: &PlanArena,
@@ -312,5 +398,183 @@ mod tests
             })
         );
         assert_eq!(meter.usage().peak_vm_stack, PeakVmStack::from(2u64));
+    }
+
+    /// Append failures retain complete prior Unicode bytes and do not spend
+    /// refused charges.
+    #[test]
+    fn append_refusals_preserve_unicode_output_and_meter_state()
+    {
+        let mut output =
+            super::OutputBuffer::try_new(crate::units::OutputBytes::from(6_u64)).expect("buffer");
+        let mut meter = RenderMeter::new(RenderLimits {
+            max_output_bytes: 6_u64.into(),
+            ..RenderLimits::default()
+        });
+        output
+            .append(&mut meter, &super::Fragment("é"))
+            .expect("first fragment");
+        output
+            .append(&mut meter, &super::Fragment("𐐀"))
+            .expect("exact ceiling");
+        let before = meter.usage();
+        assert_eq!(
+            output.append(&mut meter, &super::Fragment("\n")),
+            Err(RenderError::LimitExceeded {
+                kind: RenderLimitKind::OutputBytes,
+                limit: LimitBound::from(6_u64)
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(output.into_text(), "é𐐀");
+        let mut output = super::OutputBuffer::try_new(crate::units::OutputBytes::from(1_u64))
+            .expect("overflow buffer");
+        let mut meter = RenderMeter::new(RenderLimits {
+            max_output_bytes: u64::MAX.into(),
+            ..RenderLimits::default()
+        });
+        meter
+            .charge_output_bytes(crate::units::OutputBytes::from(u64::MAX))
+            .expect("prior cumulative output");
+        let before = meter.usage();
+        assert_eq!(
+            output.append(&mut meter, &super::Fragment("a")),
+            Err(RenderError::ArithmeticOverflow {
+                operation: crate::error::RenderArithmetic::OutputBytes
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(output.into_text(), "");
+        let refusal = super::OutputBuffer::try_new(crate::units::OutputBytes::from(u64::MAX));
+        if usize::try_from(u64::MAX).is_ok() {
+            assert!(matches!(
+                refusal,
+                Err(RenderError::AllocationFailed {
+                    site: crate::error::RenderAllocationSite::Output
+                })
+            ));
+        }
+        else {
+            assert!(matches!(
+                refusal,
+                Err(RenderError::ArithmeticOverflow {
+                    operation: crate::error::RenderArithmetic::OutputBytes
+                })
+            ));
+        }
+    }
+
+    /// Plan order, stale identities and selected-size disagreement are
+    /// observable at execution.
+    #[test]
+    fn execution_checks_identity_order_and_byte_reconciliation()
+    {
+        let mut build_meter = crate::limits::BuildMeter::new(crate::limits::BuildLimits::default());
+        let mut builder = crate::build::DocBuilder::try_new(&mut build_meter).expect("builder");
+        let left_doc = builder
+            .text(crate::arena::TextSource::from("é"))
+            .expect("left text");
+        let right_doc = builder
+            .text(crate::arena::TextSource::from("𐐀"))
+            .expect("right text");
+        let arena = builder.finish().expect("arena");
+        let super::Maybe::Present(crate::arena::DocNode::Text(left_text)) =
+            arena.node(left_doc.node_id())
+        else {
+            panic!("left identity")
+        };
+        let super::Maybe::Present(crate::arena::DocNode::Text(right_text)) =
+            arena.node(right_doc.node_id())
+        else {
+            panic!("right identity")
+        };
+        let mut plan_meter = RenderMeter::new(RenderLimits::default());
+        let mut plans = super::PlanArena::new();
+        let left = plans
+            .alloc(super::PlanNode::Text(left_text), &mut plan_meter)
+            .expect("left plan");
+        let right = plans
+            .alloc(super::PlanNode::Text(right_text), &mut plan_meter)
+            .expect("right plan");
+        let root = plans
+            .alloc_seq(left, right, &mut plan_meter)
+            .expect("sequence");
+        let mut meter = RenderMeter::new(RenderLimits {
+            max_vm_stack: 2_u64.into(),
+            ..RenderLimits::default()
+        });
+        let output = super::execute(
+            &arena,
+            &plans,
+            root,
+            crate::units::OutputBytes::from(6_u64),
+            &mut meter,
+        )
+        .expect("execution");
+        assert_eq!(output.into_text(), "é𐐀");
+        assert_eq!(u64::from(meter.usage().output_bytes), 6);
+        assert_eq!(u64::from(meter.usage().vm_steps), 3);
+        let mut meter = RenderMeter::new(RenderLimits::default());
+        assert!(matches!(
+            super::execute(
+                &arena,
+                &plans,
+                root,
+                crate::units::OutputBytes::from(7_u64),
+                &mut meter
+            ),
+            Err(RenderError::Invariant {
+                invariant: crate::error::RenderInvariant::OutputReconciliation
+            })
+        ));
+        assert_eq!(u64::from(meter.usage().output_bytes), 6);
+        let stale = plans
+            .alloc(super::PlanNode::Empty, &mut plan_meter)
+            .expect("stale subject");
+        plans
+            .release_one(stale, &mut plan_meter)
+            .expect("release subject");
+        let mut meter = RenderMeter::new(RenderLimits::default());
+        assert!(matches!(
+            super::execute(
+                &arena,
+                &plans,
+                stale,
+                crate::units::OutputBytes::from(0_u64),
+                &mut meter
+            ),
+            Err(RenderError::Invariant {
+                invariant: crate::error::RenderInvariant::PlanIdentity
+            })
+        ));
+        assert_eq!(u64::from(meter.usage().output_bytes), 0);
+        let invalid_doc = plans
+            .alloc(
+                super::PlanNode::Text(crate::arena::TextId::from(u32::MAX)),
+                &mut plan_meter,
+            )
+            .expect("invalid document subject");
+        let mut meter = RenderMeter::new(RenderLimits::default());
+        assert!(matches!(
+            super::execute(
+                &arena,
+                &plans,
+                invalid_doc,
+                crate::units::OutputBytes::from(0_u64),
+                &mut meter
+            ),
+            Err(RenderError::Invariant {
+                invariant: crate::error::RenderInvariant::DocumentIdentity
+            })
+        ));
+        assert_eq!(u64::from(meter.usage().output_bytes), 0);
+        let mut meter = RenderMeter::new(RenderLimits {
+            max_vm_steps: 0_u64.into(),
+            ..RenderLimits::default()
+        });
+        assert!(
+            matches!(super::execute(&arena, &plans, stale, crate::units::OutputBytes::from(0_u64), &mut meter), Err(RenderError::LimitExceeded { kind: RenderLimitKind::VmSteps, limit }) if u64::from(limit) == 0)
+        );
+        assert_eq!(u64::from(meter.usage().output_bytes), 0);
     }
 }

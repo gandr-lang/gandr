@@ -10,26 +10,24 @@
 //! no recursive drop glue, and the derived equality, hashing and debug
 //! instances are shallow over ids.
 //!
-//! # The two disciplines, both enforced rather than documented
+//! # Constructor discipline and wholesale truncation
 //!
-//! - **Constructor-only minting.** An id is produced only by a [`CoreArena`]
-//!   constructor over already-allocated children, so a child id always
-//!   resolves. **Within one family** it is also strictly less than its
-//!   parent's, which is what makes that family acyclic by construction. Across
-//!   families the ordering says nothing — the four id spaces are independent
-//!   indices — so acyclicity of the whole graph rests on the minting order
-//!   alone: a constructor cannot name a node that does not exist yet, whichever
-//!   family it is in.
+//! - **Constructor-only minting.** Opaque ids originate in [`CoreArena`]
+//!   constructors. Callers supply live children from the same arena and keep
+//!   family indices within their representable limit. Under that discipline,
+//!   each same-family child precedes its parent; cross-family acyclicity
+//!   follows from minting order, not numeric comparison. Constructors record
+//!   ids but do not validate their provenance or allocation generation.
 //! - **Wholesale truncation.** [`CoreArena::watermark`] snapshots the four
 //!   family lengths and [`CoreArena::truncate_to`] restores them, so a pass's
 //!   intermediates allocate past a mark and are dropped in one step afterwards.
 //!
 //! # The honest cost
 //!
-//! An owned tree cannot be ill-formed; a `u32` id *can* name no node, or a node
-//! in another arena. What keeps that fail-closed is constructor-only minting,
-//! one arena per elaboration run, and a checked lookup returning an option
-//! rather than an index.
+//! An id can name no current node or the same numeric slot in another arena.
+//! Checked lookup rejects an out-of-bounds slot, not a foreign origin. A later
+//! allocation can reuse a truncated slot, so the caller must discard ids and
+//! edges to removed nodes rather than treating an id as a permanent identity.
 
 use alloc::vec::Vec;
 
@@ -50,10 +48,10 @@ use crate::syntax::Zone;
 
 /// The id of a [`Value`] node in a [`CoreArena`].
 ///
-/// Minted only by a [`CoreArena`] constructor over already-allocated children,
-/// so it always resolves, and is strictly greater than every child id **of its
-/// own family**. A cross-family child is ordered by minting time rather than by
-/// id, because the families index independently.
+/// An arena-relative allocation index, valid while its node remains live.
+/// With live children from the same arena and representable family indices,
+/// a newly minted id exceeds its same-family children. Neither provenance
+/// nor allocation generation is encoded; truncation can permit index reuse.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ValueId(u32);
@@ -94,12 +92,16 @@ struct ArenaIndex(u32);
 /// - provides: the total, panic-free length-to-index widening. The requirement
 ///   stays prose: every `usize` an arena can reach is a family length, so a
 ///   predicate over the argument would state nothing.
-/// - fails: never, which is the honest cost of infallible constructors: the
-///   ceiling is not reachable at any memory an arena can occupy — four billion
-///   nodes of the smallest family is on the order of a hundred gigabytes — and
-///   the term crate's arena takes the same posture, so the two do not diverge
-///   on a condition neither can reach.
+/// - fails: never; saturation keeps the arithmetic total but cannot preserve
+///   fresh allocation identity beyond the representable family-index limit.
+///   Memory availability is not evidence that the limit cannot be reached.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, an interior index and the u32 ceiling distinguish
+///   round-trip identity from off-by-one and truncating conversions; an
+///   over-ceiling usize, where representable, distinguishes saturation.
+/// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
 #[inline]
 #[spec(ensures: |ret| ret.0 == u32::try_from(length.0).unwrap_or(u32::MAX))]
 fn id_index(length: ArenaLength) -> ArenaIndex
@@ -118,6 +120,12 @@ fn id_index(length: ArenaLength) -> ArenaIndex
 /// - fails: never; it saturates at the offset ceiling, which a checked read
 ///   then rejects.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, an interior index and the u32 ceiling distinguish
+///   round-trip identity from off-by-one and truncating conversions; an
+///   over-ceiling usize, where representable, distinguishes saturation.
+/// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
 #[inline]
 #[spec(ensures: |ret| ret.0 == usize::try_from(index.0).unwrap_or(usize::MAX))]
 fn id_offset(index: ArenaIndex) -> ArenaLength
@@ -193,18 +201,18 @@ impl CoreArena
     /// Truncate every family back to `watermark`, dropping later allocations.
     ///
     /// # Specification
-    /// - requires: `watermark` was taken from this arena and no family has
-    ///   since shrunk below it; every id minted after it is unreachable from
-    ///   content the caller retains.
+    /// - requires: retained graph content does not depend on nodes that the
+    ///   truncation removes. A stale larger mark is admissible and does not
+    ///   grow any family; discarded ids may still be queried for absence.
     /// - ensures: `self.watermark() == ArenaWatermark { values:
     ///   watermark.values.min(entry.values), computations:
     ///   watermark.computations.min(entry.computations), value_types:
     ///   watermark.value_types.min(entry.value_types), comp_types:
     ///   watermark.comp_types.min(entry.comp_types) }` — each family holds
     ///   exactly its watermark-many leading nodes, and a mark above the entry
-    ///   lengths leaves that family where it was. Every id minted after the
-    ///   watermark then dangles, and a lookup of one fails closed rather than
-    ///   resolving to a later node.
+    ///   lengths leaves that family where it was. Removed nodes no longer
+    ///   resolve immediately after truncation; later allocation can reuse their
+    ///   indices, so the caller discards the corresponding ids.
     /// - provides: the wholesale truncation a per-run arena is torn down by.
     ///   The clause checks the four family lengths, including the documented
     ///   stale-mark no-op. Arena provenance and the unreachability the
@@ -219,6 +227,7 @@ impl CoreArena
     ///   separated by a mark below the current length and a mark at it, with
     ///   the post-truncation lookup of a dropped id asserted to be absent.
     /// - witness: `arena::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[inline]
     #[spec(
         captures: entry = self.watermark(),
@@ -245,12 +254,22 @@ impl CoreArena
     ///
     /// # Specification
     /// - requires: nothing; a dangling id is admissible.
-    /// - ensures: `Some(node)` exactly when `id` names a value node this arena
-    ///   still holds, `None` otherwise — an id past the end, or one a
-    ///   truncation dropped, fails closed rather than resolving to another
-    ///   node.
+    /// - ensures: the current value node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
     /// - provides: the read side of the value family.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.values.get(id_offset(ArenaIndex(id.0)).0)) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
     #[inline]
     #[must_use]
     pub fn value(
@@ -265,12 +284,22 @@ impl CoreArena
     ///
     /// # Specification
     /// - requires: nothing; a dangling id is admissible.
-    /// - ensures: `Some(node)` exactly when `id` names a computation node this
-    ///   arena still holds, `None` otherwise — an id past the end, or one a
-    ///   truncation dropped, fails closed rather than resolving to another
-    ///   node.
+    /// - ensures: the current computation node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
     /// - provides: the read side of the computation family.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.computations.get(id_offset(ArenaIndex(id.0)).0)) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
     #[inline]
     #[must_use]
     pub fn computation(
@@ -285,12 +314,22 @@ impl CoreArena
     ///
     /// # Specification
     /// - requires: nothing; a dangling id is admissible.
-    /// - ensures: `Some(node)` exactly when `id` names a value-type node this
-    ///   arena still holds, `None` otherwise — an id past the end, or one a
-    ///   truncation dropped, fails closed rather than resolving to another
-    ///   node.
+    /// - ensures: the current value-type node at the index carried by `id`, or
+    ///   `None` when that index is outside the family. A truncated index can be
+    ///   reused by later allocation; ids do not carry generations.
     /// - provides: the read side of the value-type family.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.value_types.get(id_offset(ArenaIndex(id.0)).0)) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
     #[inline]
     #[must_use]
     pub fn value_type(
@@ -305,12 +344,22 @@ impl CoreArena
     ///
     /// # Specification
     /// - requires: nothing; a dangling id is admissible.
-    /// - ensures: `Some(node)` exactly when `id` names a computation-type node
-    ///   this arena still holds, `None` otherwise — an id past the end, or one
-    ///   a truncation dropped, fails closed rather than resolving to another
-    ///   node.
+    /// - ensures: the current computation-type node at the index carried by
+    ///   `id`, or `None` when that index is outside the family. A truncated
+    ///   index can be reused by later allocation; ids do not carry generations.
     /// - provides: the read side of the computation-type family.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct nodes at both ends of each family,
+    ///   truncation to zero, and a later stale mark distinguish wrong-slot
+    ///   lookup, surviving removed nodes and accidental growth.
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(ensures: |ret| match (ret, self.comp_types.get(id_offset(ArenaIndex(id.0)).0)) {
+        | (Some(actual), Some(expected)) => core::ptr::eq(core::ptr::from_ref(actual), core::ptr::from_ref(expected)),
+        | (None, None) => true,
+        | (Some(_), None) | (None, Some(_)) => false,
+    })]
     #[inline]
     #[must_use]
     pub fn comp_type(
@@ -330,6 +379,19 @@ impl CoreArena
     /// - provides: the single append point every value constructor goes
     ///   through.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal children and distinct formers exercise append
+    ///   identity, family separation and child order; truncation then
+    ///   reallocation separates fresh allocation from a stale-slot alias.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = self.values.len(), kind = core::mem::discriminant(&value)],
+        ensures: |ret| entry.checked_add(1) == Some(self.values.len())
+            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
+            && self.values.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+    )]
     #[inline]
     fn alloc_value(
         &mut self,
@@ -351,6 +413,19 @@ impl CoreArena
     /// - provides: the single append point every computation constructor goes
     ///   through.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal children and distinct formers exercise append
+    ///   identity, family separation and child order; truncation then
+    ///   reallocation separates fresh allocation from a stale-slot alias.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = self.computations.len(), kind = core::mem::discriminant(&computation)],
+        ensures: |ret| entry.checked_add(1) == Some(self.computations.len())
+            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
+            && self.computations.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+    )]
     #[inline]
     fn alloc_computation(
         &mut self,
@@ -372,6 +447,19 @@ impl CoreArena
     /// - provides: the single append point every value-type constructor goes
     ///   through.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal children and distinct formers exercise append
+    ///   identity, family separation and child order; truncation then
+    ///   reallocation separates fresh allocation from a stale-slot alias.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = self.value_types.len(), kind = core::mem::discriminant(&value_type)],
+        ensures: |ret| entry.checked_add(1) == Some(self.value_types.len())
+            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
+            && self.value_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+    )]
     #[inline]
     fn alloc_value_type(
         &mut self,
@@ -393,6 +481,19 @@ impl CoreArena
     /// - provides: the single append point every computation-type constructor
     ///   goes through.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal children and distinct formers exercise append
+    ///   identity, family separation and child order; truncation then
+    ///   reallocation separates fresh allocation from a stale-slot alias.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
+    #[spec(
+        captures: [entry = self.comp_types.len(), kind = core::mem::discriminant(&comp_type)],
+        ensures: |ret| entry.checked_add(1) == Some(self.comp_types.len())
+            && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
+            && self.comp_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
+    )]
     #[inline]
     fn alloc_comp_type(
         &mut self,
@@ -467,6 +568,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Pair(first, second)))]
     #[inline]
     pub fn value_pair(
         &mut self,
@@ -486,6 +594,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Injection(side, body)))]
     #[inline]
     pub fn value_injection(
         &mut self,
@@ -505,6 +620,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the
     ///   computation family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Thunk(body)))]
     #[inline]
     pub fn value_thunk(
         &mut self,
@@ -523,6 +645,14 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero target and an already allocated child
+    ///   distinguish a lost level, the wrong child and a lift confused with its
+    ///   underlying node; the executable predicate observes the former and
+    ///   child only.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| matches!(self.value(ret), Some(Value::Lift { body: actual, .. }) if *actual == body))]
     #[inline]
     pub fn value_lift(
         &mut self,
@@ -542,6 +672,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the
     ///   value-type family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Quote(quoted)))]
     #[inline]
     pub fn value_quote(
         &mut self,
@@ -560,6 +697,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the
     ///   computation-type family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::QuoteComputation(quoted)))]
     #[inline]
     pub fn value_quote_computation(
         &mut self,
@@ -643,6 +787,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Lambda(body)))]
     #[inline]
     pub fn computation_lambda(
         &mut self,
@@ -662,6 +813,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Application(head, argument)))]
     #[inline]
     pub fn computation_application(
         &mut self,
@@ -680,6 +838,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the value
     ///   family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Return(value)))]
     #[inline]
     pub fn computation_return(
         &mut self,
@@ -699,6 +864,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Bind(bound, body)))]
     #[inline]
     pub fn computation_bind(
         &mut self,
@@ -717,6 +889,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the value
     ///   family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Force(value)))]
     #[inline]
     pub fn computation_force(
         &mut self,
@@ -736,6 +915,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Case { scrutinee, on_left, on_right }))]
     #[inline]
     pub fn computation_case(
         &mut self,
@@ -786,6 +972,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Product(first, second)))]
     #[inline]
     pub fn value_type_product(
         &mut self,
@@ -806,6 +999,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Sum(first, second)))]
     #[inline]
     pub fn value_type_sum(
         &mut self,
@@ -825,6 +1025,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the
     ///   computation-type family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Thunk(body)))]
     #[inline]
     pub fn value_type_thunk(
         &mut self,
@@ -862,6 +1069,13 @@ impl CoreArena
     /// - provides: the representation of a sealed abstract type, with its
     ///   admission left to the judgement that owns it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Abstract(atom)))]
     #[inline]
     pub fn value_type_abstract(
         &mut self,
@@ -896,6 +1110,11 @@ impl CoreArena
     ///   the matching sort decodes, a quote of the other sort and a non-quote
     ///   code are minted as they stand.
     /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[spec(ensures: |ret| if let Some(&Value::Quote(quoted)) = self.value(code) {
+        ret == quoted
+    } else {
+        matches!(self.value_type(ret), Some(ValueType::Element { code: actual, .. }) if *actual == code)
+    })]
     #[inline]
     pub fn value_type_element(
         &mut self,
@@ -919,6 +1138,14 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero target and an already allocated child
+    ///   distinguish a lost level, the wrong child and a lift confused with its
+    ///   underlying node; the executable predicate observes the former and
+    ///   child only.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| matches!(self.value_type(ret), Some(ValueType::Lift { inner: actual, .. }) if *actual == inner))]
     #[inline]
     pub fn value_type_lift(
         &mut self,
@@ -970,6 +1197,13 @@ impl CoreArena
     /// - provides: the only way to mint this former; the child is in the
     ///   value-type family, so the two id spaces stay independent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner(result)))]
     #[inline]
     pub fn comp_type_returner(
         &mut self,
@@ -989,6 +1223,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Arrow { domain, codomain }))]
     #[inline]
     pub fn comp_type_arrow(
         &mut self,
@@ -1016,6 +1257,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Pi { domain, codomain }))]
     #[inline]
     pub fn comp_type_pi(
         &mut self,
@@ -1047,6 +1295,11 @@ impl CoreArena
     /// - hypothesis: L3 — the same decision surface as the value decode, over
     ///   the other sort's quote.
     /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[spec(ensures: |ret| if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+        ret == quoted
+    } else {
+        matches!(self.comp_type(ret), Some(CompType::Element { code: actual, .. }) if *actual == code)
+    })]
     #[inline]
     pub fn comp_type_element(
         &mut self,
@@ -1291,5 +1544,199 @@ mod tests
             arena.value_type(pi),
             "the static Pi reads back with its domain and codomain"
         );
+    }
+    #[test]
+    fn index_boundaries_preserve_identity_or_saturate()
+    {
+        for raw in [0_u32, 1, u32::MAX] {
+            let offset = super::id_offset(super::ArenaIndex(raw));
+            assert_eq!(usize::try_from(raw).unwrap_or(usize::MAX), offset.0);
+            assert_eq!(raw, super::id_index(offset).0);
+        }
+        if let Some(above) = usize::try_from(u32::MAX)
+            .ok()
+            .and_then(|limit| limit.checked_add(1))
+        {
+            assert_eq!(u32::MAX, super::id_index(super::ArenaLength(above)).0);
+        }
+    }
+
+    #[test]
+    fn all_families_truncate_without_resurrecting_nodes()
+    {
+        let mut arena = CoreArena::new();
+        let kept_value = arena.value_unit();
+        let kept_type = arena.value_type_unit();
+        let kept_comp = arena.computation_return(kept_value);
+        let kept_comp_type = arena.comp_type_returner(kept_type);
+        let mark = arena.watermark();
+        let dropped_value = arena.value_constant(ConstantIndex::from(17_usize));
+        let dropped_type = arena.value_type_base(BaseType::Integer);
+        let dropped_comp = arena.computation_force(dropped_value);
+        let dropped_comp_type = arena.comp_type_arrow(dropped_type, kept_comp_type);
+        let later = arena.watermark();
+        assert_eq!(
+            Some(&Value::Constant(ConstantIndex::from(17_usize))),
+            arena.value(dropped_value)
+        );
+        assert_eq!(
+            Some(&ValueType::Base(BaseType::Integer)),
+            arena.value_type(dropped_type)
+        );
+        assert_eq!(
+            Some(&crate::Computation::Force(dropped_value)),
+            arena.computation(dropped_comp)
+        );
+        assert_eq!(
+            Some(&CompType::Arrow {
+                domain: dropped_type,
+                codomain: kept_comp_type
+            }),
+            arena.comp_type(dropped_comp_type)
+        );
+        arena.truncate_to(mark);
+        assert_eq!(Some(&Value::Unit), arena.value(kept_value));
+        assert_eq!(Some(&ValueType::Unit), arena.value_type(kept_type));
+        assert_eq!(
+            Some(&crate::Computation::Return(kept_value)),
+            arena.computation(kept_comp)
+        );
+        assert_eq!(
+            Some(&CompType::Returner(kept_type)),
+            arena.comp_type(kept_comp_type)
+        );
+        assert_eq!(None, arena.value(dropped_value));
+        assert_eq!(None, arena.value_type(dropped_type));
+        assert_eq!(None, arena.computation(dropped_comp));
+        assert_eq!(None, arena.comp_type(dropped_comp_type));
+        arena.truncate_to(later);
+        assert_eq!(mark, arena.watermark());
+        let replacement = arena.value_pair(kept_value, kept_value);
+        assert_eq!(dropped_value, replacement);
+        assert_eq!(
+            Some(&Value::Pair(kept_value, kept_value)),
+            arena.value(replacement)
+        );
+        arena.truncate_to(ArenaWatermark::default());
+        arena.truncate_to(later);
+        assert_eq!(ArenaWatermark::default(), arena.watermark());
+        assert_eq!(None, arena.value(kept_value));
+        assert_eq!(None, arena.value_type(kept_type));
+        assert_eq!(None, arena.computation(kept_comp));
+        assert_eq!(None, arena.comp_type(kept_comp_type));
+    }
+
+    #[test]
+    fn distinct_children_survive_every_compound_former()
+    {
+        let mut arena = CoreArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_constant(ConstantIndex::from(17_usize));
+        let left = arena.computation_return(first);
+        let right = arena.computation_return(second);
+        let domain = arena.value_type_unit();
+        let other = arena.value_type_base(BaseType::Integer);
+        let result = arena.comp_type_returner(other);
+        let level = Level::zero().succ().expect("one");
+        let values = [
+            (arena.value_pair(first, second), Value::Pair(first, second)),
+            (
+                arena.value_injection(gandr_kernel_term::Side::Left, first),
+                Value::Injection(gandr_kernel_term::Side::Left, first),
+            ),
+            (
+                arena.value_injection(gandr_kernel_term::Side::Right, second),
+                Value::Injection(gandr_kernel_term::Side::Right, second),
+            ),
+            (arena.value_thunk(right), Value::Thunk(right)),
+            (arena.value_lift(level.clone(), second), Value::Lift {
+                target: level.clone(),
+                body: second,
+            }),
+            (arena.value_quote(other), Value::Quote(other)),
+            (
+                arena.value_quote_computation(result),
+                Value::QuoteComputation(result),
+            ),
+        ];
+        for (id, node) in values {
+            assert!(id > second);
+            assert_eq!(Some(&node), arena.value(id));
+        }
+        let computations = [
+            (
+                arena.computation_lambda(right),
+                crate::Computation::Lambda(right),
+            ),
+            (
+                arena.computation_application(left, second),
+                crate::Computation::Application(left, second),
+            ),
+            (
+                arena.computation_return(second),
+                crate::Computation::Return(second),
+            ),
+            (
+                arena.computation_bind(left, right),
+                crate::Computation::Bind(left, right),
+            ),
+            (
+                arena.computation_force(second),
+                crate::Computation::Force(second),
+            ),
+            (
+                arena.computation_case(first, left, right),
+                crate::Computation::Case {
+                    scrutinee: first,
+                    on_left: left,
+                    on_right: right,
+                },
+            ),
+        ];
+        for (id, node) in computations {
+            assert!(id > right);
+            assert_eq!(Some(&node), arena.computation(id));
+        }
+        let types = [
+            (
+                arena.value_type_product(domain, other),
+                ValueType::Product(domain, other),
+            ),
+            (
+                arena.value_type_sum(domain, other),
+                ValueType::Sum(domain, other),
+            ),
+            (arena.value_type_thunk(result), ValueType::Thunk(result)),
+            (
+                arena.value_type_lift(other, level.clone()),
+                ValueType::Lift {
+                    inner: other,
+                    target: level,
+                },
+            ),
+            (
+                arena.value_type_abstract(ConstantIndex::from(23_usize)),
+                ValueType::Abstract(ConstantIndex::from(23_usize)),
+            ),
+        ];
+        for (id, node) in types {
+            assert!(id > other);
+            assert_eq!(Some(&node), arena.value_type(id));
+        }
+        let comp_types = [
+            (arena.comp_type_returner(domain), CompType::Returner(domain)),
+            (arena.comp_type_arrow(domain, result), CompType::Arrow {
+                domain,
+                codomain: result,
+            }),
+            (arena.comp_type_pi(other, result), CompType::Pi {
+                domain: other,
+                codomain: result,
+            }),
+        ];
+        for (id, node) in comp_types {
+            assert!(id > result);
+            assert_eq!(Some(&node), arena.comp_type(id));
+        }
     }
 }

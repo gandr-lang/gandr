@@ -13,6 +13,7 @@
 //! that the two are replay-distinct although code equality would identify
 //! them, so such a collapse fails here, loudly, by name.
 
+use anodized::spec;
 use gandr_theory_levitation::ConstructorTag;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::Payload;
@@ -36,13 +37,10 @@ fn code_iso_bool_bool_has_at_least_two_replay_inequivalent_members()
         !bool::from(replay_equivalent(&identity, &negation, &samples, &samples)),
         "identity and negation are replay-inequivalent: CodeIso(Bool, Bool) is not a singleton"
     );
-    assert!(
-        usize::from(distinct_up_to_replay(
-            &[identity, negation],
-            &samples,
-            &samples
-        )) >= 2,
-        "CodeIso(Bool, Bool) has at least two replay-inequivalent members"
+    assert_eq!(
+        distinct_up_to_replay(&[identity, negation], &samples, &samples),
+        ReplayClassCount::from(2_usize),
+        "the two transformations represent two replay classes"
     );
 }
 
@@ -50,7 +48,27 @@ fn code_iso_bool_bool_has_at_least_two_replay_inequivalent_members()
 /// deduplication by [`replay_equivalent`] over the samples.
 ///
 /// # Specification
-/// trivial.
+/// - requires: all members share source and target descriptions; samples belong
+///   to those descriptions and translators are deterministic on them.
+/// - ensures: the number of greedy representatives of sample replay
+///   equivalence.
+/// - panics: on a boundary mismatch or a translator panic.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, singleton and repeated identity/negation lists
+///   expose exact class counts; an empty corpus collapses nonempty lists to one
+///   class. These observations detect counting members, dropping negation or
+///   discarding the empty-list boundary; mixed boundaries refuse instead of
+///   being compared. The quotient is over deterministic replay on these
+///   samples, not all values.
+/// - witness: `tests::code_iso::negation_guard::replay_classes_handle_empty_and_repeated_members`
+/// - witness: `tests::code_iso::negation_guard::code_iso_bool_bool_has_at_least_two_replay_inequivalent_members`
+#[spec(requires: members.iter().zip(members.iter().skip(1)).all(|(left, right)|
+    (left.source(), left.target()) == (right.source(), right.target())),
+    ensures: |count| usize::from(count) <= members.len()
+        && (usize::from(count) == 0) == members.is_empty()
+        && (!(source_samples.is_empty() && target_samples.is_empty())
+            || usize::from(count) == usize::from(!members.is_empty())))]
 fn distinct_up_to_replay(
     members: &[CodeIso],
     source_samples: &[DescValue],
@@ -136,5 +154,38 @@ fn the_disagreement_is_witnessed_on_false()
             &disagreement.right_image
         )),
         "the two images are distinct: the collapse guard bites"
+    );
+}
+
+#[test]
+fn replay_classes_handle_empty_and_repeated_members()
+{
+    let samples = fixtures::bool_two_ctor_values();
+    let identity = fixtures::identity_bool();
+    let negation = fixtures::negation_bool();
+    assert_eq!(
+        distinct_up_to_replay(&[], &samples, &samples),
+        ReplayClassCount::from(0_usize)
+    );
+    assert_eq!(
+        distinct_up_to_replay(core::slice::from_ref(&identity), &samples, &samples),
+        ReplayClassCount::from(1_usize)
+    );
+    let repeated = [identity.clone(), identity.clone(), negation, identity];
+    assert_eq!(
+        distinct_up_to_replay(&repeated, &samples, &samples),
+        ReplayClassCount::from(2_usize)
+    );
+    assert_eq!(
+        distinct_up_to_replay(&repeated, &[], &[]),
+        ReplayClassCount::from(1_usize)
+    );
+    assert!(
+        std::panic::catch_unwind(|| distinct_up_to_replay(
+            &[fixtures::identity_bool(), fixtures::bool_bridge()],
+            &[],
+            &[]
+        ))
+        .is_err()
     );
 }

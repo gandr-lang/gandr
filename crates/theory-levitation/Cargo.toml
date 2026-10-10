@@ -18,7 +18,10 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]

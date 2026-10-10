@@ -76,6 +76,13 @@ impl Binders
     /// - provides: the step a walk takes past a binder.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one below the u32 ceiling and the ceiling
+    ///   distinguish increment from saturation, through both binder-count entry
+    ///   points.
+    /// - witness: `rewrite::tests::binder_counts_clamp_at_the_ceiling`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     #[inline]
     #[must_use]
     pub fn deeper(self) -> Self
@@ -97,6 +104,13 @@ impl Binders
     ///   further out.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one below the u32 ceiling and the ceiling
+    ///   distinguish increment from saturation, through both binder-count entry
+    ///   points.
+    /// - witness: `rewrite::tests::binder_counts_clamp_at_the_ceiling`
+    #[spec(ensures: |ret| ret.0 == u32::from(index).saturating_add(1))]
     #[inline]
     #[must_use]
     pub fn past(index: DeBruijnIndex) -> Self
@@ -239,12 +253,28 @@ impl<'arena> Engine<'arena>
     /// Rewrite `subject` from depth zero.
     ///
     /// # Specification
-    /// - requires: `subject` names a node of this engine's arena.
+    /// - requires: the subject graph is acyclic wherever its nodes resolve; the
+    ///   pending and result stacks are empty. Unreadable ids are admitted.
     /// - ensures: the rewritten node, in the subject's family; an unreadable
     ///   subject answers itself.
     /// - provides: the whole iterative walk, memoized per node and depth.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — 600 bounded generated codomains agree with a
+    ///   level-based reference under open substitution. L3 — a shared product
+    ///   chain observes once-per-key minting, and binding-site goldens separate
+    ///   shadowing.
+    /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
+    /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
+    /// - witness: `rewrite::tests::binding_sites_distinguish_free_bound_and_linear_indices`
+    #[spec(
+        requires: self.tasks.is_empty() && self.results.is_empty(),
+        ensures: |ret| self.tasks.is_empty() && self.results.is_empty()
+            && self.memo.get(&(subject, Binders::NONE, rewrite)) == Some(&ret)
+            && core::mem::discriminant(&ret) == core::mem::discriminant(&subject),
+    )]
     fn run(
         &mut self,
         subject: Node,
@@ -280,6 +310,24 @@ impl<'arena> Engine<'arena>
     /// - provides: the scheduling half of the engine.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a memo hit returns the stored result, a free
+    ///   occurrence answers immediately, and substitution beneath a binder
+    ///   schedules a shifted replacement; the shared-chain and capture
+    ///   witnesses separate missing publication, duplicate work and premature
+    ///   replacement.
+    /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
+    /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
+    /// - witness: `rewrite::tests::substitution_avoids_capture`
+    #[spec(
+        captures: [pending = self.tasks.len(), ready = self.results.len()],
+        ensures: (ready.checked_add(1) == Some(self.results.len()) && self.tasks.len() == pending
+            && self.memo.get(&(node, depth, rewrite)) == self.results.last())
+            || (self.results.len() == ready && self.tasks.len() > pending
+                && matches!(self.tasks.get(pending), Some(Task::Close(held, at, step) | Task::Record(held, at, step))
+                    if *held == node && *at == depth && *step == rewrite)),
+    )]
     fn open(
         &mut self,
         node: Node,
@@ -335,6 +383,42 @@ impl<'arena> Engine<'arena>
     /// - provides: the whole variable rule of the three rewrites.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — indices below, at and above depths zero and one
+    ///   separate all three rewrite rules; a zero shift, a saturating shift and
+    ///   an open replacement distinguish identity, clamping and capture
+    ///   avoidance.
+    /// - witness: `rewrite::tests::occurrence_rules_separate_depth_boundaries`
+    #[spec(
+        captures: mentioned = self.mention,
+        ensures: |ret| match rewrite {
+            | Rewrite::Shift(amount) => self.mention == mentioned && if u32::from(index) < depth.0 || amount == Binders::NONE {
+                ret == Occurrence::Answered(id)
+            } else {
+                matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                    Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                        if u32::from(*actual) == u32::from(index).saturating_add(amount.0)))
+            },
+            | Rewrite::Substitute(replacement) => self.mention == mentioned && match u32::from(index).cmp(&depth.0) {
+                | core::cmp::Ordering::Less => ret == Occurrence::Answered(id),
+                | core::cmp::Ordering::Equal => if depth == Binders::NONE {
+                    ret == Occurrence::Answered(replacement)
+                } else { ret == Occurrence::Carried(replacement, depth) },
+                | core::cmp::Ordering::Greater => matches!(ret, Occurrence::Answered(answer)
+                    if matches!(self.arena.value(answer), Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                        if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
+            },
+            | Rewrite::Lower => match u32::from(index).cmp(&depth.0) {
+                | core::cmp::Ordering::Less => ret == Occurrence::Answered(id) && self.mention == mentioned,
+                | core::cmp::Ordering::Equal => ret == Occurrence::Answered(id) && self.mention == Mention::Present,
+                | core::cmp::Ordering::Greater => self.mention == mentioned
+                    && matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                        Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                            if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
+            },
+        },
+    )]
     fn occurrence(
         &mut self,
         id: ValueId,
@@ -388,6 +472,15 @@ impl<'arena> Engine<'arena>
     /// - provides: the lowering half of substitution and strengthening.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — lowering index one and an index above a crossed
+    ///   binder distinguishes subtraction from identity and the wrong zone; the
+    ///   occurrence matrix also preserves a previously recorded mention.
+    /// - witness: `rewrite::tests::occurrence_rules_separate_depth_boundaries`
+    #[spec(requires: position.0 > 0,
+        ensures: |ret| matches!(self.arena.value(ret), Some(Value::Variable { zone: Zone::Intuitionistic, index })
+            if u32::from(*index).checked_add(1) == Some(position.0)))]
     fn lowered(
         &mut self,
         position: Binders,
@@ -421,6 +514,43 @@ impl<'arena> Engine<'arena>
     /// - provides: the only statement of where the core language binds.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — lambda and static lambda bind their bodies, bind
+    ///   scopes only its continuation, case scopes both branches, and Pi scopes
+    ///   only its codomain; static Pi, arrow, quote and decode do not bind.
+    ///   Exact rewritten indices distinguish each boundary and the untouched
+    ///   linear zone; L2 generated codomains cover their nested combinations.
+    /// - witness: `rewrite::tests::binding_sites_distinguish_free_bound_and_linear_indices`
+    /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
+    #[spec(
+        captures: [pending = self.tasks.len(), ready = self.results.len(), children = match node {
+        | Node::Value(id) => match self.arena.value(id) {
+            | Some(&Value::Variable { .. } | &Value::Constant(_) | &Value::Unit | &Value::Literal(_)) | None => 0_usize,
+            | Some(&Value::Pair(..) | &Value::StaticApplication(..)) => 2,
+            | Some(&Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::StaticLambda(_)) => 1,
+        },
+        | Node::Computation(id) => match self.arena.computation(id) {
+            | None => 0_usize,
+            | Some(&Computation::Lambda(_) | &Computation::Return(_) | &Computation::Force(_)) => 1,
+            | Some(&Computation::Application(..) | &Computation::Bind(..)) => 2,
+            | Some(&Computation::Case { .. }) => 3,
+        },
+        | Node::ValueType(id) => match self.arena.value_type(id) {
+            | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) | None => 0_usize,
+            | Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. }) => 2,
+            | Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. }) => 1,
+        },
+        | Node::CompType(id) => match self.arena.comp_type(id) {
+            | None => 0_usize,
+            | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
+            | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+        },
+    }],
+        ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
+            && self.tasks.get(pending..).is_some_and(|tasks| tasks.iter().all(|task|
+                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper())))),
+    )]
     fn push_children(
         &mut self,
         node: Node,
@@ -541,7 +671,19 @@ impl<'arena> Engine<'arena>
     /// direction, since it cannot fabricate a node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an empty stack is admissible.
+    /// - ensures: removes and returns the last result, or `original` when
+    ///   empty.
+    /// - provides: the result-stack consumption shared by the family adapters.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and populated stacks distinguish fallback
+    ///   identity from consuming the last result; family adapters also consume
+    ///   a mismatched result without confusing its id with the original family.
+    /// - witness: `rewrite::tests::missing_and_mismatched_results_preserve_family_identity`
+    #[spec(captures: [top = self.results.last().copied(), ready = self.results.len()],
+        ensures: |ret| ret == top.unwrap_or(original) && self.results.len() == ready.saturating_sub(1))]
     fn popped(
         &mut self,
         original: Node,
@@ -553,7 +695,23 @@ impl<'arena> Engine<'arena>
     /// Pop a value child's result.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an empty or mismatched stack is admissible.
+    /// - ensures: consumes one result if present; returns its id only in this
+    ///   family, otherwise preserving `original`.
+    /// - provides: the family-specific result-stack projection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, matching and mismatched result stacks
+    ///   distinguish fallback identity, correct family extraction and removal
+    ///   of exactly the last result, without reinterpreting an id from another
+    ///   family.
+    /// - witness: `rewrite::tests::missing_and_mismatched_results_preserve_family_identity`
+    #[spec(captures: [top = self.results.last().copied(), ready = self.results.len()],
+        ensures: |ret| self.results.len() == ready.saturating_sub(1) && ret == match top {
+            | Some(Node::Value(id)) => id,
+            | Some(Node::Computation(_) | Node::ValueType(_) | Node::CompType(_)) | None => original,
+        })]
     fn value(
         &mut self,
         original: ValueId,
@@ -568,7 +726,23 @@ impl<'arena> Engine<'arena>
     /// Pop a computation child's result.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an empty or mismatched stack is admissible.
+    /// - ensures: consumes one result if present; returns its id only in this
+    ///   family, otherwise preserving `original`.
+    /// - provides: the family-specific result-stack projection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, matching and mismatched result stacks
+    ///   distinguish fallback identity, correct family extraction and removal
+    ///   of exactly the last result, without reinterpreting an id from another
+    ///   family.
+    /// - witness: `rewrite::tests::missing_and_mismatched_results_preserve_family_identity`
+    #[spec(captures: [top = self.results.last().copied(), ready = self.results.len()],
+        ensures: |ret| self.results.len() == ready.saturating_sub(1) && ret == match top {
+            | Some(Node::Computation(id)) => id,
+            | Some(Node::Value(_) | Node::ValueType(_) | Node::CompType(_)) | None => original,
+        })]
     fn computation(
         &mut self,
         original: ComputationId,
@@ -583,7 +757,23 @@ impl<'arena> Engine<'arena>
     /// Pop a value-type child's result.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an empty or mismatched stack is admissible.
+    /// - ensures: consumes one result if present; returns its id only in this
+    ///   family, otherwise preserving `original`.
+    /// - provides: the family-specific result-stack projection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, matching and mismatched result stacks
+    ///   distinguish fallback identity, correct family extraction and removal
+    ///   of exactly the last result, without reinterpreting an id from another
+    ///   family.
+    /// - witness: `rewrite::tests::missing_and_mismatched_results_preserve_family_identity`
+    #[spec(captures: [top = self.results.last().copied(), ready = self.results.len()],
+        ensures: |ret| self.results.len() == ready.saturating_sub(1) && ret == match top {
+            | Some(Node::ValueType(id)) => id,
+            | Some(Node::Value(_) | Node::Computation(_) | Node::CompType(_)) | None => original,
+        })]
     fn value_type(
         &mut self,
         original: ValueTypeId,
@@ -598,7 +788,23 @@ impl<'arena> Engine<'arena>
     /// Pop a computation-type child's result.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an empty or mismatched stack is admissible.
+    /// - ensures: consumes one result if present; returns its id only in this
+    ///   family, otherwise preserving `original`.
+    /// - provides: the family-specific result-stack projection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, matching and mismatched result stacks
+    ///   distinguish fallback identity, correct family extraction and removal
+    ///   of exactly the last result, without reinterpreting an id from another
+    ///   family.
+    /// - witness: `rewrite::tests::missing_and_mismatched_results_preserve_family_identity`
+    #[spec(captures: [top = self.results.last().copied(), ready = self.results.len()],
+        ensures: |ret| self.results.len() == ready.saturating_sub(1) && ret == match top {
+            | Some(Node::CompType(id)) => id,
+            | Some(Node::Value(_) | Node::Computation(_) | Node::ValueType(_)) | None => original,
+        })]
     fn comp_type(
         &mut self,
         original: CompTypeId,
@@ -625,6 +831,13 @@ impl<'arena> Engine<'arena>
     /// - provides: the combining half of the engine.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unchanged and changed children of every compound
+    ///   former distinguish identity reuse, swapped children, wrong-family
+    ///   results and missed quote decoding through exact reconstructed nodes.
+    /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&node))]
     fn close(
         &mut self,
         node: Node,
@@ -641,7 +854,28 @@ impl<'arena> Engine<'arena>
     /// Combine a value node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the result stack holds rewritten children in source order.
+    /// - ensures: consumes those children; unchanged children reuse `id`, while
+    ///   changed children preserve the former except for quote decoding.
+    /// - provides: the family-specific reconstruction step.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unchanged and changed children of each former are
+    ///   read back exactly, with unequal children separating reversed stack
+    ///   order. Matching quotes exercise decode-on-mint, while leaves and
+    ///   missing children preserve their original identity.
+    /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    #[spec(
+        captures: [ready = self.results.len(), children = match self.arena.value(id) {
+            | Some(&Value::Variable { .. } | &Value::Constant(_) | &Value::Unit | &Value::Literal(_)) | None => 0_usize,
+            | Some(&Value::Pair(..) | &Value::StaticApplication(..)) => 2,
+            | Some(&Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::StaticLambda(_)) => 1,
+        }],
+        ensures: |ret| self.results.len() == ready.saturating_sub(children)
+            && (ret == id || self.arena.value(id).is_some_and(|original| self.arena.value(ret).is_some_and(|rewritten|
+                core::mem::discriminant(original) == core::mem::discriminant(rewritten)))),
+    )]
     fn close_value(
         &mut self,
         id: ValueId,
@@ -734,7 +968,29 @@ impl<'arena> Engine<'arena>
     /// Combine a computation node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the result stack holds rewritten children in source order.
+    /// - ensures: consumes those children; unchanged children reuse `id`, while
+    ///   changed children preserve the former except for quote decoding.
+    /// - provides: the family-specific reconstruction step.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unchanged and changed children of each former are
+    ///   read back exactly, with unequal children separating reversed stack
+    ///   order. Matching quotes exercise decode-on-mint, while leaves and
+    ///   missing children preserve their original identity.
+    /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    #[spec(
+        captures: [ready = self.results.len(), children = match self.arena.computation(id) {
+            | None => 0_usize,
+            | Some(&Computation::Lambda(_) | &Computation::Return(_) | &Computation::Force(_)) => 1,
+            | Some(&Computation::Application(..) | &Computation::Bind(..)) => 2,
+            | Some(&Computation::Case { .. }) => 3,
+        }],
+        ensures: |ret| self.results.len() == ready.saturating_sub(children)
+            && (ret == id || self.arena.computation(id).is_some_and(|original| self.arena.computation(ret).is_some_and(|rewritten|
+                core::mem::discriminant(original) == core::mem::discriminant(rewritten)))),
+    )]
     fn close_computation(
         &mut self,
         id: ComputationId,
@@ -820,7 +1076,28 @@ impl<'arena> Engine<'arena>
     /// Combine a value-type node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the result stack holds rewritten children in source order.
+    /// - ensures: consumes those children; unchanged children reuse `id`, while
+    ///   changed children preserve the former except for quote decoding.
+    /// - provides: the family-specific reconstruction step.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unchanged and changed children of each former are
+    ///   read back exactly, with unequal children separating reversed stack
+    ///   order. Matching quotes exercise decode-on-mint, while leaves and
+    ///   missing children preserve their original identity.
+    /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    #[spec(
+        captures: [ready = self.results.len(), children = match self.arena.value_type(id) {
+            | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) | None => 0_usize,
+            | Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. }) => 2,
+            | Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. }) => 1,
+        }],
+        ensures: |ret| self.results.len() == ready.saturating_sub(children)
+            && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
+                matches!(original, ValueType::Element { .. }) || core::mem::discriminant(original) == core::mem::discriminant(rewritten)))),
+    )]
     fn close_value_type(
         &mut self,
         id: ValueTypeId,
@@ -900,7 +1177,28 @@ impl<'arena> Engine<'arena>
     /// Combine a computation-type node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the result stack holds rewritten children in source order.
+    /// - ensures: consumes those children; unchanged children reuse `id`, while
+    ///   changed children preserve the former except for quote decoding.
+    /// - provides: the family-specific reconstruction step.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unchanged and changed children of each former are
+    ///   read back exactly, with unequal children separating reversed stack
+    ///   order. Matching quotes exercise decode-on-mint, while leaves and
+    ///   missing children preserve their original identity.
+    /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
+    #[spec(
+        captures: [ready = self.results.len(), children = match self.arena.comp_type(id) {
+            | None => 0_usize,
+            | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
+            | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+        }],
+        ensures: |ret| self.results.len() == ready.saturating_sub(children)
+            && (ret == id || self.arena.comp_type(id).is_some_and(|original| self.arena.comp_type(ret).is_some_and(|rewritten|
+                matches!(original, CompType::Element { .. }) || core::mem::discriminant(original) == core::mem::discriminant(rewritten)))),
+    )]
     fn close_comp_type(
         &mut self,
         id: CompTypeId,
@@ -969,11 +1267,14 @@ impl<'arena> Engine<'arena>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — the shift agrees with a capture-free reference over
-///   generated dependent types, on the lowering side of instantiation that
-///   carries every replacement through it.
+/// - hypothesis: L2 — 600 deterministic bounded codomains agree with a
+///   capture-free level-based reference under open substitution, with L3
+///   free/bound index boundaries and closed-type identity.
 /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+#[spec(captures: entry = arena.watermark(),
+    ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry))
+        && (ret == subject || arena.value_type(ret).is_some()))]
 #[inline]
 #[must_use]
 pub fn shift_value_type(
@@ -1006,6 +1307,9 @@ pub fn shift_value_type(
 /// # Adequacy
 /// - hypothesis: L3 — free and bound indices separated within one subject.
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+#[spec(captures: entry = arena.watermark(),
+    ensures: |ret| (amount != Binders::NONE || (ret == subject && arena.watermark() == entry))
+        && (ret == subject || arena.comp_type(ret).is_some()))]
 #[inline]
 #[must_use]
 pub fn shift_comp_type(
@@ -1037,11 +1341,12 @@ pub fn shift_comp_type(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — the machine agrees with a capture-free reference over
-///   every generated dependent type of a bounded size, at arguments that are
-///   themselves open.
+/// - hypothesis: L2 — 600 deterministic bounded codomains agree with a
+///   capture-free level-based reference at open arguments; the finite
+///   comparisons do not establish equivalence for ungenerated types.
 /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
 /// - witness: `rewrite::tests::instantiating_a_decode_at_a_quote_decodes`
+#[spec(ensures: |ret| ret == codomain || arena.comp_type(ret).is_some())]
 #[inline]
 #[must_use]
 pub fn instantiate_comp_type(
@@ -1112,6 +1417,10 @@ pub fn instantiate_value(
 /// - hypothesis: L3 — a type that mentions the binder and one that mentions
 ///   only an outer index separate the two answers.
 /// - witness: `rewrite::tests::strengthening_refuses_a_mention_and_lowers_the_rest`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(id) => id == subject || arena.comp_type(id).is_some(),
+    | Maybe::Absent(strengthening::Absent::MentionsBinder) => true,
+})]
 #[inline]
 pub fn strengthen_comp_type(
     arena: &mut CoreArena,
@@ -1135,6 +1444,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -1243,7 +1553,45 @@ mod tests
     /// The pre-order spelling of any node the walk visits.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: an acyclic arena graph in the reference fragment.
+    /// - ensures: a pre-order token sequence; unsupported or missing nodes emit
+    ///   `Other`, so the observer does not separate those forms.
+    /// - provides: an identity-independent reading for finite reference checks.
+    /// - panics: none for the admitted graph.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an asymmetric dependent tree and a static application
+    ///   have exact pre-order token sequences; these separate root-family
+    ///   confusion, reversed child order and omitted variable payloads. Only
+    ///   the generator and static-test fragment has a separating spelling.
+    /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
+    /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
+    #[spec(ensures: |ret| ret.first() == Some(&match root {
+        | Visit::CompType(id) => match arena.comp_type(id) {
+            | Some(&CompType::Returner(_)) => Token::Returner,
+            | Some(&CompType::Arrow { .. }) => Token::Arrow,
+            | Some(&CompType::Pi { .. }) => Token::Pi,
+            | Some(&CompType::Element { .. }) => Token::CompElement,
+            | None => Token::Other,
+        },
+        | Visit::ValueType(id) => match arena.value_type(id) {
+            | Some(&ValueType::Base(base)) => Token::Base(base),
+            | Some(&ValueType::Element { .. }) => Token::Element,
+            | Some(&ValueType::Thunk(_)) => Token::Thunk,
+            | Some(&ValueType::Product(..)) => Token::Product,
+            | Some(&ValueType::Unit | &ValueType::Sum(..) | &ValueType::Universe { .. } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. }) | None => Token::Other,
+        },
+        | Visit::Value(id) => match arena.value(id) {
+            | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
+            | Some(&Value::Constant(constant)) => Token::Constant(constant),
+            | Some(&Value::Pair(..)) => Token::Pair,
+            | Some(&Value::Quote(_)) => Token::Quote,
+            | Some(&Value::QuoteComputation(_)) => Token::QuoteComputation,
+            | Some(&Value::StaticLambda(_)) => Token::StaticLambda,
+            | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
+            | Some(&Value::Unit | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. }) | None => Token::Other,
+        },
+    }))]
     fn spelling_of(
         arena: &CoreArena,
         root: Visit,
@@ -1389,7 +1737,19 @@ mod tests
         /// The next draw below `bound`, which must be positive.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: `bound` is positive.
+        /// - ensures: the next deterministic draw is strictly below `bound`.
+        /// - provides: a bounded choice for the reference generator.
+        /// - panics: none for the admitted positive bound.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — singleton, two-element and maximal positive
+        ///   ranges distinguish the exclusive bound; bounded generated
+        ///   codomains exercise the resulting choices against an independent
+        ///   reference.
+        /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
+        /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
+        #[spec(requires: bound.0 > 0, ensures: |ret| ret.0 < bound.0)]
         fn below(
             &mut self,
             bound: Count,
@@ -1402,11 +1762,42 @@ mod tests
         }
     }
 
-    /// Generate a tree of `kind` whose free variables range over `frees`
-    /// context levels, at most `fuel` formers deep.
+    /// Generate a tree of `kind` over `frees` context levels, using `fuel` to
+    /// bound compound choices before completing a terminal code or type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `frees + fuel` fits u32.
+    /// - ensures: a nonempty pre-order tree of `kind`; children follow their
+    ///   parent, free levels are below `frees`, and local levels are bound.
+    /// - provides: bounded compound choices; zero fuel still permits the
+    ///   terminal code/type formers needed to reach a variable or base type.
+    /// - panics: none for the admitted counts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the 600 deterministic generated trees feed
+    ///   independent level-based and de Bruijn substitution readings. L3 — zero
+    ///   fuel and no free variables have fixed ground spellings in every
+    ///   requested family, distinguishing malformed terminal shapes and child
+    ///   arities.
+    /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
+    /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
+    #[spec(
+        requires: frees.0.checked_add(fuel.0).is_some(),
+        ensures: |ret| ret.nodes.first().is_some_and(|root| root.binders == 0 && match kind {
+            | Kind::Comp => matches!(root.shape, Shape::Returner | Shape::Arrow | Shape::Pi | Shape::CompElement),
+            | Kind::ValueType => matches!(root.shape, Shape::Integer | Shape::Element | Shape::Thunk | Shape::Product),
+            | Kind::ValueCode => matches!(root.shape, Shape::Free(_) | Shape::Local(_) | Shape::Quote),
+            | Kind::CompCode => matches!(root.shape, Shape::Free(_) | Shape::Local(_) | Shape::QuoteComputation),
+        }) && ret.nodes.iter().enumerate().all(|(here, node)| node.binders <= fuel.0
+            && node.children.iter().all(|child| *child > here && *child < ret.nodes.len())
+            && match node.shape {
+                | Shape::Free(level) => level < frees.0 && node.children.is_empty(),
+                | Shape::Local(level) => level < node.binders && node.children.is_empty(),
+                | Shape::Integer => node.children.is_empty(),
+                | Shape::Arrow | Shape::Pi | Shape::Product => node.children.len() == 2,
+                | Shape::Returner | Shape::CompElement | Shape::Element | Shape::Thunk | Shape::Quote | Shape::QuoteComputation => node.children.len() == 1,
+            }),
+    )]
     fn generate(
         stream: &mut Stream,
         kind: Kind,
@@ -1515,7 +1906,26 @@ mod tests
     /// reading free variables as `reading` says.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a nonempty well-formed generated tree; `placement` contains
+    ///   its unspliced free levels and every needed replacement depth exists.
+    /// - ensures: a live arena root interpreting each level at its placement,
+    ///   with the designated spliced level replaced without variable capture.
+    /// - provides: the level-based reference, independent of the rewrite
+    ///   engine.
+    /// - panics: none for an admitted tree and placement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the level-based builder is the independent reading
+    ///   used by 600 bounded substitution comparisons. L3 — ground roots of all
+    ///   three output families and a dependent asymmetric tree pin the oracle
+    ///   against dropped children, reversed order and a misplaced binder.
+    /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
+    /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
+    #[spec(requires: !tree.nodes.is_empty(), ensures: |ret| match ret {
+        | Built::Value(id) => arena.value(id).is_some(),
+        | Built::ValueType(id) => arena.value_type(id).is_some(),
+        | Built::CompType(id) => arena.comp_type(id).is_some(),
+    })]
     fn build(
         arena: &mut CoreArena,
         tree: &Tree,
@@ -1736,7 +2146,30 @@ mod tests
         /// unfolding is exponential and whose node count is linear.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: sixty-four product levels, each sharing both children,
+        ///   above a decode of the intuitionistic variable at `index`.
+        /// - provides: a linear representation with an exponential unfolding.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a shift over sixty-four shared product levels has
+        ///   exactly the watermark of the original plus one rewritten chain,
+        ///   distinguishing loss of sharing from expansion of the exponentially
+        ///   large unfolding.
+        /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
+        #[spec(ensures: |ret| {
+            let mut current = ret;
+            let mut valid = true;
+            for _ in 0_u32..64_u32 {
+                if let Some(&ValueType::Product(first, second)) = arena.value_type(current) {
+                    valid &= first == second;
+                    current = first;
+                } else { valid = false; }
+            }
+            valid && matches!(arena.value_type(current), Some(ValueType::Element { code, .. })
+                if arena.value(*code) == Some(&Value::Variable { zone: Zone::Intuitionistic, index }))
+        })]
         fn chain(
             arena: &mut CoreArena,
             index: DeBruijnIndex,
@@ -1837,5 +2270,671 @@ mod tests
             value_spelling(&arena, reduct),
             "the open argument rises past the binder it crosses"
         );
+    }
+
+    #[test]
+    fn binder_counts_clamp_at_the_ceiling()
+    {
+        for (input, expected) in [
+            (0_u32, 1_u32),
+            (u32::MAX - 1, u32::MAX),
+            (u32::MAX, u32::MAX),
+        ] {
+            assert_eq!(Binders::from(expected), Binders::from(input).deeper());
+            assert_eq!(
+                Binders::from(expected),
+                Binders::past(DeBruijnIndex::from(input))
+            );
+        }
+    }
+
+    #[test]
+    fn occurrence_rules_separate_depth_boundaries()
+    {
+        use super::Engine;
+        use super::Mention;
+        use super::Occurrence;
+        use super::Rewrite;
+        let mut arena = CoreArena::new();
+        let replacement = arena.value_constant(ConstantIndex::from(7_usize));
+        // depth, index, shift by one, lowering (None marks the removed binder).
+        for (depth, index, raised, lowered) in [
+            (0_u32, 0_u32, 1_u32, None),
+            (0, 1, 2, Some(0)),
+            (1, 0, 0, Some(0)),
+            (1, 1, 2, None),
+            (1, 2, 3, Some(1)),
+            (1, u32::MAX, u32::MAX, Some(u32::MAX - 1)),
+        ] {
+            let id = variable(&mut arena, DeBruijnIndex::from(index));
+            let mut engine = Engine::new(&mut arena);
+            let zero_shift = engine.occurrence(
+                id,
+                DeBruijnIndex::from(index),
+                Binders::from(depth),
+                Rewrite::Shift(Binders::NONE),
+            );
+            assert_eq!(Occurrence::Answered(id), zero_shift);
+            let Occurrence::Answered(shifted) = engine.occurrence(
+                id,
+                DeBruijnIndex::from(index),
+                Binders::from(depth),
+                Rewrite::Shift(Binders::ONE),
+            )
+            else {
+                panic!("a shift answers directly");
+            };
+            assert_eq!(
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(raised)
+                }),
+                engine.arena.value(shifted)
+            );
+            if index < depth {
+                assert_eq!(id, shifted);
+            }
+            let substituted = engine.occurrence(
+                id,
+                DeBruijnIndex::from(index),
+                Binders::from(depth),
+                Rewrite::Substitute(replacement),
+            );
+            match lowered {
+                | None if depth == 0 => assert_eq!(Occurrence::Answered(replacement), substituted),
+                | None => assert_eq!(
+                    Occurrence::Carried(replacement, Binders::from(depth)),
+                    substituted
+                ),
+                | Some(expected) => {
+                    let Occurrence::Answered(answer) = substituted
+                    else {
+                        panic!("an unselected index is not carried");
+                    };
+                    assert_eq!(
+                        Some(&Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index: DeBruijnIndex::from(expected)
+                        }),
+                        engine.arena.value(answer)
+                    );
+                    if index < depth {
+                        assert_eq!(id, answer);
+                    }
+                },
+            }
+            for prior in [Mention::Absent, Mention::Present] {
+                engine.mention = prior;
+                let Occurrence::Answered(answer) = engine.occurrence(
+                    id,
+                    DeBruijnIndex::from(index),
+                    Binders::from(depth),
+                    Rewrite::Lower,
+                )
+                else {
+                    panic!("lowering never carries a replacement");
+                };
+                if let Some(expected) = lowered {
+                    assert_eq!(prior, engine.mention);
+                    assert_eq!(
+                        Some(&Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index: DeBruijnIndex::from(expected)
+                        }),
+                        engine.arena.value(answer)
+                    );
+                }
+                else {
+                    assert_eq!(id, answer);
+                    assert_eq!(Mention::Present, engine.mention);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn missing_and_mismatched_results_preserve_family_identity()
+    {
+        use super::Engine;
+        use super::Node;
+        use super::Rewrite;
+        let mut arena = CoreArena::new();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let roots = [
+            Node::Value(value),
+            Node::Computation(computation),
+            Node::ValueType(value_type),
+            Node::CompType(comp_type),
+        ];
+        let other_value = arena.value_constant(ConstantIndex::from(9_usize));
+        let other_comp = arena.computation_force(other_value);
+        let other_type = arena.value_type_base(BaseType::Integer);
+        let other_comp_type = arena.comp_type_returner(other_type);
+        let supplied_roots = [
+            Node::Value(other_value),
+            Node::Computation(other_comp),
+            Node::ValueType(other_type),
+            Node::CompType(other_comp_type),
+        ];
+        for original in roots {
+            for supplied in supplied_roots {
+                let mut engine = Engine::new(&mut arena);
+                let sentinel = Node::Value(value);
+                engine.results.extend([sentinel, supplied]);
+                let answer = match original {
+                    | Node::Value(id) => Node::Value(engine.value(id)),
+                    | Node::Computation(id) => Node::Computation(engine.computation(id)),
+                    | Node::ValueType(id) => Node::ValueType(engine.value_type(id)),
+                    | Node::CompType(id) => Node::CompType(engine.comp_type(id)),
+                };
+                let expected =
+                    if core::mem::discriminant(&original) == core::mem::discriminant(&supplied) {
+                        supplied
+                    }
+                    else {
+                        original
+                    };
+                assert_eq!(expected, answer);
+                assert_eq!([sentinel], engine.results.as_slice());
+            }
+            let mut engine = Engine::new(&mut arena);
+            assert_eq!(original, engine.popped(original));
+            let answer = match original {
+                | Node::Value(id) => Node::Value(engine.value(id)),
+                | Node::Computation(id) => Node::Computation(engine.computation(id)),
+                | Node::ValueType(id) => Node::ValueType(engine.value_type(id)),
+                | Node::CompType(id) => Node::CompType(engine.comp_type(id)),
+            };
+            assert_eq!(original, answer);
+            assert!(engine.results.is_empty());
+            let mut empty = CoreArena::new();
+            let mut engine = Engine::new(&mut empty);
+            assert_eq!(original, engine.run(original, Rewrite::Shift(Binders::ONE)));
+            assert_eq!(crate::ArenaWatermark::default(), engine.arena.watermark());
+        }
+    }
+
+    #[test]
+    fn reference_helpers_have_ground_and_asymmetric_goldens()
+    {
+        let mut stream = Stream(0x9E37_79B9_7F4A_7C15);
+        for bound in [1_u32, 2, u32::MAX] {
+            for _ in 0_u32 .. 32_u32 {
+                assert!(stream.below(Count(bound)).0 < bound);
+            }
+        }
+        for (kind, expected) in [
+            (Kind::Comp, vec![
+                Token::Returner,
+                Token::Base(BaseType::Integer),
+            ]),
+            (Kind::ValueType, vec![Token::Base(BaseType::Integer)]),
+            (Kind::ValueCode, vec![
+                Token::Quote,
+                Token::Base(BaseType::Integer),
+            ]),
+            (Kind::CompCode, vec![
+                Token::QuoteComputation,
+                Token::Returner,
+                Token::Base(BaseType::Integer),
+            ]),
+        ] {
+            let tree = generate(&mut stream, kind, Count(0), Count(0));
+            let mut arena = CoreArena::new();
+            let built = build(&mut arena, &tree, Count(0), Reading::Plain);
+            let visit = match built {
+                | Built::Value(id) => Visit::Value(id),
+                | Built::ValueType(id) => Visit::ValueType(id),
+                | Built::CompType(id) => Visit::CompType(id),
+            };
+            assert_eq!(expected, spelling_of(&arena, visit));
+        }
+        let tree = Tree {
+            nodes: vec![
+                GeneratedNode {
+                    shape: Shape::Pi,
+                    children: vec![1, 2],
+                    binders: 0,
+                },
+                GeneratedNode {
+                    shape: Shape::Integer,
+                    children: vec![],
+                    binders: 0,
+                },
+                GeneratedNode {
+                    shape: Shape::CompElement,
+                    children: vec![3],
+                    binders: 1,
+                },
+                GeneratedNode {
+                    shape: Shape::Local(0),
+                    children: vec![],
+                    binders: 1,
+                },
+            ],
+        };
+        let mut arena = CoreArena::new();
+        let Built::CompType(root) = build(&mut arena, &tree, Count(0), Reading::Plain)
+        else {
+            panic!("the Pi is a computation type");
+        };
+        assert_eq!(
+            vec![
+                Token::Pi,
+                Token::Base(BaseType::Integer),
+                Token::CompElement,
+                Token::Variable(0)
+            ],
+            spelling(&arena, root)
+        );
+    }
+
+    #[test]
+    fn congruences_preserve_formers_and_child_order()
+    {
+        use super::Engine;
+        use super::Node;
+        let mut arena = CoreArena::new();
+        let v0 = variable(&mut arena, DeBruijnIndex::from(0));
+        let v1 = variable(&mut arena, DeBruijnIndex::from(1));
+        let w0 = variable(&mut arena, DeBruijnIndex::from(3));
+        let w1 = variable(&mut arena, DeBruijnIndex::from(5));
+        let c0 = arena.computation_return(v0);
+        let c1 = arena.computation_return(v1);
+        let d0 = arena.computation_return(w0);
+        let d1 = arena.computation_return(w1);
+        let t0 = arena.value_type_element(v0, Level::zero());
+        let t1 = arena.value_type_element(v1, Level::zero());
+        let u0 = arena.value_type_base(BaseType::Integer);
+        let u1 = arena.value_type_unit();
+        let k0 = arena.comp_type_returner(t0);
+        let k1 = arena.comp_type_returner(t1);
+        let l0 = arena.comp_type_returner(u0);
+        let l1 = arena.comp_type_returner(u1);
+        let level = Level::zero().succ().expect("one");
+        for (original, unchanged, changed, expected) in [
+            (
+                arena.value_pair(v0, v1),
+                vec![Node::Value(v0), Node::Value(v1)],
+                vec![Node::Value(w0), Node::Value(w1)],
+                Value::Pair(w0, w1),
+            ),
+            (
+                arena.value_injection(gandr_kernel_term::Side::Left, v0),
+                vec![Node::Value(v0)],
+                vec![Node::Value(w0)],
+                Value::Injection(gandr_kernel_term::Side::Left, w0),
+            ),
+            (
+                arena.value_injection(gandr_kernel_term::Side::Right, v1),
+                vec![Node::Value(v1)],
+                vec![Node::Value(w1)],
+                Value::Injection(gandr_kernel_term::Side::Right, w1),
+            ),
+            (
+                arena.value_thunk(c0),
+                vec![Node::Computation(c0)],
+                vec![Node::Computation(d0)],
+                Value::Thunk(d0),
+            ),
+            (
+                arena.value_lift(level.clone(), v0),
+                vec![Node::Value(v0)],
+                vec![Node::Value(w0)],
+                Value::Lift {
+                    target: level.clone(),
+                    body: w0,
+                },
+            ),
+            (
+                arena.value_quote(t0),
+                vec![Node::ValueType(t0)],
+                vec![Node::ValueType(u0)],
+                Value::Quote(u0),
+            ),
+            (
+                arena.value_quote_computation(k0),
+                vec![Node::CompType(k0)],
+                vec![Node::CompType(l0)],
+                Value::QuoteComputation(l0),
+            ),
+            (
+                arena.value_static_lambda(v0),
+                vec![Node::Value(v0)],
+                vec![Node::Value(w0)],
+                Value::StaticLambda(w0),
+            ),
+            (
+                arena.value_static_application(v0, v1),
+                vec![Node::Value(v0), Node::Value(v1)],
+                vec![Node::Value(w0), Node::Value(w1)],
+                Value::StaticApplication(w0, w1),
+            ),
+        ] {
+            let mark = arena.watermark();
+            let mut engine = Engine::new(&mut arena);
+            engine.results.extend(unchanged);
+            assert_eq!(Node::Value(original), engine.close(Node::Value(original)));
+            assert_eq!(mark, engine.arena.watermark());
+            engine.results.extend(changed);
+            let Node::Value(rewritten) = engine.close(Node::Value(original))
+            else {
+                panic!("the family is preserved");
+            };
+            assert_ne!(original, rewritten);
+            assert_eq!(Some(&expected), engine.arena.value(rewritten));
+            assert!(engine.results.is_empty());
+        }
+        for (original, unchanged, changed, expected) in [
+            (
+                arena.computation_lambda(c0),
+                vec![Node::Computation(c0)],
+                vec![Node::Computation(d0)],
+                crate::Computation::Lambda(d0),
+            ),
+            (
+                arena.computation_application(c0, v0),
+                vec![Node::Computation(c0), Node::Value(v0)],
+                vec![Node::Computation(d0), Node::Value(w0)],
+                crate::Computation::Application(d0, w0),
+            ),
+            (
+                arena.computation_return(v0),
+                vec![Node::Value(v0)],
+                vec![Node::Value(w0)],
+                crate::Computation::Return(w0),
+            ),
+            (
+                arena.computation_force(v1),
+                vec![Node::Value(v1)],
+                vec![Node::Value(w1)],
+                crate::Computation::Force(w1),
+            ),
+            (
+                arena.computation_bind(c0, c1),
+                vec![Node::Computation(c0), Node::Computation(c1)],
+                vec![Node::Computation(d0), Node::Computation(d1)],
+                crate::Computation::Bind(d0, d1),
+            ),
+            (
+                arena.computation_case(v0, c0, c1),
+                vec![
+                    Node::Value(v0),
+                    Node::Computation(c0),
+                    Node::Computation(c1),
+                ],
+                vec![
+                    Node::Value(w0),
+                    Node::Computation(d0),
+                    Node::Computation(d1),
+                ],
+                crate::Computation::Case {
+                    scrutinee: w0,
+                    on_left: d0,
+                    on_right: d1,
+                },
+            ),
+        ] {
+            let mark = arena.watermark();
+            let mut engine = Engine::new(&mut arena);
+            engine.results.extend(unchanged);
+            assert_eq!(
+                Node::Computation(original),
+                engine.close(Node::Computation(original))
+            );
+            assert_eq!(mark, engine.arena.watermark());
+            engine.results.extend(changed);
+            let Node::Computation(rewritten) = engine.close(Node::Computation(original))
+            else {
+                panic!("the family is preserved");
+            };
+            assert_ne!(original, rewritten);
+            assert_eq!(Some(&expected), engine.arena.computation(rewritten));
+            assert!(engine.results.is_empty());
+        }
+        for (original, unchanged, changed, expected) in [
+            (
+                arena.value_type_product(t0, t1),
+                vec![Node::ValueType(t0), Node::ValueType(t1)],
+                vec![Node::ValueType(u0), Node::ValueType(u1)],
+                ValueType::Product(u0, u1),
+            ),
+            (
+                arena.value_type_sum(t0, t1),
+                vec![Node::ValueType(t0), Node::ValueType(t1)],
+                vec![Node::ValueType(u0), Node::ValueType(u1)],
+                ValueType::Sum(u0, u1),
+            ),
+            (
+                arena.value_type_static_pi(t0, t1),
+                vec![Node::ValueType(t0), Node::ValueType(t1)],
+                vec![Node::ValueType(u0), Node::ValueType(u1)],
+                ValueType::StaticPi {
+                    domain: u0,
+                    codomain: u1,
+                },
+            ),
+            (
+                arena.value_type_thunk(k0),
+                vec![Node::CompType(k0)],
+                vec![Node::CompType(l0)],
+                ValueType::Thunk(l0),
+            ),
+            (
+                arena.value_type_lift(t0, level.clone()),
+                vec![Node::ValueType(t0)],
+                vec![Node::ValueType(u0)],
+                ValueType::Lift {
+                    inner: u0,
+                    target: level.clone(),
+                },
+            ),
+            (
+                arena.value_type_element(v0, level.clone()),
+                vec![Node::Value(v0)],
+                vec![Node::Value(w0)],
+                ValueType::Element {
+                    code: w0,
+                    target: level.clone(),
+                },
+            ),
+        ] {
+            let mark = arena.watermark();
+            let mut engine = Engine::new(&mut arena);
+            engine.results.extend(unchanged);
+            assert_eq!(
+                Node::ValueType(original),
+                engine.close(Node::ValueType(original))
+            );
+            assert_eq!(mark, engine.arena.watermark());
+            engine.results.extend(changed);
+            let Node::ValueType(rewritten) = engine.close(Node::ValueType(original))
+            else {
+                panic!("the family is preserved");
+            };
+            assert_ne!(original, rewritten);
+            assert_eq!(Some(&expected), engine.arena.value_type(rewritten));
+            assert!(engine.results.is_empty());
+        }
+        for (original, unchanged, changed, expected) in [
+            (
+                arena.comp_type_returner(t0),
+                vec![Node::ValueType(t0)],
+                vec![Node::ValueType(u0)],
+                CompType::Returner(u0),
+            ),
+            (
+                arena.comp_type_arrow(t0, k0),
+                vec![Node::ValueType(t0), Node::CompType(k0)],
+                vec![Node::ValueType(u0), Node::CompType(l0)],
+                CompType::Arrow {
+                    domain: u0,
+                    codomain: l0,
+                },
+            ),
+            (
+                arena.comp_type_pi(t1, k1),
+                vec![Node::ValueType(t1), Node::CompType(k1)],
+                vec![Node::ValueType(u1), Node::CompType(l1)],
+                CompType::Pi {
+                    domain: u1,
+                    codomain: l1,
+                },
+            ),
+            (
+                arena.comp_type_element(v1, level.clone()),
+                vec![Node::Value(v1)],
+                vec![Node::Value(w1)],
+                CompType::Element {
+                    code: w1,
+                    target: level,
+                },
+            ),
+        ] {
+            let mark = arena.watermark();
+            let mut engine = Engine::new(&mut arena);
+            engine.results.extend(unchanged);
+            assert_eq!(
+                Node::CompType(original),
+                engine.close(Node::CompType(original))
+            );
+            assert_eq!(mark, engine.arena.watermark());
+            engine.results.extend(changed);
+            let Node::CompType(rewritten) = engine.close(Node::CompType(original))
+            else {
+                panic!("the family is preserved");
+            };
+            assert_ne!(original, rewritten);
+            assert_eq!(Some(&expected), engine.arena.comp_type(rewritten));
+            assert!(engine.results.is_empty());
+        }
+        let quoted_value = arena.value_quote(u0);
+        let quoted_comp = arena.value_quote_computation(l0);
+        let undecoded_comp = arena.comp_type_element(v0, Level::zero());
+        let mark = arena.watermark();
+        let mut engine = Engine::new(&mut arena);
+        engine.results.push(Node::Value(quoted_value));
+        assert_eq!(Node::ValueType(u0), engine.close(Node::ValueType(t0)));
+        engine.results.push(Node::Value(quoted_comp));
+        assert_eq!(
+            Node::CompType(l0),
+            engine.close(Node::CompType(undecoded_comp))
+        );
+        assert_eq!(mark, engine.arena.watermark());
+    }
+
+    #[test]
+    fn binding_sites_distinguish_free_bound_and_linear_indices()
+    {
+        use super::Engine;
+        use super::Node;
+        use super::Rewrite;
+        let mut arena = CoreArena::new();
+        let zero = variable(&mut arena, DeBruijnIndex::from(0));
+        let one = variable(&mut arena, DeBruijnIndex::from(1));
+        let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0));
+        let pair = arena.value_pair(zero, one);
+        let shared = arena.computation_return(pair);
+        let linear_branch = arena.computation_return(linear);
+        let case = arena.computation_case(zero, shared, linear_branch);
+        let bind = arena.computation_bind(shared, shared);
+        let lambda = arena.computation_lambda(shared);
+        for (root, expected) in [
+            (case, vec![1_u32, 0, 2]),
+            (bind, vec![1, 2, 0, 2]),
+            (lambda, vec![0, 2]),
+        ] {
+            let Node::Computation(rewritten) =
+                Engine::new(&mut arena).run(Node::Computation(root), Rewrite::Shift(Binders::ONE))
+            else {
+                panic!("computation");
+            };
+            let mut pending = vec![Node::Computation(rewritten)];
+            let mut actual = Vec::new();
+            let mut linear_seen = Vec::new();
+            while let Some(node) = pending.pop() {
+                match node {
+                    | Node::Value(id) => match *arena.value(id).expect("a value child") {
+                        | Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index,
+                        } => actual.push(u32::from(index)),
+                        | Value::Variable {
+                            zone: Zone::Linear,
+                            index,
+                        } => linear_seen.push(u32::from(index)),
+                        | Value::Pair(first, second) => {
+                            pending.extend([Node::Value(second), Node::Value(first)]);
+                        },
+                        | _ => panic!("the golden uses variables and pairs"),
+                    },
+                    | Node::Computation(id) => {
+                        match *arena.computation(id).expect("a computation child") {
+                            | crate::Computation::Lambda(body) => {
+                                pending.push(Node::Computation(body));
+                            },
+                            | crate::Computation::Return(value) => {
+                                pending.push(Node::Value(value));
+                            },
+                            | crate::Computation::Bind(bound, body) => {
+                                pending.extend([Node::Computation(body), Node::Computation(bound)]);
+                            },
+                            | crate::Computation::Case {
+                                scrutinee,
+                                on_left,
+                                on_right,
+                            } => pending.extend([
+                                Node::Computation(on_right),
+                                Node::Computation(on_left),
+                                Node::Value(scrutinee),
+                            ]),
+                            | _ => panic!("the golden uses binding computations and return"),
+                        }
+                    },
+                    | Node::ValueType(_) | Node::CompType(_) => panic!("the golden contains terms"),
+                }
+            }
+            assert_eq!(expected, actual);
+            assert_eq!(if root == case { vec![0] } else { vec![] }, linear_seen);
+        }
+        let domain = arena.value_type_element(zero, Level::zero());
+        let codomain = arena.value_type_element(one, Level::zero());
+        let static_pi = arena.value_type_static_pi(domain, codomain);
+        let result = arena.comp_type_returner(domain);
+        let mark = arena.watermark();
+        assert_eq!(
+            static_pi,
+            shift_value_type(&mut arena, static_pi, Binders::NONE)
+        );
+        assert_eq!(result, shift_comp_type(&mut arena, result, Binders::NONE));
+        assert_eq!(mark, arena.watermark());
+        let shifted = shift_value_type(&mut arena, static_pi, Binders::ONE);
+        let Some(&ValueType::StaticPi { domain, codomain }) = arena.value_type(shifted)
+        else {
+            panic!("static Pi");
+        };
+        for (child, index) in [(domain, 1_u32), (codomain, 2_u32)] {
+            let Some(&ValueType::Element { code, .. }) = arena.value_type(child)
+            else {
+                panic!("a neutral decode");
+            };
+            assert_eq!(
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(index)
+                }),
+                arena.value(code)
+            );
+        }
+        let linear_type = arena.comp_type_element(linear, Level::zero());
+        let mark = arena.watermark();
+        assert_eq!(
+            Maybe::Present(linear_type),
+            strengthen_comp_type(&mut arena, linear_type)
+        );
+        assert_eq!(mark, arena.watermark());
     }
 }

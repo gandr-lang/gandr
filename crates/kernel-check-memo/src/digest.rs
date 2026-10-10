@@ -57,12 +57,20 @@ impl From<DigestWord> for u64
 ///   datum that does not survive relocation.
 /// - ensures: two supports with equal content produce equal digests, given a
 ///   deterministic consumer digest.
-/// - provides: the fast path that selects a bucket; never a decision. This
-///   stays prose: content derivation is an obligation on the consumer, equal
-///   digests for equal content is a law over two values, and a data-item
-///   `#[spec]` states an invariant of one value that the pinned expansion never
-///   checks at construction.
+/// - provides: the fast path that selects a bucket; never a decision.
 /// - panics: none.
+/// - executable: none — the source content is not retained; equal digests for
+///   agreeing supports is a law over two consumer-owned values, not an
+///   invariant the data-item expansion can check at construction.
+///
+/// # Adequacy
+/// - hypothesis: L3 — for distinct supports with one digest, exact served
+///   outcomes and a third colliding miss distinguish digest-only agreement. L1
+///   — structurally equal nodes at distinct arena positions must collapse to
+///   the closed-form content count in the unshared workload. This catches
+///   position-derived keys, but does not certify arbitrary consumer hashes.
+/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentDigest
 {

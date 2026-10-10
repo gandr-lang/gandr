@@ -14,7 +14,10 @@ publish.workspace = true
 # The printer reads core types and values, the leaf vocabularies and levels
 # they carry, and lays its documents out through the layout engine; a name the
 # printer cannot spell says why through the shape crate's named absence.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true

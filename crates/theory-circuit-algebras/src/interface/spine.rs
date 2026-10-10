@@ -46,6 +46,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cat;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsRef;
@@ -148,6 +149,13 @@ impl SpineReading
     ///   asserted on their two legs, and a name absent from the pattern is
     ///   absent.
     /// - witness: `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(wire) => self.ports.get(hole) == Some(&wire) && match hole.cat() {
+            Cat::Producer => self.wiring.boundary().inputs().contains(&wire),
+            Cat::Consumer => self.wiring.boundary().outputs().contains(&wire),
+        },
+        Maybe::Absent(spine_port::Absent::NotInPattern) => !self.ports.contains_key(hole),
+    })]
     #[inline]
     pub fn port_of(
         &self,
@@ -249,6 +257,26 @@ impl core::error::Error for SpineObstruction
 /// - witness: `interface::spine::tests::a_repeated_hole_is_refused_as_a_copy`
 /// - witness: `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`
 /// - witness: `matching::tests::the_embedding_matcher_agrees_with_the_one_sided_matcher_on_the_spine`
+#[spec(ensures: |ref result| {
+    let producer = cmd.producer().to_ref();
+    let consumer = cmd.consumer().to_ref();
+    let nodes = usize::from(producer.size()).saturating_add(usize::from(consumer.size()));
+    let holes = producer.metavars().chain(consumer.metavars()).count();
+    match *result {
+        Ok(ref reading) => reading.cut == Wire::from(0)
+            && usize::from(reading.wiring.wire_count()) == nodes.saturating_sub(1)
+            && usize::from(reading.wiring.edge_count()) == nodes.saturating_sub(holes)
+            && reading.ports.len() == holes
+            && producer.metavars().chain(consumer.metavars()).all(|hole| reading.ports.get(hole).is_some_and(|wire| match hole.cat() {
+                Cat::Producer => reading.wiring.boundary().inputs().contains(wire),
+                Cat::Consumer => reading.wiring.boundary().outputs().contains(wire),
+            })),
+        Err(SpineObstruction::RepeatedHole { ref hole, first, second }) => first != second
+            && producer.metavars().chain(consumer.metavars()).filter(|candidate| *candidate == hole).count() > 1
+            && usize::from(first) < nodes.saturating_sub(1) && usize::from(second) < nodes.saturating_sub(1),
+        Err(SpineObstruction::Malformed { .. }) => true,
+    }
+})]
 #[inline]
 pub fn read_spine(cmd: &CmdPat) -> Result<SpineReading, SpineObstruction>
 {
@@ -289,10 +317,21 @@ impl Reader
     /// Allocates the next wire.
     ///
     /// # Specification
+    /// - requires: one more wire index is representable.
     /// - ensures: a wire no earlier call returned; wires are numbered from 0 in
     ///   allocation order. A pattern held in memory never allocates
     ///   `usize::MAX` wires, so the counter never saturates.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive allocation and a mixed-polarity pattern
+    ///   expose exact wire indices and boundary legs. Repeating an index,
+    ///   skipping an index or using a nonzero initial cut differs; exhausted
+    ///   index space is excluded.
+    /// - witness: `interface::spine::tests::wire_allocation_and_declaration_keep_both_legs_ordered`
+    /// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+    #[spec(requires: self.next < usize::MAX, captures: [prior = self.next],
+            ensures: |wire| usize::from(wire) == prior && self.next == prior.saturating_add(1))]
     fn fresh(&mut self) -> Wire
     {
         let wire = Wire::from(self.next);
@@ -304,6 +343,7 @@ impl Reader
     /// for a consumer.
     ///
     /// # Specification
+    /// - requires: `wire` is already allocated.
     /// - ensures: `hole` is recorded once, on the leg its category names.
     /// - fails: [`SpineObstruction::RepeatedHole`] when `hole` already took a
     ///   port. A consumer metavariable only ends a spine, so the repeat is
@@ -312,6 +352,28 @@ impl Reader
     ///
     /// # Errors
     /// [`SpineObstruction::RepeatedHole`] on a second occurrence of `hole`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh producer and consumer holes, including one name
+    ///   at both polarities, expose leg order and exact map entries; repeats on
+    ///   either leg expose the first and rejected wire without changing state.
+    ///   Category erasure, reordering and partial mutation on refusal differ;
+    ///   the wire is allocated by the reader.
+    /// - witness: `interface::spine::tests::wire_allocation_and_declaration_keep_both_legs_ordered`
+    /// - witness: `interface::spine::tests::a_repeated_hole_is_refused_as_a_copy`
+    #[spec(requires: usize::from(wire) < self.next, captures: [
+        prior = self.ports.get(hole).copied(), count = self.ports.len(),
+        inputs = self.inputs.len(), outputs = self.outputs.len(), next = self.next,
+    ], ensures: |ref result| self.next == next && match *result {
+        Ok(()) => prior.is_none() && self.ports.len() == count.saturating_add(1) && self.ports.get(hole) == Some(&wire)
+            && match hole.cat() {
+                Cat::Producer => self.inputs.len() == inputs.saturating_add(1) && self.inputs.last() == Some(&wire) && self.outputs.len() == outputs,
+                Cat::Consumer => self.outputs.len() == outputs.saturating_add(1) && self.outputs.last() == Some(&wire) && self.inputs.len() == inputs,
+            },
+        Err(SpineObstruction::RepeatedHole { hole: ref repeated, first, second }) => repeated == hole && prior == Some(first) && second == wire
+            && self.ports.get(hole) == Some(&first) && self.ports.len() == count && self.inputs.len() == inputs && self.outputs.len() == outputs,
+        Err(SpineObstruction::Malformed { .. }) => false,
+    })]
     fn declare(
         &mut self,
         hole: &MetaVar,
@@ -348,6 +410,36 @@ impl Reader
 ///
 /// # Errors
 /// [`SpineObstruction::RepeatedHole`] on a copied metavariable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — branching producer trees and repeated leaves expose
+///   constructor order, fresh-wire counts and input-port order, or exact
+///   repetition refusal. Reversed child traversal, omitted constructors or
+///   treating a producer hole as an output differs; the output wire is
+///   allocated and the producer pattern is well-formed.
+/// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+/// - witness: `interface::spine::tests::the_reading_declares_input_ports_in_first_occurrence_order`
+/// - witness: `interface::spine::tests::a_repeated_hole_is_refused_as_a_copy`
+#[spec(requires: usize::from(out) < reader.next, captures: [
+    generators = reader.generators.len(), next = reader.next, inputs = reader.inputs.len(), outputs = reader.outputs.len(),
+], ensures: |ref result| reader.outputs.len() == outputs && match *result {
+    Ok(()) => {
+        let holes = root.metavars().count();
+        let nodes = usize::from(root.size());
+        reader.next == next.saturating_add(nodes.saturating_sub(1))
+            && reader.generators.len() == generators.saturating_add(nodes.saturating_sub(holes))
+            && reader.inputs.len() == inputs.saturating_add(holes)
+            && reader.generators.iter().skip(generators).all(|generator| generator.label().sort() == GeneratorSort::Value)
+            && reader.inputs.iter().skip(inputs).zip(root.metavars()).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && match root.view() {
+                ProdView::Meta(hole) => reader.ports.get(hole) == Some(&out),
+                ProdView::Ctor { ctor, args } => reader.generators.get(generators).is_some_and(|generator|
+                    generator.label().name().as_ref() == ctor.as_ref() && generator.sources().len() == args.len() && generator.targets() == [out]),
+            }
+    },
+    Err(SpineObstruction::RepeatedHole { ref hole, first, second }) => reader.ports.get(hole) == Some(&first) && usize::from(second) < reader.next,
+    Err(SpineObstruction::Malformed { .. }) => false,
+})]
 fn read_producer(
     root: ProdRef<'_>,
     out: Wire,
@@ -399,6 +491,40 @@ fn read_producer(
 ///
 /// # Errors
 /// [`SpineObstruction::RepeatedHole`] on a copied metavariable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — operation and return frames, producer arguments, a
+///   terminal and a consumer-hole end expose exact generator roles, threading
+///   and port order. Wrong root roles, missing frames, reordered arguments or a
+///   fabricated terminal port differs; the arriving wire is allocated and no
+///   general graph is read here.
+/// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+/// - witness: `interface::spine::tests::the_reading_declares_input_ports_in_first_occurrence_order`
+/// - witness: `interface::spine::tests::a_terminal_is_a_closed_generator_not_a_port`
+/// - witness: `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`
+#[spec(requires: usize::from(arriving) < reader.next, captures: [
+    generators = reader.generators.len(), next = reader.next, inputs = reader.inputs.len(), outputs = reader.outputs.len(),
+], ensures: |ref result| match *result {
+    Ok(()) => {
+        let nodes = usize::from(root.size());
+        let holes = root.metavars().count();
+        let consumer_holes = root.metavars().filter(|hole| hole.cat() == Cat::Consumer).count();
+        reader.next == next.saturating_add(nodes.saturating_sub(1))
+            && reader.generators.len() == generators.saturating_add(nodes.saturating_sub(holes))
+            && reader.inputs.len() == inputs.saturating_add(holes.saturating_sub(consumer_holes))
+            && reader.outputs.len() == outputs.saturating_add(consumer_holes)
+            && reader.inputs.iter().skip(inputs).zip(root.metavars().filter(|hole| hole.cat() == Cat::Producer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && reader.outputs.iter().skip(outputs).zip(root.metavars().filter(|hole| hole.cat() == Cat::Consumer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && match root.view() {
+                ConsView::Meta(hole) => reader.ports.get(hole) == Some(&arriving),
+                ConsView::Top => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Terminal && generator.sources() == [arriving] && generator.targets().is_empty()),
+                ConsView::Frame { ctor, .. } => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Return && generator.label().name().as_ref() == ctor.as_ref() && generator.sources() == [arriving] && generator.targets().len() == 1),
+                ConsView::Op { op, args, .. } => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Operation && generator.label().name().as_ref() == op.as_ref() && generator.sources().first() == Some(&arriving) && generator.sources().len() == args.len().saturating_add(1) && generator.targets().len() == 1),
+            }
+    },
+    Err(SpineObstruction::RepeatedHole { ref hole, first, second }) => reader.ports.get(hole) == Some(&first) && usize::from(second) < reader.next,
+    Err(SpineObstruction::Malformed { .. }) => false,
+})]
 fn read_consumer(
     root: ConsRef<'_>,
     arriving: Wire,
@@ -456,6 +582,7 @@ fn read_consumer(
 #[cfg(test)]
 mod tests
 {
+    extern crate std;
     use gandr_theory_cell_complexes::ConsPat;
     use gandr_theory_cell_complexes::Polarity;
     use gandr_theory_cell_complexes::ProdPat;
@@ -482,7 +609,22 @@ mod tests
     /// The generator at `edge`, which the fixture's diagram holds.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the edge is present and names a generator of `wiring`.
+    /// - ensures: the borrowed generator at that position.
+    /// - panics: on an absent or out-of-range fixture edge.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real spine generators expose their labels and ordered
+    ///   ports, while absent and first-past edges panic. A different generator
+    ///   or a fabricated fallback changes these observations; this is a fixture
+    ///   observer, not a fallible public lookup.
+    /// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+    /// - witness: `interface::spine::tests::generator_observer_refuses_absent_or_out_of_range_edges`
+    #[spec(requires: match *edge { Maybe::Present(index) => usize::from(index) < wiring.generators().len(), Maybe::Absent(_) => false },
+        ensures: |generator| match *edge {
+            Maybe::Present(index) => wiring.generators().get(usize::from(index)).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(generator))),
+            Maybe::Absent(_) => false,
+        })]
     fn generator_at<'wiring, R>(
         wiring: &'wiring Wiring,
         edge: &Maybe<Edge, R>,
@@ -688,5 +830,58 @@ mod tests
             reading.port_of(&MetaVar::producer("s")),
             "a name the pattern does not wear has no port"
         );
+    }
+
+    #[test]
+    fn wire_allocation_and_declaration_keep_both_legs_ordered()
+    {
+        let mut reader = Reader::default();
+        let first = reader.fresh();
+        let second = reader.fresh();
+        let third = reader.fresh();
+        assert_eq!([first, second, third], wires![0, 1, 2]);
+        reader
+            .declare(&MetaVar::producer("x"), first)
+            .expect("first input");
+        reader
+            .declare(&MetaVar::consumer("x"), second)
+            .expect("same name on the other leg");
+        reader
+            .declare(&MetaVar::producer("y"), third)
+            .expect("second input");
+        assert_eq!(reader.inputs, wires![0, 2]);
+        assert_eq!(reader.outputs, wires![1]);
+        let before = reader.ports.clone();
+        assert_eq!(
+            reader.declare(&MetaVar::producer("x"), third),
+            Err(SpineObstruction::RepeatedHole {
+                hole: MetaVar::producer("x"),
+                first,
+                second: third
+            })
+        );
+        assert_eq!(
+            reader.declare(&MetaVar::consumer("x"), first),
+            Err(SpineObstruction::RepeatedHole {
+                hole: MetaVar::consumer("x"),
+                first: second,
+                second: first
+            })
+        );
+        assert_eq!(reader.ports, before);
+        assert_eq!(reader.inputs, wires![0, 2]);
+        assert_eq!(reader.outputs, wires![1]);
+    }
+
+    #[test]
+    fn generator_observer_refuses_absent_or_out_of_range_edges()
+    {
+        let reading = read_spine(&succ_add()).expect("valid spine");
+        let absent: Maybe<Edge, wire_producer::Absent> =
+            Maybe::Absent(wire_producer::Absent::BoundaryInput);
+        assert!(std::panic::catch_unwind(|| generator_at(reading.wiring(), &absent)).is_err());
+        let foreign: Maybe<Edge, wire_producer::Absent> =
+            Maybe::Present(Edge::from(usize::from(reading.wiring().edge_count())));
+        assert!(std::panic::catch_unwind(|| generator_at(reading.wiring(), &foreign)).is_err());
     }
 }

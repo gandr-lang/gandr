@@ -11,6 +11,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::EvalFault;
 use gandr_core_nbe::Fuel;
@@ -146,7 +147,28 @@ fn case(
 /// Run `root` of `core` on the L machine and read its terminal back.
 ///
 /// # Specification
-/// trivial.
+/// - requires: a well-formed pure computation without constants whose run fits
+///   the fixture budget and whose terminal has a pure core reading.
+/// - ensures: its terminal reading in the returned arena, or the common
+///   semantic stop for a stuck elimination or an unbound variable.
+/// - provides: the machine observation for differential comparison.
+/// - panics: on a focus refusal, machine fault or unreadable terminal.
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded closed generated computations halt and their
+///   settled readings agree with the independent normalizer. L3 hand-built
+///   bindings, applications, cases and malformed eliminations distinguish lost
+///   environments, wrong branch selection and mismapped stops. Constant
+///   unfolding and budget exhaustion are outside this helper.
+/// - witness: `tests::differential::l_machine_is_total_and_deterministic`
+/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+#[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
+    | Answer::Term { ref core, term } => core.computation(term).is_some(),
+    | Answer::Stopped(_) => true,
+})]
 fn machine(
     core: &CoreArena,
     root: ComputationId,
@@ -174,7 +196,26 @@ fn machine(
 /// The stop a machine's stuck configuration names.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the common semantic stop for an unobservable apply or force, an
+///   unmatched case, or an unbound value variable.
+/// - provides: an evaluator-independent refusal vocabulary.
+/// - panics: for any machine state outside those four classes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built applications, forces and cases with the wrong
+///   head have their declared stops; an unbound forced variable remains
+///   unbound. These distinguish exchanged stop classes; states impossible for
+///   the supported focused fragment are not mapped.
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+#[spec(ensures: |ret| match *stuck {
+    | Stuck::Unobservable { head: DestructorTag::Apply, .. } => ret == Stop::AppliedNonFunction,
+    | Stuck::Unobservable { head: DestructorTag::Force, .. } => ret == Stop::ForcedNonThunk,
+    | Stuck::Unmatched { .. } => ret == Stop::CasedNonInjection,
+    | Stuck::UnboundVariable { .. } => ret == Stop::UnboundVariable,
+    | _ => false,
+})]
 fn machine_stop(stuck: &Stuck) -> Stop
 {
     match *stuck {
@@ -203,7 +244,29 @@ fn machine_stop(stuck: &Stuck) -> Stop
 /// definitions.
 ///
 /// # Specification
-/// trivial.
+/// - requires: a well-formed pure computation without constants, within the
+///   fixture's normalization budget.
+/// - ensures: its normal form resolves in the returned arena, or evaluation
+///   yields the common stop for a malformed elimination or unbound variable.
+/// - provides: an independent normalizer observation for the machine.
+/// - panics: on a readback refusal or an unsupported evaluation fault.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated machine readings, normalized, agree with the
+///   independent normalization-by-evaluation path. L3 exact first-order and
+///   suspended-body fixtures distinguish unperformed reductions, wrong binding
+///   and collapsed refusal classes. Evidence is bounded to the pure fixtures
+///   and their budget, not arbitrary open code.
+/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::first_order_returns_compare_exactly`
+/// - witness: `tests::differential::thunks_compare_structurally_through_readback`
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+#[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
+    | Answer::Term { ref core, term } => core.computation(term).is_some(),
+    | Answer::Stopped(_) => true,
+})]
 fn normalised(
     core: &CoreArena,
     root: ComputationId,
@@ -235,7 +298,27 @@ fn normalised(
 /// The stop a normaliser's fault names.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the common semantic stop for each wrong-head elimination and
+///   unbound variable, without conflating the four classes.
+/// - provides: the normalizer side of the shared refusal vocabulary.
+/// - panics: for fuel, dangling-term, domain or machine-invariant faults, or a
+///   non-returning bind outside the supported fixtures.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the malformed apply, force and case fixtures and the
+///   unbound variable name their exact semantic stop in both evaluators. These
+///   distinguish exchanged error classes; internal faults and resource failures
+///   are deliberately outside this mapping.
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+#[spec(ensures: |ret| match fault {
+    | EvalFault::AppliedNonFunction => ret == Stop::AppliedNonFunction,
+    | EvalFault::ForcedNonThunk => ret == Stop::ForcedNonThunk,
+    | EvalFault::CasedNonInjection => ret == Stop::CasedNonInjection,
+    | EvalFault::UnboundVariable { .. } => ret == Stop::UnboundVariable,
+    | _ => false,
+})]
 fn normaliser_stop(fault: EvalFault) -> Stop
 {
     match fault {
@@ -258,7 +341,28 @@ fn normaliser_stop(fault: EvalFault) -> Stop
 /// comes to once the normaliser runs it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: a term answer is in the normalizer helper's supported domain.
+/// - ensures: a stopped answer remains the same stop; a term answer has its
+///   reading normalized, with any resulting term resolving in its arena.
+/// - provides: the common observation for suspended machine readings.
+/// - panics: on a normalization failure outside the helper's domain.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated readings agree with independent normalization
+///   after settling. L3 suspended-body examples distinguish a retained redex
+///   from its normal form and preserve semantic stops. Only pure bounded
+///   fixture readings are covered.
+/// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+/// - witness: `tests::differential::thunks_compare_structurally_through_readback`
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::refusal_classes_do_not_collapse_into_success`
+#[spec(ensures: |ref ret| match *answer {
+    | Answer::Stopped(stop) => matches!(*ret, Answer::Stopped(found) if found == stop),
+    | Answer::Term { .. } => match *ret {
+        | Answer::Term { ref core, term } => core.computation(term).is_some(),
+        | Answer::Stopped(_) => true,
+    },
+})]
 fn settled(answer: &Answer) -> Answer
 {
     match *answer {
@@ -270,7 +374,31 @@ fn settled(answer: &Answer) -> Answer
 /// Whether two answers agree: the same stop, or terms equal node for node.
 ///
 /// # Specification
-/// trivial.
+/// - requires: term answers hold acyclic graphs in the compared pure fragment.
+/// - ensures: Same for structurally equal terms or identical semantic stops; a
+///   term and a stop, unequal stops or unequal terms differ.
+/// - provides: a common observation across the two evaluators.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unequal first-order answers differ while exact and
+///   normalized fixtures agree in their declared relation; all refusal classes
+///   remain distinct from successful answers. The comparison oracle separately
+///   challenges address identity, node labels and each ordered child. This is
+///   structural comparison, not equivalence modulo reduction.
+/// - witness: `tests::differential::first_order_returns_compare_exactly`
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::thunks_compare_structurally_through_readback`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+/// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
+/// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
+/// - witness: `tests::differential::refusal_classes_do_not_collapse_into_success`
+#[spec(ensures: |ret| match (left, right) {
+    | (&Answer::Stopped(first), &Answer::Stopped(second)) => (ret == Agreement::Same) == (first == second),
+    | (&Answer::Term { core: ref first, term: first_root }, &Answer::Term { core: ref second, term: second_root }) =>
+        ret != Agreement::Same || (first.computation(first_root).is_some() && second.computation(second_root).is_some()),
+    | _ => ret == Agreement::Differ,
+})]
 fn agreement(
     left: &Answer,
     right: &Answer,
@@ -298,7 +426,22 @@ fn agreement(
 /// Every case's two answers relate as it expects.
 ///
 /// # Specification
-/// trivial.
+/// - requires: each case is in both evaluator helpers' supported pure domain.
+/// - ensures: each pair of observations has its case's declared relation: exact
+///   agreement, agreement only after normalization, or the named stop.
+/// - provides: the independent finite-case comparison oracle.
+/// - panics: on a mismatched observation or an unsupported evaluator failure.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite bindings, applications, both case branches,
+///   suspended redexes and malformed eliminations have declared relations
+///   between independent evaluator observations. They distinguish premature
+///   normalization, lost bindings and wrong stops. The assertion loop covers
+///   these pure fixtures, not arbitrary well-typed programs.
+/// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
+#[spec(requires: cases.iter().all(|case| case.core.computation(case.root).is_some()))]
 fn assert_cases(cases: Vec<Case>)
 {
     for case in cases {
@@ -654,4 +797,37 @@ proptest! {
             "the machine read back {:?} against the normal form {:?}", ran, normal
         );
     }
+}
+
+/// Actual malformed eliminations remain distinct from one another and from a
+/// value.
+#[test]
+fn refusal_classes_do_not_collapse_into_success()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let returned = core.computation_return(unit);
+    let forced = core.computation_force(unit);
+    let applied = core.computation_application(returned, unit);
+    let value_answer = machine(&core, returned);
+    let forced_answer = machine(&core, forced);
+    let applied_answer = machine(&core, applied);
+    assert!(matches!(
+        forced_answer,
+        Answer::Stopped(Stop::ForcedNonThunk)
+    ));
+    assert!(matches!(
+        applied_answer,
+        Answer::Stopped(Stop::AppliedNonFunction)
+    ));
+    assert_eq!(
+        Agreement::Differ,
+        agreement(&forced_answer, &applied_answer)
+    );
+    assert_eq!(Agreement::Differ, agreement(&value_answer, &forced_answer));
+    assert_eq!(Agreement::Differ, agreement(&forced_answer, &value_answer));
+    assert_eq!(
+        Agreement::Same,
+        agreement(&settled(&forced_answer), &forced_answer)
+    );
 }

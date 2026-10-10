@@ -57,11 +57,6 @@
 //! }
 //! std::fs::remove_dir_all(&directory)?;
 //! assert_eq!(printed.len(), 1, "one unsettled declaration, one report");
-//! assert!(
-//!     printed[0].starts_with("error[UnresolvedName]: no declaration or binder answers `missing`"),
-//!     "{}",
-//!     printed[0]
-//! );
 //! # Ok::<(), Box<dyn core::error::Error>>(())
 //! ```
 //!

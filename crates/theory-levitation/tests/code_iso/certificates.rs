@@ -2,6 +2,7 @@
 //! inverse and composition, all up to replay-equivalence, the only identity a
 //! certificate has.
 
+use anodized::spec;
 use gandr_theory_levitation::check_desc;
 use gandr_theory_levitation::generic_eq;
 use proptest::prelude::*;
@@ -155,7 +156,19 @@ proptest! {
 ///
 /// # Specification
 /// - requires: `first.target` is `next.source`.
+/// - ensures: the composed translator runs from the first source to the next
+///   target.
 /// - panics: on a boundary mismatch, a test-author error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — composed finite isomorphisms are observed through their
+///   replay and boundaries; a mismatched pair must panic rather than fabricate
+///   a composite. This detects removal of the helper's refusal path, within the
+///   sample domain of the groupoid witnesses rather than all translators.
+/// - witness: `tests::code_iso::certificates::inverse_undoes_composition_up_to_replay`
+/// - witness: `tests::code_iso::certificates::composite_requires_matching_boundaries`
+#[spec(requires: first.target() == next.source(),
+    ensures: |ref result| (result.source(), result.target()) == (first.source(), next.target()))]
 fn composite(
     first: &CodeIso,
     next: &CodeIso,
@@ -315,5 +328,17 @@ fn invertible_composition_declines_only_on_a_boundary_mismatch()
             Maybe::Absent(_)
         ),
         "a boundary-object mismatch is the sole decline, a domain error rather than a gate"
+    );
+}
+
+#[test]
+fn composite_requires_matching_boundaries()
+{
+    assert!(
+        std::panic::catch_unwind(|| composite(
+            &fixtures::identity_bool(),
+            &fixtures::bool_bridge().inverse()
+        ))
+        .is_err()
     );
 }

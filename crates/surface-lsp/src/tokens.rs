@@ -9,6 +9,7 @@
 //! line, its terminators dropped. Lengths and columns count UTF-16 code units,
 //! read through the renderer seam's [`LineIndex`].
 
+use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
@@ -121,10 +122,17 @@ impl AsRef<[u32]> for TokenStream
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — every role, its emitted index read back through the
-///   legend and compared with the meaning stated independently of both.
+/// - hypothesis: L2 — all 23 roles, including absence, are checked against
+///   independent type and modifier names, distinguishing legend permutations,
+///   wrong classifications and lost declaration or built-in bits.
 /// - witness: `tokens::tests::every_classified_role_maps_inside_the_legend`
 /// - witness: `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present((kind, modifiers)) => role != HlRole::Other
+        && usize::try_from(kind.0).is_ok_and(|index| index < TOKEN_TYPES.len())
+        && modifiers.0 & !3_u32 == 0,
+    Maybe::Absent(_) => role == HlRole::Other,
+})]
 fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_role::Absent>
 {
     let plain = |index: u32| Maybe::Present((TokenType(index), TokenModifiers::NONE));
@@ -176,6 +184,12 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 /// - witness: `tokens::tests::a_one_line_keyword_encodes_as_five_integers`
 /// - witness: `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`
 /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
+#[spec(ensures: |ret| ret.0.len().is_multiple_of(INTEGERS_PER_TOKEN)
+    && ret.0.chunks_exact(INTEGERS_PER_TOKEN).all(|token|
+        matches!(token, &[_, _, length, kind, bits] if length > 0
+            && usize::try_from(kind).is_ok_and(|index| index < TOKEN_TYPES.len())
+            && bits & !3_u32 == 0))
+    && (!spans.iter().all(|span| span.role == HlRole::Other) || ret.0.is_empty()))]
 #[inline]
 #[must_use]
 pub fn encode(
@@ -244,14 +258,24 @@ pub fn encode(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a range covering one token, the whole document, a strict
-///   interior of one token, an inverted interior and an empty range, each
-///   asserted at its exact stream over the wire.
+/// - hypothesis: L3 — all ordered spans and all query endpoint pairs in 0..=4
+///   are compared with byte-set intersection, including empty spans, empty and
+///   inverted queries, touching edges and unsorted input. Exact retained spans
+///   distinguish boundary inclusions, clipping and reordering; directed wire
+///   cases retain document-relative token deltas.
+/// - witness: `tokens::tests::overlap_observes_half_open_bytes_including_empty_spans`
 /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
 /// - witness: `server::tests::a_range_over_the_whole_document_agrees_with_the_full_stream`
 /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
 /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
 /// - witness: `server::tests::an_empty_range_yields_no_tokens`
+#[spec(
+    captures: count = spans.iter().filter(|span| start < end
+        && span.range.start() < span.range.end()
+        && span.range.start() < end && start < span.range.end()).count(),
+    ensures: |ret| ret.len() == count && ret.iter().all(|span|
+        span.range.start().max(start) < span.range.end().min(end)),
+)]
 #[inline]
 #[must_use]
 pub fn overlapping(
@@ -265,13 +289,14 @@ pub fn overlapping(
     }
     spans
         .into_iter()
-        .filter(|span| span.range.start() < end && start < span.range.end())
+        .filter(|span| span.range.start().max(start) < span.range.end().min(end))
         .collect()
 }
 
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::ByteRange;
     use gandr_surface_render_remote::HlRole;
@@ -336,7 +361,23 @@ mod tests
     /// new role does not compile here until its meaning is stated.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every classified role has its standard type and modifier
+    ///   names; only Other has no meaning.
+    /// - provides: a name-based oracle independent of wire indices.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — all classified roles and Other distinguish absent,
+    ///   swapped or wrongly modified meanings by the independently encoded
+    ///   stream's interpretation under the advertised legend.
+    /// - witness: `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref meaning) => role != HlRole::Other && !meaning.name.is_empty()
+            && meaning.modifiers.iter().all(|&name| matches!(name, "declaration" | "defaultLibrary")),
+        Maybe::Absent(()) => role == HlRole::Other,
+    })]
     fn meaning(role: HlRole) -> Maybe<Meaning, ()>
     {
         const DECLARED: &[&str] = &["declaration"];
@@ -370,7 +411,19 @@ mod tests
     /// The modifier names `modifiers` selects, in bit order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; high bits are ignored.
+    /// - ensures: the selected low-bit modifier names appear in legend order.
+    /// - provides: the client's interpretation of modifier bits.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all four low-bit combinations, also with a high bit
+    ///   set, distinguish wrong bit selection and order through exact names.
+    /// - witness: `tokens::tests::modifier_bits_and_skipped_spans_keep_their_meaning`
+    #[spec(ensures: |ret| ret.0.iter().copied().eq(
+        TOKEN_MODIFIERS.into_iter().zip([1_u32, 2_u32])
+            .filter_map(|(name, bit)| (modifiers.0 & bit != 0).then_some(name))))]
     fn modifier_names(modifiers: TokenModifiers) -> Names
     {
         Names(
@@ -386,7 +439,19 @@ mod tests
     /// A span of `role` over the bytes a [`Bytes`] pair spells.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: start is no greater than end.
+    /// - ensures: both offsets and the role are retained exactly.
+    /// - provides: an ordered span for semantic-token witnesses.
+    /// - fails: never in the valid domain.
+    /// - panics: an inverted range violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all ordered endpoints in 0..=4, including empty
+    ///   spans, distinguish endpoint shifts through byte-set intersection.
+    /// - witness: `tokens::tests::overlap_observes_half_open_bytes_including_empty_spans`
+    #[spec(requires: start <= end, ensures: |ret|
+        ret.range.start() == ByteOffset::from(start)
+            && ret.range.end() == ByteOffset::from(end) && ret.role == role)]
     fn span(
         Bytes(start, end): Bytes,
         role: HlRole,
@@ -480,6 +545,68 @@ mod tests
             encode(&astral, &[span(Bytes(0, 9), HlRole::StringLit)]),
             TokenStream::from(vec![0, 0, 2, 10, 0, 1, 0, 2, 10, 0]),
             "each piece's length counts UTF-16 units"
+        );
+    }
+    #[test]
+    fn overlap_observes_half_open_bytes_including_empty_spans()
+    {
+        let mut spans = Vec::new();
+        for start in (0_usize ..= 4).rev() {
+            for end in start ..= 4 {
+                spans.push(span(Bytes(start, end), HlRole::Keyword));
+            }
+        }
+        for start in 0_usize ..= 4 {
+            for end in 0_usize ..= 4 {
+                let expected: Vec<_> = spans
+                    .iter()
+                    .copied()
+                    .filter(|candidate| {
+                        (0_usize .. 4).any(|byte| {
+                            usize::from(candidate.range.start()) <= byte
+                                && byte < usize::from(candidate.range.end())
+                                && start <= byte
+                                && byte < end
+                        })
+                    })
+                    .collect();
+                assert_eq!(
+                    super::overlapping(
+                        spans.clone(),
+                        ByteOffset::from(start),
+                        ByteOffset::from(end)
+                    ),
+                    expected,
+                    "range {start}..{end}",
+                );
+            }
+        }
+    }
+    #[test]
+    fn modifier_bits_and_skipped_spans_keep_their_meaning()
+    {
+        for (bits, expected) in [
+            (0_u32, Vec::new()),
+            (1, vec!["declaration"]),
+            (2, vec!["defaultLibrary"]),
+            (3, vec!["declaration", "defaultLibrary"]),
+        ] {
+            assert_eq!(modifier_names(TokenModifiers(bits)).0, expected);
+            assert_eq!(
+                modifier_names(TokenModifiers(bits | 0x8000_0000)).0,
+                expected
+            );
+        }
+        let index = LineIndex::new(SourceText::from("a\r\n\rb"));
+        assert_eq!(encode(&index, &[]), TokenStream::default());
+        assert_eq!(
+            encode(&index, &[
+                span(Bytes(0, 1), HlRole::Other),
+                span(Bytes(1, 3), HlRole::Comment),
+                span(Bytes(3, 4), HlRole::Comment),
+                span(Bytes(4, 5), HlRole::VariableDef),
+            ]),
+            TokenStream::from(vec![2, 0, 1, 3, 1])
         );
     }
 }

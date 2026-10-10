@@ -10,6 +10,7 @@
 //! members sharing no arm. The sequent alphabet's only command position is the
 //! root; the toy alphabet's every node is one.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cat;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
@@ -52,6 +53,7 @@ use gandr_theory_deep_inference::anti_unify_tracelets;
 use gandr_theory_deep_inference::flows_equal;
 use gandr_theory_deep_inference::tracelet_flow;
 use proptest::prelude::*;
+use quenchant_shape::shape::Maybe;
 
 use crate::fixture::add_s;
 use crate::fixture::add_z;
@@ -134,27 +136,81 @@ const SIZES: [Members; 3] = [Members(2), Members(8), Members(64)];
 const REGIMES: [Regime; 3] = [Regime::TwoArms, Regime::OneVarying, Regime::AllDistinct];
 
 /// A term language the corpus instantiates certificates in.
+///
+/// # Specification
+/// - ensures: implementations accept consistent numeral assignments and
+///   introduce no fresh metavariables when discriminating a peak.
+/// - executable: none — trait instrumentation emits lowercase qualifier
+///   constants rejected by `non_upper_case_globals`; concrete implementations
+///   enforce the method obligations without the trait-level macro.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both local alphabet implementations participate in
+///   generated family admission. Concrete predicates inspect typed images and
+///   replacement fields; replay witnesses distinguish a conflicting assignment
+///   or ineffective adversary.
+/// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
 trait Corpus: CellAlphabet
 {
     /// The substitution sending every listed hole to the numeral of its
     /// value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: repeated variables have the same assigned value.
+    /// - ensures: every listed variable denotes the corresponding numeral or
+    ///   return-side frame stack in the resulting substitution.
+    /// - panics: conflicting repeated assignments are fixture defects.
+    /// - executable: none — instrumenting this abstract declaration requires
+    ///   the trait macro rejected by the qualifier-constant lint on `Corpus`.
+    ///   Both concrete implementations enforce consistent typed assignments.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — finite, consistent assignments, including empty and
+    ///   repeated bindings. The shared precondition rules out conflicting
+    ///   images; implementation predicates inspect typed bindings, and
+    ///   generated admission observes the substitutions in replay.
+    /// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
     fn numerals(holes: &[(Self::Var, Value)]) -> Self::Subst;
 
     /// `peak` with the body the base's first recorded cell reads replaced by
     /// one it does not fire on.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the alphabet-specific discriminating replacement introduces
+    ///   no fresh metavariables. Whether it prevents firing depends on the base
+    ///   cell and is checked by the adversarial replay witness.
+    /// - panics: none.
+    /// - executable: none — instrumenting this abstract declaration requires
+    ///   the trait macro rejected by the qualifier-constant lint on `Corpus`.
+    ///   Both concrete implementations check their exact replacement fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — arbitrary peaks of either local alphabet. The
+    ///   metavariable subset excludes an invented hole; concrete replacement
+    ///   fields and the failing-versus-honest replay pair distinguish an
+    ///   ineffective adversary.
+    /// - witness: `tests::template::an_entry_a_cell_discriminates_on_yields_no_template`
     fn discriminated(peak: &Self::Cmd) -> Self::Cmd;
 }
 
 /// `n` successors of `Zero`, as a producer.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly `n` unary Succ constructors followed by one Zero leaf.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — representable numeral sizes. The borrowed preorder checks
+///   every constructor, arity and node count, detecting a wrong leaf, branching
+///   or an off-by-one successor. Zero and two are concrete boundary witnesses.
+/// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+#[spec(ensures: |output| usize::from(output.size()) == n.0.saturating_add(1)
+    && output.to_ref().preorder().enumerate().all(|(index, entry)| match *entry.head() {
+        gandr_theory_cell_complexes::ProdHead::Ctor(ref ctor, arity) =>
+            ctor.as_ref() == if index < n.0 { "Succ" } else { "Zero" }
+                && usize::from(arity) == usize::from(index < n.0),
+        gandr_theory_cell_complexes::ProdHead::Meta(_) => false,
+    }))]
 fn numeral(n: Value) -> ProdPat
 {
     (0_usize .. n.0).fold(ProdPat::ctor("Zero", []), |inner, _| {
@@ -165,7 +221,18 @@ fn numeral(n: Value) -> ProdPat
 /// `n` return-side `Succ⁻` frames over `★`, as a consumer.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly `n` Succ return frames ending in the top consumer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — representable frame stacks. Borrowed frames and their end
+///   distinguish a wrong frame symbol, a metavariable tail and an off-by-one
+///   depth. Typed consumer substitution checks the same stacks in a family.
+/// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+#[spec(ensures: |output| output.to_ref().frames().len() == n.0
+    && output.to_ref().frames().iter().all(|frame|
+        matches!(*frame, gandr_theory_cell_complexes::SpineFrame::Frame(ref ctor) if ctor.as_ref() == "Succ"))
+    && matches!(*output.to_ref().end(), gandr_theory_cell_complexes::SpineEnd::Top))]
 fn frames(n: Value) -> ConsPat
 {
     (0_usize .. n.0).fold(ConsPat::top(), |inner, _| ConsPat::frame("Succ", inner))
@@ -174,7 +241,16 @@ fn frames(n: Value) -> ConsPat
 /// `n` successors of `Zero`, as a toy term.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a ground successor numeral with `n + 1` command nodes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — representable toy numerals. Node count and absence of
+///   metavariables detect wrong depth or an open image; the concrete zero and
+///   two numerals distinguish constructors, and generic family admission
+///   observes the images under rewriting.
+/// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+#[spec(ensures: |output| usize::from(ToyAlphabet::cmd_size(&output)) == n.0.saturating_add(1) && ToyAlphabet::metavariables(&output).is_empty())]
 fn toy_numeral(n: Value) -> Toy
 {
     (0_usize .. n.0).fold(Toy::zero(), |inner, _| Toy::succ(inner))
@@ -185,7 +261,24 @@ impl Corpus for SequentAlphabet
     /// Producer holes bound to numerals, consumer holes to `Succ⁻` frames.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: repeated variables have the same assigned value.
+    /// - ensures: every producer binding is its numeral and every consumer
+    ///   binding is its frame stack, with no additional bindings.
+    /// - panics: a conflicting repeated assignment is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — consistent typed assignments, including empty and
+    ///   repeated variables. Direct binding lookup, category-specific images
+    ///   and the distinct-variable count exclude missing, extra or
+    ///   swapped-category entries.
+    /// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+    #[spec(requires: holes.iter().enumerate().all(|(index, binding)| holes[..index].iter().all(|held| held.0 != binding.0 || held.1 == binding.1)), ensures: |output|
+        usize::from(output.len()) == holes.iter().enumerate().filter(|entry|
+            !holes[..entry.0].iter().any(|held| held.0 == entry.1.0)).count()
+        && holes.iter().all(|binding| match binding.0.cat() {
+            Cat::Producer => output.get_prod(&binding.0) == Maybe::Present(&numeral(binding.1)),
+            Cat::Consumer => output.get_cons(&binding.0) == Maybe::Present(&frames(binding.1)),
+        }))]
     fn numerals(holes: &[(Self::Var, Value)]) -> Self::Subst
     {
         let mut subst = Subst::new();
@@ -205,7 +298,16 @@ impl Corpus for SequentAlphabet
     /// The producer replaced by `Bad`, a constructor no cell reads.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the producer is Bad, with polarity and consumer unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — sequent peaks. Exact replacement fields distinguish
+    ///   changing the consumer or polarity instead of the producer; honest and
+    ///   discriminated family replays establish that this fixed base reads the
+    ///   replaced field.
+    /// - witness: `tests::template::an_entry_a_cell_discriminates_on_yields_no_template`
+    #[spec(ensures: |output| output.polarity() == peak.polarity() && output.consumer() == peak.consumer() && *output.producer() == ProdPat::ctor("Bad", []))]
     fn discriminated(peak: &Self::Cmd) -> Self::Cmd
     {
         CmdPat::cut(
@@ -221,7 +323,19 @@ impl Corpus for ToyAlphabet
     /// Every hole bound to a numeral, through the toy matcher.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: repeated variables have the same assigned value.
+    /// - ensures: applying the substitution to any listed hole produces its
+    ///   ground numeral.
+    /// - panics: a conflicting repeated assignment is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — consistent toy assignments. Applying each bound
+    ///   variable checks its image rather than the matcher return flag; empty
+    ///   and repeated inputs distinguish accidental rejection or lost bindings.
+    ///   Generated family admission observes larger images.
+    /// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+    #[spec(requires: holes.iter().enumerate().all(|(index, binding)| holes[..index].iter().all(|held| held.0 != binding.0 || held.1 == binding.1)), ensures: |output| holes.iter().all(|binding|
+        Self::apply_subst(&output, &Toy::var(binding.0.clone())) == toy_numeral(binding.1)))]
     fn numerals(holes: &[(Self::Var, Value)]) -> Self::Subst
     {
         let mut subst = ToySubst::default();
@@ -242,7 +356,17 @@ impl Corpus for ToyAlphabet
     /// `Succ` rule fires on; a peak with no child is kept.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the first child is replaced by Zero if it exists; otherwise
+    ///   the peak is preserved. No new metavariable is introduced.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a leaf and a two-child peak. Exact splicing or
+    ///   unchanged fallback detects changing a sibling or refusing a valid
+    ///   child; generated adversarial admission observes the resulting firing
+    ///   refusal where the base reads that child.
+    /// - witness: `tests::template::corpus_boundaries_preserve_typed_assignments`
+    #[spec(ensures: |output| output == Self::splice_cmd_at(peak, &Self::position_at_path(&[PositionStep::from(0_usize)]), Toy::zero()).unwrap_or_else(|_| peak.clone()))]
     fn discriminated(peak: &Self::Cmd) -> Self::Cmd
     {
         Self::splice_cmd_at(
@@ -357,7 +481,17 @@ fn overlapping_rules() -> CellStore
 /// holding every fused cell.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: every returned base is a composition certificate that replays
+///   over the returned store, with the supplied source name preserved.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the fixed sequent and toy stores. Both certificate legs
+///   are replayed independently of the overlap enumeration, excluding a missing
+///   fused cell or invalid join. Generated admission observes instantiated
+///   bases.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| output.name == name && output.bases.iter().all(|base| base.overlap.kind == OverlapKind::Composition && bool::from(base.replay(&output.store))))]
 fn fused<A>(
     name: Name,
     mut store: CellStore<A>,
@@ -383,7 +517,18 @@ where
 /// Every certificate completing `store` emits, with the completed store.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the bounded completion result retains its source name and every
+///   emitted certificate replays over its returned store; exhaustion does not
+///   imply completeness.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the two corpus alphabets and their fixed stores.
+///   Independent replay checks both legs of every emitted certificate,
+///   rejecting a stale store or invalid endpoint without claiming completion
+///   succeeded within the budget.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| output.name == name && output.bases.iter().all(|base| bool::from(base.replay(&output.store))))]
 fn completed<A>(
     name: Name,
     store: CellStore<A>,
@@ -411,7 +556,17 @@ where
 /// without a certificate are dropped.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a nonempty sequent corpus containing only sources with
+///   certificates, in the fixed candidate order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the fixed three candidate stores. The nonempty-source
+///   invariant protects indexed generation and rejects an omitted filter;
+///   generated replay and the rendered table exercise the retained
+///   certificates.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| !output.is_empty() && output.iter().all(|source| !source.bases.is_empty()))]
 fn sequent_sources() -> Vec<Source<SequentAlphabet>>
 {
     [
@@ -429,7 +584,16 @@ fn sequent_sources() -> Vec<Source<SequentAlphabet>>
 /// without a certificate are dropped.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a nonempty toy corpus containing only sources with certificates,
+///   in the fixed candidate order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the fixed toy candidate stores. Every retained source
+///   must support indexed certificate selection; generated replay and the
+///   rendered table exercise the filtered corpus rather than a vacuous sample.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| !output.is_empty() && output.iter().all(|source| !source.bases.is_empty()))]
 fn toy_sources() -> Vec<Source<ToyAlphabet>>
 {
     let mut addition = CellStore::new();
@@ -450,7 +614,16 @@ fn toy_sources() -> Vec<Source<ToyAlphabet>>
 /// into (add-Z), whose first step reads the peak's producer.
 ///
 /// # Specification
+/// - ensures: a replaying composition certificate whose producer peak is
+///   exactly Succ(Zero), in a store holding all its steps.
 /// - panics: when the store derives no lead base, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the fixed Peano store. Exact peak shape and both-leg
+///   replay exclude a different composition or a stale fused store; all focused
+///   adversarial template tests start from this base.
+/// - witness: `tests::template::an_entry_a_cell_discriminates_on_yields_no_template`
+#[spec(ensures: |output| output.1.overlap.kind == OverlapKind::Composition && *output.1.overlap.peak.producer() == numeral(Value(1)) && bool::from(output.1.replay(&output.0)))]
 fn lead_base() -> (CellStore, Tracelet)
 {
     let Source { store, bases, .. } = fused(Name("fused Peano"), peano_store());
@@ -464,7 +637,21 @@ fn lead_base() -> (CellStore, Tracelet)
 /// The distinct metavariables of `cmd`, in order of first occurrence.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly the distinct metavariables, retaining their
+///   first-occurrence order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — commands of either corpus alphabet. An independent
+///   first-occurrence filter checks values and order, distinguishing duplicate
+///   holes, omissions and reordered assignment slots. A repeated-hole command
+///   is observed directly.
+/// - witness: `tests::template::family_boundaries_preserve_assignments_and_adversary_positions`
+#[spec(ensures: |output| {
+    let variables = A::metavariables(cmd);
+    output.iter().eq(variables.iter().enumerate().filter_map(|(index, var)|
+        (!variables[..index].contains(var)).then_some(var)))
+})]
 fn holes<A>(cmd: &A::Cmd) -> Vec<A::Var>
 where
     A: CellAlphabet,
@@ -481,7 +668,24 @@ where
 /// The value member `member` fills hole `hole` with under `regime`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: in the two-arm regime, the hole index is representable as u32.
+/// - ensures: the selected bit, with out-of-word bits zero; alternatively the
+///   member index at only the first hole, or at every hole, for the other
+///   regimes.
+/// - panics: an unrepresentable two-arm hole index is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — all three regimes, including the first hole and a bit
+///   beyond the machine word. A bit-mask observer distinguishes the selected
+///   bit from parity of the whole member; explicit regime boundaries reject
+///   varying the wrong hole.
+/// - witness: `tests::template::family_boundaries_preserve_assignments_and_adversary_positions`
+#[spec(requires: regime != Regime::TwoArms || u32::try_from(hole.0).is_ok(), ensures: |output| output.0 == match regime {
+    Regime::TwoArms => u32::try_from(hole.0).ok().and_then(|shift| 1_usize.checked_shl(shift))
+        .map_or(0, |mask| usize::from(member.0 & mask != 0)),
+    Regime::OneVarying => if hole.0 == 0 { member.0 } else { 0 },
+    Regime::AllDistinct => member.0,
+})]
 fn value(
     regime: Regime,
     member: Ordinal,
@@ -505,7 +709,23 @@ fn value(
 /// member made adversarial as `adversary` says.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly the requested number of instances. Both path skeletons
+///   are preserved except that the last first leg loses its final step in the
+///   divergent regime; the discriminating regime changes only the last peak.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — empty, singleton and larger families of either alphabet.
+///   Path conservation and the exact last-member truncation distinguish an
+///   off-by-one adversary, wrong leg or dropped member. The named member-63
+///   refusals observe discrimination and divergence separately.
+/// - witness: `tests::template::family_boundaries_preserve_assignments_and_adversary_positions`
+#[spec(ensures: |output| output.len() == members.0 && output.iter().enumerate().all(|(index, member)| {
+    let diverged = adversary == Adversary::Diverged && index.saturating_add(1) == members.0;
+    member.path_b == base.path_b && member.path_a.as_slice() == &base.path_a[..base.path_a.len().saturating_sub(usize::from(diverged))]
+        && member.overlap.left == base.overlap.left && member.overlap.right == base.overlap.right
+        && member.overlap.kind == base.overlap.kind && member.overlap.seam == base.overlap.seam
+}))]
 fn family<A>(
     base: &Tracelet<A>,
     members: Members,
@@ -548,7 +768,19 @@ where
 /// join's node counts and one node per recorded step.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the saturating sum of all peak nodes, join nodes and recorded
+///   steps in both legs.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — empty and populated families. Regrouping boundary-node
+///   totals separately from path totals detects a missing leg or boundary
+///   contribution; the independent template price audit consumes this count.
+/// - witness: `tests::template::family_boundaries_preserve_assignments_and_adversary_positions`
+#[spec(ensures: |output| usize::from(output) == family.iter().fold(0_usize, |sum, member|
+    sum.saturating_add(usize::from(A::cmd_size(&member.overlap.peak)))
+        .saturating_add(usize::from(A::cmd_size(&member.joins_at))))
+    .saturating_add(usize::from(plain_steps(family))))]
 fn plain_size<A>(family: &[Tracelet<A>]) -> NodeCount
 where
     A: CellAlphabet,
@@ -566,7 +798,19 @@ where
 /// and steps, and every arm's node count plus one guard per arm.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the carrier node-and-step cost plus the node cost of every
+///   distinct arm and one guard per arm, with saturating arithmetic.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — emitted templates of both alphabets. Summing arm costs
+///   separately from the carrier detects a lost guard or carrier contribution;
+///   the expansion-factor audit compares this structural observer with the
+///   production report.
+/// - witness: `tests::template::a_template_is_emitted_only_below_its_expansion_factor`
+#[spec(ensures: |output| usize::from(output) == usize::from(plain_size(core::slice::from_ref(template.carrier())))
+    .saturating_add(template.entries().iter().flat_map(|entry| entry.arms.values())
+        .fold(0_usize, |sum, arm| sum.saturating_add(usize::from(arm.size)).saturating_add(1))))]
 fn template_size<A>(template: &GuardedTemplate<A>) -> NodeCount
 where
     A: CellAlphabet,
@@ -588,7 +832,17 @@ where
 /// The recorded steps replaying every member of `family` on its own fires.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the total number of recorded applications across both legs of
+///   every member, regardless of whether those applications replay.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — empty, singleton and adversarial families. Flattened
+///   application counting distinguishes a dropped leg or counting only
+///   successful replay steps. The divergent singleton retains two recorded
+///   applications even though its replay fails.
+/// - witness: `tests::template::family_boundaries_preserve_assignments_and_adversary_positions`
+#[spec(ensures: |output| usize::from(output) == family.iter().flat_map(|member| member.path_a.iter().chain(&member.path_b)).count())]
 fn plain_steps<A>(family: &[Tracelet<A>]) -> NodeCount
 where
     A: CellAlphabet,
@@ -605,7 +859,18 @@ where
 /// on inheritance: the producer under the most lying cache the family admits.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a produced template or a non-inheritance refusal; no
+///   `NotInherited` refusal escapes after its key has been poisoned and
+///   retried.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — generated honest and adversarial families. The refusal
+///   tag distinguishes an early return from the poisoning loop; the
+///   poisoned-cache admission witness requires real replay to reject a lying
+///   inheritance entry.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| !matches!(output, Err(TemplateRefusal::NotInherited { .. })))]
 fn produced_under_lies<A>(
     family: &[Tracelet<A>],
     store: &CellStore<A>,
@@ -629,7 +894,22 @@ where
 /// member by member, divided by it.
 ///
 /// # Specification
+/// - ensures: every successful emission has its independently summed size and
+///   plain cost, and its size is strictly below the integer expansion factor.
 /// - panics: when the clause fails.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated families, including non-paying and adversarial
+///   classes. Structural cost observers are independent of cached production
+///   counters; the integer quotient separates strict payment from equality at
+///   the threshold.
+/// - witness: `tests::template::a_template_is_emitted_only_below_its_expansion_factor`
+#[spec(ensures: anti_unify_tracelets(family, store, &mut InheritanceCache::new()).map_or_else(|_| true, |template| {
+    let size = template_size(&template);
+    let plain = plain_size(family);
+    size == template.size() && plain == template.plain_size()
+        && usize::from(plain).checked_div(usize::from(size)).is_some_and(|factor| usize::from(size) < factor)
+}))]
 fn emitted_below_its_expansion_factor<A>(
     family: &[Tracelet<A>],
     store: &CellStore<A>,
@@ -657,7 +937,20 @@ fn emitted_below_its_expansion_factor<A>(
 /// its plain replay decides.
 ///
 /// # Specification
+/// - ensures: if poisoning produces a template, each member reconstructs its
+///   own boundary and admission agrees with independent plain replay.
 /// - panics: when the clause fails.
+///
+/// # Adequacy
+/// - hypothesis: L2 — honest, divergent and discriminated generated families
+///   over both alphabets. Direct certificate replay and boundary comparison
+///   distinguish trusted cache claims from actual admission and catch a
+///   reconstructed but wrong join.
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
+#[spec(ensures: produced_under_lies(family, store).map_or_else(|_| true, |template| family.iter().all(|member|
+    template.peak_substitution(&member.overlap.peak).and_then(|substitution| template.instantiate(&substitution))
+        .is_ok_and(|rebuilt| rebuilt.overlap.peak == member.overlap.peak && rebuilt.joins_at == member.joins_at)
+        && template.admit(&member.overlap.peak, store) == Ok(member.replay(store)))))]
 fn members_admit_as_their_plain_replay<A>(
     family: &[Tracelet<A>],
     store: &CellStore<A>,
@@ -690,7 +983,20 @@ fn members_admit_as_their_plain_replay<A>(
 /// which regime, which adversary.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generated family sizes and regimes come from their fixed corpora,
+///   with each of the three adversary modes available.
+/// - panics: none.
+/// - executable: none — the opaque strategy return causes E0562 in the
+///   attribute's evaluation closure under enforcement; a named return type
+///   would be required before the attribute can be attached.
+///
+/// # Adequacy
+/// - hypothesis: L3 — 64 sampled cases per property over both alphabets,
+///   complemented by deterministic last-member refusals. Concrete near misses
+///   prevent an all-refusal generator from hiding admission or payment defects;
+///   sampling does not prove the full product space.
+/// - witness: `tests::template::a_template_is_emitted_only_below_its_expansion_factor`
+/// - witness: `tests::template::every_member_admits_as_its_plain_replay`
 fn shape() -> impl Strategy<
     Value = (
         prop::sample::Index,
@@ -990,7 +1296,28 @@ fn a_certificate_outside_the_template_is_refused_by_name()
 /// made of it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: labels contain no table delimiter or line break.
+/// - ensures: one thirteen-column row retaining the alphabet, class, member
+///   count and independently summed plain cost, with an outcome and work
+///   report.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — table-safe labels and generated certificate families.
+///   Parsed label, count and cost columns plus row shape reject a shifted
+///   column or a report for another family. The ignored verdict-table witness
+///   is run explicitly to observe successful and refused production.
+/// - witness: `tests::template::verdict_table`
+#[spec(requires: !label.alphabet.0.contains(['|', '\n', '\r']) && !label.class.contains(['|', '\n', '\r']), ensures: |output| {
+    let mut columns = output.split('|').map(str::trim);
+    columns.next() == Some("") && columns.next() == Some(label.alphabet.0.trim())
+        && columns.next() == Some(label.class.trim())
+        && columns.next().and_then(|column| column.parse::<usize>().ok()) == Some(family.len())
+        && columns.next().is_some_and(|outcome| !outcome.is_empty())
+        && columns.next().is_some()
+        && columns.next().and_then(|column| column.parse::<usize>().ok()) == Some(usize::from(plain_size(family)))
+        && columns.count() == 8 && output.ends_with('|')
+})]
 fn row<A>(
     label: &Label,
     family: &[Tracelet<A>],
@@ -1061,7 +1388,19 @@ where
 /// in every regime and at every size.
 ///
 /// # Specification
-/// trivial.
+/// - requires: alphabet and source names contain no table delimiter or line
+///   break.
+/// - ensures: prints the row for each source/base/regime/size tuple.
+/// - panics: output failure follows the standard output writer's behavior.
+///
+/// # Adequacy
+/// - hypothesis: L1 — finite corpus sources with table-safe names. The input
+///   predicate prevents labels from changing table structure; the row predicate
+///   checks each rendered tuple. The explicit verdict-table run observes the
+///   standard-output surface, not an in-memory surrogate.
+/// - witness: `tests::template::verdict_table`
+#[spec(requires: !alphabet.0.contains(['|', '\n', '\r'])
+    && sources.iter().all(|source| !source.name.0.contains(['|', '\n', '\r'])))]
 fn generated_rows<A>(
     alphabet: Name,
     sources: &[Source<A>],
@@ -1150,4 +1489,196 @@ fn verdict_table()
             );
         }
     }
+}
+
+#[test]
+fn inheritance_refusals_preserve_leg_and_step_boundaries()
+{
+    let (store, lead) = lead_base();
+    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let mut cache = InheritanceCache::new();
+    assert!(matches!(
+        anti_unify_tracelets(&members, &CellStore::new(), &mut cache),
+        Err(TemplateRefusal::NotInherited {
+            verdict: InheritanceVerdict::Stuck {
+                leg: TemplateLeg::PathA, step, reason: StuckStep::UnissuedCell,
+            }, ..
+        }) if usize::from(step) == 0
+    ));
+    assert_eq!(usize::from(cache.checked()), 1);
+
+    let mut stopped_right = members.clone();
+    for member in &mut stopped_right {
+        member.path_b = vec![
+            lead.path_a
+                .last()
+                .expect("the composite ends with add-Z")
+                .clone(),
+        ];
+    }
+    assert!(matches!(
+        anti_unify_tracelets(&stopped_right, &store, &mut InheritanceCache::new()),
+        Err(TemplateRefusal::NotInherited {
+            verdict: InheritanceVerdict::Stuck {
+                leg: TemplateLeg::PathB, step, reason: StuckStep::DoesNotFire(_),
+            }, ..
+        }) if usize::from(step) == 0
+    ));
+
+    let mut wrong_join = members.clone();
+    for member in &mut wrong_join {
+        member.joins_at = member.overlap.peak.clone();
+    }
+    assert!(matches!(
+        anti_unify_tracelets(&wrong_join, &store, &mut InheritanceCache::new()),
+        Err(TemplateRefusal::NotInherited {
+            verdict: InheritanceVerdict::MissesTheJoin {
+                leg: TemplateLeg::PathA
+            },
+            ..
+        })
+    ));
+
+    let mut empty_right = members;
+    for member in &mut empty_right {
+        member.path_b.clear();
+    }
+    assert!(matches!(
+        anti_unify_tracelets(&empty_right, &store, &mut InheritanceCache::new()),
+        Err(TemplateRefusal::NotInherited {
+            verdict: InheritanceVerdict::MissesTheJoin {
+                leg: TemplateLeg::PathB
+            },
+            ..
+        })
+    ));
+}
+
+#[test]
+fn empty_input_and_report_inputs_do_not_rewrite_production_counts()
+{
+    let (store, lead) = lead_base();
+    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let mut cache = InheritanceCache::new();
+    let template =
+        anti_unify_tracelets(&members, &store, &mut cache).expect("the shared family pays");
+    let before = cache.clone();
+    assert_eq!(
+        anti_unify_tracelets::<SequentAlphabet>(&[], &store, &mut cache),
+        Err(TemplateRefusal::EmptyFamily)
+    );
+    assert_eq!(cache, before);
+
+    let outside = family(&lead, Members(3), Regime::OneVarying, Adversary::Honest)
+        .pop()
+        .expect("an arm outside the two-arm template");
+    let empty = template.cost_report(&[], &store);
+    let singleton = template.cost_report(core::slice::from_ref(&members[0]), &store);
+    let external = template.cost_report(core::slice::from_ref(&outside), &store);
+    assert_eq!(usize::from(empty.admissions), 0);
+    assert_eq!(usize::from(empty.plain_replayed_steps), 0);
+    assert_eq!(usize::from(singleton.admissions), 1);
+    assert_eq!(
+        usize::from(singleton.plain_replayed_steps),
+        members[0].path_a.len() + members[0].path_b.len()
+    );
+    assert_eq!(usize::from(external.admissions), 0);
+    assert_eq!(
+        usize::from(external.plain_replayed_steps),
+        outside.path_a.len() + outside.path_b.len()
+    );
+    let production = template.production();
+    for report in [empty, singleton, external] {
+        assert_eq!(usize::from(report.members), members.len());
+        assert_eq!(
+            (
+                report.triples_checked,
+                report.cache_hits,
+                report.replayed_steps
+            ),
+            (
+                production.triples_checked,
+                production.cache_hits,
+                production.replayed_steps
+            )
+        );
+    }
+}
+
+#[test]
+fn corpus_boundaries_preserve_typed_assignments()
+{
+    use gandr_theory_cell_complexes::MetaVar;
+    assert_eq!(ProdPat::ctor("Zero", []), numeral(Value(0)));
+    assert_eq!(ConsPat::top(), frames(Value(0)));
+    assert_eq!(Toy::succ(Toy::succ(Toy::zero())), toy_numeral(Value(2)));
+    let producer = MetaVar::producer("p");
+    let consumer = MetaVar::consumer("k");
+    let substitution = SequentAlphabet::numerals(&[
+        (producer.clone(), Value(2)),
+        (consumer.clone(), Value(1)),
+        (producer.clone(), Value(2)),
+    ]);
+    assert_eq!(
+        Maybe::Present(&ProdPat::ctor("Succ", [ProdPat::ctor("Succ", [
+            ProdPat::ctor("Zero", [])
+        ])])),
+        substitution.get_prod(&producer)
+    );
+    assert_eq!(
+        Maybe::Present(&ConsPat::frame("Succ", ConsPat::top())),
+        substitution.get_cons(&consumer)
+    );
+    assert!(bool::from(SequentAlphabet::numerals(&[]).is_empty()));
+    let variable = gandr_theory_cell_complexes_tools::ToyVar::from("p");
+    let toy_substitution =
+        ToyAlphabet::numerals(&[(variable.clone(), Value(2)), (variable.clone(), Value(2))]);
+    assert_eq!(
+        Toy::succ(Toy::succ(Toy::zero())),
+        ToyAlphabet::apply_subst(&toy_substitution, &Toy::var(variable))
+    );
+    assert_eq!(Toy::zero(), ToyAlphabet::discriminated(&Toy::zero()));
+    assert_eq!(
+        Toy::add(Toy::zero(), Toy::var("right")),
+        ToyAlphabet::discriminated(&Toy::add(Toy::succ(Toy::zero()), Toy::var("right")))
+    );
+}
+
+#[test]
+fn family_boundaries_preserve_assignments_and_adversary_positions()
+{
+    let command = Toy::add(Toy::var("b"), Toy::add(Toy::var("a"), Toy::var("b")));
+    assert_eq!(
+        vec![
+            gandr_theory_cell_complexes_tools::ToyVar::from("b"),
+            gandr_theory_cell_complexes_tools::ToyVar::from("a")
+        ],
+        holes::<ToyAlphabet>(&command)
+    );
+    assert_eq!(Value(1), value(Regime::TwoArms, Ordinal(6), Ordinal(1)));
+    assert_eq!(
+        Value(0),
+        value(
+            Regime::TwoArms,
+            Ordinal(usize::MAX),
+            Ordinal(usize::try_from(usize::BITS).expect("word width fits usize"))
+        )
+    );
+    assert_eq!(Value(6), value(Regime::OneVarying, Ordinal(6), Ordinal(0)));
+    assert_eq!(Value(0), value(Regime::OneVarying, Ordinal(6), Ordinal(1)));
+    assert_eq!(Value(6), value(Regime::AllDistinct, Ordinal(6), Ordinal(1)));
+    let (store, base) = lead_base();
+    let empty = family(&base, Members(0), Regime::TwoArms, Adversary::Diverged);
+    assert!(empty.is_empty());
+    assert_eq!(NodeCount::from(0_usize), plain_size(&empty));
+    assert_eq!(NodeCount::from(0_usize), plain_steps(&empty));
+    let single = family(&base, Members(1), Regime::TwoArms, Adversary::Diverged);
+    assert_eq!(
+        &base.path_a[.. base.path_a.len().saturating_sub(1)],
+        single[0].path_a.as_slice()
+    );
+    assert_eq!(base.path_b, single[0].path_b);
+    assert!(!bool::from(single[0].replay(&store)));
+    assert_eq!(NodeCount::from(2_usize), plain_steps(&single));
+    assert_eq!(NodeCount::from(12_usize), plain_size(&single));
 }

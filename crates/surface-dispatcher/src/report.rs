@@ -10,6 +10,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Membership;
@@ -81,6 +82,16 @@ pub enum Shown
 /// - witness: `report::tests::each_verb_shows_its_declarations`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| match ret {
+    Shown::Goal => declaration.settlement() == Settlement::Unsettled
+        && unsettled_by(declaration) == Unsettled::Obligations && verb == Verb::Check(Goals::Reported),
+    Shown::Line => (declaration.settlement() == Settlement::Unsettled
+        && !(unsettled_by(declaration) == Unsettled::Obligations && verb == Verb::Check(Goals::Reported)))
+        || (declaration.settlement() == Settlement::Settled
+            && declaration.membership() == Membership::Fixture && verb == Verb::Test),
+    Shown::Counted => declaration.settlement() == Settlement::Settled
+        && !(declaration.membership() == Membership::Fixture && verb == Verb::Test),
+})]
 pub fn shown(
     declaration: &DeclarationReport<'_>,
     verb: Verb,
@@ -113,7 +124,22 @@ enum Unsettled
 /// What `declaration`'s unsettlement, if any, rests on.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: obligations exactly when both stated and produced outcomes are
+///   checks; every refusal, stated run or malformed expectation is
+///   verdict-shaped.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real settled, owed and refused declarations are observed
+///   through their printing and gating decisions. These cover the ordinary
+///   checks/refusal boundary, not every malformed expectation.
+/// - witness: `report::tests::each_verb_shows_its_declarations`
+/// - witness: `report::tests::each_count_decides_its_verdict`
+#[spec(ensures: |ret| (ret == Unsettled::Obligations)
+    == matches!((declaration.stated(), declaration.outcome()),
+        (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_))))]
 fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
 {
     match (declaration.stated(), declaration.outcome()) {
@@ -253,9 +279,22 @@ impl SourceCounts
     /// Every source read, whatever its root.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the saturated sum of strict, fixture and pending sources;
+    ///   refusal, lowered-pending and fault counters do not add sources.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct root counts and a sum beyond the maximum
+    ///   count distinguish omitted roots, inclusion of fault/refusal counts and
+    ///   wrapping arithmetic. These are finite integer boundaries.
+    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
+    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.strict.0
+        .saturating_add(self.fixture.0).saturating_add(self.pending.0))]
     pub fn read(&self) -> SourceCount
     {
         SourceCount(
@@ -273,7 +312,20 @@ impl fmt::Display for SourceCounts
     /// expects and the faulted paths.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: renders the total, strict, fixture, pending, refused,
+    ///   lowered-pending and fault counts in that order.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — write status does not expose the emitted count
+    ///   sequence in the caller-owned formatter sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pairwise distinct counts have an independently
+    ///   expected numeric sequence in the rendered report. Dropped, repeated or
+    ///   exchanged roles are distinguished without pinning English prose;
+    ///   arbitrary formatter failures are outside the successful-write fixture.
+    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     fn fmt(
         &self,
@@ -304,7 +356,18 @@ impl SourceCount
     /// The count and one more, saturating.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one greater, saturated at the maximum source count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive fault transitions reach and remain at the
+    ///   maximum count; ordinary path faults exercise an increment below the
+    ///   boundary. These distinguish wraparound and premature saturation.
+    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
+    /// - witness: `report::tests::each_count_decides_its_verdict`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
     const fn one_more(self) -> Self
     {
         Self(self.0.saturating_add(1_usize))
@@ -448,6 +511,21 @@ impl RunReport
     /// - witness: `report::tests::each_count_decides_its_verdict`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| {
+        let fault = self.sources.faulted.0 != 0
+            || usize::from(self.tally.refusals().count(FailureClass::EngineFault)) != 0;
+        let owed = usize::from(self.tally.declarations().unsettled());
+        let unsettled = self.sources.refused.0 != 0 || self.sources.lowered_pending.0 != 0
+            || match verb {
+                Verb::Check(Goals::Reported) => owed > usize::from(self.goals),
+                Verb::Check(Goals::Gated) | Verb::Test => owed != 0,
+            };
+        match ret {
+            RunVerdict::Faulted => fault,
+            RunVerdict::Unsettled => !fault && unsettled,
+            RunVerdict::Settled => !fault && !unsettled,
+        }
+    })]
     pub fn verdict(
         &self,
         verb: Verb,
@@ -476,7 +554,26 @@ impl RunReport
     /// Count one faulted path.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the fault count increases by one with saturation; the source
+    ///   root counts, refusals and lowered-pending count are unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary faults outrank unsettlement; successive
+    ///   faults at the maximum preserve the root and refusal counts. This
+    ///   distinguishes wrapping and changing an unrelated source
+    ///   classification.
+    /// - witness: `report::tests::each_count_decides_its_verdict`
+    /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
+    #[spec(
+        captures: [sources = self.sources],
+        ensures: |_| self.sources.faulted.0 == sources.faulted.0.saturating_add(1_usize)
+            && self.sources.strict == sources.strict && self.sources.fixture == sources.fixture
+            && self.sources.pending == sources.pending && self.sources.refused == sources.refused
+            && self.sources.lowered_pending == sources.lowered_pending,
+    )]
     pub(crate) fn faulted(&mut self)
     {
         self.sources.faulted = self.sources.faulted.one_more();
@@ -495,7 +592,42 @@ impl RunReport
     /// a pending source's declarations are not counted.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; the caller supplies the source's classification.
+    /// - ensures: the selected root count increases with saturation; refused
+    ///   and lowered standings increment their respective counters. Pending
+    ///   standings contribute no declarations, exercised rows or goals;
+    ///   otherwise a settled composition contributes its tally and rows, and
+    ///   one goal per declaration unsettled only by obligations. Fault and
+    ///   lowering counts are unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real ordinary, pending-form and newly lowered sources
+    ///   distinguish source counting from declaration/goal absorption. Existing
+    ///   gating fixtures distinguish refusal and engine counts. The
+    ///   observations are finite compositions, not arbitrary tally states.
+    /// - witness: `report::tests::pending_sources_do_not_contribute_declarations_or_goals`
+    /// - witness: `report::tests::each_count_decides_its_verdict`
+    #[spec(
+        captures: [sources = self.sources, goals = usize::from(self.goals), lowerings = self.lowerings],
+        ensures: |_| {
+            let added_goals = if standing == Standing::Pending { 0_usize }
+                else { match *composed {
+                    Composed::Settled { ref report, .. } => report.declarations().iter()
+                        .filter(|declaration| declaration.settlement() == Settlement::Unsettled
+                            && unsettled_by(declaration) == Unsettled::Obligations).count(),
+                    Composed::Refused(_) => 0_usize,
+                }};
+            self.sources.strict.0 == sources.strict.0.saturating_add(usize::from(root == SourceRoot::Strict))
+                && self.sources.fixture.0 == sources.fixture.0.saturating_add(usize::from(root == SourceRoot::Fixture))
+                && self.sources.pending.0 == sources.pending.0.saturating_add(usize::from(root == SourceRoot::Pending))
+                && self.sources.refused.0 == sources.refused.0.saturating_add(usize::from(standing == Standing::Refused))
+                && self.sources.lowered_pending.0 == sources.lowered_pending.0.saturating_add(usize::from(standing == Standing::Lowered))
+                && self.sources.faulted == sources.faulted && self.lowerings == lowerings
+                && usize::from(self.goals) == goals.saturating_add(added_goals)
+        },
+    )]
     pub(crate) fn read(
         &mut self,
         root: SourceRoot,
@@ -546,7 +678,20 @@ impl fmt::Display for RunReport
     /// line terminator.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: sources, lowerings, goals and exercised rows precede the
+    ///   settle tally on separate lines, without a trailing line terminator.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes status but not the emitted
+    ///   line sequence or its trailing boundary.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct source, lowering and goal counts occupy
+    ///   their expected line roles and the report has no trailing CR or LF.
+    ///   This observes layout without pinning English sentences or the separate
+    ///   tally formatter; arbitrary sink failures are outside the fixture.
+    /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     fn fmt(
         &self,
@@ -749,5 +894,118 @@ def broken = missing ;"#,
             [RunVerdict::Faulted; 3_usize],
             "an engine refusal faults every verb, even one a declaration states"
         );
+    }
+
+    #[test]
+    fn source_counts_saturate_without_counting_refusals()
+    {
+        let mut report = RunReport {
+            sources: super::SourceCounts {
+                strict: super::SourceCount(usize::MAX.saturating_sub(1)),
+                fixture: super::SourceCount(1),
+                pending: super::SourceCount(1),
+                refused: super::SourceCount(7),
+                lowered_pending: super::SourceCount(11),
+                faulted: super::SourceCount(usize::MAX.saturating_sub(1)),
+            },
+            ..RunReport::default()
+        };
+        assert_eq!(usize::MAX, usize::from(report.sources().read()));
+        let before = report.sources();
+        report.faulted();
+        assert_eq!(usize::MAX, usize::from(report.sources().faulted()));
+        report.faulted();
+        assert_eq!(usize::MAX, usize::from(report.sources().faulted()));
+        assert_eq!(before.strict(), report.sources().strict());
+        assert_eq!(before.fixture(), report.sources().fixture());
+        assert_eq!(before.pending(), report.sources().pending());
+        assert_eq!(before.refused(), report.sources().refused());
+        assert_eq!(before.lowered_pending(), report.sources().lowered_pending());
+    }
+
+    #[test]
+    fn pending_sources_do_not_contribute_declarations_or_goals()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let compose_source = |source: &'static str| {
+            let mut lowerings = LoweringCount::default();
+            compose(
+                &grammar,
+                CorpusRoot::Fixture,
+                SourceText::from(source),
+                &mut lowerings,
+            )
+            .expect("the fixture composes")
+        };
+        let ordinary = compose_source(
+            "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
+        );
+        let pending = compose_source(
+            "def rec f(x: Integer) -> -F Integer { ret x }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
+        );
+        let mut report = RunReport::default();
+        report.read(
+            SourceRoot::Fixture,
+            &ordinary,
+            Standing::of(SourceRoot::Fixture, &ordinary),
+        );
+        assert_eq!(DeclarationCount::from(1_usize), report.goals());
+        assert_eq!(
+            DeclarationCount::from(1_usize),
+            report
+                .exercised()
+                .count(crate::exercised::Row::LambdaChecks)
+        );
+        let before = report;
+        let standing = Standing::of(SourceRoot::Pending, &pending);
+        assert_eq!(Standing::Pending, standing);
+        report.read(SourceRoot::Pending, &pending, standing);
+        assert_eq!(before.tally(), report.tally());
+        assert_eq!(before.exercised(), report.exercised());
+        assert_eq!(before.goals(), report.goals());
+        assert_eq!(super::SourceCount(1), report.sources().pending());
+        let standing = Standing::of(SourceRoot::Pending, &ordinary);
+        assert_eq!(Standing::Lowered, standing);
+        report.read(SourceRoot::Pending, &ordinary, standing);
+        assert_eq!(super::SourceCount(2), report.sources().pending());
+        assert_eq!(super::SourceCount(1), report.sources().lowered_pending());
+        assert_eq!(DeclarationCount::from(2_usize), report.goals());
+        assert_eq!(
+            DeclarationCount::from(2_usize),
+            report
+                .exercised()
+                .count(crate::exercised::Row::LambdaChecks)
+        );
+    }
+
+    #[test]
+    fn report_rendering_preserves_numeric_roles_and_line_boundaries()
+    {
+        let report = RunReport {
+            sources: super::SourceCounts {
+                strict: super::SourceCount(2),
+                fixture: super::SourceCount(3),
+                pending: super::SourceCount(5),
+                refused: super::SourceCount(7),
+                lowered_pending: super::SourceCount(11),
+                faulted: super::SourceCount(13),
+            },
+            lowerings: LoweringCount::from(23_usize),
+            goals: DeclarationCount::from(29_usize),
+            ..RunReport::default()
+        };
+        let rendered = std::format!("{report}");
+        let mut lines = rendered.lines();
+        let expected: [&[usize]; 3] = [&[10, 2, 3, 5, 7, 11, 13], &[23], &[29]];
+        for counts in expected {
+            let line = lines.next().expect("a report line for these count roles");
+            assert!(
+                line.split(|ch: char| !ch.is_ascii_digit())
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.parse::<usize>().expect("decimal digits"))
+                    .eq(counts.iter().copied())
+            );
+        }
+        assert!(!rendered.ends_with(['\r', '\n']));
     }
 }

@@ -47,6 +47,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_graphs::Prec;
 
 use crate::Adaptation;
@@ -61,6 +62,8 @@ use crate::RuleName;
 use crate::Sort;
 use crate::SurfaceForm;
 use crate::TileLabel;
+use crate::model::RegexShape;
+use crate::model::Sym;
 
 /// Builds the circuit block form's rules.
 ///
@@ -78,6 +81,17 @@ use crate::TileLabel;
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in item band and a table missing it, L3 exact
+///   rule identities, preserved-prefix observations and the missing-name
+///   refusal catch reordered or omitted declarations and lookup bypass.
+///   Complete circuit parses cover the four arrow glyphs; arbitrary precedence
+///   maps and all source programs are not exhausted.
+/// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+/// - witness: `tests::surface::named_kind_coverage_is_semantic`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |rules| rules.len() == 2 && rules.iter().zip(["sign_declaration", "circuit_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && Some(rule.prec()) == precs.get(PrecName("item.singleton"))))) ]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -108,7 +122,19 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// slot.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the named item rule at `p`, preserving the existing
+///   prefix.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For an existing sentinel rule and the built-in item band, L3
+///   exact prefix, declaration order and band observations catch overwritten
+///   prefixes, wrong provenance and wrong precedence; longer arbitrary prefixes
+///   are not exhausted.
+/// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "sign_declaration" && rule.provenance().0 == "sign_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
 fn sign_declaration(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -155,7 +181,19 @@ fn sign_declaration(
 /// would make it; only the mold count differs.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the named item rule at `p`, preserving the existing
+///   prefix.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For an existing sentinel rule and the built-in item band, L3
+///   exact prefix, declaration order and band observations catch overwritten
+///   prefixes, wrong provenance and wrong precedence; longer arbitrary prefixes
+///   are not exhausted.
+/// - witness: `surface::circuit::tests::assembly_keeps_existing_rules_and_requires_the_item_band`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(captures: before = out.len(), ensures: |()| out.len() == before.saturating_add(1) && out.get(before).is_some_and(|rule| rule.name().0 == "circuit_declaration" && rule.provenance().0 == "circuit_declaration" && rule.sort() == Sort::Item && rule.prec() == p))]
 fn circuit_declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -209,7 +247,21 @@ fn circuit_declarations(
 /// a parse failure.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: two keyword-discriminated `oper` and `rule` sequences, each with
+///   its local tail.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["oper", "rule"]).all(|(branch, keyword)| matches!(branch.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == keyword)) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier"))))))]
 fn circuit_judgment() -> Regex
 {
     alt([
@@ -237,7 +289,20 @@ fn circuit_judgment() -> Regex
 /// menu rather than admit one declined spelling.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: expression endpoints separated by the circuit arrow grid.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn written_face_tail() -> Regex
 {
     seq([h(Sort::Expression), arrow_grid(), h(Sort::Expression)])
@@ -246,7 +311,20 @@ fn written_face_tail() -> Regex
 /// Build the colon-led tail shared by circuit judgments.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a colon-led signature followed by an optional body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn circuit_judgment_tail() -> Regex
 {
     seq([t(TileLabel(":")), signature(), opt(body())])
@@ -256,7 +334,20 @@ fn circuit_judgment_tail() -> Regex
 /// parenthesized-expression family for the binder endpoint.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a colon-led rewrite signature followed by an optional body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn rule_judgment_tail() -> Regex
 {
     seq([t(TileLabel(":")), rule_signature(), opt(body())])
@@ -265,7 +356,21 @@ fn rule_judgment_tail() -> Regex
 /// Build a rewrite rule signature from expression endpoints.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the direct-telescope and expression-endpoint signature
+///   alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3))))]
 fn rule_signature() -> Regex
 {
     alt([
@@ -290,7 +395,20 @@ fn rule_signature() -> Regex
 /// expressions.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: parentheses around a nonempty direct-telescope list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn rule_parameter_group() -> Regex
 {
     seq([
@@ -334,7 +452,20 @@ fn circuit_rule_face_arrow() -> Regex
 /// Build the parenthesis-led data-block tail reserved for localized decline.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: parenthesized optional inputs and an optional term-arrow result.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn data_spelled_oper_tail() -> Regex
 {
     seq([
@@ -365,7 +496,21 @@ fn data_spelled_oper_tail() -> Regex
 /// members and its closing brace follow it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a shared keyword lead, identifier and colon with a parenthesized
+///   signature and optional body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn top_level_judgment() -> Regex
 {
     seq([
@@ -385,7 +530,20 @@ fn top_level_judgment() -> Regex
 /// carry a filler.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the sort, data and circuit-judgment member alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn sign_member() -> Regex
 {
     alt([
@@ -424,7 +582,20 @@ fn sign_member() -> Regex
 /// pass's, not the tree's.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a parameter side followed by an optional arrow and result side.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn signature() -> Regex
 {
     seq([parameter_side(), opt(seq([arrow_grid(), result_side()]))])
@@ -438,7 +609,20 @@ fn signature() -> Regex
 /// against a one-port list.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a bare type or parenthesized parameter list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
 fn parameter_side() -> Regex
 {
     alt([h(Sort::Type), parameter_group()])
@@ -447,7 +631,21 @@ fn parameter_side() -> Regex
 /// Build a parenthesized parameter list `( … )`, binders admitted.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one parenthesized optional parameter list, including the empty
+///   interface.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn parameter_group() -> Regex
 {
     seq([
@@ -466,7 +664,20 @@ fn parameter_group() -> Regex
 /// `identifier` and `rule` / `data` menus.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a bare type or parenthesized result list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
 fn result_side() -> Regex
 {
     alt([h(Sort::Type), result_group()])
@@ -475,7 +686,20 @@ fn result_side() -> Regex
 /// Build a parenthesized result list `( … )`, plain ports only.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one parenthesized optional list of plain result ports.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn result_group() -> Regex
 {
     seq([t(TileLabel("(")), opt(comma1(port())), t(TileLabel(")"))])
@@ -490,7 +714,21 @@ fn result_group() -> Regex
 /// cell's telescope binds beside it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: plain ports, rewrite binders and data binders as distinct
+///   alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 6 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data"))))))]
 fn parameter() -> Regex
 {
     alt([
@@ -516,7 +754,21 @@ fn parameter() -> Regex
 /// sugar for it (minting a fresh name in order).
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a named port or a bare type, keeping the unnamed-port sugar
+///   separate.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn port() -> Regex
 {
     alt([
@@ -529,7 +781,20 @@ fn port() -> Regex
 /// fresh-name minting writes out.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: exactly an identifier or the unnamed-port marker.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["identifier","_"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn port_name() -> Regex
 {
     alt([t(TileLabel("identifier")), t(TileLabel("_"))])
@@ -543,7 +808,21 @@ fn port_name() -> Regex
 /// declined until the reversible lane lands its checking story.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: exactly the four circuit glyphs in declared order, never the term
+///   arrow.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 4 && parts.iter().zip(["-->","<->","==>","<=>"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn arrow_grid() -> Regex
 {
     alt([
@@ -557,7 +836,20 @@ fn arrow_grid() -> Regex
 /// Build a circuit body `{ node …; feed …; }`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: braces around a possibly empty sequence of body statements.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn body() -> Regex
 {
     seq([
@@ -575,7 +867,21 @@ fn body() -> Regex
 /// wires ports directly, and is the only statement that may close a cycle.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: keyword-distinct node and feed statements, each with an optional
+///   label and required terminator.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["node", "feed"]).all(|(branch, keyword)| matches!(branch.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 7 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == keyword)) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn body_statement() -> Regex
 {
     alt([
@@ -603,7 +909,20 @@ fn body_statement() -> Regex
 /// Build a node line's head application `head(a, b)`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a named head followed by a parenthesized optional port list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn application() -> Regex
 {
     seq([
@@ -618,7 +937,20 @@ fn application() -> Regex
 /// list, where every entry is already bound or being bound by name.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: parentheses around a possibly empty list of port names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. This is not a language-equivalence proof beyond the finite
+///   corpus.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn port_tuple() -> Regex
 {
     seq([
@@ -700,8 +1032,93 @@ fn repeat(part: Regex) -> Regex
 /// Build a comma-separated nonempty regex list.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one leading element followed by repetitions that each begin with
+///   a comma.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in circuit forms, L3 pinned grammar identity and
+///   corpus role observations catch missing alternatives, changed delimiters
+///   and moved rule boundaries; the predicate observes the stated root and
+///   marker shape. Arbitrary nullable list elements and programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))))]
 fn comma1(element: Regex) -> Regex
 {
     seq([element.clone(), repeat(seq([t(TileLabel(",")), element]))])
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_theory_graphs::Assoc;
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecSpec;
+
+    use super::circuit_declarations;
+    use super::rules;
+    use super::sign_declaration;
+    use crate::PbgError;
+    use crate::PrecName;
+    use crate::PrecTable;
+    use crate::Regex;
+    use crate::Rule;
+    use crate::RuleName;
+    use crate::Sort;
+    use crate::TileLabel;
+    use crate::model::RegexShape;
+    use crate::model::Sym;
+    use crate::surface::built_in_prec_table;
+
+    #[test]
+    fn assembly_keeps_existing_rules_and_requires_the_item_band()
+    {
+        let precs = built_in_prec_table().expect("constant groups");
+        let item = precs.prec(PrecName("item.singleton")).expect("item band");
+        let mut out = vec![Rule::new(
+            RuleName("sentinel"),
+            Sort::Pattern,
+            item,
+            Regex::tile(TileLabel("sentinel")),
+        )];
+        sign_declaration(&mut out, item);
+        circuit_declarations(&mut out, item);
+        assert_eq!(
+            [
+                RuleName("sentinel"),
+                RuleName("sign_declaration"),
+                RuleName("circuit_declaration")
+            ],
+            out.iter().map(Rule::name).collect::<Vec<_>>().as_slice()
+        );
+        let first = out.first().expect("preserved prefix");
+        assert_eq!(Sort::Pattern, first.sort());
+        assert!(
+            matches!(first.regex().view().shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sentinel")
+        );
+        for rule in out.iter().skip(1) {
+            assert_eq!(Sort::Item, rule.sort());
+            assert_eq!(item, rule.prec());
+            assert_eq!(rule.name().0, rule.provenance().0);
+        }
+        let mut spec = PrecSpec::new();
+        let unrelated = spec.insert("unrelated", Assoc::Non).expect("one group");
+        let missing = PrecTable::new(PrecDag::build(&spec).expect("acyclic"), [(
+            PrecName("unrelated"),
+            unrelated,
+        )]);
+        assert_eq!(
+            Err(PbgError::MissingPrec {
+                name: "item.singleton"
+            }),
+            rules(&missing)
+        );
+    }
 }

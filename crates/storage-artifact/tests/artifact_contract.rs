@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! The artifact layer's specification suite: the record round trip, the
 //! identity's determinism, sensitivity and history-independence, the stored
 //! read back through the kernel's decoder, and each refusal of that read.

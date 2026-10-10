@@ -5,6 +5,7 @@
 
 use core::error::Error;
 
+use anodized::spec;
 use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::End;
 use gandr_theory_graphs::SeenKeyVerdict;
@@ -314,6 +315,7 @@ fn construction_guards_refuse_malformed_shapes() -> Result<(), Box<dyn Error>>
         WalkStep::Swing(swing(&[a, b])),
     ])?;
     assert_eq!(from_parts, from_steps);
+    assert_eq!(shape(&from_parts), (vec![vec![1], vec![1, 2]], vec![9]));
     assert_eq!(WalkChainLength::from(3), from_parts.chain_len()?);
     assert_eq!(
         Err(WalkBuildError::InvalidWalkShape),
@@ -953,9 +955,19 @@ mod fixture_support
     /// Builds a walk from its swings and stances.
     ///
     /// # Specification
-    /// - requires: the shape alternates.
+    /// - requires: every swing is nonempty, and their count is one more than
+    ///   the stance count.
     /// - ensures: returns the walk.
     /// - panics: when the shape does not alternate, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For nonempty alternating fixture parts, L3 exact key
+    ///   sequences distinguish dropped swings, reversed symbols and misplaced
+    ///   stances. The predicate checks the entire borrowed sequence; malformed
+    ///   fixture inputs are precondition violations, not grammar inputs.
+    /// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+    /// - witness: `tests::walk::figure_33_fragments_are_literate_external_oracle`
+    #[spec(requires: !swings.is_empty() && swings.iter().all(|swing| !swing.is_empty()) && stances.len().checked_add(1) == Some(swings.len()), ensures: |ref result| result.swings().iter().map(Swing::nonterminals).eq(swings.iter().copied()) && result.stances() == stances)]
     pub(super) fn walk(
         swings: &[&[Nt]],
         stances: &[St],
@@ -1320,11 +1332,21 @@ mod assertion_support
     /// `expected_second`, inserting them in the opposite order.
     ///
     /// # Specification
-    /// - requires: both walks are valid and minimal, with distinct canonical
-    ///   keys.
+    /// - requires: both walks are minimal inequalities with distinct canonical
+    ///   keys and alternating lengths at most nine.
     /// - ensures: returns only when the transitive row and the less projection
     ///   both list the two walks in the expected order.
     /// - panics: when either list differs, naming the case.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For independently ordered inequality pairs and
+    ///   deliberately reversed evidence, L3 acceptance or assertion failure
+    ///   distinguishes a disabled observer and a reversed expected order. The
+    ///   predicate checks inequality shape, distinct walks and the fixture cap;
+    ///   canonical-key distinctness and minimality remain caller obligations.
+    /// - witness: `tests::walk::canonical_order_keys_are_isolated_pairwise_witnesses`
+    /// - witness: `tests::walk::ordered_observer_refuses_reversed_evidence`
+    #[spec(requires: expected_first != expected_second && [&expected_first, &expected_second].into_iter().all(|walk| walk.is_neq().is_ok_and(bool::from) && walk.chain_len().is_ok_and(|length| u32::from(length) <= 9)))]
     pub(super) fn assert_ordered_walks<'case, C>(
         case: C,
         expected_first: Walk<Nt, St>,
@@ -1367,7 +1389,19 @@ mod assertion_support
 /// Reads a walk back as its symbols' keys.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves swing boundaries and symbol order while projecting
+///   keys.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For hand-written walk shapes, L3 literal key sequences
+///   distinguish flattening swings, reversing traversal and dropping stance
+///   keys. The predicate compares each borrowed projection; it does not assert
+///   that distinct symbols always have distinct keys.
+/// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+/// - witness: `tests::walk::figure_33_fragments_are_literate_external_oracle`
+#[spec(ensures: |ref result| result.swings.len() == walk.swings().len() && result.swings.iter().zip(walk.swings()).all(|(keys, swing)| keys.iter().copied().eq(swing.nonterminals().iter().map(|nt| nt.key.0))) && result.stances.iter().copied().eq(walk.stances().iter().map(|stance| stance.key.0)))]
 fn shape(walk: &Walk<Nt, St>) -> WalkShape
 {
     WalkShape {
@@ -1407,6 +1441,15 @@ where
 /// - requires: `nonterminals` is non-empty.
 /// - ensures: returns the swing.
 /// - panics: on an empty swing, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: For nonempty singleton and rising symbol sequences, L3 literal
+///   walk shapes distinguish lost or reordered symbols. The predicate checks
+///   the full borrowed payload; empty fixture slices are outside the admitted
+///   domain.
+/// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+/// - witness: `tests::walk::figure_33_fragments_are_literate_external_oracle`
+#[spec(requires: !nonterminals.is_empty(), ensures: |ref result| result.nonterminals() == nonterminals)]
 fn swing(nonterminals: &[Nt]) -> Swing<Nt>
 {
     Swing::new(nonterminals.to_vec()).expect("test swings are non-empty")
@@ -1445,4 +1488,120 @@ proptest! {
         prop_assert_eq!(a.walks(Dir::Left, &End::Root, &End::Node(st(length,  u64::from(length)))), b.walks(Dir::Left, &End::Root, &End::Node(st(length,  u64::from(length)))));
         prop_assert_eq!(a.fingerprint(), b.fingerprint());
     }
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries() -> Result<(), Box<dyn Error>>
+{
+    let oversized_count = usize::try_from(u32::MAX)?
+        .checked_add(1)
+        .ok_or(WalkBuildError::ArithmeticOverflow)?;
+    let oversized = Swing::new(vec![(); oversized_count])?;
+    assert_eq!(oversized.height(), Err(WalkBuildError::ArithmeticOverflow));
+    let walk = Walk::<(), ()>::new(vec![oversized], vec![])?;
+    assert_eq!(
+        walk.is_eq().map(bool::from),
+        Err(WalkBuildError::ArithmeticOverflow)
+    );
+    assert_eq!(
+        walk.is_neq().map(bool::from),
+        Err(WalkBuildError::ArithmeticOverflow)
+    );
+    assert_eq!(walk.height(), Err(WalkBuildError::ArithmeticOverflow));
+    assert_eq!(walk.chain_len().map(u32::from), Ok(1));
+    let prefix = Walk::new(
+        vec![
+            Swing::new(vec![(); 2])?,
+            Swing::new(vec![(); oversized_count])?,
+        ],
+        vec![()],
+    )?;
+    assert_eq!(prefix.is_eq().map(bool::from), Ok(false));
+    assert_eq!(
+        prefix.is_neq().map(bool::from),
+        Err(WalkBuildError::ArithmeticOverflow)
+    );
+    assert_eq!(prefix.chain_len().map(u32::from), Ok(3));
+    assert_eq!(
+        Walk::<(), ()>::new(vec![], vec![(); usize::MAX]),
+        Err(WalkBuildError::InvalidWalkShape)
+    );
+    assert_eq!(
+        Walk::new(vec![Swing::new(vec![()])?], vec![(); usize::MAX]),
+        Err(WalkBuildError::ArithmeticOverflow)
+    );
+    Ok(())
+}
+
+#[test]
+fn empty_machine_preserves_root_and_empty_projections() -> Result<(), Box<dyn Error>>
+{
+    let spec = WalkSpec::<Sym>::new(WalkChainLength::from(1))?;
+    let index = WalkIndex::build(&spec)?;
+    let absent = End::Node(st(1_u8, 1_u64));
+    assert_eq!(index.ends(), &[End::Root]);
+    assert_eq!(
+        WalkIndex::compare_seen_keys(&spec)?,
+        SeenKeyVerdict::Equivalent
+    );
+    for dir in [Dir::Left, Dir::Right] {
+        assert!(index.walks(dir, &End::Root, &End::Root).is_empty());
+        assert!(index.walks(dir, &End::Root, &absent).is_empty());
+    }
+    assert!(index.eq(&End::Root, &End::Root).is_empty());
+    assert!(index.lt(&End::Root, &absent).is_empty());
+    assert!(index.gt(&absent, &End::Root).is_empty());
+    assert!(index.molds(&TestLabel(1)).is_empty());
+    assert_eq!(u64::from(index.fingerprint()), 0xc749_02ca_177d_edaf_u64);
+    Ok(())
+}
+
+#[test]
+fn fingerprint_matches_independently_framed_directional_machines() -> Result<(), Box<dyn Error>>
+{
+    // The digests frame the documented words directly, independently of the
+    // accumulator helpers.
+    for (dir, expected) in [
+        (Dir::Left, 0x10b3_bc21_fc87_fcd1_u64),
+        (Dir::Right, 0x3df8_3d0e_b32f_2121_u64),
+    ] {
+        let a = fixture_support::nt(1_u8, 0_u8, 0x0102_0304_0506_0708_u64);
+        let b = fixture_support::nt(2_u8, 0_u8, 0x1112_1314_1516_1718_u64);
+        let c = fixture_support::nt(3_u8, 0_u8, 0x2122_2324_2526_2728_u64);
+        let middle = st(4_u8, 0x3132_3334_3536_3738_u64);
+        let dst = End::Node(fixture_support::mold_st(
+            5_u8,
+            0x4142_4344_4546_4748_u64,
+            7_u8,
+            11_u8,
+        ));
+        let mut spec = WalkSpec::<Sym>::new(WalkChainLength::from(3))?;
+        spec.set_root_entry(a);
+        spec.insert_direct(
+            dir,
+            End::Root,
+            dst,
+            fixture_support::walk(&[&[a], &[b, c]], &[middle]),
+        );
+        assert_eq!(u64::from(WalkIndex::build(&spec)?.fingerprint()), expected);
+    }
+    Ok(())
+}
+
+#[test]
+fn ordered_observer_refuses_reversed_evidence()
+{
+    let a = fixture_support::nt(1_u8, 0_u8, 1_u64);
+    let b = fixture_support::nt(2_u8, 0_u8, 2_u64);
+    let lower = fixture_support::walk(&[&[a, b]], &[]);
+    let higher = fixture_support::walk(&[&[a, b], &[a, b]], &[st(3_u8, 3_u64)]);
+    assert!(
+        std::panic::catch_unwind(|| assertion_support::assert_ordered_walks(
+            "reversed evidence",
+            higher,
+            lower
+        ))
+        .is_err()
+    );
 }

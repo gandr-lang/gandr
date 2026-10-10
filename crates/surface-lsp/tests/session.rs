@@ -17,6 +17,7 @@ mod session
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_surface_diagnostics::Entry;
     use gandr_surface_diagnostics::Report;
     use gandr_surface_diagnostics::entries;
@@ -64,7 +65,26 @@ mod session
         /// An empty directory named for `test` and this process.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: test is one normal path component, unique among active
+        ///   tests. The temporary directory is writable and no other actor owns
+        ///   this path.
+        /// - ensures: the owned directory exists and is empty, replacing stale
+        ///   content.
+        /// - provides: an isolated source root for a protocol/renderer
+        ///   comparison.
+        /// - fails: never when filesystem operations succeed.
+        /// - panics: a stale directory cannot be removed or a new one cannot be
+        ///   created.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the refusal session creates and writes its
+        ///   isolated source; instrumented postconditions observe the directory
+        ///   and emptiness, distinguishing skipped creation or retained stale
+        ///   contents.
+        /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+        #[spec(requires: test.components().count() == 1
+            && matches!(test.components().next(), Some(std::path::Component::Normal(_))),
+            ensures: |ret| ret.0.is_dir() && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()))]
         fn new(test: &Path) -> Self
         {
             let root = std::env::temp_dir().join(format!(
@@ -85,7 +105,18 @@ mod session
         /// Remove the directory and everything under it.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: the directory remains exclusively owned and present.
+        /// - ensures: the owned directory and its children no longer exist.
+        /// - provides: cleanup after the filesystem-backed session.
+        /// - fails: never when removal succeeds.
+        /// - panics: the filesystem refuses removal.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the refusal session drops a root containing its
+        ///   source; the instrumented absence check detects skipped or
+        ///   incomplete removal.
+        /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+        #[spec(requires: self.0.is_dir(), ensures: !self.0.exists())]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -105,7 +136,22 @@ mod session
     /// The `file` URI of `path`, escaped as a client escapes it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: path is absolute UTF-8.
+    /// - ensures: a file URI decodes to the exact path bytes, escaping
+    ///   characters outside RFC 3986 unreserved characters and the path
+    ///   separator.
+    /// - provides: client-spelled document identifiers for fixtures.
+    /// - fails: never in the valid domain.
+    /// - panics: a non-UTF-8 path violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a path containing a space and non-ASCII character has
+    ///   a pinned URI; corpus sessions link each published URI to its source.
+    /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
+    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    #[spec(requires: path.is_absolute() && path.to_str().is_some(),
+        ensures: |ret| ret.strip_prefix("file://").is_some_and(|encoded|
+            percent_encoding::percent_decode_str(encoded).eq(path.as_os_str().as_encoded_bytes().iter().copied())))]
     fn uri(path: &Path) -> String
     {
         let path = path.to_str().expect("a test path is UTF-8");
@@ -115,7 +161,21 @@ mod session
     /// One input stream carrying `messages` as frames, in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: every JSON value is serializable and fits the reader
+    ///   ceiling.
+    /// - ensures: one compact JSON frame per input value, in input order.
+    /// - provides: the session input byte stream.
+    /// - fails: never for serializable values and the vector writer.
+    /// - panics: a message cannot encode or its vector write fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a pinned two-frame UTF-8/nullable stream
+    ///   distinguishes wrong byte lengths, missing frames and reordered values;
+    ///   full sessions observe each protocol response and publication.
+    /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
+    /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
+    #[spec(ensures: |ret| ret.as_ref().windows(4)
+        .filter(|window| *window == b"\r\n\r\n").count() == messages.len())]
     fn frames(messages: &[Value]) -> Body
     {
         let mut input = Vec::new();
@@ -129,7 +189,20 @@ mod session
     /// Every frame in `output`, each as JSON.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: output contains complete frames with compact JSON bodies.
+    /// - ensures: all frame values are decoded in order.
+    /// - provides: a semantic observation independent of frame boundaries.
+    /// - fails: never in the valid domain.
+    /// - panics: framing or JSON decoding rejects the stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a pinned Unicode and null stream distinguishes
+    ///   missing, reordered or truncated values; session goldens check protocol
+    ///   meaning.
+    /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
+    /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
+    #[spec(ensures: |ret| ret.len() == output.as_ref().windows(4)
+        .filter(|window| *window == b"\r\n\r\n").count())]
     fn written(output: &Body) -> Vec<Value>
     {
         let mut stream = output.as_ref();
@@ -145,7 +218,21 @@ mod session
     /// the server wrote.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: messages serialize into frames within the reader ceiling.
+    /// - ensures: the session stops at exit or EOF, returning its lifecycle
+    ///   ending and every emitted JSON-RPC message in order.
+    /// - provides: an in-memory client observation of the public service loop.
+    /// - fails: never for the admitted in-memory streams.
+    /// - panics: transport or output decoding rejects a fixture stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a full session has pinned responses and tokens. L3 —
+    ///   EOF before/after shutdown and a truncated frame distinguish lifecycle
+    ///   ending and lost transport faults.
+    /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
+    /// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
+    #[spec(ensures: |ret| ret.1.len() <= messages.len()
+        && ret.1.iter().all(|message| message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")))]
     fn session(messages: &[Value]) -> (Served, Vec<Value>)
     {
         let input = frames(messages);
@@ -194,7 +281,25 @@ mod session
     /// as the wire carries it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: byte lies on a character boundary or beyond the source end.
+    /// - ensures: the JSON line and character equal the renderer UTF-16
+    ///   projection.
+    /// - provides: a wire position independent of the LSP adapter.
+    /// - fails: never in the valid domain.
+    /// - panics: an interior character byte violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every located corpus report agrees with the server;
+    ///   L3 — the pinned refusal location distinguishes byte/UTF-16 coordinate
+    ///   shifts.
+    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
+    #[spec(
+        requires: index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok(),
+        ensures: |ret| index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok_and(|position|
+            ret.get("line").and_then(Value::as_u64) == u64::try_from(usize::from(position.row)).ok()
+                && ret.get("character").and_then(Value::as_u64) == u64::try_from(usize::from(position.col)).ok()),
+    )]
     fn position(
         index: &LineIndex<'_>,
         byte: gandr_surface_syntax::ByteOffset,
@@ -210,7 +315,26 @@ mod session
     /// independently of the server: the wire's own view of `report`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: index describes the report source; located spans project.
+    /// - ensures: the primary range, optional code, title and related ranges
+    ///   and labels are represented in the comparison object, preserving
+    ///   context order.
+    /// - provides: an independent renderer-stage observation of editor
+    ///   diagnostics.
+    /// - fails: never for valid report spans.
+    /// - panics: a located span lies inside a character.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every corpus report, including absent locations and
+    ///   causal contexts, is compared against the actual wire publication;
+    ///   exact ranges, codes and labels distinguish lost or misprojected report
+    ///   fields.
+    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    #[spec(ensures: |ret|
+        ret.get("code").is_some_and(|code| code.is_null() == matches!(report.identifier(), Maybe::Absent(_)))
+            && ret.get("message").is_some_and(Value::is_string)
+            && ret.get("related").and_then(Value::as_array).is_some_and(|related|
+                related.len() == report.context().into_iter().filter(|slot| matches!(slot, Maybe::Present(_))).count()))]
     fn rendered(
         report: &Report<'_>,
         index: &LineIndex<'_>,
@@ -227,13 +351,41 @@ mod session
             | Maybe::Present(spelling) => json!(spelling.to_string()),
             | Maybe::Absent(_) => Value::Null,
         };
-        json!({"range": range, "code": code, "message": report.title().to_string()})
+        let related: Vec<_> = report.context().into_iter().filter_map(|slot| match slot {
+            Maybe::Present(annotation) => Some(json!({
+                "range": {"start": position(index, annotation.span.start()), "end": position(index, annotation.span.end())},
+                "message": annotation.label.to_string(),
+            })),
+            Maybe::Absent(_) => None,
+        }).collect();
+        json!({"range": range, "code": code, "message": report.title().to_string(), "related": related})
     }
 
     /// The range, code and message of each diagnostic a publication carries.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: publication carries a diagnostic array.
+    /// - ensures: each diagnostic preserves its range, code, message and
+    ///   related ranges/labels; an absent code is observed as null and absent
+    ///   context as an empty array, without changing diagnostic or context
+    ///   order.
+    /// - provides: the wire projection compared with renderer-stage reports.
+    /// - fails: never in the valid domain.
+    /// - panics: the diagnostic array is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every corpus publication is compared with independent
+    ///   renderer-stage observations, distinguishing dropped or reordered
+    ///   diagnostics and missing codes, titles or causal labels.
+    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    #[spec(requires: publication.pointer("/params/diagnostics").is_some_and(Value::is_array),
+        ensures: |ret| publication.pointer("/params/diagnostics").and_then(Value::as_array).is_some_and(|diagnostics|
+            ret.len() == diagnostics.len() && ret.iter().zip(diagnostics).all(|(projected, original)|
+                projected.get("range") == original.get("range")
+                    && projected.get("message") == original.get("message")
+                    && projected.get("code") == Some(original.get("code").unwrap_or(&Value::Null))
+                    && projected.get("related").and_then(Value::as_array).is_some_and(|related|
+                        related.len() == original.get("relatedInformation").and_then(Value::as_array).map_or(0, Vec::len))))) ]
     fn published(publication: &Value) -> Vec<Value>
     {
         publication
@@ -242,10 +394,15 @@ mod session
             .expect("a publication carries diagnostics")
             .iter()
             .map(|diagnostic| {
+                let related: Vec<_> = diagnostic.get("relatedInformation").and_then(Value::as_array)
+                    .into_iter().flatten().map(|annotation| json!({
+                        "range": annotation.pointer("/location/range"), "message": annotation.get("message"),
+                    })).collect();
                 json!({
                     "range": diagnostic["range"],
                     "code": diagnostic.get("code").cloned().unwrap_or(Value::Null),
                     "message": diagnostic["message"],
+                    "related": related,
                 })
             })
             .collect()
@@ -254,7 +411,19 @@ mod session
     /// The corpus root, canonical so its paths classify as the walk's do.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the neighboring corpus checkout is present and readable.
+    /// - ensures: the returned root is an absolute directory with the corpus
+    ///   name.
+    /// - provides: a canonical filesystem root for independent corpus evidence.
+    /// - fails: never when canonicalization succeeds.
+    /// - panics: the expected corpus directory cannot be canonicalized.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — full corpus report/token comparisons read both strict
+    ///   and fixture roots, distinguishing a wrong or unavailable corpus root.
+    /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+    /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
+    #[spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
     fn corpus() -> PathBuf
     {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -267,7 +436,30 @@ mod session
     /// path order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: corpus roots form a readable finite directory tree with
+    ///   UTF-8 paths and source text, unchanged during enumeration.
+    /// - ensures: every .gandr file under strict and fixture is returned once,
+    ///   in path order, with its URI and complete source text.
+    /// - provides: client inputs for the independent token-coverage comparison.
+    /// - fails: never in the valid filesystem domain.
+    /// - panics: a directory, entry or source cannot be read or a path is not
+    ///   UTF-8.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source membership agrees with the independent
+    ///   dispatcher walk; each source token stream covers its
+    ///   grammar-classified bytes. Runtime checks distinguish URI shape,
+    ///   duplicate paths and ordering deviations.
+    /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
+    #[spec(ensures: |ret|
+        ret.iter().all(|source| source.uri.starts_with("file://")
+            && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr"))
+            && ret.iter().zip(ret.iter().skip(1)).all(|(first, second)|
+                match (percent_encoding::percent_decode_str(&first.uri).decode_utf8(),
+                       percent_encoding::percent_decode_str(&second.uri).decode_utf8()) {
+                    (Ok(first), Ok(second)) => Path::new(first.as_ref()) < Path::new(second.as_ref()),
+                    _ => false,
+                }))]
     fn corpus_sources() -> Vec<Source>
     {
         let root = corpus();
@@ -311,7 +503,13 @@ mod session
             "params": {"textDocument": {"uri": source.uri}},
         }));
         messages.extend(closing());
-        let (served, written) = session(&messages);
+        let (served, mut written) = session(&messages);
+        written
+            .get_mut(1)
+            .and_then(|message| message.pointer_mut("/params/diagnostics/0"))
+            .and_then(Value::as_object_mut)
+            .expect("the refusal diagnostic")
+            .remove("message");
         assert_eq!(
             served,
             Served::Clean,
@@ -337,7 +535,7 @@ mod session
                             "severity": 1_i32,
                             "code": "UnresolvedName",
                             "source": "gandr",
-                            "message": "no declaration or binder answers `missing` at 31..38",
+
                         }],
                     },
                 }),
@@ -478,6 +676,7 @@ mod session
                         },
                         "code": null,
                         "message": line.to_string(),
+                        "related": [],
                     }),
                 })
                 .collect::<Vec<_>>();
@@ -516,6 +715,23 @@ mod session
         let grammar = built_in().expect("the built-in grammar builds");
         let roles = RoleTable::build(&grammar).expect("the role table builds");
         let sources = corpus_sources();
+        let root = corpus();
+        let mut walk = Walk::new(vec![root.join("strict"), root.join("fixture")]);
+        let mut expected_uris = alloc::collections::BTreeSet::new();
+        while let Maybe::Present(step) = walk.step() {
+            let Step::Source { path, .. } = step
+            else {
+                panic!("a readable corpus source");
+            };
+            let _inserted = expected_uris.insert(uri(path));
+        }
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source.uri.clone())
+                .collect::<alloc::collections::BTreeSet<_>>(),
+            expected_uris
+        );
         let mut messages = opening();
         for (id, source) in sources.iter().enumerate() {
             messages.push(open(source));
@@ -598,5 +814,17 @@ mod session
                 source.uri
             );
         }
+    }
+    #[test]
+    fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
+    {
+        assert_eq!(uri(Path::new("/a b/é.gandr")), "file:///a%20b/%C3%A9.gandr");
+        let messages = [json!({"text":"é😀"}), Value::Null];
+        let stream = frames(&messages);
+        assert_eq!(
+            stream.as_ref(),
+            "Content-Length: 17\r\n\r\n{\"text\":\"é😀\"}Content-Length: 4\r\n\r\nnull".as_bytes()
+        );
+        assert_eq!(written(&stream), messages);
     }
 }

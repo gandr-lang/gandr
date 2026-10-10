@@ -8,6 +8,7 @@
 //! alphabet, so seeds and components that tie on a prefix of their
 //! linearization, or outright, are common rather than rare.
 
+use anodized::spec;
 use gandr_theory_circuit_algebras::DiagramEquality;
 use gandr_theory_circuit_algebras::Generator;
 use gandr_theory_circuit_algebras::GeneratorLabel;
@@ -98,7 +99,33 @@ impl Recipe
     /// boundary-honest.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: at least one closing and a representable total wire count.
+    /// - ensures: follows the steps, then closes each remaining open wire in
+    ///   cyclic closing order, producing monogamous, acyclic, boundary-honest
+    ///   parts.
+    /// - panics: none on the bounded recipe domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed isolated, open and generated wires expose
+    ///   cyclic closure and boundary roles. L1 — generated diagrams and their
+    ///   permutations pass assembly and certificate verification. Losing an
+    ///   open wire, duplicating a producer or assigning a backward dependency
+    ///   differs; recipes have nonempty closings and representable allocation
+    ///   counts.
+    /// - witness: `tests::normal_form::recipe_closes_open_wires_and_preserves_isolated_roles`
+    /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(requires: !self.closings.is_empty() && self.steps.iter().try_fold(0_usize, |count, step| count.checked_add(match *step { Step::IsolatedWire | Step::Input => 1, Step::Generator { produces, .. } => produces })).is_some(),
+    ensures: |ref built| built.wires == self.steps.iter().fold(0_usize, |count, step| count.saturating_add(match *step { Step::IsolatedWire | Step::Input => 1, Step::Generator { produces, .. } => produces }))
+        && built.inputs.iter().chain(&built.outputs).all(|wire| usize::from(*wire) < built.wires)
+        && built.generators.iter().all(|generator| generator.sources().iter().chain(generator.targets()).all(|wire| usize::from(*wire) < built.wires))
+        && (0..built.wires).all(|position| {
+            let wire = Wire::from(position);
+            let produced = built.generators.iter().flat_map(Generator::targets).filter(|port| **port == wire).count();
+            let consumed = built.generators.iter().flat_map(Generator::sources).filter(|port| **port == wire).count();
+            produced <= 1 && consumed <= 1 && built.inputs.iter().filter(|port| **port == wire).count() == usize::from(produced == 0)
+                && built.outputs.iter().filter(|port| **port == wire).count() == usize::from(consumed == 0)
+                && built.generators.iter().position(|generator| generator.targets().contains(&wire)).zip(built.generators.iter().position(|generator| generator.sources().contains(&wire))).is_none_or(|(producer, consumer)| producer < consumer)
+        }))]
     fn build(&self) -> Built
     {
         let mut built = Built::default();
@@ -156,7 +183,18 @@ impl Built
     /// A fresh wire.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: another wire index is representable.
+    /// - ensures: returns the previous count and increments it exactly once.
+    /// - panics: none within the representable domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — isolated, input and produced wires have distinct
+    ///   consecutive positions in the mixed recipe witness. Reusing an index or
+    ///   skipping one changes its boundary or incidence. Counts at the machine
+    ///   limit are outside this bounded generator domain.
+    /// - witness: `tests::normal_form::recipe_closes_open_wires_and_preserves_isolated_roles`
+    /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(requires: self.wires < usize::MAX, captures: [prior = self.wires], ensures: |wire| usize::from(wire) == prior && self.wires == prior.saturating_add(1))]
     fn fresh(&mut self) -> Wire
     {
         let wire = Wire::from(self.wires);
@@ -167,7 +205,17 @@ impl Built
     /// The parts assembled into a diagram.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: these parts satisfy the wiring assembly invariants.
+    /// - ensures: preserves all counts, ordered generators and boundary ports.
+    /// - panics: if assembly refuses malformed parts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — generated original and permuted presentations are
+    ///   assembled and their isomorphism certificates checked. Losing or
+    ///   reordering a record changes the certificate or form; malformed parts
+    ///   are outside the helper domain.
+    /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(ensures: |ref diagram| usize::from(diagram.wire_count()) == self.wires && diagram.generators() == self.generators && diagram.boundary().inputs() == self.inputs && diagram.boundary().outputs() == self.outputs)]
     fn assemble(&self) -> Wiring
     {
         Wiring::assemble(
@@ -183,7 +231,29 @@ impl Built
     /// by position.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: both relisting arrays are permutations of their respective
+    ///   domains, and all ports name declared wires.
+    /// - ensures: preserves every label and ordered port under the wire
+    ///   permutation and lists generators in the requested order.
+    /// - panics: on invalid permutation indices or undeclared ports.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — random full-domain permutations preserve the
+    ///   canonical form and both independently verified relabellings. Reversing
+    ///   the wire permutation, relisting ports or losing a generator changes
+    ///   that evidence. The predicate states ordered correspondence without
+    ///   canonicalizing a second time; inputs are bijections.
+    /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(requires: relisting.wires.len() == self.wires && relisting.edges.len() == self.generators.len()
+        && relisting.wires.iter().enumerate().all(|entry| *entry.1 < self.wires && !relisting.wires.iter().take(entry.0).any(|prior| prior == entry.1))
+        && relisting.edges.iter().enumerate().all(|entry| *entry.1 < self.generators.len() && !relisting.edges.iter().take(entry.0).any(|prior| prior == entry.1))
+        && self.inputs.iter().chain(&self.outputs).chain(self.generators.iter().flat_map(|generator| generator.sources().iter().chain(generator.targets()))).all(|wire| usize::from(*wire) < self.wires),
+    ensures: |ref result| result.wires == self.wires && result.generators.len() == self.generators.len()
+        && [(&*self.inputs, &*result.inputs), (&*self.outputs, &*result.outputs)].into_iter().all(|(before, after)| before.len() == after.len()
+            && before.iter().zip(after).all(|(wire, image)| relisting.wires.get(usize::from(*wire)).is_some_and(|mapped| *image == Wire::from(*mapped))))
+        && result.generators.iter().zip(&relisting.edges).all(|(record, position)| self.generators.get(*position).is_some_and(|original|
+            record.label() == original.label() && [(original.sources(), record.sources()), (original.targets(), record.targets())].into_iter().all(|(before, after)| before.len() == after.len()
+                && before.iter().zip(after).all(|(wire, image)| relisting.wires.get(usize::from(*wire)).is_some_and(|mapped| *image == Wire::from(*mapped)))))))]
     fn relisted(
         &self,
         relisting: &Relisting,
@@ -287,7 +357,19 @@ fn recipe() -> impl Strategy<Value = Recipe>
 /// A generated diagram with a random renumbering and relisting of it.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generates valid built parts and full-domain wire and generator
+///   permutations, retaining interface positions.
+/// - panics: none within the recipe strategy bounds.
+/// - executable: none — the return type is an opaque strategy, which the
+///   backend cannot name in its generated closure; observing samples also needs
+///   a test runner rather than a predicate on the strategy value.
+///
+/// # Adequacy
+/// - hypothesis: L1 — generated diagrams and random renumberings yield equal
+///   forms with both certificates verified. The property also executes the
+///   permutation-domain preconditions before relisting, so omissions or
+///   duplicate indices fail. Sampling is bounded rather than exhaustive.
+/// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
 fn presented() -> impl Strategy<Value = (Built, Relisting)>
 {
     recipe().prop_flat_map(|recipe| {
@@ -345,4 +427,37 @@ proptest! {
             "and so does its right one"
         );
     }
+}
+
+#[test]
+fn recipe_closes_open_wires_and_preserves_isolated_roles()
+{
+    let recipe = Recipe {
+        steps: vec![Step::IsolatedWire, Step::Input, Step::Generator {
+            label: GeneratorLabel::new("a", GeneratorSort::Value),
+            picks: Vec::new(),
+            produces: 1,
+        }],
+        closings: vec![Closing::Terminal, Closing::Output],
+    };
+    let built = recipe.build();
+    assert_eq!(built.wires, 3);
+    assert_eq!(built.inputs, [Wire::from(0), Wire::from(1)]);
+    assert_eq!(built.outputs, [Wire::from(0), Wire::from(2)]);
+    assert_eq!(built.generators.len(), 2);
+    let first = built
+        .generators
+        .first()
+        .expect("the generating step exists");
+    assert!(first.sources().is_empty());
+    assert_eq!(first.targets(), [Wire::from(2)]);
+    let terminal = built.generators.last().expect("the closing exists");
+    assert_eq!(terminal.sources(), [Wire::from(1)]);
+    assert!(terminal.targets().is_empty());
+    let wiring = built.assemble();
+    let canonical = canonicalize(&wiring);
+    assert_eq!(
+        canonical.relabelling().verify(&wiring, canonical.form()),
+        Ok(())
+    );
 }

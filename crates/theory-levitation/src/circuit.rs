@@ -50,6 +50,8 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
+
 use crate::boundary::CircuitNodeBudget;
 use crate::code::Name;
 use crate::elaborate::RewritePort;
@@ -268,6 +270,15 @@ impl CircuitBody
     ///   the surface refuses and this order keeps the derivation total rather
     ///   than inventing a second producer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct and duplicate bound ports are observed
+    ///   through both boundary readings; choosing the later duplicate changes
+    ///   its constructor and losing a port leaves an unexpected variable.
+    /// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
+    #[spec(ensures: |ref producers| self.nodes.iter().all(|node| producers.contains_key(node.out()))
+        && producers.iter().all(|(port, node)| self.nodes.iter().find(|candidate| candidate.out() == *port)
+            .is_some_and(|first| core::ptr::eq(core::ptr::from_ref(*node), core::ptr::from_ref(first)))))]
     fn producers(&self) -> BTreeMap<&Name, &CircuitNode>
     {
         let mut producers: BTreeMap<&Name, &CircuitNode> = BTreeMap::new();
@@ -438,9 +449,16 @@ pub enum CircuitDerivationError
 /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
 /// - witness: `circuit::tests::a_pinned_redex_target_substitutes_into_the_frame`
 /// - witness: `circuit::tests::a_wiring_that_closes_a_cycle_derives_nothing`
+/// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
 ///
 /// [`check_desc`]: crate::check_desc
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref derived) => [&derived.source, &derived.target].into_iter().all(|term|
+        term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(CircuitNodeBudget::DEFAULT)),
+    | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+})]
 pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, CircuitDerivationError>
 {
     derive_boundaries_within(body, CircuitNodeBudget::DEFAULT)
@@ -463,11 +481,19 @@ pub fn derive_boundaries(body: &CircuitBody) -> Result<DerivedBoundaries, Circui
 /// See the `- fails:` clause above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a doubling body declines under the standing ceiling and a
-///   body under it derives both readings.
+/// - hypothesis: L3 — zero, one-short and exact per-reading ceilings on
+///   unbound, nullary and unary bodies distinguish off-by-one charging and a
+///   shared allowance. Exact terms and budget errors are the observers.
 /// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
 /// - witness: `circuit::tests::a_body_within_the_node_budget_still_derives`
+/// - witness: `circuit::tests::the_node_budget_is_per_reading_and_explicit_when_a_caller_wants_one`
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref derived) => [&derived.source, &derived.target].into_iter().all(|term|
+        term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(budget)),
+    | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+})]
 pub fn derive_boundaries_within(
     body: &CircuitBody,
     budget: CircuitNodeBudget,
@@ -501,16 +527,23 @@ pub fn derive_boundaries_within(
 /// when the reading passes the standing ceiling.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the reading is the only decision surface, so the
-///   congruence body distinguishes the two arms pointwise (`add(x, y)` against
-///   `add(x′, y′)`), and the cycle guard is distinguished by the two-node
-///   cycle.
+/// - hypothesis: L3 — both readings of redex/frame bodies, unbound and opaque
+///   endpoints, reconvergence, cycles and duplicate producers are observed as
+///   exact terms/errors; wrong substitution, source precedence or cycle scope
+///   changes one of those observations.
 /// - witness: `circuit::tests::the_congruence_wiring_derives_its_boundary_pair`
 /// - witness: `circuit::tests::a_redex_boundary_resolves_its_own_port_leaves`
 /// - witness: `circuit::tests::an_unbound_port_stays_a_boundary_variable`
 /// - witness: `circuit::tests::a_reconvergent_wire_is_unfolded_at_each_consumption`
 /// - witness: `circuit::tests::a_wiring_that_closes_a_cycle_derives_nothing`
+/// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref derived) => { let term = derived;
+        term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(CircuitNodeBudget::DEFAULT) },
+    | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == CircuitNodeBudget::DEFAULT,
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+})]
 pub fn derive_boundary(
     body: &CircuitBody,
     reading: BoundaryReading,
@@ -541,12 +574,19 @@ pub fn derive_boundary(
 /// See the `- fails:` clause above.
 ///
 /// # Adequacy
-/// - hypothesis: L1 evidence — one ceiling, so a body that stays under it and a
-///   body of doubling frames that passes it separate the predicate.
+/// - hypothesis: L3 — zero, one-short and exact ceilings on unbound, nullary
+///   and unary bodies have exact terms or budget refusals. Off-by-one charges,
+///   counting bookkeeping and sharing the allowance change those results.
 /// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
 /// - witness: `circuit::tests::a_body_within_the_node_budget_still_derives`
 /// - witness: `circuit::tests::the_node_budget_is_per_reading_and_explicit_when_a_caller_wants_one`
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref derived) => { let term = derived;
+        term.applied_symbols().count().saturating_add(term.to_node().vars().count()) <= usize::from(budget) },
+    | Err(CircuitDerivationError::NodeBudget { budget: observed }) => observed == budget,
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+})]
 pub fn derive_boundary_within(
     body: &CircuitBody,
     reading: BoundaryReading,
@@ -661,10 +701,8 @@ pub fn derive_boundary_within(
 mod tests
 {
     use alloc::format;
-    use alloc::string::ToString as _;
 
     use super::*;
-    use crate::desc::SurfaceSpan;
 
     /// The `cong2` body of the ruled block form: two disjoint redexes
     /// whiskered into one `add` frame.
@@ -878,7 +916,18 @@ mod tests
     /// so the derived boundary has `2ⁿ` leaves.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one ordered doubling frame per requested level; every frame
+    ///   has two arguments and the body names the final level's output.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a five-level body derives the exact repeated binary
+    ///   term, while twenty levels exceed the ceiling; dropped frames, wrong
+    ///   predecessor links and changed arity alter that term or its refusal.
+    /// - witness: `circuit::tests::a_body_within_the_node_budget_still_derives`
+    /// - witness: `circuit::tests::a_doubling_body_declines_on_the_node_budget`
+    #[spec(ensures: |ref body| body.nodes.len() == levels.0
+        && body.nodes.iter().all(|node| matches!(*node, CircuitNode::Frame(ref frame) if frame.args.len() == 2)))]
     fn doubling_body(levels: DoublingLevels) -> CircuitBody
     {
         let levels = levels.0;
@@ -919,34 +968,74 @@ mod tests
     #[test]
     fn a_body_within_the_node_budget_still_derives()
     {
-        // Five doubling frames derive 2⁵ leaves, comfortably under the
-        // ceiling, and the ceiling is not a cliff the ruled bodies sit near:
-        // the `cong2` block derives five nodes.
         let body = doubling_body(DoublingLevels(5));
-        assert!(
-            derive_boundaries(&body).is_ok(),
-            "a body under the ceiling derives as before"
-        );
-        assert!(
-            derive_boundaries(&cong2_body()).is_ok(),
-            "the ruled congruence block is nowhere near the ceiling"
+        let mut expected = FreeTerm::var("x");
+        for _ in 0 .. 5_usize {
+            expected = FreeTerm::op("add", [expected.clone(), expected]);
+        }
+        assert_eq!(
+            derive_boundaries(&body),
+            Ok(DerivedBoundaries {
+                source: expected.clone(),
+                target: expected
+            })
         );
     }
 
     #[test]
     fn the_node_budget_is_per_reading_and_explicit_when_a_caller_wants_one()
     {
-        let body = doubling_body(DoublingLevels(8));
-        assert!(
-            derive_boundary_within(&body, BoundaryReading::Source, CircuitNodeBudget::from(16))
-                .is_err(),
-            "a tight ceiling declines the same body"
-        );
-        assert!(
-            derive_boundary_within(&body, BoundaryReading::Source, CircuitNodeBudget::DEFAULT)
-                .is_ok(),
-            "and the standing ceiling admits it"
-        );
+        for (body, exact, expected) in [
+            (CircuitBody::new([], "x"), 1_usize, FreeTerm::var("x")),
+            (
+                CircuitBody::new(
+                    [CircuitNode::Frame(CircuitFrame::new(
+                        FrameHead::Ctor("Zero".into()),
+                        [],
+                        "z",
+                    ))],
+                    "z",
+                ),
+                2,
+                FreeTerm::ctor("Zero", []),
+            ),
+            (
+                CircuitBody::new(
+                    [CircuitNode::Frame(CircuitFrame::new(
+                        FrameHead::Op("f".into()),
+                        [FreeTerm::var("x")],
+                        "z",
+                    ))],
+                    "z",
+                ),
+                4,
+                FreeTerm::op("f", [FreeTerm::var("x")]),
+            ),
+        ] {
+            let short = CircuitNodeBudget::from(exact.saturating_sub(1));
+            let budget = CircuitNodeBudget::from(exact);
+            for reading in [BoundaryReading::Source, BoundaryReading::Target] {
+                assert_eq!(
+                    derive_boundary_within(&body, reading, short),
+                    Err(CircuitDerivationError::NodeBudget { budget: short })
+                );
+                assert_eq!(
+                    derive_boundary_within(&body, reading, budget),
+                    Ok(expected.clone())
+                );
+            }
+            assert_eq!(
+                derive_boundaries_within(&body, short),
+                Err(CircuitDerivationError::NodeBudget { budget: short })
+            );
+            assert_eq!(
+                derive_boundaries_within(&body, budget),
+                Ok(DerivedBoundaries {
+                    source: expected.clone(),
+                    target: expected
+                })
+            );
+        }
     }
 
     #[test]
@@ -977,54 +1066,31 @@ mod tests
     }
 
     #[test]
-    fn the_declared_sphere_is_carried_beside_the_wiring()
+    fn duplicate_producers_keep_the_first_source_binding()
     {
-        let sphere = RuleFace::new(
-            FreeTerm::op("add", [FreeTerm::var("x"), FreeTerm::var("y")]),
-            FreeTerm::op("add", [
-                FreeTerm::var("x\u{2032}"),
-                FreeTerm::var("y\u{2032}"),
-            ]),
-            Vec::new(),
-            SurfaceSpan::new(0.into(), 1.into()),
+        let body = CircuitBody::new(
+            [
+                CircuitNode::Frame(CircuitFrame::new(
+                    FrameHead::Ctor("First".into()),
+                    [],
+                    "shared",
+                )),
+                CircuitNode::Frame(CircuitFrame::new(
+                    FrameHead::Ctor("Later".into()),
+                    [],
+                    "shared",
+                )),
+                CircuitNode::Frame(CircuitFrame::new(
+                    FrameHead::Op("f".into()),
+                    [FreeTerm::var("shared"), FreeTerm::var("free")],
+                    "out",
+                )),
+            ],
+            "out",
         );
-        let rule = CircuitRule::new("cong2", sphere.clone(), cong2_body());
-        assert_eq!(sphere.lhs, rule.sphere.lhs, "the sphere is carried whole");
-        assert_eq!(
-            "z",
-            rule.body.out.to_string(),
-            "the body names the interface port its boundaries are read from"
-        );
-    }
-
-    #[test]
-    fn a_node_reports_the_port_it_binds()
-    {
-        let frame = CircuitNode::Frame(CircuitFrame::new(
-            FrameHead::Ctor("Zero".into()),
-            Vec::new(),
-            "z",
-        ));
-        assert_eq!(
-            "z",
-            frame.out().to_string(),
-            "a frame binds its output port"
-        );
-        let redex = CircuitNode::Redex(CircuitRedex::new(
-            "p",
-            FreeTerm::var("x"),
-            FreeTerm::var("x\u{2032}"),
-            "x\u{2032}",
-        ));
-        assert_eq!(
-            "x\u{2032}",
-            redex.out().to_string(),
-            "a redex binds its output port"
-        );
-        assert_eq!(
-            "Zero",
-            FrameHead::Ctor("Zero".into()).name().to_string(),
-            "a head reports its declared name"
-        );
+        let expected = FreeTerm::op("f", [FreeTerm::ctor("First", []), FreeTerm::var("free")]);
+        for reading in [BoundaryReading::Source, BoundaryReading::Target] {
+            assert_eq!(derive_boundary(&body, reading), Ok(expected.clone()));
+        }
     }
 }

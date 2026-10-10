@@ -60,6 +60,8 @@ mod walk;
 
 use std::path::PathBuf;
 
+use anodized::spec;
+
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
 pub use crate::compose::Lowered;
@@ -168,6 +170,14 @@ impl core::fmt::Display for StatusReport
     ///   invocation.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not emitted
+    ///   text, so the absence of a line terminator cannot be checked here.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parameterless report is rendered without CR or
+    ///   LF, distinguishing an extra line break. The wording and arbitrary
+    ///   rejecting sinks are outside this observation.
+    /// - witness: `tests::status_routes_to_the_status_report`
     #[inline]
     fn fmt(
         &self,
@@ -197,10 +207,10 @@ impl core::fmt::Display for StatusReport
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 only — the decision surface is a four-variant match,
-///   enumerated exhaustively with the exact outcome asserted, the walk's paths
-///   observed through the order it visits them in and the script's through the
-///   fault an absent one reports.
+/// - hypothesis: L3 — all four invocation variants and both goals policies have
+///   exact outcomes. Missing-path fixtures observe the first routed path and
+///   the script path; they do not enumerate arbitrary path lists or prove the
+///   complete walk order, which has its own witnesses.
 /// - witness: `tests::status_routes_to_the_status_report`
 /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
 /// - witness: `tests::the_test_verb_routes_to_a_walk`
@@ -208,6 +218,21 @@ impl core::fmt::Display for StatusReport
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
+#[spec(
+    captures: [
+        status = matches!(invocation, Invocation::Status),
+        verb = match &invocation {
+            &Invocation::Check { goals, .. } => Some(Verb::Check(goals)),
+            &Invocation::Test { .. } => Some(Verb::Test),
+            &Invocation::Status | &Invocation::Run { .. } => None,
+        },
+    ],
+    ensures: |ref ret| match *ret {
+        Outcome::Status(_) => status,
+        Outcome::Run { verb: routed, .. } => Some(routed) == verb,
+        Outcome::Script(_) => !status && verb.is_none(),
+    },
+)]
 pub fn dispatch(invocation: Invocation) -> Outcome
 {
     match invocation {
@@ -229,6 +254,7 @@ mod tests
 {
     use std::path::PathBuf;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::Goals;
@@ -244,8 +270,19 @@ mod tests
     /// it visited when no path exists.
     ///
     /// # Specification
+    /// - requires: a run outcome whose first step is a fault.
+    /// - ensures: the path carried by that first fault.
+    /// - fails: never on the admitted domain.
+    /// - panics: a non-run outcome or non-fault first step violates the
+    ///   precondition.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — missing paths distinguish the first routed path under
+    ///   both check policies and test. Other outcomes and successful first
+    ///   steps are outside this helper's admitted domain.
+    /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
+    /// - witness: `tests::the_test_verb_routes_to_a_walk`
+    #[spec(requires: matches!(outcome, Outcome::Run { .. }))]
     fn first_fault_path(outcome: Outcome) -> PathBuf
     {
         let Outcome::Run { mut walk, .. } = outcome
@@ -268,6 +305,8 @@ mod tests
             matches!(outcome, Outcome::Status(StatusReport)),
             "a bare invocation reports the status"
         );
+        let rendered = std::format!("{StatusReport}");
+        assert!(!rendered.contains(['\n', '\r']));
     }
 
     /// `check` keeps its goals setting and its paths' order.

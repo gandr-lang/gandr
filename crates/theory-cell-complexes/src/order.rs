@@ -79,6 +79,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::pattern::CmdPat;
@@ -121,6 +122,11 @@ use crate::polarity::Polarity;
 /// - witness: `tests::order::the_path_order_survives_a_uniform_hole_instantiation`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| (lhs != rhs || output == Ordering::Equal) && match output {
+    Ordering::Greater => lhs.size() >= rhs.size() && dominates(&hole_counts(lhs), &hole_counts(rhs)).0,
+    Ordering::Less => rhs.size() >= lhs.size() && dominates(&hole_counts(rhs), &hole_counts(lhs)).0,
+    Ordering::Equal => true,
+})]
 pub fn reduction_cmp(
     lhs: &CmdPat,
     rhs: &CmdPat,
@@ -158,6 +164,11 @@ pub fn reduction_cmp(
 /// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| (lhs != rhs || output == Ordering::Equal) && match output {
+    Ordering::Greater => rhs.metavars().all(|var| lhs.metavars().any(|held| held == var)),
+    Ordering::Less => lhs.metavars().all(|var| rhs.metavars().any(|held| held == var)),
+    Ordering::Equal => true,
+})]
 pub fn path_order_cmp(
     lhs: &CmdPat,
     rhs: &CmdPat,
@@ -189,6 +200,14 @@ struct HoleOccurrences(usize);
 /// - ensures: one entry per distinct metavariable, mapped to its occurrence
 ///   count.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, repeated and cross-category occurrences have exact
+///   keyed multiplicities. Dropped repeats, category conflation and extra keys
+///   change the counts and orientation guard.
+/// - witness: `order::tests::hole_domination_counts_occurrences_and_categories`
+#[spec(ensures: |output| output.values().fold(0_usize, |sum, count| sum.saturating_add(count.0)) == cmd.metavars().count()
+    && output.iter().all(|(var, count)| count.0 > 0 && count.0 == cmd.metavars().filter(|held| held == var).count()))]
 fn hole_counts(cmd: &CmdPat) -> BTreeMap<&MetaVar, HoleOccurrences>
 {
     let mut counts: BTreeMap<&MetaVar, HoleOccurrences> = BTreeMap::new();
@@ -216,6 +235,14 @@ struct HoleDomination(bool);
 /// - ensures: positive exactly when every entry of `smaller` has an entry in
 ///   `larger` with a count at least as high.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — absent, lower, equal and higher per-hole counts separate
+///   domination from obstruction. Vacuous empty maps are included;
+///   strict-versus-nonstrict bounds and missing-key defaults change the
+///   verdict.
+/// - witness: `order::tests::hole_domination_counts_occurrences_and_categories`
+#[spec(ensures: |output| output.0 == smaller.iter().all(|(var, count)| larger.get(var).is_some_and(|held| held >= count)))]
 fn dominates(
     larger: &BTreeMap<&MetaVar, HoleOccurrences>,
     smaller: &BTreeMap<&MetaVar, HoleOccurrences>,
@@ -305,6 +332,17 @@ impl<'term> FlatTerm<'term>
     /// - intension: one pass over the consumer spine and one over each producer
     ///   table, never recursion; the producer tables are read in their own
     ///   index order, which already puts children first.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf and nested cuts exercise producer, operation and
+    ///   continuation children through equal and strict path comparisons.
+    ///   Child-order loss, missing nodes and forward edges change the relation;
+    ///   boundary table probes cover empty ranges.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(ensures: |output| output.nodes.len() == usize::from(cmd.size())
+        && output.nodes.last().is_some_and(|node| node.head == Head::Cut(cmd.polarity()))
+        && output.nodes.iter().enumerate().all(|(index, node)| output.children_of(node).len() == node.child_count.0
+            && output.children_of(node).iter().all(|child| child.0 < index)))]
     fn lay_out(cmd: &'term CmdPat) -> Self
     {
         let mut term = Self::default();
@@ -342,6 +380,14 @@ impl<'term> FlatTerm<'term>
     ///   children being the most recently completed subtrees, its first child
     ///   the most recent; the index of the table's root.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nullary and multi-argument producers appear below
+    ///   distinct heads in both comparison directions. Exact strict and equal
+    ///   observations reject a wrong root or reordered arguments.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(captures: before = self.nodes.len(), ensures: |output|
+        self.nodes.len() == before.saturating_add(usize::from(prod.size())) && output.0.saturating_add(1) == self.nodes.len())]
     fn push_prod(
         &mut self,
         prod: ProdRef<'term>,
@@ -374,6 +420,15 @@ impl<'term> FlatTerm<'term>
     /// - requires: every index of `children` is already appended.
     /// - ensures: the new node's index.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — heads over zero, one and multiple existing children
+    ///   are compared through the resulting terms. Wrong arity, head or child
+    ///   order changes equality or strict order.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(requires: children.iter().all(|child| child.0 < self.nodes.len()),
+        captures: before = self.nodes.len(), ensures: |output| output.0 == before && self.nodes.len() == before.saturating_add(1)
+            && self.nodes.get(output.0).is_some_and(|node| node.head == head && self.children_of(node) == children))]
     fn push(
         &mut self,
         head: Head<'term>,
@@ -396,6 +451,15 @@ impl<'term> FlatTerm<'term>
     /// - ensures: the run [`FlatTerm::push`] recorded for the node; an empty
     ///   run for a node this table did not lay out.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero and multiple children and a range beyond the
+    ///   child table return exact runs. Wrong offsets, dropped children and a
+    ///   weakened range bound change the observation.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(ensures: |output| if node.first_child.0.saturating_add(node.child_count.0) <= self.children.len() {
+        output.len() == node.child_count.0
+    } else { output.is_empty() })]
     fn children_of(
         &self,
         node: &FlatNode<'term>,
@@ -414,6 +478,21 @@ impl<'term> FlatTerm<'term>
 ///   metavariable. The frame-above-operation tier is what orients the worked
 ///   fusion cell forwards.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all five function-head tiers and unranked metavariables
+///   have exact comparisons both ways. Reversed tiers or ranking a variable
+///   changes the precedence.
+/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+#[spec(ensures: |output| match (head, output) {
+    (Head::Var(_), Maybe::Absent(precedence::Absent::Metavariable)) => true,
+    (Head::Cut(_), Maybe::Present(rank)) => rank.0 == 4,
+    (Head::Frame(_), Maybe::Present(rank)) => rank.0 == 3,
+    (Head::Op(_), Maybe::Present(rank)) => rank.0 == 2,
+    (Head::Ctor(_), Maybe::Present(rank)) => rank.0 == 1,
+    (Head::Top, Maybe::Present(rank)) => rank.0 == 0,
+    _ => false,
+})]
 fn head_rank(head: Head<'_>) -> Maybe<HeadRank, precedence::Absent>
 {
     Maybe::Present(match head {
@@ -460,6 +539,17 @@ const fn polarity_rank(polarity: Polarity) -> HeadRank
 /// - provides: [`precedence::Absent::Metavariable`] when either head is a
 ///   metavariable.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — kind, symbol, polarity and arity ties are varied
+///   separately, with variables on either side. Exact comparisons reject
+///   reversed precedence, skipped tie-breaks and ranked variables.
+/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+#[spec(ensures: |output| match output {
+    Maybe::Absent(_) => matches!(left, Head::Var(_)) || matches!(right, Head::Var(_)),
+    Maybe::Present(order) => !matches!(left, Head::Var(_)) && !matches!(right, Head::Var(_))
+        && (left != right || order == left_arity.cmp(&right_arity)),
+})]
 fn precedence_cmp(
     left: Head<'_>,
     left_arity: ChildCount,
@@ -507,6 +597,17 @@ fn precedence_cmp(
 /// - panics: none.
 /// - intension: no recursion; time is the product of the two node counts times
 ///   the arity.
+///
+/// # Adequacy
+/// - hypothesis: L3 — identical, proper-subterm, precedence-separated and
+///   lexicographically separated terms are compared both ways; empty tables are
+///   negative. False reflexivity, ignored side conditions and reversed argument
+///   order change the relation.
+/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+#[spec(ensures: |output| !output.0 || (!left.nodes.is_empty() && !right.nodes.is_empty()
+    && left.nodes.last().is_some_and(|node| !matches!(node.head, Head::Var(_)))
+    && (left.nodes.len() != right.nodes.len() || left.children != right.children
+        || left.nodes.iter().zip(&right.nodes).any(|(l, r)| l.head != r.head || l.first_child != r.first_child || l.child_count != r.child_count))))]
 fn strictly_greater(
     left: &FlatTerm<'_>,
     right: &FlatTerm<'_>,
@@ -575,6 +676,14 @@ impl RelationTable
     ///   region, and a negative answer otherwise — a default an increasing fill
     ///   never reaches.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, ragged and filled relations expose recorded
+    ///   true and false entries and negative out-of-range answers. Shifted
+    ///   indices and a positive missing-cell default change the result.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(ensures: |output| output.0 == self.rows.get(left.0).and_then(|row| row.get(right.0))
+        .is_some_and(|answer| answer.0))]
     fn at(
         &self,
         left: FlatIndex,
@@ -595,6 +704,13 @@ impl RelationTable
     /// - ensures: the root pair's answer for a filled table, and a negative
     ///   answer for an empty one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty rows and filled relations whose last entry is
+    ///   true or false expose opposite root answers. Using a first entry or a
+    ///   positive empty default changes the result.
+    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+    #[spec(ensures: |output| output.0 == self.rows.last().is_some_and(|row| row.last().is_some_and(|answer| answer.0)))]
     fn roots(&self) -> PathVerdict
     {
         self.rows
@@ -617,6 +733,19 @@ impl RelationTable
 ///   index.
 /// - ensures: the strict path-order answer for this pair.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid filled relation prefixes compare function heads,
+///   variable heads and a larger child against the other root. Exact path
+///   comparisons reject ranked variables, a lost subterm case and skipped
+///   argument domination.
+/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+#[spec(
+    requires: pair.left_children.iter().all(|child| equal.rows.get(child.0).is_some_and(|row| current_row.len() < row.len())
+        && greater.rows.get(child.0).is_some_and(|row| current_row.len() < row.len()))
+        && pair.right_children.iter().all(|child| child.0 < current_row.len()),
+    ensures: |output| !matches!(pair.left.head, Head::Var(_)) || !output.0,
+)]
 fn exceeds(
     pair: NodePair<'_, '_>,
     equal: &RelationTable,
@@ -669,6 +798,18 @@ fn exceeds(
 ///   has the left argument strictly greater; negative when the lists agree
 ///   throughout or the first difference goes the other way.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — filled relations compare equal argument lists and first
+///   differences in either direction. Prefix equality is negative; skipping the
+///   first difference or choosing the wrong column changes the answer.
+/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
+#[spec(
+    requires: left.iter().zip(right).all(|(left, right)| equal.rows.get(left.0).is_some_and(|row| right.0 < row.len())
+        && greater.rows.get(left.0).is_some_and(|row| right.0 < row.len())),
+    ensures: |output| left.iter().zip(right).find(|&(left, right)| !equal.at(*left, *right).0)
+        .map_or(!output.0, |(left, right)| output == greater.at(*left, *right)),
+)]
 fn lexicographically_greater(
     left: &[FlatIndex],
     right: &[FlatIndex],
@@ -691,6 +832,218 @@ mod tests
     use super::*;
     use crate::pattern::ConsPat;
     use crate::pattern::ProdPat;
+
+    #[test]
+    fn hole_domination_counts_occurrences_and_categories()
+    {
+        let producer = MetaVar::producer("x");
+        let consumer = MetaVar::consumer("x");
+        let missing = MetaVar::producer("absent");
+        let term = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("x")]),
+            ConsPat::meta("x"),
+        );
+        let counts = hole_counts(&term);
+        assert_eq!(
+            BTreeMap::from([
+                (&producer, HoleOccurrences(2)),
+                (&consumer, HoleOccurrences(1))
+            ]),
+            counts
+        );
+        let ground = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        assert!(hole_counts(&ground).is_empty());
+        assert!(dominates(&counts, &BTreeMap::new()).0);
+        assert!(dominates(&counts, &counts).0);
+        for (key, amount, expected) in [
+            (&producer, 1, true),
+            (&producer, 2, true),
+            (&producer, 3, false),
+            (&consumer, 1, true),
+            (&consumer, 2, false),
+            (&missing, 1, false),
+        ] {
+            assert_eq!(
+                expected,
+                dominates(&counts, &BTreeMap::from([(key, HoleOccurrences(amount))])).0
+            );
+        }
+        assert!(!dominates(&BTreeMap::new(), &counts).0);
+    }
+
+    #[test]
+    fn precedence_and_relation_boundaries_preserve_strictness()
+    {
+        let a = Sym::new("A");
+        let z = Sym::new("Z");
+        let variable = MetaVar::producer("x");
+        let ranked = [
+            Head::Top,
+            Head::Ctor(&a),
+            Head::Op(&a),
+            Head::Frame(&a),
+            Head::Cut(Polarity::Positive),
+        ];
+        for (left_index, &left) in ranked.iter().enumerate() {
+            for (right_index, &right) in ranked.iter().enumerate() {
+                assert_eq!(
+                    Maybe::Present(left_index.cmp(&right_index)),
+                    precedence_cmp(left, ChildCount(2), right, ChildCount(2))
+                );
+            }
+            assert_eq!(
+                Maybe::Absent(precedence::Absent::Metavariable),
+                precedence_cmp(left, ChildCount(0), Head::Var(&variable), ChildCount(0))
+            );
+            assert_eq!(
+                Maybe::Absent(precedence::Absent::Metavariable),
+                precedence_cmp(Head::Var(&variable), ChildCount(0), left, ChildCount(0))
+            );
+            assert_eq!(
+                Maybe::Present(Ordering::Less),
+                precedence_cmp(left, ChildCount(0), left, ChildCount(1))
+            );
+            assert_eq!(
+                Maybe::Present(Ordering::Greater),
+                precedence_cmp(left, ChildCount(2), left, ChildCount(1))
+            );
+        }
+        for (left, right) in [
+            (Head::Ctor(&a), Head::Ctor(&z)),
+            (Head::Op(&a), Head::Op(&z)),
+            (Head::Frame(&a), Head::Frame(&z)),
+            (Head::Cut(Polarity::Positive), Head::Cut(Polarity::Negative)),
+        ] {
+            assert_eq!(
+                Maybe::Present(Ordering::Less),
+                precedence_cmp(left, ChildCount(9), right, ChildCount(0))
+            );
+            assert_eq!(
+                Maybe::Present(Ordering::Greater),
+                precedence_cmp(right, ChildCount(0), left, ChildCount(9))
+            );
+        }
+        let term = |prod| CmdPat::cut(Polarity::Positive, prod, ConsPat::top());
+        let low = ProdPat::ctor("A", []);
+        let high = ProdPat::ctor("Z", []);
+        for (smaller, larger) in [
+            (low.clone(), high.clone()),
+            (low.clone(), ProdPat::ctor("A", [low.clone()])),
+            (
+                ProdPat::ctor("Pair", [low.clone(), high.clone()]),
+                ProdPat::ctor("Pair", [high.clone(), low.clone()]),
+            ),
+            (
+                ProdPat::ctor("Pair", [low.clone(), low.clone()]),
+                ProdPat::ctor("Pair", [low.clone(), high]),
+            ),
+        ] {
+            let smaller = term(smaller);
+            let larger = term(larger);
+            assert_eq!(Ordering::Less, path_order_cmp(&smaller, &larger));
+            assert_eq!(Ordering::Greater, path_order_cmp(&larger, &smaller));
+            assert_eq!(Ordering::Equal, path_order_cmp(&larger, &larger));
+        }
+        let laid_out_term = term(ProdPat::ctor("Pair", [low.clone(), ProdPat::meta("x")]));
+        let layout = FlatTerm::lay_out(&laid_out_term);
+        let invalid = FlatNode {
+            head: Head::Top,
+            first_child: FlatIndex(usize::MAX),
+            child_count: ChildCount(1),
+        };
+        assert!(layout.children_of(&invalid).is_empty());
+        assert!(!strictly_greater(&FlatTerm::default(), &layout).0);
+        assert!(!strictly_greater(&layout, &FlatTerm::default()).0);
+        let variable_term = term(ProdPat::meta("x"));
+        let ground_term = term(low);
+        assert_eq!(
+            Ordering::Equal,
+            path_order_cmp(&variable_term, &ground_term)
+        );
+        assert_eq!(
+            Ordering::Equal,
+            path_order_cmp(&ground_term, &variable_term)
+        );
+        let empty = RelationTable::default();
+        assert!(!empty.roots().0);
+        assert!(!empty.at(FlatIndex(0), FlatIndex(0)).0);
+        let table = RelationTable {
+            rows: alloc::vec![
+                alloc::vec![PathVerdict(false), PathVerdict(true)],
+                alloc::vec![],
+                alloc::vec![PathVerdict(true), PathVerdict(false)]
+            ],
+        };
+        for (left, right, expected) in [
+            (0, 0, false),
+            (0, 1, true),
+            (1, 0, false),
+            (2, 0, true),
+            (2, 1, false),
+            (2, 2, false),
+            (3, 0, false),
+            (usize::MAX, usize::MAX, false),
+        ] {
+            assert_eq!(expected, table.at(FlatIndex(left), FlatIndex(right)).0);
+        }
+        assert!(!table.roots().0);
+        assert!(
+            !RelationTable {
+                rows: alloc::vec![alloc::vec![]]
+            }
+            .roots()
+            .0
+        );
+        assert!(
+            RelationTable {
+                rows: alloc::vec![alloc::vec![PathVerdict(false), PathVerdict(true)]]
+            }
+            .roots()
+            .0
+        );
+        let equal = RelationTable {
+            rows: alloc::vec![
+                alloc::vec![PathVerdict(true), PathVerdict(false)],
+                alloc::vec![PathVerdict(false), PathVerdict(true)]
+            ],
+        };
+        let greater = RelationTable {
+            rows: alloc::vec![
+                alloc::vec![PathVerdict(false), PathVerdict(false)],
+                alloc::vec![PathVerdict(true), PathVerdict(false)]
+            ],
+        };
+        for (left, right, expected) in [
+            (alloc::vec![], alloc::vec![], false),
+            (alloc::vec![FlatIndex(1)], alloc::vec![FlatIndex(1)], false),
+            (alloc::vec![FlatIndex(1)], alloc::vec![FlatIndex(0)], true),
+            (
+                alloc::vec![FlatIndex(0), FlatIndex(1)],
+                alloc::vec![FlatIndex(1), FlatIndex(0)],
+                false,
+            ),
+            (
+                alloc::vec![FlatIndex(0), FlatIndex(1)],
+                alloc::vec![FlatIndex(0), FlatIndex(0)],
+                true,
+            ),
+            (
+                alloc::vec![FlatIndex(0)],
+                alloc::vec![FlatIndex(0), FlatIndex(1)],
+                false,
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                lexicographically_greater(&left, &right, &equal, &greater).0
+            );
+        }
+    }
 
     /// The worked fusion cell, left face: the intermediate `Succ` allocation
     /// is still there.

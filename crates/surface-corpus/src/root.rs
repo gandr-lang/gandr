@@ -11,12 +11,31 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 
 use crate::expectation::ExpectationSchema;
 use crate::refusal::CorpusRefusal;
 
 /// Which corpus root a source sits under.
+///
+/// # Specification
+/// - requires: the caller selects the root by source location rather than
+///   source attributes.
+/// - ensures: strict admission rejects self-description as owing or refusing;
+///   fixture admission permits each expectation schema.
+/// - panics: none.
+/// - executable: none — the tag carries no source path or filesystem
+///   membership. Its caller supplies that provenance; `admit` checks the
+///   selected policy.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both roots and all four schemas; exact admission variants
+///   and a nonempty refusal span distinguish widened or narrowed policy arms.
+///   End-to-end settlement distinguishes an expectation interpreted under the
+///   wrong root; directory provenance remains a caller premise.
+/// - witness: `root::tests::the_admission_table_is_pinned`
+/// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CorpusRoot
 {
@@ -48,12 +67,25 @@ impl CorpusRoot
     /// meets an `owes` or `refuses` expectation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the domain is two roots by four schemas, enumerated
-    ///   against a pinned eight-row table, so a widened or narrowed arm breaks
-    ///   its row; the guard's effect on a whole declaration is settled end to
-    ///   end.
+    /// - hypothesis: L3 — both roots crossed with all four schemas at a
+    ///   nonempty byte span; exact results distinguish widened or narrowed
+    ///   admissions, swapped refused schemas and lost source spans. The
+    ///   end-to-end strict-root witness observes guarded settlement, not merely
+    ///   the admission tag.
     /// - witness: `root::tests::the_admission_table_is_pinned`
     /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+    #[spec(
+        ensures: |ret| {
+    matches!(
+        (self, schema, ret), (Self::Fixture, _, Ok(())) | (Self::Strict,
+        ExpectationSchema::Checks | ExpectationSchema::Runs, Ok(())) | (Self::Strict,
+        ExpectationSchema::Owes, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
+        schema : ExpectationSchema::Owes, .. })) | (Self::Strict,
+        ExpectationSchema::Refuses, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
+        schema : ExpectationSchema::Refuses, .. }))
+    )
+},
+    )]
     #[inline]
     pub const fn admit(
         self,
@@ -82,7 +114,21 @@ impl fmt::Display for CorpusRoot
     /// Writes the root's name: `strict` or `fixture`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes a label distinguishing the selected corpus root.
+    /// - fails: returns the formatter sink refusal without swallowing it.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither previously emitted
+    ///   text nor the sink state; these effects are observed by the caller.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses the label.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both root tags and a refusing sink; distinct rendered
+    ///   labels and the exact formatting refusal distinguish collapsed root
+    ///   names and discarded write failures. The English wording is not pinned.
+    /// - witness: `root::tests::root_labels_are_distinct_and_propagate_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -99,15 +145,35 @@ impl fmt::Display for CorpusRoot
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::ToString as _;
+    use core::fmt;
+
+    use gandr_surface_syntax::ByteOffset;
+
     use super::CorpusRoot;
     use crate::expectation::ExpectationSchema;
-    use crate::fixture::empty_span;
+    use crate::fixture::RefusingWriter;
+    use crate::fixture::span;
     use crate::refusal::CorpusRefusal;
+
+    #[test]
+    fn root_labels_are_distinct_and_propagate_sink_refusal()
+    {
+        assert_ne!(
+            CorpusRoot::Strict.to_string(),
+            CorpusRoot::Fixture.to_string()
+        );
+        assert_eq!(
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", CorpusRoot::Strict)),
+            Err(fmt::Error),
+            "the root formatter propagates a failed write"
+        );
+    }
 
     #[test]
     fn the_admission_table_is_pinned()
     {
-        let span = empty_span();
+        let span = span(ByteOffset::from(11_usize), ByteOffset::from(29_usize));
         let refused = |schema| Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span });
         let table = [
             (CorpusRoot::Strict, ExpectationSchema::Checks, Ok(())),

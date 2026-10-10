@@ -8,6 +8,7 @@
 
 use std::path::PathBuf;
 
+use anodized::spec;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -62,6 +63,13 @@ impl DocumentUri
     ///   escape decoding to bytes that are not UTF-8, each asserted at its
     ///   exact path.
     /// - witness: `protocol::tests::a_file_uri_names_its_decoded_path`
+    #[spec(ensures: |ret| match self.0.strip_prefix(FILE_SCHEME)
+        .and_then(|rest| rest.get(rest.find('/')?..)) {
+        Some(path) if !path.contains('%') => ret == std::path::Path::new(path),
+        Some(path) => ret.as_os_str().is_empty() || percent_encoding::percent_decode_str(path)
+            .eq(ret.as_os_str().as_encoded_bytes().iter().copied()),
+        None => ret.as_os_str().is_empty(),
+    })]
     #[inline]
     #[must_use]
     pub fn path(&self) -> PathBuf
@@ -199,10 +207,17 @@ impl InitializeResult
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — the advertised object compared whole, over the wire
-    ///   and through the public display.
+    /// - hypothesis: L2 — the complete advertised wire object is checked
+    ///   against a pinned supported-method golden; changed encoding, sync mode,
+    ///   token legend or capability flags change that observation.
     /// - witness: `server::tests::initialize_advertises_the_token_legend`
     /// - witness: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`
+    #[spec(ensures: |ret|
+        matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
+            && ret.capabilities.text_document_sync.open_close
+            && ret.capabilities.text_document_sync.change.0 == SyncKind::FULL.0
+            && ret.capabilities.semantic_tokens_provider.full
+            && ret.capabilities.semantic_tokens_provider.range)]
     #[inline]
     #[must_use]
     pub const fn advertised() -> Self
@@ -375,6 +390,9 @@ impl Diagnostic
     /// - hypothesis: L3 — a source the lowering refuses at no position is
     ///   asserted at its exact diagnostic.
     /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+    #[spec(ensures: |ret| ret.range == Range::default()
+        && ret.severity == Severity::ERROR && ret.code.is_none()
+        && ret.source == SOURCE && ret.related_information.is_empty())]
     #[inline]
     #[must_use]
     pub fn at_origin(message: String) -> Self
@@ -466,6 +484,9 @@ mod tests
             ("untitled:Untitled-1", ""),
             ("file:///bad%FF.gandr", ""),
             ("file://host", ""),
+            ("file://host/", "/"),
+            ("file:///a%2fb", "/a/b"),
+            ("file:///literal%ZZ", "/literal%ZZ"),
         ];
         for (uri, path) in cases {
             assert_eq!(

@@ -91,7 +91,8 @@ impl MemoEntryCount
     /// - witness: `accounting::tests::successor_of_an_ordinary_count_is_exact`
     /// - witness: `accounting::tests::successor_at_the_ceiling_is_a_typed_refusal`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (usize::from(self) < usize::MAX))]
+    #[spec(ensures: |ret| ret.map(usize::from)
+        == usize::from(self).checked_add(1).ok_or(MemoError::EntryCountOverflow))]
     pub fn successor(self) -> Result<Self, MemoError>
     {
         self.0
@@ -168,6 +169,24 @@ impl From<MemoBucketCount> for usize
 /// Kept incrementally rather than derived on demand so that a measurement over
 /// a large memo costs a lookup rather than a walk, and so that the ceiling is
 /// reached — if it ever is — at the recording site where it can be refused.
+///
+/// # Specification
+/// - requires: each retained plane count is positive and the sum is
+///   representable.
+/// - ensures: the total is exactly the sum of the distinct plane counts.
+/// - provides: incremental accounting without recounting the memo's entries.
+/// - panics: none.
+/// - executable: none — a data-item predicate is not checked at construction;
+///   the recording operation checks both counters at its mutation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — from an empty census and a valid census one below the
+///   ceiling, exact per-plane and total counts distinguish cross-plane bumps,
+///   missing-plane mistakes and an early overflow guard. At the ceiling,
+///   full-state equality after refusal distinguishes partial mutation for both
+///   an existing and an absent plane.
+/// - witness: `accounting::tests::recording_bumps_one_plane_and_the_total`
+/// - witness: `accounting::tests::ceiling_refusal_preserves_existing_and_absent_planes`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EntryCensus<Plane>
 {
@@ -215,12 +234,13 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the absent-plane
-    ///   default, separated by a plane that has recorded entries against one
-    ///   that has not, each asserted as an exact count.
+    /// - hypothesis: L3 — for a valid census, a present plane with two entries,
+    ///   another with one and an absent plane distinguish zero defaults,
+    ///   wrong-plane reads and accidental total-count answers by exact counts.
     /// - witness: `accounting::tests::recording_bumps_one_plane_and_the_total`
     #[inline]
-    #[spec(ensures: |ret| ret <= self.total())]
+    #[spec(ensures: |ret| ret <= self.total()
+        && ret == self.planes.get(&plane).copied().unwrap_or(MemoEntryCount::zero()))]
     pub(crate) fn plane(
         &self,
         plane: Plane,
@@ -250,18 +270,23 @@ where
     /// [`MemoEntryCount::successor`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surfaces are which counter each
-    ///   bump lands on and the absent-plane default, separated by two planes
-    ///   recording different numbers of entries and by reading a plane that has
-    ///   recorded nothing, each asserted as an exact count.
+    /// - hypothesis: L3 — for a valid census and a fresh entry, exact counts
+    ///   across two planes distinguish a wrong-plane or missing total bump. A
+    ///   total one below the ceiling must advance to the ceiling; the next
+    ///   attempt must refuse without changing any field, for both existing and
+    ///   absent planes. This separates early guards, wrapping and partial
+    ///   mutation. A plane cannot overflow before its valid total does.
     /// - witness: `accounting::tests::recording_bumps_one_plane_and_the_total`
+    /// - witness: `accounting::tests::ceiling_refusal_preserves_existing_and_absent_planes`
     #[spec(
         captures: [entry_plane = self.plane(plane), entry_total = self.total()],
-        ensures: |ret| if ret.is_ok() {
-            usize::from(self.plane(plane)) == usize::from(entry_plane).saturating_add(1)
-                && usize::from(self.total()) == usize::from(entry_total).saturating_add(1)
-        } else {
-            self.plane(plane) == entry_plane && self.total() == entry_total
+        ensures: |ret| match usize::from(entry_total).checked_add(1)
+            .zip(usize::from(entry_plane).checked_add(1)) {
+            Some((total, count)) => ret.is_ok()
+                && usize::from(self.total()) == total
+                && usize::from(self.plane(plane)) == count,
+            None => ret == Err(MemoError::EntryCountOverflow)
+                && self.plane(plane) == entry_plane && self.total() == entry_total,
         }
     )]
     pub(crate) fn record(
@@ -276,11 +301,42 @@ where
         self.total = total;
         Ok(())
     }
+
+    /// A valid one-plane census at the representable ceiling, for fault
+    /// injection.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: only `plane` is present, and its count and the total are MAX.
+    /// - provides: the accounting boundary without allocating MAX memo entries.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the census reached by one increment from MAX - 1 is
+    ///   compared in full with this fixture, then existing and absent-plane
+    ///   records must both refuse unchanged. This catches wrong counts and
+    ///   extra-plane fixtures, without representing the memo entries
+    ///   themselves.
+    /// - witness: `accounting::tests::ceiling_refusal_preserves_existing_and_absent_planes`
+    #[cfg(test)]
+    #[spec(ensures: |ret| ret.planes.len() == 1
+        && usize::from(ret.total()) == usize::MAX
+        && usize::from(ret.plane(plane)) == usize::MAX)]
+    pub(crate) fn at_ceiling_for_test(plane: Plane) -> Self
+    {
+        Self {
+            planes: BTreeMap::from([(plane, MemoEntryCount::from(usize::MAX))]),
+            total: MemoEntryCount::from(usize::MAX),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
+    #[cfg(anodized_panic)]
+    use anodized::spec;
+
     use super::MemoEntryCount;
     use super::MemoError;
 
@@ -311,7 +367,7 @@ mod tests
     ///   target-only flag or stale non-enforcing dependency.
     /// - witness: `accounting::tests::anodized_precondition_sentinel`
     #[cfg(anodized_panic)]
-    #[anodized::spec(requires: count != MemoEntryCount::zero())]
+    #[spec(requires: count != MemoEntryCount::zero())]
     fn require_nonzero(count: MemoEntryCount) -> MemoEntryCount
     {
         count
@@ -329,7 +385,7 @@ mod tests
     ///   enforcement from an unrelated panic or a silent unchecked return.
     /// - witness: `accounting::tests::anodized_postcondition_sentinel`
     #[cfg(anodized_panic)]
-    #[anodized::spec(ensures: |count| count != MemoEntryCount::zero())]
+    #[spec(ensures: |count| count != MemoEntryCount::zero())]
     fn false_postcondition() -> MemoEntryCount
     {
         MemoEntryCount::zero()
@@ -408,5 +464,27 @@ mod tests
             census.total(),
             "the total is the sum over planes"
         );
+    }
+
+    #[test]
+    fn ceiling_refusal_preserves_existing_and_absent_planes()
+    {
+        let mut census = super::EntryCensus {
+            planes: alloc::collections::BTreeMap::from([(
+                TestPlane::First,
+                MemoEntryCount::from(PENULTIMATE_COUNT),
+            )]),
+            total: MemoEntryCount::from(PENULTIMATE_COUNT),
+        };
+        assert_eq!(Ok(()), census.record(TestPlane::First));
+        let before = super::EntryCensus::at_ceiling_for_test(TestPlane::First);
+        assert_eq!(before, census, "the final representable step is exact");
+        for plane in [TestPlane::First, TestPlane::Second] {
+            assert_eq!(Err(MemoError::EntryCountOverflow), census.record(plane));
+            assert_eq!(
+                before, census,
+                "refusal must not add a plane or change a count"
+            );
+        }
     }
 }

@@ -5,6 +5,7 @@
 //! check that both agree with their plans lives here, over the sequent
 //! alphabet the engine's own suites use.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet as _;
 use gandr_theory_cell_complexes::CellCount;
@@ -217,7 +218,18 @@ fn relabelled_rule_clusters() -> CellStore
 /// entries the completion worklist batches.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly the enumerated confluence overlaps, in enumeration order;
+///   composition entries are omitted.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the generated scheduling store and its alpha-renamed
+///   twin. Ordered comparison with the filtered engine enumeration checks
+///   completeness and order; exact batch coordinates reject retaining
+///   compositions, dropping confluences or reordering the family.
+/// - witness: `tests::oracle::overlap_support_batches_replay_along_their_plans`
+#[spec(ensures: |output| enumerate_overlaps(store).iter()
+    .filter(|overlap| overlap.kind == OverlapKind::Confluence).eq(output.iter()))]
 fn confluence_family(store: &CellStore) -> Vec<Overlap>
 {
     enumerate_overlaps(store)
@@ -230,9 +242,23 @@ fn confluence_family(store: &CellStore) -> Vec<Overlap>
 /// budget.
 ///
 /// # Specification
+/// - requires: a confluence overlap whose two identifiers belong to `store`.
 /// - ensures: the engine's confluence certificate, when the pair joins.
 /// - provides: the engine's reason when it does not.
 /// - panics: when the overlap is refused outright, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — confluence entries emitted from the supplied fixture
+///   store. Present certificates retain that overlap and replay to their join;
+///   absent joins remain typed absences. Planned and sequential replay separate
+///   a certificate for another peak from a genuine join of the selected pair.
+/// - witness: `tests::oracle::overlap_support_batches_replay_along_their_plans`
+#[spec(requires: overlap.kind == OverlapKind::Confluence
+    && matches!(store.get(overlap.left), Maybe::Present(_))
+    && matches!(store.get(overlap.right), Maybe::Present(_)), ensures: |output| match output {
+        Maybe::Present(ref certificate) => certificate.overlap == *overlap && bool::from(certificate.replay(store)),
+        Maybe::Absent(_) => true,
+    })]
 fn joined_certificate(
     overlap: &Overlap,
     store: &CellStore,
@@ -245,8 +271,17 @@ fn joined_certificate(
 /// The certified replay witness of one path of a certificate.
 ///
 /// # Specification
+/// - ensures: the certificate's raw peak and join are retained by the witness.
 /// - panics: when the path does not replay to the certificate's join, which the
 ///   engine's certificate contract excludes.
+///
+/// # Adequacy
+/// - hypothesis: L1 — each path of an engine-issued certificate. Raw-boundary
+///   equality anchors the witness to that certificate; different recorded legs
+///   and their independently replayed plans distinguish replacing one leg with
+///   the other or certifying another boundary.
+/// - witness: `tests::oracle::every_generated_certificate_matches_its_replay_plan`
+#[spec(ensures: |output| output.peak() == &certificate.overlap.peak && output.joins_at() == &certificate.joins_at)]
 fn certified(
     store: &CellStore,
     certificate: &Tracelet,
@@ -265,7 +300,18 @@ fn certified(
 /// The certified replay witness of the fixture's leading critical pair.
 ///
 /// # Specification
-/// - panics: when the leading pair does not join, which is a fixture defect.
+/// - ensures: a witness rooted at the first enumerated confluence peak.
+/// - panics: when no leading pair exists or it does not join, which is a
+///   fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the scheduling store and its relabelled twin, each with a
+///   joining leading critical pair. The first enumerated peak anchors
+///   selection; the twin’s name-free schedule and own skolemized join reject
+///   selecting a different cluster or retaining the original names.
+/// - witness: `tests::oracle::a_relabelled_twin_schedules_and_replays_identically`
+#[spec(ensures: |output| confluence_family(store).first()
+    .is_some_and(|leading| output.peak() == &leading.peak))]
 fn cluster_replay_witness(store: &CellStore) -> ReplayWitness
 {
     let overlaps = confluence_family(store);
@@ -282,8 +328,20 @@ fn cluster_replay_witness(store: &CellStore) -> ReplayWitness
 /// Replay a plan under exactly its critical-path fuel.
 ///
 /// # Specification
+/// - ensures: the term reached by eager replay with exactly the plan's
+///   critical-path fuel.
 /// - panics: when the plan obstructs or declines its own critical path, which
 ///   the plan's contract excludes.
+///
+/// # Adequacy
+/// - hypothesis: L2 — certified plans and their issuing stores. The result is
+///   checked against sequential replay and against replay one dependency level
+///   at a time; exact skolemized joins reject short fuel, skipped levels and
+///   retaining raw metavariables.
+/// - witness: `tests::oracle::overlap_support_batches_replay_along_their_plans`
+/// - witness: `tests::oracle::every_generated_certificate_matches_its_replay_plan`
+#[spec(ensures: |output| matches!(plan.replay_with_fuel(store, plan.critical_path()),
+    Ok(Maybe::Present(ref reached)) if output == *reached))]
 fn planned(
     plan: &ReplayPlan,
     store: &CellStore,
@@ -302,8 +360,24 @@ fn planned(
 /// The input position of each batch member, per batch.
 ///
 /// # Specification
+/// - requires: every batch member occurs in `overlaps`.
+/// - ensures: the first input position of each member, preserving batch and
+///   member order and each batch's cardinality.
 /// - panics: when a batch member is not in `overlaps`, which the batching
 ///   contract excludes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the generated overlap family, its scheduled batches and a
+///   relabelled twin. Exact nested input coordinates and member equality
+///   separate a flattened partition, dropped member or wrong input index
+///   without depending on metavariable spelling.
+/// - witness: `tests::oracle::overlap_support_batches_replay_along_their_plans`
+/// - witness: `tests::oracle::a_relabelled_twin_schedules_and_replays_identically`
+#[spec(requires: batches.iter().flatten().all(|member| overlaps.contains(member)),
+    ensures: |output| output.len() == batches.len()
+        && output.iter().zip(batches).all(|(positions, batch)| positions.len() == batch.len()
+            && positions.iter().zip(batch).all(|(position, member)|
+                overlaps.iter().position(|candidate| candidate == member) == Some(position.0))))]
 fn batch_input_positions(
     overlaps: &[Overlap],
     batches: &[Vec<Overlap>],

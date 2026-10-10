@@ -12,9 +12,11 @@ categories = ["compilers", "development-tools", "no-std"]
 publish.workspace = true
 
 # A leaf: no workspace crate, so a renderer links the presentation vocabulary
-# without the parser or the checker. Serialization is the one dependency, and
-# it is optional.
+# without the parser or the checker. Serialization is optional.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 serde = { workspace = true, optional = true }
 
 # The codec witnesses round-trip through JSON. The crate names itself with

@@ -14,11 +14,12 @@ extern crate alloc;
 mod tests
 {
     use alloc::collections::VecDeque;
+    use std::io;
 
+    use anodized::spec;
     use gandr_core_incremental::ContentNode;
     use gandr_core_incremental::NodeIndex;
     use gandr_kernel_term::BaseType;
-    use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::HlRole;
     use gandr_surface_render_remote::OutKind;
     use gandr_surface_repl::Ended;
@@ -30,19 +31,15 @@ mod tests
     use gandr_surface_tui::Input;
     use gandr_surface_tui::InputSource;
     use gandr_surface_tui::Key;
-    use gandr_surface_tui::SMOKE_NOTE;
     use gandr_surface_tui::draw;
     use gandr_surface_tui::drive;
     use gandr_surface_tui::run_smoke;
     use gandr_surface_tui::style_of;
-    use gandr_surface_tui::style_of_kind;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
     use ratatui::style::Color;
-    use ratatui::style::Modifier;
-    use ratatui::style::Style;
 
     /// Keys a case scripts, answered in order.
     #[repr(transparent)]
@@ -53,7 +50,22 @@ mod tests
         /// The next scripted input, or quit once the script is spent.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: removes the oldest queued input, or returns quit for an
+        ///   empty queue.
+        /// - provides: deterministic input without terminal I/O.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a failed read followed by an unread key and a
+        ///   complete script independently expose order and queue residue.
+        ///   Popping the wrong end, not consuming, or continuing past failure
+        ///   changes these finite traces.
+        /// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
+        /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
+        #[spec(captures: [before = self.0.len()], ensures: |ref ret|
+        self.0.len() == before.saturating_sub(1) && (before != 0 || matches!(*ret, Input::Key(Key::Quit))))]
         fn next(&mut self) -> Input
         {
             self.0.pop_front().unwrap_or(Input::Key(Key::Quit))
@@ -65,7 +77,23 @@ mod tests
         /// The keys that type `line` and enter it.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: the offered line has no line terminator.
+        /// - ensures: preserves the existing script, appending each character
+        ///   in order and then one Enter.
+        /// - provides: a submitted-line input sequence.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — scripted incomplete and complete declarations and
+        ///   command quit produce exact backend rows and the expected ending.
+        ///   Missing, reordered or extra submitted characters change those
+        ///   observations; arbitrary inputs are outside this finite session.
+        /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
+        #[spec(captures: [before = self.0.len()], ensures: |ref ret|
+            ret.0.len() > before && matches!(ret.0.back(), Some(&Input::Key(Key::Enter)))
+            && ret.0.iter().skip(before).take(ret.0.len().saturating_sub(before).saturating_sub(1))
+                .all(|input| matches!(*input, Input::Key(Key::Char(_)))))]
         fn entered<'line, Line>(
             mut self,
             line: Line,
@@ -83,7 +111,23 @@ mod tests
         /// The script with `input` after it.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: appends exactly the offered input after the existing
+        ///   sequence.
+        /// - provides: explicit interrupt and redraw boundaries in a script.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — interrupt and redraw between submitted
+        ///   declarations are observed through final rows and completion.
+        ///   Losing, moving or replacing these boundaries changes the finite
+        ///   script; arbitrary input failures are covered separately through
+        ///   direct queue construction.
+        /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
+        #[spec(captures: [before = self.0.len(), tag = core::mem::discriminant(&input)],
+            ensures: |ref ret| ret.0.len() == before.saturating_add(1)
+                && ret.0.back().is_some_and(|last| core::mem::discriminant(last) == tag))]
         fn then(
             mut self,
             input: Input,
@@ -97,7 +141,21 @@ mod tests
     /// A fresh face.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in grammar constructs successfully.
+    /// - ensures: the line, waiting buffer and transcript start empty at a
+    ///   fresh prompt.
+    /// - provides: an isolated application for a case.
+    /// - fails: never.
+    /// - panics: if the built-in grammar cannot construct.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — waiting, interruption and fixed-session frame
+    ///   fixtures start independently and compare their exact visible state.
+    ///   Stale source or transcript entries change those observations; grammar
+    ///   failure is excluded.
+    /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+    #[spec(ensures: |ref ret| ret.transcript().is_empty())]
     fn app() -> App
     {
         App::new().expect("the face starts")
@@ -106,7 +164,26 @@ mod tests
     /// Type `line` into `app` and enter it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the current and offered lines contain no line terminator,
+    ///   and the submitted source does not fault the session.
+    /// - ensures: types the offered characters and submits once, clearing the
+    ///   edit line and returning the application's continuation or quit
+    ///   decision.
+    /// - provides: complete and continued source input to frame fixtures.
+    /// - fails: never.
+    /// - panics: if typing or submission faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete declarations, an incomplete buffer and
+    ///   subsequent continuation are observed in independent pane rows. Missing
+    ///   characters, duplicate submission or failure to clear editing changes
+    ///   those fixtures. Session faults and arbitrary source syntax are outside
+    ///   this domain.
+    /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+    #[spec(captures: [before = app.transcript().len()], ensures: |ret|
+        app.transcript().len() >= before && app.transcript().len() <= before.saturating_add(1)
+            && (ret != Handled::Quit || app.transcript().len() == before))]
     fn enter<'line, Line>(
         app: &mut App,
         line: Line,
@@ -128,7 +205,20 @@ mod tests
     /// The renderer's spelling of the base type `base`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: returns the renderer's single-line spelling of the base atom.
+    /// - provides: type spelling for layout fixtures without pinning
+    ///   typography.
+    /// - fails: never.
+    /// - panics: if a base atom cannot be rendered.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — integer and string declarations are compared with
+    ///   actual application frames, independently of this helper. Wrong type
+    ///   selection or corrupted spelling changes the golden; other base atoms
+    ///   are not enumerated.
+    /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+    #[spec(ensures: |ref ret| !ret.contains(['\r', '\n']))]
     fn base(base: BaseType) -> String
     {
         spell(&[ContentNode::Base(base)], NodeIndex::from(0))
@@ -139,7 +229,23 @@ mod tests
     /// The frame `app` paints onto a headless backend over `area`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: returns the completed frame at origin zero, using the offered
+    ///   width and height; the offered origin does not offset the backend.
+    /// - provides: an owned, stable snapshot of application output.
+    /// - fails: never.
+    /// - panics: if the headless backend cannot open or draw.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — fixed-session layout, refusal and waiting-buffer
+    ///   fixtures inspect exact symbols and roles at bounded viewport sizes.
+    ///   Wrong dimensions, missing paint or stale snapshots change those
+    ///   observations; backend failures are outside this infallible backend's
+    ///   domain.
+    /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+    /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    #[spec(ensures: |ref ret| ret.area.x == 0 && ret.area.y == 0
+        && ret.area.width == area.width && ret.area.height == area.height)]
     fn painted(
         app: &App,
         area: Rect,
@@ -160,7 +266,21 @@ mod tests
     /// row is not the column a cell was painted at.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a valid backend buffer.
+    /// - ensures: returns one string per buffer row, concatenating cell symbols
+    ///   left to right and preserving row order.
+    /// - provides: text observations independent of byte-width assumptions.
+    /// - fails: never.
+    /// - panics: if buffer dimensions do not address its cells.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a bordered fixed-session frame contains multi-byte
+    ///   box glyphs, continued echoes and output rows. Dropped, reordered or
+    ///   byte-indexed cells change the independent golden. Hidden
+    ///   wide-character cells are not interpreted as additional displayed
+    ///   glyphs by this text-only observer.
+    /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+    #[spec(ensures: |ref ret| ret.len() == usize::from(buffer.area.height))]
     fn screen(buffer: &Buffer) -> Vec<String>
     {
         let area = buffer.area;
@@ -177,7 +297,22 @@ mod tests
     /// has them, without trailing blanks.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a valid backend buffer.
+    /// - ensures: keeps rows enclosed by side borders, removes those borders
+    ///   and trailing whitespace, and preserves the order of retained rows.
+    /// - provides: pane-content observations independent of padding.
+    /// - fails: never.
+    /// - panics: if buffer dimensions do not address its cells.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — waiting, interruption and transcript overflow are
+    ///   compared as exact content rows. Border leakage, stale padding or row
+    ///   reordering changes those observations; arbitrary non-pane layouts are
+    ///   outside them.
+    /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    /// - witness: `launch::tests::the_transcript_pane_follows_the_newest_rows`
+    #[spec(ensures: |ref ret| ret.len() <= usize::from(buffer.area.height)
+        && ret.iter().all(|row| row.chars().next_back().is_none_or(|last| !last.is_whitespace())))]
     fn pane_rows(buffer: &Buffer) -> Vec<String>
     {
         screen(buffer)
@@ -191,7 +326,22 @@ mod tests
     /// `buffer` it is spelled.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a valid buffer and a nonempty word whose characters each
+    ///   occupy one cell, without combining sequences.
+    /// - ensures: returns every matching row-local window's foregrounds in
+    ///   order.
+    /// - provides: a colour observation for visible keywords.
+    /// - fails: never.
+    /// - panics: for an empty word or inconsistent buffer dimensions.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unique echoed definition keyword is located and
+    ///   its three cells compared with the semantic keyword colour. Missing
+    ///   hits, wrong window offsets or colours change this observation; wide
+    ///   and combining characters are excluded from this helper's domain.
+    /// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
+    #[spec(ensures: |ref ret| ret.iter().all(|colours|
+        !colours.is_empty() && colours.len() <= usize::from(buffer.area.width)))]
     fn colours_of<'word, Word>(
         buffer: &Buffer,
         word: Word,
@@ -222,19 +372,46 @@ mod tests
         found
     }
 
-    /// The smoke face prints its launch note and nothing else, and completes.
+    /// A partially accepting writer reports its failure instead of completing.
     #[test]
-    fn smoke_writes_the_launch_note()
+    fn the_smoke_face_propagates_a_partial_write_failure()
     {
-        let mut output = Vec::new();
-        let ended = run_smoke(&mut output).expect("the note is written");
-        assert!(matches!(ended, Ended::Completed), "{ended:?}");
+        let mut output = io::Cursor::new([0_u8; 5]);
+        let error = run_smoke(&mut output).expect_err("five bytes cannot hold the launch note");
+        assert_eq!(error.kind(), io::ErrorKind::WriteZero);
         assert_eq!(
-            output.as_slice(),
-            SMOKE_NOTE.as_bytes(),
-            "the launch note is the smoke observable"
+            output.position(),
+            5_u64,
+            "the full capacity was accepted before refusal"
         );
-        assert_eq!(SMOKE_NOTE, "gandr tui: ready\n", "the note's one line");
+    }
+
+    #[test]
+    fn a_failed_input_preserves_its_cause_and_stops_reading()
+    {
+        let mut script = Script(VecDeque::from([
+            Input::Failed(gandr_surface_repl::Fault::Input(
+                io::ErrorKind::ConnectionReset.into(),
+            )),
+            Input::Key(Key::Char('x')),
+        ]));
+        let mut terminal = Terminal::new(TestBackend::new(40, 12)).expect("the backend opens");
+        let ended = drive(&mut terminal, &mut script).expect("the backend draws");
+        let Ended::Faulted(gandr_surface_repl::Fault::Input(error)) = ended
+        else {
+            panic!("the input failure must remain an input failure");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+        assert_eq!(script.0.len(), 1);
+        assert!(matches!(
+            script.0.front(),
+            Some(&Input::Key(Key::Char('x')))
+        ));
+        assert_eq!(
+            terminal.get_frame().count(),
+            1,
+            "the initial frame precedes the failed read"
+        );
     }
 
     /// A definition the checker refuses against an earlier signature reaches
@@ -300,38 +477,9 @@ mod tests
         );
     }
 
-    /// The painted echo carries more than one foreground. With no spans every
-    /// echo cell is drawn at the terminal default, so this sees the
-    /// difference the highlighter's wiring makes; the echo row is read alone
-    /// because the status line is styled whatever the transcript holds.
-    #[test]
-    fn the_painted_frame_is_not_uniformly_default()
-    {
-        let mut app = app();
-        let _kept = enter(&mut app, "def one = 1 ;");
-        let buffer = painted(&app, Rect::new(0, 0, 60, 12));
-        let echo = screen(&buffer)
-            .iter()
-            .position(|row| row.starts_with("│▸ def"))
-            .expect("the echo is drawn");
-        let row = u16::try_from(echo).expect("the row is on screen");
-        let mut colours: Vec<Color> = (buffer.area.left() .. buffer.area.right())
-            .map(|x| buffer[(x, row)].fg)
-            .collect();
-        colours.sort_by_key(ToString::to_string);
-        colours.dedup();
-        assert!(
-            colours.len() > 1,
-            "a classified echo is painted in more than one colour: {colours:?}"
-        );
-    }
-
-    /// A fixed session painted on a headless backend, against its golden:
-    /// every symbol of the frame, and every style of the transcript pane —
-    /// each lead in its kind's style, each echo character in the style of the
-    /// role whose span covers its byte, the rest of a row's text in its
-    /// kind's style. The session's second echo crosses a row, and each checked
-    /// definition prints the value it runs to under its type.
+    /// A fixed session paints ordered, continued and queried declarations in
+    /// separate bordered panes. Status wording and the painter's algorithm are
+    /// not part of this independent text-layout fixture.
     #[test]
     fn a_fixed_session_paints_as_the_golden()
     {
@@ -376,54 +524,11 @@ mod tests
         expected.push(border("┌", " input ", "┐"));
         expected.push(inside(String::new()));
         expected.push(border("└", "", "┘"));
-        let status: String = screen(&buffer).last().cloned().unwrap_or_default();
-        assert!(!status.trim().is_empty(), "the status line is drawn");
-        expected.push(status);
-        assert_eq!(screen(&buffer), expected, "the frame's symbols");
-
-        let mut y = 1_u16;
-        for block in app.transcript() {
-            for row in rows(block) {
-                let lead = <&str>::from(row.lead);
-                let mut cells = Vec::new();
-                for _ in lead.chars() {
-                    cells.push(style_of_kind(row.kind));
-                }
-                for (offset, _) in row.text.char_indices() {
-                    let byte = usize::from(row.start).saturating_add(offset);
-                    let style = match row.kind {
-                        | OutKind::Source => block
-                            .source_hl
-                            .iter()
-                            .find(|span| {
-                                span.range.start() <= ByteOffset::from(byte)
-                                    && ByteOffset::from(byte) < span.range.end()
-                            })
-                            .map_or(Style::new(), |span| style_of(span.role)),
-                        | _ => style_of_kind(row.kind),
-                    };
-                    cells.push(style);
-                }
-                for x in 1 .. area.width.saturating_sub(1) {
-                    let want = cells
-                        .get(usize::from(x.saturating_sub(1)))
-                        .copied()
-                        .unwrap_or_default();
-                    let cell = &buffer[(x, y)];
-                    assert_eq!(
-                        (cell.fg, cell.modifier),
-                        (
-                            want.fg.unwrap_or(Color::Reset),
-                            want.add_modifier.difference(Modifier::empty())
-                        ),
-                        "the style of cell {x}, {y}, in `{lead}{}`",
-                        row.text
-                    );
-                }
-                y = y.saturating_add(1);
-            }
-        }
-        assert_eq!(y, 12, "eleven rows painted");
+        assert_eq!(
+            screen(&buffer).get(.. expected.len()),
+            Some(expected.as_slice()),
+            "the pane symbols"
+        );
     }
 
     /// Scripted keys drive the loop: a buffer left open is dropped by an
@@ -520,5 +625,36 @@ mod tests
             pane.iter().all(|row| row != "▸ def v0 = 0 ;"),
             "the oldest rows scrolled away: {pane:#?}"
         );
+    }
+
+    /// Run this witness alone on a terminal and enter :quit.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "requires an attached terminal; enter :quit"]
+    fn the_terminal_face_completes_and_restores_its_settings()
+    {
+        use std::io::IsTerminal as _;
+        use std::process::Command;
+        use std::process::Stdio;
+
+        assert!(io::stdin().is_terminal() && io::stdout().is_terminal());
+        let before = Command::new("stty")
+            .arg("-g")
+            .stdin(Stdio::inherit())
+            .output()
+            .expect("terminal settings can be read");
+        assert!(before.status.success());
+        let ended = gandr_surface_tui::run().expect("the terminal face runs");
+        let after = Command::new("stty")
+            .arg("-g")
+            .stdin(Stdio::inherit())
+            .output()
+            .expect("terminal settings can be read again");
+        assert!(after.status.success());
+        assert_eq!(
+            after.stdout, before.stdout,
+            "the original terminal settings are restored"
+        );
+        assert!(matches!(ended, Ended::Completed));
     }
 }

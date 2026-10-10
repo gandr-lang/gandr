@@ -25,6 +25,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::error::ChunkerError;
 use crate::error::ProfileField;
 use crate::error::RawDiscriminator;
@@ -43,6 +45,8 @@ pub const PARAMETER_DOMAIN: &[u8] = b"gandr:storage-chunker:params:v1";
 ///   misreading the fields that follow.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — discriminator uniqueness relates all enum variants; the
+///   conversion predicate checks the executable wire-value mapping.
 ///
 /// # Adequacy
 /// - hypothesis: L3 only — the discriminator table is a finite class,
@@ -70,6 +74,15 @@ impl AlgorithmVersion
     /// - provides: the value [`TryFrom<u16>`] reads back.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 exhausts every raw sixteen-bit value, observing the
+    ///   exact variant or field-and-value refusal; L2 profile goldens fix
+    ///   discriminator bytes. Renumbering and variant swaps are distinguished.
+    /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
+    /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
+    /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
+    #[spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16 })]
     #[inline]
     #[must_use]
     pub const fn discriminator(self) -> RawDiscriminator
@@ -98,6 +111,19 @@ impl TryFrom<u16> for AlgorithmVersion
     ///
     /// # Errors
     /// [`ChunkerError::UnsupportedProfileValue`] — `raw` names no algorithm.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 exhausts all sixteen-bit inputs, including zero, both
+    ///   admitted discriminators, their successor and the maximum; exact
+    ///   variants and refusal payloads distinguish changed guards and mappings.
+    /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
+    #[spec(ensures: |ret| ret == match raw {
+        1 => Ok(Self::FastCdc2020),
+        2 => Ok(Self::TypedCdc),
+        _ => Err(ChunkerError::UnsupportedProfileValue {
+            field: ProfileField::Algorithm, raw: RawDiscriminator(raw),
+        }),
+    })]
     #[inline]
     fn try_from(raw: u16) -> Result<Self, Self::Error>
     {
@@ -145,6 +171,13 @@ impl fmt::Display for ParameterCommitment
     /// - provides: a rendering a refusal or a log line can carry.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 hexadecimal goldens for empty bytes and bytes spanning
+    ///   zero, the nibble boundary and 255 distinguish padding, case, ordering
+    ///   and omission faults; L3 observes a refusing sink's exact fmt error.
+    /// - witness: `commitment::tests::hexadecimal_rendering_preserves_bytes_and_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -191,6 +224,18 @@ impl CommitmentWriter
     /// - provides: the header every profile's commitment shares.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes complete commitment byte images for both
+    ///   algorithms and mixed-width fields; changed domain bytes, version,
+    ///   endian order and an extra or missing header byte disagree with
+    ///   goldens.
+    /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
+    /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
+    /// - witness: `commitment::tests::field_encoding_preserves_order_and_all_widths`
+    #[spec(ensures: |ret| ret.0.len() == PARAMETER_DOMAIN.len().saturating_add(2)
+        && ret.0.starts_with(PARAMETER_DOMAIN)
+        && ret.0.ends_with(&algorithm.discriminator().0.to_le_bytes()))]
     pub(crate) fn open(algorithm: AlgorithmVersion) -> Self
     {
         let mut writer = Self(Vec::new());
@@ -209,6 +254,23 @@ impl CommitmentWriter
     /// - provides: the one place a commitment chooses a byte order.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes the entire encoded image after appending all
+    ///   field widths, including empty and non-empty raw bytes. Mixed non-zero
+    ///   bytes distinguish truncation, endian swaps, prefix damage and
+    ///   reordering.
+    /// - witness: `commitment::tests::field_encoding_preserves_order_and_all_widths`
+    #[spec(
+        captures: before = self.0.len(),
+        ensures: match field {
+            CommitmentField::Byte(value) => self.0.get(before..) == Some([value].as_slice()),
+            CommitmentField::Word(value) => self.0.get(before..) == Some(value.to_le_bytes().as_slice()),
+            CommitmentField::Int(value) => self.0.get(before..) == Some(value.to_le_bytes().as_slice()),
+            CommitmentField::Long(value) => self.0.get(before..) == Some(value.to_le_bytes().as_slice()),
+            CommitmentField::Bytes(bytes) => self.0.get(before..) == Some(bytes),
+        },
+    )]
     pub(crate) fn push(
         &mut self,
         field: CommitmentField<'_>,
@@ -234,5 +296,77 @@ impl CommitmentWriter
     pub(crate) fn finish(self) -> ParameterCommitment
     {
         ParameterCommitment(self.0.into_boxed_slice())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::format;
+    use alloc::vec;
+    use core::fmt;
+    use core::fmt::Write as _;
+
+    use anodized::spec;
+
+    use super::AlgorithmVersion;
+    use super::CommitmentField;
+    use super::CommitmentWriter;
+    use super::ParameterCommitment;
+
+    #[test]
+    fn field_encoding_preserves_order_and_all_widths()
+    {
+        let mut writer = CommitmentWriter::open(AlgorithmVersion::TypedCdc);
+        writer.push(CommitmentField::Byte(0xAB));
+        writer.push(CommitmentField::Word(0x1234));
+        writer.push(CommitmentField::Int(0x1234_5678));
+        writer.push(CommitmentField::Long(0x0123_4567_89AB_CDEF));
+        writer.push(CommitmentField::Bytes(&[]));
+        writer.push(CommitmentField::Bytes(&[0, 255]));
+        let mut expected = b"gandr:storage-chunker:params:v1".to_vec();
+        expected.extend_from_slice(&[
+            2, 0, 0xAB, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12, 0xEF, 0xCD, 0xAB, 0x89, 0x67, 0x45,
+            0x23, 0x01, 0, 255,
+        ]);
+        assert_eq!(writer.finish().as_ref(), expected);
+    }
+
+    #[test]
+    fn hexadecimal_rendering_preserves_bytes_and_sink_failure()
+    {
+        let empty = ParameterCommitment(vec![].into_boxed_slice());
+        assert_eq!(format!("{empty}"), "");
+        let image = ParameterCommitment(vec![0, 1, 15, 16, 171, 255].into_boxed_slice());
+        assert_eq!(format!("{image}"), "00010f10abff");
+        assert_eq!(write!(RefusingSink, "{image}"), Err(fmt::Error));
+    }
+
+    /// A sink that refuses every write.
+    struct RefusingSink;
+
+    impl fmt::Write for RefusingSink
+    {
+        /// Refuses a write.
+        ///
+        /// # Specification
+        /// - requires: nothing; the offered text is arbitrary.
+        /// - ensures: every write returns the formatter's error.
+        /// - provides: a sink that exercises formatter refusal propagation.
+        /// - fails: always returns `fmt::Error`.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on text emitted by this module's formatter cases;
+        ///   the exact formatting result distinguishes falsely accepted writes.
+        /// - witness: `commitment::tests::hexadecimal_rendering_preserves_bytes_and_sink_failure`
+        #[spec(ensures: |ret| ret == Err(fmt::Error))]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> fmt::Result
+        {
+            Err(fmt::Error)
+        }
     }
 }

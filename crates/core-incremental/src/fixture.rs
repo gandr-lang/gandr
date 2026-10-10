@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -55,8 +56,8 @@ pub struct Key(pub &'static str);
 #[derive(Clone, Copy, Debug)]
 pub struct Digits(pub &'static str);
 
-/// How many unrelated nodes an arena holds before a fixture's own, so two
-/// builds of one program differ in every id.
+/// How many four-family allocation batches precede a fixture's own nodes,
+/// so independently built programs can differ in every arena coordinate.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct Noise(pub usize);
@@ -66,8 +67,26 @@ pub struct Noise(pub usize);
 #[derive(Clone, Copy, Debug)]
 pub struct Position(pub usize);
 
-/// A directory under the system temporary directory, emptied on creation and
-/// removed on drop.
+/// A scratch path selected using the system temporary directory and a test
+/// label. Construction and drop request removal on a best-effort basis;
+/// construction does not create the directory.
+///
+/// # Specification
+/// - requires: the label is unique among concurrent tests and the selected path
+///   belongs to the calling test.
+/// - ensures: the owned path is available to file-store fixtures; cleanup is
+///   requested on construction and drop, without a guarantee of success.
+/// - executable: none — this declaration has no call boundary; filesystem
+///   ownership and whether a removal succeeds are external to the path value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — file-store fixtures create and use separate labelled
+///   scratch trees, including a failed write and concurrent publication. Their
+///   scope exits execute cleanup, but these witnesses do not observe every
+///   cleanup outcome or model hostile filesystem interference.
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+/// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+/// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct Scratch(PathBuf);
@@ -77,7 +96,20 @@ impl Scratch
     /// The scratch directory of `label` for this process.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the label is unique among concurrent tests and the selected
+    ///   path belongs to the calling test.
+    /// - ensures: the process-labelled scratch path is returned after a removal
+    ///   attempt. No directory is created and cleanup failure is not reported.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — labelled paths support real file-store creation and
+    ///   publication failures. The predicate observes the borrowed label suffix
+    ///   without allocating another path or claiming that cleanup succeeded.
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    /// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
+    #[spec(
+        ensures: |ret| ret.0.as_os_str().as_encoded_bytes().ends_with(label.0.as_bytes()),
+    )]
     pub fn new(label: Label) -> Self
     {
         let path = std::env::temp_dir().join(format!(
@@ -101,7 +133,21 @@ impl Scratch
     /// The names of the directory's entries, sorted.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the directory and each enumerated entry are readable.
+    /// - ensures: the enumerated filenames, converted lossily to text, are
+    ///   returned in nondecreasing order; distinct names may map to equal text.
+    /// - panics: when enumeration or reading an entry fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — singleton publication results and a directory
+    ///   containing staging-name squatters exercise entry collection and the
+    ///   ordering predicate. No witness assumes the operating system supplied
+    ///   an unsorted enumeration; concurrent directory mutation and non-UTF-8
+    ///   names are outside these cases.
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
+    /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+    #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left <= right))]
     pub fn entries(&self) -> Vec<String>
     {
         let mut names: Vec<String> = std::fs::read_dir(&self.0)
@@ -121,20 +167,46 @@ impl Scratch
 
 impl Drop for Scratch
 {
-    /// Remove the directory.
+    /// Request removal of the scratch tree, ignoring cleanup failure.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the selected path still belongs to this test.
+    /// - ensures: removal of the tree is attempted without propagating an
+    ///   error; neither absence afterwards nor successful cleanup is promised.
+    /// - executable: none — there is no local result distinguishing success
+    ///   from refused cleanup, and an extra filesystem operation would not
+    ///   observe the original removal attempt without changing its effects.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scope exit after file-store success and failure
+    ///   invokes the destructor on owned scratch trees. Cleanup refusals and a
+    ///   concurrent change of ownership remain outside the witnessed filesystem
+    ///   class.
+    /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+    /// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
     fn drop(&mut self)
     {
         drop(std::fs::remove_dir_all(&self.0));
     }
 }
 
-/// An arena holding `noise` unrelated nodes of every sort.
+/// An arena holding `noise` unrelated batches: two values and one node of
+/// each other family per batch.
 ///
 /// # Specification
-/// trivial.
+/// - requires: enough resources for the requested allocation batches.
+/// - ensures: zero batches leave the arena empty; positive noise changes its
+///   watermark. Each batch allocates a unit, a return, a thunk, a unit type and
+///   a returner type, subject to the arena's documented id ceiling.
+///
+/// # Adequacy
+/// - hypothesis: L3 — canonical bytes and addresses agree for quiet and noisy
+///   arenas, and the former corpus is checked with zero and three batches. The
+///   predicate prevents accidentally ignored noise; opaque watermark fields do
+///   not expose a per-family census, and the id ceiling is not tested.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(ensures: |ret| (ret.watermark() == CoreArena::new().watermark()) == (noise.0 == 0))]
 pub fn noisy(noise: Noise) -> CoreArena
 {
     let mut arena = CoreArena::new();
@@ -151,7 +223,33 @@ pub fn noisy(noise: Noise) -> CoreArena
 /// The integer literal of `digits`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: a nonempty sequence of ASCII decimal digits.
+/// - ensures: the nonnegative integer with those digits is returned in
+///   canonical magnitude form, stripping leading zeros and retaining one zero
+///   for an all-zero input.
+/// - panics: if the input is empty or contains a non-ASCII-digit character.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the address-change and corpus witnesses use positive
+///   decimal strings and distinguish changed literal values. The borrowed
+///   postcondition checks their exact canonical magnitude; padded and all-zero
+///   spellings are outside this fixture corpus rather than claimed as covered.
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
+    ensures: |ret| {
+        let canonical = digits.0.trim_start_matches('0');
+        match ret {
+            | Literal::Integer(ref literal) => {
+                literal.sign() == Sign::NonNegative
+                    && literal.magnitude().as_ref()
+                        == if canonical.is_empty() { "0" } else { canonical }
+            },
+            | _ => false,
+        }
+    }
+)]
 pub fn integer(digits: Digits) -> Literal
 {
     Literal::Integer(IntegerLiteral::new(
@@ -181,7 +279,35 @@ pub fn declaration(
 /// The program of unsigned items `key = digits`, in order, over `arena`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: every digit string is nonempty ASCII decimal text, and the arena
+///   has headroom for the appended nodes within its id ceiling.
+/// - ensures: keys, nonnegative literal values and input order are preserved;
+///   positions and origins enumerate the input from zero, with no signatures.
+/// - panics: on malformed digits or failure of the fixed ordering invariant.
+///
+/// # Adequacy
+/// - hypothesis: L3 — changed values, keys, order, deletion and repeated keys
+///   have distinct addresses, while unrelated arena allocations preserve them.
+///   These finite cases do not exercise padded digits or the arena id ceiling.
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+#[spec(
+    requires: entries.iter().all(|&(_, digits)| !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit())),
+    ensures: |ret| {
+        ret.items().len() == entries.len()
+        && ret.items().iter().zip(entries).enumerate().all(|(ordinal, (item, &(key, digits)))| {
+            let canonical = digits.0.trim_start_matches('0');
+            item.key().as_ref() == key.0.as_bytes()
+                && usize::from(item.declaration().constant()) == ordinal
+                && usize::from(item.declaration().origin()) == ordinal
+                && item.declaration().signature() == Maybe::Absent(signature::Absent::Unsigned)
+                && match item.declaration().body() {
+                    Maybe::Present(id) => matches!(ret.arena().value(id), Some(&gandr_core_term::Value::Literal(Literal::Integer(ref literal))) if literal.sign() == Sign::NonNegative && literal.magnitude().as_ref() == if canonical.is_empty() { "0" } else { canonical }),
+                    Maybe::Absent(_) => false,
+                }
+        })
+    }
+)]
 pub fn integers(
     mut arena: CoreArena,
     entries: &[(Key, Digits)],
@@ -208,7 +334,22 @@ pub fn integers(
 /// The checkpoints of a batch run over `program`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the item order can be allocated; refused declarations remain
+///   valid fixture inputs rather than requiring a well-typed program.
+/// - ensures: one checkpoint per input item is returned under the default
+///   checking budget, with references in the program's source order.
+/// - panics: when the order cannot be constructed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite former corpus reaches checked, synthesised,
+///   owed and several refusal classes; independently noisy builds serialize
+///   identically. The underlying checker and capacity-exhaustion cases are not
+///   proved by this batch-fixture wrapper.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+#[spec(ensures: |ret| ret.budget() == CheckBudget::DEFAULT
+    && ret.items().len() == program.items().len()
+    && ret.items().iter().zip(&program.layout().references).all(|(checkpoint, reference)| checkpoint.content().reference() == reference))]
 pub fn checked(program: &mut Program) -> Checkpoints
 {
     check_program(program, CheckBudget::DEFAULT)
@@ -217,12 +358,38 @@ pub fn checked(program: &mut Program) -> Checkpoints
         .clone()
 }
 
-/// A program holding every former of the core vocabulary and reaching every
-/// verdict and refusal the fragment can, with a reader whose support holds a
-/// structured type; built after `noise` unrelated nodes.
+/// A finite corpus of core formers and selected verdict and refusal paths,
+/// including a reader with structured support, built after `noise` unrelated
+/// allocation batches.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the requested noise leaves arena-id headroom for the corpus.
+/// - ensures: the fixed data, function, dependent-type, universe, lift, quote
+///   and type-operator cases use contiguous admission positions and resolving
+///   signature and body roots. It is not a corpus of every possible refusal.
+/// - panics: if the fixed small literals, levels or ordering invariant fail.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus reaches the named checked, synthesised, owed
+///   and refusal classes and a structured support answer; noisy builds have
+///   identical canonical bytes and decode to the same checkpoints. These finite
+///   observations do not cover every constructor combination, every checker
+///   refusal, arbitrary levels or the arena id ceiling.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[spec(ensures: |ret| {
+        ret.items().iter().enumerate().all(|(ordinal, item)| {
+            usize::from(item.declaration().constant()) == ordinal
+                && match item.declaration().signature() {
+                    | Maybe::Present(id) => ret.arena().value_type(id).is_some(),
+                    | Maybe::Absent(_) => true,
+                }
+                && match item.declaration().body() {
+                    | Maybe::Present(id) => ret.arena().value(id).is_some(),
+                    | Maybe::Absent(_) => true,
+                }
+        })
+    })]
 pub fn every_former(noise: Noise) -> Program
 {
     let mut arena = noisy(noise);

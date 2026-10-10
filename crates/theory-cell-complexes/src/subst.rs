@@ -16,6 +16,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::SubstitutionBindingCount;
@@ -130,7 +131,17 @@ impl Subst
     /// - provides: [`binding::Absent::Unbound`] when `var` has no producer
     ///   binding.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, bound and wrong-category keys observe exact
+    ///   producer images or named absence. Shifted keys and category confusion
+    ///   change the result.
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(image) => self.prods.iter().any(|(held, value)| held == var && value == image),
+        Maybe::Absent(_) => !self.prods.contains_key(var),
+    })]
     pub fn get_prod(
         &self,
         var: &MetaVar,
@@ -148,7 +159,17 @@ impl Subst
     /// - provides: [`binding::Absent::Unbound`] when `var` has no consumer
     ///   binding.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, bound and wrong-category keys observe exact
+    ///   consumer images or named absence. Shifted keys and category confusion
+    ///   change the result.
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(image) => self.conss.iter().any(|(held, value)| held == var && value == image),
+        Maybe::Absent(_) => !self.conss.contains_key(var),
+    })]
     pub fn get_cons(
         &self,
         var: &MetaVar,
@@ -168,12 +189,15 @@ impl Subst
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a two-binding substitution restricted to one of its
-    ///   metavariables keeps that binding alone, and restricted to a
-    ///   metavariable it leaves unbound is empty.
+    /// - hypothesis: L3 — empty, singleton, duplicated, complete and absent
+    ///   variable lists select exact binding maps. Extra keys, missing images
+    ///   and duplicate-count dependence change the result.
     /// - witness: `subst::tests::a_restriction_keeps_exactly_the_named_bindings`
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.prods.iter().eq(self.prods.iter().filter(|&(var, _)| vars.contains(var)))
+        && output.conss.iter().eq(self.conss.iter().filter(|&(var, _)| vars.contains(var))))]
     pub fn restricted(
         &self,
         vars: &[MetaVar],
@@ -210,13 +234,24 @@ impl Subst
     /// - [`BindingRefusal::ConflictingRebind`]: `var` is bound elsewhere.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the triangular-unification witness reads the bindings
-    ///   back after commitment; L1 — the generated suite binds every producer
-    ///   hole of each generated pattern through this path to build the instance
-    ///   it then matches back.
+    /// - hypothesis: L3 — fresh, equal-rebind, conflicting and wrong-category
+    ///   producer offers expose exact results and preserved maps; L1 —
+    ///   generated instances reconstruct their targets. Overwriting or
+    ///   accepting a wrong category changes the observations.
     /// - witness: `subst::tests::unification_resolves_triangular_bindings`
     /// - witness: `tests::subst::every_match_reproduces_its_target`
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
+    #[spec(
+        captures: [
+            expected = if var.cat() != Cat::Producer { Err(BindingRefusal::CategoryMismatch) }
+                else if self.prods.get(&var).is_some_and(|held| *held != image) { Err(BindingRefusal::ConflictingRebind) }
+                else { Ok(()) },
+            bindings = self.prods.len(),
+            grows = var.cat() == Cat::Producer && !self.prods.contains_key(&var),
+        ],
+        ensures: |output| output == expected && self.prods.len() == bindings.saturating_add(usize::from(grows)),
+    )]
     pub fn bind_prod(
         &mut self,
         var: MetaVar,
@@ -251,9 +286,23 @@ impl Subst
     /// - [`BindingRefusal::ConflictingRebind`]: `var` is bound elsewhere.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Subst::bind_prod`], for consumer images.
+    /// - hypothesis: L3 — fresh, equal-rebind, conflicting and wrong-category
+    ///   consumer offers expose exact results and preserved maps. Overwriting,
+    ///   incorrect refusal precedence and accepting a producer key change the
+    ///   observations.
     /// - witness: `subst::tests::unification_finds_a_most_general_unifier`
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
+    #[spec(
+        captures: [
+            expected = if var.cat() != Cat::Consumer { Err(BindingRefusal::CategoryMismatch) }
+                else if self.conss.get(&var).is_some_and(|held| *held != image) { Err(BindingRefusal::ConflictingRebind) }
+                else { Ok(()) },
+            bindings = self.conss.len(),
+            grows = var.cat() == Cat::Consumer && !self.conss.contains_key(&var),
+        ],
+        ensures: |output| output == expected && self.conss.len() == bindings.saturating_add(usize::from(grows)),
+    )]
     pub fn bind_cons(
         &mut self,
         var: MetaVar,
@@ -294,13 +343,16 @@ impl Subst
     ///   stays, rather than diverging.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a unifier whose first binding mentions a metavariable
-    ///   bound after it equates its two sides after one application pass only
-    ///   when resolution ran; the L1 property checks the same equation over
-    ///   generated pairs.
+    /// - hypothesis: L3 — acyclic two-category substitutions are empty,
+    ///   resolved or triangular; exact one-pass images and idempotence
+    ///   distinguish skipped resolution from repeated expansion. L1 — generated
+    ///   unifiers equate both sides.
     /// - witness: `subst::tests::unification_resolves_triangular_bindings`
     /// - witness: `tests::subst::every_unifier_equates_its_two_sides`
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
+    #[spec(ensures: self.prods.values().all(|image| !self.mentions_bound(image.to_ref().metavars()).0)
+        && self.conss.values().all(|image| !self.mentions_bound(image.to_ref().metavars()).0))]
     pub fn resolve(&mut self)
     {
         for _ in 0 .. usize::from(self.len()) {
@@ -342,7 +394,17 @@ impl Subst
     /// Whether any of `vars` is bound at its own category.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: positive exactly when an occurrence is bound in its own
+    ///   category; an empty map or occurrence sequence gives a negative answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and populated maps distinguish bound holes in
+    ///   each category from absent names and the opposite category. Missing
+    ///   category dispatch, treating emptiness as positive or overlooking a
+    ///   bound occurrence changes the observations.
+    /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
+    #[spec(ensures: |output| !output.0 || !bool::from(self.is_empty()))]
     fn mentions_bound<'var, I>(
         &self,
         vars: I,
@@ -368,13 +430,17 @@ impl Subst
     ///   empty substitution is a plain copy.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a match of the successor rule's left-hand side
-    ///   reconstructs its target exactly; the L1 property checks that over
-    ///   generated pairs.
+    /// - hypothesis: L3 — empty, partial and triangular substitutions preserve
+    ///   unbound holes and polarity while inserting images once. Exact terms
+    ///   distinguish recursive expansion and lost frames; L1 — generated
+    ///   matches reproduce their targets.
     /// - witness: `subst::tests::matching_binds_a_ground_configuration`
     /// - witness: `tests::subst::every_match_reproduces_its_target`
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.polarity() == cmd.polarity()
+        && (self.mentions_bound(cmd.metavars()).0 || output == *cmd))]
     pub fn apply_cmd(
         &self,
         cmd: &CmdPat,
@@ -392,8 +458,16 @@ impl Subst
     /// # Specification
     /// - ensures: as [`Subst::apply_cmd`], for a producer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bound and unbound leaves, a nested constructor and a
+    ///   triangular image are compared before and after resolution. Extra
+    ///   passes or lost constructor children change exact terms.
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| (matches!(prod.to_ref().head(), ProdHead::Meta(_)) || output.to_ref().head() == prod.to_ref().head())
+        && (self.mentions_bound(prod.to_ref().metavars()).0 || output == *prod))]
     pub fn apply_prod(
         &self,
         prod: &ProdPat,
@@ -407,8 +481,17 @@ impl Subst
     /// # Specification
     /// - ensures: as [`Subst::apply_cmd`], for a consumer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — terminal, unbound and bound consumer ends under
+    ///   frames and operation arguments are compared before and after
+    ///   resolution. Lost frames, skipped arguments and recursive expansion
+    ///   change exact terms.
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.to_ref().frames().len() >= cons.to_ref().frames().len()
+        && (self.mentions_bound(cons.to_ref().metavars()).0 || output == *cons))]
     pub fn apply_cons(
         &self,
         cons: &ConsPat,
@@ -422,6 +505,14 @@ impl Subst
     /// # Specification
     /// - ensures: as [`Subst::apply_cmd`], for a producer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bare and nested producers with bound, unbound and
+    ///   triangular images have exact one-pass observations. Missing leaves or
+    ///   an extra expansion pass changes the term.
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
+    #[spec(ensures: |output| (matches!(prod.head(), ProdHead::Meta(_)) || output.to_ref().head() == prod.head())
+        && (self.mentions_bound(prod.metavars()).0 || output.to_ref() == prod))]
     fn apply_prod_ref(
         &self,
         prod: ProdRef<'_>,
@@ -442,6 +533,14 @@ impl Subst
     ///   argument is substituted, and a bound end is replaced by its image's
     ///   frames and end, inside the frames above it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, framed and operation consumer spines with
+    ///   bound or unbound ends have exact one-pass observations. Dropped
+    ///   arguments or reordered frame suffixes change the term.
+    /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
+    #[spec(ensures: |output| output.to_ref().frames().len() >= cons.frames().len()
+        && (self.mentions_bound(cons.metavars()).0 || output.to_ref() == cons))]
     fn apply_cons_ref(
         &self,
         cons: ConsRef<'_>,
@@ -476,6 +575,19 @@ impl Subst
     /// - ensures: every binding of `found` is bound here to a copy of its
     ///   subtree.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — successful matching extends an already populated
+    ///   substitution in both categories; a later conflict leaves it unchanged.
+    ///   Exact images and counts reject overwrite, omitted commitment and
+    ///   premature commitment.
+    /// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+    #[spec(
+        requires: found.prods.keys().all(|var| !self.prods.contains_key(*var))
+            && found.conss.keys().all(|var| !self.conss.contains_key(*var)),
+        captures: bindings = usize::from(self.len()).saturating_add(found.prods.len()).saturating_add(found.conss.len()),
+        ensures: usize::from(self.len()) == bindings,
+    )]
     fn commit(
         &mut self,
         found: Found<'_, '_>,
@@ -497,7 +609,15 @@ impl Subst
 ///   `conss` a consumer metavariable.
 /// - ensures: the substitution binding exactly those maps.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and two-category renaming maps are observed by
+///   exact lookups, restriction and application. Swapped categories, omitted
+///   keys and lost images change the substitution.
+/// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
 #[inline]
+#[spec(requires: prods.keys().all(|var| var.cat() == Cat::Producer)
+    && conss.keys().all(|var| var.cat() == Cat::Consumer))]
 pub fn substitution_from(
     prods: BTreeMap<MetaVar, ProdPat>,
     conss: BTreeMap<MetaVar, ConsPat>,
@@ -561,15 +681,19 @@ type Step = Result<(), Refusal>;
 ///   in once, after the whole walk succeeds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a ground successor configuration is matched and
-///   reconstructed exactly, and a polarity clash refuses with nothing bound; L1
-///   — every generated pattern matches every instance of itself, reproducing
-///   it.
+/// - hypothesis: L3 — valid positive cuts with constructor, arity, frame,
+///   polarity or binding clashes preserve a nonempty substitution despite
+///   staged bindings; successful matches reproduce their targets. L1 —
+///   generated instances reject skipped matching or commitment.
 /// - witness: `subst::tests::matching_binds_a_ground_configuration`
 /// - witness: `subst::tests::a_polarity_clash_blocks_a_match`
 /// - witness: `tests::subst::every_match_reproduces_its_target`
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
 #[inline]
 #[must_use]
+#[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) {
+    subst.apply_cmd(pattern) == *target
+} else { *subst == before })]
 pub fn match_cmd(
     pattern: &CmdPat,
     target: &CmdPat,
@@ -607,8 +731,17 @@ pub fn match_cmd(
 ///   [`Refusal::Conflict`] on a binding that disagrees with `subst` or `found`.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — producer heads differing by symbol, arity or
+///   repeated-hole image fail after a consumer binding has been staged. Exact
+///   refusal and unchanged substitution reject early commitment and ignored
+///   conflicts.
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(captures: [bindings = found.prods.len(), pending = goals.len()],
+    ensures: |output| output.is_ok() || (found.prods.len() == bindings && goals.len() == pending))]
 fn match_prod_step<'pattern, 'target>(
     pat: ProdRef<'pattern>,
     tgt: ProdRef<'target>,
@@ -659,8 +792,16 @@ fn match_prod_step<'pattern, 'target>(
 ///   [`Refusal::Conflict`] on a binding that disagrees with `subst` or `found`.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — consumer frames and operation arities disagree with a
+///   pattern; compatible ends succeed. Exact substitutions and refusal
+///   distinguish ignored frame clashes and conflicting end bindings.
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(captures: [bindings = found.conss.len(), pending = goals.len()],
+    ensures: |output| output.is_ok() || (found.conss.len() == bindings && goals.len() == pending))]
 fn match_cons_step<'pattern, 'target>(
     pat: ConsRef<'pattern>,
     tgt: ConsRef<'target>,
@@ -732,16 +873,21 @@ fn match_cons_step<'pattern, 'target>(
 ///   bindings are copied in once, after the whole walk succeeds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a unifier is found, equates its sides and binds only what
-///   it must; a cycle is refused by the occurs check with nothing bound; a
-///   triangular unifier is resolved. L1 — every generated pair that unifies is
-///   equated by its unifier.
+/// - hypothesis: L3 — renamed-apart equations distinguish unifiers, triangular
+///   images, clashes and cyclic dereferences. Exact equations and unchanged
+///   refusal states reject false success, skipped resolution and early
+///   commitment. L1 — generated successful pairs are equated by their unifier.
 /// - witness: `subst::tests::unification_finds_a_most_general_unifier`
 /// - witness: `subst::tests::the_occurs_check_rejects_a_cycle`
 /// - witness: `subst::tests::unification_resolves_triangular_bindings`
 /// - witness: `tests::subst::every_unifier_equates_its_two_sides`
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
 #[inline]
 #[must_use]
+#[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) {
+    subst.apply_cmd(a) == subst.apply_cmd(b)
+} else { *subst == before })]
 pub fn unify_cmd(
     a: &CmdPat,
     b: &CmdPat,
@@ -771,8 +917,17 @@ type OwnedBindings = (Vec<(MetaVar, ProdPat)>, Vec<(MetaVar, ConsPat)>);
 /// - fails: the first refusal a goal meets.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — successful and conflicting two-category equations begin
+///   with existing bindings. Replayed equations and exact unchanged failure
+///   states reject omitted bindings and partial commitment.
+/// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(ensures: |output| output.as_ref().map_or(true, |bindings|
+    bindings.0.iter().all(|binding| binding.0.cat() == Cat::Producer && !existing.prods.contains_key(&binding.0))
+        && bindings.1.iter().all(|binding| binding.0.cat() == Cat::Consumer && !existing.conss.contains_key(&binding.0))))]
 fn unify_halves(
     a: &CmdPat,
     b: &CmdPat,
@@ -814,8 +969,17 @@ fn unify_halves(
 ///   on an occurs-check failure, [`Refusal::Cyclic`] on a cyclic walk.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — unequal producer heads, equal holes, proper bindings and
+///   cyclic dereferences separate successes and refusals. Exact resulting
+///   equations and unchanged failure states reject skipped occurs checks and
+///   false success.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(captures: [bindings = found.prods.len(), pending = goals.len()],
+    ensures: |output| output.is_ok() || (found.prods.len() == bindings && goals.len() == pending))]
 fn unify_prod_step<'term>(
     lhs: ProdRef<'term>,
     rhs: ProdRef<'term>,
@@ -861,8 +1025,19 @@ fn unify_prod_step<'term>(
 /// - intension: a worklist of subtrees; each bound metavariable's image is
 ///   visited once.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — unbound producer holes meet ground, directly recursive
+///   and indirectly recursive images. Exact bindings or unchanged maps reject a
+///   lost occurs check and premature insertion.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(
+    requires: !existing.prods.contains_key(var) && !found.prods.contains_key(var),
+    ensures: |output| if output.is_ok() { found.prods.get(var) == Some(&image) }
+        else { !found.prods.contains_key(var) },
+)]
 fn bind_found_prod<'term>(
     var: &'term MetaVar,
     image: ProdRef<'term>,
@@ -903,8 +1078,16 @@ fn bind_found_prod<'term>(
 ///   cyclic walk.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — bare and framed consumer equations include direct and
+///   indirect cycles. Exact substitutions or unchanged failure states
+///   distinguish genuine binding from ignored cyclic ends.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(captures: [bindings = found.conss.len(), pending = goals.len()],
+    ensures: |output| output.is_ok() || (found.conss.len() == bindings && goals.len() == pending))]
 fn unify_cons_step<'term>(
     lhs: ConsRef<'term>,
     rhs: ConsRef<'term>,
@@ -967,8 +1150,19 @@ fn unify_cons_step<'term>(
 ///   occurs only at a spine's end: operation arguments are producers.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — unbound consumer holes meet terminal, directly recursive
+///   and indirectly recursive spines. Exact bindings or unchanged maps reject a
+///   lost occurs check and premature insertion.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+///
 /// # Errors
 /// As the failure clause states.
+#[spec(
+    requires: !existing.conss.contains_key(var) && !found.conss.contains_key(var),
+    ensures: |output| if output.is_ok() { found.conss.get(var) == Some(&image) }
+        else { !found.conss.contains_key(var) },
+)]
 fn bind_found_cons<'term>(
     var: &'term MetaVar,
     image: ConsRef<'term>,
@@ -1017,6 +1211,19 @@ quenchant_shape::reason_enum! {
 /// - provides: [`binding_walk::Absent::Cyclic`] when the chain is longer than
 ///   the number of bindings, which only a cyclic chain is.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, acyclic and cyclic producer maps expose a
+///   constructor, unbound leaf or typed cycle. Premature stopping and an
+///   incorrect traversal bound change the result.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+#[spec(ensures: |output| match output {
+    Maybe::Present(term) => match *term.head() {
+        ProdHead::Ctor(..) => true,
+        ProdHead::Meta(ref var) => !existing.prods.contains_key(var) && !found.prods.contains_key(var),
+    },
+    Maybe::Absent(_) => !existing.prods.is_empty() || !found.prods.is_empty(),
+})]
 fn walk_prod<'term>(
     prod: ProdRef<'term>,
     existing: &'term Subst,
@@ -1048,6 +1255,19 @@ fn walk_prod<'term>(
 /// - provides: [`binding_walk::Absent::Cyclic`] when the chain is longer than
 ///   the number of bindings, which only a cyclic chain is.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, acyclic and cyclic consumer maps expose a
+///   terminal, unbound end or typed cycle. Following beneath a frame or using
+///   an incorrect traversal bound changes the result.
+/// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
+#[spec(ensures: |output| match output {
+    Maybe::Present(term) => match term.bare_meta() {
+        Maybe::Present(var) => !existing.conss.contains_key(var) && !found.conss.contains_key(var),
+        Maybe::Absent(_) => true,
+    },
+    Maybe::Absent(_) => !existing.conss.is_empty() || !found.conss.is_empty(),
+})]
 fn walk_cons<'term>(
     cons: ConsRef<'term>,
     existing: &'term Subst,
@@ -1080,6 +1300,325 @@ mod tests
 {
     use super::*;
     use crate::polarity::Polarity;
+
+    #[test]
+    fn binding_refusals_preserve_both_category_maps()
+    {
+        let x = MetaVar::producer("x");
+        let alpha = MetaVar::consumer("alpha");
+        let zero = ProdPat::ctor("Zero", []);
+        let top = ConsPat::top();
+        let mut subst = Subst::new();
+        assert!(!subst.mentions_bound([&x, &alpha]).0);
+        assert_eq!(Maybe::Absent(binding::Absent::Unbound), subst.get_prod(&x));
+        assert_eq!(
+            Maybe::Absent(binding::Absent::Unbound),
+            subst.get_cons(&alpha)
+        );
+        assert_eq!(
+            Err(BindingRefusal::CategoryMismatch),
+            subst.bind_prod(alpha.clone(), zero.clone())
+        );
+        assert_eq!(
+            Err(BindingRefusal::CategoryMismatch),
+            subst.bind_cons(x.clone(), top.clone())
+        );
+        assert_eq!(Subst::new(), subst);
+        assert_eq!(Ok(()), subst.bind_prod(x.clone(), zero.clone()));
+        assert_eq!(Ok(()), subst.bind_cons(alpha.clone(), top.clone()));
+        assert!(!subst.mentions_bound(core::iter::empty()).0);
+        assert!(subst.mentions_bound([&x]).0);
+        assert!(subst.mentions_bound([&alpha]).0);
+        assert!(
+            !subst
+                .mentions_bound([
+                    &MetaVar::consumer("x"),
+                    &MetaVar::producer("alpha"),
+                    &MetaVar::producer("missing")
+                ])
+                .0
+        );
+        let before = subst.clone();
+        assert_eq!(Ok(()), subst.bind_prod(x.clone(), zero.clone()));
+        assert_eq!(Ok(()), subst.bind_cons(alpha.clone(), top.clone()));
+        assert_eq!(before, subst);
+        assert_eq!(
+            Err(BindingRefusal::ConflictingRebind),
+            subst.bind_prod(x.clone(), ProdPat::ctor("One", []))
+        );
+        assert_eq!(
+            Err(BindingRefusal::ConflictingRebind),
+            subst.bind_cons(alpha.clone(), ConsPat::frame("F", ConsPat::top()))
+        );
+        assert_eq!(before, subst);
+        assert_eq!(Maybe::Present(&zero), subst.get_prod(&x));
+        assert_eq!(Maybe::Present(&top), subst.get_cons(&alpha));
+        assert_eq!(
+            Maybe::Absent(binding::Absent::Unbound),
+            subst.get_prod(&alpha)
+        );
+        assert_eq!(Maybe::Absent(binding::Absent::Unbound), subst.get_cons(&x));
+        assert_eq!(subst, subst.restricted(&[alpha, x.clone(), x]));
+        assert_eq!(Subst::new(), subst.restricted(&[]));
+    }
+
+    #[test]
+    fn substitution_applies_once_then_resolves_both_categories()
+    {
+        let x = MetaVar::producer("x");
+        let y = MetaVar::producer("y");
+        let alpha = MetaVar::consumer("alpha");
+        let beta = MetaVar::consumer("beta");
+        let zero = ProdPat::ctor("Zero", []);
+        let mut subst = substitution_from(
+            BTreeMap::from([(x.clone(), ProdPat::meta("y")), (y, zero.clone())]),
+            BTreeMap::from([
+                (alpha.clone(), ConsPat::frame("F", ConsPat::meta("beta"))),
+                (beta, ConsPat::top()),
+            ]),
+        );
+        assert_eq!(
+            Subst::new(),
+            substitution_from(BTreeMap::new(), BTreeMap::new())
+        );
+        let prod = ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("free")]);
+        let cons = ConsPat::op(
+            "op",
+            [ProdPat::meta("x")],
+            ConsPat::frame("Outer", ConsPat::meta("alpha")),
+        );
+        let before_prod = ProdPat::ctor("Pair", [ProdPat::meta("y"), ProdPat::meta("free")]);
+        let before_cons = ConsPat::op(
+            "op",
+            [ProdPat::meta("y")],
+            ConsPat::frame("Outer", ConsPat::frame("F", ConsPat::meta("beta"))),
+        );
+        assert_eq!(before_prod, subst.apply_prod(&prod));
+        assert_eq!(before_cons, subst.apply_cons(&cons));
+        let command = CmdPat::cut(Polarity::Negative, prod, cons);
+        assert_eq!(
+            CmdPat::cut(Polarity::Negative, before_prod, before_cons),
+            subst.apply_cmd(&command)
+        );
+        assert_eq!(ConsPat::top(), subst.apply_cons(&ConsPat::top()));
+        assert_eq!(
+            ConsPat::meta("free"),
+            subst.apply_cons(&ConsPat::meta("free"))
+        );
+        subst.resolve();
+        assert_eq!(Maybe::Present(&zero), subst.get_prod(&x));
+        assert_eq!(
+            Maybe::Present(&ConsPat::frame("F", ConsPat::top())),
+            subst.get_cons(&alpha)
+        );
+        let after_prod = ProdPat::ctor("Pair", [zero.clone(), ProdPat::meta("free")]);
+        let after_cons = ConsPat::op(
+            "op",
+            [zero],
+            ConsPat::frame("Outer", ConsPat::frame("F", ConsPat::top())),
+        );
+        let expected = CmdPat::cut(Polarity::Negative, after_prod, after_cons);
+        assert_eq!(expected, subst.apply_cmd(&command));
+        assert_eq!(expected, subst.apply_cmd(&expected));
+        let resolved = subst.clone();
+        subst.resolve();
+        assert_eq!(resolved, subst);
+    }
+
+    #[test]
+    fn failed_walks_preserve_existing_and_staged_bindings()
+    {
+        let cut = |prod, cons| CmdPat::cut(Polarity::Positive, prod, cons);
+        let zero = ProdPat::ctor("Zero", []);
+        let one = ProdPat::ctor("One", []);
+        let mut base = Subst::new();
+        base.bind_prod(MetaVar::producer("held"), zero.clone())
+            .expect("fresh binding");
+        base.bind_cons(MetaVar::consumer("held_cons"), ConsPat::top())
+            .expect("fresh binding");
+        let ordinary = cut(
+            ProdPat::ctor("F", [ProdPat::meta("x")]),
+            ConsPat::meta("alpha"),
+        );
+        let target = cut(
+            ProdPat::ctor("F", [zero.clone()]),
+            ConsPat::frame("K", ConsPat::top()),
+        );
+        for unifies in [false, true] {
+            let mut accepted = base.clone();
+            let decision = if unifies {
+                unify_cmd(&ordinary, &target, &mut accepted)
+            }
+            else {
+                match_cmd(&ordinary, &target, &mut accepted)
+            };
+            assert!(bool::from(decision));
+            assert_eq!(target, accepted.apply_cmd(&ordinary));
+            assert_eq!(SubstitutionBindingCount::from(4_usize), accepted.len());
+            assert_eq!(
+                base,
+                accepted.restricted(&[MetaVar::producer("held"), MetaVar::consumer("held_cons")])
+            );
+        }
+        let failures = [
+            (
+                ordinary.clone(),
+                CmdPat::cut(
+                    Polarity::Negative,
+                    target.producer().clone(),
+                    target.consumer().clone(),
+                ),
+            ),
+            (
+                ordinary.clone(),
+                cut(ProdPat::ctor("G", [zero.clone()]), ConsPat::top()),
+            ),
+            (ordinary, cut(ProdPat::ctor("F", []), ConsPat::top())),
+            (
+                cut(
+                    ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("x")]),
+                    ConsPat::meta("alpha"),
+                ),
+                cut(
+                    ProdPat::ctor("Pair", [zero.clone(), one.clone()]),
+                    ConsPat::top(),
+                ),
+            ),
+            (
+                cut(
+                    ProdPat::meta("x"),
+                    ConsPat::op("op", [ProdPat::meta("y")], ConsPat::meta("alpha")),
+                ),
+                cut(zero.clone(), ConsPat::op("op", [], ConsPat::top())),
+            ),
+            (
+                cut(
+                    ProdPat::meta("x"),
+                    ConsPat::frame("F", ConsPat::meta("alpha")),
+                ),
+                cut(zero.clone(), ConsPat::frame("G", ConsPat::top())),
+            ),
+            (
+                cut(ProdPat::meta("held"), ConsPat::meta("alpha")),
+                cut(one, ConsPat::top()),
+            ),
+            (
+                cut(ProdPat::meta("x"), ConsPat::meta("held_cons")),
+                cut(zero, ConsPat::frame("F", ConsPat::top())),
+            ),
+        ];
+        for (pattern, target) in failures {
+            for unifies in [false, true] {
+                let mut actual = base.clone();
+                let decision = if unifies {
+                    unify_cmd(&pattern, &target, &mut actual)
+                }
+                else {
+                    match_cmd(&pattern, &target, &mut actual)
+                };
+                assert!(!bool::from(decision));
+                assert_eq!(base, actual);
+            }
+        }
+    }
+
+    #[test]
+    fn walks_refuse_cycles_and_occurs_checks()
+    {
+        let x = MetaVar::producer("x");
+        let alpha = MetaVar::consumer("alpha");
+        let px = ProdPat::meta("x");
+        let ca = ConsPat::meta("alpha");
+        let zero = ProdPat::ctor("Zero", []);
+        let top = ConsPat::top();
+        let empty = Subst::new();
+        let found = Found::default();
+        assert_eq!(
+            Maybe::Present(px.to_ref()),
+            walk_prod(px.to_ref(), &empty, &found)
+        );
+        assert_eq!(
+            Maybe::Present(ca.to_ref()),
+            walk_cons(ca.to_ref(), &empty, &found)
+        );
+        let cyclic = substitution_from(
+            BTreeMap::from([
+                (x.clone(), ProdPat::meta("y")),
+                (MetaVar::producer("y"), px.clone()),
+            ]),
+            BTreeMap::from([
+                (alpha.clone(), ConsPat::meta("beta")),
+                (MetaVar::consumer("beta"), ca.clone()),
+            ]),
+        );
+        assert_eq!(
+            Maybe::Absent(binding_walk::Absent::Cyclic),
+            walk_prod(px.to_ref(), &cyclic, &found)
+        );
+        assert_eq!(
+            Maybe::Absent(binding_walk::Absent::Cyclic),
+            walk_cons(ca.to_ref(), &cyclic, &found)
+        );
+        let framed = ConsPat::frame("F", ca.clone());
+        assert_eq!(
+            Maybe::Present(framed.to_ref()),
+            walk_cons(framed.to_ref(), &cyclic, &found)
+        );
+        for (left, right) in [
+            (
+                CmdPat::cut(Polarity::Positive, px.clone(), top.clone()),
+                CmdPat::cut(Polarity::Positive, zero.clone(), top.clone()),
+            ),
+            (
+                CmdPat::cut(Polarity::Positive, zero.clone(), ca.clone()),
+                CmdPat::cut(Polarity::Positive, zero.clone(), top.clone()),
+            ),
+        ] {
+            let mut actual = cyclic.clone();
+            assert!(!bool::from(unify_cmd(&left, &right, &mut actual)));
+            assert_eq!(cyclic, actual);
+        }
+        let indirect = substitution_from(
+            BTreeMap::from([(MetaVar::producer("y"), px.clone())]),
+            BTreeMap::from([(MetaVar::consumer("beta"), ca.clone())]),
+        );
+        for image in [
+            ProdPat::ctor("Succ", [px.clone()]),
+            ProdPat::ctor("Succ", [ProdPat::meta("y")]),
+        ] {
+            let mut found = Found::default();
+            assert_eq!(
+                Err(Refusal::Occurs),
+                bind_found_prod(&x, image.to_ref(), &indirect, &mut found)
+            );
+            assert!(found.prods.is_empty());
+        }
+        for image in [framed, ConsPat::frame("F", ConsPat::meta("beta"))] {
+            let mut found = Found::default();
+            assert_eq!(
+                Err(Refusal::Occurs),
+                bind_found_cons(&alpha, image.to_ref(), &indirect, &mut found)
+            );
+            assert!(found.conss.is_empty());
+        }
+        let mut found = Found::default();
+        assert_eq!(
+            Ok(()),
+            bind_found_prod(&x, zero.to_ref(), &empty, &mut found)
+        );
+        assert_eq!(
+            Ok(()),
+            bind_found_cons(&alpha, top.to_ref(), &empty, &mut found)
+        );
+        assert_eq!(
+            Maybe::Present(zero.to_ref()),
+            walk_prod(px.to_ref(), &empty, &found)
+        );
+        assert_eq!(
+            Maybe::Present(top.to_ref()),
+            walk_cons(ca.to_ref(), &empty, &found)
+        );
+    }
 
     #[test]
     fn a_restriction_keeps_exactly_the_named_bindings()

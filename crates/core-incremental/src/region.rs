@@ -18,6 +18,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::Declaration;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
@@ -83,6 +84,22 @@ impl AsRef<[u8]> for ItemKey
 }
 
 /// What a constant names, stated without admission positions.
+///
+/// # Specification
+/// - requires: item keys and occurrence counts are interpreted in one program.
+/// - ensures: an item reference names the occurrence of its key; an unoccupied
+///   position names no item.
+/// - panics: none.
+/// - executable: none — the program assigning keys and occurrence counts is
+///   external to a reference value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, skipped and maximum positions, interleaved
+///   repeated keys and unknown references distinguish missing names, wrong
+///   occurrence counts and accidental naming by exact references and ordinals.
+/// - witness: `region::tests::positions_must_ascend_and_may_skip`
+/// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+/// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Reference
 {
@@ -148,6 +165,21 @@ impl Item
 }
 
 /// Why a sequence of items is not a program.
+///
+/// # Specification
+/// - requires: interpreted against the rejected sequence of offered items.
+/// - ensures: the ordinal and two positions identify its first nonascending
+///   pair, including equality.
+/// - panics: none.
+/// - executable: none — the rejected sequence is absent from the error value;
+///   the constructor checks the payload against that sequence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated and descending positions, including two
+///   violations after a valid prefix, distinguish a relaxed comparison, wrong
+///   positions and last-error selection through exact error payloads.
+/// - witness: `region::tests::positions_must_ascend_and_may_skip`
+/// - witness: `region::tests::the_first_position_violation_wins`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ProgramError
 {
@@ -200,6 +232,22 @@ impl core::error::Error for ProgramError
 
 /// The items of a program and the two maps between positions, references and
 /// source ordinals, apart from the arena so both can be borrowed at once.
+///
+/// # Specification
+/// - requires: constructed with the items of one program.
+/// - ensures: items and references share source ordinals; occupied positions
+///   and named references resolve back to those ordinals.
+/// - panics: none.
+/// - executable: none — the data declaration has no call boundary; program
+///   construction and lookup predicates check the addressing relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — constructor-produced empty and singleton layouts, gaps
+///   and repeated keys distinguish missing entries, crossed ordinals and false
+///   hits through exact reference and ordinal lookup results.
+/// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+/// - witness: `region::tests::positions_must_ascend_and_may_skip`
+/// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
 #[derive(Clone, Debug)]
 pub struct Layout
 {
@@ -222,6 +270,16 @@ impl Layout
     /// - ensures: the reference of the item at `position`, or
     ///   [`Reference::Unoccupied`] when no item takes it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — occupied, skipped, empty and maximum positions
+    ///   distinguish a false hit or a missing mapping by exact returned
+    ///   references.
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    #[spec(ensures: |ret| self.occupied.get(&position)
+        .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
+        .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
     pub(crate) fn resolve(
         &self,
         position: ConstantIndex,
@@ -242,6 +300,17 @@ impl Layout
     /// - provides: `naming::Absent::Unnamed` for [`Reference::Unoccupied`] and
     ///   for a reference no item of this program carries.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the three distinct references of interleaved keys
+    ///   round-trip to exact ordinals; unoccupied, unknown-key and out-of-range
+    ///   occurrence references distinguish accidental naming by exact absence.
+    /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    #[spec(ensures: |ret| match self.named.get(reference) {
+        Some(&ordinal) => ret == Maybe::Present(ordinal),
+        None => ret == Maybe::Absent(naming::Absent::Unnamed),
+    })]
     pub(crate) fn ordinal_of(
         &self,
         reference: &Reference,
@@ -256,6 +325,24 @@ impl Layout
 
 /// The items a front end offers for one revision, in source order, over the
 /// arena their declarations were minted in.
+///
+/// # Specification
+/// - requires: nothing; unresolved arena identifiers remain admitted input.
+/// - ensures: admitted positions strictly ascend, item order is retained and
+///   references distinguish successive occurrences of each key.
+/// - panics: none.
+/// - executable: none — the data declaration has no entry or return boundary;
+///   the constructor checks admission order and the assembled layout.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and maximum-position programs, gaps, repeated keys
+///   and nonascending pairs distinguish lost items, wrong naming and incorrect
+///   admission through exact references and refusal payloads. These witnesses
+///   concern addressing, not validity of arena node ids.
+/// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+/// - witness: `region::tests::positions_must_ascend_and_may_skip`
+/// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+/// - witness: `region::tests::the_first_position_violation_wins`
 #[derive(Clone, Debug)]
 pub struct Program
 {
@@ -285,11 +372,43 @@ impl Program
     /// ascend in source order.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the strict comparison and the
-    ///   occurrence count, separated by a repeated position, a descending one,
-    ///   a gap, and two items sharing a key.
+    /// - hypothesis: L3 — empty and singleton input, maximum and skipped
+    ///   positions, interleaved repeated keys and two violations after a valid
+    ///   prefix distinguish lost items, wrong occurrence counts, relaxed order
+    ///   and last-error selection by exact references, ordinals and errors.
     /// - witness: `region::tests::positions_must_ascend_and_may_skip`
     /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    /// - witness: `region::tests::the_first_position_violation_wins`
+    #[spec(
+        captures: [item_count = items.len(),
+        first_bad = items.windows(2).enumerate().find_map(|(index, pair)| {
+            let (previous, next) = pair.first().zip(pair.last())?;
+            let position = next.declaration.constant();
+            let previous = previous.declaration.constant();
+            (position <= previous).then_some(ProgramError::PositionOrder {
+                ordinal: ItemOrdinal::from(index.saturating_add(1)),
+                position,
+                previous,
+            })
+        })],
+        ensures: |ret| match ret {
+            Ok(ref program) => first_bad.is_none()
+                && program.layout.items.len() == item_count
+                && program.layout.references.len() == item_count
+                && program.layout.occupied.len() == item_count
+                && program.layout.named.len() == item_count
+                && program.layout.items.iter().zip(&program.layout.references)
+                    .enumerate().all(|(index, (item, reference))| {
+                        matches!(reference, Reference::Item { key, .. } if key == &item.key)
+                            && program.layout.occupied.get(&item.declaration.constant())
+                                == Some(&ItemOrdinal::from(index))
+                            && program.layout.named.get(reference)
+                                == Some(&ItemOrdinal::from(index))
+                    }),
+            Err(error) => first_bad == Some(error),
+        },
+    )]
     #[inline]
     pub fn new(
         arena: CoreArena,
@@ -411,6 +530,16 @@ impl Program
     /// - ensures: the reference of the item at `position`, or
     ///   [`Reference::Unoccupied`] when no item takes it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact results at occupied, skipped, empty and maximum
+    ///   positions distinguish wrong position lookup and false absence.
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
+    /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    #[spec(ensures: |ret| self.layout.occupied.get(&position)
+        .and_then(|&ordinal| self.layout.references.get(usize::from(ordinal)))
+        .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
     #[inline]
     #[must_use]
     pub fn resolve(
@@ -426,6 +555,23 @@ impl Program
 ///
 /// The engine never reads a revision, only the program lowered from it, so a
 /// front end may keep any representation it likes behind this seam.
+///
+/// # Specification
+/// - requires: revision interpretation belongs to the implementing front end.
+/// - ensures: successful lowering supplies a program in source order with
+///   strictly ascending admission positions.
+/// - fails: through the front end's associated error when lowering fails.
+/// - panics: none.
+/// - executable: none — revision meaning and failures are implementor-owned;
+///   instrumenting this declaration changes required implementor methods.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, skipped and rejected position sequences witness
+///   the local program-construction boundary of successful results. Revision
+///   correspondence and frontend-specific failures remain obligations of the
+///   implementing front end, not claims of these constructor witnesses.
+/// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+/// - witness: `region::tests::positions_must_ascend_and_may_skip`
 pub trait ItemSource
 {
     /// The revision representation the front end reads.
@@ -442,9 +588,19 @@ pub trait ItemSource
     ///   admission positions ascending.
     /// - fails: when the revision cannot be lowered at all.
     /// - panics: none.
+    /// - executable: none — the revision has no shared semantic observer; a
+    ///   declaration attribute also changes the required trait interface.
     ///
     /// # Errors
     /// The front end's own failure to lower the revision.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, skipped and rejected position sequences
+    ///   distinguish incorrect admission at the local result-construction
+    ///   boundary. The front end owns evidence for revision correspondence and
+    ///   its errors.
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
     fn items(
         &self,
         revision: &Self::Revision,
@@ -566,6 +722,83 @@ mod tests
                 },
             ],
             "the second item of a key is its first repeat"
+        );
+        for (index, reference) in program.references().iter().enumerate() {
+            assert_eq!(
+                program.layout().ordinal_of(reference),
+                Maybe::Present(ItemOrdinal::from(index)),
+            );
+            assert_eq!(program.resolve(ConstantIndex::from(index)), *reference);
+        }
+        for missing in [
+            Reference::Unoccupied,
+            Reference::Item {
+                key: ItemKey::from("absent"),
+                occurrence: Occurrence::from(0_usize),
+            },
+            Reference::Item {
+                key: ItemKey::from("e"),
+                occurrence: Occurrence::from(1_usize),
+            },
+        ] {
+            assert_eq!(
+                program.layout().ordinal_of(&missing),
+                Maybe::Absent(super::naming::Absent::Unnamed),
+            );
+        }
+    }
+
+    #[test]
+    fn empty_and_extreme_programs_resolve_exactly()
+    {
+        let empty = Program::new(CoreArena::new(), vec![]).expect("empty program");
+        assert_eq!(empty.items(), []);
+        assert_eq!(empty.references(), []);
+        for position in [0_usize, usize::MAX] {
+            assert_eq!(
+                empty.resolve(ConstantIndex::from(position)),
+                Reference::Unoccupied
+            );
+        }
+        assert_eq!(
+            empty.layout().ordinal_of(&Reference::Unoccupied),
+            Maybe::Absent(super::naming::Absent::Unnamed),
+        );
+
+        let extreme = Program::new(CoreArena::new(), vec![item(Name("edge"), At(usize::MAX))])
+            .expect("the maximum position has no predecessor");
+        let reference = Reference::Item {
+            key: ItemKey::from("edge"),
+            occurrence: Occurrence::from(0_usize),
+        };
+        assert_eq!(extreme.references(), core::slice::from_ref(&reference));
+        assert_eq!(extreme.resolve(ConstantIndex::from(usize::MAX)), reference);
+        assert_eq!(
+            extreme.resolve(ConstantIndex::from(0_usize)),
+            Reference::Unoccupied
+        );
+        assert_eq!(
+            extreme.layout().ordinal_of(&reference),
+            Maybe::Present(ItemOrdinal::from(0_usize))
+        );
+    }
+
+    #[test]
+    fn the_first_position_violation_wins()
+    {
+        assert_eq!(
+            Program::new(CoreArena::new(), vec![
+                item(Name("a"), At(0)),
+                item(Name("b"), At(4)),
+                item(Name("c"), At(4)),
+                item(Name("d"), At(2)),
+            ])
+            .map(|_| ()),
+            Err(ProgramError::PositionOrder {
+                ordinal: ItemOrdinal::from(2_usize),
+                position: ConstantIndex::from(4_usize),
+                previous: ConstantIndex::from(4_usize),
+            }),
         );
     }
 }

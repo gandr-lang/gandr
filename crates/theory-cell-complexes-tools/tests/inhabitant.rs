@@ -12,6 +12,7 @@
 //! law is the match law read backward: each member of a family is its
 //! generalization under its own arms.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
@@ -32,7 +33,17 @@ use quenchant_shape::shape::Maybe;
 /// `pattern` matched against `target`, and the substitution it found.
 ///
 /// # Specification
+/// - ensures: applying the returned substitution to the pattern reproduces the
+///   target.
 /// - panics: when the match is refused, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching sequent and nesting toy patterns reconstruct
+///   exact targets; a constructor mismatch panics. Missing bindings, wrong
+///   categories and an accepted fixture defect change those observations.
+/// - witness: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`
+/// - witness: `tests::inhabitant::a_refused_fixture_match_panics`
+#[spec(ensures: |output| A::apply_subst(&output, pattern) == *target)]
 fn matched<A>(
     pattern: &A::Cmd,
     target: &A::Cmd,
@@ -52,7 +63,15 @@ where
 /// matched term.
 ///
 /// # Specification
+/// - requires: the pattern is matchable against the target.
 /// - panics: when the law fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — root and nested patterns with metavariables reconstruct
+///   the supplied target. Dropped images, wrong binding categories and changed
+///   constructors violate reconstruction.
+/// - witness: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`
+#[spec(requires: { let mut subst = A::Subst::default(); bool::from(A::match_cmd(pattern, target, &mut subst)) })]
 fn match_reproduces<A>(
     pattern: &A::Cmd,
     target: &A::Cmd,
@@ -71,7 +90,15 @@ fn match_reproduces<A>(
 /// free, except one the target itself carries.
 ///
 /// # Specification
+/// - requires: the pattern is matchable against the target.
 /// - panics: when the law fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated pattern holes and targets with free holes bound
+///   the binding law. A pattern-only unbound hole survives substitution and
+///   changes the observed variable set.
+/// - witness: `tests::inhabitant::a_successful_match_binds_every_metavariable_the_pattern_names`
+#[spec(requires: { let mut subst = A::Subst::default(); bool::from(A::match_cmd(pattern, target, &mut subst)) })]
 fn match_binds_every_metavariable<A>(
     pattern: &A::Cmd,
     target: &A::Cmd,
@@ -93,7 +120,16 @@ fn match_binds_every_metavariable<A>(
 /// there is the identity, and reading after a splice returns what was spliced.
 ///
 /// # Specification
+/// - requires: the position addresses a command subterm.
 /// - panics: when either direction fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — root and nested valid command positions obey
+///   read-after-write and identity reconstruction, with replacement sizes on
+///   either side of the original. Wrong addresses and damaged contexts change
+///   the observations.
+/// - witness: `tests::inhabitant::splicing_at_a_position_agrees_with_reading_it`
+#[spec(requires: matches!(A::subterm_cmd_at(term, pos), Maybe::Present(_)))]
 fn splice_agrees_with_read<A>(
     term: &A::Cmd,
     pos: &A::Pos,
@@ -124,7 +160,20 @@ fn splice_agrees_with_read<A>(
 /// the caller's further reading.
 ///
 /// # Specification
+/// - ensures: one pattern per family component and one arm per family member at
+///   every point.
 /// - panics: when the family is refused or the law fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty rectangular families reconstruct every member
+///   component under its own arms, including a singleton and zero components.
+///   Wrong arms, omitted components and spurious disagreement points change
+///   reconstruction or the exact boundary result. An empty family panics rather
+///   than returning a spurious generalization.
+/// - witness: `tests::inhabitant::each_member_is_its_generalization_under_its_arms`
+/// - witness: `tests::inhabitant::singleton_and_zero_component_families_preserve_shape`
+/// - witness: `tests::inhabitant::an_empty_fixture_family_panics`
+#[spec(ensures: |output| family.first().is_some_and(|member| output.patterns.len() == member.len()) && output.points.iter().all(|point| point.arms.len() == family.len()))]
 fn generalization_reproduces<A>(family: &[&[A::Cmd]]) -> Generalization<A>
 where
     A: CellAlphabet,
@@ -210,6 +259,10 @@ fn a_successful_match_binds_every_metavariable_the_pattern_names()
     match_binds_every_metavariable::<ToyAlphabet>(
         &Toy::add(Toy::var("x"), Toy::var("y")),
         &Toy::add(Toy::var("z"), Toy::zero()),
+    );
+    match_binds_every_metavariable::<ToyAlphabet>(
+        &Toy::add(Toy::var("x"), Toy::var("x")),
+        &Toy::add(Toy::var("z"), Toy::var("z")),
     );
 }
 
@@ -324,4 +377,31 @@ fn a_family_without_a_generalization_is_refused_by_name()
             .map(|generalization| generalization.patterns),
         "members of two lengths"
     );
+}
+
+#[test]
+fn singleton_and_zero_component_families_preserve_shape()
+{
+    let term = Toy::add(Toy::var("x"), Toy::succ(Toy::zero()));
+    let singleton = generalization_reproduces::<ToyAlphabet>(&[core::slice::from_ref(&term)]);
+    assert_eq!(vec![term], singleton.patterns);
+    assert!(singleton.points.is_empty());
+    let empty = generalization_reproduces::<ToyAlphabet>(&[&[], &[]]);
+    assert!(empty.patterns.is_empty());
+    assert!(empty.points.is_empty());
+}
+
+#[test]
+fn a_refused_fixture_match_panics()
+{
+    let refused =
+        std::panic::catch_unwind(|| matched::<ToyAlphabet>(&Toy::zero(), &Toy::succ(Toy::zero())));
+    assert!(refused.is_err());
+}
+
+#[test]
+fn an_empty_fixture_family_panics()
+{
+    let refused = std::panic::catch_unwind(|| generalization_reproduces::<ToyAlphabet>(&[]));
+    assert!(refused.is_err());
 }

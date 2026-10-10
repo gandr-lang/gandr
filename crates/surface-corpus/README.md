@@ -9,6 +9,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
+- [Specification and adequacy](#specification-and-adequacy)
 - [One predicate: settled](#one-predicate-settled)
 - [A run outcome refines checks](#a-run-outcome-refines-checks)
 - [Membership is location](#membership-is-location)
@@ -31,7 +32,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 **What.** `settle` takes a `CorpusRoot`, the `CoreArena` a module was lowered into, the `LoweredModule` from `gandr-surface-lowering`, and the `ModuleReport` `gandr-core-checker` returned for it, and answers a `SettleReport`: one `DeclarationReport` per declared name, stating what the name's attributes assert (`Stated`), what the name produced (`Produced`: the checker's verdict, the lowering's refusal, or the root's own refusal), and the obligations its verdict owes; plus the module's ledger size. `SettleReport::tally` sums a run into a `Tally` — declarations and fixtures by `Settlement`, the ledger size, the surviving obligations, the refusals by failure class, the run's settlement and its `Seal` — which a driver absorbs across sources, gates on, and prints.
 
-**Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits no self-description but `checks`, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
+**Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` refinement, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
 **How.** Attributes are read off the lowering's side table under each declared name's digests; the four schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in. One equality decides each declaration; the tally counts it once.
 
@@ -43,17 +44,17 @@ The expectation language over a lowered module and its verdicts — the `checks`
 ## Provided features
 
 - `CorpusRoot` and `CorpusRoot::admit`: the two roots and the strict root's refusal of `owes` and `refuses`. Witnesses: `root::tests::the_admission_table_is_pinned`, `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`.
-- `ExpectationSchema` and `expectation_schema::Absent`: the four schemas, matched by the registry's names. Witnesses: `expectation::tests::every_registered_attribute_is_an_expectation_schema`.
+- `ExpectationSchema` and `expectation_schema::Absent`: the four schemas, matched by the registry's names. Witnesses: `expectation::tests::registered_names_select_schemas_without_order_assumptions`.
 - `Runner`, `RunSpelling` and `ran::Absent`: the run a `runs` outcome is compared against, asked of the caller. Witnesses: `settle::tests::a_run_outcome_settles_under_either_root`.
 - `Stated`, `Outcome`, `ExpectationFault` and `Membership`: what a declaration states, and why an expectation states nothing. Witnesses: `expectation::tests::an_owes_payload_outside_the_counts_states_no_verdict`, `expectation::tests::a_payload_the_arena_does_not_hold_is_unreadable`, `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`, `settle::tests::a_name_carrying_two_expectations_states_none`.
 - `RefusalName`, `RefusalSpelling`, `refusal_name::Absent`, `Refusal` and `CorpusRefusal`: the closed refusal vocabulary, one view over every producer's refusals, and this crate's own refusal. Witnesses: `refusal::tests::every_refusal_is_named_by_its_variant`, `refusal::tests::a_near_miss_names_no_refusal`, `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`.
 - `settle`, `SettleFault`, `Produced`, `produced_refusal::Absent`, `DeclarationReport`, `Settlement` and `Surviving`: the settle comparison. Witnesses: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`, `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`, `settle::tests::verdicts_that_are_not_the_modules_own_are_refused`, and the witnesses above.
-- `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts` and `Seal`: the report and its counts. Witnesses: `report::tests::the_run_is_settled_only_when_every_declaration_is`, `report::tests::sealed_is_reported_never_gated`, `report::tests::the_ledger_size_is_printed_settled_or_not`, `report::tests::every_fixture_and_every_unsettled_declaration_has_a_line`, `report::tests::the_tally_counts_every_declaration_once`, `report::tests::absorbing_a_tally_sums_every_count`.
+- `SettleReport`, `Tally`, `SettleCounts`, `ClassCounts` and `Seal`: the report and its counts. Witnesses: `report::tests::the_run_is_settled_only_when_every_declaration_is`, `report::tests::sealed_is_reported_never_gated`, `report::tests::reports_select_declarations_and_retain_summary_fields`, `report::tests::saturating_tallies_preserve_every_count_channel`, `report::tests::the_tally_counts_every_declaration_once`, `report::tests::absorbing_a_tally_sums_every_count`.
 
 ## Expected features
 
-- **One arena.** `settle` reads payloads out of the arena the lowering minted the module into; any other arena is refused as an unreadable payload, never read.
-- **The module's own verdicts.** The report passed is the checker's report for exactly the declarations the lowering did not refuse, in admission order; any other is refused by admission position.
+- **One arena.** The caller supplies the arena the lowering minted the module into. Payload lookup rejects absent or unsuitable literals, but arena-local identifiers do not establish provenance: an unrelated arena can reuse an identifier.
+- **The module's own verdicts.** The caller supplies the checker's report for exactly the declarations the lowering did not refuse, in admission order. Missing, shifted and surplus verdicts are refused by position; matching positions alone do not establish that a report came from this module.
 - **`alloc`.** The crate is `no_std` with `alloc`, and does no I/O, no file walking and no process exit.
 
 ## Examples
@@ -126,7 +127,15 @@ assert_eq!(usize::from(tally.ledger()), 1_usize);
 assert_eq!(tally.seal(), Seal::Unsealed);
 ```
 
-The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-corpus` runs the crate's tests; every module a witness settles is parsed from source, lowered and checked in the same test, so the suite settles exactly what a driver hands this crate.
+The same example is the crate-level doctest. `cargo nextest run -p gandr-surface-corpus` runs the crate's tests. Source-level settlement witnesses parse, lower and check their modules; counter and formatter boundary witnesses also construct values directly to reach saturation and sink failures.
+
+## Specification and adequacy
+
+Executable predicates cover root admission, schema and refusal mappings, payload interpretation, settlement precedence, ordered declaration alignment, directional obligation differences, saturating tally transitions and the kernel-export partition. Mutation predicates retain only scalar snapshots or addresses; settlement compares borrowed run spellings rather than cloning them. The private attribute iterator exposes its two borrowed slices so a predicate can check order without consuming the result. An opaque iterator becomes preferable again if specification instrumentation supports opaque return types.
+
+Adequacy names each witness and its finite input class. Source witnesses cover strict-root guards, conflicting and malformed attributes, run mismatches, refusal names and alignment failures; boundary witnesses cover numeric overflow, every tally channel and sink refusal. A later alignment error does not roll back or repeat earlier runner calls. Corpus export witnesses establish composition over the current sources, not a general semantic oracle.
+
+Exemptions identify the unavailable observation: data and vocabulary declarations have no call boundary; formatters expose no readable sink; runner semantics depend on the caller's module and machine. Source, arena and checker-report provenance remains a caller premise. `ClassCounts::count` preserves its public constant-evaluation support, but its foreign `DeclarationCount` result has no public const scalar observer; an owning-crate observer would permit that predicate without changing this API. The alternative is breaking constant callers to inspect a private representation, which this crate does not do.
 
 ## One predicate: settled
 
@@ -182,7 +191,7 @@ The alternative was pairing by origin token, which the driver issues and could i
 
 ## Inputs, not a pipeline
 
-This crate reads a lowered module and its verdicts and depends on neither the parser nor the dispatcher; adapting the lowering's declarations to the checker's input and walking the roots belong to the dispatcher, and the exit codes to the driver. The suite depends on the parser and the grammar, and for its kernel export suite on the two storage crates, as development dependencies only: a `LoweredModule` and a `ModuleReport` have no public constructor that would let a test build one by hand, so each witness parses, lowers and checks a source the way the dispatcher does, and adapts the declarations in the fixture exactly as the example above. The alternative was taking the source text and running the pipeline here, which would make this crate the driver. The choice reverses if the lowering and the checker gain a shared declaration type, at which point the adaptation, and with it the fixture's copy, goes away.
+This crate reads a lowered module and its verdicts and depends on neither the parser nor the dispatcher; adapting the lowering's declarations to the checker's input and walking the roots belong to the dispatcher, and the exit codes to the driver. The suite depends on the parser and the grammar, and for its kernel export suite on the two storage crates, as development dependencies only: a `LoweredModule` and a `ModuleReport` have no public constructor that would let a test build one by hand, so each source-level witness parses, lowers and checks a source the way the dispatcher does, and adapts the declarations in the fixture exactly as the example above. The alternative was taking the source text and running the pipeline here, which would make this crate the driver. The choice reverses if the lowering and the checker gain a shared declaration type, at which point the adaptation, and with it the fixture's copy, goes away.
 
 ## The corpus
 
@@ -222,9 +231,9 @@ The alternatives were leaving these sources out, which loses them, and stating e
 
 ## The kernel export suite
 
-`kernel_export` takes every source of both roots the lowering reads through the composition a driver runs — parse, lower, check, readmit through the checker's bridge, export — and holds each export to the storage tier's contract. `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`: two independent sweeps export the same bytes and mint the same artifact identity for every source; each export decodes and re-encodes byte for byte; its records, committed through `gandr-storage-artifact`, read back through the record plane and the kernel's decoder as the export; and each root exports a declaration. `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest` classifies every declaration once by what became of it at the kernel boundary — defined, assumed, marked by the checker's refusal, withheld for naming a declaration that did not cross, or never offered because the lowering refused it — fails on any verdict the readmission disagrees with, checks that a withheld declaration names one that did not cross, and holds the artifact's manifest to the partition: a record per crossed declaration beside the header, and the declarations read back exactly the crossed ones, in admission order, under their names. `kernel_export::kernel_corpus_partition::corpus_exercises_multiple_exclusion_classes` asks that at least four kinds of declaration stay out of the kernel.
+`kernel_export` takes each readable source through parse, lower, check, readmission and export. `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds` checks repeat-sweep byte and identity determinism, decoder/re-encoder agreement, record-plane readback and admission from each root. `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest` checks that withheld dependencies did not cross, the manifest contains one record per crossed declaration beside its header, and the decoded declarations are exactly the admitted names in order. These are L3 witnesses over the current corpus; repeating the same pipeline is not an independent semantic oracle.
 
-The three are the prior implementation's, which ran in the sequent crate's suite and made it declare development dependencies across the kernel, storage and surface tiers; here they sit with the corpus they sweep, and the sequent crate takes no such edge. The prior gate pinned each item's size, table entries, expanded work and identity in a checked-in record, the partition pinned its classification in a checked-in manifest, a generator behind an environment switch rewrote both, a framed digest bound them to the corpus bytes, and the gate pinned the corpus's cardinality. No count is pinned here, as [above](#the-corpus): the gate asserts what is a function of the source — the bytes and the identity, reproduced by an independent sweep — and the decoder enforces the work budgets on every read. The prior gate also drove six kernel-native goldens built by hand, a universe and its lifts; `strict/classifier/` reaches both through the surface, and `gandr-kernel-term`'s suite holds the format's goldens, so they are not carried. The alternative was porting the records and their generator, which re-pins every count the corpus decided not to pin. The choice reverses if a quantity the gate should watch can change while the source does not, which a record beside the source would then catch.
+The suite derives its expectations from admission and storage semantics rather than checked-in sizes, identities, class thresholds or corpus cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`; this crate checks their composition with real surface sources. The alternative is a generated snapshot for each source, which would also freeze incidental counts. A snapshot becomes appropriate when it can detect a required invariant that admission, roundtrip and repeat-sweep checks cannot distinguish.
 
 ## License
 

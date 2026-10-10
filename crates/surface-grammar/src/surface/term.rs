@@ -3,6 +3,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_graphs::Prec;
 
 use crate::Adaptation;
@@ -17,6 +18,8 @@ use crate::RuleName;
 use crate::Sort;
 use crate::SurfaceForm;
 use crate::TileLabel;
+use crate::model::RegexShape;
+use crate::model::Sym;
 
 /// Builds every surface rule except the type, shell and circuit forms.
 ///
@@ -31,6 +34,17 @@ use crate::TileLabel;
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For complete and missing-band tables, L2 error-order
+///   observations and L3 grammar identity catch silent omission, reordered
+///   families and incorrect missing-group provenance. The predicate observes
+///   the first missing band or the ordered resident-sort ranges; arbitrary
+///   aliases and source programs beyond the corpus are not exhausted.
+/// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.ret", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 97 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=31 | 83..=88 => Sort::Pattern, 32..=37 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -90,7 +104,20 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// still covers them.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends one factored definition rule at the item sort and
+///   supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 1 && added.first().is_some_and(|rule| rule.name().0 == "def_value" && rule.provenance().0 == "def_value" && rule.sort() == Sort::Item && rule.prec() == p && rule.adaptations().iter().map(|adaptation| adaptation.surface).eq(["def_signature", "def_function", "def_rec"]))))]
 fn items(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -134,7 +161,20 @@ fn items(
 /// inventory never lists them.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the six ordered declaration families at the item sort and
+///   supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "operator_declaration", "rec_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -348,7 +388,19 @@ fn declarations(
 /// value/signature/function/recursive tail.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an attribute repetition, one shared def tile and the
+///   recursive-or-regular tail menu.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn def_family() -> Regex
 {
     seq([
@@ -368,7 +420,19 @@ fn def_family() -> Regex
 /// changes what the ascription *does*, never what it is written against.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: transparent and opaque ascription branches whose signature shapes
+///   agree and whose opening tiles differ.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip([":", ":>"]).all(|(part, lead)| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|item| matches!(item.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == lead)) && sequence.get(1).is_some_and(|item| matches!(item.shape(), RegexShape::Seq(_)))))))]
 fn module_ascription_tail() -> Regex
 {
     alt([
@@ -381,7 +445,18 @@ fn module_ascription_tail() -> Regex
 /// are value components and abstract type components.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a record-signature opener, optional field list and closing brace.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "#{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn module_signature() -> Regex
 {
     seq([
@@ -435,7 +510,19 @@ fn module_signature() -> Regex
 /// is the case a depth-blind splitter silently cuts in half.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a value-field branch and a type-component branch, discriminated
+///   by their initial name classes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))))]
 fn module_signature_field() -> Regex
 {
     alt([
@@ -463,7 +550,19 @@ fn module_signature_field() -> Regex
 /// the same `.` label molds by context.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a rec keyword, name and parameters followed by an optional result
+///   and one brace-delimited alternative body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rec")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn def_rec_tail() -> Regex
 {
     seq([
@@ -486,7 +585,19 @@ fn def_rec_tail() -> Regex
 /// default arm.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an observation arm and a default arm, each ending in an
+///   expression hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ".")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=>")) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "_")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=>")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
 fn copattern_clause() -> Regex
 {
     alt([
@@ -509,7 +620,18 @@ fn copattern_clause() -> Regex
 /// does); the elaborator requires every entry typed.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a non-optional binder list between parentheses.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn head_params() -> Regex
 {
     seq([
@@ -532,7 +654,19 @@ fn head_params() -> Regex
 /// family's factored tails are.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: constructor, operation and rewrite-member branches; the
+///   constructor owns one shared leading tile.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "constructor")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))))]
 fn data_member() -> Regex
 {
     alt([
@@ -573,7 +707,19 @@ fn data_member() -> Regex
 /// Build the data-style operation member after its context-specific lead menu.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the supplied lead, a name, parameters and an optional
+///   arrow/result tail.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn data_oper_member(lead: Regex) -> Regex
 {
     seq([
@@ -596,7 +742,19 @@ fn data_oper_member(lead: Regex) -> Regex
 /// a grammar fact, because the result is an ordinary type hole.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a type-or-telescope side followed by an optional result-arrow
+///   tail.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn generator_signature() -> Regex
 {
     seq([
@@ -610,7 +768,18 @@ fn generator_signature() -> Regex
 /// the circuit parameter side climbs.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a non-optional port/binder list inside parentheses.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn generator_telescope() -> Regex
 {
     seq([
@@ -629,7 +798,19 @@ fn generator_telescope() -> Regex
 /// shape whole so the elaborator declines it by name and points at `==>`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the rewrite arrow and the admitted obsolete spelling, in that
+///   order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["==>","~>"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 pub(super) fn rule_face_arrow() -> Regex
 {
     alt([t(TileLabel("==>")), t(TileLabel("~>"))])
@@ -638,7 +819,19 @@ pub(super) fn rule_face_arrow() -> Regex
 /// Build the reserved grade prefix, narrowed to `{ number, ω }`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: only numeric and omega grade-prefix alternatives, excluding
+///   identifier grades.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip(["number","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn grade_prefix() -> Regex
 {
     alt([t(TileLabel("number")), t(TileLabel("ω"))])
@@ -651,7 +844,18 @@ fn grade_prefix() -> Regex
 /// entries reuse the `attribute` shape (`name (payload)?`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a non-optional attribute list inside square brackets.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
 fn attr_slot() -> Regex
 {
     seq([t(TileLabel("[")), comma1(attr_inline()), t(TileLabel("]"))])
@@ -662,7 +866,18 @@ fn attr_slot() -> Regex
 /// `parenthesized_type`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: either a type hole or a parenthesized named-result group.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))))]
 fn op_result() -> Regex
 {
     alt([
@@ -684,7 +899,19 @@ fn op_result() -> Regex
 /// the reserved `rule` 2-cell.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: observation, operation and rewrite-member branches, with the
+///   observation ending in a type hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && sequence.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && sequence.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "oper")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "rule"))))))]
 fn codata_member() -> Regex
 {
     alt([
@@ -713,7 +940,18 @@ fn codata_member() -> Regex
 /// narrowed.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an optional restricted grade, a name, colon and type hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn ctor_field() -> Regex
 {
     seq([
@@ -727,7 +965,18 @@ fn ctor_field() -> Regex
 /// Build the reserved operator-declaration fixity class menu.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the five declared fixity spellings in their grammar order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 5 && parts.iter().zip(["infixl","infixr","infix","prefix","postfix"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn fixity_class() -> Regex
 {
     alt([
@@ -742,7 +991,18 @@ fn fixity_class() -> Regex
 /// Build one inline `rec { … }` member: a value or function definition.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one def/name prefix followed by the value-or-function tail menu.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_)))))]
 fn rec_member() -> Regex
 {
     seq([
@@ -762,7 +1022,20 @@ fn rec_member() -> Regex
 /// Append attribute, parameter, and extern helper forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the attribute and extern blocks, in order, at the item
+///   sort and supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 2 && added.iter().zip(["attribute_block", "extern_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn attributes_parameters_externs(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -845,7 +1118,20 @@ fn attributes_parameters_externs(
 /// Append block statement forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the ten ordered statement forms at the item sort and
+///   supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["let_statement", "bind_statement", "unpack_statement", "leta_statement", "recv_statement", "acquire_statement", "release_statement", "fork_statement", "fork_shared_statement", "expression_statement"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn statements(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -954,7 +1240,20 @@ fn statements(
 /// Append pattern forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the ordered pattern forms, assigning the or and as forms
+///   their own bands and every other form the atom band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["wildcard", "constructor_pattern", "tuple_pattern", "record_pattern", "list_pattern", "rest_pattern", "literal_pattern", "hole.pattern", "or_pattern", "as_pattern"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Pattern && rule.prec() == match name { "or_pattern" => or, "as_pattern" => as_p, _ => atom } && rule.provenance().0 == if name == "hole.pattern" { "hole" } else { name })))]
 fn patterns(
     out: &mut Vec<Rule>,
     or: Prec,
@@ -1096,7 +1395,20 @@ fn patterns(
 /// their binary-expression molds.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends six ordered instantiation residents, all at the dedicated
+///   sort and supplied band with shared instantiation provenance.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["instantiation.type", "instantiation.direction.descent", "instantiation.direction.productivity", "instantiation.named_measure", "instantiation.explicit", "instantiation.tail"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Instantiation && rule.prec() == p && rule.provenance().0 == "instantiation_expression")))]
 fn instantiations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -1154,7 +1466,20 @@ fn instantiations(
 /// Append expression forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the ordered operator and primary expression families at
+///   their selected precedence bands.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 45 && added.iter().zip(["ret_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "ret_expression" | "pack_expression" => p.ret, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -1348,7 +1673,20 @@ fn expressions(
 /// Append shared lexical named-token forms used by term and pattern rules.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends six pattern lexical forms followed by eight expression
+///   lexical forms, preserving the shared source kinds and distinct bands.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 14 && added.iter().zip([("identifier.pattern", "identifier", Sort::Pattern, pat), ("constructor.pattern", "constructor", Sort::Pattern, pat), ("boolean.pattern", "boolean", Sort::Pattern, pat), ("number.pattern", "number", Sort::Pattern, pat), ("typed_number.pattern", "typed_number", Sort::Pattern, pat), ("string.pattern", "string", Sort::Pattern, pat), ("identifier.expression", "identifier", Sort::Expression, expr), ("constructor.expression", "constructor", Sort::Expression, expr), ("boolean.expression", "boolean", Sort::Expression, expr), ("number.expression", "number", Sort::Expression, expr), ("typed_number.expression", "typed_number", Sort::Expression, expr), ("character", "character", Sort::Expression, expr), ("string.expression", "string", Sort::Expression, expr), ("escape_sequence", "escape_sequence", Sort::Expression, expr)]).all(|(rule, (name, provenance, sort, prec))| rule.name().0 == name && rule.provenance().0 == provenance && rule.sort() == sort && rule.prec() == prec)))]
 fn lexical(
     out: &mut Vec<Rule>,
     pat: Prec,
@@ -1514,7 +1852,20 @@ struct ExprPrecs
 /// Append one binary expression rule.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends one binary-expression rule with the supplied header and a
+///   single operator separating recursive holes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 1 && added.first().is_some_and(|rule| rule.name() == name && rule.provenance().0 == "binary_expression" && rule.sort() == s && rule.prec() == p && matches!(rule.regex().view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == s)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == op.0)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == s))))))]
 fn binary(
     out: &mut Vec<Rule>,
     name: RuleName,
@@ -1535,7 +1886,19 @@ fn binary(
 /// Build an inline attribute block.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a non-optional attribute list between the attribute opener and
+///   its closer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "@[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
 fn attr_block_inline() -> Regex
 {
     seq([t(TileLabel("@[")), comma1(attr_inline()), t(TileLabel("]"))])
@@ -1544,7 +1907,18 @@ fn attr_block_inline() -> Regex
 /// Build an inline attribute.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a name followed by an optional parenthesized expression payload.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn attr_inline() -> Regex
 {
     seq([
@@ -1560,7 +1934,18 @@ fn attr_inline() -> Regex
 /// Build an inline parameter, including uppercase type-variable binders.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a binder-name menu followed by an optional type annotation.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_)))))]
 fn param() -> Regex
 {
     seq([
@@ -1576,7 +1961,19 @@ fn param() -> Regex
 /// Build an inline receive/acquire/release statement.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the supplied keyword and parenthesized expression, then an
+///   as-binding terminated by a semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == keyword.0)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "as")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn session_stmt(keyword: TileLabel) -> Regex
 {
     seq([
@@ -1593,7 +1990,19 @@ fn session_stmt(keyword: TileLabel) -> Regex
 /// Build the inline statement alternatives used inside a block.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the ten statement alternatives, each carrying its own terminating
+///   semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 10 && parts.iter().all(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.last().is_some_and(|last| matches!(last.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))))]
 fn statement_alt() -> Regex
 {
     alt([
@@ -1640,7 +2049,19 @@ fn statement_alt() -> Regex
 /// Build a variable-binding statement: `val PAT = E ;`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a val keyword and pattern hole, then an equals-delimited
+///   expression and semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "val")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn val_statement() -> Regex
 {
     seq([
@@ -1662,7 +2083,19 @@ fn val_statement() -> Regex
 /// lowerer mints atoms for — so no separate binder list is needed or admitted.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an unpack binding with a mandatory signature before its source
+///   expression.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "unpack")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn unpack_statement() -> Regex
 {
     seq([
@@ -1689,7 +2122,19 @@ fn unpack_statement() -> Regex
 /// discriminates the annotated and bare spellings with no lookahead.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a run keyword and pattern, optional bound-type annotation and
+///   left-arrow source expression, terminated by a semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "run")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "<-")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn bind_statement() -> Regex
 {
     seq([
@@ -1705,7 +2150,21 @@ fn bind_statement() -> Regex
 /// Build a repeat-one regex.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one explicit element followed by a repetition of the same
+///   element.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted. Arbitrary nullable elements are not
+///   exhausted.
+/// - witness: `surface::term::tests::list_separators_are_not_optional_between_members`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if parts.first() == Some(&inner)))))]
 fn repeat1(element: Regex) -> Regex
 {
     seq([element.clone(), repeat(element)])
@@ -1714,7 +2173,19 @@ fn repeat1(element: Regex) -> Regex
 /// Build an inline block with semicolon-bearing statement alternatives.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a brace-delimited block with repeated terminated statements and
+///   an optional final expression.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn block() -> Regex
 {
     seq([
@@ -1728,7 +2199,18 @@ fn block() -> Regex
 /// Build a record pattern field.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a named field assigned a pattern hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern))))]
 fn record_pat_field() -> Regex
 {
     seq([
@@ -1741,7 +2223,19 @@ fn record_pat_field() -> Regex
 /// Build list pattern elements.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an element-list branch with an optional rest tail and a separate
+///   rest-only branch.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "..")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern))))))]
 fn list_pat_elems() -> Regex
 {
     alt([
@@ -1764,7 +2258,19 @@ fn list_pat_elems() -> Regex
 /// `string` tile.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: quotes surrounding only a repetition of escapes and plain string
+///   fragments.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "\"")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if matches!(inner.shape(), RegexShape::Alt(ref fragments) if fragments.len() == 2 && fragments.iter().zip(["escape_sequence", "string_fragment"]).all(|(fragment,label)| matches!(fragment.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "\""))))]
 fn dq_string() -> Regex
 {
     seq([
@@ -1780,7 +2286,18 @@ fn dq_string() -> Regex
 /// Build an inline extern type member.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a type keyword, type name and semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn extern_type_inline() -> Regex
 {
     seq([
@@ -1793,7 +2310,18 @@ fn extern_type_inline() -> Regex
 /// Build a rest pattern.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a rest marker followed by a pattern hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "..")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern))))]
 fn rest_pat() -> Regex
 {
     seq([t(TileLabel("..")), h(Sort::Pattern)])
@@ -1802,7 +2330,18 @@ fn rest_pat() -> Regex
 /// Build expression arguments.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: parentheses around an optional expression-argument list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn args() -> Regex
 {
     seq([
@@ -1815,7 +2354,18 @@ fn args() -> Regex
 /// Build a grade fragment.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the ordered numeric, identifier and omega grade alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.iter().zip(["number","identifier","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn grade() -> Regex
 {
     alt([
@@ -1828,7 +2378,19 @@ fn grade() -> Regex
 /// Build a single nested `else if` shape.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an if condition, optional answer-type slot and two blocks
+///   separated by else.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "if")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "else")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
 fn if_tail() -> Regex
 {
     seq([
@@ -1854,7 +2416,18 @@ fn if_tail() -> Regex
 /// and needs no lookahead.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a result arrow followed by a type hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "->")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn answer_type() -> Regex
 {
     seq([t(TileLabel("->")), h(Sort::Type)])
@@ -1863,7 +2436,18 @@ fn answer_type() -> Regex
 /// Build a `co` field.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a named observation assigned an expression hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))]
 fn co_field() -> Regex
 {
     seq([
@@ -1876,7 +2460,18 @@ fn co_field() -> Regex
 /// Build a record expression field.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a named record field assigned an expression hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))]
 fn record_field() -> Regex
 {
     seq([
@@ -1904,7 +2499,18 @@ fn r(
 /// Build a case/offer arm.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a pattern and expression separated by the arm arrow.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Pattern)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "=>")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Expression))))]
 fn arm() -> Regex
 {
     seq([h(Sort::Pattern), t(TileLabel("=>")), h(Sort::Expression)])
@@ -1931,7 +2537,19 @@ fn alt<const N: usize>(parts: [Regex; N]) -> Regex
 /// Build an inline extern function member.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a def/name prefix, parameters, optional result annotation and
+///   mandatory semicolon.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
 fn extern_function_inline() -> Regex
 {
     seq([
@@ -1946,7 +2564,18 @@ fn extern_function_inline() -> Regex
 /// Build an inline parameter list.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: parentheses around an optional parameter list.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "(")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")"))))]
 fn params() -> Regex
 {
     seq([t(TileLabel("(")), opt(comma1(param())), t(TileLabel(")"))])
@@ -1955,7 +2584,20 @@ fn params() -> Regex
 /// Append session-operation expression forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the seven ordered session-expression forms at the
+///   supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 7 && added.iter().zip(["offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn session_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -2086,7 +2728,21 @@ fn t(label: TileLabel) -> Regex
 /// Build a comma-separated nonempty regex list.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one explicit element and a repetition of comma followed by the
+///   same element, without a trailing separator.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted. Arbitrary nullable elements are not
+///   exhausted.
+/// - witness: `surface::term::tests::list_separators_are_not_optional_between_members`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")) && sequence.get(1) == parts.first())))))]
 fn comma1(element: Regex) -> Regex
 {
     seq([element.clone(), repeat(seq([t(TileLabel(",")), element]))])
@@ -2111,7 +2767,21 @@ fn comma1(element: Regex) -> Regex
 /// `;`, `,`, or `}` is admissible, none of which competes with hole content.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one explicit member, repeated separator/member pairs and an
+///   optional trailing separator.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted. Arbitrary nullable elements are not
+///   exhausted.
+/// - witness: `surface::term::tests::list_separators_are_not_optional_between_members`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.get(1) == parts.first() && sequence.first().is_some_and(|separator| matches!(separator.shape(), RegexShape::Alt(ref alternatives) if alternatives.len() == 2 && alternatives.iter().zip([";", ","]).all(|(alternative,label)| matches!(alternative.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(inner) if matches!(inner.shape(), RegexShape::Alt(ref alternatives) if alternatives.len() == 2 && alternatives.iter().zip([";", ","]).all(|(alternative,label)| matches!(alternative.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)))))))]
 fn member_list(element: Regex) -> Regex
 {
     let first = element.clone();
@@ -2126,7 +2796,20 @@ fn member_list(element: Regex) -> Regex
 /// separator admitted so it can be declined.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the semicolon and admitted comma separators in that order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted. Arbitrary nullable elements are not
+///   exhausted.
+/// - witness: `surface::term::tests::list_separators_are_not_optional_between_members`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.iter().zip([";",","]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn member_sep() -> Regex
 {
     alt([t(TileLabel(";")), t(TileLabel(","))])
@@ -2152,7 +2835,20 @@ fn member_sep() -> Regex
 /// discrimination the member-list separator rule exists to protect.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends plain and attributed definitions followed by a nested
+///   module, all at the module-member sort with module provenance.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["module_definition_member", "attributed_module_definition_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -2193,7 +2889,19 @@ fn module_members(
 /// `@[ … ]` block, then the ordinary definition tail.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one mandatory attribute block and any following attribute blocks
+///   before a def and its regular tail.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "def")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_)))))]
 fn module_definition_member() -> Regex
 {
     seq([
@@ -2214,7 +2922,19 @@ fn module_definition_member() -> Regex
 /// attribute block, which remains before `def`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an attribute-style opener with an optional typed-binder list and
+///   its closer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "@[")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "]"))))]
 fn implicit_telescope() -> Regex
 {
     seq([
@@ -2231,7 +2951,18 @@ fn implicit_telescope() -> Regex
 /// valid binder names at this parse-only stage.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a binder-name menu followed by a mandatory colon and type hole.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == Sort::Type))))]
 fn implicit_param() -> Regex
 {
     seq([
@@ -2248,7 +2979,19 @@ fn implicit_param() -> Regex
 /// Build the non-recursive definition/signature tail after `def`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one shared name, optional implicit telescope and
+///   signature/value/function tail alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref alternatives) if alternatives.len() == 3))))]
 fn regular_def_tail() -> Regex
 {
     seq([
@@ -2287,7 +3030,19 @@ fn regular_def_tail() -> Regex
 /// top level, and this slot carries no such ruling to preserve.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a module keyword, either name case, optional ascription and a
+///   brace-delimited repetition of module-member holes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "module")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Optional(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "{")) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(inner) if matches!(inner.shape(), RegexShape::Sym(Sym::Sort(Sort::ModuleMember))))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))]
 fn nested_module_member() -> Regex
 {
     seq([
@@ -2312,7 +3067,20 @@ fn h(sort: Sort) -> Regex
 /// Append atom-level expression forms.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: appends the ordered atomic expression families, including session
+///   forms and the shell block, at the supplied band.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch lost or reordered forms, changed provenance and
+///   misplaced precedence bands. The predicate observes the appended metadata
+///   without cloning the prior rules; arbitrary pre-existing prefixes and table
+///   aliases are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 24 && added.iter().zip(["hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == p && rule.provenance().0 == name)))]
 fn primary_expressions(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -2669,4 +3437,106 @@ fn primary_expressions(
             t(TileLabel("}")),
         ]),
     ));
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecSpec;
+
+    use super::comma1;
+    use super::member_list;
+    use super::repeat1;
+    use super::rules;
+    use crate::Pbg;
+    use crate::PbgError;
+    use crate::PrecName;
+    use crate::PrecTable;
+    use crate::Regex;
+    use crate::Rule;
+    use crate::RuleName;
+    use crate::Sort;
+    use crate::TileLabel;
+    use crate::surface::PREC_GROUPS;
+    use crate::surface::built_in_prec_table;
+
+    #[test]
+    fn assembly_reports_the_first_missing_band()
+    {
+        for absent in [
+            ["item.singleton", "expression.atom"],
+            ["pattern.or", "expression.ret"],
+            ["expression.postfix", "expression.atom"],
+        ] {
+            let mut spec = PrecSpec::new();
+            let mut names = Vec::new();
+            for &(name, assoc) in PREC_GROUPS {
+                if !absent.contains(&name) {
+                    let id = spec.insert(name, assoc).expect("unique band");
+                    names.push((PrecName(name), id));
+                }
+            }
+            let partial = PrecTable::new(PrecDag::build(&spec).expect("acyclic bands"), names);
+            assert_eq!(
+                Err(PbgError::MissingPrec { name: absent[0] }),
+                rules(&partial)
+            );
+        }
+    }
+
+    #[test]
+    fn list_separators_are_not_optional_between_members()
+    {
+        let repeated_edges: &[(&str, &str)] = &[("member", "member")];
+        let comma_edges: &[(&str, &str)] = &[(",", "member"), ("member", ",")];
+        let member_edges: &[(&str, &str)] = &[
+            (",", "member"),
+            (";", "member"),
+            ("member", ","),
+            ("member", ";"),
+        ];
+        let repeat_one: fn(Regex) -> Regex = repeat1;
+        for (assemble, expected, comma_closers) in [
+            (repeat_one, repeated_edges, 0_usize),
+            (comma1, comma_edges, 0),
+            (member_list, member_edges, 1),
+        ] {
+            let table = built_in_prec_table().expect("built-in bands");
+            let prec = table.prec(PrecName("expression.atom")).expect("atom band");
+            let rule = Rule::new(
+                RuleName("members"),
+                Sort::Expression,
+                prec,
+                assemble(Regex::tile(TileLabel("member"))),
+            );
+            let grammar = Pbg::build(table.into_dag(), vec![rule]).expect("member grammar");
+            let observed: BTreeSet<_> = grammar
+                .adjacencies()
+                .iter()
+                .map(|&(left, right)| {
+                    (
+                        grammar.mold(left).expect("left occurrence").label,
+                        grammar.mold(right).expect("right occurrence").label,
+                    )
+                })
+                .collect();
+            assert!(
+                observed.iter().copied().eq(expected.iter().copied()),
+                "{observed:?} != {expected:?}"
+            );
+            assert_eq!(
+                comma_closers,
+                grammar
+                    .candidates(TileLabel(","))
+                    .iter()
+                    .filter(|&&mold| bool::from(grammar.mold_is_form_last(mold)))
+                    .count()
+            );
+        }
+    }
 }

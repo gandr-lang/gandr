@@ -17,6 +17,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::ConversionCount;
@@ -156,7 +157,18 @@ impl fmt::Display for Exercised
     /// Writes each row with its count, in table order, separated by `; `.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every row's decimal count appears in table order, with a
+    ///   separator between adjacent entries and none after the last.
+    /// - fails: propagates a sink error without writing later entries.
+    /// - panics: none.
+    /// - executable: none — the formatter does not expose its written bytes,
+    ///   and the result alone cannot describe their content or order.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric counts, including the saturation ceiling,
+    ///   retain their numeric positions; no failing formatter is injected.
+    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
     #[inline]
     fn fmt(
         &self,
@@ -211,9 +223,13 @@ impl Exercised
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an empty count set misses every row, and a module
-    ///   carrying a known subset misses exactly the rest.
+    /// - hypothesis: L3 — an empty source misses every row, while
+    ///   representative settled declarations miss precisely the complement of
+    ///   their rows.
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    #[spec(ensures: |ref ret| ret.iter().copied().eq(
+        Row::ALL.into_iter().filter(|&row| usize::from(self.count(row)) == 0_usize)
+    ))]
     #[inline]
     #[must_use]
     pub fn missing(&self) -> Vec<Row>
@@ -234,9 +250,15 @@ impl Exercised
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two disjoint count sets are absorbed and every row
-    ///   asserted at its sum.
+    /// - hypothesis: L3 — overlapping and disjoint counts add independently;
+    ///   reaching and then exceeding the ceiling never wraps another row.
     /// - witness: `exercised::tests::absorbing_sums_every_row`
+    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
+    #[spec(
+        captures: [before = *self],
+        ensures: |_| Row::ALL.into_iter().all(|row| usize::from(self.count(row))
+            == usize::from(before.count(row)).saturating_add(usize::from(other.count(row))))
+    )]
     #[inline]
     pub fn absorb(
         &mut self,
@@ -271,13 +293,18 @@ impl Exercised
     /// - intension: walks each accepted body once with an explicit worklist.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one module per row, and a near miss beside each
-    ///   refusal row: a thunk refused below an unsigned definition's body,
-    ///   another former's shape refusal, an unsettled declaration carrying a
-    ///   row's shape.
+    /// - hypothesis: L3 — representative modules cover every row, repeated
+    ///   formers count once per declaration, unsettled declarations count
+    ///   nowhere, and settled near misses cannot masquerade as refusal rows.
+    ///   These cases do not exhaust core syntax or possible refusal payloads.
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
     /// - witness: `exercised::tests::an_unsettled_declaration_carries_no_row`
     /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+    #[spec(
+        captures: [settled = report.declarations().iter()
+            .filter(|declaration| declaration.settlement() == Settlement::Settled).count()],
+        ensures: |ref ret| Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= settled)
+    )]
     #[must_use]
     pub(crate) fn of(
         arena: &CoreArena,
@@ -299,7 +326,22 @@ impl Exercised
     /// Mark `row` as carried, at most once.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: `row` has count one, independently of its previous count;
+    ///   every other row is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested lambdas in one declaration mark its row once,
+    ///   whereas lambdas in different declarations contribute separately.
+    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    #[spec(
+        captures: [before = *self],
+        ensures: |_| Row::ALL.into_iter().all(|candidate| self.count(candidate)
+            == if candidate == row { DeclarationCount::from(1_usize) }
+                else { before.count(candidate) })
+    )]
     fn mark(
         &mut self,
         row: Row,
@@ -337,7 +379,32 @@ impl Exercised
 /// The rows one settled declaration carries, each counted once.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `declaration` reports `lowered` in `arena`; accepted bodies have
+///   finite acyclic reachable graphs. The worklist is disposable scratch.
+/// - ensures: each row contributes at most one. An owed declaration contributes
+///   only the obligation row; a guarded declaration contributes no row.
+///   Accepted bodies contribute formers and conversions, while refusals
+///   contribute their matching refusal row, never all refusals
+///   indiscriminately.
+/// - fails: absent arena nodes contribute no direction row.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — representative checked, synthesised, owed and refused
+///   declarations carry exact independent row counts; guarded outcomes and
+///   every core constructor are not separately generated here.
+/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+#[spec(ensures: |ref ret| {
+    Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
+        && match declaration.produced() {
+            Produced::Judged(Verdict::Owed(_)) => Row::ALL.into_iter().all(|row|
+                usize::from(ret.count(row)) == usize::from(row == Row::AddressableObligation)),
+            Produced::Guarded(_) => Row::ALL.into_iter().all(|row|
+                usize::from(ret.count(row)) == 0_usize),
+            _ => true,
+        }
+})]
 fn carried(
     arena: &CoreArena,
     declaration: &DeclarationReport<'_>,
@@ -366,7 +433,23 @@ fn carried(
 /// Mark the subsumption row when `conversions` counts a crossing.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a positive conversion count marks the subsumption row as one;
+///   zero leaves it unchanged. Every other row is unchanged.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — accepted conversions contribute independently of the four
+///   direction rows; refusal-only declarations contribute no bridge.
+/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+#[spec(
+    captures: [before = *rows],
+    ensures: |_| Row::ALL.into_iter().all(|row| rows.count(row)
+        == if row == Row::SubsumptionBridge && conversions > ConversionCount::default() {
+            DeclarationCount::from(1_usize)
+        } else { before.count(row) })
+)]
 fn bridged(
     conversions: ConversionCount,
     rows: &mut Exercised,
@@ -380,7 +463,33 @@ fn bridged(
 /// Mark the row a checker refusal witnesses, if any.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `refusal` describes `lowered`.
+/// - ensures: returner shape mismatches mark the shape row, unsynthesised
+///   lambdas mark the head row, and only an unsigned whole-body thunk marks the
+///   definition row. Other refusals and unrelated row counts are unchanged.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each selected refusal and settled near misses have exact
+///   counts; the table does not enumerate every unselected refusal variant.
+/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+#[spec(
+    captures: [before = *rows],
+    ensures: |_| {
+        let selected = match refusal {
+            CheckRefusal::ShapeMismatch { wanted: ExpectedShape::Returner, .. } => Some(Row::ShapeRefusal),
+            CheckRefusal::NotSynthesisable { form: CheckingForm::Lambda(_) } => Some(Row::NonSynthesisableHead),
+            CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(thunk) }
+                if matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk)
+                => Some(Row::NonSynthesisableDefinition),
+            _ => None,
+        };
+        Row::ALL.into_iter().all(|row| rows.count(row)
+            == if selected == Some(row) { DeclarationCount::from(1_usize) } else { before.count(row) })
+    }
+)]
 fn checking_row(
     refusal: CheckRefusal,
     lowered: &LoweredDeclaration<'_>,
@@ -435,7 +544,18 @@ fn checking_row(
 /// Whether `thunk` is the whole body of `lowered`, an unsigned definition.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing; identity is compared without dereferencing `thunk`.
+/// - ensures: whole exactly when the declaration is unsigned and its body id
+///   equals `thunk`. A signed body or any distinct id is inner.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — actual lowered declarations distinguish unsigned body
+///   identity from another thunk, a signed body, an owed signature and refusal.
+/// - witness: `exercised::tests::only_an_identical_unsigned_body_is_whole`
+#[spec(ensures: |ret| (ret == WholeBody::Whole)
+    == matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk))]
 fn is_whole_unsigned_body(
     lowered: &LoweredDeclaration<'_>,
     thunk: ValueId,
@@ -453,7 +573,32 @@ fn is_whole_unsigned_body(
 /// Mark the row a lowering refusal witnesses, if any.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: unresolved term names, unresolved type heads and reserved-form
+///   boundaries mark their respective rows once. Other refusals and every
+///   unrelated row are unchanged.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real source refusals distinguish the three selected
+///   classes from an unadmitted form; other unselected variants are not
+///   sampled.
+/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+#[spec(
+    captures: [before = *rows],
+    ensures: |_| {
+        let selected = match refusal {
+            LoweringRefusal::UnresolvedName { .. } => Some(Row::UndefinedTermName),
+            LoweringRefusal::UnresolvedTypeHead { .. } => Some(Row::UndefinedTypeHead),
+            LoweringRefusal::OutOfFragment { boundary: FragmentBoundary::Reserved, .. } => Some(Row::ReservedForm),
+            _ => None,
+        };
+        Row::ALL.into_iter().all(|row| rows.count(row)
+            == if selected == Some(row) { DeclarationCount::from(1_usize) } else { before.count(row) })
+    }
+)]
 fn lowering_row(
     refusal: LoweringRefusal<'_>,
     rows: &mut Exercised,
@@ -497,7 +642,29 @@ fn lowering_row(
 /// at `body`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the reachable graph is finite and acyclic; missing node ids are
+///   permitted. Checking acyclicity would duplicate the traversal.
+/// - ensures: discards old worklist entries and leaves it empty. Only the four
+///   direction rows can change, and only by being marked as one; a missing root
+///   leaves every row unchanged. Each reachable former marks its row,
+///   independently of its repetition or depth; other nodes mark no row.
+/// - fails: a missing node is ignored rather than classified as a former.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — admitted bodies exercise all four formers and repeated
+///   lambdas; a missing root cannot visit stale scratch or erase prior rows.
+///   Pair, injection, lift, bind and case wrappers are not separately sampled.
+/// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+/// - witness: `exercised::tests::a_missing_root_discards_stale_work`
+#[spec(
+    captures: [before = *rows, missing = arena.value(body).is_none()],
+    ensures: |_| worklist.is_empty() && Row::ALL.into_iter().all(|row|
+        rows.count(row) == before.count(row) || (!missing
+            && matches!(row, Row::LambdaChecks | Row::ReturnChecks
+                | Row::ForceSynthesises | Row::ApplicationSynthesises)
+            && usize::from(rows.count(row)) == 1_usize))
+)]
 fn formers(
     arena: &CoreArena,
     body: ValueId,
@@ -592,6 +759,7 @@ enum WholeBody
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationCount;
@@ -606,8 +774,18 @@ mod tests
     /// The rows `source`'s settled declarations carry under the fixture root.
     ///
     /// # Specification
+    /// - requires: the built-in grammar builds and `source` composes without an
+    ///   engine fault or whole-module refusal under the fixture root.
+    /// - ensures: the returned rows belong to the composed source; an empty
+    ///   source contributes zero to every row.
+    /// - panics: if the fixture violates the composition premise.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — real empty, accepted and refused source declarations
+    ///   have independent exact row expectations, not a second composition.
+    /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
+    #[spec(ensures: |ref ret| !source.as_ref().is_empty()
+        || Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) == 0_usize))]
     fn rows_of(source: SourceText<'_>) -> Exercised
     {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -622,8 +800,20 @@ mod tests
     /// The count set holding `rows`' counts and zero elsewhere.
     ///
     /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the last supplied count for a row wins; omitted rows are
+    ///   zero.
+    /// - fails: never.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric fixtures and a repeated row before the
+    ///   saturation boundary distinguish last-write precedence from addition.
+    /// - witness: `exercised::tests::absorbing_sums_every_row`
+    /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
+    #[spec(ensures: |ref ret| Row::ALL.into_iter().all(|row|
+        ret.count(row) == rows.iter().rev().find(|&&(candidate, _)| candidate == row)
+            .map_or_else(DeclarationCount::default, |&(_, count)| count)))]
     fn only(rows: &[(Row, DeclarationCount)]) -> Exercised
     {
         let mut exercised = Exercised::default();
@@ -636,7 +826,7 @@ mod tests
     #[test]
     fn a_module_carries_exactly_its_rows()
     {
-        let table = [
+        let table: &[(&str, &[(Row, usize)])] = &[
             (
                 r#"def answer : Integer ; def answer = 42 ;
 def identity : +U (Integer -> -F Integer) ;
@@ -645,7 +835,7 @@ def applied : +U (-F Integer) ;
 def applied = thunk { (force identity)(answer) } ;
 def konst : +U (Integer -> Integer -> -F Integer) ;
 def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
-                vec![
+                &[
                     (Row::LambdaChecks, 2_usize),
                     (Row::ReturnChecks, 2_usize),
                     (Row::ForceSynthesises, 1_usize),
@@ -653,55 +843,55 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                     (Row::SubsumptionBridge, 4_usize),
                 ],
             ),
-            (r#"@[ refuses("UnresolvedName") ] def a = missing ;"#, vec![
-                (Row::UndefinedTermName, 1_usize),
-            ]),
+            (r#"@[ refuses("UnresolvedName") ] def a = missing ;"#, &[(
+                Row::UndefinedTermName,
+                1_usize,
+            )]),
             (
                 r#"@[ refuses("UnresolvedTypeHead") ] def a : Natural ;"#,
-                vec![(Row::UndefinedTypeHead, 1_usize)],
+                &[(Row::UndefinedTypeHead, 1_usize)],
             ),
             (
                 r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { ret 3 } ;"#,
-                vec![(Row::ShapeRefusal, 1_usize)],
+                &[(Row::ShapeRefusal, 1_usize)],
             ),
             (
                 r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { (fn (x) { ret x })(3) } ;"#,
-                vec![(Row::NonSynthesisableHead, 1_usize)],
+                &[(Row::NonSynthesisableHead, 1_usize)],
             ),
             (
                 r#"@[ refuses("NotSynthesisable") ] def a = thunk { ret 3 } ;"#,
-                vec![(Row::NonSynthesisableDefinition, 1_usize)],
+                &[(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
                 r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
-                vec![(Row::ReservedForm, 1_usize)],
+                &[(Row::ReservedForm, 1_usize)],
             ),
-            (r#"@[ owes(1) ] def a : Integer ;"#, vec![(
+            (r#"@[ owes(1) ] def a : Integer ;"#, &[(
                 Row::AddressableObligation,
                 1_usize,
             )]),
         ];
-        for (source, rows) in table {
+        for &(source, rows) in table {
             let carried = rows_of(SourceText::from(source));
-            let counted: Vec<(Row, DeclarationCount)> = rows
-                .iter()
-                .map(|&(row, count)| (row, DeclarationCount::from(count)))
-                .collect();
-            assert_eq!(carried, only(&counted), "{source}");
-            let missing: Vec<Row> = Row::ALL
-                .into_iter()
-                .filter(|row| !rows.iter().any(|&(carried, _)| carried == *row))
-                .collect();
-            assert_eq!(
-                carried.missing(),
-                missing,
+            for row in Row::ALL {
+                let expected = rows
+                    .iter()
+                    .find(|&&(candidate, _)| candidate == row)
+                    .map_or(0_usize, |&(_, count)| count);
+                assert_eq!(usize::from(carried.count(row)), expected, "{source}: {row}");
+            }
+            assert!(
+                carried.missing().into_iter().eq(Row::ALL
+                    .into_iter()
+                    .filter(|row| !rows.iter().any(|&(carried, _)| carried == *row))),
                 "{source} misses every other row"
             );
         }
         assert_eq!(
-            Exercised::default().missing(),
-            Row::ALL.to_vec(),
-            "an empty run misses every row"
+            rows_of(SourceText::from("")).missing().as_slice(),
+            &Row::ALL,
+            "an empty source misses every row"
         );
     }
 
@@ -725,15 +915,28 @@ def d : Integer ;
     #[test]
     fn a_near_miss_carries_no_refusal_row()
     {
-        let rows = rows_of(SourceText::from(
+        let grammar = built_in().expect("the built-in grammar builds");
+        let source = SourceText::from(
             r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { force (thunk { ret 3 }) } ;
 @[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { ret 3 } ;
 @[ refuses("OutOfFragment") ] def c = fn (x) { ret x } ;"#,
+        );
+        let mut lowerings = LoweringCount::default();
+        let Composed::Settled {
+            report, exercised, ..
+        } = compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings)
+            .expect("the near misses compose")
+        else {
+            panic!("the near misses lower")
+        };
+        assert_eq!(report.declarations().len(), 3_usize);
+        assert!(report.declarations().iter().all(
+            |declaration| declaration.settlement() == gandr_surface_corpus::Settlement::Settled
         ));
         assert_eq!(
-            rows,
+            exercised,
             Exercised::default(),
-            "a thunk below the body, a thunk's shape refusal and an unadmitted form witness none of the rows"
+            "settled near misses carry no refusal row"
         );
     }
 
@@ -762,6 +965,116 @@ def d : Integer ;
                 | Row::NonSynthesisableDefinition => 0_usize,
             };
             assert_eq!(left.count(row), DeclarationCount::from(expected), "{row}");
+        }
+    }
+    #[test]
+    fn absorption_saturates_and_preserves_other_rows()
+    {
+        let mut left = only(&[
+            (Row::LambdaChecks, DeclarationCount::from(2_usize)),
+            (
+                Row::LambdaChecks,
+                DeclarationCount::from(usize::MAX - 1_usize),
+            ),
+            (Row::ReservedForm, DeclarationCount::from(7_usize)),
+        ]);
+        let right = only(&[
+            (Row::LambdaChecks, DeclarationCount::from(1_usize)),
+            (Row::AddressableObligation, DeclarationCount::from(1_usize)),
+        ]);
+        for obligations in 1_usize ..= 2_usize {
+            left.absorb(&right);
+            assert_eq!(usize::from(left.count(Row::LambdaChecks)), usize::MAX);
+            assert_eq!(
+                usize::from(left.count(Row::AddressableObligation)),
+                obligations
+            );
+            assert_eq!(usize::from(left.count(Row::ReservedForm)), 7_usize);
+        }
+        let rendered = left.to_string();
+        assert!(
+            rendered
+                .split(|character: char| !character.is_ascii_digit())
+                .filter_map(|digits| digits.parse::<usize>().ok())
+                .eq(Row::ALL.into_iter().map(|row| usize::from(left.count(row))))
+        );
+    }
+
+    #[test]
+    fn a_missing_root_discards_stale_work()
+    {
+        let mut foreign = gandr_core_term::CoreArena::new();
+        let unit = foreign.value_unit();
+        let returned = foreign.computation_return(unit);
+        let missing = foreign.value_thunk(returned);
+        let mut arena = gandr_core_term::CoreArena::new();
+        let local = arena.value_unit();
+        let stale = arena.computation_force(local);
+        assert!(
+            arena.value(missing).is_none(),
+            "the root is outside this arena"
+        );
+        let mut worklist = vec![super::Node::Computation(stale)];
+        let mut rows = only(&[(Row::ReservedForm, DeclarationCount::from(1_usize))]);
+        let before = rows;
+        super::formers(&arena, missing, &mut worklist, &mut rows);
+        assert_eq!(
+            rows, before,
+            "neither stale force nor missing root carries a row"
+        );
+        assert!(
+            worklist.is_empty(),
+            "scratch is exhausted even for a missing root"
+        );
+    }
+
+    #[test]
+    fn only_an_identical_unsigned_body_is_whole()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let source = SourceText::from(
+            "def whole = thunk { ret 1 } ; def other = thunk { ret 2 } ;
+             def signed : +U (-F Integer) ; def signed = thunk { ret 3 } ;
+             def owed : Integer ; def refused = missing ;",
+        );
+        let mut lowerings = LoweringCount::default();
+        let lowering = crate::compose::lower_source(&grammar, source, &mut lowerings)
+            .expect("the identity fixtures parse and lower");
+        let crate::compose::Lowered::Module { module, .. } = lowering.into_lowered()
+        else {
+            panic!("the module is admitted")
+        };
+        let [ref whole, ref other, ref signed, ref owed, ref refused] = *module.declarations()
+        else {
+            panic!("the five declarations retain their positions")
+        };
+        let gandr_surface_lowering::DeclarationOutcome::Bodied { body } = whole.outcome()
+        else {
+            panic!("whole is unsigned")
+        };
+        let gandr_surface_lowering::DeclarationOutcome::Bodied { body: another } = other.outcome()
+        else {
+            panic!("other is unsigned")
+        };
+        let gandr_surface_lowering::DeclarationOutcome::Completed {
+            body: signed_body, ..
+        } = signed.outcome()
+        else {
+            panic!("signed is completed")
+        };
+        assert_eq!(
+            super::is_whole_unsigned_body(whole, body),
+            super::WholeBody::Whole
+        );
+        assert_eq!(
+            super::is_whole_unsigned_body(whole, another),
+            super::WholeBody::Inner
+        );
+        for (declaration, candidate) in [(signed, signed_body), (owed, body), (refused, body)] {
+            assert_eq!(
+                super::is_whole_unsigned_body(declaration, candidate),
+                super::WholeBody::Inner
+            );
         }
     }
 }

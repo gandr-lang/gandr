@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_grammar::Pbg;
@@ -64,10 +65,18 @@ impl Ran<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a source of each kind is run and its status asserted.
+    /// - hypothesis: L3 — real values, blame, refusal, empty programs and an
+    ///   unrunnable type distinguish the three statuses. These fixtures do not
+    ///   enumerate every machine or readback failure.
     /// - witness: `script::tests::each_kind_of_source_has_its_status`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match *self {
+        Self::Refused | Self::NoProgram => matches!(ret, RunStatus::Unreached),
+        Self::Evaluated { ref evaluation, .. } => matches!((evaluation.status(), ret),
+            (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
+                | (RunStatus::Unreached, RunStatus::Unreached)),
+    })]
     pub const fn status(&self) -> RunStatus
     {
         match *self {
@@ -91,10 +100,37 @@ impl Ran<'_>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a source of each kind is run and its exact outcome
-///   asserted, an owed declaration beside a runnable target among them.
+/// - hypothesis: L3 — a refused source, an empty program and a last named
+///   target beside an unrelated goal have exact run outcomes. Value and blame
+///   fixtures distinguish reaching the machine from refusal; arbitrary programs
+///   and resource failures are outside this finite set.
 /// - witness: `script::tests::each_kind_of_source_has_its_status`
 #[inline]
+#[spec(
+    captures: [
+        was_refused = match *composed {
+            Composed::Refused(_) => true,
+            Composed::Settled { ref report, .. } => report.declarations().iter()
+                .any(|declaration| !matches!(declaration.produced().refusal(),
+                    Maybe::Absent(produced_refusal::Absent::Unrefused))),
+        },
+        expected_target = match *composed {
+            Composed::Settled { ref program, .. } => match program.target() {
+                Maybe::Present(target) => match program.name(target) {
+                    Maybe::Present(name) => Some(name),
+                    Maybe::Absent(_) => None,
+                },
+                Maybe::Absent(_) => None,
+            },
+            Composed::Refused(_) => None,
+        },
+    ],
+    ensures: |ref ret| match *ret {
+        Ran::Refused => was_refused,
+        Ran::NoProgram => !was_refused && expected_target.is_none(),
+        Ran::Evaluated { target, .. } => !was_refused && expected_target == Some(target),
+    },
+)]
 pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
 {
     let Composed::Settled {
@@ -132,8 +168,9 @@ pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar the source is parsed under.
-/// - ensures: [`compose()`](crate::compose()) under the strict root, then
-///   [`execute`]; `lowerings` is exactly one more.
+/// - ensures: composes under the strict root, then executes the resulting
+///   program. Once parsing succeeds, the lowering count increases by one with
+///   saturation; a parse refusal leaves it unchanged.
 /// - provides: the run of source text, with no file.
 /// - fails: as [`compose()`](crate::compose()).
 /// - panics: none.
@@ -142,9 +179,19 @@ pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
 /// The [`ComposeFault`] [`compose()`](crate::compose()) meets.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — source text holding a computation runs to its value.
+/// - hypothesis: L3 — a real computation runs to its value and successive
+///   empty-program compositions reach and remain at the maximum lowering count.
+///   The parse-error counter branch is stated by the predicate, not
+///   independently triggered by these valid built-in-grammar fixtures.
 /// - witness: `run::run::run_source_runs_source_text`
+/// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
+#[spec(
+    captures: [before = usize::from(*lowerings)],
+    ensures: |ref ret| usize::from(*lowerings) == if matches!(*ret, Err(ComposeFault::Parse(_))) {
+        before
+    } else { before.saturating_add(1_usize) },
+)]
 pub fn run_source<'source>(
     grammar: &Pbg,
     source: SourceText<'source>,
@@ -196,11 +243,20 @@ impl ScriptRun<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an absent path and a source of each kind.
+    /// - hypothesis: L3 — an absent path directly observes the fault status;
+    ///   file-backed value and refusal runs observe the source status. These
+    ///   are finite examples, not every nested evaluation failure.
     /// - witness: `run::run::run_source_file_reports_the_path_of_an_absent_file`
-    /// - witness: `script::tests::each_kind_of_source_has_its_status`
+    /// - witness: `run::run::run_source_file_runs_a_script_file`
+    /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match *self {
+        Self::Fault { .. } => matches!(ret, RunStatus::Unreached),
+        Self::Source { ref ran, .. } => matches!((ran.status(), ret),
+            (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
+                | (RunStatus::Unreached, RunStatus::Unreached)),
+    })]
     pub const fn status(&self) -> RunStatus
     {
         match *self {
@@ -258,14 +314,24 @@ impl Script
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a script file, one starting with a shebang line, an
-    ///   absent path and a source failing before the machine, each asserted at
-    ///   its exact outcome against the same text run with no file.
+    /// - hypothesis: L3 — real file, shebang, missing-file and source-refusal
+    ///   fixtures assert their paths and outcomes. L2 comparisons with the same
+    ///   in-memory source cover pipeline agreement, not an independent oracle
+    ///   for arbitrary programs or all filesystem failures.
     /// - witness: `run::run::run_source_file_runs_a_script_file`
     /// - witness: `run::run::run_source_file_accepts_an_executable_shebang_line`
     /// - witness: `run::run::run_source_file_reports_the_path_of_an_absent_file`
     /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
+    #[spec(
+        captures: [expected_path = self.path.as_path()],
+        ensures: |ref ret| match *ret {
+            ScriptRun::Fault { path, .. } => path == expected_path,
+            ScriptRun::Source { step: Step::Source { path, root, ref composed, standing, .. }, .. } =>
+                path == expected_path && standing == Standing::of(root, composed),
+            ScriptRun::Source { step: Step::Fault { .. }, .. } => false,
+        },
+    )]
     pub fn run(&mut self) -> ScriptRun<'_>
     {
         let root = match read_source(&self.path, &mut self.text) {
@@ -386,5 +452,22 @@ mod tests
             matches!(evaluation, Evaluation::Value(_)),
             "the run returned a value"
         );
+    }
+
+    #[test]
+    fn run_source_counts_lowerings_with_saturation()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let mut lowerings = LoweringCount::from(usize::MAX.saturating_sub(1));
+        for _ in 0_usize .. 2 {
+            let (_, ran) = run_source(
+                &grammar,
+                SourceText::from("// nothing to run"),
+                &mut lowerings,
+            )
+            .expect("an empty program composes");
+            assert_eq!(Ran::NoProgram, ran);
+            assert_eq!(usize::MAX, usize::from(lowerings));
+        }
     }
 }

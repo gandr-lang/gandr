@@ -18,6 +18,7 @@ Coherent resolution of a cell rewriting system: firing a cell under the alphabet
 - [Supplied overlaps](#supplied-overlaps)
 - [Replay reuse](#replay-reuse)
 - [Boundary wrappers](#boundary-wrappers)
+- [Executable specifications](#executable-specifications)
 - [License](#license)
 
 <!-- tocstop -->
@@ -196,6 +197,12 @@ The crate keeps no memo of replay outcomes: every `replay` re-fires every step. 
 ## Boundary wrappers
 
 The crate owns the nominal wrappers its own signatures cross: budgets, indices and verdicts. The substrate keeps its own counts and decisions, which this crate reads; a budget in the substrate would make every engine's budget a substrate change. A wrapper two crates must exchange by value moves to the lower one.
+
+## Executable specifications
+
+The item specifications pair executable `#[spec]` predicates with local `# Adequacy` witnesses. Enforced runs check rewrite order and budgets, overlap and certificate support, preserved completion state, and the exact successful replay prefix before a typed refusal. The boundary witnesses include empty schedules and support, interrupted batches, independently failing replay legs, and fusion retries that preserve the store and identifier.
+
+The test-only numeral strategy is the sole executable exemption: the pinned attribute cannot name its opaque `impl Strategy` return in a generated predicate signature. The fusion differential independently checks every generated input through borrowed producer views and its size, rejecting metavariables, wrong constructors or arities, and values outside zero through 63 successors. The exemption ends when opaque returns are supported.
 
 ## License
 

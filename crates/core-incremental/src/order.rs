@@ -18,6 +18,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_theory_orders::OrderError;
 use gandr_theory_orders::OrderMaintenance;
 use gandr_theory_orders::Pos;
@@ -40,11 +41,43 @@ quenchant_shape::reason_enum! {
 }
 
 /// An item's identity across revisions of one session.
+///
+/// # Specification
+/// - requires: interpreted against a session's current item order.
+/// - ensures: keeping an item preserves its handle; removal or movement makes
+///   its old handle stale, and another session cannot use it.
+/// - panics: none.
+/// - executable: none — liveness, ownership and ordering require the owning
+///   order and its revision history, not just the carried position.
+///
+/// # Adequacy
+/// - hypothesis: L3 — insertion, deletion, a move and a foreign session
+///   distinguish lost identity and stale or foreign aliasing by exact handle
+///   equality, references and comparison results.
+/// - witness: `order::tests::a_handle_survives_an_insertion_before_its_item`
+/// - witness: `order::tests::a_deleted_items_handle_goes_stale`
+/// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
+/// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ItemHandle(Pos);
 
 /// What one splice did to the order.
+///
+/// # Specification
+/// - requires: interpreted with the base and edited sequences of one splice.
+/// - ensures: kept plus removed counts the base; kept plus inserted counts the
+///   edited sequence.
+/// - panics: none.
+/// - executable: none — the two input sequences are absent from the census; the
+///   splice predicate checks the count equations at its return boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, fresh, deleted and unchanged orders plus a swap
+///   distinguish missing or crossed counters by exact census values and handle
+///   survival.
+/// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+/// - witness: `order::tests::handles_compare_in_the_edited_order`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct SpliceCensus
 {
@@ -57,6 +90,24 @@ pub struct SpliceCensus
 }
 
 /// The order of the latest revision's items, one handle per item.
+///
+/// # Specification
+/// - requires: handle operations use this order's current revision.
+/// - ensures: every current item has a distinct handle; edits preserve a
+///   longest subsequence's handles and retire every other base handle.
+/// - panics: none.
+/// - executable: none — preservation compares revisions; the data value holds
+///   only the current order, and splice predicates check its transition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — duplicate payloads at seeding and insertion, deletion,
+///   swap and move transitions distinguish value-based identity, incorrect
+///   preservation and stale aliases through handles and lookups. The witnesses
+///   exercise small orders, not allocator or identifier ceilings.
+/// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
+/// - witness: `order::tests::a_handle_survives_an_insertion_before_its_item`
+/// - witness: `order::tests::a_deleted_items_handle_goes_stale`
+/// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
 #[repr(transparent)]
 pub struct ItemOrder
 {
@@ -76,6 +127,23 @@ impl ItemOrder
     ///
     /// # Errors
     /// The order-maintenance structure's own refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and three-entry sequences with duplicate
+    ///   references distinguish dropped occurrences, shared handles and wrong
+    ///   ordering through exact payloads and comparisons. Construction and
+    ///   capacity refusals belong to the underlying order; these finite
+    ///   witnesses do not exhaust its identifiers or storage.
+    /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
+    /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+    #[spec(ensures: |ret| match ret {
+        Ok((ref order, ref handles)) => handles.len() == references.len()
+            && handles.iter().zip(references).all(|(&handle, reference)|
+                order.order.get(handle.0) == Some(reference))
+            && handles.windows(2).all(|pair| pair.first().zip(pair.last())
+                .is_some_and(|(&left, &right)| order.order.cmp(left.0, right.0) == Some(Ordering::Less))),
+        Err(_) => true,
+    })]
     pub fn seeded(references: &[Reference]) -> Result<(Self, Vec<ItemHandle>), OrderError>
     {
         let mut order = OrderMaintenance::new()?;
@@ -110,14 +178,34 @@ impl ItemOrder
     /// The order-maintenance structure's own refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the keep rule, the removal and the
-    ///   placement of fresh handles, separated by an insertion before an item,
-    ///   a deletion, a swap and a move to the front, each asserted by handle
-    ///   equality, staleness and the order the handles compare in.
+    /// - hypothesis: L2 — the preserved-run helper is compared to exhaustive
+    ///   subset search on four-slot words with distinct present positions from
+    ///   zero through three. L3 insertion, deletion, swap, move, empty and
+    ///   unchanged orders distinguish incorrect placement, census and
+    ///   retirement through exact handles, references and comparisons.
+    ///   Allocation and identifier ceilings of the underlying order remain
+    ///   outside this finite domain.
+    /// - witness: `order::tests::preserved_runs_match_an_exhaustive_subsequence_oracle`
     /// - witness: `order::tests::a_handle_survives_an_insertion_before_its_item`
     /// - witness: `order::tests::a_deleted_items_handle_goes_stale`
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
+    /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+    #[spec(
+        requires: base.len() == base_references.len()
+            && base.iter().zip(base_references).all(|(&handle, &reference)|
+                self.order.get(handle.0) == Some(reference)),
+        ensures: |ret| match ret {
+            Ok((ref handles, census)) => handles.len() == edited.len()
+                && usize::from(census.kept).checked_add(usize::from(census.removed)) == Some(base.len())
+                && usize::from(census.kept).checked_add(usize::from(census.inserted)) == Some(edited.len())
+                && handles.iter().zip(edited).all(|(&handle, reference)|
+                    self.order.get(handle.0) == Some(reference))
+                && handles.windows(2).all(|pair| pair.first().zip(pair.last())
+                    .is_some_and(|(&left, &right)| self.order.cmp(left.0, right.0) == Some(Ordering::Less))),
+            Err(_) => true,
+        },
+    )]
     pub fn splice(
         &mut self,
         base: &[ItemHandle],
@@ -195,6 +283,19 @@ impl ItemOrder
     /// - provides: `handle::Absent::Stale` when either handle no longer names
     ///   an item.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal and reversed live pairs, with each operand
+    ///   separately stale or foreign and both operands the same invalid handle,
+    ///   distinguish inverted order, premature equality and one-sided
+    ///   validation by exact comparison variants.
+    /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
+    /// - witness: `order::tests::handles_compare_in_the_edited_order`
+    /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
+    #[spec(ensures: |ret| self.order.cmp(left.0, right.0).map_or_else(
+        || ret == Maybe::Absent(handle::Absent::Stale),
+        |ordering| ret == Maybe::Present(ordering),
+    ))]
     pub fn compare(
         &self,
         left: ItemHandle,
@@ -215,6 +316,18 @@ impl ItemOrder
     ///   handle.
     /// - provides: `handle::Absent::Stale` for a handle no longer in the order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — duplicate live payloads, deleted handles and handles
+    ///   from another order distinguish wrong payloads and accidental aliasing
+    ///   by exact returned references or named absence.
+    /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
+    /// - witness: `order::tests::a_deleted_items_handle_goes_stale`
+    /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
+    #[spec(ensures: |ret| self.order.get(handle.0).map_or_else(
+        || ret == Maybe::Absent(handle::Absent::Stale),
+        |reference| ret == Maybe::Present(reference),
+    ))]
     pub fn reference(
         &self,
         handle: ItemHandle,
@@ -242,6 +355,29 @@ struct BasePosition(usize);
 /// - panics: none.
 /// - intension: patience sorting: one binary search per entry, then one walk
 ///   back along the predecessor links.
+///
+/// # Adequacy
+/// - hypothesis: L2 — enumerate all four-slot words over positions zero through
+///   three and absence, admitting only distinct present positions. Independent
+///   subset search supplies maximal length; input-order membership checks
+///   distinguish a wrong predecessor chain or descending selection. L3 also
+///   covers the empty slice. Larger input classes are not exhausted.
+/// - witness: `order::tests::preserved_runs_match_an_exhaustive_subsequence_oracle`
+#[spec(ensures: |ret| {
+    let mut previous = None;
+    let mut selected = 0_usize;
+    let mut ascending = true;
+    for &position in positions {
+        if let Maybe::Present(position) = position
+            && ret.contains(&position)
+        {
+            ascending &= previous.is_none_or(|earlier| earlier < position);
+            previous = Some(position);
+            selected = selected.saturating_add(1);
+        }
+    }
+    ascending && selected == ret.len()
+})]
 fn longest_preserved_run(
     positions: &[Maybe<BasePosition, handle::Absent>]
 ) -> BTreeSet<BasePosition>
@@ -282,6 +418,7 @@ mod tests
     use alloc::vec::Vec;
     use core::cmp::Ordering;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::ItemOrder;
@@ -314,7 +451,26 @@ mod tests
     /// Splice an order seeded with `base` to `edited`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: each name list is distinct, and the order can admit the
+    ///   finite fixture.
+    /// - ensures: returns the seeded and edited handles and the exact splice
+    ///   census, with the order in the edited state.
+    /// - panics: when seeding or splicing refuses the fixture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — insertion, deletion, swap, move, empty and unchanged
+    ///   fixtures distinguish incorrect state assembly by exact handle and
+    ///   census observations. These inputs do not induce underlying capacity
+    ///   refusals.
+    /// - witness: `order::tests::a_handle_survives_an_insertion_before_its_item`
+    /// - witness: `order::tests::a_deleted_items_handle_goes_stale`
+    /// - witness: `order::tests::handles_compare_in_the_edited_order`
+    /// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
+    /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
+    #[spec(ensures: |ret| ret.1.len() == base.len()
+        && ret.2.len() == edited.len()
+        && usize::from(ret.3.kept).checked_add(usize::from(ret.3.removed)) == Some(base.len())
+        && usize::from(ret.3.kept).checked_add(usize::from(ret.3.inserted)) == Some(edited.len()))]
     fn spliced(
         base: &[Name],
         edited: &[Name],
@@ -424,5 +580,166 @@ mod tests
             Maybe::Present(Ordering::Less),
             "e moved to the front"
         );
+    }
+
+    #[test]
+    fn seeding_preserves_duplicate_payloads_with_distinct_handles()
+    {
+        let payloads = references(&[Name("a"), Name("a"), Name("b")]);
+        let (order, handles) = ItemOrder::seeded(&payloads).expect("three entries");
+        assert_eq!(handles.len(), 3);
+        for (&handle, reference) in handles.iter().zip(&payloads) {
+            assert_eq!(order.reference(handle), Maybe::Present(reference));
+        }
+        let first = handles[0];
+        let repeated = handles[1];
+        assert_ne!(first, repeated);
+        assert_eq!(order.compare(first, first), Maybe::Present(Ordering::Equal));
+        assert_eq!(
+            order.compare(first, repeated),
+            Maybe::Present(Ordering::Less)
+        );
+        assert_eq!(
+            order.compare(repeated, first),
+            Maybe::Present(Ordering::Greater)
+        );
+    }
+
+    #[test]
+    fn comparisons_refuse_stale_and_foreign_operands()
+    {
+        let (order, before, after, _) = spliced(&[Name("a"), Name("b")], &[Name("a")]);
+        let (_, foreign) = ItemOrder::seeded(&references(&[Name("a")])).expect("foreign order");
+        let live = after[0];
+        let stale = before[1];
+        let foreign = foreign[0];
+        assert_eq!(
+            order.reference(foreign),
+            Maybe::Absent(handle::Absent::Stale)
+        );
+        for (left, right) in [
+            (live, stale),
+            (stale, live),
+            (stale, stale),
+            (live, foreign),
+            (foreign, live),
+            (foreign, foreign),
+        ] {
+            assert_eq!(
+                order.compare(left, right),
+                Maybe::Absent(handle::Absent::Stale)
+            );
+        }
+    }
+
+    #[test]
+    fn empty_and_unchanged_splices_have_exact_censuses()
+    {
+        for (base, edited, (kept, inserted, removed)) in [
+            (&[][..], &[][..], (0_usize, 0_usize, 0_usize)),
+            (&[][..], &[Name("a")][..], (0, 1, 0)),
+            (&[Name("a")][..], &[][..], (0, 0, 1)),
+            (
+                &[Name("a"), Name("b")][..],
+                &[Name("a"), Name("b")][..],
+                (2, 0, 0),
+            ),
+        ] {
+            let (order, before, after, census) = spliced(base, edited);
+            assert_eq!(census, super::SpliceCensus {
+                kept: ItemCount::from(kept),
+                inserted: ItemCount::from(inserted),
+                removed: ItemCount::from(removed),
+            });
+            assert_eq!(after.len(), edited.len());
+            if inserted == 0 && removed == 0 {
+                assert_eq!(before, after);
+            }
+            for (&handle, name) in after.iter().zip(edited) {
+                assert!(
+                    matches!(order.reference(handle), Maybe::Present(&Reference::Item { ref key, occurrence })
+                    if key.as_ref() == name.0.as_bytes() && usize::from(occurrence) == 0)
+                );
+            }
+            for old in before {
+                if !after.contains(&old) {
+                    assert_eq!(order.reference(old), Maybe::Absent(handle::Absent::Stale));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn preserved_runs_match_an_exhaustive_subsequence_oracle()
+    {
+        assert_eq!(
+            super::longest_preserved_run(&[]),
+            alloc::collections::BTreeSet::new()
+        );
+        for word in 0_usize .. 625 {
+            let mut rest = word;
+            let positions: [Maybe<super::BasePosition, handle::Absent>; 4] =
+                core::array::from_fn(|_| {
+                    let digit = rest.checked_rem(5).expect("nonzero radix");
+                    rest = rest.checked_div(5).expect("nonzero radix");
+                    if digit == 4 {
+                        Maybe::Absent(handle::Absent::Stale)
+                    }
+                    else {
+                        Maybe::Present(super::BasePosition(digit))
+                    }
+                });
+            if positions.iter().enumerate().any(|(index, &position)| {
+                matches!(position, Maybe::Present(_))
+                    && positions
+                        .iter()
+                        .skip(index.saturating_add(1))
+                        .any(|&later| later == position)
+            }) {
+                continue;
+            }
+            let mut longest = 0_usize;
+            for mask in 0_usize .. 16 {
+                let mut previous = None;
+                let mut length = 0_usize;
+                let mut ascending = true;
+                for (slot, &position) in positions.iter().enumerate() {
+                    let bit = 1_usize
+                        .checked_shl(u32::try_from(slot).expect("four slots"))
+                        .expect("bounded shift");
+                    if mask & bit == 0 {
+                        continue;
+                    }
+                    match position {
+                        | Maybe::Present(position) => {
+                            ascending &= previous.is_none_or(|earlier| earlier < position);
+                            previous = Some(position);
+                            length = length.saturating_add(1);
+                        },
+                        | Maybe::Absent(_) => ascending = false,
+                    }
+                }
+                if ascending {
+                    longest = longest.max(length);
+                }
+            }
+            let actual = super::longest_preserved_run(&positions);
+            assert_eq!(actual.len(), longest, "optimal length for {positions:?}");
+            let mut previous = None;
+            let mut observed = 0_usize;
+            for position in positions {
+                if let Maybe::Present(position) = position
+                    && actual.contains(&position)
+                {
+                    assert!(
+                        previous.is_none_or(|earlier| earlier < position),
+                        "subsequence of {positions:?}"
+                    );
+                    previous = Some(position);
+                    observed = observed.saturating_add(1);
+                }
+            }
+            assert_eq!(observed, actual.len(), "membership for {positions:?}");
+        }
     }
 }

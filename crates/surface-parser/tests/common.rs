@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::ByteSpan;
@@ -22,8 +23,18 @@ use gandr_surface_syntax::SyntaxTree;
 /// the cost of `built_in()` a grammar-touching test pays.
 ///
 /// # Specification
-/// - panics: when the built-in grammar fails to assemble, which its own suite
-///   rules out.
+/// - ensures: the shared grammar declares definitions, returns and grouping.
+/// - panics: when the built-in grammar fails to assemble.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — real definitions, returns and grouped expressions
+///   exercise the shared grammar; missing terminal menus and malformed
+///   productions change the observed repairs. Other built-in forms are covered
+///   by the corpus.
+/// - witness: `tests::acceptance::core_forms_are_clean`
+/// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+#[spec(ensures: |ret| ["def", "ret", "(", ")"].into_iter().all(|label| !ret.candidates(gandr_surface_grammar::TileLabel(label)).is_empty()))]
 pub fn built() -> &'static Pbg
 {
     /// The process-wide cached grammar.
@@ -47,7 +58,16 @@ pub fn children(
 /// The immediate children of the node at `at` that are not layout, in order.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns immediate children in their original order, excluding
+///   exactly Space labels; an absent node has no children.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested real forms retain their significant children
+///   despite layout; the observer is the child-label and source-text sequence,
+///   not its length. Filtering a token or retaining layout changes the oracle.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[spec(ensures: |ret| ret.iter().copied().eq(tree.children(at).filter(|&child| tree.node(child).map(Node::label) != Some(NodeLabel::Space))))]
 pub fn significant_children(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -86,7 +106,15 @@ pub fn span(
 /// node.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the node fragment, or empty text if no valid fragment
+///   exists.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — real UTF-8 token fragments, layout and an absent index
+///   distinguish byte slicing, empty fallback and whitespace loss.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[spec(ensures: |ret| ret.as_str() == tree.fragment(at).map_or("", <&str>::from))]
 pub fn text(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -119,9 +147,19 @@ pub fn corpus_root() -> PathBuf
 /// Every `.gandr` file under `dir`, sorted.
 ///
 /// # Specification
-/// - ensures: a walk of `dir` and its subdirectories, unreadable entries
-///   skipped, the paths sorted so a run is deterministic.
+/// - ensures: recursively returns only .gandr paths rooted under dir, sorted
+///   lexicographically; unreadable directories and entries are skipped.
 /// - panics: none.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — the real corpus contains strict and nested fixture
+///   sources plus non-source files. Exact representative paths, ordering,
+///   extensions and a non-directory root distinguish shallow walks, unsorted
+///   output and leaking read failures; filesystem permission races are outside
+///   the deterministic witness.
+/// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
+#[spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left <= right)))]
 pub fn gandr_files(dir: &Path) -> Vec<PathBuf>
 {
     let mut out = Vec::new();

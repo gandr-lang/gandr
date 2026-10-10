@@ -23,6 +23,8 @@ use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 use core::num::TryFromIntError;
 
+use anodized::spec;
+
 use crate::Fingerprint;
 use crate::FingerprintByte;
 use crate::FingerprintWord64;
@@ -118,6 +120,17 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - requires: nothing.
     /// - ensures: the same nonterminal always has the same sort.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the concrete vocabulary's sort aliases, L3 closure
+    ///   verdicts distinguish merging different sorts and confusing sort with
+    ///   identity. Finite same-process fixtures do not establish callback
+    ///   stability for arbitrary implementations.
+    /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+    /// - witness: `tests::walk::same_sort_bounds_different_identity_continuation_is_suppressed`
     fn nonterminal_sort(nonterminal: &Self::Nonterminal) -> Self::Sort;
 
     /// Reports a nonterminal's bounds.
@@ -126,6 +139,16 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - requires: nothing.
     /// - ensures: the same nonterminal always has the same bounds.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For aliases sharing a sort but differing in bounds, L3
+    ///   opposite seen-key verdicts distinguish losing the bounds refinement.
+    ///   The fixture vocabulary is covered, not cross-call stability of
+    ///   arbitrary implementations.
+    /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
     fn nonterminal_bounds(nonterminal: &Self::Nonterminal) -> Self::Bounds;
 
     /// Reports a stance's sort.
@@ -134,6 +157,17 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - requires: nothing.
     /// - ensures: the same stance always has the same sort.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For top and interior stance sorts in the fixture
+    ///   vocabulary, L3 exact canonical rows distinguish wrong sort selection
+    ///   and key priority. Arbitrary callback stability and every possible
+    ///   canonical tie are outside these finite observations.
+    /// - witness: `tests::walk::canonical_top_key_requires_zero_height_prefix`
+    /// - witness: `tests::walk::canonical_mid_key_requires_strict_interior_count`
     fn stance_sort(stance: &Self::Stance) -> Self::Sort;
 
     /// Reports whether a stance is tile-sorted.
@@ -142,6 +176,17 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - requires: nothing.
     /// - ensures: the same stance always gives the same answer.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For tiled and untiled stances before, inside and after
+    ///   rising swings, L3 retained rows distinguish ignoring tile status and
+    ///   rejecting boundary tiles. The finite fixtures do not prove observer
+    ///   stability for other vocabularies.
+    /// - witness: `tests::walk::section_4_1_filters_and_canonical_order_are_observable`
+    /// - witness: `tests::walk::canonical_valid_minimal_gate_excludes_tiled_midpoint`
     fn stance_tile_sorted(stance: &Self::Stance) -> StanceTileSorted;
 
     /// Reports the label and mold of a tile stance; any other stance has
@@ -151,6 +196,16 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - requires: nothing.
     /// - ensures: the same stance always gives the same answer.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For differently labeled reachable and unreachable fixture
+    ///   stances, L3 exact label-indexed mold rows distinguish absent or wrong
+    ///   payloads and mixed labels. Other vocabulary implementations and
+    ///   callback stability are not established.
+    /// - witness: `tests::walk::molds_projection_is_reachable_canonical_and_label_indexed`
     fn label_mold(stance: &Self::Stance) -> Option<(Self::Label, Self::Mold)>;
 
     /// Reports a nonterminal's fingerprint key.
@@ -160,6 +215,16 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - ensures: the same nonterminal always has the same key, across
     ///   processes and builds.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For asymmetric nonterminal keys in a finite vocabulary, L3
+    ///   independently framed digests distinguish omitted, changed and
+    ///   reordered keys. The observations do not establish key stability across
+    ///   processes or builds, or collision freedom.
+    /// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
     fn nonterminal_key(nonterminal: &Self::Nonterminal) -> WalkSymbolKey;
 
     /// Reports a stance's fingerprint key.
@@ -169,6 +234,16 @@ pub trait WalkSym: Clone + Debug + Eq + Ord
     /// - ensures: the same stance always has the same key, across processes and
     ///   builds.
     /// - panics: none.
+    /// - executable: none — a required trait declaration has no body; the
+    ///   attribute backend requires instrumenting the whole trait and all
+    ///   implementations, including downstream crates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For asymmetric stance keys at row ends and between swings,
+    ///   L3 independently framed digests distinguish missing or changed keys
+    ///   and byte reversal. Cross-process stability for arbitrary
+    ///   implementations and collision freedom remain boundaries.
+    /// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
     fn stance_key(stance: &Self::Stance) -> WalkSymbolKey;
 }
 
@@ -229,9 +304,16 @@ impl<N> Swing<N>
     /// [`WalkBuildError::EmptySwing`] for no nonterminals.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — singleton and longer swings are accepted
-    ///   and an empty one is refused by name.
+    /// - hypothesis: For empty, singleton and longer input sequences, L3 shape
+    ///   observations distinguish empty acceptance, dropped symbols and
+    ///   reordered payloads. The predicate checks cardinality without cloning
+    ///   unconstrained symbols; payload preservation is witnessed for the
+    ///   fixture vocabulary, not every possible symbol type.
     /// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+    #[spec(captures: count = nonterminals.len(), ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::EmptySwing && count == 0,
+        |swing| count > 0 && swing.nonterminals.len() == count,
+    ))]
     #[inline]
     pub fn new(nonterminals: Vec<N>) -> Result<Self, WalkBuildError>
     {
@@ -267,9 +349,18 @@ impl<N> Swing<N>
     /// [`WalkBuildError::ArithmeticOverflow`] for a count past `u32`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — the canonical order observes zero and
-    ///   nonzero heights through exact rows.
+    /// - hypothesis: For singleton, rising and oversized zero-sized swings, L3
+    ///   numeric results distinguish counting symbols instead of links,
+    ///   truncation and overflow acceptance. Huge non-zero-sized allocations
+    ///   are not required or exercised.
     /// - witness: `tests::walk::canonical_height_counts_nonzero_swings_only`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(ensures: |ref result| match *result {
+        Ok(height) => u32::try_from(self.nonterminals.len()).ok().and_then(|count| count.checked_sub(1)) == Some(u32::from(height)),
+        Err(WalkBuildError::ArithmeticOverflow) => u32::try_from(self.nonterminals.len()).is_err(),
+        Err(WalkBuildError::InvalidWalkShape) => self.nonterminals.is_empty(),
+        _ => false,
+    })]
     #[inline]
     pub fn height(&self) -> Result<SwingHeight, WalkBuildError>
     {
@@ -351,9 +442,20 @@ impl<N, T> Walk<N, T>
     /// is `usize::MAX`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — singleton and multi-swing walks are
-    ///   accepted, and a walk with as many stances as swings is refused.
+    /// - hypothesis: For empty, alternating and mismatched parts, L3 exact
+    ///   walks and typed refusals distinguish cardinality errors and symbol
+    ///   reordering. Zero-sized stance sequences exercise count overflow and
+    ///   empty-swing refusal precedence; the predicate retains counts rather
+    ///   than cloning payloads.
     /// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(captures: [swing_count = swings.len(), stance_count = stances.len()], ensures: |ref result| match *result {
+        Ok(ref walk) => swing_count > 0 && stance_count.checked_add(1) == Some(swing_count)
+            && walk.swings.len() == swing_count && walk.stances.len() == stance_count,
+        Err(WalkBuildError::InvalidWalkShape) => swing_count == 0 || stance_count.checked_add(1).is_some_and(|count| count != swing_count),
+        Err(WalkBuildError::ArithmeticOverflow) => swing_count > 0 && stance_count.checked_add(1).is_none(),
+        _ => false,
+    })]
     #[inline]
     pub fn new(
         swings: Vec<Swing<N>>,
@@ -389,10 +491,19 @@ impl<N, T> Walk<N, T>
     /// [`WalkBuildError::InvalidWalkShape`] for steps that do not alternate.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — an alternating sequence equals the same
-    ///   walk built from parts, and a trailing stance and two adjacent swings
-    ///   are each refused.
+    /// - hypothesis: For alternating steps and empty, adjacent-swing or
+    ///   trailing-stance failures, L3 equality against an independently
+    ///   specified shape distinguishes omissions and ordering mistakes. The
+    ///   predicate captures tags and counts; arbitrary consumed payload
+    ///   equality is outside its bounds.
     /// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+    #[spec(captures: [
+        count = steps.len(),
+        alternating = !steps.is_empty() && !steps.len().is_multiple_of(2) && steps.iter().enumerate().all(|(index, step)| matches!(*step, WalkStep::Swing(_)) == index.is_multiple_of(2)),
+    ], ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::InvalidWalkShape && !alternating,
+        |walk| alternating && walk.swings.len() == count.div_ceil(2) && walk.stances.len() == count.saturating_div(2),
+    ))]
     #[inline]
     pub fn from_steps(steps: Vec<WalkStep<N, T>>) -> Result<Self, WalkBuildError>
     {
@@ -445,9 +556,19 @@ impl<N, T> Walk<N, T>
     /// [`WalkBuildError::ArithmeticOverflow`] for a swing past `u32`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a single-swing equality walk is answered by
-    ///   the equal query and a two-nonterminal walk by the less query.
+    /// - hypothesis: For flat, rising and oversized swings, L3 booleans, exact
+    ///   query rows and refusals distinguish all-swings from last-swing
+    ///   classification and loss of short-circuiting. An early rising swing
+    ///   suppresses a later overflow; a first oversized swing refuses. Other
+    ///   private malformed representations are not public inputs.
     /// - witness: `tests::walk::query_orientation_filters_direct_rows`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(ensures: |ref result| match *result {
+        Ok(equal) => self.swings.iter().find(|swing| swing.nonterminals.len() != 1).map_or_else(|| bool::from(equal), |swing| !bool::from(equal) && swing.nonterminals.len() > 1 && u32::try_from(swing.nonterminals.len()).is_ok()),
+        Err(WalkBuildError::ArithmeticOverflow) => self.swings.iter().find(|swing| swing.nonterminals.len() != 1).is_some_and(|swing| u32::try_from(swing.nonterminals.len()).is_err()),
+        Err(WalkBuildError::InvalidWalkShape) => self.swings.iter().find(|swing| swing.nonterminals.len() != 1).is_some_and(|swing| swing.nonterminals.is_empty()),
+        _ => false,
+    })]
     #[inline]
     pub fn is_eq(&self) -> Result<WalkEquality, WalkBuildError>
     {
@@ -474,9 +595,19 @@ impl<N, T> Walk<N, T>
     /// [`Walk::new`] never builds.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a walk whose prefix rises but whose last
-    ///   swing is flat is excluded from the less query.
+    /// - hypothesis: For flat and rising final swings and an oversized
+    ///   zero-sized final swing, L3 rows and typed results distinguish
+    ///   inspecting the prefix instead of the destination and unchecked
+    ///   narrowing. A privately constructed swingless walk is outside the
+    ///   witnessed public domain.
     /// - witness: `tests::walk::direct_rows_reject_nonzero_prefix_with_zero_height_final_swing`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(ensures: |ref result| match *result {
+        Ok(unequal) => self.swings.last().is_some_and(|swing| !swing.nonterminals.is_empty() && u32::try_from(swing.nonterminals.len()).is_ok() && bool::from(unequal) == (swing.nonterminals.len() > 1)),
+        Err(WalkBuildError::ArithmeticOverflow) => self.swings.last().is_some_and(|swing| u32::try_from(swing.nonterminals.len()).is_err()),
+        Err(WalkBuildError::InvalidWalkShape) => self.swings.last().is_none_or(|swing| swing.nonterminals.is_empty()),
+        _ => false,
+    })]
     #[inline]
     pub fn is_neq(&self) -> Result<WalkInequality, WalkBuildError>
     {
@@ -497,9 +628,18 @@ impl<N, T> Walk<N, T>
     /// [`WalkBuildError::ArithmeticOverflow`] past `u32`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — the canonical order's first key separates
-    ///   one rising swing from two.
+    /// - hypothesis: For mixed flat and rising swings, L3 exact canonical rows
+    ///   distinguish rising-swing count from total height or stance count; an
+    ///   oversized zero-sized swing witnesses checked refusal. Overflow of the
+    ///   number of allocated swings itself is not materialized.
     /// - witness: `tests::walk::canonical_height_counts_nonzero_swings_only`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(ensures: |ref result| match *result {
+        Ok(height) => self.swings.iter().all(|swing| !swing.nonterminals.is_empty() && u32::try_from(swing.nonterminals.len()).is_ok()) && usize::try_from(u32::from(height)).ok() == Some(self.swings.iter().filter(|swing| swing.nonterminals.len() > 1).count()),
+        Err(WalkBuildError::ArithmeticOverflow) => self.swings.iter().any(|swing| u32::try_from(swing.nonterminals.len()).is_err()) || u32::try_from(self.swings.iter().filter(|swing| swing.nonterminals.len() > 1).count()).is_err(),
+        Err(WalkBuildError::InvalidWalkShape) => self.swings.iter().any(|swing| swing.nonterminals.is_empty()),
+        _ => false,
+    })]
     #[inline]
     pub fn height(&self) -> Result<WalkHeight, WalkBuildError>
     {
@@ -527,9 +667,16 @@ impl<N, T> Walk<N, T>
     /// [`WalkBuildError::ArithmeticOverflow`] past `u32`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — the cap refuses a two-swing walk under a
-    ///   cap of one, naming length three.
+    /// - hypothesis: For one and multiple swings, L3 lengths and cap errors
+    ///   distinguish alternating length from symbol or stance count. The
+    ///   predicate checks each arithmetic stage; a swing vector large enough to
+    ///   overflow the doubled count is not allocated by the witnesses.
     /// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
+    /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[spec(ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::ArithmeticOverflow && u32::try_from(self.swings.len()).ok().and_then(|count| count.checked_mul(2)).and_then(|count| count.checked_sub(1)).is_none(),
+        |length| u32::try_from(self.swings.len()).ok().and_then(|count| count.checked_mul(2)).and_then(|count| count.checked_sub(1)) == Some(u32::from(*length)),
+    ))]
     #[inline]
     pub fn chain_len(&self) -> Result<WalkChainLength, WalkBuildError>
     {
@@ -552,6 +699,20 @@ impl<N, T> Walk<N, T>
     ///
     /// # Errors
     /// [`WalkBuildError::InvalidWalkShape`] for a root `mid`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For composable walks and a root midpoint, L3 exact symbol
+    ///   sequences and named refusal distinguish reversal, midpoint omission
+    ///   and root traversal. The predicate checks concatenated swing lengths
+    ///   and stance counts without adding equality bounds; semantic endpoint
+    ///   alignment belongs to the caller, because a walk does not store its
+    ///   ends.
+    /// - witness: `tests::walk::insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable`
+    /// - witness: `walk::tests::append_preserves_parts_and_rejects_the_root`
+    #[spec(ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::InvalidWalkShape && matches!(*mid, End::Root),
+        |walk| matches!(*mid, End::Node(_)) && walk.swings.iter().map(|swing| swing.nonterminals.len()).eq(self.swings.iter().chain(&right.swings).map(|swing| swing.nonterminals.len())) && walk.stances.len() == self.stances.len().saturating_add(1).saturating_add(right.stances.len()),
+    ))]
     fn append_through(
         &self,
         mid: &End<T>,
@@ -655,9 +816,18 @@ impl<S: WalkSym> SwingArc<S>
     /// [`WalkBuildError::UselessArc`] for an arc that does neither.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — emitting, continuing and dual arcs build,
-    ///   and an arc that does neither is refused by name.
+    /// - hypothesis: For emitting, continuing, dual and useless arcs, L3
+    ///   closure rows and named refusals distinguish lost emissions,
+    ///   continuations and advances. The predicate preserves activity flags and
+    ///   the source key without cloning symbols; full payload identity and
+    ///   arbitrary key collisions remain witness boundaries.
     /// - witness: `tests::walk::construction_guards_refuse_malformed_shapes`
+    /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+    /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    #[spec(captures: [emits = emit.is_some(), continues = continue_from.is_some(), source_key = S::nonterminal_key(&from), advance_kind = core::mem::discriminant(&advance)], ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::UselessArc && !emits && !continues,
+        |arc| (emits || continues) && arc.emit.is_some() == emits && arc.continue_from.is_some() == continues && S::nonterminal_key(&arc.from) == source_key && core::mem::discriminant(&arc.advance) == advance_kind,
+    ))]
     #[inline]
     pub fn new(
         from: S::Nonterminal,
@@ -714,9 +884,16 @@ impl<S: WalkSym> WalkSpec<S>
     /// [`WalkBuildError::ZeroMaxChainLen`] for a zero cap.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a zero cap is refused, and every accepted
-    ///   cap is reported back exactly.
+    /// - hypothesis: For zero and positive caps, L3 typed refusals and
+    ///   empty-index observations distinguish accepting zero, changing the cap,
+    ///   omitting the root or inventing rows. Finite cap examples do not
+    ///   enumerate every representable cap.
     /// - witness: `tests::walk::max_chain_len_reports_exact_accepted_cap`
+    /// - witness: `tests::walk::empty_machine_preserves_root_and_empty_projections`
+    #[spec(ensures: |ref result| result.as_ref().map_or_else(
+        |error| *error == WalkBuildError::ZeroMaxChainLen && u32::from(max_chain_len) == 0,
+        |spec| u32::from(max_chain_len) > 0 && spec.max_chain_len == max_chain_len && spec.ends.len() == 1 && spec.ends.contains(&End::Root) && spec.direct_steps.is_empty() && spec.swing_seeds.is_empty() && spec.swing_arcs.is_empty() && spec.root_entry.is_none(),
+    ))]
     #[inline]
     pub fn new(max_chain_len: WalkChainLength) -> Result<Self, WalkBuildError>
     {
@@ -755,9 +932,17 @@ impl<S: WalkSym> WalkSpec<S>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — repeated and permuted insertions build the
-    ///   same index and fingerprint.
+    /// - hypothesis: For duplicated and permuted direct paths, L3 exact
+    ///   composed rows and fingerprints distinguish omissions, reversed ends
+    ///   and duplicate retention. The predicate checks endpoint closure and
+    ///   bounded set growth without cloning the consumed walk; complete path
+    ///   preservation is witnessed, not captured.
     /// - witness: `tests::walk::insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable`
+    #[spec(captures: [
+        end_count = self.ends.len(),
+        added_ends = usize::from(!self.ends.contains(&src)).saturating_add(usize::from(src != dst && !self.ends.contains(&dst))),
+        direct_count = self.direct_steps.len(),
+    ], ensures: self.ends.len() == end_count.saturating_add(added_ends) && self.direct_steps.len() >= direct_count && self.direct_steps.len() <= direct_count.saturating_add(1))]
     #[inline]
     pub fn insert_direct(
         &mut self,
@@ -776,7 +961,19 @@ impl<S: WalkSym> WalkSpec<S>
     /// `start`; and the end `src`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the seed and its source end are retained; reinsertion changes
+    ///   nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For sort-and-bounds aliases and generated chains, L3 exact
+    ///   closure rows distinguish absent seeds, wrong directions and lost
+    ///   source ends. The predicate checks endpoint insertion and bounded seed
+    ///   growth; full consumed seed identity is left to the semantic witnesses.
+    /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+    /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    #[spec(captures: [end_count = self.ends.len(), added_end = !self.ends.contains(&src), seed_count = self.swing_seeds.len()], ensures: self.ends.len() == end_count.saturating_add(usize::from(added_end)) && self.swing_seeds.len() >= seed_count && self.swing_seeds.len() <= seed_count.saturating_add(1))]
     #[inline]
     pub fn insert_swing_seed(
         &mut self,
@@ -792,7 +989,20 @@ impl<S: WalkSym> WalkSpec<S>
     /// Adds a swing-machine arc, and the end it emits at.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the arc and its emitted end are retained; reinsertion changes
+    ///   nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For emitting and continuation-only arcs, L3 direct rows
+    ///   and seen-key verdicts distinguish lost arcs, wrong emission ends and
+    ///   duplicate retention. The predicate checks exact set growth and
+    ///   endpoint closure; full consumed arc identity is observed through
+    ///   closure fixtures rather than copied into the contract.
+    /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+    /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    #[spec(captures: [arc_count = self.swing_arcs.len(), added_arc = !self.swing_arcs.contains(&arc), end_count = self.ends.len(), added_end = arc.emit.as_ref().is_some_and(|end| !self.ends.contains(end))], ensures: self.swing_arcs.len() == arc_count.saturating_add(usize::from(added_arc)) && self.ends.len() == end_count.saturating_add(usize::from(added_end)))]
     #[inline]
     pub fn insert_swing_arc(
         &mut self,
@@ -954,11 +1164,13 @@ impl<S: WalkSym> WalkIndex<S>
     /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — the paper's figure-33
-    ///   fragments and section-4.1 filters, query orientation, cyclic closure,
-    ///   the cap, the outer queue's pruning, duplicate and permutation
-    ///   stability, converging prefixes and the molds projection each pin exact
-    ///   rows; generated chains agree under permuted insertion.
+    /// - hypothesis: For figure-33 fragments, section-4.1 filters, cycles,
+    ///   converging paths and generated chains, L3 exact rows plus L2
+    ///   permutation observations distinguish missing closure paths, unsafe
+    ///   pruning, orientation errors and unstable ordering. Predicates check
+    ///   retained ends, row shapes, minimality and caps; complete closure and
+    ///   canonical tie-breaking remain the independent fixtures' obligations,
+    ///   not a universal proof.
     /// - witness: `tests::walk::figure_33_fragments_are_literate_external_oracle`
     /// - witness: `tests::walk::section_4_1_filters_and_canonical_order_are_observable`
     /// - witness: `tests::walk::query_orientation_filters_direct_rows`
@@ -967,6 +1179,14 @@ impl<S: WalkSym> WalkIndex<S>
     /// - witness: `tests::walk::insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable`
     /// - witness: `tests::walk::converged_equality_prefixes_all_expand_through_shared_endpoint`
     /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    #[spec(ensures: |ref result| result.as_ref().map_or_else(
+        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+        |index| index.ends.iter().eq(spec.ends.iter())
+            && index.transitive_rows.values().all(|walks| !walks.is_empty() && walks.iter().all(|walk| (walk.is_eq().is_ok_and(bool::from) || walk.is_neq().is_ok_and(bool::from)) && minimal::<S>(walk).is_ok_and(bool::from) && walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len)))
+            && index.eq_rows.values().all(|walks| !walks.is_empty() && walks.iter().all(|walk| walk.is_eq().is_ok_and(bool::from)))
+            && index.lt_rows.values().chain(index.gt_rows.values()).all(|walks| !walks.is_empty() && walks.iter().all(|walk| walk.is_neq().is_ok_and(bool::from)))
+            && (spec.root_entry.is_some() || index.mold_rows.is_empty()),
+    ))]
     #[inline]
     pub fn build(spec: &WalkSpec<S>) -> Result<Self, WalkBuildError>
     {
@@ -1008,12 +1228,18 @@ impl<S: WalkSym> WalkIndex<S>
     /// Any [`WalkBuildError`] either closure raises.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — a machine whose alias
-    ///   shares a sort but not bounds diverges, one that does not agrees, and
-    ///   generated chains agree.
+    /// - hypothesis: For sort aliases with equal and unequal bounds, L3
+    ///   opposite verdicts distinguish omission of bounds and accidental
+    ///   inclusion of identity; L2 chains observe insertion invariance. The
+    ///   predicate checks cap provenance and that divergence requires generated
+    ///   paths; arbitrary closure equivalence is not recomputed or proved.
     /// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
     /// - witness: `tests::walk::same_sort_bounds_different_identity_continuation_is_suppressed`
     /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    #[spec(ensures: |ref result| result.as_ref().map_or_else(
+        |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+        |verdict| *verdict == SeenKeyVerdict::Equivalent || (!spec.swing_seeds.is_empty() && !spec.swing_arcs.is_empty()),
+    ))]
     #[inline]
     pub fn compare_seen_keys(spec: &WalkSpec<S>) -> Result<SeenKeyVerdict, WalkBuildError>
     {
@@ -1107,10 +1333,13 @@ impl<S: WalkSym> WalkIndex<S>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — reachable ends of one label appear in
-    ///   order, another label keeps its own row, and an unreached label has
-    ///   none.
+    /// - hypothesis: For reachable and unreachable labels, L3 exact ordered
+    ///   end/mold pairs distinguish mixed labels, reversed order and fabricated
+    ///   reachability. The predicate checks the borrowed row and absent-label
+    ///   boundary; complete reachability belongs to construction, not this
+    ///   accessor.
     /// - witness: `tests::walk::molds_projection_is_reachable_canonical_and_label_indexed`
+    #[spec(ensures: |result| self.mold_rows.get(label).map_or_else(|| result.is_empty(), |row| result == row.as_slice()))]
     #[inline]
     #[must_use]
     pub fn molds(
@@ -1124,7 +1353,7 @@ impl<S: WalkSym> WalkIndex<S>
     /// Reports the index's fingerprint.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: the builder-established root is the first end.
     /// - ensures: the FNV-1a hash of the frame `gandr.walk.v1`, the cap, the
     ///   direct rows, the transitive rows and the molds projection, each row in
     ///   canonical order with every symbol written as its stable key; so two
@@ -1134,10 +1363,16 @@ impl<S: WalkSym> WalkIndex<S>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — permuted and repeated
-    ///   insertion keep the fingerprint, on a fixture and on generated chains.
+    /// - hypothesis: For empty and directional machines, L3 independently
+    ///   framed digests distinguish changed tags, counts, symbol order and byte
+    ///   order; L2 insertion permutations distinguish unstable enumeration. The
+    ///   predicate checks the retained root invariant, not the discarded hash
+    ///   preimage. Neither these finite vectors nor FNV claim collision
+    ///   freedom.
     /// - witness: `tests::walk::insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable`
     /// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+    /// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
+    #[spec(requires: matches!(self.ends.as_slice().first(), Some(End::Root)))]
     #[inline]
     #[must_use]
     pub const fn fingerprint(&self) -> Fingerprint
@@ -1189,6 +1424,19 @@ enum SeenKey<Sort, Bounds>
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For mixed valid, invalid and non-minimal rows, L3 exact public
+///   rows distinguish retained empty rows and incorrect rejection. Predicates
+///   check bounded output cardinality and admissibility without cloning the
+///   consumed table; completeness and canonical key order remain witness
+///   boundaries.
+/// - witness: `tests::walk::canonical_valid_minimal_gate_excludes_tiled_midpoint`
+/// - witness: `tests::walk::direct_rows_reject_nonzero_prefix_with_zero_height_final_swing`
+#[spec(captures: count = rows.len(), ensures: |ref result| result.as_ref().map_or_else(
+    |error| *error == WalkBuildError::ArithmeticOverflow,
+    |filtered| filtered.len() <= count && filtered.values().all(|walks| !walks.is_empty() && walks.iter().all(|walk| (walk.is_eq().is_ok_and(bool::from) || walk.is_neq().is_ok_and(bool::from)) && minimal::<S>(walk).is_ok_and(bool::from))),
+))]
 fn filter_rows<S>(rows: DirectRows<S>) -> Result<DirectRows<S>, WalkBuildError>
 where
     S: WalkSym,
@@ -1216,6 +1464,21 @@ where
 /// # Errors
 /// [`WalkBuildError::ChainLengthExceeded`] past the cap,
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For explicit paths, aliasing swing machines and bounded
+///   generated chains, L3 rows and cap refusals plus L2 insertion permutations
+///   distinguish omitted paths, repeated walks and wrong cap payloads. The
+///   predicate checks canonical raw rows, registered endpoints, caps and
+///   retention cardinality; complete generated incidence is witnessed rather
+///   than recomputed.
+/// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+/// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+/// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
+#[spec(ensures: |ref result| result.as_ref().map_or_else(
+    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+    |rows| rows.iter().all(|(key, walks)| spec.ends.contains(&key.1) && spec.ends.contains(&key.2) && !walks.is_empty() && walks.iter().is_sorted_by(|left, right| left < right) && walks.iter().all(|walk| walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len))) && rows.values().map(Vec::len).sum::<usize>() >= spec.direct_steps.len(),
+))]
 fn direct_rows<S>(
     spec: &WalkSpec<S>,
     mode: SwingKeyMode,
@@ -1262,6 +1525,20 @@ where
 /// # Errors
 /// [`WalkBuildError::ChainLengthExceeded`] past the cap,
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For cyclic paths, terminal roots, converging prefixes and
+///   tiled interiors, L3 exact row sequences distinguish unsafe global pruning,
+///   repeated expansion and lost compositions. Predicates check row order,
+///   uniqueness, minimality and caps; exhaustive closure completeness and
+///   termination are not proved by finite fixtures.
+/// - witness: `tests::walk::transitive_queue_prunes_only_node_endpoints_not_already_seen`
+/// - witness: `tests::walk::converged_equality_prefixes_all_expand_through_shared_endpoint`
+/// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
+#[spec(ensures: |ref result| result.as_ref().map_or_else(
+    |error| match *error { WalkBuildError::ChainLengthExceeded { max, actual } => max == spec.max_chain_len && actual > max, WalkBuildError::ArithmeticOverflow => true, _ => false },
+    |rows| rows.iter().all(|(key, walks)| spec.ends.contains(&key.1) && spec.ends.contains(&key.2) && !walks.is_empty() && walks.iter().is_sorted_by(|left, right| left < right) && walks.iter().all(|walk| walk.chain_len().is_ok_and(|length| length <= spec.max_chain_len))) && rows.values().flatten().all(|walk| minimal::<S>(walk).is_ok_and(bool::from)),
+))]
 fn transitive_rows<S>(
     spec: &WalkSpec<S>,
     direct_rows: &DirectRows<S>,
@@ -1338,6 +1615,20 @@ where
 /// # Errors
 /// [`WalkBuildError::ChainLengthExceeded`] naming both lengths,
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed length.
+///
+/// # Adequacy
+/// - hypothesis: For lengths below, equal to and above the cap, L3 exact
+///   refusals distinguish a strict instead of inclusive bound and swapped
+///   reported lengths. The predicate also checks arithmetic failure
+///   propagation; an allocated walk large enough to overflow its swing count is
+///   outside the witnesses.
+///
+/// - witness: `tests::walk::cyclic_outer_closure_terminates_and_cap_errors_are_typed`
+/// - witness: `walk::tests::cap_boundary_is_inclusive`
+#[spec(ensures: |ref result| walk.chain_len().map_or_else(
+    |error| result.as_ref().err() == Some(&error),
+    |actual| if actual <= max { result.is_ok() } else { matches!(*result, Err(WalkBuildError::ChainLengthExceeded { max: reported_max, actual: reported_actual }) if reported_max == max && reported_actual == actual) },
+))]
 fn guard_cap<N, T>(
     walk: &Walk<N, T>,
     max: WalkChainLength,
@@ -1365,6 +1656,20 @@ fn guard_cap<N, T>(
 /// [`WalkBuildError::InvalidWalkShape`] for a malformed walk,
 /// [`WalkBuildError::EmptySwing`] never in practice, and
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For sort/bounds aliases, identity aliases and generated
+///   chains, L3 exact emissions and L2 insertion permutations distinguish wrong
+///   seen keys, skipped continuations and repeated output. Predicates check arc
+///   indexing, ordered distinct emissions and the source prefix; all-path
+///   completeness and arbitrary symbol implementation laws remain boundaries.
+/// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+/// - witness: `tests::walk::same_sort_bounds_different_identity_continuation_is_suppressed`
+/// - witness: `tests::walk::small_chain_keyings_agree_under_permuted_insertion`
+#[spec(requires: arcs.iter().all(|(source, row)| row.iter().all(|arc| arc.from == **source)), ensures: |ref result| result.as_ref().map_or_else(
+    |error| matches!(*error, WalkBuildError::InvalidWalkShape | WalkBuildError::EmptySwing | WalkBuildError::ArithmeticOverflow),
+    |rows| rows.iter().is_sorted_by(|left, right| left < right) && rows.iter().all(|entry| entry.1.swings.first().and_then(|swing| swing.nonterminals.first()) == Some(start)),
+))]
 fn swing_closure<S>(
     arcs: &ArcsBySource<'_, S>,
     start: &S::Nonterminal,
@@ -1411,6 +1716,21 @@ where
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For independently ordered pairs and malformed or tiled
+///   candidates, L3 exact retained rows distinguish each canonical key, invalid
+///   shape acceptance and non-minimal retention. Predicates enforce sorted
+///   input, bounded retention and valid/minimal outputs; canonical key
+///   completeness and first-key retention remain fixture-level evidence without
+///   cloning the input.
+/// - witness: `tests::walk::canonical_order_keys_are_isolated_pairwise_witnesses`
+/// - witness: `tests::walk::canonical_unique_key_gate_retains_first_public_row`
+/// - witness: `tests::walk::canonical_valid_minimal_gate_excludes_tiled_midpoint`
+#[spec(requires: walks.iter().is_sorted(), captures: count = walks.len(), ensures: |ref result| result.as_ref().map_or_else(
+    |error| *error == WalkBuildError::ArithmeticOverflow,
+    |kept| kept.len() <= count && kept.iter().all(|walk| (walk.is_eq().is_ok_and(bool::from) || walk.is_neq().is_ok_and(bool::from)) && minimal::<S>(walk).is_ok_and(bool::from)),
+))]
 fn canonical_walks<S>(walks: Vec<MachineWalk<S>>) -> Result<Vec<MachineWalk<S>>, WalkBuildError>
 where
     S: WalkSym,
@@ -1440,6 +1760,22 @@ where
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For equality walks and tiles before, between and after rising
+///   swings, L3 exact accepted rows distinguish total stance count from
+///   strictly interior rising positions. The predicate uses first and last
+///   rising positions as an independent observer; allocation-scale count
+///   overflow is not witnessed.
+/// - witness: `tests::walk::section_4_1_filters_and_canonical_order_are_observable`
+/// - witness: `tests::walk::canonical_valid_minimal_gate_excludes_tiled_midpoint`
+#[spec(ensures: |ref result| result.as_ref().map_or_else(
+    |error| walk.height().as_ref().err() == Some(error),
+    |kept| {
+        let interior_tile = walk.swings.iter().position(|swing| swing.nonterminals.len() > 1).zip(walk.swings.iter().rposition(|swing| swing.nonterminals.len() > 1)).is_some_and(|(first, last)| walk.stances.iter().enumerate().any(|(index, stance)| index >= first && index < last && bool::from(S::stance_tile_sorted(stance))));
+        bool::from(*kept) != interior_tile
+    },
+))]
 fn minimal<S>(walk: &MachineWalk<S>) -> Result<WalkMinimal, WalkBuildError>
 where
     S: WalkSym,
@@ -1475,6 +1811,19 @@ where
 ///   molded end with that label some left-facing root row reaches, with its
 ///   mold, ascending and without repetition; otherwise empty.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For reachable, unreachable and differently labeled molded
+///   ends, L3 exact rows distinguish wrong direction, non-root reachability,
+///   mixed labels and duplicate retention. Predicates check the root-entry
+///   gate, cardinality, label/mold identity and order; full endpoint
+///   correspondence remains the fixture boundary.
+/// - witness: `tests::walk::molds_projection_is_reachable_canonical_and_label_indexed`
+/// - witness: `tests::walk::empty_machine_preserves_root_and_empty_projections`
+#[spec(requires: transitive_rows.values().all(|row| !row.is_empty()), ensures: |ref result| {
+    let eligible = if spec.root_entry.is_none() { 0 } else { transitive_rows.keys().filter(|key| key.0 == Dir::Left && key.1 == End::Root && matches!(key.2, End::Node(ref stance) if S::label_mold(stance).is_some())).count() };
+    result.values().map(Vec::len).sum::<usize>() == eligible && result.iter().all(|(label, row)| !row.is_empty() && row.iter().is_sorted_by(|left, right| left < right) && row.iter().all(|entry| matches!(entry.0, End::Node(ref stance) if S::label_mold(stance).is_some_and(|pair| pair.0 == *label && pair.1 == entry.1))))
+})]
 fn mold_rows<S>(
     spec: &WalkSpec<S>,
     transitive_rows: &DirectRows<S>,
@@ -1504,7 +1853,18 @@ where
 /// Sorts and deduplicates in place.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the distinct input values, ascending.
+/// - panics: only if the element comparator panics.
+///
+/// # Adequacy
+/// - hypothesis: For empty, repeated and permuted scalar values, L3 exact
+///   output distinguishes omission, duplicate retention and unsorted output.
+///   Predicates check strict order, nonempty preservation and bounded
+///   cardinality without cloning unconstrained elements; arbitrary comparator
+///   laws and complete membership remain witness boundaries.
+/// - witness: `walk::tests::canonicalization_preserves_distinct_values`
+#[spec(captures: count = values.len(), ensures: values.len() <= count && values.is_empty() == (count == 0) && values.iter().is_sorted_by(|left, right| left < right))]
 fn canonicalize<T>(values: &mut Vec<T>)
 where
     T: Ord,
@@ -1537,6 +1897,22 @@ enum QueryKind
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For both directions and flat/rising direct walks, L3 exact
+///   query rows distinguish wrong shape selection and failure to reverse
+///   greater-than keys. The predicate checks selected cardinality and shapes;
+///   key orientation and row order are independently witnessed rather than
+///   reconstructed with cloned keys.
+/// - witness: `tests::walk::query_orientation_filters_direct_rows`
+/// - witness: `tests::walk::direct_rows_reject_nonzero_prefix_with_zero_height_final_swing`
+#[spec(ensures: |ref result| result.as_ref().map_or_else(
+    |error| *error == WalkBuildError::ArithmeticOverflow,
+    |rows| {
+        let count = direct_rows.iter().filter(|entry| match kind { QueryKind::Eq | QueryKind::Lt => entry.0.0 == Dir::Left, QueryKind::Gt => entry.0.0 == Dir::Right }).flat_map(|(_, row)| row).filter(|walk| match kind { QueryKind::Eq => walk.is_eq().is_ok_and(bool::from), QueryKind::Lt | QueryKind::Gt => walk.is_neq().is_ok_and(bool::from) }).count();
+        rows.values().map(Vec::len).sum::<usize>() == count && rows.values().all(|row| !row.is_empty() && row.iter().all(|walk| match kind { QueryKind::Eq => walk.is_eq().is_ok_and(bool::from), QueryKind::Lt | QueryKind::Gt => walk.is_neq().is_ok_and(bool::from) }))
+    },
+))]
 fn query_rows<S>(
     direct_rows: &DirectRows<S>,
     kind: QueryKind,
@@ -1590,6 +1966,20 @@ impl<N: Clone, T: Clone> PartialWalk<N, T>
     ///
     /// # Errors
     /// [`WalkBuildError::InvalidWalkShape`] for a walk without swings.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For stay, extension and crossing on a nonempty partial
+    ///   walk, L3 exact states distinguish changing the wrong swing, dropping
+    ///   the crossed stance or failing to advance the current symbol. The
+    ///   predicate checks shape transitions without strengthening the
+    ///   clone-only bounds; arbitrary payload equality and precondition
+    ///   violations are outside its observer.
+    /// - witness: `walk::tests::partial_advances_preserve_payload_and_current_state`
+    #[spec(requires: !self.swings.is_empty(), ensures: |ref result| result.as_ref().is_ok_and(|next| match *advance {
+        SwingAdvance::Stay => next.stances.len() == self.stances.len() && next.swings.iter().map(|swing| swing.nonterminals.len()).eq(self.swings.iter().map(|swing| swing.nonterminals.len())),
+        SwingAdvance::Extend(_) => next.swings.len() == self.swings.len() && next.stances.len() == self.stances.len() && next.swings.iter().zip(&self.swings).enumerate().all(|(index, (after, before))| after.nonterminals.len() == before.nonterminals.len().saturating_add(usize::from(index.saturating_add(1) == self.swings.len()))),
+        SwingAdvance::Cross { .. } => next.swings.len() == self.swings.len().saturating_add(1) && next.stances.len() == self.stances.len().saturating_add(1) && next.swings.last().is_some_and(|swing| swing.nonterminals.len() == 1) && next.swings.iter().take(self.swings.len()).map(|swing| swing.nonterminals.len()).eq(self.swings.iter().map(|swing| swing.nonterminals.len())),
+    }))]
     fn apply(
         &self,
         advance: &SwingAdvance<N, T>,
@@ -1636,7 +2026,22 @@ impl<N: Clone, T: Clone> PartialWalk<N, T>
 /// Computes a state's seen key under a mode.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the vocabulary observers are stable.
+/// - ensures: the production mode retains sort and bounds; the diagnostic mode
+///   retains only sort.
+/// - panics: only if a vocabulary observer panics.
+///
+/// # Adequacy
+/// - hypothesis: For aliases sharing a sort, L3 opposite closure verdicts
+///   distinguish omitted bounds and inclusion of identity. The predicate checks
+///   the exact observer values and variant; it assumes lawful, stable
+///   vocabulary callbacks and does not establish their cross-process behavior.
+/// - witness: `tests::walk::seen_key_verdicts_separate_safe_and_legacy_closure`
+/// - witness: `tests::walk::same_sort_bounds_different_identity_continuation_is_suppressed`
+#[spec(ensures: |ref result| match *result {
+    SeenKey::SortBounds(ref sort, ref bounds) => mode == SwingKeyMode::SortBounds && *sort == S::nonterminal_sort(nonterminal) && *bounds == S::nonterminal_bounds(nonterminal),
+    SeenKey::SortOnly(ref sort) => mode == SwingKeyMode::SortOnly && *sort == S::nonterminal_sort(nonterminal),
+})]
 fn seen_key<S>(
     nonterminal: &S::Nonterminal,
     mode: SwingKeyMode,
@@ -1696,6 +2101,21 @@ struct FallbackSwing<N: Ord>
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for an overflowed count.
+///
+/// # Adequacy
+/// - hypothesis: For pairs isolating height, stance-sort keys, length and
+///   destination-first fallback, L3 exact row order distinguishes comparator
+///   key omissions and reversal. Predicates check height, length and the entire
+///   borrowed fallback correspondence without cloning; top, middle and bottom
+///   key selection remains independently witnessed, not duplicated.
+/// - witness: `tests::walk::canonical_order_keys_are_isolated_pairwise_witnesses`
+/// - witness: `tests::walk::canonical_height_counts_nonzero_swings_only`
+/// - witness: `tests::walk::canonical_top_key_requires_zero_height_prefix`
+/// - witness: `tests::walk::canonical_mid_key_requires_strict_interior_count`
+#[spec(ensures: |ref result| result.as_ref().map_or_else(
+    |error| *error == WalkBuildError::ArithmeticOverflow && (walk.height().is_err() || walk.chain_len().is_err()),
+    |key| walk.height().is_ok_and(|height| key.height == height) && walk.chain_len().is_ok_and(|length| key.chain_len == length) && key.fallback_swings.len() == walk.swings.len() && key.fallback_swings.iter().zip(walk.swings.iter().rev()).all(|(fallback, swing)| swing.height().is_ok_and(|height| fallback.height == height) && fallback.nonterminals.iter().eq(swing.nonterminals.iter().rev())) && key.fallback_stances.iter().eq(walk.stances.iter().rev()),
+))]
 fn canonical_walk_key<S>(walk: &MachineWalk<S>) -> Result<WalkSortKey<S>, WalkBuildError>
 where
     S: WalkSym,
@@ -1756,6 +2176,20 @@ where
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for a count past `u32`.
+///
+/// # Adequacy
+/// - hypothesis: For empty and directional machines with asymmetric symbol keys
+///   and a mold row, L3 independently framed digests distinguish changed tags,
+///   omitted rows, swapped words and byte order. Predicates check nonempty
+///   canonical-table domains and count refusal, not a second hash computation;
+///   collision freedom and allocation-scale overflow remain outside the
+///   witnesses.
+/// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
+/// - witness: `tests::walk::empty_machine_preserves_root_and_empty_projections`
+#[spec(requires: direct_rows.values().chain(transitive_rows.values()).all(|row| !row.is_empty()) && mold_rows.values().all(|row| !row.is_empty() && row.iter().is_sorted_by(|left, right| left < right)), ensures: |ref result| {
+    let fits = u32::try_from(direct_rows.len()).is_ok() && u32::try_from(transitive_rows.len()).is_ok() && direct_rows.values().chain(transitive_rows.values()).all(|row| u32::try_from(row.len()).is_ok() && row.iter().all(|walk| walk.chain_len().is_ok() && u32::try_from(walk.stances.len()).is_ok() && walk.swings.iter().all(|swing| swing.height().is_ok()))) && mold_rows.values().all(|row| u32::try_from(row.len()).is_ok());
+    result.as_ref().map_or_else(|error| *error == WalkBuildError::ArithmeticOverflow && !fits, |_| fits)
+})]
 fn fingerprint_index<S>(
     max_chain_len: WalkChainLength,
     direct_rows: &DirectRows<S>,
@@ -1794,6 +2228,19 @@ where
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for a count past `u32`.
+///
+/// # Adequacy
+/// - hypothesis: For both row directions and root/node endpoints, L3
+///   independently framed public digests distinguish lost direction, table
+///   tags, row counts and walk framing. Predicates check the nonempty-row
+///   domain and representable counts; the complete byte stream is witnessed
+///   rather than rehashed in the contract, and enormous tables are not
+///   allocated.
+/// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
+#[spec(requires: rows.values().all(|row| !row.is_empty()), ensures: |ref result| {
+    let fits = u32::try_from(rows.len()).is_ok() && rows.values().all(|row| u32::try_from(row.len()).is_ok() && row.iter().all(|walk| walk.chain_len().is_ok() && u32::try_from(walk.stances.len()).is_ok() && walk.swings.iter().all(|swing| swing.height().is_ok())));
+    result.as_ref().map_or_else(|error| *error == WalkBuildError::ArithmeticOverflow && !fits, |&()| fits)
+})]
 fn hash_walk_rows<S>(
     hash: &mut Fnv64,
     tag: FingerprintByte,
@@ -1822,7 +2269,22 @@ where
 /// Absorbs one end: `0` for the root, `1` and the stance's key otherwise.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the vocabulary key observer is stable.
+/// - ensures: absorbs the root tag alone, or the node tag and its little-endian
+///   key.
+/// - panics: only if the vocabulary observer panics.
+///
+/// # Adequacy
+/// - hypothesis: For root and node endpoints with an asymmetric key, L3
+///   independently framed digests distinguish missing tags, key truncation and
+///   byte reversal. The predicate checks the short frame from the prior
+///   accumulator state; arbitrary key stability and hash collision freedom are
+///   not established.
+/// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
+#[spec(captures: prior = u64::from(hash.finish()), ensures: u64::from(hash.finish()) == match *end {
+    End::Root => prior.wrapping_mul(0x0000_0100_0000_01b3),
+    End::Node(ref stance) => core::iter::once(1_u8).chain(u64::from(S::stance_key(stance)).to_le_bytes()).fold(prior, |state, byte| (state ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)),
+})]
 fn hash_end<S>(
     hash: &mut Fnv64,
     end: &End<S::Stance>,
@@ -1851,6 +2313,19 @@ fn hash_end<S>(
 ///
 /// # Errors
 /// [`WalkBuildError::ArithmeticOverflow`] for a count past `u32`.
+///
+/// # Adequacy
+/// - hypothesis: For flat and rising swings separated by a stance, L3 an
+///   independently framed digest distinguishes confusing height with length,
+///   dropping symbols, reversing the walk or omitting stance keys. The
+///   predicate checks exact count representability rather than duplicating the
+///   byte stream; allocation-scale counts and arbitrary symbol laws remain
+///   boundaries.
+/// - witness: `tests::walk::fingerprint_matches_independently_framed_directional_machines`
+#[spec(ensures: |ref result| {
+    let fits = walk.chain_len().is_ok() && u32::try_from(walk.stances.len()).is_ok() && walk.swings.iter().all(|swing| swing.height().is_ok());
+    result.as_ref().map_or_else(|error| *error == WalkBuildError::ArithmeticOverflow && !fits, |&()| fits)
+})]
 fn hash_walk<S>(
     hash: &mut Fnv64,
     walk: &MachineWalk<S>,
@@ -1872,4 +2347,93 @@ where
         hash.write_u64(S::stance_key(stance));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn append_preserves_parts_and_rejects_the_root() -> Result<(), WalkBuildError>
+    {
+        let left = Walk::new(
+            vec![Swing::new(vec![1_u8, 2])?, Swing::new(vec![3])?],
+            vec![4_u8],
+        )?;
+        let right = Walk::new(
+            vec![Swing::new(vec![5_u8])?, Swing::new(vec![6, 7])?],
+            vec![8_u8],
+        )?;
+        let joined = left.append_through(&End::Node(9), &right)?;
+        assert_eq!(
+            joined
+                .swings
+                .iter()
+                .map(|swing| swing.nonterminals.as_slice())
+                .collect::<Vec<_>>(),
+            vec![&[1, 2][..], &[3], &[5], &[6, 7]]
+        );
+        assert_eq!(joined.stances, vec![4, 9, 8]);
+        assert_eq!(
+            left.append_through(&End::Root, &right),
+            Err(WalkBuildError::InvalidWalkShape)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cap_boundary_is_inclusive() -> Result<(), WalkBuildError>
+    {
+        let walk = Walk::new(vec![Swing::new(vec![1_u8])?, Swing::new(vec![2])?], vec![
+            3_u8,
+        ])?;
+        assert_eq!(
+            guard_cap(&walk, WalkChainLength::from(2)),
+            Err(WalkBuildError::ChainLengthExceeded {
+                max: WalkChainLength::from(2),
+                actual: WalkChainLength::from(3)
+            })
+        );
+        assert_eq!(guard_cap(&walk, WalkChainLength::from(3)), Ok(()));
+        assert_eq!(guard_cap(&walk, WalkChainLength::from(4)), Ok(()));
+        Ok(())
+    }
+
+    #[test]
+    fn canonicalization_preserves_distinct_values()
+    {
+        let mut values = vec![7_i8, -3, 1, 7, -3];
+        canonicalize(&mut values);
+        assert_eq!(values, vec![-3, 1, 7]);
+        canonicalize(&mut values);
+        assert_eq!(values, vec![-3, 1, 7]);
+        let mut empty = Vec::<i8>::new();
+        canonicalize(&mut empty);
+        assert_eq!(empty, vec![]);
+    }
+
+    #[test]
+    fn partial_advances_preserve_payload_and_current_state() -> Result<(), WalkBuildError>
+    {
+        let initial = PartialWalk::<u8, u8> {
+            current: 1,
+            swings: vec![Swing::new(vec![1])?],
+            stances: vec![],
+        };
+        assert_eq!(initial.apply(&SwingAdvance::Stay)?, initial);
+        let extended = initial.apply(&SwingAdvance::Extend(2))?;
+        assert_eq!(extended, PartialWalk {
+            current: 2,
+            swings: vec![Swing::new(vec![1, 2])?],
+            stances: vec![]
+        });
+        let crossed = extended.apply(&SwingAdvance::Cross { stance: 9, next: 3 })?;
+        assert_eq!(crossed, PartialWalk {
+            current: 3,
+            swings: vec![Swing::new(vec![1, 2])?, Swing::new(vec![3])?],
+            stances: vec![9]
+        });
+        Ok(())
+    }
 }

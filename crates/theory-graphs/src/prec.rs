@@ -16,6 +16,8 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 
+use anodized::spec;
+
 use crate::EdgeSource;
 use crate::Fingerprint;
 use crate::FingerprintByte;
@@ -185,9 +187,11 @@ impl Prec
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — ids built past the last group are refused
-    ///   by every query, one past the end included.
+    /// - hypothesis: For all 16-bit indices, L3 known and unknown-group probes
+    ///   observe the raw identity, distinguishing clamping or a shifted index.
+    ///   Membership in a particular graph is not a constructor guarantee.
     /// - witness: `tests::prec::prec_dag_size_and_boundary_contract`
+    #[spec(ensures: |result| result.0.0 == index.0)]
     #[inline]
     #[must_use]
     pub const fn new(index: PrecIndex) -> Self
@@ -294,9 +298,11 @@ impl Error for PrecSpecError
 /// the relation is checked for cycles.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — size and boundary, duplicate-name,
-///   duplicate-edge, invalid-edge and capacity witnesses separate every branch
-///   of the builder.
+/// - hypothesis: For empty through full-capacity builders, L3 exact groups,
+///   canonical edges and refusal-state equality distinguish lost data,
+///   duplicate retention and invalid endpoint acceptance. Construction at the
+///   16-bit capacity is witnessed; consuming every group at that capacity
+///   remains outside these witnesses.
 /// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
 /// - witness: `tests::prec::duplicate_edge_canonicalization_and_invalid_edges`
 /// - witness: `tests::prec::capacity_beyond_u16_is_typed`
@@ -348,11 +354,30 @@ impl PrecSpec
     /// [`PrecSpecError::CapacityExceeded`] past the last 16-bit index.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — every index of a full specification is
-    ///   observed in insertion order and the next insertion is refused; a
-    ///   repeated name is refused by name.
+    /// - hypothesis: For builder states and consuming name conversions, the
+    ///   predicate observes append position, association, name-index membership
+    ///   and unchanged cardinalities on refusal. L3 full-capacity and duplicate
+    ///   probes distinguish shifted identities, changed association and refusal
+    ///   precedence. Name conversion and prior entry contents are observed by
+    ///   witnesses rather than copied into the predicate.
     /// - witness: `tests::prec::capacity_beyond_u16_is_typed`
     /// - witness: `tests::prec::duplicate_edge_canonicalization_and_invalid_edges`
+    #[spec(
+        captures: [prior = self.names.len(), prior_assocs = self.assocs.len(),
+            prior_index = self.name_index.len(), prior_edges = self.edges.len()],
+        ensures: |ref result| self.edges.len() == prior_edges && match *result {
+            Ok(prec) => usize::from(prec.0.0) == prior && self.names.len() == prior.saturating_add(1)
+                && self.assocs.len() == prior_assocs.saturating_add(1)
+                && self.name_index.len() == prior_index.saturating_add(1)
+                && self.assocs.last() == Some(&assoc)
+                && self.names.last().is_some_and(|name| self.name_index.contains(name)),
+            Err(PrecSpecError::DuplicateName { ref name }) => self.name_index.contains(name)
+                && self.names.len() == prior && self.assocs.len() == prior_assocs && self.name_index.len() == prior_index,
+            Err(PrecSpecError::CapacityExceeded) => prior > usize::from(u16::MAX)
+                && self.names.len() == prior && self.assocs.len() == prior_assocs && self.name_index.len() == prior_index,
+            Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn insert<N>(
         &mut self,
@@ -387,10 +412,27 @@ impl PrecSpec
     /// [`PrecSpecError::InvalidEdge`] for an undeclared endpoint.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a repeated edge is stored once, and an
-    ///   endpoint one past the last group is refused naming both endpoints.
+    /// - hypothesis: For any endpoint identities, the result and edge-set
+    ///   observer distinguish a new edge, a repeated edge, and either invalid
+    ///   endpoint with its original payload. L3 canonicalization and state
+    ///   equality on refusal catch duplicate insertion and collateral mutation.
+    ///   Global acyclicity is deliberately deferred to DAG construction.
     /// - witness: `tests::prec::duplicate_edge_canonicalization_and_invalid_edges`
     /// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
+    #[spec(
+        captures: [prior = self.edges.len(), existed = self.edges.binary_search(&(tighter, looser)).is_ok()],
+        ensures: |ref result| match *result {
+            Ok(()) => usize::from(tighter.0.0) < self.names.len() && usize::from(looser.0.0) < self.names.len()
+                && self.edges.binary_search(&(tighter, looser)).is_ok()
+                && self.edges.len() == prior.saturating_add(usize::from(!existed))
+                && self.edges.windows(2).all(|pair| matches!(*pair, [left, right] if left < right)),
+            Err(PrecSpecError::InvalidEdge { tighter: refused_tighter, looser: refused_looser, node_count }) =>
+                refused_tighter == tighter && refused_looser == looser && node_count == group_node_count(&self.names)
+                && (usize::from(tighter.0.0) >= self.names.len() || usize::from(looser.0.0) >= self.names.len())
+                && self.edges.len() == prior,
+            Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn add_edge(
         &mut self,
@@ -465,7 +507,25 @@ impl PrecSpec
     /// Yields every group with its name and associativity, in index order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; builder-produced columns match.
+    /// - ensures: yields paired names and associations with their ascending
+    ///   ids.
+    /// - panics: consuming the last entry of a full 65,536-group table
+    ///   overflows the 16-bit enumeration counter when overflow checking is
+    ///   enabled.
+    /// - executable: none — the backend cannot annotate the closure return type
+    ///   for an opaque iterator; complete enumeration is also a lazy
+    ///   observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For matching columns below full capacity, L3 empty, named
+    ///   and diamond tables observe every identity, name and association,
+    ///   distinguishing truncation or misaligned columns. Construction at full
+    ///   capacity is witnessed separately and does not prove full iterator
+    ///   consumption; the 16-bit counter is a known boundary.
+    /// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
+    /// - witness: `tests::prec::prec_dag_contract`
+    /// - witness: `tests::prec::capacity_beyond_u16_is_typed`
     #[inline]
     pub fn groups(&self) -> impl Iterator<Item = (Prec, PrecName<'_>, Assoc)> + '_
     {
@@ -498,7 +558,20 @@ impl Display for PrecCycle
     /// Writes the walk's group indices in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the witness indices in their supplied order.
+    /// - fails: the output sink refuses a write.
+    /// - panics: none.
+    /// - executable: none — the formatter is a write-only sink and provides no
+    ///   independent observer of bytes emitted or of a refused write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For arbitrary witness sequences, L3 extraction of numeric
+    ///   fields distinguishes dropped, reordered or deduplicated indices, and a
+    ///   refusing sink observes initial error propagation. Wording and
+    ///   whitespace are not pinned; later sink-failure positions and graph
+    ///   validity of the witness are outside these observations.
+    /// - witness: `prec::tests::cycle_display_preserves_fields_and_refuses_a_sink`
     #[inline]
     fn fmt(
         &self,
@@ -572,10 +645,11 @@ impl Error for PrecDagError
 /// deterministic linear extension precomputed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise plus L1 cycle evidence — a diamond, integer
-///   chains and the virtual bounds separate strict reachability from the
-///   reflexive associativity cases; self and three-group cycles are refused
-///   with closed walks over input edges.
+/// - hypothesis: For acyclic diamonds, integer chains and virtual bounds, L3
+///   exact relations distinguish orientation, incomparability and association
+///   from identity; L1 closed-cycle incidence witnesses refusal of cyclic
+///   specifications. These fixtures do not prove least closure for every graph
+///   or collision freedom of its fingerprint.
 /// - witness: `tests::prec::prec_dag_contract`
 /// - witness: `tests::prec::prec_integer_chain_oracle`
 /// - witness: `tests::prec::prec_cycle_witness_contract`
@@ -616,13 +690,31 @@ impl PrecDag
     /// [`PrecDagError::Inconsistent`] when an internal invariant fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L1 cycle evidence — a self edge yields
-    ///   the two-element walk; a three-group cycle yields a closed walk over
-    ///   input edges; a diamond and chains pin the closure; a disconnected
-    ///   relation pins the smallest-ready tie-break.
+    /// - hypothesis: For builder-produced specifications, the predicate
+    ///   observes retained group tables, canonical closure rows, direct-edge
+    ///   inclusion and valid cycle incidence. L3 diamonds and chains
+    ///   distinguish wrong closure, a disconnected relation distinguishes the
+    ///   ready-node tie-break, and self and longer cycles distinguish malformed
+    ///   refusal evidence. Complete least closure and topological ordering
+    ///   remain witness observations; allocator exhaustion is not forced.
     /// - witness: `tests::prec::prec_cycle_witness_contract`
     /// - witness: `tests::prec::prec_dag_contract`
     /// - witness: `tests::prec::deterministic_linear_extension_uses_smallest_ready_id`
+    #[spec(ensures: |ref result| match *result {
+        Ok(ref dag) => dag.names == spec.names && dag.assocs == spec.assocs && dag.edges == spec.edges
+            && (dag.reachability.len(), dag.linear_extension.len()) == (spec.names.len(), spec.names.len())
+            && dag.linear_extension.iter().all(|prec| usize::from(prec.0.0) < spec.names.len())
+            && dag.reachability.iter().enumerate().all(|(source, row)| row.iter().all(|target|
+                usize::from(target.0.0) < spec.names.len() && usize::from(target.0.0) != source)
+                && row.windows(2).all(|pair| matches!(*pair, [left, right] if left < right)))
+            && spec.edges.iter().all(|&(source, target)| dag.reachability.get(usize::from(source.0.0))
+                .is_some_and(|row| row.binary_search(&target).is_ok())),
+        Err(PrecDagError::Cycle(ref cycle)) => cycle.witness.len() >= 2
+            && cycle.witness.first() == cycle.witness.last()
+            && cycle.witness.windows(2).all(|pair| matches!(*pair, [source, target] if spec.edges.binary_search(&(source, target)).is_ok())),
+        Err(PrecDagError::Graph(GraphValidationError::NodeCountTooLarge { node_count })) => node_count == group_node_count(&spec.names),
+        Err(_) => false,
+    })]
     #[inline]
     pub fn build(spec: &PrecSpec) -> Result<Self, PrecDagError>
     {
@@ -701,7 +793,25 @@ impl PrecDag
     /// Yields every group with its name and associativity, in index order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; builder-produced columns match.
+    /// - ensures: yields paired names and associations with their ascending
+    ///   ids.
+    /// - panics: consuming the last entry of a full 65,536-group table
+    ///   overflows the 16-bit enumeration counter when overflow checking is
+    ///   enabled.
+    /// - executable: none — the backend cannot annotate the closure return type
+    ///   for an opaque iterator; complete enumeration is also a lazy
+    ///   observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For matching columns below full capacity, L3 empty, named
+    ///   and diamond tables observe every identity, name and association,
+    ///   distinguishing truncation or misaligned columns. Construction at full
+    ///   capacity is witnessed separately and does not prove full iterator
+    ///   consumption; the 16-bit counter is a known boundary.
+    /// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
+    /// - witness: `tests::prec::prec_dag_contract`
+    /// - witness: `tests::prec::capacity_beyond_u16_is_typed`
     #[inline]
     pub fn groups(&self) -> impl Iterator<Item = (Prec, PrecName<'_>, Assoc)> + '_
     {
@@ -742,14 +852,19 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — a diamond and a
-    ///   three-group chain pin every pair, incomparable siblings included;
-    ///   generated chains check the duality with [`gt`](Self::gt) and that
-    ///   `assoc` matters only for a group compared with itself.
+    /// - hypothesis: For known or unknown identities, the predicate observes
+    ///   direction and the right-associative reflexive case. L3 diamonds and
+    ///   chains separate reversal, incomparable siblings and unknown ids; L2
+    ///   generated pairs separate association from strict reachability. The
+    ///   stored closure's construction is witnessed separately from lookup.
     /// - witness: `tests::prec::prec_dag_contract`
     /// - witness: `tests::prec::prec_integer_chain_oracle`
     /// - witness: `tests::prec::lt_gt_duality_for_distinct_chain_nodes`
     /// - witness: `tests::prec::associativity_affects_reflexive_pairs_only`
+    #[spec(ensures: |result| bool::from(result) == (usize::from(left.0.0) < self.names.len()
+        && usize::from(right.0.0) < self.names.len()
+        && if left == right { self.assocs.get(usize::from(left.0.0)) == Some(&Assoc::Right) && assoc == Assoc::Right }
+            else { self.reachability.get(usize::from(right.0.0)).is_some_and(|row| row.contains(&left)) }))]
     #[inline]
     #[must_use]
     pub fn lt(
@@ -783,12 +898,19 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — as [`lt`](Self::lt),
-    ///   with the left-associative reflexive case.
+    /// - hypothesis: For known or unknown identities, L3 pair observations and
+    ///   L2 generated chains distinguish reversed reachability, a wrong
+    ///   left-associative reflexive case and acceptance of unknown groups. The
+    ///   predicate observes the stored relation, not its independent
+    ///   derivation.
     /// - witness: `tests::prec::prec_dag_contract`
     /// - witness: `tests::prec::prec_integer_chain_oracle`
     /// - witness: `tests::prec::lt_gt_duality_for_distinct_chain_nodes`
     /// - witness: `tests::prec::associativity_affects_reflexive_pairs_only`
+    #[spec(ensures: |result| bool::from(result) == (usize::from(left.0.0) < self.names.len()
+        && usize::from(right.0.0) < self.names.len()
+        && if left == right { self.assocs.get(usize::from(left.0.0)) == Some(&Assoc::Left) && assoc == Assoc::Left }
+            else { self.reachability.get(usize::from(left.0.0)).is_some_and(|row| row.contains(&right)) }))]
     #[inline]
     #[must_use]
     pub fn gt(
@@ -819,11 +941,14 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a non-associative group equals itself only
-    ///   under the non-associative assertion, and an associative group never
-    ///   equals itself.
+    /// - hypothesis: For any two identities and asserted association, L3
+    ///   reflexive, distinct and unknown probes distinguish identity equality
+    ///   from the declared-and-asserted non-associative case. The predicate
+    ///   reads the association table; its construction is a separate boundary.
     /// - witness: `tests::prec::prec_dag_contract`
     /// - witness: `tests::prec::bound_value_reflexive_association_tracks_direction`
+    #[spec(ensures: |result| bool::from(result) == (left == right && assoc == Assoc::Non
+        && self.assocs.get(usize::from(left.0.0)) == Some(&Assoc::Non)))]
     #[inline]
     #[must_use]
     pub fn eq(
@@ -849,11 +974,16 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — diamond siblings are
-    ///   incomparable and every chain pair is comparable; generated chains
-    ///   check symmetry and the refusal of unknown ids.
+    /// - hypothesis: For any identities, L3 diamond siblings and known/unknown
+    ///   probes distinguish incomparability from identity and either strict
+    ///   direction; L2 generated pairs check symmetry. This observes the stored
+    ///   closure rather than proving it is the least relation.
     /// - witness: `tests::prec::prec_dag_contract`
     /// - witness: `tests::prec::comparable_is_symmetric_and_rejects_invalid_boundaries`
+    #[spec(ensures: |result| bool::from(result) == (usize::from(left.0.0) < self.names.len()
+        && usize::from(right.0.0) < self.names.len() && (left == right
+            || self.reachability.get(usize::from(left.0.0)).is_some_and(|row| row.contains(&right))
+            || self.reachability.get(usize::from(right.0.0)).is_some_and(|row| row.contains(&left)))))]
     #[inline]
     #[must_use]
     pub fn comparable(
@@ -883,10 +1013,19 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — each pairing of a virtual bound with a
-    ///   known group, an unknown group and the other bound is observed.
+    /// - hypothesis: For every virtual/value pairing, L3 known and unknown
+    ///   probes distinguish reversed extremes, treating unknown values as
+    ///   known, and an incorrect value-reflexive association. Concrete-value
+    ///   lookup is the lower-level comparison boundary, not a second closure
+    ///   computation.
     /// - witness: `tests::prec::virtual_bound_comparisons`
     /// - witness: `tests::prec::prec_dag_size_and_boundary_contract`
+    #[spec(ensures: |result| bool::from(result) == match (left, right) {
+        (Bound::Bottom, Bound::Root) => true,
+        (Bound::Bottom, Bound::Value(prec)) | (Bound::Value(prec), Bound::Root) => usize::from(prec.0.0) < self.names.len(),
+        (Bound::Value(a), Bound::Value(b)) => bool::from(self.lt(a, b, assoc)),
+        _ => false,
+    })]
     #[inline]
     #[must_use]
     pub fn bound_lt(
@@ -915,9 +1054,19 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — as [`bound_lt`](Self::bound_lt), mirrored.
+    /// - hypothesis: For all virtual/value pairings, L3 observations
+    ///   distinguish the greater-than orientation, unknown-value refusal and
+    ///   left-associative reflexivity. Concrete-value ordering is delegated to
+    ///   its independently witnessed comparison; no claim of a total order is
+    ///   made.
     /// - witness: `tests::prec::virtual_bound_comparisons`
     /// - witness: `tests::prec::bound_value_reflexive_association_tracks_direction`
+    #[spec(ensures: |result| bool::from(result) == match (left, right) {
+        (Bound::Root, Bound::Bottom) => true,
+        (Bound::Root, Bound::Value(prec)) | (Bound::Value(prec), Bound::Bottom) => usize::from(prec.0.0) < self.names.len(),
+        (Bound::Value(a), Bound::Value(b)) => bool::from(self.gt(a, b, assoc)),
+        _ => false,
+    })]
     #[inline]
     #[must_use]
     pub fn bound_gt(
@@ -948,9 +1097,16 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — same bottom, same root, bottom against root
-    ///   and each bound against a value are observed.
+    /// - hypothesis: For all virtual/value pairings, L3 same-extreme, distinct
+    ///   extreme and mixed-value probes distinguish virtual equality from value
+    ///   reflexivity. Value comparisons retain their association rule; this is
+    ///   not ordinary identity equality on every concrete group.
     /// - witness: `tests::prec::virtual_bound_comparisons`
+    #[spec(ensures: |result| bool::from(result) == match (left, right) {
+        (Bound::Bottom, Bound::Bottom) | (Bound::Root, Bound::Root) => true,
+        (Bound::Value(a), Bound::Value(b)) => bool::from(self.eq(a, b, assoc)),
+        _ => false,
+    })]
     #[inline]
     #[must_use]
     pub fn bound_eq(
@@ -982,11 +1138,17 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — the one-past-the-end
-    ///   group is refused against `Root` while the last group is accepted;
-    ///   generated chains accept every group against either bound.
+    /// - hypothesis: For all virtual/value pairings, L3 last-known and
+    ///   first-unknown probes and L2 generated chains distinguish valid extreme
+    ///   comparisons from accepting foreign ids. Value/value comparability is
+    ///   separately witnessed; virtual bounds do not make siblings comparable.
     /// - witness: `tests::prec::prec_dag_size_and_boundary_contract`
     /// - witness: `tests::prec::comparable_is_symmetric_and_rejects_invalid_boundaries`
+    #[spec(ensures: |result| bool::from(result) == match (left, right) {
+        (Bound::Bottom | Bound::Root, Bound::Bottom | Bound::Root) => true,
+        (Bound::Bottom | Bound::Root, Bound::Value(prec)) | (Bound::Value(prec), Bound::Bottom | Bound::Root) => usize::from(prec.0.0) < self.names.len(),
+        (Bound::Value(a), Bound::Value(b)) => bool::from(self.comparable(a, b)),
+    })]
     #[inline]
     #[must_use]
     pub fn bound_comparable(
@@ -1010,7 +1172,7 @@ impl PrecDag
     /// Fingerprints the groups' names and associativities and the edges.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: the builder-established group and canonical-edge invariants.
     /// - ensures: the FNV-1a hash of the group count, then per group its name's
     ///   byte length, its name and its associativity tag (0 for [`Assoc::Non`],
     ///   1 for [`Assoc::Left`], 2 for [`Assoc::Right`]), then the edge count
@@ -1022,13 +1184,17 @@ impl PrecDag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus an external oracle — reordered and
-    ///   repeated edges agree, while a renamed group, a changed associativity
-    ///   and a changed relation each move the fingerprint; the value of a
-    ///   three-group DAG is pinned against the documented stream hashed by an
-    ///   independent FNV-1a implementation.
+    /// - hypothesis: For coherent builder-produced tables, the predicate checks
+    ///   matched group columns and canonical declared edges. L3 independent
+    ///   stream and sensitivity witnesses distinguish framing, byte order,
+    ///   omitted names or associations, and edge-order dependence. The
+    ///   predicate does not duplicate the hash computation, and collision
+    ///   freedom is not claimed for a 64-bit fingerprint.
     /// - witness: `tests::prec::stable_fingerprint_sensitivity`
     /// - witness: `tests::prec::fingerprint_stream_is_pinned`
+    #[spec(requires: self.names.len() == self.assocs.len()
+        && self.edges.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))
+        && self.edges.iter().all(|&(source, target)| usize::from(source.0.0) < self.names.len() && usize::from(target.0.0) < self.names.len()))]
     #[inline]
     #[must_use]
     pub fn fingerprint(&self) -> Fingerprint
@@ -1066,6 +1232,17 @@ impl PrecDag
     /// - requires: nothing; an unknown `tighter` has no row.
     /// - ensures: true exactly when `looser` is in `tighter`'s closure row.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For any identities in a constructed DAG, the predicate
+    ///   compares row membership without binary-search dependence. L3 diamonds
+    ///   and unknown-id probes distinguish a wrong row, reversed relation and
+    ///   treating absence as reachability. Derivation of the closure itself is
+    ///   the builder boundary.
+    /// - witness: `tests::prec::prec_dag_contract`
+    /// - witness: `tests::prec::prec_dag_size_and_boundary_contract`
+    #[spec(ensures: |result| bool::from(result) == self.reachability.get(usize::from(tighter.0.0))
+        .is_some_and(|row| row.contains(&looser)))]
     fn strictly_tighter(
         &self,
         tighter: Prec,
@@ -1097,6 +1274,20 @@ impl PrecGraph
     /// - ensures: one row per group; row `n` holds the looser endpoint of every
     ///   edge whose tighter endpoint is group `n`, ascending.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For builder-produced specifications, the predicate
+    ///   compares the flattened labelled rows with the canonical input edge
+    ///   stream, including order and multiplicity. L3 diamond and
+    ///   duplicate-edge witnesses distinguish reversal, missing rows and
+    ///   dropped incidences. It does not establish acyclicity; cyclic rows are
+    ///   valid encodings.
+    /// - witness: `tests::prec::prec_dag_contract`
+    /// - witness: `tests::prec::duplicate_edge_canonicalization_and_invalid_edges`
+    /// - witness: `tests::prec::prec_cycle_witness_contract`
+    #[spec(ensures: |ref built| built.rows.len() == spec.names.len()
+        && built.rows.iter().enumerate().flat_map(|(source, row)| row.iter().map(move |&target| (source, u32::from(target))))
+            .eq(spec.edges.iter().map(|&(source, target)| (usize::from(source.0.0), u32::from(target.0.0)))))]
     fn from_spec(spec: &PrecSpec) -> Self
     {
         let mut rows = Vec::new();
@@ -1130,7 +1321,18 @@ impl EdgeSource for PrecGraph
     /// Yields a group's looser neighbours; an unknown node has none.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: yields the requested row in order, or no nodes when absent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For any dense identity, the cloned borrowed-iterator
+    ///   observer checks the exact row or empty fallback. L3 declared, empty
+    ///   and first-absent rows distinguish a neighbouring row from absence. The
+    ///   adapter does not validate whether row targets are declared.
+    /// - witness: `prec::tests::successor_rows_keep_the_absent_boundary`
+    #[spec(ensures: |ref result| usize::try_from(u32::from(node)).ok().and_then(|position| self.rows.get(position))
+        .map_or_else(|| result.clone().next().is_none(), |row| result.clone().eq(row.iter().copied())))]
     #[inline]
     fn successors(
         &self,
@@ -1150,7 +1352,7 @@ impl EdgeSource for PrecGraph
 /// ready node first.
 ///
 /// # Specification
-/// - requires: `graph` is acyclic.
+/// - requires: `graph` is acyclic, dense and uses representable group indices.
 /// - ensures: every node appears once, each before every node it has an edge
 ///   to; among the nodes whose predecessors are all placed, the smallest goes
 ///   next.
@@ -1159,6 +1361,27 @@ impl EdgeSource for PrecGraph
 ///
 /// # Errors
 /// [`PrecDagError::Inconsistent`] when the order leaves a node out.
+///
+/// # Adequacy
+/// - hypothesis: For acyclic canonical dense rows with representable group
+///   indices, the predicates observe input bounds, complete output length, a
+///   source first and a sink last. L3 disconnected, diamond and chain witnesses
+///   distinguish omitted nodes, reversed dependencies and a wrong ready-node
+///   tie-break. Full permutation and topological order are witness boundaries
+///   rather than a repeated traversal.
+/// - witness: `tests::prec::deterministic_linear_extension_uses_smallest_ready_id`
+/// - witness: `tests::prec::prec_dag_contract`
+/// - witness: `tests::prec::prec_integer_chain_oracle`
+#[spec(
+    requires: graph.rows.len() <= usize::from(u16::MAX).saturating_add(1)
+        && graph.rows.iter().all(|row| row.iter().all(|&node| usize::try_from(u32::from(node)).is_ok_and(|position| position < graph.rows.len()))
+            && row.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))),
+    ensures: |ref result| result.as_ref().is_ok_and(|order| order.len() == graph.rows.len()
+        && order.iter().all(|prec| usize::from(prec.0.0) < graph.rows.len())
+        && order.first().map_or_else(|| graph.rows.is_empty(), |first| graph.rows.iter()
+            .all(|row| !row.contains(&NodeId::from(u32::from(first.0.0)))))
+        && order.last().map_or_else(|| graph.rows.is_empty(), |last| graph.rows.get(usize::from(last.0.0)).is_some_and(Vec::is_empty))),
+)]
 fn linear_extension(graph: &PrecGraph) -> Result<Vec<Prec>, PrecDagError>
 {
     let mut indegree = Vec::new();
@@ -1217,6 +1440,19 @@ impl PredecessorCount
     ///
     /// # Errors
     /// [`PrecDagError::Inconsistent`] on overflow.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every predecessor count, L3 zero and maximum probes
+    ///   observe exact increment or typed overflow. They distinguish
+    ///   saturation, wrapping and a wrong refusal. Real graph cardinalities
+    ///   need not approach the machine limit to witness this arithmetic
+    ///   boundary.
+    /// - witness: `prec::tests::predecessor_counts_refuse_both_extremes`
+    #[spec(ensures: |ref result| match *result {
+        Ok(next) => self.0.checked_add(1) == Some(next.0),
+        Err(PrecDagError::Inconsistent) => self.0 == usize::MAX,
+        Err(_) => false,
+    })]
     fn succ(self) -> Result<Self, PrecDagError>
     {
         self.0
@@ -1235,6 +1471,18 @@ impl PredecessorCount
     ///
     /// # Errors
     /// [`PrecDagError::Inconsistent`] below zero.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every predecessor count, L3 one, zero and maximum
+    ///   probes observe exact decrement or typed underflow. They distinguish
+    ///   premature refusal and wrapping. This arithmetic does not prove that
+    ///   the original count matches graph incidence.
+    /// - witness: `prec::tests::predecessor_counts_refuse_both_extremes`
+    #[spec(ensures: |ref result| match *result {
+        Ok(next) => next.0.checked_add(1) == Some(self.0),
+        Err(PrecDagError::Inconsistent) => self.0 == 0,
+        Err(_) => false,
+    })]
     fn pred(self) -> Result<Self, PrecDagError>
     {
         self.0
@@ -1254,6 +1502,22 @@ impl PredecessorCount
 ///
 /// # Errors
 /// [`PrecDagError::Inconsistent`] for a node without a count.
+///
+/// # Adequacy
+/// - hypothesis: For any predecessor slice and node, the pointer observer
+///   identifies the mutable slot or an absent entry. L3 mutation of the last
+///   valid slot and first-absent refusal distinguish neighbouring aliasing and
+///   fallback insertion. The stored count is not validated against a graph
+///   here.
+/// - witness: `prec::tests::predecessor_slots_and_group_indices_keep_their_bounds`
+#[spec(
+    captures: expected = usize::try_from(u32::from(node)).ok().and_then(|position| indegree.get(position)).map(core::ptr::from_ref),
+    ensures: |ref result| match *result {
+        Ok(ref count) => expected == Some(core::ptr::from_ref(*count)),
+        Err(PrecDagError::Inconsistent) => expected.is_none(),
+        Err(_) => false,
+    },
+)]
 fn slot(
     indegree: &mut [PredecessorCount],
     node: NodeId,
@@ -1276,6 +1540,18 @@ fn slot(
 ///
 /// # Errors
 /// [`PrecDagError::Inconsistent`] for a node past 16 bits.
+///
+/// # Adequacy
+/// - hypothesis: For any dense node, L3 last-representable and
+///   first-unrepresentable probes compare the raw identity and typed refusal,
+///   distinguishing truncation and a shifted boundary. Existence of that
+///   identity in a particular specification is not checked.
+/// - witness: `prec::tests::predecessor_slots_and_group_indices_keep_their_bounds`
+#[spec(ensures: |ref result| match *result {
+    Ok(prec) => u32::from(prec.0.0) == u32::from(node),
+    Err(PrecDagError::Inconsistent) => u32::from(node) > u32::from(u16::MAX),
+    Err(_) => false,
+})]
 fn prec_of_node(node: NodeId) -> Result<Prec, PrecDagError>
 {
     u16::try_from(u32::from(node))
@@ -1293,6 +1569,27 @@ fn prec_of_node(node: NodeId) -> Result<Prec, PrecDagError>
 ///
 /// # Errors
 /// [`PrecDagError::Inconsistent`] for a node past 16 bits.
+///
+/// # Adequacy
+/// - hypothesis: For any owned node sequence, the predicate observes
+///   representability, length and both endpoint identities without copying the
+///   consumed sequence. L3 ordered, empty and refused sequences distinguish
+///   truncation, reversal and dropping a failing interior entry;
+///   cycle-incidence witnesses also observe interior order. The endpoint
+///   predicate alone does not prove every interior position.
+/// - witness: `prec::tests::predecessor_slots_and_group_indices_keep_their_bounds`
+/// - witness: `tests::prec::prec_cycle_witness_contract`
+#[spec(
+    captures: [length = nodes.len(), head = nodes.first().copied(), tail = nodes.last().copied(),
+        representable = nodes.iter().all(|&node| u16::try_from(u32::from(node)).is_ok())],
+    ensures: |ref result| match *result {
+        Ok(ref groups) => representable && groups.len() == length
+            && groups.first().map(|prec| u32::from(prec.0.0)) == head.map(u32::from)
+            && groups.last().map(|prec| u32::from(prec.0.0)) == tail.map(u32::from),
+        Err(PrecDagError::Inconsistent) => !representable,
+        Err(_) => false,
+    },
+)]
 fn precs_of_nodes(nodes: Vec<NodeId>) -> Result<Vec<Prec>, PrecDagError>
 {
     nodes.into_iter().map(prec_of_node).collect()
@@ -1314,7 +1611,18 @@ fn valid(
 /// a specification holds at most 65 536 groups, so it never saturates.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the slice length, saturated at the largest dense node bound.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For slices of any element type, L3 empty and zero-sized large
+///   slices compare length with the saturated bound, distinguishing truncation
+///   and a shifted saturation threshold. The large witness is conditional on
+///   host width and allocates no backing elements; real precedence tables are
+///   much smaller.
+/// - witness: `prec::tests::group_counts_saturate_without_materializing_nodes`
+#[spec(ensures: |result| u32::from(result) == u32::try_from(groups.len()).unwrap_or(u32::MAX))]
 fn group_node_count<T>(groups: &[T]) -> NodeCount
 {
     NodeCount::from(u32::try_from(groups.len()).unwrap_or(u32::MAX))
@@ -1349,7 +1657,22 @@ fn assoc_of(
 /// Yields every group with its name and associativity, in index order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: matching name and associativity columns.
+/// - ensures: yields paired names and associations with their ascending ids.
+/// - panics: consuming the last entry of a full 65,536-group table overflows
+///   the 16-bit enumeration counter when overflow checking is enabled.
+/// - executable: none — the backend cannot annotate the closure return type for
+///   an opaque iterator; complete enumeration is also a lazy observation.
+///
+/// # Adequacy
+/// - hypothesis: For matching columns below full capacity, L3 empty, named and
+///   diamond tables observe every identity, name and association,
+///   distinguishing truncation or misaligned columns. Construction at full
+///   capacity is witnessed separately and does not prove full iterator
+///   consumption; the 16-bit counter is a known boundary.
+/// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
+/// - witness: `tests::prec::prec_dag_contract`
+/// - witness: `tests::prec::capacity_beyond_u16_is_typed`
 fn groups_of<'groups>(
     names: &'groups [String],
     assocs: &'groups [Assoc],
@@ -1371,7 +1694,18 @@ fn groups_of<'groups>(
 /// Frames a slice's length as a fingerprint word, saturating past 64 bits.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the slice length, saturated at the largest 64-bit word.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For ordinary and zero-sized slices, the result observer
+///   preserves the framed length. L3 large-length and independently hashed
+///   precedence streams distinguish truncation and framing omission. Saturation
+///   above 64 bits is not reachable on a host with at most 64-bit addresses.
+/// - witness: `prec::tests::group_counts_saturate_without_materializing_nodes`
+/// - witness: `tests::prec::fingerprint_stream_is_pinned`
+#[spec(ensures: |result| u64::from(result) == u64::try_from(items.len()).unwrap_or(u64::MAX))]
 fn word_of_len<T>(items: &[T]) -> FingerprintWord64
 {
     FingerprintWord64::from(u64::try_from(items.len()).unwrap_or(u64::MAX))
@@ -1380,12 +1714,145 @@ fn word_of_len<T>(items: &[T]) -> FingerprintWord64
 /// Tags an associativity in the fingerprint stream.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: non-associative, left and right encode as bytes 0, 1 and 2.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For every association variant, the predicate observes its
+///   protocol byte. The L3 independent stream fixture includes all three
+///   variants and distinguishes a swapped or collapsed tag. This checks the
+///   encoding, not collision freedom of the surrounding fingerprint.
+/// - witness: `tests::prec::fingerprint_stream_is_pinned`
+#[spec(ensures: |result| matches!((assoc, u8::from(result)), (Assoc::Non, 0) | (Assoc::Left, 1) | (Assoc::Right, 2)))]
 fn assoc_tag(assoc: Assoc) -> FingerprintByte
 {
     match assoc {
         | Assoc::Non => FingerprintByte::from(0_u8),
         | Assoc::Left => FingerprintByte::from(1_u8),
         | Assoc::Right => FingerprintByte::from(2_u8),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+
+    use super::*;
+
+    #[test]
+    fn predecessor_counts_refuse_both_extremes()
+    {
+        assert_eq!(PredecessorCount(0).succ(), Ok(PredecessorCount(1)));
+        assert_eq!(PredecessorCount(1).pred(), Ok(PredecessorCount(0)));
+        assert_eq!(PredecessorCount(0).pred(), Err(PrecDagError::Inconsistent));
+        assert_eq!(
+            PredecessorCount(usize::MAX).succ(),
+            Err(PrecDagError::Inconsistent)
+        );
+        assert_eq!(
+            PredecessorCount(usize::MAX).pred(),
+            Ok(PredecessorCount(usize::MAX.saturating_sub(1)))
+        );
+    }
+
+    #[test]
+    fn predecessor_slots_and_group_indices_keep_their_bounds()
+    {
+        let mut counts = [PredecessorCount(3), PredecessorCount(5)];
+        *slot(&mut counts, NodeId::from(1)).expect("last count") = PredecessorCount(4);
+        assert_eq!(counts, [PredecessorCount(3), PredecessorCount(4)]);
+        assert_eq!(
+            slot(&mut counts, NodeId::from(2)),
+            Err(PrecDagError::Inconsistent)
+        );
+        let last = NodeId::from(u32::from(u16::MAX));
+        let foreign = NodeId::from(u32::from(u16::MAX).saturating_add(1));
+        assert_eq!(prec_of_node(last), Ok(Prec::new(PrecIndex::from(u16::MAX))));
+        assert_eq!(prec_of_node(foreign), Err(PrecDagError::Inconsistent));
+        let nodes = vec![NodeId::from(7), NodeId::from(2), last];
+        assert_eq!(
+            precs_of_nodes(nodes)
+                .expect("ordered groups")
+                .iter()
+                .map(|prec| u16::from(prec.index()))
+                .collect::<Vec<_>>(),
+            vec![7, 2, u16::MAX]
+        );
+        assert_eq!(
+            precs_of_nodes(vec![NodeId::from(0), foreign, NodeId::from(1)]),
+            Err(PrecDagError::Inconsistent)
+        );
+        assert!(precs_of_nodes(Vec::new()).expect("empty groups").is_empty());
+    }
+
+    #[test]
+    fn successor_rows_keep_the_absent_boundary()
+    {
+        let graph = PrecGraph {
+            rows: vec![vec![NodeId::from(1)], Vec::new()],
+        };
+        assert_eq!(graph.successors(NodeId::from(0)).collect::<Vec<_>>(), vec![
+            NodeId::from(1)
+        ]);
+        assert_eq!(graph.successors(NodeId::from(1)).next(), None);
+        assert_eq!(graph.successors(NodeId::from(2)).next(), None);
+    }
+
+    #[test]
+    fn group_counts_saturate_without_materializing_nodes()
+    {
+        assert_eq!(group_node_count::<()>(&[]), NodeCount::from(0));
+        assert_eq!(u64::from(word_of_len::<()>(&[])), 0);
+        if let Some(length) = usize::try_from(u32::MAX)
+            .ok()
+            .and_then(|count| count.checked_add(1))
+        {
+            let groups = vec![(); length];
+            assert_eq!(group_node_count(&groups), NodeCount::from(u32::MAX));
+            assert_eq!(
+                u64::from(word_of_len(&groups)),
+                u64::from(u32::MAX).saturating_add(1)
+            );
+        }
+    }
+
+    #[test]
+    fn cycle_display_preserves_fields_and_refuses_a_sink()
+    {
+        /// A formatting destination that refuses every write.
+        struct Refuse;
+
+        impl core::fmt::Write for Refuse
+        {
+            /// Returns the destination's fixed refusal.
+            ///
+            /// # Specification
+            /// trivial.
+            fn write_str(
+                &mut self,
+                _text: &str,
+            ) -> FmtResult
+            {
+                Err(core::fmt::Error)
+            }
+        }
+
+        let cycle = PrecCycle {
+            witness: vec![
+                Prec::new(PrecIndex::from(7)),
+                Prec::new(PrecIndex::from(1)),
+                Prec::new(PrecIndex::from(7)),
+            ],
+        };
+        let rendered = alloc::format!("{cycle}");
+        let indices = rendered
+            .split(|ch: char| !ch.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .map(|part| part.parse::<u16>().expect("displayed index"))
+            .collect::<Vec<_>>();
+        assert_eq!(indices, vec![7, 1, 7]);
+        assert!(core::fmt::write(&mut Refuse, format_args!("{cycle}")).is_err());
     }
 }

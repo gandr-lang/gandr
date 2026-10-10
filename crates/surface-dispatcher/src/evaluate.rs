@@ -33,6 +33,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::Judged;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
@@ -266,6 +267,11 @@ impl Evaluation<'_>
     /// - hypothesis: L3 — one run of each class the fragment can write, each
     ///   asserted at its exact status.
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
+    #[spec(ensures: |ret| match *self {
+        Self::Value(_) => matches!(ret, RunStatus::Value),
+        Self::Blamed(_) | Self::Stuck(_) | Self::Unfinished(_) => matches!(ret, RunStatus::Failed),
+        Self::Unrunnable(_) => matches!(ret, RunStatus::Unreached),
+    })]
     #[inline]
     #[must_use]
     pub const fn status(&self) -> RunStatus
@@ -284,7 +290,21 @@ impl fmt::Display for Evaluation<'_>
     /// outcome as its class and what it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: values retain their spelling; other outcomes identify their
+    ///   class and the declaration, position or machine reason they carry.
+    /// - fails: propagates the formatter's error.
+    /// - panics: none.
+    /// - executable: none — a formatter exposes neither its destination nor
+    ///   written bytes, and its result does not contain the rendered fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — value spellings, goal names and distinct numeric
+    ///   admission positions retain their roles; a sink failure is not
+    ///   injected.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
     #[inline]
     fn fmt(
         &self,
@@ -334,13 +354,13 @@ impl<'source> Program<'source>
     ///
     /// # Specification
     /// - requires: `verdicts` are the checker's report for `module`, judged
-    ///   over `core`; `module`'s admission positions are dense in declaration
-    ///   order, as the lowering mints them.
-    /// - ensures: one entry per declaration of `module`, at its admission
-    ///   position: a declaration checked or synthesised has its elaborated body
+    ///   over `core`; their admission indices may be sparse.
+    /// - ensures: one entry per declaration of `module`, packed in module
+    ///   order. A declaration checked or synthesised has its elaborated body
     ///   focused and is defined as it; one owed its body is carried as itself;
     ///   one refused by the lowering or the checker, or whose body does not
-    ///   focus, is carried as itself and never run.
+    ///   focus, is carried as itself and never run. Input admission indices
+    ///   select verdicts; program positions index the packed entries.
     /// - provides: the program every run of the module's declarations shares.
     /// - fails: never; a body that does not focus is the declaration's
     ///   standing, not a failure of the program.
@@ -350,10 +370,24 @@ impl<'source> Program<'source>
     /// # Adequacy
     /// - hypothesis: L3 — sources holding an accepted, an owed, a refused and
     ///   an unfocusable declaration are built and each run asserted at its
-    ///   exact outcome, which only the standing built for it gives.
+    ///   exact outcome. A sparse literal declaration retains its name and value
+    ///   at its packed program position. Sparse cross-declaration references
+    ///   are outside these fixtures.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    /// - witness: `evaluate::tests::sparse_admission_positions_keep_program_order`
+    #[spec(
+        ensures: |ref ret| ret.declarations.len() == module.declarations().len()
+            && usize::from(ret.definitions.len()) == ret.declarations.len()
+            && ret.declarations.iter().zip(module.declarations()).enumerate()
+                .all(|(position, (declared, lowered))| declared.name == lowered.name()
+                    && match (ret.definitions.get(ConstantIndex::from(position)), &declared.slot) {
+                        (Some(Definition::Transparent(producer)), &Slot::Defined(_)) => ret.arena.producer(producer).is_some(),
+                        (Some(Definition::Opaque), &Slot::Opaque(_)) => true,
+                        _ => false,
+                    })
+    )]
     #[must_use]
     pub(crate) fn new(
         core: &CoreArena,
@@ -422,6 +456,10 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — a source of several names, a later declaration of an
     ///   earlier name among them, and a source of none.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(last) => usize::from(last).checked_add(1_usize) == Some(self.declarations.len()),
+        Maybe::Absent(run_target::Absent::NoDeclaration) => self.declarations.is_empty(),
+    })]
     #[inline]
     pub fn target(&self) -> Maybe<ConstantIndex, run_target::Absent>
     {
@@ -434,7 +472,23 @@ impl<'source> Program<'source>
     /// The name of the declaration at `constant`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; any admission position may be queried.
+    /// - ensures: the name stored at the exact position, or `Undeclared` when
+    ///   the position is outside the declarations, without truncating the
+    ///   index.
+    /// - fails: an absent name is the typed absence, never a substitute name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct names retain their positions across a later
+    ///   definition of an earlier name; empty and maximal-index queries are
+    ///   absent.
+    /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    #[spec(ensures: |ret| match (self.declarations.get(usize::from(constant)), ret) {
+        (Some(declared), Maybe::Present(name)) => declared.name == name,
+        (None, Maybe::Absent(declaration_name::Absent::Undeclared)) => true,
+        _ => false,
+    })]
     #[inline]
     pub fn name(
         &self,
@@ -451,7 +505,21 @@ impl<'source> Program<'source>
     /// refusal, in admission order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: exactly the declarations whose bodies failed focusing, with
+    ///   their own names and refusals, in admission order; other slots are
+    ///   absent.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — anodized rejects postconditions on this opaque
+    ///   iterator return type with E0562; observing the sequence requires
+    ///   instrumentation support rather than changing the public signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two code refusals retain order across defined, owed
+    ///   and refused declarations; other focusing refusal kinds are not
+    ///   generated.
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     #[inline]
     pub fn focus_refusals(&self)
     -> impl Iterator<Item = (SurfaceName<'source>, FocusRefusal)> + '_
@@ -484,7 +552,9 @@ impl<'source> Program<'source>
     ///   `<code>`.
     /// - provides: the run stage every caller shares, so one declaration has
     ///   one outcome and one spelling wherever it is run.
-    /// - fails: never; every failure is an outcome.
+    /// - fails: never; every failure is an outcome. A refused entry command
+    ///   also produces `Unrunnable`; its attempted focusing may already have
+    ///   appended command-arena nodes.
     /// - panics: none.
     /// - intension: each run is bounded by a step budget; the reference walk,
     ///   the readback and the spelling are recursion-free, their pending work
@@ -495,11 +565,41 @@ impl<'source> Program<'source>
     ///   and per spelling arm it can reach, each run asserted at its exact
     ///   evaluation; a goal met directly, through a force and through an
     ///   application; a refused and a code reference reached directly and
-    ///   through another declaration.
+    ///   through another declaration. Machine exhaustion and every core
+    ///   spelling constructor are not generated by the source cases; structured
+    ///   terminals have separate core-to-machine and spelling witnesses.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    #[spec(
+        captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
+            watermark = self.arena.watermark(), blocked = match self.declarations.get(usize::from(constant)) {
+                None => Some(Unrunnable::Undeclared(constant)),
+                Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => Some(Unrunnable::Refused(name)),
+                Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
+                    Some(Unrunnable::Unfocused { declaration: name, refusal }),
+                Some(&Declared { slot: Slot::Defined(_) | Slot::Opaque(Opacity::Owed), .. }) => None,
+            }],
+        ensures: |ref ret| self.declarations.len() == declarations && self.definitions.len() == definitions
+            && blocked.is_none_or(|reason| matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
+                && self.arena.watermark() == watermark)
+            && match *ret {
+                Evaluation::Blamed(name) => self.declarations.iter().any(|declared|
+                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Owed))),
+                Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => usize::from(index) >= declarations,
+                Evaluation::Unrunnable(Unrunnable::Refused(name)) => self.declarations.iter().any(|declared|
+                    declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
+                Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, .. }) =>
+                    self.declarations.iter().any(|declared| declared.name == declaration),
+                Evaluation::Unfinished(Unfinished::Inconsistent(index)) => self.declarations.get(usize::from(index))
+                    .is_some_and(|declared| matches!(declared.slot, Slot::Defined(_))),
+                Evaluation::Value(_) | Evaluation::Stuck(_)
+                    | Evaluation::Unfinished(Unfinished::Fault(_) | Unfinished::Readback(_)) => true,
+            }
+    )]
     #[inline]
     pub fn evaluate(
         &mut self,
@@ -563,7 +663,40 @@ impl<'source> Program<'source>
     /// that the machine cannot carry, as the reason it never runs.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the first reached absent, refused or unfocused declaration is
+    ///   returned with its exact identity; an owed declaration is carried.
+    ///   Absence means the reachable reference graph contains no such obstacle.
+    /// - fails: an undeclared reference reports its own index, not the run
+    ///   target.
+    /// - panics: none.
+    /// - intension: each declared position is expanded at most once, including
+    ///   when references repeat or form a cycle.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct and transitive refusal and code references are
+    ///   blocked, while owed references reach the machine; cycles are not built
+    ///   by these admitted source fixtures.
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[spec(ensures: |ret| {
+        let root = match self.declarations.get(usize::from(constant)) {
+            None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
+            Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => ret == Maybe::Present(Unrunnable::Refused(name)),
+            Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
+                ret == Maybe::Present(Unrunnable::Unfocused { declaration: name, refusal }),
+            Some(&Declared { slot: Slot::Opaque(Opacity::Owed), .. }) => matches!(ret, Maybe::Absent(carried::Absent::Carried)),
+            Some(&Declared { slot: Slot::Defined(_), .. }) => true,
+        };
+        root && match ret {
+            Maybe::Present(Unrunnable::Undeclared(index)) => self.declarations.get(usize::from(index)).is_none(),
+            Maybe::Present(Unrunnable::Refused(name)) => self.declarations.iter().any(|declared|
+                declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
+            Maybe::Present(Unrunnable::Unfocused { declaration, refusal }) => self.declarations.iter().any(|declared|
+                declared.name == declaration && matches!(declared.slot, Slot::Opaque(Opacity::Unfocused(actual)) if actual == refusal)),
+            Maybe::Absent(carried::Absent::Carried) => true,
+        }
+    })]
     fn unrunnable(
         &self,
         constant: ConstantIndex,
@@ -602,8 +735,23 @@ impl<'source> Program<'source>
     /// for a constant whose value is a thunk.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; the constant need not have a definition yet.
+    /// - ensures: success returns distinct, allocated return and force commands
+    ///   for the same constant, in that order, in this program's arena.
+    /// - fails: preserves the focusing refusal; nodes already appended are not
+    ///   rolled back when a later allocation fails.
+    /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ordinary value runs through the return entry and a
+    ///   thunk through both entries; allocation exhaustion is not forced.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[spec(ensures: |ret| match ret {
+        Ok((returned, forced)) => returned != forced && self.arena.command(returned).is_some()
+            && self.arena.command(forced).is_some(),
+        Err(_) => true,
+    })]
     /// # Errors
     /// The [`FocusRefusal`] of a command arena that refused a node.
     fn entries(
@@ -627,8 +775,35 @@ impl<'source> Program<'source>
     /// observation, and the stuck state otherwise.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `outcome` was produced by `machine`; a halted id resolves in
+    ///   its store.
+    /// - ensures: success returns the identical halted id, never an immediately
+    ///   opaque value. A stuck result retains its precise stuck reason; opacity
+    ///   reached outside suspension is instead classified by declaration
+    ///   standing.
+    /// - fails: returns blame, unrunnability or inconsistency for an opaque
+    ///   declaration, or the unchanged stuck outcome; it never spells a value.
+    /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct, forced and applied goals preserve blame,
+    ///   while a constructed terminal selects its first opaque field and an
+    ///   unforced suspension does not expose its goal; other stuck reasons are
+    ///   not separately generated by these source and core fixtures.
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    #[spec(
+        requires: match outcome { Outcome::Halted(value) => machine.store().value(value).is_some(), Outcome::Stuck(_) => true },
+        captures: [halted = match outcome { Outcome::Halted(value) => Some(value), Outcome::Stuck(_) => None },
+            stuck = match outcome { Outcome::Stuck(ref reason) => Some(core::mem::discriminant(reason)), Outcome::Halted(_) => None }],
+        ensures: |ref ret| match *ret {
+            Ok(value) => halted == Some(value)
+                && !matches!(machine.store().value(value), Some(&HeapValue::Opaque(_))),
+            Err(Evaluation::Stuck(ref actual)) => stuck == Some(core::mem::discriminant(actual)),
+            Err(Evaluation::Value(_)) => false,
+            Err(Evaluation::Blamed(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_)) => true,
+        }
+    )]
     /// # Errors
     /// The evaluation a run ends with when it halted on, or stuck at, an
     /// opaque constant, or stuck otherwise.
@@ -673,7 +848,25 @@ impl<'source> Program<'source>
     /// The first opaque constant `value` holds outside any suspension.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the reachable constructed-value graph is finite and acyclic.
+    ///   A missing id is permitted and ignored.
+    /// - ensures: the first opaque field in left-to-right depth-first order is
+    ///   returned; literals, missing values and suspensions contribute none. A
+    ///   thunk or closure is never entered merely to look for blame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested fields distinguish field order from admission
+    ///   order; a goal underneath an unforced thunk remains unobserved.
+    /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[spec(ensures: |ret| match machine.store().value(value) {
+        Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
+        Some(&HeapValue::Constructed { .. }) => true,
+        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Closure { .. })) | None =>
+            matches!(ret, Maybe::Absent(carried::Absent::Carried)),
+    })]
     fn opaque_within(
         machine: &Machine<'_>,
         value: HeapValueId,
@@ -698,7 +891,26 @@ impl<'source> Program<'source>
     /// The evaluation of a run that met the opaque constant `constant`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; missing and even defined positions are classified.
+    /// - ensures: owed positions blame their name, refused and unfocused ones
+    ///   remain unrunnable with their identity, a defined position is
+    ///   inconsistent, and an absent position reports that exact undeclared
+    ///   index.
+    /// - fails: every classification is an evaluation, never a panic.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real composed declarations exercise every standing,
+    ///   including the inconsistent defined and out-of-range boundaries.
+    /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
+    #[spec(ensures: |ref ret| match self.declarations.get(usize::from(constant)) {
+        Some(&Declared { name, slot: Slot::Opaque(Opacity::Owed) }) => matches!(*ret, Evaluation::Blamed(actual) if actual == name),
+        Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
+        Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) => matches!(*ret,
+            Evaluation::Unrunnable(Unrunnable::Unfocused { declaration, refusal: actual }) if declaration == name && actual == refusal),
+        Some(&Declared { slot: Slot::Defined(_), .. }) => matches!(*ret, Evaluation::Unfinished(Unfinished::Inconsistent(actual)) if actual == constant),
+        None => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Undeclared(actual)) if actual == constant),
+    })]
     fn met(
         &self,
         constant: ConstantIndex,
@@ -731,7 +943,57 @@ impl<'source> Program<'source>
     /// The spelling of the terminal `read`, read back into `core`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the reachable core graph is finite and acyclic; missing ids
+    ///   are permitted and have explicit placeholder spellings.
+    /// - ensures: literals retain signs, decimal components and escaped text;
+    ///   unit, functions, suspensions and codes have their declared spellings.
+    ///   Pairs and injections preserve field order and nesting, lifts are
+    ///   erased, and constants retain known names or the unknown-constant
+    ///   placeholder.
+    /// - fails: unsupported computation heads and missing nodes are spelled,
+    ///   not dereferenced or silently omitted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source values cover integer, quoted text, unit,
+    ///   functions and thunks; a core fixture covers nested pairs, both
+    ///   injection sides and constant names. Numeric and malformed-core cases
+    ///   are not separately generated by these witnesses.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    #[spec(ensures: |ref ret| match core.computation(read) {
+        Some(&Computation::Lambda(_)) => ret.0 == "<fun>",
+        Some(&Computation::Return(value)) => match core.value(value) {
+            Some(&Value::Unit) => ret.0 == "()",
+            Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
+            Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
+            Some(&Value::Constant(constant)) => match self.name(constant) {
+                Maybe::Present(name) => ret.0 == name.as_ref(),
+                Maybe::Absent(declaration_name::Absent::Undeclared) => ret.0 == "<constant>",
+            },
+            Some(&Value::Variable { .. }) => ret.0 == "<variable>",
+            Some(&Value::Literal(Literal::Integer(ref integer))) => {
+                let digits: &str = integer.magnitude().as_ref();
+                ret.0.chars().eq(core::iter::once('-').filter(|_| integer.sign() == Sign::Negative).chain(digits.chars()))
+            },
+            Some(&Value::Literal(Literal::Numeric(ref numeric))) => {
+                let integer: &str = numeric.integer_part().as_ref();
+                let fraction: &str = numeric.fraction().as_ref();
+                ret.0.chars().eq(core::iter::once('-').filter(|_| numeric.sign() == Sign::Negative)
+                    .chain(integer.chars()).chain(core::iter::once('.'))
+                    .chain(if fraction.is_empty() { "0" } else { fraction }.chars()))
+            },
+            Some(&Value::Literal(Literal::Text(ref text))) => {
+                let text: &str = text.as_ref();
+                ret.0.chars().eq(core::iter::once('"').chain(text.escape_debug()).chain(core::iter::once('"')))
+            },
+            Some(&Value::Pair(..)) => ret.0.starts_with('(') && ret.0.ends_with(')'),
+            Some(&Value::Injection(side, _)) => ret.0.starts_with(match side { Side::Left => "inl(", Side::Right => "inr(" }) && ret.0.ends_with(')'),
+            Some(&Value::Lift { .. }) => true,
+            None => ret.0 == "<dangling>",
+        },
+        Some(&(Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) | None => ret.0 == "<computation>",
+    })]
     fn spell(
         &self,
         core: &CoreArena,
@@ -849,7 +1111,27 @@ enum Piece
 /// The constants `body` refers to, outside its types.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the reachable term graph is finite and acyclic; missing ids are
+///   ignored rather than followed.
+/// - ensures: one index per reference occurrence, preserving multiplicity;
+///   quoted types and static code do not contribute references. A constant root
+///   contributes only itself and an atomic non-reference root contributes none.
+/// - fails: never.
+/// - panics: none.
+/// - intension: traversal uses an explicit worklist without recursion.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real transitive source references prevent unsafe runs,
+///   and a nested core value retains repeated references rather than
+///   deduplicating. Every core wrapper is not separately generated.
+/// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+/// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+#[spec(ensures: |ref ret| match core.value(body) {
+    Some(&Value::Constant(constant)) => ret.iter().copied().eq([constant]),
+    Some(&(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_)
+        | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) | None => ret.is_empty(),
+    Some(&(Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_))) => true,
+})]
 fn references(
     core: &CoreArena,
     body: ValueId,
@@ -918,6 +1200,7 @@ fn references(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_sequent::FocusRefusal;
     use gandr_core_sequent::MachineFault;
     use gandr_core_sequent::Stuck;
@@ -925,6 +1208,7 @@ mod tests
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::SurfaceName;
+    use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -941,8 +1225,18 @@ mod tests
     /// The program `source` composes to under the fixture root.
     ///
     /// # Specification
+    /// - requires: a flat source fixture that composes without an engine fault
+    ///   or whole-module refusal under the fixture root.
+    /// - ensures: definitions and declared names occupy the same dense table.
+    /// - panics: if the grammar or composition premise fails.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — values, goals, refusals, later definitions of
+    ///   existing names and an empty source have independent expected outcomes
+    ///   or targets.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
+    #[spec(ensures: |ref ret| usize::from(ret.definitions.len()) == ret.declarations.len())]
     fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
     {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -957,14 +1251,29 @@ mod tests
     /// What running the declaration named `name` of `program` comes to.
     ///
     /// # Specification
+    /// - requires: `program` declares `name`.
+    /// - ensures: evaluates that name without changing declaration count; an
+    ///   undeclared-reference result lies outside the program, not at another
+    ///   name.
+    /// - panics: if the named declaration is absent.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — named values, direct and indirect goals and refused
+    ///   references return independent expected evaluations.
+    /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
+    /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    #[spec(
+        requires: program.declarations.iter().any(|declared| declared.name == name),
+        captures: [declarations = program.declarations.len()],
+        ensures: |ref ret| program.declarations.len() == declarations
+            && match *ret { Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => usize::from(index) >= declarations, _ => true }
+    )]
     fn run<'source>(
         program: &mut Program<'source>,
-        name: impl Into<SurfaceName<'source>>,
+        name: SurfaceName<'source>,
     ) -> Evaluation<'source>
     {
-        let name = name.into();
         let position = program
             .declarations
             .iter()
@@ -1000,7 +1309,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { ret thunk { ret 1 
             ("delayed", r#""later""#),
             ("nested", "<thunk>"),
         ] {
-            let evaluation = run(&mut values, name);
+            let evaluation = run(&mut values, SurfaceName::from(name));
             assert!(
                 matches!(evaluation, Evaluation::Value(_)),
                 "`{name}` runs to a value: {evaluation}"
@@ -1034,26 +1343,23 @@ def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { ret holder } ;"#,
             ("applied", "function"),
         ] {
             assert_eq!(
-                run(&mut goals, name),
+                run(&mut goals, SurfaceName::from(name)),
                 Evaluation::Blamed(SurfaceName::from(goal)),
                 "`{name}` is blamed on the goal it reaches"
             );
         }
         assert_eq!(
-            run(&mut goals, "untouched").to_string(),
+            run(&mut goals, SurfaceName::from("untouched")).to_string(),
             "3",
             "a run that reaches no goal is not blamed for one beside it"
         );
         assert_eq!(
-            run(&mut goals, "kept").to_string(),
+            run(&mut goals, SurfaceName::from("kept")).to_string(),
             "<thunk>",
             "a goal under a suspension the run returns is not reached"
         );
-        assert_eq!(
-            run(&mut goals, "forced").to_string(),
-            "blame: `suspended` is owed its body",
-            "blame is spelled with the goal it names"
-        );
+        let rendered = run(&mut goals, SurfaceName::from("forced")).to_string();
+        assert_eq!(rendered.split('`').nth(1), Some("suspended"));
     }
 
     #[test]
@@ -1064,17 +1370,26 @@ def kept : +U (-F (+U (-F Integer))) ; def kept = thunk { ret holder } ;"#,
 def uses : Integer ; def uses = bad ;
 def small : Type ; def small = Integer ;
 def alias : Type ; def alias = small ;
-def again : Type ; def again = alias ;"#,
+def again : Type ; def again = alias ;
+def later : Integer ; def lost = missing ; def answer = 42 ;
+def wide : Type ; def wide = String ;"#,
+        );
+        let before = carried.arena.watermark();
+        assert!(
+            carried
+                .focus_refusals()
+                .map(|(name, _)| name)
+                .eq([SurfaceName::from("small"), SurfaceName::from("wide")])
         );
         for name in ["bad", "uses"] {
             assert_eq!(
-                run(&mut carried, name),
+                run(&mut carried, SurfaceName::from(name)),
                 Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad"))),
                 "`{name}` reaches the refused declaration and never runs"
             );
         }
         for name in ["small", "alias", "again"] {
-            let evaluation = run(&mut carried, name);
+            let evaluation = run(&mut carried, SurfaceName::from(name));
             assert!(
                 matches!(
                     evaluation,
@@ -1091,6 +1406,19 @@ def again : Type ; def again = alias ;"#,
             Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(9_usize))),
             "a position past the program holds nothing to run"
         );
+        assert_eq!(
+            carried.arena.watermark(),
+            before,
+            "blocked runs mint no commands"
+        );
+        assert_eq!(
+            run(&mut carried, SurfaceName::from("lost")),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("lost")))
+        );
+        assert_eq!(
+            run(&mut carried, SurfaceName::from("answer")).to_string(),
+            "42"
+        );
     }
 
     #[test]
@@ -1101,9 +1429,18 @@ def again : Type ; def again = alias ;"#,
 def small : Type ; def small = Integer ;"#,
         );
         let rows = [
-            (run(&mut written, "answer"), RunStatus::Value),
-            (run(&mut written, "copy"), RunStatus::Failed),
-            (run(&mut written, "small"), RunStatus::Unreached),
+            (
+                run(&mut written, SurfaceName::from("answer")),
+                RunStatus::Value,
+            ),
+            (
+                run(&mut written, SurfaceName::from("copy")),
+                RunStatus::Failed,
+            ),
+            (
+                run(&mut written, SurfaceName::from("small")),
+                RunStatus::Unreached,
+            ),
             (
                 Evaluation::Stuck(Stuck::UndefinedConstant(ConstantIndex::from(0_usize))),
                 RunStatus::Failed,
@@ -1137,11 +1474,178 @@ def small : Type ; def small = Integer ;"#,
             Maybe::Present(ConstantIndex::from(1_usize)),
             "a later declaration of an earlier name keeps that name's position"
         );
+        for (position, name) in [(0_usize, "x"), (1_usize, "y")] {
+            assert_eq!(
+                redeclared.name(ConstantIndex::from(position)),
+                Maybe::Present(SurfaceName::from(name))
+            );
+        }
+        assert_eq!(
+            redeclared.name(ConstantIndex::from(usize::MAX)),
+            Maybe::Absent(super::declaration_name::Absent::Undeclared)
+        );
         let none = program(r#"// nothing declared"#);
         assert_eq!(
             none.target(),
             Maybe::Absent(run_target::Absent::NoDeclaration),
             "a source of no name has no target"
+        );
+        assert_eq!(
+            none.name(ConstantIndex::from(0_usize)),
+            Maybe::Absent(super::declaration_name::Absent::Undeclared)
+        );
+        assert!(
+            program("").declarations.is_empty(),
+            "empty input admits no declaration"
+        );
+    }
+    #[test]
+    fn terminal_classification_preserves_declaration_identity()
+    {
+        let written = program(
+            r#"def answer = 42 ; def later : Integer ;
+def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"#,
+        );
+        let defined = written.met(ConstantIndex::from(0_usize));
+        assert_eq!(
+            defined,
+            Evaluation::Unfinished(Unfinished::Inconsistent(ConstantIndex::from(0_usize)))
+        );
+        assert_eq!(
+            written.met(ConstantIndex::from(1_usize)),
+            Evaluation::Blamed(SurfaceName::from("later"))
+        );
+        assert_eq!(
+            written.met(ConstantIndex::from(2_usize)),
+            Evaluation::Unrunnable(Unrunnable::Refused(SurfaceName::from("bad")))
+        );
+        assert!(
+            matches!(written.met(ConstantIndex::from(3_usize)), Evaluation::Unrunnable(
+            Unrunnable::Unfocused { declaration, refusal: FocusRefusal::Code(_) }) if declaration == SurfaceName::from("small"))
+        );
+        let absent = written.met(ConstantIndex::from(99_usize));
+        assert_eq!(
+            absent,
+            Evaluation::Unrunnable(Unrunnable::Undeclared(ConstantIndex::from(99_usize)))
+        );
+        for (evaluation, expected) in [(defined, 0_usize), (absent, 99_usize)] {
+            assert!(
+                evaluation
+                    .to_string()
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter_map(|digits| digits.parse::<usize>().ok())
+                    .eq([expected])
+            );
+        }
+    }
+
+    #[test]
+    fn a_constructed_terminal_blames_its_first_opaque_field()
+    {
+        let goals = program("def first : Integer ; def second : Integer ;");
+        let mut core = gandr_core_term::CoreArena::new();
+        let unit = core.value_unit();
+        let first = core.value_constant(ConstantIndex::from(0_usize));
+        let second = core.value_constant(ConstantIndex::from(1_usize));
+        let nested = core.value_pair(second, first);
+        let outer = core.value_pair(unit, nested);
+        let returned = core.computation_return(outer);
+        let mut commands = gandr_core_sequent::CommandArena::default();
+        let mut provenance = gandr_core_sequent::Provenance::new();
+        let command =
+            gandr_core_sequent::focus_computation(&core, returned, &mut commands, &mut provenance)
+                .expect("the constructed terminal focuses");
+        let mut machine = gandr_core_sequent::Machine::new(&commands, &goals.definitions);
+        let outcome = machine
+            .run(command, gandr_core_sequent::StepCount::from(100_usize))
+            .expect("the constructed terminal runs");
+        assert_eq!(
+            goals.halted(&machine, outcome),
+            Err(Evaluation::Blamed(SurfaceName::from("second")))
+        );
+    }
+
+    #[test]
+    fn structured_values_keep_repeated_references_and_field_order()
+    {
+        let names = program("def first : Integer ; def second : Integer ;");
+        let mut core = gandr_core_term::CoreArena::new();
+        let first = core.value_constant(ConstantIndex::from(0_usize));
+        let second = core.value_constant(ConstantIndex::from(1_usize));
+        let nested = core.value_pair(second, first);
+        let outer = core.value_pair(first, nested);
+        let mut referred = super::references(&core, outer);
+        referred.sort_unstable();
+        assert_eq!(referred.as_slice(), &[
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(0_usize),
+            ConstantIndex::from(1_usize)
+        ]);
+        let returned = core.computation_return(outer);
+        assert_eq!(
+            names.spell(&core, returned).as_ref(),
+            "(first, (second, first))"
+        );
+        for (side, expected) in [
+            (gandr_kernel_term::Side::Left, "inl(second)"),
+            (gandr_kernel_term::Side::Right, "inr(second)"),
+        ] {
+            let injected = core.value_injection(side, second);
+            let returned = core.computation_return(injected);
+            assert_eq!(names.spell(&core, returned).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn sparse_admission_positions_keep_program_order()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let tree = gandr_surface_parser::parse(
+            &grammar,
+            SourceText::from("def omitted : Integer ; def answer = 42 ;"),
+        )
+        .expect("the fixture parses")
+        .into_tree();
+        let mut core = gandr_core_term::CoreArena::new();
+        let lowered = gandr_surface_lowering::lower_module(
+            &grammar,
+            &tree,
+            &mut core,
+            gandr_surface_lowering::LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the fixture lowers");
+        let answer = *lowered
+            .declarations()
+            .last()
+            .expect("the answer follows the omitted name");
+        assert_eq!(answer.constant(), ConstantIndex::from(1_usize));
+        let sparse = gandr_surface_lowering::LoweredModule::new(
+            Vec::from([answer]),
+            Vec::new(),
+            lowered.attributes().clone(),
+            lowered.origins().clone(),
+            gandr_surface_lowering::ModuleImports::default(),
+            lowered.recognition().clone(),
+        );
+        let verdicts = gandr_core_checker::check_module(
+            &mut gandr_core_checker::CheckingContext::new(
+                &mut core,
+                gandr_core_checker::CheckBudget::DEFAULT,
+            ),
+            &crate::compose::adapt(&sparse),
+        );
+        let mut program = Program::new(&core, &sparse, &verdicts);
+        assert_eq!(
+            program.target(),
+            Maybe::Present(ConstantIndex::from(0_usize))
+        );
+        assert_eq!(
+            program.name(ConstantIndex::from(0_usize)),
+            Maybe::Present(SurfaceName::from("answer"))
+        );
+        assert!(
+            matches!(run(&mut program, SurfaceName::from("answer")), Evaluation::Value(ref value) if value.as_ref() == "42")
         );
     }
 }

@@ -14,9 +14,9 @@
 //! Both backends encode completely before they change anything, so an
 //! unsupported form fails a store with nothing written. The file backend
 //! writes the record to a private temporary it created exclusively and
-//! publishes it with one rename; a guard removes the temporary on every other
-//! exit, so a reader of the directory after a failed store sees what it saw
-//! before. Loading checks the header, the address, the length and the
+//! publishes it with one rename. On every other exit a guard attempts to
+//! remove the temporary; cleanup is best-effort if the filesystem itself
+//! refuses removal. Loading checks the header, the address, the length and the
 //! payload's digest before it decodes, and decoding refuses a payload that is
 //! not the canonical spelling of what it parses to.
 
@@ -27,6 +27,7 @@ use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_kernel_strata::LevelOffset;
 use quenchant_shape::shape::Maybe;
 
@@ -87,6 +88,17 @@ const MAX_TEMPORARY_ATTEMPTS: u8 = 8;
 
 /// The content address of a program revision: the BLAKE3 digest of its
 /// canonical bytes.
+///
+/// # Specification
+/// - executable: none — the digest does not retain the program whose canonical
+///   bytes it addresses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently allocated finite programs retain identity;
+///   selected reorderings, renamings and value changes separate addresses. This
+///   is not a collision-freedom proof.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckpointAddress([u8; 32]);
@@ -106,6 +118,17 @@ impl CheckpointAddress
 }
 
 /// The identity of the backend artifact that judged a checkpoint set.
+///
+/// # Specification
+/// - executable: none — the digest does not retain the artifact bytes whose
+///   identity it records.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real backend digests separate restored records; raw
+///   digest extrema exercise the memory key range. Neither witness proves
+///   collision freedom.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BackendArtifact([u8; 32]);
@@ -125,6 +148,20 @@ impl From<&[u8]> for BackendArtifact
 }
 
 /// Why a checkpoint store refused or failed.
+///
+/// # Specification
+/// - executable: none — an error value does not retain the failed codec or
+///   filesystem operation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — observed corrupt, noncanonical, oversized-level,
+///   unresolved-node and filesystem cases retain their error class and payload.
+///   Unrepresentable machine-size lengths are outside this finite evidence.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+/// - witness: `persistence::tests::opening_an_existing_file_as_a_directory_fails_without_changing_it`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CheckpointStoreError
 {
@@ -152,7 +189,33 @@ impl From<CodecError> for CheckpointStoreError
     /// The store's account of a codec failure.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the codec failure keeps its class and diagnostic payload in
+    ///   the store error vocabulary.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — malformed, noncanonical, capped and unresolved
+    ///   payloads cross the public persistence boundary with exact errors. The
+    ///   machine-width refusal has no reachable oversized allocation in this
+    ///   corpus.
+    /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+    /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+    /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    #[spec(
+        ensures: |ret| match (error, ret) {
+            | (CodecError::Corrupt, Self::Corrupt)
+            | (CodecError::NonCanonical, Self::NonCanonical)
+            | (CodecError::Unrepresentable, Self::Rejected) => true,
+            | (
+                CodecError::LevelOffsetTooLarge { offset },
+                Self::LevelOffsetTooLarge { offset: observed },
+            ) => offset == observed,
+            | (CodecError::Unsupported(form), Self::UnsupportedPersistence(observed)) => {
+                form == observed
+            },
+            | _ => false,
+        },
+    )]
     #[inline]
     fn from(error: CodecError) -> Self
     {
@@ -200,6 +263,18 @@ impl core::error::Error for CheckpointStoreError
 }
 
 /// Observes persistence and invalidation without taking part in checking.
+///
+/// # Specification
+/// - executable: none — the trait exposes no notification history or state
+///   observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a recording observer sees successful stores and empty
+///   restores; a failed publication sends no stored notification. This does not
+///   certify arbitrary observer implementations or their panic behavior.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
 pub trait CheckpointObserver
 {
     /// A checkpoint set was stored at `address`.
@@ -228,6 +303,19 @@ pub trait CheckpointObserver
 }
 
 /// A persistence boundary for complete checkpoint sets.
+///
+/// # Specification
+/// - executable: none — state, canonical bytes and later operations belong to
+///   implementors, not this declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — memory and reopened files return the tested canonical
+///   sets, with backend separation and failure preservation. Capped offsets are
+///   refused before replacing an existing record.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 pub trait CheckpointStore
 {
     /// Load the set stored at `address` by `backend`.
@@ -240,6 +328,17 @@ pub trait CheckpointStore
     /// - fails: when the stored bytes are corrupt or not canonical, or the
     ///   backing store fails.
     /// - panics: none.
+    /// - executable: none — the required method has no body or byte-state
+    ///   observer; inspecting storage again would perform another operation.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real memory and file records distinguish matching,
+    ///   absent and other-backend keys; corrupt files fail. These witnesses
+    ///   cover concrete implementations, not every implementation of the trait.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
     ///
     /// # Errors
     /// A typed persistence error naming the failure.
@@ -253,12 +352,23 @@ pub trait CheckpointStore
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success a later load at `address` by `backend` returns a
-    ///   set equal to `checkpoints`; on failure the store holds what it held
-    ///   before.
-    /// - fails: when the set holds an unsupported form, or the backing store
-    ///   fails.
+    /// - ensures: on success the new record decodes to `checkpoints`; a later
+    ///   load returns that set absent intervening changes or read failures. On
+    ///   failure the store holds what it held before.
+    /// - fails: unsupported data, capped levels, unrepresentable counts, or a
+    ///   backing-store failure.
     /// - panics: none.
+    /// - executable: none — the required method has no body or state observer
+    ///   with which to compare the stored bytes or a later load.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — supported sets round-trip; unsupported and capped
+    ///   replacements leave the old record intact. File preservation is
+    ///   observed through both its bytes and a subsequent load.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
     ///
     /// # Errors
     /// A typed persistence error naming the failure.
@@ -271,6 +381,18 @@ pub trait CheckpointStore
 }
 
 /// A checkpoint store in memory, holding canonical records.
+///
+/// # Specification
+/// - executable: none — canonicality relates each stored byte string to the
+///   encoding operation, not a retained checkpoint value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked sets at two budgets occupy distinct backend keys;
+///   replacement preserves neighboring records, and unsupported encoding does
+///   not alter the old record. Capped offsets are refused before publication.
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+/// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MemoryCheckpointStore
@@ -302,6 +424,51 @@ impl CheckpointStore for MemoryCheckpointStore
     /// - ensures: as [`CheckpointStore::load`]; a record of another backend at
     ///   the address answers `OtherBackend`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and occupied address ranges, both digest
+    ///   extrema, two backend records and replacement preserve the selected set
+    ///   and count. The predicate checks selection and error classes without
+    ///   decoding twice.
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    #[spec(
+        captures: [before = self.records.len()],
+        ensures: |ret| {
+            self.records.len() == before
+                && match ret {
+                    | Ok(Maybe::Present(_)) => self.records.contains_key(&(address, backend)),
+                    | Ok(Maybe::Absent(stored::Absent::NotStored)) => self
+                        .records
+                        .range(
+                            (address, BackendArtifact([0; 32]))
+                                ..= (address, BackendArtifact([u8::MAX; 32])),
+                        )
+                        .next()
+                        .is_none(),
+                    | Ok(Maybe::Absent(stored::Absent::OtherBackend)) => {
+                        !self.records.contains_key(&(address, backend))
+                            && self
+                                .records
+                                .range(
+                                    (address, BackendArtifact([0; 32]))
+                                        ..= (address, BackendArtifact([u8::MAX; 32])),
+                                )
+                                .next()
+                                .is_some()
+                    },
+                    | Err(error) => {
+                        self.records.contains_key(&(address, backend))
+                            && matches!(
+                                error,
+                                CheckpointStoreError::Corrupt
+                                    | CheckpointStoreError::NonCanonical
+                                    | CheckpointStoreError::LevelOffsetTooLarge { .. }
+                            )
+                    },
+                }
+        },
+    )]
     #[inline]
     fn load(
         &mut self,
@@ -337,10 +504,35 @@ impl CheckpointStore for MemoryCheckpointStore
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surface is the order of encode and insert,
-    ///   separated by a store of an unsupported set over an existing record,
-    ///   after which the record and the count are as before.
+    /// - hypothesis: L3 — distinct backend keys coexist, replacement preserves
+    ///   neighboring values, and unsupported encoding leaves the old record and
+    ///   count intact. Value preservation is observed by loads, not a cloned
+    ///   pre-state; capped offsets are refused before insertion.
     /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    #[spec(
+        captures: [
+            before = self.records.len(),
+            held = self.records.contains_key(&(address, backend)),
+        ],
+        ensures: |ret| match ret {
+            | Ok(()) => {
+                self.records.contains_key(&(address, backend))
+                    && before.checked_add(usize::from(!held)) == Some(self.records.len())
+            },
+            | Err(error) => {
+                self.records.len() == before
+                    && self.records.contains_key(&(address, backend)) == held
+                    && matches!(
+                        error,
+                        CheckpointStoreError::UnsupportedPersistence(_)
+                            | CheckpointStoreError::Rejected
+                            | CheckpointStoreError::LevelOffsetTooLarge { .. }
+                    )
+            },
+        },
+    )]
     #[inline]
     fn store(
         &mut self,
@@ -357,6 +549,19 @@ impl CheckpointStore for MemoryCheckpointStore
 
 /// A checkpoint store in a directory: one file per address, named by the
 /// address's hexadecimal digest.
+///
+/// # Specification
+/// - executable: none — the path does not hold the directory state, record
+///   bytes or results of concurrent filesystem operations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reopened directories preserve ordinary records; failed
+///   publication and four concurrent publishers exercise staging and
+///   replacement. Removal failures and forced random-name collisions are
+///   outside these witnesses.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+/// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FileCheckpointStore
@@ -373,10 +578,21 @@ impl FileCheckpointStore
     /// - requires: nothing.
     /// - ensures: on success the directory exists.
     /// - fails: [`CheckpointStoreError::Io`] when it cannot be created.
-    /// - panics: none.
+    /// - panics: propagates a panic from the supplied `AsRef` implementation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real directory is created and reopened; a file at
+    ///   the requested path fails without changing its bytes. The predicate
+    ///   classifies errors without replaying an arbitrary `AsRef`
+    ///   implementation or probing the filesystem after the operation.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::opening_an_existing_file_as_a_directory_fails_without_changing_it`
     ///
     /// # Errors
     /// [`CheckpointStoreError::Io`] — the directory cannot be created.
+    #[spec(
+        ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)),
+    )]
     #[inline]
     pub fn open<Location>(path: Location) -> Result<Self, CheckpointStoreError>
     where
@@ -410,7 +626,7 @@ impl CheckpointStore for FileCheckpointStore
     /// - requires: nothing.
     /// - ensures: as [`CheckpointStore::load`]; a missing file answers
     ///   `NotStored`, and a record whose header names another backend answers
-    ///   `OtherBackend` once its integrity is checked.
+    ///   `OtherBackend` after both integrity checking and payload decoding.
     /// - fails: [`CheckpointStoreError::Io`] for any read error but a missing
     ///   file; [`CheckpointStoreError::Corrupt`] for a bad header, an address
     ///   that is not the file's, a length or digest that does not match the
@@ -422,10 +638,23 @@ impl CheckpointStore for FileCheckpointStore
     ///   integrity check, separated by a missing record, a directory at the
     ///   record path, a flipped address byte, a flipped payload byte, a
     ///   truncated and an extended file, and a well-formed record carrying a
-    ///   noncanonical payload.
+    ///   noncanonical payload for another backend. Decode failure takes
+    ///   precedence over backend mismatch. Removal races are not simulated.
     /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
     /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                ret,
+                Ok(_)
+                    | Err(CheckpointStoreError::Io
+                        | CheckpointStoreError::Corrupt
+                        | CheckpointStoreError::NonCanonical
+                        | CheckpointStoreError::LevelOffsetTooLarge { .. })
+            )
+        },
+    )]
     #[inline]
     fn load(
         &mut self,
@@ -485,8 +714,8 @@ impl CheckpointStore for FileCheckpointStore
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`CheckpointStore::store`]; no file that existed before
-    ///   the call is opened, truncated or written, and no temporary survives
-    ///   the call, whatever its outcome.
+    ///   the call is opened, truncated or written. An unpublished temporary
+    ///   receives a best-effort cleanup attempt.
     /// - fails: the encoding's refusal, before any file is touched;
     ///   [`CheckpointStoreError::Io`] when the temporary cannot be created or
     ///   written or the rename fails.
@@ -497,11 +726,27 @@ impl CheckpointStore for FileCheckpointStore
     ///   staging name and the publishing rename, separated by a directory
     ///   occupying the record path, a squatter at the name a predictable
     ///   staging scheme would pick, four threads storing one address at once,
-    ///   and an unsupported set stored over a published record.
+    ///   and an unsupported set stored over a published record. Cleanup
+    ///   succeeds in those writable directories; forced random-name collisions,
+    ///   and cleanup refusal are not proved. Capped offsets leave the old
+    ///   record bytes, decoded set and directory entries unchanged.
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
     /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
     /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
+    /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                ret,
+                Ok(())
+                    | Err(CheckpointStoreError::Io
+                        | CheckpointStoreError::UnsupportedPersistence(_)
+                        | CheckpointStoreError::Rejected
+                        | CheckpointStoreError::LevelOffsetTooLarge { .. })
+            )
+        },
+    )]
     #[inline]
     fn store(
         &mut self,
@@ -532,10 +777,24 @@ enum Failure
 /// What `error` means to the store.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: missing and existing paths retain their distinct classes; every
+///   other error kind is classified as `Other`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — actual missing-record and directory-read errors separate
+///   `NotFound` from `Other`. Random staging-name collisions are not forced, so
+///   `AlreadyExists` classification has no dedicated collision witness.
+/// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
 #[expect(
     clippy::std_instead_of_core,
     reason = "`core::io::ErrorKind` is not stable yet"
+)]
+#[spec(
+    ensures: |ret| match error.kind() {
+        | std::io::ErrorKind::NotFound => ret == Failure::NotFound,
+        | std::io::ErrorKind::AlreadyExists => ret == Failure::AlreadyExists,
+        | _ => ret == Failure::Other,
+    },
 )]
 fn failure_of(error: &std::io::Error) -> Failure
 {
@@ -551,8 +810,20 @@ fn failure_of(error: &std::io::Error) -> Failure
     }
 }
 
-/// A complete record under a private name, awaiting the rename that
-/// publishes it; removed on every other exit.
+/// An exclusively created private path guarded until publication.
+/// Drop attempts cleanup unless a successful rename disarms the guard.
+///
+/// # Specification
+/// - executable: none — publication and cleanup concern external filesystem
+///   state; the guard retains only a path and publication flag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — failed rename removes a private record in a writable
+///   directory; successful and concurrent publication leave only the named
+///   record. Cleanup refusal and forced nonce collisions are not witnessed.
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
 struct TemporaryRecord
 {
     /// The private path the record was written to.
@@ -565,7 +836,7 @@ struct TemporaryRecord
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Publication
 {
-    /// Still private: the guard removes it.
+    /// Still private: the guard attempts to remove it.
     Private,
     /// Renamed into place: nothing to remove.
     Published,
@@ -578,15 +849,40 @@ impl TemporaryRecord
     /// # Specification
     /// - requires: `root` is an existing directory.
     /// - ensures: on success the whole artifact is in a file this call created,
-    ///   under a name no other live temporary holds, and the guard removes it
+    ///   under a name no other live temporary holds; the guard attempts removal
     ///   unless [`Self::commit`] publishes it. A candidate name that exists is
     ///   never opened: exclusive creation turns a collision into a retry under
     ///   a fresh nonce.
     /// - fails: [`CheckpointStoreError::Io`] when a candidate cannot be created
     ///   for any reason but existing, when the write fails — the handle is then
-    ///   closed before the partial file is removed — or when
+    ///   closed before cleanup of the partial file is attempted — or when
     ///   [`MAX_TEMPORARY_ATTEMPTS`] candidates in a row exist.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real publication, failed rename, a predictable-name
+    ///   squatter and four concurrent publishers exercise private creation. The
+    ///   predicate checks lexical directory/address placement and an armed
+    ///   guard; it does not reread the artifact or force the random collision
+    ///   retry path.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
+    /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(ref record) => {
+                record.published == Publication::Private
+                    && record.path.parent() == Some(root)
+                    && record.path.file_name().is_some_and(|name| {
+                        let prefix = blake3::Hash::from_bytes(address.0).to_hex();
+                        name.as_encoded_bytes().get(.. 64) == Some(prefix.as_str().as_bytes())
+                            && name.as_encoded_bytes().get(64 .. 69) == Some(b".tmp-".as_slice())
+                    })
+            },
+            | Err(error) => error == CheckpointStoreError::Io,
+        },
+    )]
     fn write(
         root: &Path,
         address: CheckpointAddress,
@@ -611,7 +907,7 @@ impl TemporaryRecord
                 | Err(ref error) if failure_of(error) == Failure::AlreadyExists => continue,
                 | Err(_error) => return Err(CheckpointStoreError::Io),
             };
-            // Armed before the first byte, so a partial write is removed too.
+            // Armed before the first byte, so cleanup also covers partial writes.
             let record = Self {
                 path: candidate,
                 published: Publication::Private,
@@ -633,9 +929,24 @@ impl TemporaryRecord
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `Ok` exactly when the rename succeeded; the guard is then
-    ///   disarmed. On failure the guard removes the temporary.
+    ///   disarmed. On failure the guard attempts to remove the temporary.
     /// - fails: [`CheckpointStoreError::Io`] when the rename fails.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — publication succeeds in a writable directory and
+    ///   fails against an occupied directory path. The predicate checks the
+    ///   guard state; the filesystem witnesses observe the record and cleanup,
+    ///   without claiming that a refused removal could not leave a temporary.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    #[spec(
+        captures: [before = self.published],
+        ensures: |ret| match ret {
+            | Ok(()) => self.published == Publication::Published,
+            | Err(error) => error == CheckpointStoreError::Io && self.published == before,
+        },
+    )]
     fn commit(
         mut self,
         destination: &Path,
@@ -649,10 +960,21 @@ impl TemporaryRecord
 
 impl Drop for TemporaryRecord
 {
-    /// Remove the temporary unless the rename published it.
+    /// Attempt to remove the temporary unless the rename published it.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: an unpublished path receives one best-effort removal attempt;
+    ///   a published path is not removed.
+    /// - executable: none — removal is external I/O whose failure is discarded;
+    ///   probing the path afterward would neither prove the attempt nor be
+    ///   race-free.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — failed publication leaves no private record in the
+    ///   writable test directory, while successful publication remains
+    ///   readable. A cleanup failure or concurrent deletion is not injected.
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
     #[inline]
     fn drop(&mut self)
     {
@@ -663,6 +985,17 @@ impl Drop for TemporaryRecord
 }
 
 /// A file record: header, then payload.
+///
+/// # Specification
+/// - executable: none — this nominal byte wrapper has no callable boundary;
+///   `artifact_bytes` establishes its framing contract.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real file round-trips and mutations of record integrity
+///   exercise the envelope. Its constructor checks metadata and payload
+///   placement without a second digest computation.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
 #[repr(transparent)]
 struct ArtifactBytes(Vec<u8>);
 
@@ -672,6 +1005,30 @@ struct ArtifactBytes(Vec<u8>);
 /// # Specification
 /// - fails: [`CheckpointStoreError::Rejected`] when the length passes 64 bits.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — file round-trips preserve payloads; address, extent and
+///   digest mutations are refused on load. The predicate checks framing and
+///   metadata without rehashing the payload; an unrepresentable allocation is
+///   unwitnessed.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref artifact) => u64::try_from(payload.0.len()).is_ok_and(|length| {
+            FILE_HEADER_LEN.checked_add(payload.0.len()) == Some(artifact.0.len())
+                && artifact.0.get(.. 8) == Some(FILE_MAGIC.as_slice())
+                && artifact.0.get(8 .. 12) == Some(FILE_VERSION.to_le_bytes().as_slice())
+                && artifact.0.get(12 .. 44) == Some(address.0.as_slice())
+                && artifact.0.get(44 .. 76) == Some(backend.0.as_slice())
+                && artifact.0.get(76 .. 84) == Some(length.to_le_bytes().as_slice())
+                && artifact.0.get(FILE_HEADER_LEN ..) == Some(payload.0)
+        }),
+        | Err(error) => {
+            error == CheckpointStoreError::Rejected && u64::try_from(payload.0.len()).is_err()
+        },
+    },
+)]
 fn artifact_bytes(
     address: CheckpointAddress,
     backend: BackendArtifact,
@@ -694,7 +1051,24 @@ fn artifact_bytes(
 /// The contents of every item of `program`, in order.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: one content table per source reference, in source order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently allocated programs and selected source
+///   reorderings retain the ordered reference census. The predicate does not
+///   repeat arena projection or claim that unresolved children are persistable.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| {
+        ret.len() == program.references().len()
+            && ret
+                .iter()
+                .zip(program.references())
+                .all(|(content, reference)| content.reference() == reference)
+    },
+)]
 fn contents_of(program: &Program) -> Vec<ItemContent>
 {
     (0 .. program.layout().items.len())
@@ -709,9 +1083,9 @@ fn contents_of(program: &Program) -> Vec<ItemContent>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the BLAKE3 digest of the program's canonical bytes: its items'
-///   references and contents, in order. Two programs built independently with
-///   the same items have the same address; reordering, changing or renaming an
-///   item changes it.
+///   references and contents, in order. Independent construction with the same
+///   items preserves the address; order, item contents and names all contribute
+///   to the digest. Digest inequality is not an injectivity claim.
 /// - fails: [`CheckpointStoreError::UnsupportedPersistence`] naming the first
 ///   unresolved id met.
 /// - panics: none.
@@ -723,9 +1097,31 @@ fn contents_of(program: &Program) -> Vec<ItemContent>
 /// # Adequacy
 /// - hypothesis: L3 — the surfaces are the content-only inputs and the order,
 ///   separated by two independently built programs, a reordering, a changed
-///   value and a renamed key.
+///   value and a renamed key. The executable success facet checks top-level
+///   resolution, not a second encoding or hash; nested unresolved ids have
+///   separate refusal witnesses.
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+            let signature = match item.declaration().signature() {
+                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            let body = match item.declaration().body() {
+                | Maybe::Present(id) => program.arena().value(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            signature && body
+        }),
+        | Err(error) => matches!(
+            error,
+            CheckpointStoreError::UnsupportedPersistence(_) | CheckpointStoreError::Rejected
+        ),
+    },
+)]
 #[inline]
 pub fn address_of(program: &Program) -> Result<CheckpointAddress, CheckpointStoreError>
 {
@@ -738,21 +1134,30 @@ pub fn address_of(program: &Program) -> Result<CheckpointAddress, CheckpointStor
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the one canonical encoding of the set.
-/// - fails: [`CheckpointStoreError::UnsupportedPersistence`] naming the first
-///   unresolved id met.
+/// - ensures: the one canonical encoding, which decodes to the supplied set.
+/// - fails: unsupported nodes, capped level offsets or unrepresentable counts.
 /// - panics: none.
 ///
 /// # Errors
-/// [`CheckpointStoreError::UnsupportedPersistence`] — an item holds an id its
-/// arena did not resolve.
+/// A typed refusal naming the unsupported, capped or unrepresentable input.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are each former's spelling and the refusal
-///   of unresolved ids, separated by a set holding every former the vocabulary
-///   has and by one unresolved id of each sort nested inside a resolved item.
+/// - hypothesis: L3 — a finite semantic corpus round-trips its supported forms;
+///   one unresolved id of each sort nested inside a resolved item reports its
+///   exact refusal. This does not enumerate all possible programs.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| match ret {
+        | Err(CheckpointStoreError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= crate::codec::MAX_DECODED_LEVEL_OFFSET
+        },
+        | Ok(_)
+        | Err(CheckpointStoreError::UnsupportedPersistence(_) | CheckpointStoreError::Rejected) => true,
+        | Err(_) => false,
+    },
+)]
 #[inline]
 pub fn encode_checkpoints(
     checkpoints: &Checkpoints
@@ -785,6 +1190,17 @@ pub fn encode_checkpoints(
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| {
+        matches!(
+            ret,
+            Ok(_)
+                | Err(CheckpointStoreError::Corrupt
+                    | CheckpointStoreError::NonCanonical
+                    | CheckpointStoreError::LevelOffsetTooLarge { .. })
+        )
+    },
+)]
 #[inline]
 pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
 {
@@ -799,10 +1215,43 @@ pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, Checkp
 /// - ensures: on success the set is stored at the program's address and the
 ///   observer is told; on failure the observer is told nothing.
 /// - fails: the address's or the store's error.
-/// - panics: none.
+/// - panics: propagates a panic from a supplied store or observer.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — real memory and file stores notify after successful
+///   storage; unresolved addressing and failed file publication notify nobody.
+///   The precondition checks reference alignment, not full checkpoint
+///   provenance; the success predicate does not repeat hashing or invoke the
+///   observer.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
 ///
 /// # Errors
 /// As [`address_of`] and [`CheckpointStore::store`].
+#[spec(
+    requires: checkpoints.items().len() == program.references().len()
+        && checkpoints
+            .items()
+            .iter()
+            .zip(program.references())
+            .all(|(checkpoint, reference)| checkpoint.content().reference() == reference),
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+            let signature = match item.declaration().signature() {
+                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            let body = match item.declaration().body() {
+                | Maybe::Present(id) => program.arena().value(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            signature && body
+        }),
+        | Err(_) => true,
+    },
+)]
 #[inline]
 pub fn persist<Store, Observer>(
     store: &mut Store,
@@ -830,10 +1279,36 @@ where
 ///   returns nothing.
 /// - provides: `restored::Absent` naming why nothing was restored.
 /// - fails: the address's or the store's error.
-/// - panics: none.
+/// - panics: propagates a panic from a supplied store or observer.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching records restore, while missing, other-backend
+///   and other-program requests notify invalidation. The success predicate
+///   checks top-level resolution only; generic store contents and callback
+///   histories are observed by the real-store witnesses, not replayed in a
+///   postcondition.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
 ///
 /// # Errors
 /// As [`address_of`] and [`CheckpointStore::load`].
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(_) => program.items().iter().all(|item| {
+            let signature = match item.declaration().signature() {
+                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            let body = match item.declaration().body() {
+                | Maybe::Present(id) => program.arena().value(id).is_some(),
+                | Maybe::Absent(_) => true,
+            };
+            signature && body
+        }),
+        | Err(_) => true,
+    },
+)]
 #[inline]
 pub fn restore<Store, Observer>(
     store: &mut Store,
@@ -872,6 +1347,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::body;
     use gandr_core_checker::signature;
@@ -934,6 +1410,19 @@ mod tests
     use crate::typing::Typing;
 
     /// An observer that records what it is told.
+    ///
+    /// # Specification
+    /// - executable: none — the lists retain notifications, not the operations
+    ///   that should have emitted them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — successful stores, absent restores and failed
+    ///   publication are observed through the recording lists. Distinct missing
+    ///   addresses retain notification order; the observer does not judge the
+    ///   persistence operation.
+    /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+    /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     #[derive(Debug, Default)]
     struct Recording
     {
@@ -948,7 +1437,27 @@ mod tests
         /// Record the stored address.
         ///
         /// # Specification
-        /// trivial.
+        /// - ensures: append this stored address without invalidating an
+        ///   address.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — successful memory and file persistence append
+        ///   notifications; failed publication leaves the list empty. The
+        ///   predicate observes length and last address, not a cloned history
+        ///   prefix.
+        /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+        /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
+        #[spec(
+            captures: [
+                before = self.stored.len(),
+                invalidated = self.invalidated.len(),
+            ],
+            ensures: |ret| {
+                before.checked_add(1) == Some(self.stored.len())
+                    && self.stored.last() == Some(&address)
+                    && self.invalidated.len() == invalidated
+            },
+        )]
         fn stored(
             &mut self,
             address: CheckpointAddress,
@@ -960,7 +1469,24 @@ mod tests
         /// Record the invalidated address.
         ///
         /// # Specification
-        /// trivial.
+        /// - ensures: append this invalidated address without recording a
+        ///   store.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — distinct missing addresses preserve notification
+        ///   order; other-backend and other-program restores are also observed.
+        ///   The predicate checks append extent and the final address without
+        ///   cloning earlier entries.
+        /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
+        /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+        #[spec(
+            captures: [before = self.invalidated.len(), stored = self.stored.len()],
+            ensures: |ret| {
+                before.checked_add(1) == Some(self.invalidated.len())
+                    && self.invalidated.last() == Some(&address)
+                    && self.stored.len() == stored
+            },
+        )]
         fn invalidated(
             &mut self,
             address: CheckpointAddress,
@@ -994,7 +1520,26 @@ mod tests
     /// The canonical bytes of `checkpoints`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the checkpoint set is encodable.
+    /// - ensures: the canonical bytes of that set.
+    /// - panics: an unencodable fixture violates the precondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite semantic corpus and deliberately
+    ///   noncanonical tables use encodable fixtures. The partial precondition
+    ///   checks unresolved main-content nodes only, not support, typing planes
+    ///   or machine widths.
+    /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+    /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+    #[spec(
+        requires: checkpoints.items().iter().all(|checkpoint| {
+            checkpoint
+                .content()
+                .nodes()
+                .iter()
+                .all(|node| !matches!(node, &ContentNode::Unresolved(_)))
+        }),
+    )]
     fn bytes_of(checkpoints: &Checkpoints) -> CheckpointBytes
     {
         encode_checkpoints(checkpoints).expect("supported")
@@ -1012,7 +1557,38 @@ mod tests
     /// A one-item set whose content is `nodes` under a body root of 0.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one unsigned, owed item named hand, with body root zero and
+    ///   exactly the supplied node table; structural validity is not required.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed discovery, unreachable entries and malformed
+    ///   root tables reach the decoder. The predicate checks node count and
+    ///   fixed metadata without cloning the moved node vector or certifying its
+    ///   graph.
+    /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+    /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
+    #[spec(
+        captures: [count = nodes.len()],
+        ensures: |ret| {
+            ret.budget() == CheckBudget::DEFAULT
+                && ret.items().len() == 1
+                && ret.items().first().is_some_and(|checkpoint| {
+                    let content = checkpoint.content();
+                    content.nodes().len() == count
+                        && content.signature() == Maybe::Absent(signature::Absent::Unsigned)
+                        && content.body() == Maybe::Present(NodeIndex::from(0_usize))
+                        && checkpoint.support().is_empty()
+                        && matches!(checkpoint.typing(), &Typing::Owed)
+                        && match *content.reference() {
+                            | Reference::Item {
+                                ref key,
+                                occurrence,
+                            } => key.as_ref() == b"hand" && usize::from(occurrence) == 0,
+                            | _ => false,
+                        }
+                })
+        },
+    )]
     fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
     {
         let content = ItemContent::from_parts(
@@ -1036,7 +1612,40 @@ mod tests
     /// `bytes` with the first occurrence of `from` replaced by `to`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: from is nonempty and occurs in bytes.
+    /// - ensures: replace only its first occurrence, preserving the prefix and
+    ///   suffix even when the replacement length differs.
+    /// - panics: a missing or empty pattern violates the precondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — growing and deleting the first of two occurrences
+    ///   preserve the surrounding bytes. Canonicality mutations exercise
+    ///   equal-width rewrites; the postcondition compares borrowed slices, not
+    ///   a rebuilt output buffer.
+    /// - witness: `persistence::tests::rewriting_the_first_frame_preserves_unequal_length_neighbors`
+    /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+    #[spec(
+        requires: !from.as_ref().is_empty(),
+        ensures: |ret| {
+            bytes
+                .as_ref()
+                .windows(from.as_ref().len())
+                .position(|window| window == from.as_ref())
+                .is_some_and(|at| {
+                    match (
+                        at.checked_add(from.as_ref().len()),
+                        at.checked_add(to.as_ref().len()),
+                    ) {
+                        | (Some(after), Some(end)) => {
+                            ret.as_ref().get(.. at) == bytes.as_ref().get(.. at)
+                                && ret.as_ref().get(at .. end) == Some(to.as_ref())
+                                && ret.as_ref().get(end ..) == bytes.as_ref().get(after ..)
+                        },
+                        | _ => false,
+                    }
+                })
+        },
+    )]
     fn rewritten(
         bytes: &CheckpointBytes,
         from: &CheckpointBytes,
@@ -1062,7 +1671,34 @@ mod tests
     /// The program of one item `nested` with `signature` and `body`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one item named nested at origin zero retains the supplied
+    ///   roots and arena, including deliberately unresolved identifiers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — foreign and opaque children in all four sorts reach
+    ///   exact persistence refusals. The predicate checks item identity and
+    ///   root slots; it does not clone the moved arena or certify that those
+    ///   roots resolve.
+    /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+    /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+    #[spec(
+        ensures: |ret| {
+            ret.items().len() == 1
+                && ret.items().first().is_some_and(|item| {
+                    item.declaration().signature() == signature && item.declaration().body() == body
+                })
+                && ret
+                    .references()
+                    .first()
+                    .is_some_and(|reference| match *reference {
+                        | Reference::Item {
+                            ref key,
+                            occurrence,
+                        } => key.as_ref() == b"nested" && usize::from(occurrence) == 0,
+                        | _ => false,
+                    })
+        },
+    )]
     fn nested(
         arena: CoreArena,
         signature: Maybe<gandr_core_term::ValueTypeId, signature::Absent>,
@@ -1291,13 +1927,13 @@ mod tests
             Ok(under),
             "an offset under the cap round trips"
         );
-        assert_eq!(
-            decoded(&bytes_of(&at_offset(4096_u64))),
-            Err(CheckpointStoreError::LevelOffsetTooLarge {
-                offset: LevelOffset::from(4096_u64),
-            }),
-            "an offset at the cap is refused, naming the offset"
-        );
+        let capped = at_offset(4096_u64);
+        let refusal = CheckpointStoreError::LevelOffsetTooLarge {
+            offset: LevelOffset::from(4096_u64),
+        };
+        assert_eq!(encode_checkpoints(&capped), Err(refusal));
+        let raw = crate::codec::checkpoint_frame(&capped).expect("raw capped frame");
+        assert_eq!(decoded(&raw), Err(refusal));
     }
 
     #[test]
@@ -1378,17 +2014,11 @@ mod tests
             literal("1"),
             literal("2"),
         ]);
-        assert_eq!(
-            decoded(&bytes_of(&out_of_discovery)),
-            Err(CheckpointStoreError::NonCanonical),
-            "a table numbered against discovery order"
-        );
+        let raw = crate::codec::checkpoint_frame(&out_of_discovery).expect("raw reordered table");
+        assert_eq!(decoded(&raw), Err(CheckpointStoreError::NonCanonical));
         let unreached = hand_made(vec![literal("1"), literal("2")]);
-        assert_eq!(
-            decoded(&bytes_of(&unreached)),
-            Err(CheckpointStoreError::NonCanonical),
-            "a table with an entry no root reaches"
-        );
+        let raw = crate::codec::checkpoint_frame(&unreached).expect("raw unreachable node");
+        assert_eq!(decoded(&raw), Err(CheckpointStoreError::NonCanonical));
     }
 
     #[test]
@@ -1397,17 +2027,21 @@ mod tests
         let scratch = Scratch::new(Label("noncanonical-file"));
         let mut store = FileCheckpointStore::open(scratch.path()).expect("open");
         let address = address_of(&pair()).expect("resolved");
-        let payload = bytes_of(&hand_made(vec![
+        let payload = crate::codec::checkpoint_frame(&hand_made(vec![
             ContentNode::Literal(integer(Digits("1"))),
             ContentNode::Literal(integer(Digits("2"))),
-        ]));
+        ]))
+        .expect("raw noncanonical table");
         let artifact =
             artifact_bytes(address, backend(), Bytes(payload.as_ref())).expect("representable");
         std::fs::write(store.record_path(address), &artifact.0).expect("write");
         assert_eq!(
-            store.load(address, backend()),
+            store.load(
+                address,
+                BackendArtifact::from(b"another backend".as_slice())
+            ),
             Err(CheckpointStoreError::NonCanonical),
-            "header, address, length and digest pass; the decoder refuses"
+            "integrity passes; decoding fails before the backend mismatch is considered"
         );
     }
 
@@ -1419,10 +2053,20 @@ mod tests
         let mut program = pair();
         let address = address_of(&program).expect("resolved");
         std::fs::create_dir_all(store.record_path(address)).expect("occupy the record path");
+        let checkpoints = checked(&mut program);
+        let mut observer = Recording::default();
         assert_eq!(
-            store.store(address, backend(), &checked(&mut program)),
+            persist(&mut store, &program, backend(), &checkpoints, &mut observer),
             Err(CheckpointStoreError::Io),
             "the rename onto a directory fails"
+        );
+        assert!(
+            observer.stored.is_empty(),
+            "a failed publication is not observed as stored"
+        );
+        assert!(
+            observer.invalidated.is_empty(),
+            "storage does not invalidate a restore"
         );
         assert_eq!(
             scratch.entries(),
@@ -1715,5 +2359,154 @@ mod tests
                 "{what}"
             );
         }
+    }
+
+    #[test]
+    fn memory_records_separate_addresses_backends_and_replacements()
+    {
+        let mut program = pair();
+        let first = crate::checkpoint::check_program(&mut program, CheckBudget::from(1_usize))
+            .expect("first budget checked")
+            .checkpoints()
+            .clone();
+        let second = crate::checkpoint::check_program(&mut program, CheckBudget::from(2_usize))
+            .expect("second budget checked")
+            .checkpoints()
+            .clone();
+        let address = address_of(&program).expect("resolved");
+        let lower = BackendArtifact([0; 32]);
+        let upper = BackendArtifact([u8::MAX; 32]);
+        let mut store = MemoryCheckpointStore::default();
+        let mut observer = Recording::default();
+        assert_eq!(
+            restore(&mut store, &program, address, lower, &mut observer),
+            Ok(Maybe::Absent(restored::Absent::NotStored))
+        );
+        assert_eq!(store.store(address, upper, &second), Ok(()));
+        assert_eq!(
+            store.load(address, lower),
+            Ok(Maybe::Absent(stored::Absent::OtherBackend)),
+            "the inclusive upper digest is in the address range"
+        );
+        assert_eq!(store.store(address, lower, &first), Ok(()));
+        assert_eq!(
+            store.record_count(),
+            crate::boundary::RecordCount::from(2_usize)
+        );
+        assert_eq!(store.load(address, lower), Ok(Maybe::Present(first)));
+        assert_eq!(
+            store.load(address, upper),
+            Ok(Maybe::Present(second.clone()))
+        );
+        assert_eq!(store.store(address, lower, &second), Ok(()));
+        assert_eq!(
+            store.record_count(),
+            crate::boundary::RecordCount::from(2_usize)
+        );
+        assert_eq!(
+            store.load(address, lower),
+            Ok(Maybe::Present(second.clone()))
+        );
+        assert_eq!(store.load(address, upper), Ok(Maybe::Present(second)));
+
+        let mut empty = integers(CoreArena::new(), &[]);
+        let empty_address = address_of(&empty).expect("empty program resolves");
+        assert_eq!(
+            restore(&mut store, &empty, empty_address, lower, &mut observer),
+            Ok(Maybe::Absent(restored::Absent::NotStored)),
+            "records at another address do not occupy this range"
+        );
+        assert_eq!(observer.invalidated, [address, empty_address]);
+        assert!(observer.stored.is_empty());
+        let empty_set = checked(&mut empty);
+        assert_eq!(store.store(empty_address, lower, &empty_set), Ok(()));
+        assert_eq!(
+            store.load(empty_address, upper),
+            Ok(Maybe::Absent(stored::Absent::OtherBackend)),
+            "the inclusive lower digest is in its own address range"
+        );
+        assert_eq!(
+            store.load(empty_address, lower),
+            Ok(Maybe::Present(empty_set))
+        );
+        assert_eq!(
+            store.record_count(),
+            crate::boundary::RecordCount::from(3_usize)
+        );
+    }
+
+    #[test]
+    fn opening_an_existing_file_as_a_directory_fails_without_changing_it()
+    {
+        let scratch = Scratch::new(Label("open-file"));
+        std::fs::create_dir_all(scratch.path()).expect("fixture directory");
+        let path = scratch.path().join("occupied");
+        std::fs::write(&path, b"retained bytes").expect("create occupied file");
+        assert_eq!(
+            FileCheckpointStore::open(&path),
+            Err(CheckpointStoreError::Io)
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read occupied file"),
+            b"retained bytes"
+        );
+    }
+
+    #[test]
+    fn rewriting_the_first_frame_preserves_unequal_length_neighbors()
+    {
+        let bytes = CheckpointBytes::from(vec![8, 1, 2, 3, 1, 2, 4]);
+        let pattern = CheckpointBytes::from(vec![1, 2]);
+        let grown = rewritten(&bytes, &pattern, &CheckpointBytes::from(vec![9, 10, 11]));
+        assert_eq!(grown.as_ref(), &[8, 9, 10, 11, 3, 1, 2, 4]);
+        let deleted = rewritten(&bytes, &pattern, &CheckpointBytes::from(Vec::new()));
+        assert_eq!(deleted.as_ref(), &[8, 3, 1, 2, 4]);
+    }
+
+    #[test]
+    fn stores_refuse_capped_levels_without_replacing_records()
+    {
+        let mut level = Level::var(LevelVar::new(LevelVarIndex::from(0_u32)));
+        for _ in 0 .. crate::codec::MAX_DECODED_LEVEL_OFFSET {
+            level = level.succ().expect("representable level");
+        }
+        let mut arena = CoreArena::new();
+        let universe =
+            arena.value_type_universe(gandr_core_term::Sort::Ground(GroundSort::Value), level);
+        let mut capped_program = nested(
+            arena,
+            Maybe::Present(universe),
+            Maybe::Absent(body::Absent::Hole),
+        );
+        let capped = checked(&mut capped_program);
+        let mut program = pair();
+        let valid = checked(&mut program);
+        let address = address_of(&program).expect("resolved address");
+        let refusal = CheckpointStoreError::LevelOffsetTooLarge {
+            offset: LevelOffset::from(crate::codec::MAX_DECODED_LEVEL_OFFSET),
+        };
+
+        let mut memory = MemoryCheckpointStore::default();
+        assert_eq!(memory.store(address, backend(), &valid), Ok(()));
+        assert_eq!(memory.store(address, backend(), &capped), Err(refusal));
+        assert_eq!(
+            memory.record_count(),
+            crate::boundary::RecordCount::from(1_usize)
+        );
+        let loaded = memory.load(address, backend()).expect("old memory record");
+        assert!(matches!(loaded, Maybe::Present(ref checkpoints) if checkpoints == &valid));
+
+        let scratch = Scratch::new(Label("capped-store"));
+        let mut file = FileCheckpointStore::open(scratch.path()).expect("open");
+        assert_eq!(file.store(address, backend(), &valid), Ok(()));
+        let before = std::fs::read(file.record_path(address)).expect("old file record");
+        assert_eq!(file.store(address, backend(), &capped), Err(refusal));
+        assert_eq!(
+            std::fs::read(file.record_path(address)).expect("retained file record"),
+            before
+        );
+        assert_eq!(scratch.entries(), [address.to_hex()]);
+        let loaded = file.load(address, backend()).expect("old file checkpoints");
+        assert!(matches!(loaded, Maybe::Present(ref checkpoints) if checkpoints == &valid));
     }
 }

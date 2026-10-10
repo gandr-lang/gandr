@@ -15,6 +15,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -94,6 +95,18 @@ impl Support
     ///   separated by a judgement reading positions out of order and one
     ///   position twice.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    #[spec(
+        captures: [
+            before = log.len(),
+            first = log.iter().min_by_key(|entry| entry.constant).copied(),
+            last = log.iter().max_by_key(|entry| entry.constant).copied(),
+        ],
+        ensures: |ret| ret.consulted.len() <= before
+            && ret.consulted.first().copied() == first
+            && ret.consulted.last().copied() == last
+            && ret.consulted.iter().zip(ret.consulted.iter().skip(1))
+                .all(|(left, right)| left.constant < right.constant),
+    )]
     pub(crate) fn from_log(mut log: Vec<Consulted>) -> Self
     {
         log.sort_by_key(|consulted| consulted.constant);

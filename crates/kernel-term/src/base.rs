@@ -42,6 +42,25 @@ pub enum Sign
 
 /// A canonical unsigned integer magnitude: ASCII decimal digits with no leading
 /// zeros, the all-zero magnitude collapsed to a single `0`.
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: contains nonempty ASCII digits with no leading zero except the
+///   single zero.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Magnitude(String);
@@ -56,6 +75,20 @@ impl Magnitude
     /// - provides: the one zero magnitude every canonicalization collapses to,
     ///   so equality on zero does not depend on its spelling.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        ensures: |ret| ret.0 == "0",
+    )]
     #[inline]
     #[must_use]
     pub fn zero() -> Self
@@ -66,34 +99,40 @@ impl Magnitude
     /// Build a canonical magnitude from decimal digit text.
     ///
     /// # Specification
-    /// - requires: `text` is intended as an unsigned decimal integer.
-    /// - ensures: `Some(magnitude)` with leading zeros stripped and the
-    ///   all-zero case collapsed to `0`, when every character is an ASCII
-    ///   digit; the result compares equal exactly to magnitudes of the same
-    ///   integer value.
-    /// - provides: the canonical, structurally comparable magnitude of an
-    ///   integer or numeric literal. The clause checks decimal acceptance.
-    ///   Caller intent and exact digit preservation stay prose: `text` is
-    ///   consumed and mutated, so comparing its entry bytes would require an
-    ///   allocating capture even without checks.
-    /// - fails: returns `None` when `text` is empty or holds a non-digit
-    ///   character — a malformed magnitude is not representable.
+    /// - requires: any UTF-8 text, including malformed decimal input.
+    /// - ensures: returns the same integer digits with leading zeros removed;
+    ///   an all-zero input becomes the single zero.
+    /// - provides: canonical magnitude equality. The predicate checks
+    ///   acceptance, canonical shape, length and endpoint bytes without
+    ///   retaining the consumed string; the independent witness checks complete
+    ///   digit preservation.
+    /// - fails: returns None exactly for empty text or any non-ASCII-decimal
+    ///   byte.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the canonicalization and its guard are separated by
-    ///   the padded, all-zero, empty and non-digit inputs, each asserted
-    ///   exactly.
-    /// - witness: `base::tests::magnitude_strips_leading_zeros`
-    /// - witness: `base::tests::an_all_zero_magnitude_collapses_to_one_zero`
-    /// - witness: `base::tests::magnitude_refuses_non_digits_and_the_empty_text`
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        captures: entry = (!text.is_empty()
+                && text.bytes().all(|byte| byte.is_ascii_digit()), text.trim_start_matches('0').len().max(1), text.bytes().find(|&byte| byte != b'0').unwrap_or(b'0'), text.as_bytes().last().copied().unwrap_or(b'0')),
+        ensures: |ret| ret.as_ref().map_or(!entry.0,
+            |value| entry.0
+                && value.0.len() == entry.1
+                && value.0.bytes().all(|byte| byte.is_ascii_digit())
+                && (value.0 == "0" || !value.0.starts_with('0'))
+                && value.0.as_bytes().first().copied() == Some(entry.2)
+                && value.0.as_bytes().last().copied() == Some(entry.3)),
+    )]
     #[inline]
     #[must_use]
-    #[spec(
-        captures: entry_is_decimal = !text.is_empty()
-            && text.bytes().all(|byte| byte.is_ascii_digit()),
-        ensures: |ret| ret.is_some() == entry_is_decimal,
-    )]
     pub fn from_decimal_text(mut text: String) -> Option<Self>
     {
         if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -140,6 +179,25 @@ impl AsRef<str> for Magnitude
 
 /// A canonical fractional-digit sequence: ASCII decimal digits with no trailing
 /// zeros, the empty sequence denoting an integral value.
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: contains ASCII digits without trailing zeros; the empty string
+///   denotes an integral value.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FractionDigits(String);
@@ -154,6 +212,20 @@ impl FractionDigits
     /// - provides: the one fraction denoting an integral value, so equality on
     ///   an integral numeric literal does not depend on trailing zeros.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        ensures: |ret| ret.0.is_empty(),
+    )]
     #[inline]
     #[must_use]
     pub fn none() -> Self
@@ -164,29 +236,40 @@ impl FractionDigits
     /// Build a canonical fraction from decimal digit text.
     ///
     /// # Specification
-    /// - requires: `text` is intended as the digits after a decimal point.
-    /// - ensures: `Some(fraction)` with trailing zeros stripped, when every
-    ///   character is an ASCII digit; the result compares equal exactly to
-    ///   fractions denoting the same value.
-    /// - provides: the canonical, structurally comparable fractional part of a
-    ///   numeric literal. The clause checks decimal acceptance. Caller intent
-    ///   and exact digit preservation stay prose: `text` is consumed and
-    ///   mutated, so comparing its entry bytes would require an allocating
-    ///   capture even without checks.
-    /// - fails: returns `None` on a non-digit character.
+    /// - requires: any UTF-8 text, including an empty or malformed fractional
+    ///   part.
+    /// - ensures: returns the same fractional digits with trailing zeros
+    ///   removed; an empty or all-zero input becomes the empty fraction.
+    /// - provides: canonical fractional equality. The predicate checks
+    ///   acceptance, canonical shape, length and endpoint bytes without
+    ///   retaining the consumed string; the independent witness checks complete
+    ///   digit preservation.
+    /// - fails: returns None exactly when a byte is not an ASCII decimal digit.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the truncation and its guard are separated by the
-    ///   trailing-zero, all-zero and non-digit inputs, each asserted exactly.
-    /// - witness: `base::tests::fraction_strips_trailing_zeros`
-    /// - witness: `base::tests::fraction_refuses_non_digits`
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        captures: entry = (text.bytes().all(|byte| byte.is_ascii_digit()), text.trim_end_matches('0').len(), text.as_bytes().first().copied(), text.bytes().rev().find(|&byte| byte != b'0')),
+        ensures: |ret| ret.as_ref().map_or(!entry.0,
+            |value| entry.0
+                && value.0.len() == entry.1
+                && value.0.bytes().all(|byte| byte.is_ascii_digit())
+                && !value.0.ends_with('0')
+                && value.0.as_bytes().first().copied() == if entry.1 == 0 { None }
+            else { entry.2 }
+                && value.0.as_bytes().last().copied() == entry.3),
+    )]
     #[inline]
     #[must_use]
-    #[spec(
-        captures: entry_is_decimal = text.bytes().all(|byte| byte.is_ascii_digit()),
-        ensures: |ret| ret.is_some() == entry_is_decimal,
-    )]
     pub fn from_decimal_text(mut text: String) -> Option<Self>
     {
         if !text.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -225,6 +308,25 @@ impl AsRef<str> for FractionDigits
 
 /// A canonical integer literal: a [`Sign`] and a [`Magnitude`], inhabiting
 /// [`BaseType::Integer`].
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: stores a canonical magnitude and sign; zero always has a
+///   nonnegative sign.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct IntegerLiteral
 {
@@ -251,9 +353,15 @@ impl IntegerLiteral
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the sign pin has one decision surface, separated by
-    ///   the zero magnitude against a non-zero one.
-    /// - witness: `base::tests::a_negative_zero_integer_is_pinned_non_negative`
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[inline]
     #[must_use]
     #[spec(
@@ -304,6 +412,25 @@ impl IntegerLiteral
 ///
 /// The payload is held verbatim: a string carries no normalization beyond its
 /// own bytes.
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: retains the UTF-8 payload without Unicode, whitespace or
+///   line-ending normalization.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct StringLiteral(String);
@@ -319,6 +446,23 @@ impl StringLiteral
     ///   string's bytes are already its canonical form, so two string literals
     ///   compare equal exactly when their bytes do.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        captures: entry = (content.len(), content.as_bytes().first().copied(), content.as_bytes().last().copied()),
+        ensures: |ret| ret.0.len() == entry.0
+                && ret.0.as_bytes().first().copied() == entry.1
+                && ret.0.as_bytes().last().copied() == entry.2,
+    )]
     #[inline]
     #[must_use]
     pub fn new(content: String) -> Self
@@ -357,6 +501,25 @@ impl AsRef<str> for StringLiteral
 
 /// A canonical numeric literal: a [`Sign`], an integral [`Magnitude`], and a
 /// [`FractionDigits`] fractional part, inhabiting [`BaseType::Numeric`].
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: stores canonical integer and fractional digits; zero has a
+///   nonnegative sign.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NumericLiteral
 {
@@ -383,11 +546,15 @@ impl NumericLiteral
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the sign pin has one decision surface, separated by
-    ///   the zero value against a padded non-zero one whose canonical form must
-    ///   still compare equal to its unpadded spelling.
-    /// - witness: `base::tests::a_negative_zero_numeric_is_pinned_non_negative`
-    /// - witness: `base::tests::numeric_equality_ignores_representation_padding`
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[inline]
     #[must_use]
     #[spec(
@@ -449,6 +616,25 @@ impl NumericLiteral
 }
 
 /// A literal value: one of the three rigid base-type atoms' canonical payloads.
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: retains the canonical payload of its variant and selects the
+///   corresponding rigid base-type atom.
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors and variant projection carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L2 agreement compares every decimal value from zero through 99
+///   with independently formatted canonical digits, padded forms, and explicit
+///   empty, invalid ASCII and Unicode near-misses. L3 observes exact payload
+///   bytes, the zero/nonzero sign boundary and all literal variants; it
+///   separates digit loss, wrong trimming direction, negative zero and atom
+///   substitution. Arbitrarily long payloads and allocation refusal are outside
+///   these witnesses.
+/// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+/// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Literal
 {
@@ -473,6 +659,21 @@ impl Literal
     ///   literal's base type is decided by its payload rather than by an
     ///   annotation.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 agreement compares every decimal value from zero
+    ///   through 99 with independently formatted canonical digits, padded
+    ///   forms, and explicit empty, invalid ASCII and Unicode near-misses. L3
+    ///   observes exact payload bytes, the zero/nonzero sign boundary and all
+    ///   literal variants; it separates digit loss, wrong trimming direction,
+    ///   negative zero and atom substitution. Arbitrarily long payloads and
+    ///   allocation refusal are outside these witnesses.
+    /// - witness: `base::tests::a_literal_reports_its_base_type_atom`
+    /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
+    /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
+    #[spec(
+        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric)),
+    )]
     #[inline]
     #[must_use]
     pub const fn base_type(&self) -> BaseType
@@ -609,5 +810,103 @@ mod tests
         assert_eq!(BaseType::Integer, integer.base_type(), "the integer atom");
         assert_eq!(BaseType::String, text.base_type(), "the string atom");
         assert_eq!(BaseType::Numeric, numeric.base_type(), "the numeric atom");
+    }
+
+    #[test]
+    fn decimal_normalization_matches_a_numeric_reference()
+    {
+        assert_eq!("0", Magnitude::zero().as_ref());
+        assert_eq!("", FractionDigits::none().as_ref());
+        assert_eq!(None, Magnitude::from_decimal_text(String::new()));
+        assert_eq!(
+            Some(FractionDigits::none()),
+            FractionDigits::from_decimal_text(String::new())
+        );
+        for number in 0u16 ..= 99 {
+            let canonical = alloc::format!("{number}");
+            for prefix in ["", "0", "000"] {
+                let input = alloc::format!("{prefix}{number}");
+                let magnitude = Magnitude::from_decimal_text(input).expect("ASCII decimal input");
+                assert_eq!(canonical, magnitude.as_ref());
+                assert_eq!(canonical, magnitude.to_digits());
+            }
+            let fractional = if number == 0 {
+                String::new()
+            }
+            else if number.is_multiple_of(10) {
+                alloc::format!("{}", number.div_euclid(10))
+            }
+            else {
+                alloc::format!("{number:02}")
+            };
+            for suffix in ["", "0", "000"] {
+                let input = alloc::format!("{number:02}{suffix}");
+                let fraction =
+                    FractionDigits::from_decimal_text(input).expect("ASCII fractional input");
+                assert_eq!(fractional, fraction.as_ref());
+                assert_eq!(fractional, fraction.to_digits());
+            }
+        }
+        for invalid in [
+            "/", ":", "-1", "+1", "1.0", " 1", "1 ", "1\0", "é", "١", "𝟡",
+        ] {
+            assert_eq!(None, Magnitude::from_decimal_text(String::from(invalid)));
+            assert_eq!(
+                None,
+                FractionDigits::from_decimal_text(String::from(invalid))
+            );
+        }
+    }
+
+    #[test]
+    fn literal_constructors_preserve_payloads_and_zero_signs()
+    {
+        for sign in [Sign::Negative, Sign::NonNegative] {
+            for digits in ["0", "7", "908"] {
+                let integer = IntegerLiteral::new(
+                    sign,
+                    Magnitude::from_decimal_text(String::from(digits))
+                        .expect("canonical magnitude"),
+                );
+                assert_eq!(digits, integer.magnitude().as_ref());
+                assert_eq!(
+                    if digits == "0" {
+                        Sign::NonNegative
+                    }
+                    else {
+                        sign
+                    },
+                    integer.sign()
+                );
+                assert_eq!(BaseType::Integer, Literal::Integer(integer).base_type());
+                for fraction in ["", "01", "5"] {
+                    let numeric = NumericLiteral::new(
+                        sign,
+                        Magnitude::from_decimal_text(String::from(digits))
+                            .expect("canonical magnitude"),
+                        FractionDigits::from_decimal_text(String::from(fraction))
+                            .expect("canonical fraction"),
+                    );
+                    assert_eq!(digits, numeric.integer_part().as_ref());
+                    assert_eq!(fraction, numeric.fraction().as_ref());
+                    assert_eq!(
+                        if digits == "0" && fraction.is_empty() {
+                            Sign::NonNegative
+                        }
+                        else {
+                            sign
+                        },
+                        numeric.sign()
+                    );
+                    assert_eq!(BaseType::Numeric, Literal::Numeric(numeric).base_type());
+                }
+            }
+        }
+        for text in ["", "\0", "é", "𐐀", "a\r\nb", "e\u{301}"] {
+            let literal = StringLiteral::new(String::from(text));
+            assert_eq!(text, literal.as_ref());
+            assert_eq!(text, literal.to_content());
+            assert_eq!(BaseType::String, Literal::Text(literal).base_type());
+        }
     }
 }

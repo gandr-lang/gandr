@@ -14,7 +14,10 @@ publish.workspace = true
 # lowering, the checker and the kernel bridge it carries, the settle
 # comparison the corpus library owns, and the run stage's focusing, machine
 # and readback.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true

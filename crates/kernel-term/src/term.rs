@@ -39,6 +39,24 @@ use crate::base::Literal;
 
 /// A bound value variable, as a de Bruijn index counting binders outward: `0`
 /// is the nearest enclosing binder.
+///
+/// # Specification
+/// - requires: all u32 distances are representable; binder scope is checked by
+///   admission.
+/// - ensures: carries a binder distance distinct from a declaration position.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeBruijnIndex(u32);
@@ -76,6 +94,25 @@ impl From<DeBruijnIndex> for u32
 /// that both spell as an integer, and confusing them is the format's most
 /// available mistake; the wrapper is what stops one being passed where the
 /// other belongs.
+///
+/// # Specification
+/// - requires: all host positions are representable; declaration existence is
+///   checked by admission.
+/// - ensures: carries a declaration position distinct from a binder distance
+///   and a wire-table index.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ConstantIndex(usize);
@@ -121,6 +158,26 @@ pub enum Side
 /// Values are the total, thunkable half of the polarity split. No value
 /// constructor introduces a computation effect; the only value embedding a
 /// computation is [`Self::Thunk`], and a thunk suspends rather than runs it.
+///
+/// # Specification
+/// - requires: payload types are well formed; typing, live-child resolution and
+///   scoping are external obligations.
+/// - ensures: retains the selected positive former and its typed child ids;
+///   derived equality compares child ordinals rather than recursively comparing
+///   graphs.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Value
 {
@@ -170,6 +227,26 @@ pub enum Value
 ///
 /// The eliminators — application, force, bind, case — synthesize; the
 /// introductions — lambda, return — check against an expected computation type.
+///
+/// # Specification
+/// - requires: payload types are well formed; typing, live-child resolution and
+///   scoping are external obligations.
+/// - ensures: retains the selected negative former and its typed child ids;
+///   derived equality compares child ordinals rather than recursively comparing
+///   graphs.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {

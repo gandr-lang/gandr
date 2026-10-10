@@ -33,10 +33,12 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 
+use crate::boundary::FamilyAddress as _;
 use crate::boundary::FrameHeight;
 use crate::boundary::FrameSerial;
 use crate::boundary::NodeCount;
@@ -415,7 +417,24 @@ impl Store
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dense distinct allocations, exact retrieval and the
+    ///   first missing offset distinguish address reuse, a shifted offset and a
+    ///   misplaced value. The helper covers the ceiling with zero-sized slices;
+    ///   the store is not populated to the ceiling.
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
+    #[spec(
+        captures: [entry = self.values.len()],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                && entry.checked_add(1) == Some(self.values.len()),
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::Values)
+                && self.values.len() == entry,
+        },
+    )]
     pub fn allocate(
         &mut self,
         value: HeapValue,
@@ -435,8 +454,20 @@ impl Store
     /// - provides: the read side of the value family.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, first, last and exact-end reads observe
+    ///   distinct values, distinguishing a wrong offset and endpoint
+    ///   acceptance.
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match ret {
+        | Some(value) => usize::try_from(u32::from(id)).ok()
+            .and_then(|offset| self.values.get(offset))
+            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(value))),
+        | None => usize::try_from(u32::from(id)).map_or(true, |offset| offset >= self.values.len()),
+    })]
     pub fn value(
         &self,
         id: HeapValueId,
@@ -464,7 +495,18 @@ impl Store
     ///   address separate nominal identity from structural identity.
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     /// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
+    #[spec(
+        captures: [entry = self.cells.len()],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                && entry.checked_add(1) == Some(self.cells.len())
+                && self.cell(id) == Some(MemoState::Unforced),
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::Cells)
+                && self.cells.len() == entry,
+        },
+    )]
     pub fn allocate_cell(&mut self) -> Result<CellId, StoreFault>
     {
         let id = CellId::next_in(&self.cells).ok_or(StoreFault::RegionFull(HeapFamily::Cells))?;
@@ -480,8 +522,18 @@ impl Store
     /// - provides: the read side of the cell family.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and exact-end addresses are absent, while two
+    ///   cells in different states retain their individual identity. Wrong
+    ///   offsets and fabricated default states change the observer.
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
+    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok()
+        .and_then(|offset| self.cells.get(offset)).copied()
+    )]
     pub fn cell(
         &self,
         id: CellId,
@@ -511,7 +563,20 @@ impl Store
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
     /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
+    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
+    #[spec(
+        captures: [entry = self.cell(cell)],
+        ensures: |ret| match entry {
+            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
+            | Some(MemoState::Unforced) => ret == Ok(ForceEntry::Opened)
+                && self.cell(cell) == Some(MemoState::InProgress),
+            | Some(MemoState::InProgress) => ret == Ok(ForceEntry::Reentrant)
+                && self.cell(cell) == entry,
+            | Some(MemoState::Forced(value)) => ret == Ok(ForceEntry::Cached(value))
+                && self.cell(cell) == entry,
+        },
+    )]
     pub fn begin_force(
         &mut self,
         cell: CellId,
@@ -550,7 +615,20 @@ impl Store
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     /// - witness: `tests::csl_fibration::write_back_purity_caches_the_exact_probe_allocation`
     /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
+    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
+    #[spec(
+        captures: [entry = self.cell(cell)],
+        ensures: |ret| if self.value(value).is_none() {
+            ret == Err(StoreFault::DanglingValue(value)) && self.cell(cell) == entry
+        } else { match entry {
+            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
+            | Some(MemoState::InProgress) => ret.is_ok()
+                && self.cell(cell) == Some(MemoState::Forced(value)),
+            | Some(found) => ret == Err(StoreFault::CellNotInProgress { cell, found })
+                && self.cell(cell) == entry,
+        } },
+    )]
     pub fn write_back(
         &mut self,
         cell: CellId,
@@ -587,10 +665,23 @@ impl Store
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::write_back`].
+    /// - hypothesis: L3 — each memo state and a missing cell separate
+    ///   successful release, wrong-state refusal and dangling refusal. Exact
+    ///   error payloads and post-states expose a cleared cache or an unreleased
+    ///   black hole.
     /// - witness: `store::tests::frames_shrink_to_a_mark`
     /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
+    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
+    #[spec(
+        captures: [entry = self.cell(cell)],
+        ensures: |ret| match entry {
+            | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
+            | Some(MemoState::InProgress) => ret.is_ok() && self.cell(cell) == Some(MemoState::Unforced),
+            | Some(found) => ret == Err(StoreFault::CellNotInProgress { cell, found })
+                && self.cell(cell) == entry,
+        },
+    )]
     pub fn decline(
         &mut self,
         cell: CellId,
@@ -647,7 +738,23 @@ impl Store
     /// - hypothesis: L3 — a lookup at index `0` and at index `1` after two
     ///   bindings, and past the chain, separate the shift from the base.
     /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
+    #[spec(
+        captures: [entry = self.value_bindings.len()],
+        ensures: |ret| match ret {
+            | Ok(extended) => extended.covalues == environment.covalues
+                && entry.checked_add(1) == Some(self.value_bindings.len())
+                && match extended.values {
+                    | ValueScope::Empty => false,
+                    | ValueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                        && id.read_in(&self.value_bindings).is_some_and(|binding|
+                            binding.value == value && binding.outer == environment.values),
+                },
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::ValueBindings)
+                && self.value_bindings.len() == entry,
+        },
+    )]
     pub fn bind_value(
         &mut self,
         environment: Environment,
@@ -681,9 +788,27 @@ impl Store
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::bind_value`].
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
+    ///   exact-end indices and dangling links distinguish reversed order, an
+    ///   off-by-one index and accidental coupling of the two namespaces.
     /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
+    #[spec(
+        captures: [entry = self.covalue_bindings.len()],
+        ensures: |ret| match ret {
+            | Ok(extended) => extended.values == environment.values
+                && entry.checked_add(1) == Some(self.covalue_bindings.len())
+                && match extended.covalues {
+                    | CovalueScope::Empty => false,
+                    | CovalueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
+                        && id.read_in(&self.covalue_bindings).is_some_and(|binding|
+                            binding.mark == mark && binding.outer == environment.covalues),
+                },
+            | Err(error) => error == StoreFault::RegionFull(HeapFamily::CovalueBindings)
+                && self.covalue_bindings.len() == entry,
+        },
+    )]
     pub fn bind_covalue(
         &mut self,
         environment: Environment,
@@ -714,10 +839,16 @@ impl Store
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::bind_value`].
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
+    ///   exact-end indices and dangling links distinguish reversed order, an
+    ///   off-by-one index and accidental coupling of the two namespaces.
     /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
+        .and_then(|offset| self.bound_values(environment).nth(offset))
+    )]
     pub fn lookup_value(
         &self,
         environment: Environment,
@@ -753,10 +884,25 @@ impl Store
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::bind_value`].
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
+    ///   exact-end indices and dangling links distinguish reversed order, an
+    ///   off-by-one index and accidental coupling of the two namespaces.
     /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
+        .and_then(|offset| core::iter::successors(
+            match environment.covalues {
+                | CovalueScope::Empty => None,
+                | CovalueScope::Innermost(id) => id.read_in(&self.covalue_bindings),
+            },
+            |binding| match binding.outer {
+                | CovalueScope::Empty => None,
+                | CovalueScope::Innermost(id) => id.read_in(&self.covalue_bindings),
+            },
+        ).nth(offset).map(|binding| binding.mark))
+    )]
     pub fn lookup_covalue(
         &self,
         environment: Environment,
@@ -790,10 +936,17 @@ impl Store
     ///   environment, in one pass rather than one lookup per index.
     /// - fails: never; a dangling link ends the walk.
     /// - panics: none.
+    /// - executable: none — anodized cannot instrument a postcondition on this
+    ///   opaque return type (E0562: `impl Trait` in a closure return type).
+    ///   There is no nontrivial precondition; replacing the opaque return type
+    ///   would change the public API.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::bind_value`].
+    /// - hypothesis: L3 — empty and two-element chains, distinct payloads,
+    ///   exact-end indices and dangling links distinguish reversed order, an
+    ///   off-by-one index and accidental coupling of the two namespaces.
     /// - witness: `store::tests::environments_bind_innermost_first`
+    /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     pub fn bound_values(
         &self,
@@ -829,7 +982,18 @@ impl Store
     /// - hypothesis: L3 — a mark taken over a popped and re-pushed height is
     ///   refused as stale, which only fresh serials make observable.
     /// - witness: `store::tests::frames_shrink_to_a_mark`
+    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
     #[inline]
+    #[spec(
+        captures: [height = self.frames.len(), serial = self.last_serial],
+        ensures: |ret| match ret {
+            | Ok(()) => height.checked_add(1) == Some(self.frames.len())
+                && usize::from(serial).checked_add(1) == Some(usize::from(self.last_serial))
+                && self.mark().serial == self.last_serial,
+            | Err(error) => error == StoreFault::SerialsExhausted
+                && self.frames.len() == height && self.last_serial == serial,
+        },
+    )]
     pub fn push_frame(
         &mut self,
         frame: Frame,
@@ -853,7 +1017,19 @@ impl Store
     /// - provides: the one pop of the frame region.
     /// - fails: `None`, the one reason an empty region.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct stacked frames are popped in reverse order,
+    ///   then the empty region answers absence. Marks observe height and serial
+    ///   preservation, separating bottom-pop, repeated-pop and serial reuse.
+    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
+    /// - witness: `store::tests::frames_shrink_to_a_mark`
     #[inline]
+    #[spec(
+        captures: [height = self.frames.len(), serial = self.last_serial],
+        ensures: |ref ret| self.frames.len() == height.saturating_sub(1)
+            && ret.is_some() == (height != 0) && self.last_serial == serial,
+    )]
     pub fn pop_frame(&mut self) -> Option<Frame>
     {
         self.frames.pop().map(|entry| entry.frame)
@@ -868,8 +1044,18 @@ impl Store
     /// - provides: the mark a covariable binds.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — base, two distinct live heights and a popped/replaced
+    ///   height observe both mark fields. Stale-mark rejection distinguishes
+    ///   serial reuse from a mark based only on height.
+    /// - witness: `store::tests::frames_shrink_to_a_mark`
+    /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.height == FrameHeight::from(self.frames.len())
+        && ret.serial == self.frames.last().map_or(FrameSerial::BASE, |entry| entry.serial)
+    )]
     pub fn mark(&self) -> ContinuationMark
     {
         self.frames
@@ -924,7 +1110,17 @@ impl Store
     ///   re-pushed height, and a dropped update frame separate the shrink, its
     ///   refusal and its decline.
     /// - witness: `store::tests::frames_shrink_to_a_mark`
+    /// - witness: `store::tests::shrinking_rejects_stale_marks_and_reports_dropped_update_faults`
     #[inline]
+    #[spec(
+        captures: [entry = self.mark()],
+        ensures: |ret| match ret {
+            | Ok(()) => self.mark() == mark,
+            | Err(StoreFault::StaleMark(found)) => found == mark && self.mark() == entry,
+            | Err(_) => self.frames.len() >= usize::from(mark.height)
+                && self.frames.len() < usize::from(entry.height),
+        },
+    )]
     pub fn shrink_to(
         &mut self,
         mark: ContinuationMark,
@@ -965,6 +1161,20 @@ impl Store
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — transition tests visit every memo state and a missing
+    ///   address. Exact cell state and error payload distinguish wrong-cell
+    ///   mutation and a fabricated state for a dangling cell.
+    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
+    /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
+    #[spec(
+        captures: [entry = self.cell(cell)],
+        ensures: |ref ret| match *ret {
+            | Ok(ref state) => Some(**state) == entry,
+            | Err(error) => entry.is_none() && error == StoreFault::DanglingCell(cell),
+        },
+    )]
     fn cell_mut(
         &mut self,
         cell: CellId,
@@ -996,7 +1206,31 @@ mod tests
     /// The non-negative integer value spelled by `digits`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: digits is a nonempty unsigned decimal spelling.
+    /// - ensures: that nonnegative integer as a literal heap value, with
+    ///   leading zeroes removed except for zero itself.
+    /// - provides: numeric fixture values independent of their heap address.
+    /// - panics: on a malformed decimal spelling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid decimal fixtures used by heap identity and
+    ///   shared-cache scenarios have their canonical payload checked under
+    ///   enforcement. These distinguish the wrong literal kind, sign or value;
+    ///   malformed spellings are outside the fixture domain.
+    /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
+    /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
+    #[spec(
+        requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
+        ensures: |ref ret| match *ret {
+            | HeapValue::Literal(Literal::Integer(ref integer)) => {
+                let significant = digits.0.trim_start_matches('0');
+                let expected = if significant.is_empty() { "0" } else { significant };
+                let actual: &str = integer.magnitude().as_ref();
+                integer.sign() == Sign::NonNegative && actual == expected
+            },
+            | _ => false,
+        },
+    )]
     fn integer(digits: Digits) -> HeapValue
     {
         HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
@@ -1181,5 +1415,233 @@ mod tests
             store.bound_values(marked).collect::<alloc::vec::Vec<_>>(),
             "the walk reads the chain innermost first, as the lookups do"
         );
+    }
+
+    /// Heap and memo families retain exact identities at their allocation
+    /// boundaries.
+    #[test]
+    fn heap_reads_preserve_identity_at_the_end()
+    {
+        let mut store = Store::new();
+        assert_eq!(None, store.value(HeapValueId::from(0_u32)));
+        assert_eq!(None, store.cell(CellId::from(0_u32)));
+        let first = store.allocate(integer(Digits("11"))).expect("room");
+        let last = store.allocate(integer(Digits("29"))).expect("room");
+        assert_eq!(HeapValueId::from(0_u32), first);
+        assert_eq!(HeapValueId::from(1_u32), last);
+        assert_eq!(Some(&integer(Digits("11"))), store.value(first));
+        assert_eq!(Some(&integer(Digits("29"))), store.value(last));
+        assert_eq!(None, store.value(HeapValueId::from(2_u32)));
+        let cell = store.allocate_cell().expect("room");
+        assert_eq!(CellId::from(0_u32), cell);
+        assert_eq!(Some(MemoState::Unforced), store.cell(cell));
+        assert_eq!(None, store.cell(CellId::from(1_u32)));
+    }
+
+    /// Every memo refusal preserves its target, including competing missing
+    /// addresses.
+    #[test]
+    fn cell_refusals_preserve_state_and_error_precedence()
+    {
+        let mut store = Store::new();
+        let value = store.allocate(integer(Digits("7"))).expect("room");
+        let cell = store.allocate_cell().expect("room");
+        let missing_cell = CellId::from(1_u32);
+        let missing_value = HeapValueId::from(1_u32);
+        assert_eq!(
+            Err(StoreFault::DanglingCell(missing_cell)),
+            store.begin_force(missing_cell)
+        );
+        assert_eq!(
+            Err(StoreFault::DanglingCell(missing_cell)),
+            store.decline(missing_cell)
+        );
+        assert_eq!(
+            Err(StoreFault::DanglingValue(missing_value)),
+            store.write_back(missing_cell, missing_value)
+        );
+        assert_eq!(
+            Err(StoreFault::DanglingCell(missing_cell)),
+            store.write_back(missing_cell, value)
+        );
+        for state in [
+            MemoState::Unforced,
+            MemoState::InProgress,
+            MemoState::Forced(value),
+        ] {
+            match state {
+                | MemoState::Unforced => {},
+                | MemoState::InProgress => {
+                    store.begin_force(cell).expect("live cell");
+                },
+                | MemoState::Forced(cached) => {
+                    store.begin_force(cell).expect("live cell");
+                    store.write_back(cell, cached).expect("in progress");
+                },
+            }
+            assert_eq!(
+                Err(StoreFault::DanglingValue(missing_value)),
+                store.write_back(cell, missing_value)
+            );
+            assert_eq!(Some(state), store.cell(cell));
+            if state == MemoState::InProgress {
+                assert_eq!(Ok(()), store.decline(cell));
+                assert_eq!(Some(MemoState::Unforced), store.cell(cell));
+            }
+            else {
+                let refusal = StoreFault::CellNotInProgress { cell, found: state };
+                assert_eq!(Err(refusal), store.write_back(cell, value));
+                assert_eq!(Err(refusal), store.decline(cell));
+                assert_eq!(Some(state), store.cell(cell));
+            }
+        }
+    }
+
+    /// Producer and covalue chains shift independently and stop at missing
+    /// links.
+    #[test]
+    fn both_binding_chains_preserve_outer_and_opposite_scopes()
+    {
+        let mut store = Store::new();
+        let first = store.allocate(integer(Digits("1"))).expect("room");
+        let second = store.allocate(integer(Digits("2"))).expect("room");
+        let empty = Environment::EMPTY;
+        assert_eq!(None, store.lookup_value(empty, DeBruijnIndex::from(0_u32)));
+        assert_eq!(
+            None,
+            store.lookup_covalue(empty, CovariableIndex::from(0_u32))
+        );
+        assert_eq!(None, store.bound_values(empty).next());
+        let initial = store.bind_value(empty, first).expect("room");
+        let initial = store
+            .bind_covalue(initial, ContinuationMark::BASE)
+            .expect("room");
+        store
+            .push_frame(Frame::Destructor {
+                tag: DestructorTag::Force,
+                arguments: Box::from([]),
+            })
+            .expect("room");
+        let mark = store.mark();
+        let extended = store.bind_covalue(initial, mark).expect("room");
+        let extended = store.bind_value(extended, second).expect("room");
+        for (index, value, covalue) in [
+            (0_u32, Some(second), Some(mark)),
+            (1, Some(first), Some(ContinuationMark::BASE)),
+            (2, None, None),
+        ] {
+            assert_eq!(
+                value,
+                store.lookup_value(extended, DeBruijnIndex::from(index))
+            );
+            assert_eq!(
+                covalue,
+                store.lookup_covalue(extended, CovariableIndex::from(index))
+            );
+        }
+        assert_eq!(
+            Some(first),
+            store.lookup_value(initial, DeBruijnIndex::from(0_u32))
+        );
+        assert_eq!(
+            Some(ContinuationMark::BASE),
+            store.lookup_covalue(initial, CovariableIndex::from(0_u32))
+        );
+        assert_eq!(
+            alloc::vec![second, first],
+            store.bound_values(extended).collect::<Vec<_>>()
+        );
+        let dangling = Environment {
+            values: ValueScope::Innermost(ValueBindingId::from(u32::MAX)),
+            covalues: CovalueScope::Innermost(CovalueBindingId::from(u32::MAX)),
+        };
+        assert_eq!(
+            None,
+            store.lookup_value(dangling, DeBruijnIndex::from(0_u32))
+        );
+        assert_eq!(
+            None,
+            store.lookup_covalue(dangling, CovariableIndex::from(0_u32))
+        );
+        assert_eq!(None, store.bound_values(dangling).next());
+    }
+
+    /// Exhausting serials refuses a push without popping or reusing a frame.
+    #[test]
+    fn frame_serial_exhaustion_preserves_the_region()
+    {
+        let mut store = Store::new();
+        let force = Frame::Destructor {
+            tag: DestructorTag::Force,
+            arguments: Box::from([]),
+        };
+        let apply = Frame::Destructor {
+            tag: DestructorTag::Apply,
+            arguments: Box::from([]),
+        };
+        store.push_frame(force.clone()).expect("room");
+        let first = store.mark();
+        store.last_serial = FrameSerial::from(usize::MAX.saturating_sub(1));
+        store
+            .push_frame(apply.clone())
+            .expect("last representable serial");
+        let last = store.mark();
+        assert_eq!(FrameSerial::from(usize::MAX), last.serial);
+        assert_eq!(FrameHeight::from(2_usize), last.height);
+        assert_eq!(
+            Err(StoreFault::SerialsExhausted),
+            store.push_frame(force.clone())
+        );
+        assert_eq!(last, store.mark());
+        assert_eq!(Some(apply), store.pop_frame());
+        assert_eq!(first, store.mark());
+        assert_eq!(Some(force.clone()), store.pop_frame());
+        assert_eq!(None, store.pop_frame());
+        assert_eq!(ContinuationMark::BASE, store.mark());
+        assert_eq!(Err(StoreFault::SerialsExhausted), store.push_frame(force));
+        assert_eq!(ContinuationMark::BASE, store.mark());
+    }
+
+    /// Stale marks preserve the region; a faulty dropped update is reported
+    /// after its pop.
+    #[test]
+    fn shrinking_rejects_stale_marks_and_reports_dropped_update_faults()
+    {
+        let mut store = Store::new();
+        let force = Frame::Destructor {
+            tag: DestructorTag::Force,
+            arguments: Box::from([]),
+        };
+        store.push_frame(force.clone()).expect("room");
+        let old = store.mark();
+        assert_eq!(Some(force.clone()), store.pop_frame());
+        assert_eq!(Err(StoreFault::StaleMark(old)), store.shrink_to(old));
+        assert_eq!(ContinuationMark::BASE, store.mark());
+        store.push_frame(force).expect("room");
+        let live = store.mark();
+        assert_eq!(Err(StoreFault::StaleMark(old)), store.shrink_to(old));
+        assert_eq!(live, store.mark());
+        let cell = store.allocate_cell().expect("room");
+        store.push_frame(Frame::Update { cell }).expect("room");
+        assert_eq!(
+            Err(StoreFault::CellNotInProgress {
+                cell,
+                found: MemoState::Unforced
+            }),
+            store.shrink_to(live)
+        );
+        assert_eq!(live, store.mark());
+        assert_eq!(Some(MemoState::Unforced), store.cell(cell));
+        let missing = CellId::from(1_u32);
+        store
+            .push_frame(Frame::Update { cell: missing })
+            .expect("room");
+        assert_eq!(
+            Err(StoreFault::DanglingCell(missing)),
+            store.shrink_to(live)
+        );
+        assert_eq!(live, store.mark());
+        assert_eq!(Ok(()), store.shrink_to(ContinuationMark::BASE));
+        assert_eq!(ContinuationMark::BASE, store.mark());
     }
 }

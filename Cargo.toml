@@ -5,6 +5,7 @@ members = [
   "crates/core-incremental",
   "crates/core-nbe",
   "crates/core-sequent",
+  "crates/core-session",
   "crates/core-term",
   "crates/kernel-check-memo",
   "crates/kernel-conversion-trace",
@@ -39,6 +40,7 @@ members = [
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-orders",
+  "crates/theory-sites",
 ]
 
 [workspace.package]
@@ -66,13 +68,16 @@ publish = false
 version = "0.12.16"
 default-features = false
 
-# Executable specifications with a core-only facade. The exact fork revision
-# makes logic/BigInt optional, so the no_std consumers build with defaults off.
+# Executable specifications, including const functions, with a core-only facade.
+# Logic/BigInt is optional, so no_std consumers build with defaults off.
 # Runtime enforcement is selected for the whole build graph with
 # `--cfg anodized_panic`, never inferred from the optimization profile.
 # consumers:
 # - core-checker
+# - core-incremental
 # - core-nbe
+# - core-sequent
+# - core-session
 # - core-term
 # - kernel-check-memo
 # - kernel-conversion-trace
@@ -80,14 +85,37 @@ default-features = false
 # - kernel-strata
 # - kernel-term
 # - storage-artifact
+# - storage-chunker
 # - storage-records
 # - storage-values
+# - surface-corpus
+# - surface-diagnostics
+# - surface-dispatcher
+# - surface-driver
+# - surface-grammar
+# - surface-layout
 # - surface-lowering
+# - surface-lsp
+# - surface-parser
+# - surface-pretty
+# - surface-render-remote
+# - surface-repl
+# - surface-session
 # - surface-syntax
+# - surface-tui
+# - theory-cell-complexes
+# - theory-cell-complexes-tools
+# - theory-circuit-algebras
+# - theory-coherent-resolutions
+# - theory-computads
+# - theory-deep-inference
+# - theory-graphs
+# - theory-levitation
 # - theory-orders
+# - theory-sites
 [workspace.dependencies.anodized]
 git = "https://github.com/silvanshade/anodized"
-rev = "981bc892c979fd59c46aaaa2dc3075b8184f035f"
+rev = "2ccb1b0ef982a064c0ac5681b7b32b074344dae3"
 default-features = false
 
 # BLAKE3 hashing for content and node identities.
@@ -431,6 +459,13 @@ path = "crates/theory-cell-complexes"
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
 
+# The diagram view of circuit algebras: monogamous acyclic wirings with
+# interfaces, their canonical form and the relabelling that checks it.
+# consumers:
+# - theory-sites
+[workspace.dependencies.gandr-theory-circuit-algebras]
+path = "crates/theory-circuit-algebras"
+
 # The rewriting engine: firing, the overlap enumerator and its support,
 # replayable coherence certificates, budgeted completion.
 # consumers:
@@ -552,6 +587,7 @@ default-features = false
 # - theory-computads
 # - theory-deep-inference
 # - theory-levitation
+# - theory-sites
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
@@ -800,11 +836,14 @@ private_intra_doc_links = "allow"
 
 # The compiler-plugin half of the lint wall: specification presence, adequacy
 # grammar, nominal signature boundaries, transparent layout, recursion and
-# ownership cycles. Loaded from the pinned Git source by `mise run check:dylint`;
-# `mise run workflow:install` installs the gate binary from the same revision.
+# ownership cycles, and — allow by default until the workspace opts in — the
+# executable-predicate and adequacy-presence gates, the `Maybe`-shaped enum
+# and the erased-error signature. Loaded from the pinned Git source by
+# `mise run check:dylint`; `mise run workflow:install` installs the gate binary
+# from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+rev = "e6c8502dd46f5111a3f2e76e1356c8ac42940193"
 pattern = "crates/quenchant-dylints"
 
 # The everyday optimized build. Size-optimized and nothing else, so each crate

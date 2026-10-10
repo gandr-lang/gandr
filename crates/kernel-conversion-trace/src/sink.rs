@@ -21,20 +21,18 @@ use crate::decision::ConversionDecision;
 ///   one that retains declares `Active`, so a consumer branching on the
 ///   constant skips decision construction exactly when the decision would be
 ///   discarded.
-/// - provides: the compile-time guard that makes sink-off conversion the same
-///   function at a different type parameter rather than a second
-///   implementation. This stays prose: the claim relates each implementation's
-///   declared constant to what its `record` retains, and a data-item `#[spec]`
-///   states an invariant of one value that the pinned expansion never checks at
-///   construction.
+/// - provides: the compile-time guard separating an inactive sink from one that
+///   retains decisions.
 /// - panics: none.
+/// - executable: none — this law relates an implementation's associated
+///   constant to its external recording behavior, not to one enum value.
 ///
 /// # Adequacy
-/// - hypothesis: L0 — the two answers are variants rather than a `bool`, so a
-///   consumer cannot read the constant as anything but a sink activity; the
-///   residue is that the two shipped implementations declare opposite values,
-///   asserted pointwise by exact variant.
-/// - witness: `sink::tests::the_two_implementations_declare_opposite_activities`
+/// - hypothesis: L2 — four layered-term cases compare verdicts and exact
+///   retained counts at both shipped implementations. They distinguish a
+///   suppressed active path and nonzero null counts. They do not measure
+///   optimizer elimination of decision construction.
+/// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SinkActivity
 {
@@ -83,19 +81,16 @@ impl From<DecisionCount> for usize
 ///   them, since a replay reads them in that order.
 /// - ensures: recording never changes a verdict — an implementation observes,
 ///   and the conversion path is the same function at either instantiation.
-/// - provides: the emit half of the trace seam, with storage and policy in the
-///   implementation rather than in the conversion path. This stays prose:
-///   verdict invariance is a law over two runs, and a clause on a trait
-///   declaration requires the trait itself to carry `#[spec]`, which turns each
-///   declaration into a wrapper over a generated required method and changes
-///   what an implementor implements.
+/// - provides: the emit operation with storage and policy owned by the sink.
 /// - panics: none.
+/// - executable: none — verdict invariance relates two external runs, and trait
+///   instrumentation changes the required implementor-method interface.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the seam's whole claim is that recording is an
-///   observation, so the oracle is the differential: one strategy instantiated
-///   at both shipped implementations, verdict for verdict, with the exercised
-///   recording path asserted rather than reported.
+/// - hypothesis: L2 — four finite layered-term cases run one strategy at both
+///   shipped sinks, comparing exact verdicts and retained counts. Shared heads,
+///   distinct atoms and asymmetric layers distinguish interference and a
+///   recording path that was never exercised; arbitrary sinks are not covered.
 /// - witness: `differential::differential::recording_does_not_move_the_verdict`
 /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 pub trait TraceSink<Id>
@@ -108,17 +103,16 @@ pub trait TraceSink<Id>
     ///   [`TraceSink::record`] retains nothing.
     /// - ensures: the value is a constant, so a consumer's branch on it folds
     ///   away at monomorphization.
-    /// - provides: the sink-off/sink-on discriminator a conversion path guards
-    ///   decision construction with. This stays prose: the pinned macro refuses
-    ///   an associated constant, and the requirement is an obligation on the
-    ///   implementation's `record`.
+    /// - provides: the discriminator guarding decision construction.
     /// - panics: none.
+    /// - executable: none — the macro does not accept associated constants;
+    ///   consistency with retention is an obligation on the implementation.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — the constant is a variant rather than a `bool`; the
-    ///   residue is that the shipped implementations disagree, asserted by
-    ///   exact variant at both instantiations.
-    /// - witness: `sink::tests::the_two_implementations_declare_opposite_activities`
+    /// - hypothesis: L2 — four valid comparisons observe zero retained
+    ///   decisions with the null sink and exact nonzero counts with the log.
+    ///   This separates a suppressed active path, not generated-code costs.
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity;
 
     /// Record one decision without imposing a storage policy on the caller.
@@ -130,20 +124,19 @@ pub trait TraceSink<Id>
     ///   it through [`TraceSink::recorded_count`] and its own reader — or
     ///   retains nothing, consistently with its declared
     ///   [`TraceSink::ACTIVITY`]; either way the caller's verdict is unchanged.
-    /// - provides: the emit operation of the seam. This stays prose: the
-    ///   declaration has no body to instrument, and a clause here requires the
-    ///   trait itself to carry `#[spec]`, which turns the declaration into a
-    ///   wrapper over a generated required method and changes what an
-    ///   implementor implements. The two shipped implementations carry their
-    ///   own clauses.
+    /// - provides: the storage-independent emit operation.
     /// - panics: none.
+    /// - executable: none — instrumenting this declaration generates additional
+    ///   required trait methods; the shipped bodies carry predicates instead.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — the declaration fixes the shape and has no behaviour
-    ///   of its own; every claim above is a claim about an implementation.
-    /// - declaration-only: the two shipped implementations are witnessed at
-    ///   their own impl items, and the declaration has no body a mutant could
-    ///   change.
+    /// - hypothesis: L2 — both shipped implementations preserve the verdict on
+    ///   four layered-term cases while exposing exact retained counts. L3 the
+    ///   log preserves a mixed, repeated sequence element for element. These
+    ///   observers separate dropped or reordered events, not every possible
+    ///   implementation of the declaration.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
     fn record(
         &mut self,
         decision: ConversionDecision<Id>,
@@ -156,19 +149,19 @@ pub trait TraceSink<Id>
     /// - ensures: counts every decision [`TraceSink::record`] retained, and
     ///   answers zero for an implementation declaring
     ///   [`SinkActivity::Inactive`].
-    /// - provides: the exercised-path projection a differential asserts on, so
-    ///   a green run cannot have skipped the recording path. This stays prose
-    ///   for the same reason as [`TraceSink::record`]: a clause on the
-    ///   declaration would change what an implementor implements, and both
-    ///   shipped implementations carry the clause instead.
+    /// - provides: the projection that establishes which recording paths ran.
     /// - panics: none.
+    /// - executable: none — a predicate on this declaration changes the
+    ///   required trait-method interface; storage belongs to implementations.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — the declaration fixes the shape and has no behaviour
-    ///   of its own.
-    /// - declaration-only: the two shipped implementations are witnessed at
-    ///   their own impl items, and the declaration has no body a mutant could
-    ///   change.
+    /// - hypothesis: L3 — empty and populated logs expose exact counts, while
+    ///   recording two decisions at the null sink leaves zero. These
+    ///   distinguish constant answers, off-by-one counts and crossed
+    ///   implementations for the shipped stores, not arbitrary downstream
+    ///   implementations.
+    /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
+    /// - witness: `sink::tests::the_null_sink_retains_nothing`
     fn recorded_count(&self) -> DecisionCount;
 }
 
@@ -181,17 +174,16 @@ pub trait TraceSink<Id>
 /// - requires: nothing.
 /// - ensures: retains nothing it is given and reports a count of zero, which is
 ///   what makes it the sink-off side of the differential.
-/// - provides: the instantiation a conversion path takes when no trace is
-///   wanted, at no representation cost. This stays prose: a data-item `#[spec]`
-///   states an invariant of one value, which the pinned expansion never checks
-///   at construction; retention and count are clauses on the two methods below.
+/// - provides: recording-free state for callers that do not request a trace.
 /// - panics: none.
+/// - executable: none — the unit representation has no stored decisions; the
+///   record and count methods carry the operational predicates.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is whether anything is retained at
-///   all, and the class is finite: decisions are recorded and the count is
-///   asserted to be exactly zero, so an implementation that quietly kept them
-///   is separated.
+/// - hypothesis: L0 — the unit representation has no owned recording state. L3
+///   — exact zero counts before and after two distinct decisions separate a
+///   nonzero reported count. L2 — the finite workload observes the same
+///   verdicts at both sinks; hidden global state is outside this observer.
 /// - witness: `sink::tests::the_null_sink_retains_nothing`
 /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -205,14 +197,16 @@ impl<Id> TraceSink<Id> for NullSink
     /// - requires: nothing.
     /// - ensures: reports [`SinkActivity::Inactive`], consistently with a
     ///   `record` that retains nothing.
-    /// - provides: the constant a conversion path skips decision construction
-    ///   on. This stays prose: the pinned macro refuses an associated constant.
+    /// - provides: the constant guarding the recording-free path.
     /// - panics: none.
+    /// - executable: none — the macro does not accept associated constants.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one value, asserted by exact variant against the
-    ///   recording sink's opposite one.
-    /// - witness: `sink::tests::the_two_implementations_declare_opposite_activities`
+    /// - hypothesis: L2 — the finite workload observes zero retained decisions
+    ///   and unchanged verdicts at this instantiation. Generated-code cost is
+    ///   not measured by these witnesses.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity = SinkActivity::Inactive;
 
     /// Discards the decision.
@@ -272,19 +266,17 @@ impl<Id> TraceSink<Id> for NullSink
 ///   them, and keeps the log within the scope in which its identifiers resolve.
 /// - ensures: retains every decision it is given, once, in recording order, and
 ///   reports that many.
-/// - provides: the replay input, and the sink-on side of the differential. This
-///   stays prose: the ordering requirement is an obligation on the consumer,
-///   and a data-item `#[spec]` states an invariant of one value that the pinned
-///   expansion never checks at construction; retention and count are clauses on
-///   the methods below.
+/// - provides: the recorded replay input and the sink-on count projection.
 /// - panics: none.
+/// - executable: none — the input event history is external to the stored
+///   sequence, and data-item expansion does not check construction.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are retention, order and count, and
-///   the class is finite: a recorded sequence is compared element for element
-///   including a pair differing only in its side, and its length is asserted
-///   exactly. The L2 rung above it is the replay, an external oracle sharing no
-///   code with the strategy that produced the log.
+/// - hypothesis: L3 — empty and mixed logs retain every event in order,
+///   including every kind, side changes, position boundaries and a repeated
+///   decision. Exact counts after each append distinguish loss, duplication,
+///   deduplication and reordering. L2 replay independently checks the bounded
+///   strategy workload, not arbitrary consumer traces.
 /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
 /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
 #[repr(transparent)]
@@ -316,18 +308,19 @@ impl<Id> TraceLog<Id>
     /// - requires: nothing.
     /// - ensures: yields every decision [`TraceSink::record`] was given, once,
     ///   in recording order.
-    /// - provides: the replay input, and the projection a differential asserts
-    ///   its exercised path through. This stays prose: a closure-form
-    ///   postcondition cannot name the `impl Iterator` return type, and
-    ///   counting the yielded decisions would consume the returned iterator.
+    /// - provides: the ordered replay input without consuming the log.
     /// - panics: none.
+    /// - executable: none — expansion places the opaque return type in a
+    ///   closure signature, which Rust rejects; consuming it would also change
+    ///   the value returned to the caller.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surfaces are whether a decision is
-    ///   retained at all and in what order, separated by a recorded sequence
-    ///   whose every element and whose length are asserted exactly, including a
-    ///   pair of decisions that differ only in their side.
+    /// - hypothesis: L3 — empty, non-Copy-identifier and mixed logs distinguish
+    ///   early exhaustion, reordering, payload loss and extra output through
+    ///   exact iteration to exhaustion. Reading leaves the retained count
+    ///   unchanged, and exhaustion yields no later decision.
     /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
+    /// - witness: `sink::tests::iteration_preserves_noncopy_payloads_and_exhaustion`
     #[inline]
     pub fn decisions(&self) -> impl Iterator<Item = &ConversionDecision<Id>>
     {
@@ -343,14 +336,15 @@ impl<Id> TraceSink<Id> for TraceLog<Id>
     /// - requires: nothing.
     /// - ensures: reports [`SinkActivity::Active`], consistently with a
     ///   `record` that retains.
-    /// - provides: the constant a conversion path builds decision values on.
-    ///   This stays prose: the pinned macro refuses an associated constant.
+    /// - provides: the constant guarding decision construction for the log.
     /// - panics: none.
+    /// - executable: none — the macro does not accept associated constants.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one value, asserted by exact variant against the null
-    ///   sink's opposite one.
-    /// - witness: `sink::tests::the_two_implementations_declare_opposite_activities`
+    /// - hypothesis: L2 — four valid comparisons expose exact nonzero retained
+    ///   counts, distinguishing a guard that suppresses the recording path.
+    ///   This witnesses the shipped log, not optimizer behavior.
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     const ACTIVITY: SinkActivity = SinkActivity::Active;
 
     /// Appends the decision to the log.
@@ -370,7 +364,7 @@ impl<Id> TraceSink<Id> for TraceLog<Id>
     ///   decision is separated.
     /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
     #[inline]
-    #[spec(captures: [entry_count = self.decisions.len()], ensures: self.decisions.len() == entry_count.saturating_add(1))]
+    #[spec(captures: [entry_count = self.decisions.len()], ensures: entry_count.checked_add(1) == Some(self.decisions.len()))]
     fn record(
         &mut self,
         decision: ConversionDecision<Id>,
@@ -407,7 +401,6 @@ mod tests
 {
     use super::DecisionCount;
     use super::NullSink;
-    use super::SinkActivity;
     use super::TraceLog;
     use super::TraceSink;
     use crate::decision::ConversionDecision;
@@ -420,24 +413,13 @@ mod tests
     struct TestId(u8);
 
     #[test]
-    fn the_two_implementations_declare_opposite_activities()
-    {
-        assert_eq!(
-            SinkActivity::Inactive,
-            <NullSink as TraceSink<TestId>>::ACTIVITY,
-            "the null sink declares itself inactive so the consumer's branch is constant"
-        );
-        assert_eq!(
-            SinkActivity::Active,
-            <TraceLog<TestId> as TraceSink<TestId>>::ACTIVITY,
-            "and the recording sink declares itself active, so the two are distinguishable at compile time"
-        );
-    }
-
-    #[test]
     fn the_null_sink_retains_nothing()
     {
         let mut sink = NullSink;
+        assert_eq!(
+            DecisionCount::from(0),
+            TraceSink::<TestId>::recorded_count(&sink),
+        );
         sink.record(ConversionDecision::Force { thunk: TestId(1) });
         sink.record(ConversionDecision::ReduceLeft { redex: TestId(2) });
         assert_eq!(
@@ -459,24 +441,54 @@ mod tests
         let recorded = [
             ConversionDecision::ReduceLeft { redex: TestId(1) },
             ConversionDecision::ReduceRight { redex: TestId(2) },
+            ConversionDecision::ConstShortcut {
+                constant: TestId(3),
+            },
+            ConversionDecision::Unfold {
+                constant: TestId(4),
+            },
+            ConversionDecision::Postpone {
+                constant: TestId(4),
+            },
             ConversionDecision::Freeze {
                 constant: TestId(3),
                 side: ConversionSide::Left,
             },
-            // Same constant, other side: a vocabulary that dropped the side
-            // would collapse these two into one decision.
             ConversionDecision::Freeze {
                 constant: TestId(3),
                 side: ConversionSide::Right,
             },
+            ConversionDecision::EtaExpand {
+                side: ConversionSide::Right,
+                variable: TestId(5),
+            },
+            ConversionDecision::Force { thunk: TestId(6) },
+            ConversionDecision::ComparedShared {
+                left: TestId(1),
+                right: TestId(2),
+            },
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(0),
+            },
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(1),
+            },
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(u32::MAX),
+            },
+            ConversionDecision::ReduceLeft { redex: TestId(1) },
         ];
-        for decision in recorded {
+        for (index, decision) in recorded.into_iter().enumerate() {
             log.record(decision);
+            assert_eq!(
+                DecisionCount::from(index.checked_add(1).expect("bounded event sequence")),
+                log.recorded_count(),
+            );
         }
         assert_eq!(
-            DecisionCount::from(4),
+            DecisionCount::from(recorded.len()),
             log.recorded_count(),
-            "four decisions were made and four were retained"
+            "every event, including the repeat, is retained"
         );
         let held: alloc::vec::Vec<ConversionDecision<TestId>> = log.decisions().copied().collect();
         assert_eq!(
@@ -487,57 +499,26 @@ mod tests
     }
 
     #[test]
-    fn the_ten_decision_kinds_are_distinct_values()
+    fn iteration_preserves_noncopy_payloads_and_exhaustion()
     {
-        let kinds = [
-            ConversionDecision::ReduceLeft { redex: TestId(0) },
-            ConversionDecision::ReduceRight { redex: TestId(0) },
-            ConversionDecision::ConstShortcut {
-                constant: TestId(0),
-            },
-            ConversionDecision::Unfold {
-                constant: TestId(0),
-            },
-            ConversionDecision::Postpone {
-                constant: TestId(0),
-            },
-            ConversionDecision::Freeze {
-                constant: TestId(0),
-                side: ConversionSide::Left,
-            },
-            ConversionDecision::EtaExpand {
-                side: ConversionSide::Left,
-                variable: TestId(0),
-            },
-            ConversionDecision::Force { thunk: TestId(0) },
-            ConversionDecision::ComparedShared {
-                left: TestId(0),
-                right: TestId(0),
-            },
-            ConversionDecision::NegativeSubgoal {
-                position: SubgoalPosition::from(0_u32),
-            },
-        ];
-        let mut log: TraceLog<TestId> = TraceLog::new();
-        for decision in kinds {
-            log.record(decision);
-        }
-        assert_eq!(
-            DecisionCount::from(10),
-            log.recorded_count(),
-            "the eight rows of the decision table name nine kinds, since unfold and postpone share a row, and \
-             a refutation's negative subgoal is the tenth"
+        let mut log: TraceLog<alloc::string::String> = TraceLog::new();
+        assert_eq!(DecisionCount::from(0), log.recorded_count());
+        assert!(log.decisions().next().is_none());
+        log.record(ConversionDecision::Force {
+            thunk: alloc::string::String::from("first"),
+        });
+        log.record(ConversionDecision::Force {
+            thunk: alloc::string::String::from("second"),
+        });
+        let mut decisions = log.decisions();
+        assert!(
+            matches!(decisions.next(), Some(ConversionDecision::Force { thunk }) if thunk == "first")
         );
-        // Every kind carries the same identifier, so any two that compared equal
-        // would be indistinguishable to a replay reading the trace.
-        for (first_index, first) in kinds.iter().enumerate() {
-            for (second_index, second) in kinds.iter().enumerate() {
-                assert_eq!(
-                    first_index == second_index,
-                    first == second,
-                    "a decision kind equals only itself, even carrying identical identifiers"
-                );
-            }
-        }
+        assert!(
+            matches!(decisions.next(), Some(ConversionDecision::Force { thunk }) if thunk == "second")
+        );
+        assert!(decisions.next().is_none());
+        assert!(decisions.next().is_none());
+        assert_eq!(DecisionCount::from(2), log.recorded_count());
     }
 }
