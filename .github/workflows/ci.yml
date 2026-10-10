@@ -107,7 +107,6 @@ jobs:
           cache_save: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) }}
       # Policy caches never use a restore prefix: Cargo can consider a library
       # from another Git revision fresh. The metadata revision is in Cargo.toml.
-      # Save inside the job, before rust-cache prunes target/ at post-job time.
       - &restore-dylint-drivers
         name: restore Dylint drivers
         id: dylint-drivers-restore
@@ -381,8 +380,7 @@ jobs:
     container: *ci-image # zizmor: ignore[unpinned-images]
     steps:
       - *git-checkout
-      # Restore-only. The workspace crates stay in the restored cache so this
-      # lane's check artifacts no-op.
+      # Shared crate downloads are restore-only in this lane.
       - *install-policy-tools
       - *setup-rust
       - name: lint every target
