@@ -38,9 +38,21 @@ pub enum CoreNode
 ///
 /// # Specification
 /// - requires: `names` is indexed by admission position.
-/// - ensures: every node of `arena` reads as its own former.
+/// - ensures: arena nodes retain their formers; missing naming-table entries
+///   read as unreadable.
 /// - provides: the printer's input over checked types and readback values.
 /// - panics: none.
+/// - executable: none — admission-order correctness relates this naming table
+///   to declarations the arena does not store. The per-node conversion
+///   obligations are executable on the reader methods.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct admission names, the exact table end and handles
+///   dropped by truncation distinguish shifted naming and stale reads. External
+///   declaration-to-name correspondence is outside these fixtures because the
+///   adapter does not own declarations.
+/// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+/// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
 #[derive(Clone, Copy, Debug)]
 pub struct CoreSource<'arena>
 {
@@ -75,6 +87,15 @@ impl<'arena> CoreSource<'arena>
     /// - provides: the constant and abstract-type readings.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the constant and abstract-type wrappers at a live
+    ///   admission position and the exact table end expose shifted names or a
+    ///   missing-entry fallback. Arbitrary callback behavior is excluded.
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    #[anodized::spec(ensures: |ret| usize::from(constant) < self.names.len()
+        || matches!(ret, Former::Unreadable)
+    )]
     fn named(
         &self,
         constant: ConstantIndex,
@@ -95,6 +116,39 @@ impl<'arena> CoreSource<'arena>
     /// - provides: the value half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value formers retain their spellings; a pair
+    ///   with distinct children and a truncated value handle distinguish
+    ///   swapped child addresses and stale reads. Unrendered thunk bodies and
+    ///   lift targets are deliberately not exposed by the adapter.
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    #[anodized::spec(ensures: |ret| match (self.arena.value(id), ret) {
+        | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
+            zone == actual_zone && index == actual_index,
+        | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
+            .is_some_and(|held| held.as_ref() == name.as_ref()),
+        | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
+        | (None, Former::Unreadable)
+        | (Some(&Value::Unit), Former::Unit)
+        | (Some(&Value::Thunk(_)), Former::Thunk)
+        | (Some(&Value::Lift { .. }), Former::ValueLift) => true,
+        | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
+            core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
+        | (Some(&Value::Pair(first, second)), Former::Pair(actual_first, actual_second)) =>
+            actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
+        | (Some(&Value::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
+            side == actual_side && actual_body == CoreNode::Value(body),
+        | (Some(&Value::Quote(quoted)), Former::Quote(actual)) => actual == CoreNode::ValueType(quoted),
+        | (Some(&Value::QuoteComputation(quoted)), Former::QuoteComputation(actual)) => actual == CoreNode::CompType(quoted),
+        | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
+        | (Some(&Value::StaticApplication(operator, argument)), Former::StaticApplication(actual_operator, actual_argument)) =>
+            actual_operator == CoreNode::Value(operator) && actual_argument == CoreNode::Value(argument),
+        | _ => false,
+    })]
     fn value(
         &self,
         id: ValueId,
@@ -135,6 +189,37 @@ impl<'arena> CoreSource<'arena>
     /// - provides: the value-type half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the golden type, universe and static-operator
+    ///   fixtures observe constructor choice, child order and levels; exact-end
+    ///   names and truncated handles observe absence. Lift targets remain
+    ///   outside the former exposed here, and arbitrary type trees are not
+    ///   enumerated by these fixtures.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::universes_spell_their_sort_and_level`
+    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    #[anodized::spec(ensures: |ret| match (self.arena.value_type(id), ret) {
+        | (None, Former::Unreadable)
+        | (Some(&ValueType::Unit), Former::UnitType)
+        | (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
+        | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
+        | (Some(&ValueType::Product(first, second)), Former::Product(actual_first, actual_second))
+        | (Some(&ValueType::Sum(first, second)), Former::Sum(actual_first, actual_second)) =>
+            actual_first == CoreNode::ValueType(first) && actual_second == CoreNode::ValueType(second),
+        | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
+        | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
+            sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
+        | (Some(&ValueType::Element { code, .. }), Former::Element(actual)) => actual == CoreNode::Value(code),
+        | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
+            .is_some_and(|held| held.as_ref() == name.as_ref()),
+        | (Some(&ValueType::Abstract(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
+        | (Some(&ValueType::StaticPi { domain, codomain }), Former::StaticPi { domain: actual_domain, codomain: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::ValueType(codomain),
+        | _ => false,
+    })]
     fn value_type(
         &self,
         id: ValueTypeId,
@@ -174,6 +259,26 @@ impl<'arena> CoreSource<'arena>
     /// - provides: the computation-type half of [`Source::read`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returners, arrows, dependent types and computation
+    ///   codes in the finite grammar fixtures distinguish wrong formers and
+    ///   child positions. A direct returner read and truncation distinguish the
+    ///   child family and stale handles; arbitrary dependent trees are outside
+    ///   these fixtures.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    /// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    #[anodized::spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
+        | (None, Former::Unreadable) => true,
+        | (Some(&CompType::Returner(result)), Former::Returner(actual)) => actual == CoreNode::ValueType(result),
+        | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
+        | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
+            actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
+        | (Some(&CompType::Element { code, .. }), Former::ComputationElement(actual)) => actual == CoreNode::Value(code),
+        | _ => false,
+    })]
     fn comp_type(
         &self,
         id: CompTypeId,
@@ -207,19 +312,38 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing; an id from another arena reads as whatever this
     ///   arena holds at it, or as unreadable.
-    /// - ensures: as [`Source::read`]; a computation of any former reads as
-    ///   [`Former::Computation`].
+    /// - ensures: as [`Source::read`]; every held computation reads as
+    ///   [`Former::Computation`], and a missing handle as unreadable.
     /// - provides: the printer's reading of the core arena.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every value-type, computation-type and value former
-    ///   of the core is printed at its exact spelling by the goldens, and a
-    ///   dangling id and a computation each spell `?`.
+    /// - hypothesis: L3 — exact golden spellings distinguish constructor
+    ///   selection over the finite type and value fixtures. Direct reads of all
+    ///   four families, distinct pair children and a truncated arena
+    ///   distinguish namespace confusion, reversed children and stale handles.
+    ///   An arbitrary arena or naming table is outside this finite evidence.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    #[anodized::spec(ensures: |ret| match node {
+        | CoreNode::Computation(id) => matches!((self.arena.computation(id).is_some(), ret),
+            (true, Former::Computation) | (false, Former::Unreadable)),
+        | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable),
+        | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
+        | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
+        | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
+            | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+            | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
+            | Former::Unreadable),
+        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::UnitType | Former::Product(..)
+            | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
+            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Unreadable),
+        | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::Arrow { .. } | Former::Pi { .. }
+            | Former::ComputationElement(_) | Former::Unreadable),
+    })]
     #[inline]
     fn read(
         &self,
@@ -242,5 +366,91 @@ impl Source for CoreSource<'_>
             | CoreNode::ValueType(id) => self.value_type(id),
             | CoreNode::CompType(id) => self.comp_type(id),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_term::Zone;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::ConstantIndex;
+    use super::CoreArena;
+    use super::CoreNode;
+    use super::CoreSource;
+    use super::Former;
+    use super::Name;
+    use super::Source as _;
+
+    /// Node families retain child order and refuse handles dropped by
+    /// truncation.
+    #[test]
+    fn family_reads_preserve_children_and_reject_truncation()
+    {
+        let mut arena = CoreArena::new();
+        let mark = arena.watermark();
+        let first = arena.value_unit();
+        let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let pair = arena.value_pair(first, second);
+        let computation = arena.computation_return(first);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        let source = CoreSource::new(&arena, &[]);
+        assert!(
+            matches!(source.read(CoreNode::Value(pair)), Former::Pair(left, right)
+            if left == CoreNode::Value(first) && right == CoreNode::Value(second))
+        );
+        assert!(matches!(
+            source.read(CoreNode::Computation(computation)),
+            Former::Computation
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(value_type)),
+            Former::UnitType
+        ));
+        assert!(
+            matches!(source.read(CoreNode::CompType(comp_type)), Former::Returner(body)
+            if body == CoreNode::ValueType(value_type))
+        );
+        arena.truncate_to(mark);
+        let source = CoreSource::new(&arena, &[]);
+        for node in [
+            CoreNode::Value(pair),
+            CoreNode::Computation(computation),
+            CoreNode::ValueType(value_type),
+            CoreNode::CompType(comp_type),
+        ] {
+            assert!(matches!(source.read(node), Former::Unreadable));
+        }
+    }
+
+    /// Admission position, not the first available name, governs both named
+    /// formers.
+    #[test]
+    fn names_use_admission_positions_and_refuse_the_exact_end()
+    {
+        let mut arena = CoreArena::new();
+        let constant = arena.value_constant(ConstantIndex::from(1_usize));
+        let abstract_type = arena.value_type_abstract(ConstantIndex::from(1_usize));
+        let names = [Name::from("Other"), Name::from("Chosen")];
+        let source = CoreSource::new(&arena, &names);
+        assert!(
+            matches!(source.read(CoreNode::Value(constant)), Former::Constant(name)
+            if name.as_ref() == "Chosen")
+        );
+        assert!(
+            matches!(source.read(CoreNode::ValueType(abstract_type)), Former::Abstract(name)
+            if name.as_ref() == "Chosen")
+        );
+        let source = CoreSource::new(&arena, &names[.. 1]);
+        assert!(matches!(
+            source.read(CoreNode::Value(constant)),
+            Former::Unreadable
+        ));
+        assert!(matches!(
+            source.read(CoreNode::ValueType(abstract_type)),
+            Former::Unreadable
+        ));
     }
 }
