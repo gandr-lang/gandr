@@ -37,6 +37,7 @@
 extern crate alloc;
 
 mod arity;
+mod binding;
 mod boundary;
 mod builtin;
 mod circuit;
@@ -52,6 +53,14 @@ mod wellformed;
 
 pub use crate::arity::BridgeArity;
 pub use crate::arity::SortRef;
+pub use crate::binding::AdmissionError;
+pub use crate::binding::BindingError;
+pub use crate::binding::BindingJudgement;
+pub use crate::binding::BindingTerm;
+pub use crate::binding::Evaluation;
+pub use crate::binding::FirstOrderJudgement;
+pub use crate::binding::SimplySorted;
+pub use crate::binding::VariableIndex;
 pub use crate::boundary::AttributeEmptiness;
 pub use crate::boundary::AttributePresence;
 pub use crate::boundary::CircuitNodeBudget;

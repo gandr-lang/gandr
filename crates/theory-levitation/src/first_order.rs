@@ -132,13 +132,6 @@ struct Model
 #[inline]
 pub fn first_order<G>(source: &SignDesc<G>) -> Result<SignDesc<G>, TranslationError>
 {
-    let diagnostics = check_desc(source);
-    if !diagnostics.is_empty() {
-        return Err(TranslationError::Malformed(diagnostics));
-    }
-    if !source.ctors.is_empty() || !source.circuits.is_empty() || !source.params.is_empty() {
-        return Err(TranslationError::NonSignatureMembers);
-    }
     validate(source)?;
     let initial = Model {
         sorts: vec![
@@ -180,23 +173,33 @@ pub fn first_order<G>(source: &SignDesc<G>) -> Result<SignDesc<G>, TranslationEr
 /// Validate the structural domain before producing any model declarations.
 ///
 /// # Specification
-/// - ensures: success exactly for declared index sorts, reserved-name-free
-///   source names and single-output product operation telescopes.
-/// - fails: the first offending name or operation, in declaration order.
+/// - ensures: success exactly for well-formed operation signatures with
+///   declared index sorts, reserved-name-free names and single-output product
+///   telescopes.
+/// - fails: malformed descriptions, non-signature members or the first
+///   offending name or operation are refused.
 /// - panics: none.
 ///
 /// # Errors
-/// Returns [`TranslationError::ReservedName`],
-/// [`TranslationError::UnknownIndexSort`] or
-/// [`TranslationError::NonProductOperation`].
+/// Returns [`TranslationError::Malformed`],
+/// [`TranslationError::NonSignatureMembers`],
+/// [`TranslationError::ReservedName`], [`TranslationError::UnknownIndexSort`]
+/// or [`TranslationError::NonProductOperation`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — name, unknown-sort and non-product boundaries distinguish
 ///   the three refusals from valid telescopes.
 /// - witness: `tests::glf::translation_refuses_non_signatures`
 #[spec(ensures: |ref result| result.is_err() || source.sorts.iter().all(|sort| !sort.name.as_ref().starts_with('$')))]
-fn validate<G>(source: &SignDesc<G>) -> Result<(), TranslationError>
+pub fn validate<G>(source: &SignDesc<G>) -> Result<(), TranslationError>
 {
+    let diagnostics = check_desc(source);
+    if !diagnostics.is_empty() {
+        return Err(TranslationError::Malformed(diagnostics));
+    }
+    if !source.ctors.is_empty() || !source.circuits.is_empty() || !source.params.is_empty() {
+        return Err(TranslationError::NonSignatureMembers);
+    }
     for name in source
         .sorts
         .iter()

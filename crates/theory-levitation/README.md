@@ -3,7 +3,6 @@
 The first-order code universe of gandr's levitated descriptions: codes, the declaration table they populate, rule faces, circuit rules and their elaboration, multi-output arities, the generic programs driven by a description, and the host-side well-formedness pass.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -11,6 +10,7 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - [Examples](#examples)
 - [The closed tier](#the-closed-tier)
 - [Single-substitution signatures](#single-substitution-signatures)
+  - [Simply-sorted evaluation and readback](#simply-sorted-evaluation-and-readback)
 - [Decoding into core types](#decoding-into-core-types)
 - [Flat representation](#flat-representation)
 - [Code equality](#code-equality)
@@ -19,7 +19,6 @@ The first-order code universe of gandr's levitated descriptions: codes, the decl
 - [The integration suites](#the-integration-suites)
 - [Consumers](#consumers)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -122,7 +121,7 @@ cargo nextest run -p gandr-theory-levitation
 
 ## The closed tier
 
-The crate has no production dependency on another workspace crate. Core and kernel crates are dev-dependencies of the single-substitution experiment only; they do not enter the public API. The field leaf is the one place a core notion meets the code universe, and it enters as a type parameter: a field carries a grade `G` the consumer supplies, and its value type stays this crate's own symbolic reference (`ValueTypeRef` over `PrimTy` and declared heads), which is all the generic programs, the arity naming and the rendering read. The crate is `no_std`, so it cannot name a `std` collection; the compiler holds that line.
+The crate has no dependency on another workspace crate. The field leaf is the one place a core notion meets the code universe: it carries a grade `G` supplied by its consumer, while its value type stays this crate's symbolic `ValueTypeRef`. Generic programs, arity naming and rendering read that description. The crate is `no_std`.
 
 - **Alternatives.** Depending on the core term crate for its grade and value types puts a core edge under a theory crate, inverting the layering, and lets a dependent reach that crate through re-exported wrappers. A whole-leaf parameter `Field(L)` would lose `PrimTy` and the symbolic value type that operation arities, the inspection rendering and the leaf-shift certificate read. A trait declared here and implemented in the core tier is an abstraction with one implementation.
 - **Reversal.** A reordering of the categories that puts the core tier below the theory tier returns the field leaf to the core's own grade and value types.
@@ -135,12 +134,27 @@ A `SortDesc` is ordinary or representable. A `SortRef` carries its index argumen
 
 The generation witness derives the unindexed lambda binding signature from the paper's Definition 4 and §§6–7. The four index laws are vacuous for `Tm : Type+`; four term laws and naturality for `lam` and `app` remain. A separate indexed `Ty/Tm` fixture checks all eight printed laws. The paper does not print an SSC table for pure lambda calculus; source beta equations are not part of this binding-signature experiment.
 
-The identity-return experiment identifies **typed judgements**, not bare arena handles: context and expected type recover the parameters erased by core `Lambda`. Its variables are canonical `q` followed by weakenings; lambdas and returns are normal forms. Both composites are checked structurally in 256 deterministic generated cases, including open contexts and mixed type parameters. Another 256 cases exercise evaluation and `ReadbackMode::Unfolding`, bypassing source-face caching. Returns preserve semantic constructor data and lambdas capture their body and environment. Environment extension is isomorphic to a prefix/value pair; separately allocated neutral and readback nodes have different handles. Thus equality here is structural, not identity of arena allocations. This experiment does not prove a generic equivalence of models or equality of arbitrary explicit-substitution expressions.
+### Simply-sorted evaluation and readback
 
-Witnesses: `tests::glf::generation_matches_derived_lc`, `tests::glf::eight_dependent_single_substitution_laws`, `tests::glf::indexed_signature_translates_without_name_cases`, `tests::glf::model::identification`, `tests::glf::model::both_views`, `tests::glf::model::return_commutes_and_environment_extension_is_an_isomorphism`, `tests::glf::model::kernel`. The kernel witness admits the generated identity after mapping through core, and independently rejects an unannotated lambda in a synthesis position.
+`SimplySorted::new` adds admission beside `check_desc`, sharing the operation-signature validator with `first_order`. Every sort must be unindexed; `AdmissionError::TermDependentSort` retains the rejected sort's name. Index arguments on simple sort occurrences and binding result ports are also refused. Any finite number of sorts, operations, arguments and representable binder domains is supported, including ordinary result sorts and empty signatures.
 
-- **Alternatives.** Reusing atom abstraction conflates nominal names with representable contexts. A recursive binder tree adds ownership recursion to the flat description tier; a per-signature translation duplicates the structural laws.
-- **Reversal.** A signature requiring dependence on earlier bound terms needs a typed telescope elaborator and corresponding equation contexts before this representation can claim the full theory of signatures. A generic semantic action must replace the test-specific interpretation before it establishes an equivalence for every simply-sorted signature.
+`BindingTerm` is the free finite binding carrier derived from those declarations. `SimplySorted::evaluate` interprets it in an identity environment; `evaluate_in` accepts a sorted environment of arbitrary term images. One implementation handles every admitted signature. Operations retain argument bodies and captured environments as flat, defunctionalized closures. Readback opens each closure under its declared telescope, reflecting fresh levels. Levels preserve captured values under weakening; environment extension appends the newest image. Readback is always uncached and releases its temporary arena entries after each call.
+
+`BindingJudgement` and `FirstOrderJudgement` retain ambient context order and result sort. Their equality is canonical structural equality **at a fixed signature**, independent of allocation IDs. `to_first_order` and `from_first_order` identify binding trees with typed canonical `q`/`p` representatives of the generated SSC presentation. Environments use a chosen empty/extension isomorphism: a flat arena entry dereferences to a prefix/value pair. This is not raw-handle identity or definitional equality of representations. Semantic equality is observed by typed, uncached readback.
+
+| Witness | Scope |
+| ------- | ----- |
+| `tests::glf::model::three_signatures` | LC; value/computation sorts with an argument-local binder; two representable sorts with unequal mixed telescopes. Independent first-order and binding goldens, both composites, 256 generated cases per signature, open contexts and repeated uncached readback. |
+| `tests::glf::model::substitution_laws` | Single-substitution cancellation, newest-variable laws, weakening/lifting commutation and a nonidentity environment under mixed binders. Re-evaluation of a substituted semantic value checks the other identification direction. |
+| `tests::glf::model::admission` | Named dependent-sort refusal and admitted/refused signature boundaries. |
+| `tests::glf::model::typing_boundaries` | Sort, scope, arity and environment refusals; canonical first-order admission; typing-sensitive equality. |
+| `tests::glf::model::deep_uncached_binders` | An open variable beneath 4,096 binders, without recursive traversal or ownership. |
+
+The first-order view is the signature-generated presentation, not an adapter to the fixed core calculus. The construction covers the free binding syntax of simply-sorted signatures. Source equations are not oriented or normalized; arbitrary explicit-substitution expressions are outside the canonical identification maps. Term-dependent telescopes, second-order equation elaboration, a surface `sign` route, stage universes and extension types are outside this result. Finite witnesses support the identification; they do not prove a general equivalence of models.
+
+- **Choice.** Flat syntax trees and persistent flat environments keep ownership and traversal nonrecursive, share captured prefixes and avoid per-signature code. Operation lookup scans the signature; variable lookup follows its environment prefix. No new dependency or quotation cache is required.
+- **Alternatives.** Host closures obscure captured data and lifetime boundaries; boxed syntax recurses on destruction. Per-signature core adapters establish only their selected interpretations. Atom abstraction describes nominal binding, not representable context extension. The generic binding treatment follows [Allais, Atkey, Chapman, McBride and McKinna, *A Type and Scope Safe Universe of Syntaxes with Binding: Their Semantics and Proofs* (2021)](https://arxiv.org/abs/2001.11001).
+- **Reversal.** A dependent telescope requires typed index semantics before admission expands. Measured lookup cost can justify compiled operation indices or indexed environments without changing typed structural equality. General equation normalization needs a separately justified reduction or certificate interpretation.
 
 ## Decoding into core types
 

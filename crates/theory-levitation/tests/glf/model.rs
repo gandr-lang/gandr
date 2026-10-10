@@ -1,790 +1,767 @@
-//! Typed normal carriers of the generated identity-return presentation.
-//!
-//! Terms are compared at a fixed context and computation type. The raw core
-//! lambda node erases its domain and codomain, so an untyped map cannot be
-//! injective. Type parameters are instantiated by three distinct core types.
+//! One generic harness for three different simply-sorted binding signatures.
 
-use gandr_core_nbe::CompTermFace;
-use gandr_core_nbe::Definitions;
-use gandr_core_nbe::DomainArena;
-use gandr_core_nbe::DomainComp;
-use gandr_core_nbe::Environment;
-use gandr_core_nbe::Fuel;
-use gandr_core_nbe::LoweredChain;
-use gandr_core_nbe::ReadbackMode;
-use gandr_core_nbe::eval_computation;
-use gandr_core_nbe::readback_computation;
-use gandr_core_term::CompType;
-use gandr_core_term::CompTypeId;
-use gandr_core_term::Computation;
-use gandr_core_term::ComputationId;
-use gandr_core_term::CoreArena;
-use gandr_core_term::DefinitionalEnvironment;
-use gandr_core_term::Value;
-use gandr_core_term::ValueType;
-use gandr_core_term::ValueTypeId;
-use gandr_core_term::Zone;
-use gandr_kernel_term::BaseType;
-use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::LevelSignature;
+use gandr_theory_levitation::AdmissionError;
+use gandr_theory_levitation::BindingError;
+use gandr_theory_levitation::BindingJudgement;
+use gandr_theory_levitation::BindingTerm;
+use gandr_theory_levitation::FirstOrderJudgement;
 use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::Name;
+use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::SignDesc;
-use gandr_theory_levitation::TermView;
-use gandr_theory_levitation::first_order;
-use proptest::prelude::*;
+use gandr_theory_levitation::SimplySorted;
+use gandr_theory_levitation::SortDesc;
+use gandr_theory_levitation::SortIndex;
+use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::TranslationError;
+use gandr_theory_levitation::VariableIndex;
 
-/// An external value-type parameter of the model.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Atom
+use super::DeclPolarity;
+use super::op;
+use super::signature;
+
+/// A selected finite variable position.
+///
+/// # Specification
+/// trivial.
+fn v(index: VariableIndex) -> BindingTerm
 {
-    /// First parameter.
-    Unit,
-    /// Second parameter.
-    Integer,
-    /// Third parameter.
-    String,
+    BindingTerm::variable(index)
 }
 
-/// A scoped, typed model judgement in normal (implicit substitution) notation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Judgement
+/// An operation term; fixture names are data, never interpreter cases.
+///
+/// # Specification
+/// trivial.
+fn t<const N: usize>(
+    name: Name,
+    arguments: [BindingTerm; N],
+) -> BindingTerm
 {
-    /// The ambient context, oldest first.
-    context: Vec<Atom>,
-    /// The computation type, retaining lambda annotations.
-    ty: FreeTerm,
-    /// The generated operations and canonical q/p variables.
-    term: FreeTerm,
+    BindingTerm::operation(name, arguments)
 }
 
-/// The corresponding judgement over core arena nodes.
-#[derive(Clone, Debug)]
-struct CoreJudgement
+/// Two sorts, only one representable, with a binder in the second argument.
+///
+/// # Specification
+/// trivial.
+fn computations() -> SignDesc<()>
 {
-    /// The ambient context, oldest first.
-    context: Vec<ValueTypeId>,
-    /// The expected computation type.
-    ty: CompTypeId,
-    /// The computation term.
-    term: ComputationId,
+    signature(
+        "Computations",
+        vec![
+            SortDesc::new("V", DeclPolarity::Data).representable(),
+            SortDesc::new("C", DeclPolarity::Data),
+        ],
+        vec![
+            op("lit", vec![], SortRef::new("", "V")),
+            op("halt", vec![], SortRef::new("", "C")),
+            op(
+                "ret",
+                vec![SortRef::new("value", "V")],
+                SortRef::new("", "C"),
+            ),
+            op(
+                "bind",
+                vec![
+                    SortRef::new("first", "C"),
+                    SortRef::new("then", "C").pi_plus([SortIndex::new("x", "V")]),
+                ],
+                SortRef::new("", "C"),
+            ),
+        ],
+    )
 }
 
-/// A seed selecting a variable from a nonempty context.
+/// Three sorts, two representable, with unequal mixed binder telescopes.
+///
+/// # Specification
+/// trivial.
+fn mixed() -> SignDesc<()>
+{
+    signature(
+        "Mixed",
+        vec![
+            SortDesc::new("A", DeclPolarity::Data).representable(),
+            SortDesc::new("B", DeclPolarity::Data).representable(),
+            SortDesc::new("R", DeclPolarity::Data),
+        ],
+        vec![
+            op("a", vec![], SortRef::new("", "A")),
+            op("b", vec![], SortRef::new("", "B")),
+            op("empty", vec![], SortRef::new("", "R")),
+            op(
+                "pack",
+                vec![SortRef::new("a", "A"), SortRef::new("b", "B")],
+                SortRef::new("", "R"),
+            ),
+            op(
+                "scope",
+                vec![
+                    SortRef::new("body", "R").pi_plus([
+                        SortIndex::new("a1", "A"),
+                        SortIndex::new("b", "B"),
+                        SortIndex::new("a2", "A"),
+                    ]),
+                    SortRef::new("alternative", "A").pi_plus([SortIndex::new("b", "B")]),
+                    SortRef::new("outside", "B"),
+                ],
+                SortRef::new("", "R"),
+            ),
+        ],
+    )
+}
+
+/// Independently specified inputs to both directions of the identification.
+struct Fixture
+{
+    /// Signature data consumed by the same implementation.
+    signature: SignDesc<()>,
+    /// De Bruijn binding syntax.
+    binding: BindingJudgement,
+    /// Independently authored q/p syntax, not obtained by the forward map.
+    first_order: FirstOrderJudgement,
+}
+
+/// Three hand-derived asymmetric judgements, including open references.
+///
+/// # Specification
+/// trivial.
+fn fixtures() -> Vec<Fixture>
+{
+    let lc_context = vec![Name::from("Tm"), Name::from("Tm")];
+    let computation_context = vec![Name::from("V"), Name::from("V")];
+    let mixed_context = vec![Name::from("A"), Name::from("B"), Name::from("A")];
+    vec![
+        Fixture {
+            signature: super::lc(),
+            binding: BindingJudgement {
+                context: lc_context.clone(),
+                sort: Name::from("Tm"),
+                term: t(Name::from("lam"), [t(Name::from("app"), [
+                    v(VariableIndex(1)),
+                    v(VariableIndex(0)),
+                ])]),
+            },
+            first_order: FirstOrderJudgement {
+                context: lc_context,
+                sort: Name::from("Tm"),
+                term: FreeTerm::op("lam", [FreeTerm::op("app", [
+                    FreeTerm::op("$sub_Tm", [
+                        FreeTerm::op("$q_Tm", []),
+                        FreeTerm::op("$p_Tm", []),
+                    ]),
+                    FreeTerm::op("$q_Tm", []),
+                ])]),
+            },
+        },
+        Fixture {
+            signature: computations(),
+            binding: BindingJudgement {
+                context: computation_context.clone(),
+                sort: Name::from("C"),
+                term: t(Name::from("bind"), [
+                    t(Name::from("ret"), [v(VariableIndex(1))]),
+                    t(Name::from("ret"), [v(VariableIndex(1))]),
+                ]),
+            },
+            first_order: FirstOrderJudgement {
+                context: computation_context,
+                sort: Name::from("C"),
+                term: FreeTerm::op("bind", [
+                    FreeTerm::op("ret", [FreeTerm::op("$sub_V", [
+                        FreeTerm::op("$q_V", []),
+                        FreeTerm::op("$p_V", []),
+                    ])]),
+                    FreeTerm::op("ret", [FreeTerm::op("$sub_V", [
+                        FreeTerm::op("$q_V", []),
+                        FreeTerm::op("$p_V", []),
+                    ])]),
+                ]),
+            },
+        },
+        Fixture {
+            signature: mixed(),
+            binding: BindingJudgement {
+                context: mixed_context.clone(),
+                sort: Name::from("R"),
+                term: t(Name::from("scope"), [
+                    t(Name::from("pack"), [
+                        v(VariableIndex(2)),
+                        v(VariableIndex(1)),
+                    ]),
+                    v(VariableIndex(1)),
+                    v(VariableIndex(1)),
+                ]),
+            },
+            first_order: FirstOrderJudgement {
+                context: mixed_context,
+                sort: Name::from("R"),
+                term: FreeTerm::op("scope", [
+                    FreeTerm::op("pack", [
+                        FreeTerm::op("$sub_A", [
+                            FreeTerm::op("$sub_A", [
+                                FreeTerm::op("$q_A", []),
+                                FreeTerm::op("$p_B", []),
+                            ]),
+                            FreeTerm::op("$p_A", []),
+                        ]),
+                        FreeTerm::op("$sub_B", [
+                            FreeTerm::op("$q_B", []),
+                            FreeTerm::op("$p_A", []),
+                        ]),
+                    ]),
+                    FreeTerm::op("$sub_A", [
+                        FreeTerm::op("$q_A", []),
+                        FreeTerm::op("$p_B", []),
+                    ]),
+                    FreeTerm::op("$sub_B", [
+                        FreeTerm::op("$q_B", []),
+                        FreeTerm::op("$p_A", []),
+                    ]),
+                ]),
+            },
+        },
+    ]
+}
+
+/// A deterministic selection stream, independent of platform randomness.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct VariableChoice(u32);
+struct Choices(u64);
 
-impl From<u8> for Atom
+impl Choices
 {
-    /// Select one of the external parameter instances.
+    /// Advance a wrapping seed and choose within a nonempty finite class.
     ///
     /// # Specification
-    /// trivial.
-    fn from(value: u8) -> Self
+    /// - requires: the class is nonempty.
+    /// - ensures: the result is below its size.
+    /// - panics: only an empty class violates the precondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all generated terms are independently type checked;
+    ///   seed diversity is test input selection, not a production claim.
+    /// - witness: `tests::glf::model::three_signatures`
+    fn select(
+        &mut self,
+        size: VariableIndex,
+    ) -> VariableIndex
     {
-        match value % 3 {
-            | 0 => Self::Unit,
-            | 1 => Self::Integer,
-            | _ => Self::String,
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        VariableIndex(
+            usize::try_from(self.0 >> 32)
+                .expect("32-bit choice")
+                .checked_rem(size.0)
+                .expect("nonempty class"),
+        )
+    }
+}
+
+/// Nonrecursive generated syntax construction.
+enum Generate
+{
+    /// Requested sort, context, remaining operation depth.
+    Term(Name, Vec<Name>, usize),
+    /// Operation after all its children.
+    Close(Name, usize),
+}
+
+/// Generate a term using declarations alone, without any signature-name cases.
+///
+/// # Specification
+/// - requires: each requested leaf sort has a variable or nullary operation.
+/// - ensures: a typed term with depth at most five and arbitrary binder shapes.
+/// - panics: a fixture without a leaf inhabitant violates the precondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the production checker validates every generated term;
+///   directed independent goldens cover the generator's shared-shape residue.
+/// - witness: `tests::glf::model::three_signatures`
+fn generated(
+    source: &SignDesc<()>,
+    context: Vec<Name>,
+    sort: Name,
+    choices: &mut Choices,
+) -> BindingJudgement
+{
+    let mut work = vec![Generate::Term(sort.clone(), context.clone(), 5)];
+    let mut terms = Vec::new();
+    while let Some(step) = work.pop() {
+        match step {
+            | Generate::Close(name, count) => {
+                let arguments = terms.split_off(terms.len().saturating_sub(count));
+                terms.push(BindingTerm::operation(name, arguments));
+            },
+            | Generate::Term(sort, scope, depth) => {
+                let variables: Vec<_> = scope
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .filter(|&(_, found)| *found == sort)
+                    .map(|(index, _)| index)
+                    .collect();
+                let operations: Vec<_> = source
+                    .opers
+                    .iter()
+                    .filter(|operation| {
+                        operation.arity.outputs[0].sort == sort
+                            && (depth > 0 || operation.arity.inputs.is_empty())
+                    })
+                    .collect();
+                let choice = choices
+                    .select(VariableIndex(
+                        variables.len().saturating_add(operations.len()),
+                    ))
+                    .0;
+                if let Some(index) = variables.get(choice) {
+                    terms.push(v(VariableIndex(*index)));
+                }
+                else {
+                    let operation = operations[choice.saturating_sub(variables.len())];
+                    work.push(Generate::Close(
+                        operation.name.clone(),
+                        operation.arity.inputs.len(),
+                    ));
+                    for port in operation.arity.inputs.iter().rev() {
+                        let mut scope = scope.clone();
+                        scope.extend(port.bindings.iter().map(|binder| binder.sort.clone()));
+                        work.push(Generate::Term(
+                            port.sort.clone(),
+                            scope,
+                            depth.saturating_sub(1),
+                        ));
+                    }
+                }
+            },
         }
     }
-}
-
-/// The syntax of one type parameter.
-///
-/// # Specification
-/// trivial.
-fn atom_term(atom: Atom) -> FreeTerm
-{
-    FreeTerm::var(match atom {
-        | Atom::Unit => "A0",
-        | Atom::Integer => "A1",
-        | Atom::String => "A2",
-    })
-}
-
-/// Interpret a type parameter in the core arena.
-///
-/// # Specification
-/// trivial.
-fn atom_core(
-    core: &mut CoreArena,
-    atom: Atom,
-) -> ValueTypeId
-{
-    match atom {
-        | Atom::Unit => core.value_type_unit(),
-        | Atom::Integer => core.value_type_base(BaseType::Integer),
-        | Atom::String => core.value_type_base(BaseType::String),
+    BindingJudgement {
+        context,
+        sort,
+        term: terms.pop().expect("generated root"),
     }
 }
 
-/// Recover a parameter from its distinct core instance.
-///
-/// # Specification
-/// - requires: `ty` is one of the three external parameter instances.
-/// - ensures: the parameter whose instance is `ty`.
-/// - panics: an unrelated or dangling core type is outside the fixture domain.
-///
-/// # Adequacy
-/// - hypothesis: L3 — varying domains and result types distinguishes collapsed
-///   parameter identities in either composite.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |result| matches!(result, Atom::Unit | Atom::Integer | Atom::String))]
-fn core_atom(
-    core: &CoreArena,
-    ty: ValueTypeId,
-) -> Atom
+#[test]
+fn three_signatures()
 {
-    match *core.value_type(ty).expect("held value type") {
-        | ValueType::Unit => Atom::Unit,
-        | ValueType::Base(BaseType::Integer) => Atom::Integer,
-        | ValueType::Base(BaseType::String) => Atom::String,
-        | _ => panic!("not a parameter instance"),
-    }
-}
-
-/// Recover a parameter from its syntax.
-///
-/// # Specification
-/// - requires: the node is a fixture's type parameter.
-/// - ensures: the unique corresponding parameter.
-/// - panics: another term is outside the fixture domain.
-///
-/// # Adequacy
-/// - hypothesis: L3 — all three parameters in both composites expose collapse.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |result| matches!(result, Atom::Unit | Atom::Integer | Atom::String))]
-fn term_atom(node: gandr_theory_levitation::TermNode<'_>) -> Atom
-{
-    match node.view() {
-        | TermView::Var(name) => match name.as_ref() {
-            | "A0" => Atom::Unit,
-            | "A1" => Atom::Integer,
-            | "A2" => Atom::String,
-            | _ => panic!("not a type parameter"),
-        },
-        | _ => panic!("not a type parameter"),
-    }
-}
-
-/// Canonical variable q[p]...[p], with the index counting weakenings.
-///
-/// # Specification
-/// - ensures: exactly `index` weakenings of the newest variable.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — innermost, outermost and intermediate references expose
-///   off-by-one errors and reversed index direction.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |ref term| matches!(term.view(), TermView::Op { .. }))]
-fn variable(index: DeBruijnIndex) -> FreeTerm
-{
-    let mut term = FreeTerm::op("$q_VTm", []);
-    for _ in 0 .. u32::from(index) {
-        term = FreeTerm::op("$sub_VTm", [term, FreeTerm::op("$p_VTm", [])]);
-    }
-    term
-}
-
-/// Generate a normal judgement using the translated operation telescopes.
-///
-/// # Specification
-/// - requires: `model` is the translated identity-return signature and context
-///   plus domains is nonempty; choices name type parameters and a variable.
-/// - ensures: a well-scoped term, with every lambda's type indices retained;
-///   the returned variable may name any ambient or local binder.
-/// - panics: a missing generated operation or empty total context violates the
-///   fixture preconditions.
-///
-/// # Adequacy
-/// - hypothesis: L3 — zero and many lambdas, differing domains, and every
-///   reachable index distinguish a constant-identity generator.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(captures: original = context.clone(), ensures: |ref judgement| judgement.context == original)]
-fn generate(
-    model: &SignDesc<()>,
-    context: Vec<Atom>,
-    domains: &[Atom],
-    choice: VariableChoice,
-) -> Judgement
-{
-    let lam = model
-        .opers
-        .iter()
-        .find(|op| op.name.as_ref() == "lam")
-        .expect("generated lambda");
-    assert_eq!(
-        lam.arity.inputs[3].arguments[0].to_string(),
-        "$extend_VTm(G, A)"
-    );
-    let ret = model
-        .opers
-        .iter()
-        .find(|op| op.name.as_ref() == "ret")
-        .expect("generated return");
-    assert_eq!(ret.arity.outputs[0].arguments[1].to_string(), "F(A)");
-    let all: Vec<Atom> = context.iter().chain(domains).copied().collect();
-    let index = choice
-        .0
-        .checked_rem(u32::try_from(all.len()).expect("bounded context"))
-        .expect("nonempty context");
-    let index = DeBruijnIndex::from(index);
-    let result = all[all
-        .len()
-        .saturating_sub(1)
-        .saturating_sub(usize::try_from(u32::from(index)).expect("bounded index"))];
-    let mut ty = FreeTerm::op("F", [atom_term(result)]);
-    let mut term = FreeTerm::op(ret.name.clone(), [atom_term(result), variable(index)]);
-    for &domain in domains.iter().rev() {
-        term = FreeTerm::op(lam.name.clone(), [atom_term(domain), ty.clone(), term]);
-        ty = FreeTerm::op("Arrow", [atom_term(domain), ty]);
-    }
-    Judgement { context, ty, term }
-}
-
-/// Map generated type and term formers into the core arena, without recursion.
-///
-/// # Specification
-/// - requires: a normal, well-typed identity-return judgement.
-/// - ensures: F/Arrow/ret/lam/q[p] map to Returner/Arrow/Return/Lambda/Variable
-///   respectively, preserving the context and all type parameter identities.
-/// - panics: malformed fixture syntax is outside the domain.
-///
-/// # Adequacy
-/// - hypothesis: L2 — both structural composites, including independently built
-///   core inputs, distinguish omissions, reordering and index shifts.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |ref result| result.context.len() == judgement.context.len())]
-fn to_core(
-    core: &mut CoreArena,
-    judgement: &Judgement,
-) -> CoreJudgement
-{
-    let context = judgement
-        .context
-        .iter()
-        .map(|&atom| atom_core(core, atom))
-        .collect();
-    let mut types = Vec::new();
-    let mut node = judgement.ty.to_node();
-    let result = loop {
-        let TermView::Op { name, mut args } = node.view()
-        else {
-            panic!("computation type");
-        };
-        let first = args.next().expect("type argument");
-        if name.as_ref() == "F" {
-            break atom_core(core, term_atom(first));
-        }
-        assert_eq!(name.as_ref(), "Arrow");
-        types.push(atom_core(core, term_atom(first)));
-        node = args.next().expect("codomain");
-    };
-    let mut ty = core.comp_type_returner(result);
-    for domain in types.into_iter().rev() {
-        ty = core.comp_type_arrow(domain, ty);
-    }
-    let mut lambdas = 0_u32;
-    let mut node = judgement.term.to_node();
-    let value = loop {
-        let TermView::Op { name, mut args } = node.view()
-        else {
-            panic!("computation term");
-        };
-        if name.as_ref() == "ret" {
-            break args.nth(1).expect("return value");
-        }
-        assert_eq!(name.as_ref(), "lam");
-        lambdas = lambdas.saturating_add(1);
-        node = args.nth(2).expect("lambda body");
-    };
-    let mut value = value;
-    let mut index = 0_u32;
-    loop {
-        let TermView::Op { name, mut args } = value.view()
-        else {
-            panic!("variable term");
-        };
-        if name.as_ref() == "$q_VTm" {
-            break;
-        }
-        assert_eq!(name.as_ref(), "$sub_VTm");
-        value = args.next().expect("weakened variable");
-        assert!(
-            matches!(args.next().expect("weakening").view(), TermView::Op { name, .. } if name.as_ref() == "$p_VTm")
+    for fixture in fixtures() {
+        let semantics = SimplySorted::new(&fixture.signature).expect("simply sorted");
+        // Both independent starting views, not just a composite on one image.
+        assert_eq!(
+            semantics.to_first_order(&fixture.binding),
+            Ok(fixture.first_order.clone())
         );
-        index = index.saturating_add(1);
+        assert_eq!(
+            semantics.from_first_order(&fixture.first_order),
+            Ok(fixture.binding.clone())
+        );
+        let from_binding = semantics
+            .to_first_order(&fixture.binding)
+            .expect("forward map");
+        assert_eq!(
+            semantics.from_first_order(&from_binding),
+            Ok(fixture.binding.clone())
+        );
+        let from_first_order = semantics
+            .from_first_order(&fixture.first_order)
+            .expect("reverse map");
+        assert_eq!(
+            semantics.to_first_order(&from_first_order),
+            Ok(fixture.first_order)
+        );
+        let mut evaluation = semantics.evaluate(&fixture.binding).expect("evaluate");
+        assert_eq!(evaluation.readback(), Ok(fixture.binding.clone()));
+        assert_eq!(evaluation.readback(), Ok(fixture.binding.clone()));
+        let mut choices = Choices(0x594f_4e45_4441);
+        for iteration in 0_usize .. 256 {
+            let sorts: Vec<_> = fixture
+                .signature
+                .sorts
+                .iter()
+                .filter(|sort| sort.representability == Representability::Representable)
+                .map(|sort| sort.name.clone())
+                .collect();
+            let context: Vec<_> = sorts
+                .iter()
+                .cycle()
+                .take(iteration % 8_usize + sorts.len())
+                .cloned()
+                .collect();
+            let sort = fixture.signature.sorts[iteration % fixture.signature.sorts.len()]
+                .name
+                .clone();
+            let judgement = generated(&fixture.signature, context, sort, &mut choices);
+            let first_order = semantics
+                .to_first_order(&judgement)
+                .expect("generated first-order view");
+            assert_eq!(
+                semantics.from_first_order(&first_order),
+                Ok(judgement.clone())
+            );
+            let mut evaluation = semantics.evaluate(&judgement).expect("generic evaluation");
+            let quoted = evaluation.readback().expect("uncached readback");
+            assert_eq!(quoted, judgement);
+            assert_eq!(semantics.to_first_order(&quoted), Ok(first_order));
+            assert_eq!(evaluation.readback(), Ok(quoted));
+        }
     }
-    let value = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
-    let mut term = core.computation_return(value);
-    for _ in 0 .. lambdas {
-        term = core.computation_lambda(term);
-    }
-    CoreJudgement { context, ty, term }
 }
 
-/// Recover generated syntax from a core term at its expected type.
+/// Apply the one generic semantics to a sorted environment.
 ///
 /// # Specification
-/// - requires: `judgement` is a well-typed core identity-return judgement.
-/// - ensures: the canonical generated term and type at the same context;
-///   annotations are recovered from the judgement, not guessed from Lambda.
-/// - panics: foreign formers or a type/term mismatch violate the precondition.
+/// - requires: judgement and substitution are well sorted.
+/// - ensures: canonical capture-avoiding substitution.
+/// - panics: a typing or evaluation error violates the fixture assumptions.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — independently generated core spines and both composites
-///   distinguish a dropped type, reversed binder or wrong q/p count.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |ref result| result.context.len() == judgement.context.len())]
-fn from_core(
-    core: &CoreArena,
-    judgement: &CoreJudgement,
-) -> Judgement
+/// - hypothesis: L3 — directed expected trees distinguish capture and identity.
+/// - witness: `tests::glf::model::substitution_laws`
+fn substitute(
+    semantics: &SimplySorted<'_, ()>,
+    judgement: &BindingJudgement,
+    target: &[Name],
+    images: &[BindingTerm],
+) -> BindingJudgement
 {
-    let context = judgement
-        .context
-        .iter()
-        .map(|&ty| core_atom(core, ty))
-        .collect();
-    let mut domains = Vec::new();
-    let mut ty = judgement.ty;
-    let mut term = judgement.term;
-    let (result, index) = loop {
-        match (
-            core.comp_type(ty).expect("held type"),
-            core.computation(term).expect("held term"),
-        ) {
-            | (&CompType::Arrow { domain, codomain }, &Computation::Lambda(body)) => {
-                domains.push(core_atom(core, domain));
-                ty = codomain;
-                term = body;
-            },
-            | (&CompType::Returner(result), &Computation::Return(value)) => {
-                let Value::Variable {
-                    zone: Zone::Intuitionistic,
-                    index,
-                } = *core.value(value).expect("held variable")
-                else {
-                    panic!("intuitionistic variable");
-                };
-                break (core_atom(core, result), index);
-            },
-            | _ => panic!("foreign former or type mismatch"),
-        }
-    };
-    let mut ty = FreeTerm::op("F", [atom_term(result)]);
-    let mut term = FreeTerm::op("ret", [atom_term(result), variable(index)]);
-    for domain in domains.into_iter().rev() {
-        term = FreeTerm::op("lam", [atom_term(domain), ty.clone(), term]);
-        ty = FreeTerm::op("Arrow", [atom_term(domain), ty]);
-    }
-    Judgement { context, ty, term }
+    semantics
+        .evaluate_in(judgement, target, images)
+        .expect("sorted substitution")
+        .readback()
+        .expect("uncached substitution readback")
 }
 
-/// Independently build a core judgement, without passing through model syntax.
-///
-/// # Specification
-/// - requires: `domains` is nonempty and `choice` is an arbitrary index seed.
-/// - ensures: a well-scoped closed lambda spine returning the selected
-///   variable.
-/// - panics: empty domains violate the fixture precondition.
-///
-/// # Adequacy
-/// - hypothesis: L3 — mixed domains and extreme indices separate reverse-map
-///   errors from mistakes shared by the forward construction.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: |ref result| result.context.is_empty())]
-fn independent_core(
-    core: &mut CoreArena,
-    domains: &[Atom],
-    choice: VariableChoice,
-) -> CoreJudgement
-{
-    let selected = usize::try_from(choice.0)
-        .expect("bounded choice")
-        .checked_rem(domains.len())
-        .expect("nonempty domains");
-    let result = atom_core(
-        core,
-        domains[domains.len().saturating_sub(1).saturating_sub(selected)],
-    );
-    let mut ty = core.comp_type_returner(result);
-    let variable = core.value_variable(
-        Zone::Intuitionistic,
-        DeBruijnIndex::from(u32::try_from(selected).expect("bounded index")),
-    );
-    let mut term = core.computation_return(variable);
-    for &domain in domains.iter().rev() {
-        let domain = atom_core(core, domain);
-        ty = core.comp_type_arrow(domain, ty);
-        term = core.computation_lambda(term);
-    }
-    CoreJudgement {
-        context: Vec::new(),
-        ty,
-        term,
-    }
-}
-
-/// Assert structural core identity, ignoring allocator-assigned node ids.
-///
-/// # Specification
-/// - requires: both inputs are identity-return judgements in `core`.
-/// - ensures: returns only when context, types, formers and indices coincide.
-/// - panics: a structural mismatch.
-///
-/// # Adequacy
-/// - hypothesis: L3 — independently chosen domain and index variations expose
-///   comparison of only one side of a judgement.
-/// - witness: `tests::glf::model::identification`
-#[anodized::spec(ensures: left.context.len() == right.context.len())]
-fn assert_core_identity(
-    core: &CoreArena,
-    left: &CoreJudgement,
-    right: &CoreJudgement,
-)
-{
-    assert_eq!(
-        left.context
-            .iter()
-            .map(|&ty| core_atom(core, ty))
-            .collect::<Vec<_>>(),
-        right
-            .context
-            .iter()
-            .map(|&ty| core_atom(core, ty))
-            .collect::<Vec<_>>()
-    );
-    let (mut lt, mut rt) = (left.ty, right.ty);
-    loop {
-        match (
-            core.comp_type(lt).expect("left type"),
-            core.comp_type(rt).expect("right type"),
-        ) {
-            | (
-                &CompType::Arrow {
-                    domain: ld,
-                    codomain: lc,
-                },
-                &CompType::Arrow {
-                    domain: rd,
-                    codomain: rc,
-                },
-            ) => {
-                assert_eq!(core.value_type(ld), core.value_type(rd));
-                lt = lc;
-                rt = rc;
-            },
-            | (&CompType::Returner(l), &CompType::Returner(r)) => {
-                assert_eq!(core.value_type(l), core.value_type(r));
-                break;
-            },
-            | _ => panic!("type shape changed"),
-        }
-    }
-    let (mut lt, mut rt) = (left.term, right.term);
-    loop {
-        match (
-            core.computation(lt).expect("left term"),
-            core.computation(rt).expect("right term"),
-        ) {
-            | (&Computation::Lambda(l), &Computation::Lambda(r)) => {
-                lt = l;
-                rt = r;
-            },
-            | (&Computation::Return(l), &Computation::Return(r)) => {
-                assert_eq!(core.value(l), core.value(r));
-                break;
-            },
-            | _ => panic!("term shape changed"),
-        }
-    }
-}
-
-proptest! {
-    #![proptest_config(ProptestConfig { cases: 256, rng_seed: proptest::test_runner::RngSeed::Fixed(0x0047_4c46), ..ProptestConfig::default() })]
-    #[test]
-    fn identification(ambient in prop::collection::vec(0_u8..3, 1..9), domains in prop::collection::vec(0_u8..3, 0..48), choice in 0_u32..256) {
-        let model = first_order(&super::identity_return()).expect("translated model");
-        let context: Vec<Atom> = ambient.into_iter().map(Atom::from).collect();
-        let domains: Vec<Atom> = domains.into_iter().map(Atom::from).collect();
-        let judgement = generate(&model, context.clone(), &domains, VariableChoice(choice));
-        let mut core = CoreArena::new();
-        let mapped = to_core(&mut core, &judgement);
-        prop_assert_eq!(from_core(&core, &mapped), judgement);
-        let closed: Vec<Atom> = context.into_iter().chain(domains).collect();
-        let independent = independent_core(&mut core, &closed, VariableChoice(choice));
-        let recovered = from_core(&core, &independent);
-        let rebuilt = to_core(&mut core, &recovered);
-        assert_core_identity(&core, &independent, &rebuilt);
-    }
-
-    #[test]
-    fn both_views(ambient in prop::collection::vec(0_u8..3, 1..9), domains in prop::collection::vec(0_u8..3, 0..64), choice in 0_u32..512) {
-        let model = first_order(&super::identity_return()).expect("translated model");
-        let context: Vec<Atom> = ambient.into_iter().map(Atom::from).collect();
-        let domains: Vec<Atom> = domains.into_iter().map(Atom::from).collect();
-        let judgement = generate(&model, context, &domains, VariableChoice(choice));
-        let mut core = CoreArena::new();
-        let open = to_core(&mut core, &judgement);
-        // The public evaluator is closed. Abstract the ambient context, run
-        // uncached quotation, then reopen exactly that many binders.
-        let mut mapped = CoreJudgement { context: Vec::new(), ty: open.ty, term: open.term };
-        for &domain in open.context.iter().rev() {
-            mapped.ty = core.comp_type_arrow(domain, mapped.ty);
-            mapped.term = core.computation_lambda(mapped.term);
-        }
-        let chain = LoweredChain::new();
-        let environment = DefinitionalEnvironment::new();
-        let definitions = Definitions::new(&chain, &environment, environment.root());
-        let mut domain = DomainArena::new();
-        let budget = Fuel::from(100_000_u32);
-        let evaluated = eval_computation(&core, &mut domain, definitions, budget, mapped.term).expect("evaluation");
-        let DomainComp::Lambda { body, face } = *domain.computation(evaluated).expect("lambda head") else { panic!("lambda must commute"); };
-        prop_assert_eq!(face, CompTermFace::Source(mapped.term));
-        let closure = domain.comp_closure(body).expect("held closure");
-        prop_assert_eq!(closure.environment(), &Environment::new());
-        let Computation::Lambda(expected_body) = *core.computation(mapped.term).expect("core lambda") else { panic!("lambda input"); };
-        prop_assert_eq!(closure.body(), expected_body);
-        let read = readback_computation(&mut core, &mut domain, definitions, ReadbackMode::Unfolding, budget, evaluated).expect("uncached readback");
-        prop_assert_ne!(read, mapped.term);
-        let mut rebuilt = CoreJudgement { term: read, ..mapped.clone() };
-        assert_core_identity(&core, &mapped, &rebuilt);
-        for _ in &open.context {
-            let &Computation::Lambda(body) = core.computation(rebuilt.term).expect("quoted lambda") else { panic!("context abstraction"); };
-            let &CompType::Arrow { codomain, .. } = core.comp_type(rebuilt.ty).expect("quoted arrow") else { panic!("context type"); };
-            rebuilt.term = body;
-            rebuilt.ty = codomain;
-        }
-        rebuilt.context = open.context;
-        prop_assert_eq!(from_core(&core, &rebuilt), judgement);
-    }
-}
-
-#[test]
-pub fn kernel()
-{
-    let model = first_order(&super::identity_return()).expect("generated model");
-    let judgement = generate(&model, Vec::new(), &[Atom::Unit], VariableChoice(0));
-    let mut core = CoreArena::new();
-    let mapped = to_core(&mut core, &judgement);
-    let mut environment = gandr_kernel_core::Environment::new();
-    let staged = {
-        let mut staging = environment.stage();
-        let arena = staging.arena();
-        let (arrow, lambda) = trusted_image(&core, &mapped, arena);
-        let declared = arena.value_type_thunk(arrow);
-        let body = arena.value_thunk(lambda);
-        staging.def(LevelSignature::monomorphic(), declared, body)
-    };
-    let checked = environment
-        .add_decl(staged)
-        .expect("identity-return admitted");
-    assert_eq!(usize::from(checked.position()), 0);
-    let staged = {
-        let mut staging = environment.stage();
-        let arena = staging.arena();
-        let a = arena.value_type_unit();
-        let result = arena.comp_type_returner(a);
-        let declared = arena.value_type_thunk(result);
-        let x = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let body = arena.computation_return(x);
-        let lambda = arena.computation_lambda(body);
-        let argument = arena.value_unit();
-        // Application synthesizes its head; the expected result cannot supply
-        // the lambda's missing domain annotation.
-        let application = arena.computation_application(lambda, argument);
-        let body = arena.value_thunk(application);
-        staging.def(LevelSignature::monomorphic(), declared, body)
-    };
-    assert!(matches!(
-        environment.add_decl(staged),
-        Err(gandr_kernel_core::KernelError::NotInferable {
-            form: gandr_kernel_core::NonInferableForm::Lambda
-        })
-    ));
-}
-
-#[test]
-fn return_commutes_and_environment_extension_is_an_isomorphism()
-{
-    use gandr_core_nbe::DomainValue;
-    use gandr_core_nbe::eval_value;
-    use gandr_core_nbe::eval_value_within;
-    let mut core = CoreArena::new();
-    let first = core.value_unit();
-    let second = core.value_constant(gandr_kernel_term::ConstantIndex::from(0_usize));
-    let chain = LoweredChain::new();
-    let definitions_environment = DefinitionalEnvironment::new();
-    let definitions = Definitions::new(
-        &chain,
-        &definitions_environment,
-        definitions_environment.root(),
-    );
-    let mut domain = DomainArena::new();
-    let budget = Fuel::from(4096_u32);
-    let first_value =
-        eval_value(&core, &mut domain, definitions, budget, first).expect("first value");
-    let second_value =
-        eval_value(&core, &mut domain, definitions, budget, second).expect("second value");
-    let mut environment = Environment::new();
-    environment.extend(Zone::Intuitionistic, first_value);
-    environment.extend(Zone::Linear, second_value);
-    let original = environment.clone();
-    environment.extend(Zone::Intuitionistic, second_value);
-    assert_eq!(usize::from(environment.depth(Zone::Intuitionistic)), 2);
-    assert_eq!(
-        environment.depth(Zone::Linear),
-        original.depth(Zone::Linear)
-    );
-    assert_eq!(
-        environment.lookup(Zone::Linear, DeBruijnIndex::from(0_u32)),
-        original.lookup(Zone::Linear, DeBruijnIndex::from(0_u32))
-    );
-    assert_eq!(
-        environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
-        Some(second_value)
-    );
-    assert_eq!(
-        environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)),
-        Some(first_value)
-    );
-    // Project prefix and final value, then pair them back. This is a data
-    // isomorphism, not identity of the product with the Environment record.
-    let last = environment
-        .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
-        .expect("final entry");
-    let prefix = environment
-        .lookup(Zone::Intuitionistic, DeBruijnIndex::from(1_u32))
-        .expect("prefix entry");
-    assert_eq!(
-        Some(prefix),
-        original.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
-    );
-    assert_eq!(last, second_value);
-    let mut reconstructed = Environment::new();
-    reconstructed.extend(Zone::Intuitionistic, prefix);
-    reconstructed.extend(Zone::Intuitionistic, last);
-    reconstructed.extend(
-        Zone::Linear,
-        original
-            .lookup(Zone::Linear, DeBruijnIndex::from(0_u32))
-            .expect("linear entry"),
-    );
-    assert_eq!(reconstructed, environment);
-    // q reads the supplied semantic value exactly, without re-evaluation.
-    let q = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let (read_q, _) = eval_value_within(&core, &mut domain, definitions, budget, q, environment)
-        .expect("environment lookup");
-    assert_eq!(read_q, second_value);
-    for (term, expected) in [(first, first_value), (second, second_value)] {
-        let returned = core.computation_return(term);
-        let evaluated = eval_computation(&core, &mut domain, definitions, budget, returned)
-            .expect("return evaluation");
-        let DomainComp::Return { value, face } =
-            *domain.computation(evaluated).expect("return head")
-        else {
-            panic!("ret constructor");
-        };
-        assert_eq!(face, CompTermFace::Source(returned));
-        match (
-            domain.value(value).expect("return value"),
-            domain.value(expected).expect("independent value"),
-        ) {
-            | (&DomainValue::Unit { face: left }, &DomainValue::Unit { face: right }) => {
-                assert_eq!(left, right);
-            },
-            | (
-                &DomainValue::Neutral {
-                    neutral: left,
-                    face: left_face,
-                },
-                &DomainValue::Neutral {
-                    neutral: right,
-                    face: right_face,
-                },
-            ) => {
-                // Distinct allocations are not a strict equality of handles.
-                assert_ne!(left, right);
-                assert_eq!(left_face, right_face);
-                assert_eq!(domain.neutral(left), domain.neutral(right));
-            },
-            | _ => panic!("ret must preserve the semantic value constructor"),
-        }
-    }
-}
-
-/// Lower the identified core fragment into the trusted arena.
-///
-/// # Specification
-/// - requires: a closed, well-typed identity-return core judgement.
-/// - ensures: preserves types, lambdas, returns and intuitionistic indices.
-/// - panics: a foreign former violates the fixture precondition.
-///
-/// # Adequacy
-/// - hypothesis: L2 — admission of the mapped model identity and refusal when
-///   its lambda is asked to synthesize separate checking from synthesis.
-/// - witness: `tests::glf::model::kernel`
-#[anodized::spec(ensures: |(ty, term)| arena.comp_type(ty).is_some() && arena.computation(term).is_some())]
-fn trusted_image(
-    core: &CoreArena,
-    judgement: &CoreJudgement,
-    arena: &mut gandr_kernel_term::TermArena,
-) -> (
-    gandr_kernel_term::CompTypeId,
-    gandr_kernel_term::ComputationId,
-)
-{
-    let mut domains = Vec::new();
-    let mut ty = judgement.ty;
-    let mut term = judgement.term;
-    let (result, index) = loop {
-        match (
-            core.comp_type(ty).expect("core type"),
-            core.computation(term).expect("core term"),
-        ) {
-            | (&CompType::Arrow { domain, codomain }, &Computation::Lambda(body)) => {
-                domains.push(trusted_atom(core_atom(core, domain), arena));
-                ty = codomain;
-                term = body;
-            },
-            | (&CompType::Returner(result), &Computation::Return(value)) => {
-                let Value::Variable {
-                    zone: Zone::Intuitionistic,
-                    index,
-                } = *core.value(value).expect("core value")
-                else {
-                    panic!("variable");
-                };
-                break (trusted_atom(core_atom(core, result), arena), index);
-            },
-            | _ => panic!("identity-return fragment"),
-        }
-    };
-    let mut ty = arena.comp_type_returner(result);
-    let value = arena.value_variable(index);
-    let mut term = arena.computation_return(value);
-    for domain in domains.into_iter().rev() {
-        ty = arena.comp_type_arrow(domain, ty);
-        term = arena.computation_lambda(term);
-    }
-    (ty, term)
-}
-
-/// Interpret one parameter in the trusted arena.
+/// Oldest-first images of an identity environment.
 ///
 /// # Specification
 /// trivial.
-fn trusted_atom(
-    atom: Atom,
-    arena: &mut gandr_kernel_term::TermArena,
-) -> gandr_kernel_term::ValueTypeId
+fn identity(context: &[Name]) -> Vec<BindingTerm>
 {
-    match atom {
-        | Atom::Unit => arena.value_type_unit(),
-        | Atom::Integer => arena.value_type_base(BaseType::Integer),
-        | Atom::String => arena.value_type_base(BaseType::String),
+    (0 .. context.len())
+        .rev()
+        .map(|index| v(VariableIndex(index)))
+        .collect()
+}
+
+/// Weaken a typed judgement by one representable sort using neutral levels.
+///
+/// # Specification
+/// - requires: the judgement and extension sort are admitted.
+/// - ensures: the same term under one additional unused context entry.
+/// - panics: ill-sorted fixture input violates the precondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — substitution cancellation and mixed binder goldens
+///   distinguish capture and a missing index shift.
+/// - witness: `tests::glf::model::substitution_laws`
+fn weaken(
+    semantics: &SimplySorted<'_, ()>,
+    judgement: &BindingJudgement,
+    sort: Name,
+) -> BindingJudgement
+{
+    let mut target = judgement.context.clone();
+    target.push(sort);
+    let images: Vec<_> = (1 .. target.len())
+        .rev()
+        .map(|index| v(VariableIndex(index)))
+        .collect();
+    substitute(semantics, judgement, &target, &images)
+}
+
+#[test]
+fn substitution_laws()
+{
+    for fixture in fixtures() {
+        let semantics = SimplySorted::new(&fixture.signature).expect("admitted");
+        let extension = fixture
+            .binding
+            .context
+            .last()
+            .expect("nonempty context")
+            .clone();
+        let weakened = weaken(&semantics, &fixture.binding, extension.clone());
+        let mut single = identity(&fixture.binding.context);
+        single.push(v(VariableIndex(0)));
+        // b[p][single(a)] = b, including operations with local binders.
+        assert_eq!(
+            substitute(&semantics, &weakened, &fixture.binding.context, &single),
+            fixture.binding
+        );
+        let newest = BindingJudgement {
+            context: weakened.context.clone(),
+            sort: extension,
+            term: v(VariableIndex(0)),
+        };
+        // q[single(a)] = a; the prefix survives independently.
+        let expected = BindingJudgement {
+            context: fixture.binding.context.clone(),
+            sort: newest.sort.clone(),
+            term: v(VariableIndex(0)),
+        };
+        assert_eq!(
+            substitute(&semantics, &newest, &fixture.binding.context, &single),
+            expected
+        );
+        for position in 0 .. fixture.binding.context.len() {
+            let term = BindingJudgement {
+                context: fixture.binding.context.clone(),
+                sort: fixture.binding.context[position].clone(),
+                term: v(VariableIndex(
+                    fixture
+                        .binding
+                        .context
+                        .len()
+                        .saturating_sub(position)
+                        .saturating_sub(1),
+                )),
+            };
+            assert_eq!(
+                substitute(
+                    &semantics,
+                    &term,
+                    &fixture.binding.context,
+                    &identity(&fixture.binding.context)
+                ),
+                term
+            );
+        }
     }
+    // A nonidentity environment with operation-valued images must be weakened
+    // through both a mixed three-binder argument and its one-binder sibling.
+    let source = mixed();
+    let semantics = SimplySorted::new(&source).expect("mixed signature");
+    let judgement = BindingJudgement {
+        context: vec![Name::from("A"), Name::from("B")],
+        sort: Name::from("R"),
+        term: t(Name::from("scope"), [
+            t(Name::from("pack"), [
+                v(VariableIndex(4)),
+                v(VariableIndex(3)),
+            ]),
+            v(VariableIndex(2)),
+            v(VariableIndex(0)),
+        ]),
+    };
+    let target = vec![Name::from("B"), Name::from("A")];
+    let images = vec![v(VariableIndex(0)), t(Name::from("b"), [])];
+    let expected = BindingJudgement {
+        context: target.clone(),
+        sort: Name::from("R"),
+        term: t(Name::from("scope"), [
+            t(Name::from("pack"), [
+                v(VariableIndex(3)),
+                t(Name::from("b"), []),
+            ]),
+            v(VariableIndex(1)),
+            t(Name::from("b"), []),
+        ]),
+    };
+    let actual = substitute(&semantics, &judgement, &target, &images);
+    assert_eq!(actual, expected);
+    // Semantic identification in the other direction: Y(Λ(value)) equals the
+    // independently substituted value under the typed structural observation.
+    assert_eq!(
+        semantics.evaluate(&actual).expect("reevaluate").readback(),
+        Ok(expected)
+    );
+    // q[lift(s)] = q and b[p][lift(s)] = b[s][p].
+    let extension = Name::from("B");
+    let mut lifted_target = target.clone();
+    lifted_target.push(extension.clone());
+    let mut lifted_images: Vec<_> = images
+        .iter()
+        .zip(&judgement.context)
+        .map(|(term, sort)| {
+            weaken(
+                &semantics,
+                &BindingJudgement {
+                    context: target.clone(),
+                    sort: sort.clone(),
+                    term: term.clone(),
+                },
+                extension.clone(),
+            )
+            .term
+        })
+        .collect();
+    lifted_images.push(v(VariableIndex(0)));
+    let weakened = weaken(&semantics, &judgement, extension.clone());
+    assert_eq!(
+        substitute(&semantics, &weakened, &lifted_target, &lifted_images),
+        weaken(&semantics, &actual, extension.clone())
+    );
+    let newest = BindingJudgement {
+        context: weakened.context,
+        sort: extension,
+        term: v(VariableIndex(0)),
+    };
+    assert_eq!(
+        substitute(&semantics, &newest, &lifted_target, &lifted_images).term,
+        v(VariableIndex(0))
+    );
+}
+
+#[test]
+fn admission()
+{
+    for fixture in fixtures() {
+        SimplySorted::new(&fixture.signature).expect("all three shapes admitted");
+    }
+    let dependent = super::identity_return();
+    assert_eq!(
+        SimplySorted::new(&dependent).expect_err("dependent sort refused"),
+        AdmissionError::TermDependentSort(Name::from("VTm"))
+    );
+    let mut indexed = super::lc();
+    indexed.opers[0].arity.inputs[0].arguments = Box::from([FreeTerm::var("x")]);
+    assert_eq!(
+        SimplySorted::new(&indexed).expect_err("indexed occurrence"),
+        AdmissionError::IndexedOccurrence(Name::from("Tm"))
+    );
+    let mut result = super::lc();
+    result.opers[0].arity.outputs[0].bindings = Box::from([SortIndex::new("x", "Tm")]);
+    assert_eq!(
+        SimplySorted::new(&result).expect_err("binding output"),
+        AdmissionError::BindingResult(Name::from("lam"))
+    );
+    let mut malformed = super::lc();
+    malformed.sorts[0].representability = Representability::Ordinary;
+    let diagnostics = gandr_theory_levitation::check_desc(&malformed);
+    assert_eq!(
+        SimplySorted::new(&malformed).expect_err("ordinary binder"),
+        AdmissionError::Signature(TranslationError::Malformed(diagnostics))
+    );
+    let empty = signature("Empty", vec![], vec![]);
+    SimplySorted::new(&empty).expect("empty signature admitted");
+}
+
+#[test]
+fn typing_boundaries()
+{
+    let source = mixed();
+    let semantics = SimplySorted::new(&source).expect("admitted");
+    let valid = BindingJudgement {
+        context: vec![Name::from("A"), Name::from("B")],
+        sort: Name::from("A"),
+        term: v(VariableIndex(1)),
+    };
+    assert_eq!(semantics.check(&valid), Ok(()));
+    let mut invalid = valid.clone();
+    invalid.context.push(Name::from("R"));
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::NonRepresentable(Name::from("R")))
+    );
+    invalid.context.pop();
+    invalid.context.push(Name::from("Absent"));
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::UnknownSort(Name::from("Absent")))
+    );
+    invalid = valid.clone();
+    invalid.term = v(VariableIndex(2));
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::UnboundVariable(VariableIndex(2)))
+    );
+    invalid.term = v(VariableIndex(0));
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::SortMismatch {
+            expected: Name::from("A"),
+            actual: Name::from("B")
+        })
+    );
+    invalid.term = t(Name::from("absent"), []);
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::UnknownOperation(Name::from("absent")))
+    );
+    invalid.term = t(Name::from("a"), [v(VariableIndex(1))]);
+    assert_eq!(
+        semantics.check(&invalid),
+        Err(BindingError::Arity(Name::from("a")))
+    );
+    assert_eq!(
+        semantics
+            .evaluate_in(&valid, &valid.context, &[])
+            .expect_err("environment arity"),
+        BindingError::EnvironmentArity
+    );
+    let images = vec![v(VariableIndex(0)), v(VariableIndex(0))];
+    assert_eq!(
+        semantics
+            .evaluate_in(&valid, &valid.context, &images)
+            .expect_err("image sort"),
+        BindingError::SortMismatch {
+            expected: Name::from("A"),
+            actual: Name::from("B")
+        }
+    );
+    let noncanonical = FirstOrderJudgement {
+        context: vec![Name::from("A")],
+        sort: Name::from("A"),
+        term: FreeTerm::op("$sub_A", [FreeTerm::op("a", []), FreeTerm::op("$p_A", [])]),
+    };
+    assert_eq!(
+        semantics.from_first_order(&noncanonical),
+        Err(BindingError::NonCanonical)
+    );
+    let wrong_q = FirstOrderJudgement {
+        context: valid.context,
+        sort: valid.sort,
+        term: FreeTerm::op("$q_A", []),
+    };
+    assert_eq!(
+        semantics.from_first_order(&wrong_q),
+        Err(BindingError::NonCanonical)
+    );
+    // Context and typing remain observable even when the naked term agrees.
+    let a = BindingJudgement {
+        context: vec![Name::from("A")],
+        sort: Name::from("A"),
+        term: v(VariableIndex(0)),
+    };
+    let b = BindingJudgement {
+        context: vec![Name::from("B")],
+        sort: Name::from("B"),
+        term: v(VariableIndex(0)),
+    };
+    assert_eq!(semantics.check(&a), Ok(()));
+    assert_eq!(semantics.check(&b), Ok(()));
+    assert_ne!(a, b);
+    let constant = BindingJudgement {
+        context: vec![],
+        sort: Name::from("A"),
+        term: t(Name::from("a"), []),
+    };
+    assert_eq!(substitute(&semantics, &constant, &[], &[]), constant);
+}
+
+#[test]
+fn deep_uncached_binders()
+{
+    let source = super::lc();
+    let semantics = SimplySorted::new(&source).expect("LC admitted");
+    let mut term = v(VariableIndex(4096));
+    for _ in 0_usize .. 4096 {
+        term = t(Name::from("lam"), [term]);
+    }
+    let judgement = BindingJudgement {
+        context: vec![Name::from("Tm")],
+        sort: Name::from("Tm"),
+        term,
+    };
+    assert_eq!(
+        semantics
+            .evaluate(&judgement)
+            .expect("deep evaluation")
+            .readback(),
+        Ok(judgement)
+    );
 }

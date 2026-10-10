@@ -1,4 +1,4 @@
-//! Source-derived generation and the identity-return model's two views.
+//! Source-derived SSC generation and signature-generic binding semantics.
 
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::BridgeArity;
