@@ -17,6 +17,7 @@ publish.workspace = true
 # logic/BigInt stays disabled in this no_std library.
 [dependencies]
 anodized.workspace = true
+gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 
 [dev-dependencies]

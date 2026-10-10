@@ -1664,6 +1664,47 @@ fn decode_entry(
     let tag = reader.next_tag()?;
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
+        | tags::NODE_VT_PATH_UNIVERSE => {
+            let source = read_value(reader, table, this, &mut children)?;
+            let target = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_path_universe(source, target);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_V_PATH_REFL => {
+            let code = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_path_refl(code)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_V_PATH_PRODUCT => {
+            let first = read_value(reader, table, this, &mut children)?;
+            let second = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_path_product(first, second)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_V_PATH_EQUIV => {
+            let source = decode_dialogues(reader)?;
+            let target = decode_dialogues(reader)?;
+            let evidence = alloc::sync::Arc::new(crate::PathEvidence { source, target });
+            let path_type = read_value_type(reader, table, this, &mut children)?;
+            let forward = read_value(reader, table, this, &mut children)?;
+            let backward = read_value(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .value_path_equiv(path_type, forward, backward, evidence);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_C_TRANSPORT => {
+            let path = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Computation(table.arena.computation_transport(path, value)),
+                Family::Computation,
+            )
+        },
         | tags::NODE_VT_BASE => {
             let base = decode_base_type(reader)?;
             let id = table.arena.value_type_base(base);
@@ -1671,6 +1712,10 @@ fn decode_entry(
         },
         | tags::NODE_VT_UNIT => (
             DecodedNode::ValueType(table.arena.value_type_unit()),
+            Family::ValueType,
+        ),
+        | tags::NODE_VT_EMPTY => (
+            DecodedNode::ValueType(table.arena.value_type_empty()),
             Family::ValueType,
         ),
         | tags::NODE_VT_UNIVERSE => {
@@ -1699,6 +1744,11 @@ fn decode_entry(
             let first = read_value_type(reader, table, this, &mut children)?;
             let second = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.value_type_product(first, second);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_VT_LIST => {
+            let element = read_value_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_list(element);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_VT_SUM => {
@@ -1839,6 +1889,11 @@ fn decode_entry(
             let id = table.arena.computation_force(value);
             (DecodedNode::Computation(id), Family::Computation)
         },
+        | tags::NODE_C_ABSURD => {
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.computation_absurd(value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_C_CASE => {
             let scrutinee = read_value(reader, table, this, &mut children)?;
             let on_left = read_computation(reader, table, this, &mut children)?;
@@ -1859,6 +1914,43 @@ fn decode_entry(
     Ok(())
 }
 
+/// Decode ordered portable dialogues, allocating only as bytes are consumed.
+///
+/// # Specification
+/// - requires: nothing; the remaining bytes may be adversarial.
+/// - ensures: preserves every dialogue and decision in wire order.
+/// - provides: syntax only; no round-trip claim is trusted here.
+/// - fails: truncated, overlong or unknown decision words are refused.
+/// - panics: none.
+///
+/// # Errors
+/// The byte reader's error or malformed path evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native artifacts round-trip; truncated dialogue payloads
+///   and invalid words are rejected before admission.
+/// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+#[spec(captures: before = reader.position.0, ensures: |ret| reader.position.0 >= before && ret.as_ref().map_or(true, |dialogues| 1_usize.saturating_add(dialogues.len()).saturating_add(dialogues.iter().map(Vec::len).sum::<usize>()) <= reader.position.0.saturating_sub(before)))]
+fn decode_dialogues(
+    reader: &mut ByteReader<'_>
+) -> Result<Vec<Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>>, DecodeError>
+{
+    let count = reader.read_uvarint()?;
+    let mut dialogues = Vec::new();
+    for _ in 0 .. u64::from(count) {
+        let count = reader.read_uvarint()?;
+        let mut dialogue = Vec::new();
+        for _ in 0 .. u64::from(count) {
+            let word = reader.read_uvarint()?;
+            let decision = crate::EvidenceWord(u64::from(word))
+                .try_into()
+                .map_err(|site| DecodeError::Malformed { site })?;
+            dialogue.push(decision);
+        }
+        dialogues.push(dialogue);
+    }
+    Ok(dialogues)
+}
 /// Read one child index, validating strictly-earlier order and the required
 /// polarity, and return the entry it names.
 ///
@@ -3928,6 +4020,13 @@ mod tests
                 &[],
             ),
             (&[1], crate::types::ValueType::Unit, &[]),
+            (&[0x28], crate::types::ValueType::Empty, &[]),
+            (
+                &[0x2a, 5, 1],
+                crate::types::ValueType::PathUniverse(v1, v0),
+                &[5, 1],
+            ),
+            (&[0x50, 4], crate::types::ValueType::List(vt1), &[4]),
             (
                 &[2, 7, 0],
                 crate::types::ValueType::Universe {
@@ -4092,6 +4191,23 @@ mod tests
                 &[],
             ),
             (&[0x0b], crate::term::Value::Unit, &[]),
+            (&[0x2b, 5], crate::term::Value::PathRefl(v1), &[5]),
+            (&[0x2d, 5, 1], crate::term::Value::PathProduct(v1, v0), &[
+                5, 1,
+            ]),
+            (
+                &[0x2c, 0, 0, 4, 5, 1],
+                crate::term::Value::PathEquiv {
+                    path_type: vt1,
+                    forward: v1,
+                    backward: v0,
+                    evidence: alloc::sync::Arc::new(crate::PathEvidence {
+                        source: vec![],
+                        target: vec![],
+                    }),
+                },
+                &[4, 5, 1],
+            ),
             (
                 &[0x0c, 0, 1, 1, b'7'],
                 crate::term::Value::Literal(super::Literal::Integer(super::IntegerLiteral::new(
@@ -4167,6 +4283,12 @@ mod tests
         }
         let computations: &[(&[u8], crate::term::Computation, &[u32])] = &[
             (&[0x11, 7], crate::term::Computation::Lambda(c1), &[7]),
+            (&[0x29, 5], crate::term::Computation::Absurd(v1), &[5]),
+            (
+                &[0x2e, 5, 1],
+                crate::term::Computation::Transport(v1, v0),
+                &[5, 1],
+            ),
             (
                 &[0x12, 7, 5],
                 crate::term::Computation::Application(c1, v1),
@@ -4226,7 +4348,11 @@ mod tests
         }
         let count = table.nodes.len();
         let watermark = table.arena.watermark();
-        for tag in 0x20_u8 ..= u8::MAX {
+        for tag in (0x20_u8 ..= u8::MAX).filter(|tag| {
+            !crate::NODE_TAG_TABLE
+                .iter()
+                .any(|row| u8::from(row.tag) == *tag)
+        }) {
             let bytes = [tag];
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             assert_eq!(

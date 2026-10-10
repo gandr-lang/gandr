@@ -13,6 +13,7 @@
 //! nothing of the overlay, and it costs the expansion it counts, so it is
 //! asked only of terms whose expansion a test can walk.
 
+use anodized::spec;
 use gandr_core_nbe::SharingMeasure;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
@@ -90,6 +91,13 @@ pub struct Unfolded(pub u64);
 /// - panics: when a reached node does not resolve in `erased`, which the
 ///   requirement excludes, or when the count passes its counter, which no
 ///   walkable term reaches.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the independent expansion walk treats an existing core
+///   node as one opaque leaf, but visits repeated minted subtrees per
+///   occurrence.
+/// - witness: `measure::measure::the_expansion_size_is_what_the_unshared_walk_visits`
+#[spec(ensures: |ret| !(match root { CoreNode::Value(id) => before.value(id).is_some(), CoreNode::Computation(id) => before.computation(id).is_some(), CoreNode::ValueType(id) => before.value_type(id).is_some(), CoreNode::CompType(id) => before.comp_type(id).is_some() }) || ret.0 == 1)]
 pub fn unfolded(
     erased: &CoreArena,
     root: CoreNode,
@@ -113,14 +121,26 @@ pub fn unfolded(
         }
         match node {
             | CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
+                | Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                } => pending.extend([
+                    CoreNode::ValueType(path_type),
+                    CoreNode::Value(forward),
+                    CoreNode::Value(backward),
+                ]),
                 | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
                 },
-                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                | Value::PathProduct(first, second)
+                | Value::Pair(first, second)
+                | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
                 },
                 | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
-                | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                | Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
                 | Value::Thunk(body) => pending.push(CoreNode::Computation(body)),
@@ -132,6 +152,9 @@ pub fn unfolded(
                     .computation(id)
                     .expect("an erased computation resolves")
                 {
+                    | Computation::Transport(path, value) => {
+                        pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
+                    },
                     | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
                     | Computation::Application(head, argument) => {
                         pending.push(CoreNode::Computation(head));
@@ -160,6 +183,9 @@ pub fn unfolded(
                     .value_type(id)
                     .expect("an erased value type resolves")
                 {
+                    | ValueType::PathUniverse(source, target) => {
+                        pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
+                    },
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }

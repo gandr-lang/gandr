@@ -767,8 +767,15 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: match value { Value::Pair(first, second) | Value::StaticApplication(first, second) => self.value(first).is_some()
-                && self.value(second).is_some(), Value::Injection(_, body) | Value::Lift { body, .. } => self.value(body).is_some(), Value::Thunk(body) => self.computation(body).is_some(), Value::Quote(quoted) => self.value_type(quoted).is_some(), Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(), Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
+        requires: match value {
+            Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
+            Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
+            Value::Thunk(body) => self.computation(body).is_some(),
+            Value::Quote(quoted) => self.value_type(quoted).is_some(),
+            Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
+            Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
         ensures: |ret| self.values.len() == entry.0.values.saturating_add(1)
                 && self.computations.len() == entry.0.computations
                 && self.value_types.len() == entry.0.value_types
@@ -808,11 +815,14 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: match computation { Computation::Lambda(body) => self.computation(body).is_some(), Computation::Application(head, argument) => self.computation(head).is_some()
-                && self.value(argument).is_some(), Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(), Computation::Bind(bound, body) => self.computation(bound).is_some()
-                && self.computation(body).is_some(), Computation::Case { scrutinee, on_left, on_right } => self.value(scrutinee).is_some()
-                && self.computation(on_left).is_some()
-                && self.computation(on_right).is_some() }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
+        requires: match computation {
+            Computation::Lambda(body) => self.computation(body).is_some(),
+            Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
+            Computation::Return(value) | Computation::Force(value) | Computation::Absurd(value) => self.value(value).is_some(),
+            Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
+            Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
+            Computation::Case { scrutinee, on_left, on_right } => self.value(scrutinee).is_some() && self.computation(on_left).is_some() && self.computation(on_right).is_some(),
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations.saturating_add(1)
                 && self.value_types.len() == entry.0.value_types
@@ -852,8 +862,14 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: match value_type { ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some()
-                && self.value_type(second).is_some(), ValueType::Thunk(body) => self.comp_type(body).is_some(), ValueType::Lift { inner, .. } => self.value_type(inner).is_some(), ValueType::Element { code, .. } => self.value(code).is_some(), ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => true }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
+        requires: match value_type {
+            ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
+            ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            ValueType::Thunk(body) => self.comp_type(body).is_some(),
+            ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
+            ValueType::Element { code, .. } => self.value(code).is_some(),
+            ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
+        }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations
                 && self.value_types.len() == entry.0.value_types.saturating_add(1)
@@ -1610,6 +1626,29 @@ impl TermArena
         })
     }
 
+    /// Mint empty elimination over an already-allocated scrutinee.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_absurd(
+        &mut self,
+        scrutinee: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Absurd(scrutinee))
+    }
+
+    /// Mint the empty value type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_empty(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Empty)
+    }
+
     // Value-type constructors.
 
     /// Mint a base value type.
@@ -1766,6 +1805,19 @@ impl TermArena
     ) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Sum(first, second))
+    }
+
+    /// Allocate the strictly positive list code over an element type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_list(
+        &mut self,
+        element: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::List(element))
     }
 
     /// Mint a thunk type over an already-allocated computation type.
@@ -2216,6 +2268,82 @@ impl TermArena
         self.alloc_comp_type(CompType::Element { code, target })
     }
 
+    /// Mint the native universe-path classifier over quoted codes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::PathUniverse(source, target))
+    }
+
+    /// Mint reflexivity without claiming that its code forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_refl(
+        &mut self,
+        code: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathRefl(code))
+    }
+
+    /// Mint a componentwise product of universe paths.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathProduct(first, second))
+    }
+
+    /// Mint an untrusted equivalence with portable round-trip evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_equiv(
+        &mut self,
+        path_type: ValueTypeId,
+        forward: ValueId,
+        backward: ValueId,
+        evidence: alloc::sync::Arc<crate::PathEvidence>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        })
+    }
+
+    /// Mint transport; admission derives its source and result types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_transport(
+        &mut self,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Transport(path, value))
+    }
+
     /// The immediate child references of `node`, in the order the format writes
     /// them.
     ///
@@ -2244,7 +2372,10 @@ impl TermArena
         AnyNode::Value(id) => match self.value(id) {
             Some(&Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_))
             | None => ret.is_empty(),
-            Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
+            Some(&Value::PathEquiv { path_type, forward, backward, .. }) =>
+                ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
+            Some(&Value::PathRefl(code)) => ret.as_slice() == [AnyNode::Value(code)],
+            Some(&Value::PathProduct(first, second) | &Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
             Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -2254,10 +2385,11 @@ impl TermArena
         },
         AnyNode::Computation(id) => match self.computation(id) {
             None => ret.is_empty(),
+            Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&Computation::Lambda(body)) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
-            Some(&Computation::Return(value) | &Computation::Force(value)) =>
+            Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) =>
                 ret.as_slice() == [AnyNode::Value(value)],
             Some(&Computation::Bind(bound, body)) =>
                 ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
@@ -2269,13 +2401,14 @@ impl TermArena
                 ],
         },
         AnyNode::ValueType(id) => match self.value_type(id) {
-            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))
+            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. } | &ValueType::Abstract(_))
             | None => ret.is_empty(),
             Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
                 | &ValueType::StaticPi { domain: first, codomain: second }) =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
+            Some(&ValueType::PathUniverse(source, target)) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
             Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
-            Some(&ValueType::Lift { inner, .. }) => ret.as_slice() == [AnyNode::ValueType(inner)],
+            Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => ret.as_slice() == [AnyNode::ValueType(inner)],
             Some(&ValueType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
         },
         AnyNode::CompType(id) => match self.comp_type(id) {
@@ -2298,7 +2431,22 @@ impl TermArena
                     &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
                 )
                 | None => {},
-                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+                | Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(path_type));
+                    children.push(AnyNode::Value(forward));
+                    children.push(AnyNode::Value(backward));
+                },
+                | Some(&Value::PathRefl(code)) => children.push(AnyNode::Value(code)),
+                | Some(
+                    &Value::PathProduct(first, second)
+                    | &Value::Pair(first, second)
+                    | &Value::StaticApplication(first, second),
+                ) => {
                     children.push(AnyNode::Value(first));
                     children.push(AnyNode::Value(second));
                 },
@@ -2313,12 +2461,20 @@ impl TermArena
             },
             | AnyNode::Computation(id) => match self.computation(id) {
                 | None => {},
+                | Some(&Computation::Transport(path, value)) => {
+                    children.push(AnyNode::Value(path));
+                    children.push(AnyNode::Value(value));
+                },
                 | Some(&Computation::Lambda(body)) => children.push(AnyNode::Computation(body)),
                 | Some(&Computation::Application(head, argument)) => {
                     children.push(AnyNode::Computation(head));
                     children.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                | Some(
+                    &Computation::Return(value)
+                    | &Computation::Force(value)
+                    | &Computation::Absurd(value),
+                ) => {
                     children.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -2339,6 +2495,7 @@ impl TermArena
                 | Some(
                     &ValueType::Base(_)
                     | &ValueType::Unit
+                    | &ValueType::Empty
                     | &ValueType::Universe { .. }
                     | &ValueType::Abstract(_),
                 )
@@ -2354,8 +2511,14 @@ impl TermArena
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
                 },
+                | Some(&ValueType::PathUniverse(source, target)) => {
+                    children.push(AnyNode::Value(source));
+                    children.push(AnyNode::Value(target));
+                },
                 | Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
-                | Some(&ValueType::Lift { inner, .. }) => children.push(AnyNode::ValueType(inner)),
+                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                    children.push(AnyNode::ValueType(inner));
+                },
                 // The one edge that leaves the type language: a code is a value,
                 // which is what lets a type mention a bound variable at all.
                 | Some(&ValueType::Element { code, .. }) => children.push(AnyNode::Value(code)),

@@ -191,6 +191,10 @@ pub enum ConversionDecision<Id>
         /// The right consumer-owned node identifier.
         right: Id,
     },
+    /// Select structural decomposition before a following child dialogue.
+    /// Unlike a leading shared comparison, this cannot close the whole pair;
+    /// concatenated component traces therefore retain their boundaries.
+    Decompose,
     /// A decomposition was refuted by one of its subgoals: the single
     /// negative premise of the rule separating two applications of one rigid
     /// head, and of every former compared child by child.

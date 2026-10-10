@@ -344,6 +344,24 @@ impl ValueClosure
     }
 }
 
+/// A suspended body, either source syntax or a native transport continuation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CompBody
+{
+    /// An ordinary core computation.
+    Source(ComputationId),
+    /// After the first component returned, transport the second component.
+    TransportPair
+    {
+        /// The second component's path.
+        path: DomainValueId,
+        /// The second component's operand.
+        value: DomainValueId,
+    },
+    /// Return a pair of the held first component and the newly bound second.
+    Pair(DomainValueId),
+}
+
 /// A suspended **computation** body with the environment its free variables
 /// stand in: what a lambda, a thunk, a bind continuation and a case branch all
 /// become.
@@ -351,7 +369,7 @@ impl ValueClosure
 pub struct CompClosure
 {
     /// The core computation body, unevaluated.
-    body: ComputationId,
+    body: CompBody,
     /// What the body's free variables stand for.
     environment: Environment,
 }
@@ -370,10 +388,17 @@ impl CompClosure
     /// - fails: never — an environment too shallow for the body surfaces where
     ///   the body is entered, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source and native bodies retain the captured zones;
+    ///   entering a binder must not substitute an empty environment.
+    /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment.depth(Zone::Intuitionistic) == intuitionistic && ret.environment.depth(Zone::Linear) == linear)]
     #[inline]
     #[must_use]
     pub(crate) fn new(
-        body: ComputationId,
+        body: CompBody,
         environment: Environment,
     ) -> Self
     {
@@ -386,7 +411,7 @@ impl CompClosure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn body(&self) -> ComputationId
+    pub fn body(&self) -> CompBody
     {
         self.body
     }

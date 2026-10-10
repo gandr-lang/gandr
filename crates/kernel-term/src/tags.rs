@@ -34,15 +34,21 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | every former this crate mints, contiguous from zero                  |
+//! | frozen block  | `0x00–0x1F` | the original native formers, contiguous from zero                   |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
+//! | empty fragment | `0x28–0x29` | Empty value type and checking-only absurd computation |
+//! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
+//! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
+//! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
+//! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
+//! | recursive block | `0x50–0x51` | List code and a reserved, unassigned value tag |
+//!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
-//! [`NODE_VT_ELEMENT`] is the universe-decoding former, and it is the one tag
-//! whose child crosses from a type to a *term*: everything the dependent arrow
-//! can say depends on a type being able to mention a value, and this is the
-//! former that lets it. [`NODE_CT_ELEMENT`] is its computation-family twin.
+//! [`NODE_VT_ELEMENT`] and [`NODE_VT_PATH_UNIVERSE`] carry value codes in
+//! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
+//! path endpoints remain closed first-order value codes.
 //!
 //! The universe families took four tags from the growth room at once, one
 //! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
@@ -297,6 +303,32 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// - witness: `tags::tests::the_tag_table_is_a_contiguous_frozen_block`
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
 
+/// Node tag: universe paths, over source and target codes.
+pub const NODE_VT_PATH_UNIVERSE: WireTag = WireTag(0x2A);
+
+/// Node tag: reflexivity, over its code.
+pub const NODE_V_PATH_REFL: WireTag = WireTag(0x2B);
+
+/// Node tag: equivalence, with inline evidence and classifier/map children.
+pub const NODE_V_PATH_EQUIV: WireTag = WireTag(0x2C);
+
+/// Node tag: componentwise product of paths.
+pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
+
+/// Node tag: transport, over a path and its source value.
+pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
+
+/// Node tag: the empty value type, with no children.
+pub const NODE_VT_EMPTY: WireTag = WireTag(0x28);
+
+/// Node tag: empty elimination, over one value scrutinee.
+pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
+
+/// Node tag: the strictly positive list code, over one element type.
+pub const NODE_VT_LIST: WireTag = WireTag(0x50);
+
+/// Reserved tag for persisted recursive inhabitants; currently refused.
+pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
 ///
@@ -499,7 +531,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: tag.0 <= NODE_V_STATIC_APPLICATION.0
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0)
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && ret.child_arity.0 == child_arity.0
@@ -551,8 +583,8 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: tag.0 <= NODE_V_STATIC_APPLICATION.0
-            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT),
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0)
+            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
     ensures: |ret| ret.tag.0 == tag.0
             && ret.child_arity.0 == child_arity.0
             && ret.token_contribution.0 == 1
@@ -599,7 +631,7 @@ const fn unbounded(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
+    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT | NODE_VT_EMPTY => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
     ensures: |ret| ret.tag.0 == tag.0
             && ret.child_arity.0 == 0
             && ret.token_contribution.0 == 1
@@ -651,7 +683,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -690,12 +722,19 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
     unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
     unbounded(NODE_VT_STATIC_PI, ChildArity(2)),
     unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
+    bounded_alias(NODE_VT_EMPTY, TokenCount(1)),
+    unbounded(NODE_C_ABSURD, ChildArity(1)),
+    unbounded(NODE_VT_PATH_UNIVERSE, ChildArity(2)),
+    unbounded(NODE_V_PATH_REFL, ChildArity(1)),
+    unbounded(NODE_V_PATH_EQUIV, ChildArity(3)),
+    unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
+    unbounded(NODE_C_TRANSPORT, ChildArity(2)),
+    unbounded(NODE_VT_LIST, ChildArity(1)),
 ];
 
 #[cfg(test)]
 mod tests
 {
-
     use alloc::vec::Vec;
 
     use anodized::spec;
@@ -738,7 +777,60 @@ mod tests
     /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
     #[spec(
         ensures: |ret| ret.1.len() == NODE_TAG_TABLE.len()
-                && ret.1.iter().zip(NODE_TAG_TABLE.iter()).all(|(&node, row)| match node { AnyNode::Value(id) => match ret.0.value(id) { Some(&crate::Value::Variable(_)) => row.tag.0 == super::NODE_V_VARIABLE.0, Some(&crate::Value::Constant(_)) => row.tag.0 == super::NODE_V_CONSTANT.0, Some(&crate::Value::Unit) => row.tag.0 == super::NODE_V_UNIT.0, Some(&crate::Value::Literal(_)) => row.tag.0 == super::NODE_V_LITERAL.0, Some(&crate::Value::Pair(_, _)) => row.tag.0 == super::NODE_V_PAIR.0, Some(&crate::Value::Injection(_, _)) => row.tag.0 == super::NODE_V_INJECTION.0, Some(&crate::Value::Thunk(_)) => row.tag.0 == super::NODE_V_THUNK.0, Some(&crate::Value::Lift { .. }) => row.tag.0 == super::NODE_V_LIFT.0, Some(&crate::Value::Quote(_)) => row.tag.0 == super::NODE_V_QUOTE.0, Some(&crate::Value::QuoteComputation(_)) => row.tag.0 == super::NODE_V_QUOTE_COMPUTATION.0, Some(&crate::Value::StaticApplication(_, _)) => row.tag.0 == super::NODE_V_STATIC_APPLICATION.0, None => false, }, AnyNode::Computation(id) => match ret.0.computation(id) { Some(&crate::Computation::Lambda(_)) => row.tag.0 == super::NODE_C_LAMBDA.0, Some(&crate::Computation::Application(_, _)) => row.tag.0 == super::NODE_C_APPLICATION.0, Some(&crate::Computation::Return(_)) => row.tag.0 == super::NODE_C_RETURN.0, Some(&crate::Computation::Bind(_, _)) => row.tag.0 == super::NODE_C_BIND.0, Some(&crate::Computation::Force(_)) => row.tag.0 == super::NODE_C_FORCE.0, Some(&crate::Computation::Case { .. }) => row.tag.0 == super::NODE_C_CASE.0, None => false, }, AnyNode::ValueType(id) => match ret.0.value_type(id) { Some(&crate::ValueType::Base(_)) => row.tag.0 == super::NODE_VT_BASE.0, Some(&crate::ValueType::Unit) => row.tag.0 == super::NODE_VT_UNIT.0, Some(&crate::ValueType::Product(_, _)) => row.tag.0 == super::NODE_VT_PRODUCT.0, Some(&crate::ValueType::Sum(_, _)) => row.tag.0 == super::NODE_VT_SUM.0, Some(&crate::ValueType::Thunk(_)) => row.tag.0 == super::NODE_VT_THUNK.0, Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag.0 == super::NODE_VT_UNIVERSE.0, Some(&crate::ValueType::Universe { sort: GroundSort::Computation, .. }) => row.tag.0 == super::NODE_VT_COMPUTATION_UNIVERSE.0, Some(&crate::ValueType::Lift { .. }) => row.tag.0 == super::NODE_VT_LIFT.0, Some(&crate::ValueType::Element { .. }) => row.tag.0 == super::NODE_VT_ELEMENT.0, Some(&crate::ValueType::Abstract(_)) => row.tag.0 == super::NODE_VT_ABSTRACT.0, Some(&crate::ValueType::StaticPi { .. }) => row.tag.0 == super::NODE_VT_STATIC_PI.0, None => false, }, AnyNode::CompType(id) => match ret.0.comp_type(id) { Some(&crate::CompType::Returner(_)) => row.tag.0 == super::NODE_CT_RETURNER.0, Some(&crate::CompType::Arrow { .. }) => row.tag.0 == super::NODE_CT_ARROW.0, Some(&crate::CompType::Pi { .. }) => row.tag.0 == super::NODE_CT_PI.0, Some(&crate::CompType::Element { .. }) => row.tag.0 == super::NODE_CT_ELEMENT.0, None => false, }, }),
+                && ret.1.iter().zip(NODE_TAG_TABLE.iter()).all(|(&node, row)| match node {
+                    AnyNode::Value(id) => match ret.0.value(id) {
+                        Some(&crate::Value::Variable(_)) => row.tag == super::NODE_V_VARIABLE,
+                        Some(&crate::Value::Constant(_)) => row.tag == super::NODE_V_CONSTANT,
+                        Some(&crate::Value::Unit) => row.tag == super::NODE_V_UNIT,
+                        Some(&crate::Value::Literal(_)) => row.tag == super::NODE_V_LITERAL,
+                        Some(&crate::Value::Pair(_, _)) => row.tag == super::NODE_V_PAIR,
+                        Some(&crate::Value::Injection(_, _)) => row.tag == super::NODE_V_INJECTION,
+                        Some(&crate::Value::Thunk(_)) => row.tag == super::NODE_V_THUNK,
+                        Some(&crate::Value::Lift { .. }) => row.tag == super::NODE_V_LIFT,
+                        Some(&crate::Value::Quote(_)) => row.tag == super::NODE_V_QUOTE,
+                        Some(&crate::Value::QuoteComputation(_)) => row.tag == super::NODE_V_QUOTE_COMPUTATION,
+                        Some(&crate::Value::StaticApplication(_, _)) => row.tag == super::NODE_V_STATIC_APPLICATION,
+                        Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
+                        Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
+                        Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
+                        None => false,
+                    },
+                    AnyNode::Computation(id) => match ret.0.computation(id) {
+                        Some(&crate::Computation::Lambda(_)) => row.tag == super::NODE_C_LAMBDA,
+                        Some(&crate::Computation::Application(_, _)) => row.tag == super::NODE_C_APPLICATION,
+                        Some(&crate::Computation::Return(_)) => row.tag == super::NODE_C_RETURN,
+                        Some(&crate::Computation::Bind(_, _)) => row.tag == super::NODE_C_BIND,
+                        Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
+                        Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
+                        Some(&crate::Computation::Absurd(_)) => row.tag == super::NODE_C_ABSURD,
+                        Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
+                        None => false,
+                    },
+                    AnyNode::ValueType(id) => match ret.0.value_type(id) {
+                        Some(&crate::ValueType::Base(_)) => row.tag == super::NODE_VT_BASE,
+                        Some(&crate::ValueType::Unit) => row.tag == super::NODE_VT_UNIT,
+                        Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag == super::NODE_VT_UNIVERSE,
+                        Some(&crate::ValueType::Universe { sort: GroundSort::Computation, .. }) => row.tag == super::NODE_VT_COMPUTATION_UNIVERSE,
+                        Some(&crate::ValueType::Product(_, _)) => row.tag == super::NODE_VT_PRODUCT,
+                        Some(&crate::ValueType::Sum(_, _)) => row.tag == super::NODE_VT_SUM,
+                        Some(&crate::ValueType::Thunk(_)) => row.tag == super::NODE_VT_THUNK,
+                        Some(&crate::ValueType::Lift { .. }) => row.tag == super::NODE_VT_LIFT,
+                        Some(&crate::ValueType::Abstract(_)) => row.tag == super::NODE_VT_ABSTRACT,
+                        Some(&crate::ValueType::StaticPi { .. }) => row.tag == super::NODE_VT_STATIC_PI,
+                        Some(&crate::ValueType::Element { .. }) => row.tag == super::NODE_VT_ELEMENT,
+                        Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
+                        Some(&crate::ValueType::Empty) => row.tag == super::NODE_VT_EMPTY,
+                        Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
+                        None => false,
+                    },
+                    AnyNode::CompType(id) => match ret.0.comp_type(id) {
+                        Some(&crate::CompType::Returner(_)) => row.tag == super::NODE_CT_RETURNER,
+                        Some(&crate::CompType::Arrow { .. }) => row.tag == super::NODE_CT_ARROW,
+                        Some(&crate::CompType::Pi { .. }) => row.tag == super::NODE_CT_PI,
+                        Some(&crate::CompType::Element { .. }) => row.tag == super::NODE_CT_ELEMENT,
+                        None => false,
+                    },
+                })
     )]
     fn one_node_per_former() -> (TermArena, Vec<AnyNode>)
     {
@@ -780,6 +872,14 @@ mod tests
         let quote_computation = arena.value_quote_computation(returner);
         let static_pi = arena.value_type_static_pi(universe, universe);
         let static_application = arena.value_static_application(constant, quote);
+        let empty = arena.value_type_empty();
+        let absurd = arena.computation_absurd(variable);
+        let path_type = arena.value_type_path_universe(quote, quote);
+        let refl = arena.value_path_refl(quote);
+        let map = arena.value_thunk(lambda);
+        let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
+        let product_path = arena.value_path_product(refl, refl);
+        let transport = arena.computation_transport(product_path, pair);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -813,6 +913,14 @@ mod tests
             AnyNode::Value(quote_computation),
             AnyNode::ValueType(static_pi),
             AnyNode::Value(static_application),
+            AnyNode::ValueType(empty),
+            AnyNode::Computation(absurd),
+            AnyNode::ValueType(path_type),
+            AnyNode::Value(refl),
+            AnyNode::Value(equiv),
+            AnyNode::Value(product_path),
+            AnyNode::Computation(transport),
+            AnyNode::ValueType(arena.value_type_list(unit_type)),
         ];
         (arena, nodes)
     }
@@ -838,57 +946,59 @@ mod tests
     }
 
     #[test]
-    fn the_tag_table_is_a_contiguous_frozen_block()
+    fn assigned_wire_tags_are_unique_and_leave_reserved_bytes_unassigned()
     {
-        let tags: Vec<WireTag> = NODE_TAG_TABLE.iter().map(|row| row.tag).collect();
-        let expected: Vec<WireTag> = (0_u8 .. 32).map(WireTag::from).collect();
-        assert_eq!(expected, tags, "the node tags are contiguous from zero");
+        let mut assigned = [false; 256];
+        let reserved = u8::from(super::SHARING_BLOCK_FIRST) ..= u8::from(super::SHARING_BLOCK_LAST);
+        for row in &NODE_TAG_TABLE {
+            let tag = u8::from(row.tag);
+            assert!(
+                !core::mem::replace(&mut assigned[usize::from(tag)], true),
+                "one wire byte cannot identify two formers"
+            );
+            assert!(
+                !reserved.contains(&tag),
+                "an assigned former cannot consume a reserved sharing byte"
+            );
+            assert!(
+                !(0x30_u8 .. 0x50).contains(&tag),
+                "higher-field, funext and universe-flow reservations have no native formers"
+            );
+        }
     }
 
-    /// The settled numbering, asserted as the regions it splits into: the
-    /// frozen block stays strictly below the sharing block and, the growth
-    /// room spent by the static operators, meets it; the sharing block is
-    /// eight contiguous tags. A frozen-block addition that grew into the
-    /// reserved block would fail here rather than at the merge the settlement
-    /// exists to avoid.
+    #[test]
+    fn the_tag_table_is_a_contiguous_frozen_block()
+    {
+        let frozen: Vec<_> = NODE_TAG_TABLE
+            .iter()
+            .take(32)
+            .map(|row| u8::from(row.tag))
+            .collect();
+        assert_eq!(frozen, (0_u8 ..= 0x1f).collect::<Vec<_>>());
+    }
+
     #[test]
     fn the_reserved_sharing_block_sits_above_the_frozen_block()
     {
-        let highest = NODE_TAG_TABLE.last().expect("the table is non-empty").tag;
-        assert!(
-            u8::from(highest) < u8::from(super::SHARING_BLOCK_FIRST),
-            "the frozen block stays below the reserved sharing block"
-        );
-        assert_eq!(
-            u8::from(highest).checked_add(1),
-            Some(u8::from(super::SHARING_BLOCK_FIRST)),
-            "and the growth room between them is spent, so the next former resumes above the \
-             block"
-        );
-        let block = [
-            super::NODE_SHARE_VALUE,
-            super::NODE_SHARE_COMPUTATION,
-            super::NODE_SHARE_VALUE_TYPE,
-            super::NODE_SHARE_COMP_TYPE,
-        ];
-        for (offset, tag) in block.iter().enumerate() {
-            let expected = u8::from(super::SHARING_BLOCK_FIRST)
-                .checked_add(u8::try_from(offset).expect("four fits a byte"))
-                .expect("the block does not wrap");
-            assert_eq!(
-                expected,
-                u8::from(*tag),
-                "the four per-family sharing formers open the block in family order"
-            );
-        }
-        assert_eq!(
-            8_u8,
-            u8::from(super::SHARING_BLOCK_LAST)
-                .checked_sub(u8::from(super::SHARING_BLOCK_FIRST))
-                .and_then(|span| span.checked_add(1))
-                .expect("the block is well ordered"),
-            "the block is eight tags: four formers and four held weakening slots"
-        );
+        assert_eq!(super::SHARING_BLOCK_FIRST, WireTag::from(0x20));
+        assert_eq!(super::SHARING_BLOCK_LAST, WireTag::from(0x27));
+        let expected: Vec<_> = (0_u8 ..= 0x1f)
+            .chain(0x28 ..= 0x2e)
+            .chain(core::iter::once(0x50))
+            .collect();
+        let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
+        assert_eq!(actual, expected);
+        assert_eq!(actual.last(), Some(&0x50));
+        assert!(!actual.contains(&0x51));
+        let empty = NODE_TAG_TABLE
+            .iter()
+            .find(|row| row.tag == super::NODE_VT_EMPTY)
+            .expect("Empty has a wire former");
+        assert_eq!(empty.child_arity, super::ChildArity(0));
+        assert_eq!(empty.max_token_bound, Some(super::TokenCount(1)));
+        assert_eq!(empty.alias_verdict, NodeTagVerdict::Alias);
+        assert_eq!(empty.threshold_verdict, NodeTagVerdict::Alias);
     }
 
     #[test]

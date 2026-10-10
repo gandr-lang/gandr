@@ -897,7 +897,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(integer, integer);
+        let unformed = arena.value_type_base(BaseType::Numeric);
         let text = arena.value_literal(text_literal());
         let unknown = arena.value_constant(ConstantIndex::from(9_usize));
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -905,7 +905,7 @@ mod tests
             declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
             declaration(At(1), UNSIGNED, HOLE),
             declaration(At(2), UNSIGNED, Maybe::Present(unknown)),
-            declaration(At(3), Maybe::Present(sum), HOLE),
+            declaration(At(3), Maybe::Present(unformed), HOLE),
             declaration(At(3), Maybe::Present(integer), HOLE),
         ];
         let report = check_module(&mut context, &module);
@@ -919,8 +919,8 @@ mod tests
         assert_eq!(
             report.judged()[3].verdict(),
             Verdict::Refused(CheckRefusal::OutOfFragment {
-                at: CoreNode::Type(TypeNode::Value(sum)),
-                former: UnadmittedFormer::Sum,
+                at: CoreNode::Type(TypeNode::Value(unformed)),
+                former: UnadmittedFormer::NumericAtom,
             }),
             "a signed hole under an unformed signature is refused, not owed"
         );

@@ -631,5 +631,51 @@ pub fn every_former(noise: Noise) -> Program
     let unclassified = arena.value_type_static_pi(integer_type, value_universe);
     push("classifier", Maybe::Present(unclassified), hole());
 
+    // Native candidates preserve evidence as data; the cache is not admission.
+    let unit_type = arena.value_type_unit();
+    let code = arena.value_quote(unit_type);
+    let path_type = arena.value_type_path_universe(code, code);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let lambda = arena.computation_lambda(returned);
+    let identity = arena.value_thunk(lambda);
+    let evidence = gandr_kernel_term::PathEvidence {
+        source: vec![vec![
+            gandr_kernel_term::EvidenceWord(0)
+                .try_into()
+                .expect("reduce-left word"),
+        ]],
+        target: vec![vec![], vec![
+            gandr_kernel_term::EvidenceWord(0x070C)
+                .try_into()
+                .expect("premise word"),
+        ]],
+    };
+    let certificate = arena.value_path_equiv(
+        path_type,
+        identity,
+        identity,
+        alloc::sync::Arc::new(evidence),
+    );
+    push(
+        "native-path",
+        Maybe::Present(path_type),
+        Maybe::Present(certificate),
+    );
+    let reflexivity = arena.value_path_refl(code);
+    let path = arena.value_path_product(certificate, reflexivity);
+    let unit = arena.value_unit();
+    let pair = arena.value_pair(unit, unit);
+    let transport = arena.computation_transport(path, pair);
+    let thunk = arena.value_thunk(transport);
+    let product = arena.value_type_product(unit_type, unit_type);
+    let returned = arena.comp_type_returner(product);
+    let suspended = arena.value_type_thunk(returned);
+    push(
+        "native-transport",
+        Maybe::Present(suspended),
+        Maybe::Present(thunk),
+    );
+
     Program::new(arena, items).expect("positions ascend")
 }

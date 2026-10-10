@@ -9,6 +9,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
+- [Native universe paths](#native-universe-paths)
 - [Universe families](#universe-families)
 - [Quotes and decode-on-mint](#quotes-and-decode-on-mint)
 - [Static operators](#static-operators)
@@ -40,7 +41,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi`, the two universe towers `ValueType::Universe`, the quotes `Value::Quote` and `Value::QuoteComputation`, the code-reading formers `ValueType::Element` and `CompType::Element`, and the static operators `ValueType::StaticPi`, `Value::StaticLambda` and `Value::StaticApplication`.
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to`.
@@ -119,6 +120,12 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ## Kernel alphabet and core grammar
 
 Levels, base types, literals, sum sides, de Bruijn indices, admission positions and subterm-table entry indices come from `gandr-kernel-strata` and `gandr-kernel-term`. The two languages therefore agree on what a literal or a level is, and erasing a core term to a kernel term remaps ids without translating payloads; the erasure itself is not in this crate. The node enums, the arena and the context are this crate's own, so an elaboration-only former enters the core grammar without widening the closed vocabulary the kernel represents.
+
+## Native universe paths
+
+`PathUniverse(a, b)` is the classifier `Path_U a b`; reflexivity, equivalence and product values introduce native paths, and `Transport` eliminates them. Certificates share the kernel’s portable `PathEvidence` vocabulary. Arena identity and content hashing retain evidence; `equal_certificate_syntax` compares raw classifier and map syntax while erasing evidence only. Computationally equivalent maps do not thereby identify certificates. Binder rewrites traverse classifier codes and translator bodies without reducing those maps.
+
+**Choice.** Native syntax in the ordinary arena, rather than a second path arena with different traversal and ownership rules. Core syntax itself grants no admission authority: the checker validates the closed endpoint fragment and the kernel replays candidates. Element-identity, higher-field, bridge-mode and `Flow_U` programs remain separate kernel APIs. **Reversal.** Extending the code fragment requires corresponding formation, admission and replay rules, not a syntax-only permission.
 
 ## Universe families
 

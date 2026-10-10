@@ -37,6 +37,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -641,6 +642,18 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// [`ConversionFault`] for an unresolved node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native certificates compare structurally without
+    ///   queuing map evaluation; different native constructor kinds remain
+    ///   distinct.
+    /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+    /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    #[spec(captures: before = self.goals.len(), ensures: |ret| self.goals.len() >= before && match (self.domain.value(left), self.domain.value(right)) {
+        (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => matches!(ret, Ok(Local::Disagree)),
+        (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => matches!(ret, Ok(Local::Agree)) && self.goals.len() == before,
+        _ => true,
+    })]
     fn values(
         &mut self,
         left: DomainValueId,
@@ -659,6 +672,19 @@ impl<'run> Walk<'run>
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         match (one, other) {
+            | (
+                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+            ) => Ok(
+                if equal_paths(self.core, self.domain, left, right)?
+                    == gandr_core_term::CertificateEquality::Equal
+                {
+                    Local::Agree
+                }
+                else {
+                    Local::Disagree
+                },
+            ),
             | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Ok(Local::Agree),
             | (
                 DomainValue::Literal { literal: first, .. },
@@ -819,7 +845,9 @@ impl<'run> Walk<'run>
             | (DomainValue::Neutral { neutral, .. }, _)
             | (_, DomainValue::Neutral { neutral, .. }) => self.neutral_against_former(neutral),
             | (
-                DomainValue::Unit { .. }
+                DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
@@ -940,6 +968,13 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — a neutral does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — different rigid heads and elimination kinds cannot
+    ///   agree; paired native eliminations retain their argument obligations.
+    /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    #[spec(ensures: |ret| if left == right { matches!(ret, Ok(Local::Agree)) } else if matches!(ret, Ok(Local::Agree)) { self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(a, b)| a.head() == b.head() && a.spine().len() == b.spine().len() && a.spine().iter().zip(b.spine()).all(|(x, y)| core::mem::discriminant(x) == core::mem::discriminant(y))) } else { true })]
     fn neutrals(
         &mut self,
         left: NeutralId,
@@ -983,6 +1018,14 @@ impl<'run> Walk<'run>
         let mut queued = Vec::new();
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
+                | (
+                    Elimination::Transport(left_argument),
+                    Elimination::Transport(right_argument),
+                )
+                | (
+                    Elimination::ProductTransport(left_argument),
+                    Elimination::ProductTransport(right_argument),
+                )
                 | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
                 | (
                     Elimination::StaticApply(left_argument),
@@ -1008,7 +1051,9 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Closures(left_on_right, right_on_right));
                 },
                 | (
-                    Elimination::Apply(_)
+                    Elimination::Transport(_)
+                    | Elimination::ProductTransport(_)
+                    | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)
                     | Elimination::Case { .. }
@@ -1075,6 +1120,86 @@ impl<'run> Walk<'run>
         }
         Ok(Local::Agree)
     }
+}
+
+/// Compare path constructors without reducing their certificate programs.
+///
+/// # Specification
+/// - requires: nothing; unreadable domain nodes produce a domain fault.
+/// - ensures: evidence is erased but every translator constructor is retained;
+///   product components are compared after ambient value substitution only.
+/// - provides: certificate-syntax equality, not extensional map equality.
+/// - fails: a domain fault on a dangling value or neutral.
+/// - panics: none.
+///
+/// # Errors
+/// `ConversionFault::Domain`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — normalization never equates different translator syntax.
+/// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+#[spec(ensures: |ret| match (domain.value(left), domain.value(right)) {
+    (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) => matches!(ret, Ok(answer) if answer == gandr_core_term::equal_certificate_syntax(core, a, b)),
+    (None, _) | (_, None) => matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling))),
+    (Some(a), Some(b)) if core::mem::discriminant(a) != core::mem::discriminant(b) => matches!(ret, Ok(gandr_core_term::CertificateEquality::Different)),
+    _ => true,
+})]
+pub fn equal_paths(
+    core: &CoreArena,
+    domain: &DomainArena,
+    left: DomainValueId,
+    right: DomainValueId,
+) -> Result<gandr_core_term::CertificateEquality, ConversionFault>
+{
+    let mut pending = Vec::from([(left, right)]);
+    let mut visited = alloc::collections::BTreeSet::new();
+    while let Some((left, right)) = pending.pop() {
+        if !visited.insert((left, right)) {
+            continue;
+        }
+        let (Some(one), Some(other)) = (domain.value(left), domain.value(right))
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
+        match (*one, *other) {
+            | (
+                DomainValue::PathCertificate { certificate: a, .. },
+                DomainValue::PathCertificate { certificate: b, .. },
+            ) => {
+                if gandr_core_term::equal_certificate_syntax(core, a, b)
+                    == gandr_core_term::CertificateEquality::Different
+                {
+                    return Ok(gandr_core_term::CertificateEquality::Different);
+                }
+            },
+            | (
+                DomainValue::PathProduct {
+                    first: a,
+                    second: b,
+                    ..
+                },
+                DomainValue::PathProduct {
+                    first: c,
+                    second: d,
+                    ..
+                },
+            ) => pending.extend([(a, c), (b, d)]),
+            | (
+                DomainValue::Neutral { neutral: a, .. },
+                DomainValue::Neutral { neutral: b, .. },
+            ) => {
+                let (Some(a), Some(b)) = (domain.neutral(a), domain.neutral(b))
+                else {
+                    return Err(ConversionFault::Domain(DomainFault::Dangling));
+                };
+                if a.head() != b.head() || !a.spine().is_empty() || !b.spine().is_empty() {
+                    return Ok(gandr_core_term::CertificateEquality::Different);
+                }
+            },
+            | _ => return Ok(gandr_core_term::CertificateEquality::Different),
+        }
+    }
+    Ok(gandr_core_term::CertificateEquality::Equal)
 }
 
 #[cfg(test)]

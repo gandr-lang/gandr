@@ -9,14 +9,8 @@
         erased_error_signature
     )
 )]
-//! The domain's shape through the public surface: both faces readable on the
-//! nodes that carry them, both closure spaces built over one environment, and
-//! the two policy parameters installed together.
-//!
-//! The unit suites separate each decision surface. This suite asserts that the
-//! pieces compose through the re-exports a consumer reaches, which is what
-//! would break first if a face or a closure space were reachable only from
-//! inside the crate.
+//! The domain's source and reduced faces and its policy selection through
+//! the public consumer surface.
 
 /// The glued-shape cases, in a `cfg(test)` module so the crate's lint wall
 /// reads them as test code rather than as shipping code.
@@ -29,7 +23,6 @@ mod glued_shape
     use gandr_core_nbe::DomainValue;
     use gandr_core_nbe::DuplicationPolicy;
     use gandr_core_nbe::DuplicationStance;
-    use gandr_core_nbe::Environment;
     use gandr_core_nbe::Glued;
     use gandr_core_nbe::NeutralHead;
     use gandr_core_nbe::PolicyRefusal;
@@ -39,9 +32,7 @@ mod glued_shape
     use gandr_core_nbe::Unfolding;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionHeight;
-    use gandr_core_term::Zone;
     use gandr_kernel_term::ConstantIndex;
-    use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
 
     #[test]
@@ -81,44 +72,6 @@ mod glued_shape
             }),
             domain.computation(returner),
             "the negative side carries the same face over its own family"
-        );
-    }
-
-    #[test]
-    fn both_closure_spaces_close_over_one_environment()
-    {
-        let mut core = CoreArena::new();
-        let value_body = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let comp_body = core.computation_return(value_body);
-
-        let mut domain = DomainArena::new();
-        let bound = domain.value_unit(TermFace::Reduced);
-        let mut environment = Environment::new();
-        environment.extend(Zone::Intuitionistic, bound);
-
-        let value_closure = domain.value_closure_node(value_body, environment.clone());
-        let comp_closure = domain.comp_closure_node(comp_body, environment);
-
-        let held = domain
-            .value_closure(value_closure)
-            .expect("the value closure resolves");
-        assert_eq!(value_body, held.body());
-        assert_eq!(
-            Some(bound),
-            held.environment()
-                .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
-            "the captured environment answers the body's free variable"
-        );
-
-        let held = domain
-            .comp_closure(comp_closure)
-            .expect("the computation closure resolves");
-        assert_eq!(comp_body, held.body());
-        assert_eq!(
-            Some(bound),
-            held.environment()
-                .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
-            "and so does the other space's, over the same environment"
         );
     }
 

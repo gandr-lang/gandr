@@ -85,6 +85,10 @@ pub enum Site
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
+    /// A sum injection.
+    Injection(Site),
+    /// A sum case.
+    Case(Site),
     /// A thunk.
     Thunk(Site),
     /// A lambda.
@@ -119,6 +123,8 @@ pub enum Form
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal
 {
+    /// A native path endpoint is not a closed first-order code.
+    PathCode(Site),
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -485,6 +491,7 @@ impl Projection<'_, '_, '_>
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
     #[spec(ensures: |ret| match (refusal, &ret) {
+        | (CheckRefusal::PathCode(at), &Refusal::PathCode(projected))
         | (
             CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }),
             &Refusal::TypeMismatch { at: projected, .. },
@@ -519,10 +526,12 @@ impl Projection<'_, '_, '_>
             CheckRefusal::NotSynthesisable { form },
             &Refusal::NotSynthesisable { form: projected },
         ) => match (form, projected) {
+            | (CheckingForm::Injection(id), Form::Injection(at))
             | (CheckingForm::Thunk(id), Form::Thunk(at))
             | (CheckingForm::StaticLambda(id), Form::StaticLambda(at)) => {
                 at == self.site(ArenaNode::Value(id))
             },
+            | (CheckingForm::Case(id), Form::Case(at))
             | (CheckingForm::Lambda(id), Form::Lambda(at))
             | (CheckingForm::Return(id), Form::Return(at)) => {
                 at == self.site(ArenaNode::Computation(id))
@@ -620,6 +629,7 @@ impl Projection<'_, '_, '_>
     ) -> Refusal
     {
         match refusal {
+            | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
                 synthesised,
@@ -645,6 +655,10 @@ impl Projection<'_, '_, '_>
             },
             | CheckRefusal::NotSynthesisable { form } => Refusal::NotSynthesisable {
                 form: match form {
+                    | CheckingForm::Injection(id) => {
+                        Form::Injection(self.site(ArenaNode::Value(id)))
+                    },
+                    | CheckingForm::Case(id) => Form::Case(self.site(ArenaNode::Computation(id))),
                     | CheckingForm::Thunk(id) => Form::Thunk(self.site(ArenaNode::Value(id))),
                     | CheckingForm::Lambda(id) => {
                         Form::Lambda(self.site(ArenaNode::Computation(id)))
@@ -1034,11 +1048,10 @@ mod tests
         );
 
         let mut arena = CoreArena::new();
-        let unit = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit, unit);
+        let unformed = arena.value_type_base(gandr_kernel_term::BaseType::Numeric);
         let (_verdict, typing) = judged(
             arena,
-            Maybe::Present(sum),
+            Maybe::Present(unformed),
             Maybe::Absent(body::Absent::Hole),
             CheckBudget::DEFAULT,
         );
@@ -1046,7 +1059,7 @@ mod tests
             typing,
             Typing::Refused(Refusal::OutOfFragment {
                 at: first,
-                former: UnadmittedFormer::Sum,
+                former: UnadmittedFormer::NumericAtom,
             }),
             "a former without a rule names the node carrying it"
         );
@@ -1149,6 +1162,26 @@ mod tests
         };
         let cases = [
             (
+                super::CheckRefusal::PathCode(unit),
+                Refusal::PathCode(value_site),
+            ),
+            (
+                super::CheckRefusal::NotSynthesisable {
+                    form: super::CheckingForm::Injection(unit),
+                },
+                Refusal::NotSynthesisable {
+                    form: Form::Injection(value_site),
+                },
+            ),
+            (
+                super::CheckRefusal::NotSynthesisable {
+                    form: super::CheckingForm::Case(returned),
+                },
+                Refusal::NotSynthesisable {
+                    form: Form::Case(computation_site),
+                },
+            ),
+            (
                 super::CheckRefusal::TypeMismatch(super::Mismatch::Computation {
                     at: returned,
                     synthesised: returner,
@@ -1215,11 +1248,11 @@ mod tests
             (
                 super::CheckRefusal::OutOfFragment {
                     at: super::CoreNode::Type(super::TypeNode::Computation(returner)),
-                    former: UnadmittedFormer::Sum,
+                    former: UnadmittedFormer::NumericAtom,
                 },
                 Refusal::OutOfFragment {
                     at: comp_type_site,
-                    former: UnadmittedFormer::Sum,
+                    former: UnadmittedFormer::NumericAtom,
                 },
             ),
             (

@@ -513,15 +513,23 @@ fn checking_row(
         },
         | CheckRefusal::ShapeMismatch {
             wanted:
-                ExpectedShape::Thunk
+                ExpectedShape::PathUniverse
+                | ExpectedShape::Sum
+                | ExpectedShape::Thunk
                 | ExpectedShape::Arrow
                 | ExpectedShape::Product
                 | ExpectedShape::StaticPi,
             ..
         }
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Return(_) | CheckingForm::Hole(_) | CheckingForm::StaticLambda(_),
+            form:
+                CheckingForm::Injection(_)
+                | CheckingForm::Case(_)
+                | CheckingForm::Return(_)
+                | CheckingForm::Hole(_)
+                | CheckingForm::StaticLambda(_),
         }
+        | CheckRefusal::PathCode(_)
         | CheckRefusal::TypeMismatch(_)
         | CheckRefusal::UnknownConstant { .. }
         | CheckRefusal::OutOfFragment { .. }
@@ -678,11 +686,21 @@ fn formers(
         match node {
             | Node::Value(id) => match arena.value(id) {
                 | Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
-                | Some(&Value::Pair(first, second)) => {
+                | Some(
+                    &(Value::PathProduct(first, second)
+                    | Value::PathEquiv {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
+                    | Value::Pair(first, second)),
+                ) => {
                     worklist.push(Node::Value(first));
                     worklist.push(Node::Value(second));
                 },
-                | Some(&Value::Injection(_, injected)) => worklist.push(Node::Value(injected)),
+                | Some(&(Value::PathRefl(injected) | Value::Injection(_, injected))) => {
+                    worklist.push(Node::Value(injected));
+                },
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
                 // A quote carries a type, and a static operator and its
                 // application build one, whose codes are values that hold no
@@ -700,6 +718,9 @@ fn formers(
                 | None => {},
             },
             | Node::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::Transport(path, value)) => {
+                    worklist.extend([Node::Value(path), Node::Value(value)]);
+                },
                 | Some(&Computation::Lambda(under)) => {
                     rows.mark(Row::LambdaChecks);
                     worklist.push(Node::Computation(under));

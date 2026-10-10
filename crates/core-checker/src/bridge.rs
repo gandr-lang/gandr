@@ -1231,6 +1231,7 @@ impl Positions
             | (ConversionDecision::EtaExpand { side: x, variable: a }, ConversionDecision::EtaExpand { side: y, variable: b }) => x == y && mapped(a,b),
             | (ConversionDecision::ComparedShared { left: a, right: b }, ConversionDecision::ComparedShared { left: c, right: d }) => mapped(a,c) && mapped(b,d),
             | (ConversionDecision::NegativeSubgoal { position: a }, ConversionDecision::NegativeSubgoal { position: b }) => a == b,
+            | (ConversionDecision::Decompose, ConversionDecision::Decompose) => true,
             | _ => false,
         }
     })]
@@ -1286,6 +1287,7 @@ impl Positions
             | ConversionDecision::NegativeSubgoal { position } => {
                 ConversionDecision::NegativeSubgoal { position }
             },
+            | ConversionDecision::Decompose => ConversionDecision::Decompose,
         }
     }
 }
@@ -1304,6 +1306,150 @@ enum Image<Erased>
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Frame
 {
+    /// Await a reflexivity endpoint.
+    PathRefl
+    {
+        /// The reflexivity value.
+        at: ValueId,
+    },
+    /// Await an equivalence classifier.
+    PathEquivType
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The forward map.
+        forward: ValueId,
+        /// The inverse map.
+        backward: ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await a forward translator.
+    PathEquivForward
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The classifier image.
+        path_type: gandr_kernel_term::ValueTypeId,
+        /// The inverse map.
+        backward: ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await an inverse translator.
+    PathEquivBackward
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The classifier image.
+        path_type: gandr_kernel_term::ValueTypeId,
+        /// The forward map image.
+        forward: gandr_kernel_term::ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await the first product path.
+    PathProductFirst
+    {
+        /// The product path.
+        at: ValueId,
+        /// The second path.
+        second: ValueId,
+    },
+    /// Await the second product path.
+    PathProductSecond
+    {
+        /// The product path.
+        at: ValueId,
+        /// The first path image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// Await a transport path.
+    TransportPath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The operand.
+        value: ValueId,
+    },
+    /// Await a transport operand.
+    TransportValue
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+    },
+    /// Await the source code of a path classifier.
+    PathSource
+    {
+        /// The classifier.
+        at: ValueTypeId,
+        /// The target code.
+        target_code: ValueId,
+    },
+    /// Await the target code of a path classifier.
+    PathTarget
+    {
+        /// The classifier.
+        at: ValueTypeId,
+        /// The source code image.
+        source: gandr_kernel_term::ValueId,
+    },
+    /// Await the first summand.
+    SumFirst
+    {
+        /// The sum.
+        at: ValueTypeId,
+        /// The second summand.
+        second: ValueTypeId,
+    },
+    /// Await the second summand.
+    SumSecond
+    {
+        /// The sum.
+        at: ValueTypeId,
+        /// The first summand image.
+        first: gandr_kernel_term::ValueTypeId,
+    },
+    /// Await a sum injection payload.
+    Injection
+    {
+        /// The injection.
+        at: ValueId,
+        /// The injection side.
+        side: gandr_kernel_term::Side,
+    },
+    /// Await a sum case scrutinee.
+    CaseScrutinee
+    {
+        /// The case.
+        at: ComputationId,
+        /// The left branch.
+        on_left: ComputationId,
+        /// The right branch.
+        on_right: ComputationId,
+    },
+    /// Await the left branch.
+    CaseLeft
+    {
+        /// The case.
+        at: ComputationId,
+        /// The scrutinee image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// The right branch.
+        on_right: ComputationId,
+    },
+    /// Await the right branch.
+    CaseRight
+    {
+        /// The case.
+        at: ComputationId,
+        /// The scrutinee image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// The left branch image.
+        on_left: gandr_kernel_term::ComputationId,
+    },
     /// A thunk, awaiting its body's computation.
     Thunk
     {
@@ -2349,6 +2495,28 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match value {
+            | Value::PathRefl(code) => (
+                Frame::PathRefl { at },
+                CoreNode::Term(TermNode::Value(code)),
+            ),
+            | Value::PathProduct(first, second) => (
+                Frame::PathProductFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                evidence,
+            } => (
+                Frame::PathEquivType {
+                    at,
+                    forward,
+                    backward,
+                    evidence,
+                },
+                CoreNode::Type(TypeNode::Value(path_type)),
+            ),
             | Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
@@ -2383,7 +2551,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 Frame::PairFirst { at, second },
                 CoreNode::Term(TermNode::Value(first)),
             ),
-            | Value::Injection(..) => return Err(unadmitted(UnadmittedFormer::Injection)),
+            | Value::Injection(side, body) => (
+                Frame::Injection { at, side },
+                CoreNode::Term(TermNode::Value(body)),
+            ),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
             | Value::StaticLambda(_) => {
                 let position = self.abstraction(at)?;
@@ -2505,6 +2676,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             return Err(Refusal::DanglingNode { node });
         };
         let (frame, child) = match *computation {
+            | Computation::Transport(path, value) => {
+                (Frame::TransportPath { at, value }, TermNode::Value(path))
+            },
             | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
             | Computation::Application(head, argument) => (
                 Frame::ApplicationHead { at, argument },
@@ -2515,12 +2689,18 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | Computation::Bind(bound, body) => {
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
-            | Computation::Case { .. } => {
-                return Err(Refusal::OutOfFragment {
-                    at: node,
-                    former: UnadmittedFormer::Case,
-                });
-            },
+            | Computation::Case {
+                scrutinee,
+                on_left,
+                on_right,
+            } => (
+                Frame::CaseScrutinee {
+                    at,
+                    on_left,
+                    on_right,
+                },
+                TermNode::Value(scrutinee),
+            ),
         };
         self.memo().computations.insert(at, Image::Open);
         self.frames.push(frame);
@@ -2568,6 +2748,14 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | None => {},
         }
         let (frame, child) = match value_type_view(self.arena, at)? {
+            | ValueTypeView::PathUniverse(source, target_code) => (
+                Frame::PathSource { at, target_code },
+                CoreNode::Term(TermNode::Value(source)),
+            ),
+            | ValueTypeView::Sum(first, second) => (
+                Frame::SumFirst { at, second },
+                CoreNode::Type(TypeNode::Value(first)),
+            ),
             | ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
             },
@@ -2776,7 +2964,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 | (Value::Quote(_), GroundSort::Computation)
                 | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
-                    Value::Unit
+                    Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Unit
                     | Value::Literal(_)
                     | Value::Thunk(_)
                     | Value::Pair(..)
@@ -2890,6 +3081,131 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Result<Step, Refusal>
     {
         match (frame, image) {
+            | (Frame::PathRefl { at }, AnyNode::Value(code)) => {
+                Ok(self.erased_value(at, target.value_path_refl(code)))
+            },
+            | (Frame::PathProductFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::PathProductSecond { at, first });
+                self.argument(second)
+            },
+            | (Frame::PathProductSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_path_product(first, second)))
+            },
+            | (
+                Frame::PathEquivType {
+                    at,
+                    forward,
+                    backward,
+                    evidence,
+                },
+                AnyNode::ValueType(path_type),
+            ) => {
+                self.frames.push(Frame::PathEquivForward {
+                    at,
+                    path_type,
+                    backward,
+                    evidence,
+                });
+                self.argument(forward)
+            },
+            | (
+                Frame::PathEquivForward {
+                    at,
+                    path_type,
+                    backward,
+                    evidence,
+                },
+                AnyNode::Value(forward),
+            ) => {
+                self.frames.push(Frame::PathEquivBackward {
+                    at,
+                    path_type,
+                    forward,
+                    evidence,
+                });
+                self.argument(backward)
+            },
+            | (
+                Frame::PathEquivBackward {
+                    at,
+                    path_type,
+                    forward,
+                    evidence,
+                },
+                AnyNode::Value(backward),
+            ) => Ok(self.erased_value(
+                at,
+                target.value_path_equiv(path_type, forward, backward, evidence),
+            )),
+            | (Frame::PathSource { at, target_code }, AnyNode::Value(source)) => {
+                self.frames.push(Frame::PathTarget { at, source });
+                self.argument(target_code)
+            },
+            | (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+                self.erased_value_type(at, target.value_type_path_universe(source, target_code))
+            ),
+            | (Frame::SumFirst { at, second }, AnyNode::ValueType(first)) => {
+                self.frames.push(Frame::SumSecond { at, first });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
+            },
+            | (Frame::SumSecond { at, first }, AnyNode::ValueType(second)) => {
+                Ok(self.erased_value_type(at, target.value_type_sum(first, second)))
+            },
+            | (Frame::Injection { at, side }, AnyNode::Value(body)) => {
+                Ok(self.erased_value(at, target.value_injection(side, body)))
+            },
+            | (Frame::TransportPath { at, value }, AnyNode::Value(path)) => {
+                self.frames.push(Frame::TransportValue { at, path });
+                self.argument(value)
+            },
+            | (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
+                Ok(self.erased_computation(at, target.computation_transport(path, value)))
+            },
+            | (
+                Frame::CaseScrutinee {
+                    at,
+                    on_left,
+                    on_right,
+                },
+                AnyNode::Value(scrutinee),
+            ) => {
+                self.frames.push(Frame::CaseLeft {
+                    at,
+                    scrutinee,
+                    on_right,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_left,
+                ))))
+            },
+            | (
+                Frame::CaseLeft {
+                    at,
+                    scrutinee,
+                    on_right,
+                },
+                AnyNode::Computation(on_left),
+            ) => {
+                self.frames.push(Frame::CaseRight {
+                    at,
+                    scrutinee,
+                    on_left,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_right,
+                ))))
+            },
+            | (
+                Frame::CaseRight {
+                    at,
+                    scrutinee,
+                    on_left,
+                },
+                AnyNode::Computation(on_right),
+            ) => {
+                Ok(self
+                    .erased_computation(at, target.computation_case(scrutinee, on_left, on_right)))
+            },
             | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
             },
@@ -3002,7 +3318,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 Ok(Step::Ascend(decoded(target, code, level, sort)))
             },
             | (
-                Frame::Thunk { .. }
+                Frame::CaseLeft { .. }
+                | Frame::CaseRight { .. }
+                | Frame::Thunk { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::Lambda { .. }
                 | Frame::BindBound { .. }
@@ -3020,7 +3338,18 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::ValueType(_),
             )
             | (
-                Frame::Force { .. }
+                Frame::PathRefl { .. }
+                | Frame::PathProductFirst { .. }
+                | Frame::PathProductSecond { .. }
+                | Frame::PathEquivForward { .. }
+                | Frame::PathEquivBackward { .. }
+                | Frame::PathSource { .. }
+                | Frame::PathTarget { .. }
+                | Frame::TransportPath { .. }
+                | Frame::TransportValue { .. }
+                | Frame::Injection { .. }
+                | Frame::CaseScrutinee { .. }
+                | Frame::Force { .. }
                 | Frame::ApplicationArgument { .. }
                 | Frame::Return { .. }
                 | Frame::Reduced { .. }
@@ -3032,7 +3361,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
-                Frame::Quote { .. }
+                Frame::PathEquivType { .. }
+                | Frame::SumFirst { .. }
+                | Frame::SumSecond { .. }
+                | Frame::Quote { .. }
                 | Frame::LiftedCode { .. }
                 | Frame::TypeLift { .. }
                 | Frame::DecodeLift { .. }
@@ -3199,7 +3531,6 @@ mod tests
     use gandr_core_term::Zone;
     use gandr_kernel_check_memo::ContentDigest;
     use gandr_kernel_conversion_trace::ConversionDecision;
-    use gandr_kernel_core::Environment;
     use gandr_kernel_core::KernelVerdict;
     use gandr_kernel_core::ReplayDecline;
     use gandr_kernel_core::ReplayRefusal;
@@ -3214,7 +3545,6 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::DeclarationContent;
     use gandr_kernel_term::GroundSort;
-    use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::StructuredName;
@@ -4123,6 +4453,108 @@ mod tests
     }
 
     #[test]
+    fn native_path_module_round_trips()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_kernel_conversion_trace::ConversionDecision;
+        use gandr_kernel_core::path_universe::Dialogue;
+        use gandr_kernel_core::path_universe::Transport;
+        use gandr_kernel_core::path_universe::replay_transport;
+        use gandr_kernel_core::replay::EngineClaim;
+        use gandr_kernel_core::replay::ReplayBudget;
+        use gandr_kernel_term::PathEvidence;
+
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let boolean = arena.value_type_sum(unit_type, unit_type);
+        let code = arena.value_quote(boolean);
+        let path_type = arena.value_type_path_universe(code, code);
+        let unit = arena.value_unit();
+        let truth = arena.value_injection(Side::Left, unit);
+        let falsity = arena.value_injection(Side::Right, unit);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let left = arena.value_injection(Side::Right, variable);
+        let right = arena.value_injection(Side::Left, variable);
+        let left = arena.computation_return(left);
+        let right = arena.computation_return(right);
+        let not = arena.computation_case(variable, left, right);
+        let not = arena.computation_lambda(not);
+        let not = arena.value_thunk(not);
+        // These are untrusted candidate dialogues, not acceptance marks. The
+        // native admission below derives and replays all four round trips.
+        let evidence = Arc::new(PathEvidence {
+            source: vec![vec![ConversionDecision::Decompose], Vec::new()],
+            target: vec![Vec::new(), vec![ConversionDecision::Decompose]],
+        });
+        let path = arena.value_path_equiv(path_type, not, not, evidence);
+        let refl = arena.value_path_refl(code);
+        let product_type = arena.value_type_product(boolean, boolean);
+        let product_code = arena.value_quote(product_type);
+        let product_path_type = arena.value_type_path_universe(product_code, product_code);
+        let product_path = arena.value_path_product(path, refl);
+        let input = arena.value_pair(falsity, truth);
+        let transport = arena.computation_transport(product_path, input);
+        let body = arena.value_thunk(transport);
+        let result = arena.comp_type_returner(product_type);
+        let declared = arena.value_type_thunk(result);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(path_type), Maybe::Present(path)),
+            declaration(At(1), Maybe::Present(path_type), Maybe::Present(refl)),
+            declaration(
+                At(2),
+                Maybe::Present(product_path_type),
+                Maybe::Present(product_path),
+            ),
+            declaration(At(3), Maybe::Present(declared), Maybe::Present(body)),
+        ]);
+        let image = readmission.export(BTreeMap::new());
+        let imported = decode(image.as_image()).expect("native module decodes");
+        assert_eq!(
+            gandr_kernel_term::encode(imported.arena(), imported.declarations()).as_image(),
+            image.as_image()
+        );
+        let declarations = imported.declarations();
+        let [_, _, _, ref transported] = *declarations
+        else {
+            panic!(
+                "every native declaration must cross: {:?}",
+                readmission.readmitted()
+            );
+        };
+        let DeclarationContent::Def { body, .. } = *transported.declaration().content()
+        else {
+            panic!("transport is a definition");
+        };
+        let Some(&KernelValue::Thunk(computation)) = imported.arena().value(body)
+        else {
+            panic!("transport is suspended");
+        };
+        let Some(&gandr_kernel_term::Computation::Transport(path, value)) =
+            imported.arena().computation(computation)
+        else {
+            panic!("transport remains native on import");
+        };
+        let mut kernel = imported.arena().clone();
+        let unit = kernel.value_unit();
+        let truth = kernel.value_injection(Side::Left, unit);
+        let output = kernel.value_pair(truth, truth);
+        let expected = kernel.computation_return(output);
+        assert_eq!(
+            replay_transport(
+                &mut kernel,
+                Transport { path, value },
+                expected,
+                EngineClaim::Convertible,
+                &Dialogue::default(),
+                ReplayBudget::DEFAULT
+            )
+            .expect("imported certificate is rechecked"),
+            KernelVerdict::Convertible
+        );
+    }
+
+    #[test]
     fn an_export_names_each_crossed_declaration_at_its_position()
     {
         // module M { def bad : Integer = "" ; def first : Integer = 0 ;
@@ -4209,13 +4641,8 @@ mod tests
         // The abstract atom is witnessed by its own test.
         let mut arena = CoreArena::new();
         let unit = arena.value_unit();
-        let unit_type = arena.value_type_unit();
-        let returned = arena.computation_return(unit);
+
         let rows = [
-            (
-                CoreNode::Term(TermNode::Value(arena.value_injection(Side::Left, unit))),
-                UnadmittedFormer::Injection,
-            ),
             (
                 CoreNode::Term(TermNode::Value(arena.value_lift(Level::zero(), unit))),
                 UnadmittedFormer::ValueLift,
@@ -4225,18 +4652,8 @@ mod tests
                 UnadmittedFormer::NumericLiteral,
             ),
             (
-                CoreNode::Term(TermNode::Computation(
-                    arena.computation_case(unit, returned, returned),
-                )),
-                UnadmittedFormer::Case,
-            ),
-            (
                 CoreNode::Type(TypeNode::Value(arena.value_type_base(BaseType::Numeric))),
                 UnadmittedFormer::NumericAtom,
-            ),
-            (
-                CoreNode::Type(TypeNode::Value(arena.value_type_sum(unit_type, unit_type))),
-                UnadmittedFormer::Sum,
             ),
             (
                 CoreNode::Type(TypeNode::Value(arena.value_type_universe(
@@ -4370,34 +4787,20 @@ mod tests
         let text = arena.value_literal(text_literal());
         let mismatched = arena.value_constant(ConstantIndex::from(5_usize));
         let module = [
-            // def control : Integer = 0 ;
             declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
-            // def marked_body : Integer + Integer = inl 0 ;
             declaration(At(1), Maybe::Present(sum), Maybe::Present(injection)),
-            // def owed : Integer ;
             declaration(At(2), Maybe::Present(integer), HOLE),
-            // def marked_hole : Integer + Integer ;
             declaration(At(3), Maybe::Present(sum), HOLE),
-            // def hole ;
             declaration(At(4), UNSIGNED, HOLE),
-            // def mismatched : Integer = "" ;
             declaration(At(5), Maybe::Present(integer), Maybe::Present(text)),
-            // def dependent : Integer = mismatched ;
             declaration(At(6), Maybe::Present(integer), Maybe::Present(mismatched)),
         ];
         let (report, readmission) = judge_and_readmit(&mut arena, &module);
-        for (entry, offered) in readmission.readmitted().iter().zip(&module) {
-            assert_eq!(
-                (entry.constant(), entry.origin()),
-                (offered.constant(), offered.origin()),
-                "every outcome is located at its declaration's origin"
-            );
-        }
         let [
             ref control,
-            ref marked_body,
+            ref sum_body,
             ref owed,
-            ref marked_hole,
+            ref sum_hole,
             ref hole,
             ref mismatched_entry,
             ref dependent,
@@ -4405,114 +4808,77 @@ mod tests
         else {
             panic!("one outcome per declaration");
         };
-        let sum_mark = CheckRefusal::OutOfFragment {
-            at: CoreNode::Type(TypeNode::Value(sum)),
-            former: UnadmittedFormer::Sum,
-        };
+        assert!(matches!(*control.outcome(), Outcome::Defined { .. }));
         assert!(
-            matches!(*control.outcome(), Outcome::Defined { .. }),
-            "the positive control for a mark crosses as a definition"
+            matches!(*sum_body.outcome(), Outcome::Defined { .. }),
+            "a checked sum injection crosses as a definition"
         );
+        assert!(matches!(*owed.outcome(), Outcome::Assumed { .. }));
         assert!(
-            matches!(*owed.outcome(), Outcome::Assumed { .. }),
-            "the positive control for a hole crosses as an axiom"
-        );
-        assert_eq!(
-            marked_body.outcome(),
-            &Outcome::Marked(sum_mark),
-            "a marked body crosses as nothing, though the kernel alone admits it"
-        );
-        assert_eq!(
-            marked_hole.outcome(),
-            &Outcome::Marked(sum_mark),
-            "a marked signed hole crosses as no axiom, though the kernel alone admits one"
+            matches!(*sum_hole.outcome(), Outcome::Assumed { .. }),
+            "a hole with a formed sum signature crosses as an axiom"
         );
         assert_eq!(
             hole.outcome(),
             &Outcome::Marked(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Hole(ConstantIndex::from(4_usize)),
             }),
-            "a hole in synthesis position is refused naming the hole"
+            "an unsigned hole remains refused"
         );
         assert!(
             matches!(
                 *mismatched_entry.outcome(),
                 Outcome::Marked(CheckRefusal::TypeMismatch(Mismatch::Value { .. }))
             ),
-            "an ill-typed body is marked with its mismatch"
+            "an ill-typed body remains marked"
         );
-        assert!(
-            matches!(report.judged()[6].verdict(), Verdict::Checked { .. }),
-            "the judgement accepts the dependent through the declared type"
-        );
+        assert!(matches!(
+            report.judged()[6].verdict(),
+            Verdict::Checked { .. }
+        ));
         assert_eq!(
             dependent.outcome(),
             &Outcome::Refused(Refusal::Withheld {
                 at: mismatched,
                 constant: ConstantIndex::from(5_usize),
             }),
-            "a reference to a marked declaration is withheld, located at the reference"
+            "a checked reference to a marked declaration is withheld"
         );
         assert_eq!(
-            (
+            [
                 crossed_at(&readmission, At(0)),
+                crossed_at(&readmission, At(1)),
                 crossed_at(&readmission, At(2)),
-                readmission.environment().entries().len()
-            ),
-            (
+                crossed_at(&readmission, At(3)),
+            ],
+            [
                 ConstantIndex::from(0_usize),
                 ConstantIndex::from(1_usize),
-                2_usize
-            ),
-            "the two positive controls, and nothing else, entered the kernel"
+                ConstantIndex::from(2_usize),
+                ConstantIndex::from(3_usize),
+            ],
+            "both checked definitions and both formed holes enter in declaration order"
         );
         assert_eq!(
             readmission.audit().axioms(),
-            [ConstantIndex::from(1_usize)],
-            "the artifact rests on the owed hole's axiom alone"
-        );
-        // The kernel alone admits the content of both marked declarations, so
-        // the refusals above are the bridge's.
-        let mut kernel = Environment::new();
-        let mut staging = kernel.stage();
-        let target = staging.arena();
-        let kernel_integer = target.value_type_base(BaseType::Integer);
-        let kernel_sum = target.value_type_sum(kernel_integer, kernel_integer);
-        let kernel_zero = target.value_literal(integer_literal());
-        let kernel_injection = target.value_injection(Side::Left, kernel_zero);
-        let definition = staging.def(LevelSignature::monomorphic(), kernel_sum, kernel_injection);
-        assert!(
-            kernel.add_decl(definition).is_ok(),
-            "the kernel admits the marked body's content"
-        );
-        let mut staging = kernel.stage();
-        let target = staging.arena();
-        let kernel_integer = target.value_type_base(BaseType::Integer);
-        let kernel_sum = target.value_type_sum(kernel_integer, kernel_integer);
-        let axiom = staging.axiom(LevelSignature::monomorphic(), kernel_sum);
-        assert!(
-            kernel.add_decl(axiom).is_ok(),
-            "the kernel admits the marked hole's content as an axiom"
+            [ConstantIndex::from(2_usize), ConstantIndex::from(3_usize)],
+            "only the two signed holes are axioms"
         );
     }
 
     #[test]
     fn an_empty_ledger_readmits_an_artifact_resting_on_no_axiom()
     {
-        // def answer : Integer = 0 ; def copy = answer ;
-        // def either : Integer + Integer ;
-        //
-        // The signed hole's signature does not form, so it is marked rather
-        // than owed, and the ledger is empty.
+        // An unsupported signed hole is marked, never entered as an axiom.
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(integer, integer);
+        let unformed = arena.value_type_base(BaseType::Numeric);
         let zero = arena.value_literal(integer_literal());
         let answer = arena.value_constant(ConstantIndex::from(0_usize));
         let (report, readmission) = judge_and_readmit(&mut arena, &[
             declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
             declaration(At(1), UNSIGNED, Maybe::Present(answer)),
-            declaration(At(2), Maybe::Present(sum), HOLE),
+            declaration(At(2), Maybe::Present(unformed), HOLE),
         ]);
         assert!(
             report.ledger().entries().is_empty(),
@@ -4769,6 +5135,10 @@ mod tests
             (Unfolded::Definition(crossed), ConstantIndex::from(11_usize)),
             (Unfolded::Definition(static_only), operator),
         ]);
+        assert_eq!(
+            positions.kernel_decision(&operators, ConversionDecision::Decompose),
+            ConversionDecision::Decompose
+        );
         let mut arena = gandr_core_nbe::DomainArena::new();
         let unit = arena.value_unit(gandr_core_nbe::TermFace::Reduced);
         let returned = arena.comp_return(unit, gandr_core_nbe::CompTermFace::Reduced);

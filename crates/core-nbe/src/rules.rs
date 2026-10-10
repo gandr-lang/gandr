@@ -21,6 +21,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
@@ -360,11 +361,11 @@ pub enum Spines
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Spines::Agree`] when the spines have one length and one
-///   elimination kind at every position: an application's or a static
-///   application's arguments as a value pair, a bind's continuations as an
-///   opened pair, a case's branches as two opened pairs left first, a force as
-///   nothing, in spine order innermost first; [`Spines::Disagree`] when a
-///   length or a kind differs. The heads are not compared.
+///   elimination kind at every position: application and transport arguments as
+///   value pairs, a bind's continuations as an opened pair, a case's branches
+///   as two opened pairs left first, and a force as nothing, in spine order
+///   innermost first; [`Spines::Disagree`] when a length or a kind differs. The
+///   heads are not compared.
 /// - provides: the premises of `var-1` and `const`, in the order a recorded
 ///   subgoal position counts.
 /// - fails: [`ConversionFault::Domain`] when a neutral does not resolve.
@@ -372,6 +373,21 @@ pub enum Spines
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — neutral spine lengths and elimination kinds determine
+///   decomposition; application and transport operands contribute one premise,
+///   case branches two, and force none.
+/// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+/// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+#[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
+    (Some(a), Some(b)) => match ret {
+        Ok(Spines::Agree(ref goals)) => a.spine().len() == b.spine().len() && a.spine().iter().zip(b.spine()).all(|(x, y)| core::mem::discriminant(x) == core::mem::discriminant(y)) && goals.len() == a.spine().iter().map(|step| match *step { Elimination::Force => 0_usize, Elimination::Case { .. } => 2, _ => 1 }).sum::<usize>(),
+        Ok(Spines::Disagree) => a.spine().len() != b.spine().len() || a.spine().iter().zip(b.spine()).any(|(x, y)| core::mem::discriminant(x) != core::mem::discriminant(y)),
+        Err(_) => false,
+    },
+    _ => matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling))),
+})]
 pub fn spine_subgoals(
     domain: &DomainArena,
     left: NeutralId,
@@ -388,6 +404,11 @@ pub fn spine_subgoals(
     let mut subgoals = Vec::new();
     for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
         match (left_elimination, right_elimination) {
+            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
+            | (
+                Elimination::ProductTransport(left_argument),
+                Elimination::ProductTransport(right_argument),
+            )
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
             | (
                 Elimination::StaticApply(left_argument),
@@ -413,7 +434,9 @@ pub fn spine_subgoals(
                 subgoals.push(Subgoal::Opened(left_on_right, right_on_right));
             },
             | (
-                Elimination::Apply(_)
+                Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }
@@ -672,6 +695,13 @@ fn plan_rigid(
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native path introductions stay formers rather than
+///   unfoldable neutral heads; stuck values retain their own neutral identity.
+/// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+/// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+#[spec(ensures: |ret| match value { DomainValue::Neutral { neutral, .. } => match ret { Ok(Neutrality::Neutral(found, _)) => found == neutral, Err(_) => true, Ok(Neutrality::Former) => false }, _ => matches!(ret, Ok(Neutrality::Former)) })]
 fn value_neutrality(
     domain: &DomainArena,
     frozen: &Frozen,
@@ -684,6 +714,8 @@ fn value_neutrality(
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
+        | DomainValue::PathCertificate { .. }
+        | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
@@ -757,6 +789,17 @@ fn payload(
 ///
 /// # Errors
 /// As [`plan`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — native path comparison produces a structural verdict,
+///   never a map-evaluation channel; mismatched native formers are distinct.
+/// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+/// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
+#[spec(ensures: |ret| match (domain.value(left), domain.value(right)) {
+    (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => matches!(ret, Ok(Plan::Shared(Settled::NotConvertible))),
+    (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => matches!(ret, Ok(Plan::Shared(Settled::Convertible))),
+    _ => true,
+})]
 fn plan_values(
     core: &CoreArena,
     domain: &DomainArena,
@@ -783,6 +826,19 @@ fn plan_values(
         return Ok(planned);
     }
     let planned = match (one, other) {
+        | (
+            DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+            DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+        ) => Plan::Shared(
+            if crate::conv::equal_paths(core, domain, left, right)?
+                == gandr_core_term::CertificateEquality::Equal
+            {
+                Settled::Convertible
+            }
+            else {
+                Settled::NotConvertible
+            },
+        ),
         | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Plan::Leaf(Settled::Convertible),
         | (
             DomainValue::Literal { literal: first, .. },
@@ -925,7 +981,9 @@ fn plan_values(
             Plan::Decline(DeclineReason::UndecidedCodes)
         },
         | (
-            DomainValue::Unit { .. }
+            DomainValue::PathCertificate { .. }
+            | DomainValue::PathProduct { .. }
+            | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
             | DomainValue::Injection { .. }

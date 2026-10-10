@@ -131,8 +131,8 @@ pub enum Fidelity
 {
     /// Every node was written as the surface writes it.
     Faithful,
-    /// Some node has no surface spelling, or stands past the depth limit, and
-    /// was written `?`, `<thunk>` or `<deep>`.
+    /// Some node has no surface spelling or exceeds the depth limit.
+    /// Diagnostic notation and placeholders are not round-trippable source.
     Approximate,
 }
 

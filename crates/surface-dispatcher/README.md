@@ -10,6 +10,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - [Examples](#examples)
 - [One composition serves both verbs](#one-composition-serves-both-verbs)
 - [The run stage follows the check](#the-run-stage-follows-the-check)
+- [Native universe-path boundaries](#native-universe-path-boundaries)
 - [The kernel re-derives every acceptance](#the-kernel-re-derives-every-acceptance)
 - [Routing performs no I/O; the walk is the verb's](#routing-performs-no-io-the-walk-is-the-verbs)
 - [Membership is location](#membership-is-location)
@@ -113,7 +114,11 @@ The three statuses are the prior implementation's script contract: `0` for a val
 
 **The run target is the last name declared.** The prior implementation ran a source's final unnamed expression and called a source without one a source with no program. The fragment has no top-level expression, so the target is the declaration at the highest admission position, and a source declaring no name is `Ran::NoProgram`. The alternative, a distinguished name such as `main`, is a convention the language does not state. The choice reverses when the modules linker lowers a final unnamed expression: that expression becomes the target.
 
-**One spelling.** `Evaluation`'s `Display` is the spelling `gandr run` prints, the session's value line shows and a `runs("…")` expectation states byte for byte: an integer or a numeric literal as written, text quoted with Rust's debug escapes, `()`, a pair `(a, b)`, an injection `inl(v)` or `inr(v)`, and `<thunk>`, `<fun>` and `<code>` for what has no first-order reading; a blamed run is `` blame: `x` is owed its body ``. The prior implementation's driver printed a value's debug image (`Int(42)`) while its loop printed `42`; one spelling replaces both. The choice reverses when a printer directed by the value's type lands, and the corpus's stated outcomes are restated in its spelling.
+## Native universe-path boundaries
+
+Programmatic native `Path_U` declarations use ordinary checker export and kernel readmission; their portable evidence remains part of the artifact. The command IL does not execute native paths or transport: focusing reports `UniverseTransport` rather than treating a certificate as a runtime closure. The value renderer names a native path `<path>` and leaves unreduced transport under `<computation>`, without executing evidence while printing it. Dependency discovery traverses native classifiers, maps and product components.
+
+**Choice.** Keep admission, evaluation and presentation as separate observations. A path accepted by the kernel is not thereby executable in every downstream machine. **Reversal.** The run stage can acquire a native path image only with corresponding focusing, evaluation and readback rules; no parser syntax or coercion from `Flow_U` is implied here.
 
 ## The kernel re-derives every acceptance
 
