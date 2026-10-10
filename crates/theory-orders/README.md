@@ -86,20 +86,21 @@ Handle liveness is a returned classification, never a precondition: an operation
 
 ## Specification attributes
 
-The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors each requirement and postcondition that a total, allocation-free Rust predicate can state, and every such clause is checked: negating any one in place makes a named test in this crate fail under the enforcing lane.
+The `# Specification` prose states the obligation. Executable `#[spec(...)]` clauses check the locally observable part under `--cfg anodized_panic`; each `# Adequacy` block names same-crate witnesses and the boundary of their evidence. Contracts use scalar captures and borrowed identity, not whole-arena or payload snapshots.
 
-The public surface's clauses cross-check the crate's own observations rather than restating a field. `get` returns a payload exactly when `contains` reports the handle live. `cmp` is the label comparison of the two resolved elements, with `Some(Equal)` confined to the reflexive arm. `interval_contains` checks both bounds and their inclusivity. `push_front` and `push_back` land the returned handle at `first` and `last`. `insert_after` and `insert_before` place the new element against the neighbour captured at entry. `remove` leaves the handle stale, its slot free or retired, and its former neighbours adjacent.
+Handle liveness remains a returned classification, never an asserted prerequisite. Public predicates check membership, comparison, inclusive interval bounds, insertion adjacency and removal's stale handle and repaired neighbours. Arena predicates distinguish occupied, free, retired and absent slots, including the identity of returned borrows. The shared identity counter is bounded by monotone observations; a deterministic concurrent batch and the final-identity refusal witness its cross-call obligations.
 
-The relabel path carries the invariant it preserves. `insert_between` and `link_new` state the adjacency each call site reads, and `link_new` the whole wiring it performs. `redistribute`, `assign_labels` and `spread_label` state the density arithmetic. `assign_labels` and `relink_segment` state that every relabeled element carries the spread label of its position, that the labels strictly increase, and that the rebuilt segment is contiguous between its two bounds.
+The relabel predicates check density, exact checked spread arithmetic and rebuilt links. Window collection carries a linear certificate of its bounds and adjacency without walking the rest of the list. Allocation and relabel insertion capture the old length and check the returned handle without cloning its moved payload. Iterator predicates bind the owner and cursor and check each state transition; the independent sequence model witnesses the complete walk. Numeric witnesses cover rounding, wide multiplication, final representability and refusal rather than inferring exact arithmetic from sorted labels alone.
 
-A block stays prose, naming its boundary in `- provides:`, where a checked clause would change behaviour or cannot observe its claim:
+Three items retain explicit executable boundaries:
 
-- Handle liveness is a returned classification, so asserting it would turn a documented refusal into a panic.
-- Structure-id and slot-limit claims are laws over other calls.
-- `iter`'s postcondition quantifies over a walk the caller has yet to perform.
-- `alloc` and `relabel_insert` speak of a payload moved into the slot or a window local to the call.
-- `collect_window`'s claim could only be rechecked by walking the list again.
-- `Interval::new` keeps its `const fn` signature, because the attribute's expansion calls a non-const evaluator (`E0015`).
+| Item | Boundary |
+| ---- | -------- |
+| `Interval::new` | The datum does not hold the owning order. Its opaque `Pos` endpoints expose neither fields to this module nor a const value-equality observer. Const functions themselves are supported; this is an observer boundary. |
+| `OrderError::fmt` | A formatter exposes a write-only sink, not independently readable output or its write outcome. Distinct failure classes and a bounded sink witness rendering without pinning wording. |
+| `oracle::op_strategy` | The attribute backend cannot instrument the opaque returned strategy. A deterministic bounded census witnesses all five edit variants, not every numeric value or seed. |
+
+Revisit the interval boundary when a const-readable endpoint observer is available, and the strategy boundary when the backend supports opaque returns. The sequence oracle, narrow-universe fixtures and negative observer cases remain necessary: executable local certificates do not establish amortized cost, complete machine-sized arithmetic coverage or the behaviour of malformed cyclic arenas.
 
 ## License
 
