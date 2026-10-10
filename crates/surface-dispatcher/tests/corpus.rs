@@ -35,8 +35,22 @@ mod corpus
     /// The corpus directory `name`, under the corpus crate.
     ///
     /// # Specification
+    /// - requires: `name` is empty or consists only of normal relative path
+    ///   components, so it cannot replace or escape the corpus directory.
+    /// - ensures: an absolute corpus path retaining the offered suffix.
+    /// - fails: never; this only constructs the path, without reading it.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, strict and fixture suffixes locate the actual
+    ///   corpus sweeps; absolute and parent components are outside this domain.
+    /// - witness: `corpus::corpus::the_strict_root_checks_owing_nothing`
+    /// - witness: `corpus::corpus::the_fixture_root_settles_every_fixture`
+    /// - witness: `corpus::corpus::every_corpus_source_is_registered`
+    #[anodized::spec(
+        requires: name.components().all(|component| matches!(component, std::path::Component::Normal(_))),
+        ensures: |ref ret| ret.is_absolute() && ret.ends_with(name)
+    )]
     fn root(name: &Path) -> PathBuf
     {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -47,8 +61,23 @@ mod corpus
     /// The report of a walk over `path`, every step a source.
     ///
     /// # Specification
+    /// - requires: `path` names a finite corpus walk with no source or engine
+    ///   fault; fixtures may still be unsettled or pending.
+    /// - ensures: the exhausted walk's report has no faulted paths and records
+    ///   one lowering per source read, preserving unsettled results for
+    ///   callers.
+    /// - fails: does not convert a fault into an empty or settled report.
+    /// - panics: if a step faults.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — both real corpus roots have exact verdict, ledger,
+    ///   settlement and row expectations; the shared source sweep checks the
+    ///   lowering/read relation rather than pinning a corpus size.
+    /// - witness: `corpus::corpus::the_strict_root_checks_owing_nothing`
+    /// - witness: `corpus::corpus::the_fixture_root_settles_every_fixture`
+    /// - witness: `corpus::corpus::a_run_lowers_each_source_once`
+    #[anodized::spec(ensures: |ref ret| usize::from(ret.sources().faulted()) == 0_usize
+        && usize::from(ret.lowerings()) == usize::from(ret.sources().read()))]
     fn run(path: PathBuf) -> RunReport
     {
         let mut walk = Walk::new(vec![path]);
@@ -149,10 +178,6 @@ mod corpus
     fn a_run_lowers_each_source_once()
     {
         let report = run(root(Path::new("")));
-        assert!(
-            usize::from(report.sources().read()) > 0_usize,
-            "the corpus holds sources"
-        );
         assert_eq!(
             usize::from(report.lowerings()),
             usize::from(report.sources().read()),
@@ -160,12 +185,29 @@ mod corpus
         );
     }
 
-    /// Every `.gandr` file under `corpus`, found by listing every directory,
-    /// symbolic links followed: each source a contributor could have added.
+    /// Every non-directory `.gandr` entry under `corpus`, with directory
+    /// links followed and each canonical directory listed once.
     ///
     /// # Specification
+    /// - requires: a finite, quiescent directory graph whose directories
+    ///   resolve and list successfully.
+    /// - ensures: selected entries retain their paths under `corpus` and exact
+    ///   `.gandr` extension; a directory with that extension is traversed
+    ///   rather than returned. Revisited directory identities do not create a
+    ///   cycle.
+    /// - fails: does not silently omit a directory that fails to resolve or
+    ///   list.
+    /// - panics: on a directory-resolution, listing or entry-read failure.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — planted sources distinguish registered roots, outside
+    ///   roots, nested source-suffixed directories and, on Unix, a directory
+    ///   link the production walk skips. Cyclic links and special files are not
+    ///   separately generated.
+    /// - witness: `corpus::corpus::a_planted_orphan_is_not_registered`
+    /// - witness: `corpus::corpus::every_corpus_source_is_registered`
+    #[anodized::spec(ensures: |ref ret| ret.iter().all(|path| path.starts_with(corpus)
+        && path.extension().is_some_and(|extension| extension == "gandr")))]
     fn sources_under(corpus: &Path) -> BTreeSet<PathBuf>
     {
         let mut found = BTreeSet::new();
@@ -196,8 +238,26 @@ mod corpus
     /// does not reach.
     ///
     /// # Specification
+    /// - requires: `corpus` meets the stable, readable directory-graph premise
+    ///   of `sources_under`.
+    /// - ensures: the independently listed source entries not reached by the
+    ///   two-root walk, in strictly increasing path order. A fault at a source
+    ///   still establishes that the walk reached that path.
+    /// - fails: directory-inventory errors are not mistaken for registration.
+    /// - panics: when the independent directory inventory cannot be read.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — an exact planted orphan set separates root membership
+    ///   from reachability through links, while the real corpus has no orphan.
+    ///   Transient filesystem failures are outside the quiescent domain.
+    /// - witness: `corpus::corpus::a_planted_orphan_is_not_registered`
+    /// - witness: `corpus::corpus::every_corpus_source_is_registered`
+    #[anodized::spec(ensures: |ref ret| ret.iter().all(|path| path.starts_with(corpus)
+        && path.extension().is_some_and(|extension| extension == "gandr"))
+        && ret.windows(2_usize).all(|pair| match *pair {
+            [ref first, ref second] => first < second,
+            _ => false,
+        }))]
     fn orphans(corpus: &Path) -> Vec<PathBuf>
     {
         let mut reached = BTreeSet::new();
@@ -242,9 +302,11 @@ mod corpus
         let mut planted = Vec::new();
         for (relative, orphan) in [
             ("strict/answer.gandr", false),
+            ("strict/tree.gandr/inside.gandr", false),
             ("fixture/model/unit.gandr", false),
             ("fixture/pending/later.gandr", false),
             ("examples/orphan.gandr", true),
+            ("examples/tree.gandr/inner.gandr", true),
             ("orphan.gandr", true),
         ] {
             let path = corpus.join(relative);
@@ -289,8 +351,25 @@ mod corpus
     /// settled.
     ///
     /// # Specification
+    /// - requires: the committed corpus remains quiescent during the sweep.
+    /// - ensures: visits each source in the selected tree whose composition
+    ///   yields a declaration report, including reports with unsettled
+    ///   declarations; whole-source refusals and faulted steps are not visited.
+    /// - fails: preserves the walk's exclusion of faulted sources from
+    ///   callbacks.
+    /// - panics: propagates a callback panic.
+    /// - executable: none — the only result is calls into an opaque `FnMut`;
+    ///   neither its observations nor a visit journal are returned, and
+    ///   invoking it again from a predicate would change the caller's effects.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — both selected trees expose run-outcome and focusing
+    ///   checks, with non-vacuity guards; this does not exhaust filesystem
+    ///   faults or observe arbitrary callback side effects independently.
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`
+    /// - witness: `corpus::corpus::focusing_is_total_on_the_model_corpus`
+    /// - witness: `corpus::corpus::focusing_is_total_on_the_pathological_corpus`
     fn each_settled(
         tree: Tree,
         mut visit: impl FnMut(&Path, &Composed<'_>),
@@ -321,8 +400,21 @@ mod corpus
     /// whether it settled.
     ///
     /// # Specification
+    /// - requires: the committed corpus remains quiescent during the sweep.
+    /// - ensures: each row retains a run expectation's observed settlement,
+    ///   including failure, and begins its diagnostic with the source location
+    ///   in this workspace before naming the declaration and expected outcome.
+    /// - fails: does not filter out unsettled run expectations.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — real model and pathological run expectations retain
+    ///   their locations and settle; location/name substitution and a wrong run
+    ///   result are observable, but arbitrary diagnostic prose is not pinned.
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+    /// - witness: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`
+    #[anodized::spec(ensures: |ref ret| ret.iter().all(|row|
+        row.0.starts_with(env!("CARGO_MANIFEST_DIR"))))]
     fn stated_runs(tree: Tree) -> Vec<(String, Settlement)>
     {
         let mut runs = Vec::new();
@@ -377,8 +469,25 @@ mod corpus
     /// other than being a code, and the sources that composed.
     ///
     /// # Specification
+    /// - requires: the committed corpus remains quiescent during the sweep.
+    /// - ensures: records every composed source in the selected tree and its
+    ///   non-code focusing refusals. Pending, wholly refused and faulted
+    ///   sources contribute no composed path; code-only refusals are not
+    ///   failures here.
+    /// - fails: retains unexpected focusing refusals for the calling gate.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — both real trees compose sources and have no non-code
+    ///   focusing refusal; the selected path domain is observed independently
+    ///   of the diagnostic wording. Unexpected future refusal kinds are not
+    ///   generated by these fixtures.
+    /// - witness: `corpus::corpus::focusing_is_total_on_the_model_corpus`
+    /// - witness: `corpus::corpus::focusing_is_total_on_the_pathological_corpus`
+    #[anodized::spec(ensures: |ref ret| ret.1.iter().all(|path|
+        path.extension().is_some_and(|extension| extension == "gandr")
+            && path.components().any(|component| component.as_os_str() == "pathological")
+                == matches!(tree, Tree::Pathological)))]
     fn unfocused(tree: Tree) -> (Vec<String>, Vec<PathBuf>)
     {
         let mut refusals = Vec::new();

@@ -156,7 +156,20 @@ impl fmt::Display for ComposeFault<'_>
     /// Writes the fault and what it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the fault's context and payload; a readmission fault
+    ///   includes the declaration's admission position.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter owns the emitted text and exposes
+    ///   neither its contents nor a local result carrying the written fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real readmission fault following a mark is rendered
+    ///   and its numeric declaration position is independently asserted. This
+    ///   detects dropping or replacing that position, not changes to
+    ///   explanatory prose or failures of an arbitrary writer.
+    /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
     #[inline]
     fn fmt(
         &self,
@@ -224,6 +237,18 @@ mod lowering
     ///
     /// # Errors
     /// The [`LoweringRefusal`] the lowering returns for the whole module.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted, wholly refused and declaration-refused
+    ///   sources advance the count once; the saturation witness separates the
+    ///   penultimate count from the maximum. The counter is the declared
+    ///   observation of lowering calls, not a proof of all work inside them.
+    /// - witness: `compose::tests::each_composition_lowers_once`
+    /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
+    #[anodized::spec(
+        captures: [before = lowerings.0],
+        ensures: lowerings.0 == before.saturating_add(1),
+    )]
     pub(super) fn lower<'source>(
         grammar: &Pbg,
         tree: &SyntaxTree<'source>,
@@ -307,12 +332,12 @@ impl<'source> Lowering<'source>
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar the source is parsed under.
-/// - ensures: the source is parsed once and lowered once into a fresh arena
-///   against the empty outermost scope, and `lowerings` is exactly one more. A
-///   module the lowering reads is [`Lowered::Module`] with the arena it was
-///   minted in; a source the lowering refuses as a whole for a reason of the
-///   author's or of the fragment's is [`Lowered::Refused`]. Either carries the
-///   parser's completion obligations unchanged.
+/// - ensures: after parsing succeeds, the source is lowered once into a fresh
+///   arena against the empty outermost scope and `lowerings` advances once,
+///   saturating. A parse failure leaves the count unchanged. A module the
+///   lowering reads is [`Lowered::Module`] with its arena; a whole-source
+///   refusal outside the engine-fault class is [`Lowered::Refused`]. Either
+///   carries the parser's completion obligations unchanged.
 /// - provides: the lowering [`compose()`] judges, for a caller that keeps the
 ///   lowered module beside the verdicts — the session, which hands the same
 ///   module to the incremental checker.
@@ -327,14 +352,30 @@ impl<'source> Lowering<'source>
 ///   could be trusted.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the routing of a read module, of a
-///   refused one and of the obligations, separated by a recovering source whose
-///   obligations are compared with the parser's own, a source refused whole,
-///   and the lowering count asserted at one per call.
+/// - hypothesis: L3 — explicit unmolded-token classes and byte spans survive
+///   into both an admitted module and a whole-module refusal, while a clean
+///   source carries no repair. Exact counts and the saturation boundary detect
+///   skipped or repeated lowering. These fixtures do not independently trigger
+///   parser commitment failure or a lowering engine fault.
 /// - witness: `compose::tests::a_lowering_carries_the_parse_obligations`
 /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
 /// - witness: `compose::tests::each_composition_lowers_once`
+/// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
+#[anodized::spec(
+    captures: [before = lowerings.0],
+    ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
+        before
+    } else {
+        before.saturating_add(1)
+    } && match *ret {
+        Ok(Lowering { lowered: Lowered::Refused(refusal), .. }) =>
+            refusal.classify() != FailureClass::EngineFault,
+        Ok(Lowering { lowered: Lowered::Module { .. }, .. }) | Err(ComposeFault::Parse(_)) => true,
+        Err(ComposeFault::Lowering(refusal)) => refusal.classify() == FailureClass::EngineFault,
+        Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => false,
+    },
+)]
 pub fn lower_source<'source>(
     grammar: &Pbg,
     source: SourceText<'source>,
@@ -383,15 +424,31 @@ pub fn lower_source<'source>(
 /// - [`ComposeFault::Settle`]: the verdicts are not the module's own.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — sources with every verdict kind are judged and each
-///   declaration asserted at its exact stated and produced verdicts, the kernel
-///   acting as the external oracle on every acceptance; the kernel artifact is
-///   decoded and asserted at the exact names of the declarations that crossed.
+/// - hypothesis: L3 literal declaration names, verdicts, refusal positions and
+///   kernel-export names distinguish omission, reordering and wrong routing in
+///   finite mixed modules. L2 kernel re-derivation supplies a second checker
+///   for acceptances, not a proof for all programs or kernel failures.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
 #[inline]
+#[anodized::spec(
+    captures: [
+        expected_declarations = module.declarations().len(),
+        expected_unstatable = module.declarations().iter().filter(|declaration|
+            matches!((declaration.outcome(), declaration.signature(), declaration.definition()),
+                (DeclarationOutcome::Refused(_), Maybe::Absent(_), Maybe::Absent(_))))
+            .count(),
+    ],
+    ensures: |ref ret| match *ret {
+        Ok(Composed::Settled { ref report, ref unstatable, .. }) =>
+            report.declarations().len() == expected_declarations
+                && unstatable.len() == expected_unstatable,
+        Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
+        Ok(Composed::Refused(_)) | Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
+    },
+)]
 pub fn judge_module(
     root: CorpusRoot,
     module: LoweredModule<'_>,
@@ -426,11 +483,11 @@ pub fn judge_module(
 /// - requires: `grammar` is the checked grammar the source is parsed under;
 ///   `root` is the corpus root the source sits under.
 /// - ensures: [`lower_source`] then, for a module the lowering read,
-///   [`judge_module`]: the source is parsed once and lowered once, and
-///   `lowerings` is exactly one more. A module the lowering reads is
-///   [`Composed::Settled`] with one report per declared name; a source the
-///   lowering refuses as a whole for a reason of the author's or of the
-///   fragment's is [`Composed::Refused`] with that refusal.
+///   [`judge_module`]: after parsing succeeds, the source is lowered once and
+///   `lowerings` advances once, saturating; a parse failure leaves it
+///   unchanged. A read module is [`Composed::Settled`] with one report per
+///   declared name; an author or fragment refusal of the whole source is
+///   [`Composed::Refused`].
 /// - provides: the one verdict set a run gives the source, whichever verb runs
 ///   it.
 /// - fails: as [`lower_source`] and [`judge_module`].
@@ -447,17 +504,30 @@ pub fn judge_module(
 /// - [`ComposeFault::Settle`]: the verdicts are not the module's own.
 ///
 /// # Adequacy
-/// - hypothesis: L2 for the settled shape — sources with every verdict kind are
-///   composed and each declaration asserted at its exact stated and produced
-///   verdicts, the kernel acting as the external oracle on every acceptance; L3
-///   for the residue — a whole-module refusal under each class that reaches it,
-///   and the lowering count asserted at one per composed source.
+/// - hypothesis: L3 exact declaration outcomes and lowering counts separate
+///   ordinary modules, whole-source refusals, root policies and saturation. L2
+///   kernel re-derivation checks agreement on acceptances. The finite sources
+///   do not establish arbitrary program correctness or parser-failure coverage.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
 /// - witness: `compose::tests::each_composition_lowers_once`
 /// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+/// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
+#[anodized::spec(
+    captures: [before = lowerings.0],
+    ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
+        before
+    } else {
+        before.saturating_add(1)
+    } && match *ret {
+        Ok(Composed::Refused(refusal)) => refusal.classify() != FailureClass::EngineFault,
+        Err(ComposeFault::Lowering(refusal)) => refusal.classify() == FailureClass::EngineFault,
+        Ok(Composed::Settled { .. })
+            | Err(ComposeFault::Parse(_) | ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
+    },
+)]
 pub fn compose<'source>(
     grammar: &Pbg,
     root: CorpusRoot,
@@ -472,10 +542,33 @@ pub fn compose<'source>(
     }
 }
 
-/// The refusals of the declarations of `module` refused at their own form.
+/// The refusals of declarations refused at their own form, in admission order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: retains exactly the refusal of each declaration with neither a
+///   signature nor a definition, in the module's order; other declarations
+///   contribute nothing.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — refused forms surround a refused body and an admitted
+///   definition; exact refusal values and their distinct spans distinguish
+///   inclusion, omission and reversal. This covers the admission-order filter,
+///   not the lowering's reasons for rejecting arbitrary syntax.
+/// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+/// - witness: `compose::tests::form_refusals_retain_admission_order`
+#[anodized::spec(ensures: |ref ret| {
+    let mut selected = ret.iter();
+    module.declarations().iter().all(|declaration| {
+        match (declaration.outcome(), declaration.signature(), declaration.definition()) {
+            (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_)) =>
+                selected.next() == Some(&refusal),
+            _ => true,
+        }
+    }) && selected.next().is_none()
+})]
 fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'source>>
 {
     module
@@ -515,11 +608,33 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one declaration of each of the four outcomes in one
-///   module, asserted at its exact halves, position and origin.
+/// - hypothesis: L3 — completed, uncompleted, unsigned and refused declarations
+///   have their exact halves, positions and origins asserted, including an
+///   admitted declaration after a refusal. This separates selection and order
+///   on those four cases, not arbitrary lowering or checker correctness.
 /// - witness: `compose::tests::each_outcome_adapts_to_its_halves`
 #[inline]
 #[must_use]
+#[anodized::spec(ensures: |ref ret| {
+    let mut expected = module.declarations().iter().filter(|declaration|
+        !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)));
+    ret.iter().all(|actual| expected.next().is_some_and(|lowered| {
+        actual.constant() == lowered.constant()
+            && usize::from(actual.origin()) == usize::from(lowered.origin())
+            && match lowered.outcome() {
+                DeclarationOutcome::Completed { declared_type, body } =>
+                    actual.signature() == Maybe::Present(declared_type)
+                        && actual.body() == Maybe::Present(body),
+                DeclarationOutcome::Uncompleted { declared_type } =>
+                    actual.signature() == Maybe::Present(declared_type)
+                        && actual.body() == Maybe::Absent(body::Absent::Hole),
+                DeclarationOutcome::Bodied { body } =>
+                    actual.signature() == Maybe::Absent(signature::Absent::Unsigned)
+                        && actual.body() == Maybe::Present(body),
+                DeclarationOutcome::Refused(_) => false,
+            }
+    })) && expected.next().is_none()
+})]
 pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 {
     let mut declarations = Vec::with_capacity(module.declarations().len());
@@ -569,11 +684,29 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 /// [`ComposeFault::Readmission`]: the kernel did not re-derive an acceptance.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the routing of each outcome is separated by a module
-///   readmitted over its own arena, which crosses whole beside a refused and a
-///   withheld declaration, and over a foreign arena, where the first accepted
-///   declaration's ids dangle.
+/// - hypothesis: L3 — a mark, withheld reference and definition are admitted
+///   over their own arena. A foreign arena exposes the checked reference's
+///   dangling ids at the first nonzero failure position. Kernel-export names
+///   also observe an axiom crossing. These cases do not exercise every bridge
+///   refusal or certificate rejection.
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
+/// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+#[anodized::spec(ensures: |ref ret| match *ret {
+    Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
+        && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
+            crossed.constant() == judged.constant() && matches!(*crossed.outcome(),
+                bridge::Outcome::Defined { .. } | bridge::Outcome::Assumed { .. }
+                    | bridge::Outcome::Marked(_) | bridge::Outcome::Static
+                    | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }))),
+    Err(ComposeFault::Readmission(ref fault)) =>
+        verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
+            && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
+                | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { .. }
+                    | bridge::Refusal::LinearVariable { .. } | bridge::Refusal::DanglingNode { .. }
+                    | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. }
+                    | bridge::Refusal::MachineInvariant)),
+    Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_) | ComposeFault::Settle(_)) => false,
+})]
 fn readmitted(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
@@ -645,8 +778,20 @@ mod tests
     /// The built-in grammar.
     ///
     /// # Specification
+    /// - requires: the built-in grammar can be constructed.
+    /// - ensures: returns that checked grammar, including candidates for the
+    ///   declaration keyword `def`.
+    /// - fails: never.
+    /// - panics: if the built-in grammar is invalid.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed declarations and a whole-source refusal are
+    ///   interpreted with exact expected outcomes. These fixtures detect an
+    ///   unusable or incompatible grammar, not equivalence over all syntax.
+    /// - witness: `compose::tests::a_module_settles_every_declaration_once`
+    /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
+    #[anodized::spec(ensures: |ref ret|
+        !ret.candidates(gandr_surface_grammar::TileLabel("def")).is_empty())]
     fn grammar() -> Pbg
     {
         built_in().expect("the built-in grammar builds")
@@ -655,8 +800,21 @@ mod tests
     /// `source` composed under `root`, which must settle.
     ///
     /// # Specification
+    /// - requires: the grammar admits the named fixture declarations and their
+    ///   source composes to a module without an engine fault.
+    /// - ensures: returns that module's report; every reported name occurs in
+    ///   the supplied source.
+    /// - fails: never.
+    /// - panics: if composition faults or refuses the source as a whole.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — literal names, outcomes and ledger counts in a mixed
+    ///   fixture separate lost declarations and wrong root policies. The
+    ///   witnesses use explicit simple names, not every naming form or failure.
+    /// - witness: `compose::tests::a_module_settles_every_declaration_once`
+    /// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
+    #[anodized::spec(ensures: |ref ret| ret.declarations().iter()
+        .all(|declaration| source.as_ref().contains(declaration.name().as_ref())))]
     fn settled<'source>(
         grammar: &Pbg,
         root: CorpusRoot,
@@ -800,18 +958,31 @@ def wrong = "text" ;"#,
     {
         let grammar = grammar();
         let mut lowerings = LoweringCount::default();
-        for (source, refused) in [
-            ("def bad = 1 ~ 2 ;\ndef good = 2 ;", false),
-            ("def good = 2 ;", false),
-            ("def bad = 1 ~ 2 ;\nret 3", true),
+        for (source, refused, expected) in [
+            (
+                "def bad = 1 ~ 2 ;\ndef good = 2 ;",
+                false,
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
+            ),
+            ("def good = 2 ;", false, &[][..]),
+            (
+                "def bad = 1 ~ 2 ;\nret 3",
+                true,
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
+            ),
         ] {
-            let parsed = parse(&grammar, SourceText::from(source)).expect("parses");
             let lowering = lower_source(&grammar, SourceText::from(source), &mut lowerings)
                 .expect("lowers without a fault");
-            assert_eq!(
-                lowering.obligations(),
-                parsed.obligations(),
-                "the parser's obligations, verbatim, for {source:?}"
+            let repairs = lowering.obligations().iter().map(|repair| {
+                (
+                    repair.class,
+                    usize::from(repair.span.start()),
+                    usize::from(repair.span.end()),
+                )
+            });
+            assert!(
+                repairs.eq(expected.iter().copied()),
+                "the unexpected token keeps its repair class and exact byte span for {source:?}"
             );
             assert_eq!(
                 matches!(lowering.into_lowered(), Lowered::Refused(_)),
@@ -823,11 +994,6 @@ def wrong = "text" ;"#,
             usize::from(lowerings),
             3_usize,
             "each lowering is counted once"
-        );
-        let recovering = parse(&grammar, SourceText::from("def bad = 1 ~ 2 ;")).expect("parses");
-        assert!(
-            !recovering.obligations().is_empty(),
-            "the recovering source carries obligations, so the comparison witnesses something"
         );
     }
 
@@ -967,6 +1133,25 @@ def h = 1 ;"#,
                 "the origin token is the lowering's"
             );
         }
+        let DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = done.outcome()
+        else {
+            panic!("the signed definition completes");
+        };
+        assert_eq!(declarations[0].signature(), Maybe::Present(declared_type));
+        assert_eq!(declarations[0].body(), Maybe::Present(body));
+        let DeclarationOutcome::Uncompleted { declared_type } = owed.outcome()
+        else {
+            panic!("the signature remains owed");
+        };
+        assert_eq!(declarations[1].signature(), Maybe::Present(declared_type));
+        let DeclarationOutcome::Bodied { body } = bare.outcome()
+        else {
+            panic!("the unsigned definition retains its body");
+        };
+        assert_eq!(declarations[2].body(), Maybe::Present(body));
         assert!(
             matches!(
                 (declarations[0].signature(), declarations[0].body()),
@@ -998,7 +1183,7 @@ def h = 1 ;"#,
     {
         let grammar = grammar();
         let source = SourceText::from(
-            r#"def a : Integer ; def a = 1 ; def w : Integer ; def w = "text" ; def r = w ;"#,
+            r#"def w : Integer ; def w = "text" ; def r = w ; def a : Integer ; def a = 1 ;"#,
         );
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
@@ -1014,25 +1199,25 @@ def h = 1 ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let outcomes: Vec<bridge::Outcome> = bridge::readmit(&mut arena, &verdicts)
-            .readmitted()
-            .iter()
-            .map(|crossed| crossed.outcome().clone())
-            .collect();
-        assert!(
-            matches!(outcomes.as_slice(), [
-                bridge::Outcome::Defined { .. },
-                bridge::Outcome::Marked(_),
-                bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
-            ]),
-            "a definition, a mark and a withheld reference: {outcomes:?}"
-        );
-        assert!(
-            readmitted(&mut arena, &verdicts).is_ok(),
-            "over its own arena every acceptance crosses, and a mark or a withheld reference is no \
-             disagreement"
-        );
+        let admission = readmitted(&mut arena, &verdicts)
+            .expect("marks and withheld references are not disagreements");
+        let [ref marked, ref withheld, ref defined] = *admission.readmitted()
+        else {
+            panic!("each declaration has one readmission outcome");
+        };
+        assert!(matches!(
+            (marked.outcome(), withheld.outcome(), defined.outcome()),
+            (
+                &bridge::Outcome::Marked(_),
+                &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
+                &bridge::Outcome::Defined { .. }
+            ),
+        ));
 
+        assert!(
+            matches!(verdicts.judged()[1].verdict(), Verdict::Synthesised { .. }),
+            "the reference is accepted by the checker despite the withheld body"
+        );
         let mut foreign = CoreArena::new();
         let Err(ComposeFault::Readmission(fault)) = readmitted(&mut foreign, &verdicts)
         else {
@@ -1040,7 +1225,7 @@ def h = 1 ;"#,
         };
         assert_eq!(
             fault.constant(),
-            module.declarations()[0].constant(),
+            module.declarations()[1].constant(),
             "the first accepted declaration is the one reported"
         );
         assert!(
@@ -1049,6 +1234,15 @@ def h = 1 ;"#,
                 bridge::Outcome::Refused(bridge::Refusal::DanglingNode { .. })
             ),
             "the bridge refused its dangling ids"
+        );
+        let rendered = crate::SourceFault::Compose(ComposeFault::Readmission(fault)).to_string();
+        let positions = rendered
+            .split(|character: char| !character.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .map(|part| part.parse::<usize>().expect("the position is decimal"));
+        assert!(
+            positions.eq([1_usize]),
+            "the fault retains its nonzero position"
         );
     }
 
@@ -1088,5 +1282,37 @@ def h = 1 ;"#,
             "the definition and the owed axiom cross under their names; the refused declaration \
              and the one withheld for naming it do not"
         );
+    }
+    #[test]
+    fn form_refusals_retain_admission_order()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "def rec first(x: Integer) -> -F Integer { ret x }\n\
+             def broken = missing ;\n\
+             def value = 3 ;\n\
+             def rec last(x: Integer) -> -F Integer { ret x }",
+        );
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
+            .expect("the mixed module lowers")
+            .into_lowered()
+        else {
+            panic!("individual forms do not refuse the whole source");
+        };
+        let [ref first, _, _, ref last] = *module.declarations()
+        else {
+            panic!("the four declarations retain their admission positions");
+        };
+        let (DeclarationOutcome::Refused(first), DeclarationOutcome::Refused(last)) =
+            (first.outcome(), last.outcome())
+        else {
+            panic!("the recursive forms are outside the fragment");
+        };
+        assert_ne!(
+            first, last,
+            "the two refused forms have distinct source spans"
+        );
+        assert_eq!(super::unstatable(&module).as_slice(), &[first, last]);
     }
 }
