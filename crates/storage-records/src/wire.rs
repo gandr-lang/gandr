@@ -44,9 +44,7 @@ use crate::record::RecordCount;
 ///   variant, and no tag is a prefix of another because all four share the same
 ///   prefix and differ in the segment after it.
 /// - provides: the separation that makes a digest answer for exactly one byte
-///   language. The postcondition stays prose: distinctness and prefix-freedom
-///   relate the four variants to each other, and a data specification states a
-///   property of one value.
+///   language; each variant can be compared with the finite tag table.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -56,6 +54,17 @@ use crate::record::RecordCount;
 ///   non-prefix.
 /// - witness: `wire::tests::domain_tags_are_distinct_and_prefix_free`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[spec(maintains: {
+    let tag = self.tag();
+    !tag.as_ref().is_empty()
+        && [Self::Node, Self::Root, Self::Record, Self::Boundary]
+            .into_iter()
+            .all(|other| other == *self || {
+                let other = other.tag();
+                !tag.as_ref().starts_with(other.as_ref())
+                    && !other.as_ref().starts_with(tag.as_ref())
+            })
+})]
 pub enum Domain
 {
     /// The canonical encoding of one tree node.
@@ -81,8 +90,22 @@ impl Domain
     ///   byte string cannot answer for two languages.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 exhausts all four tags for nonemptiness and pairwise
+    ///   prefix freedom; L2 node and root digest goldens and the record wire
+    ///   image distinguish renaming, collapsed tags and changed framing.
+    /// - witness: `wire::tests::domain_tags_are_distinct_and_prefix_free`
+    /// - witness: `node::tests::the_node_identity_is_pinned`
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((self, ret.0.len(), ret.0.last()),
+        (Self::Node | Self::Root, 29, Some(&b'1'))
+        | (Self::Record, 31, Some(&b'1'))
+        | (Self::Boundary, 33, Some(&b'1'))))]
     pub const fn tag(self) -> DomainTag
     {
         match self {
@@ -328,19 +351,31 @@ impl From<ItemCapacity> for usize
 /// Computes the digest of a preimage read as material of `domain`.
 ///
 /// # Specification
-/// - requires: `preimage` already carries the domain tag at its front when it
-///   is a self-describing encoding — node and record encodings do, so this
-///   function is called on them with the matching domain and the tag is not
-///   repeated.
-/// - ensures: equal `(domain, preimage)` pairs give equal digests, and the
-///   digest is a function of the domain as well as the bytes.
-/// - provides: the crate's only hashing entry point, so no digest is computed
-///   without a domain. The postcondition stays prose: both halves relate two
-///   calls, and one call carries one domain and one preimage.
+/// - requires: nothing; arbitrary bytes are admissible, including encodings
+///   that already carry their own framing tag.
+/// - ensures: the BLAKE3 digest of the domain tag followed by the complete
+///   preimage. An encoding's own tag remains in that preimage.
+/// - provides: the crate's hashing entry point; domain separation is applied in
+///   addition to any self-describing framing, never instead of it.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 node and root digest goldens fix complete input images; L3
+///   compares all four domains on one common body, distinguishing omitted
+///   domains and collapsed alternatives. These observations do not establish
+///   collision resistance.
+/// - witness: `node::tests::the_node_identity_is_pinned`
+/// - witness: `params::tests::the_manifest_digest_is_pinned`
+/// - witness: `wire::tests::digests_of_one_body_differ_across_domains`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| {
+    let mut expected = blake3::Hasher::new();
+    let _tag = expected.update(domain.tag().as_ref());
+    let _body = expected.update(preimage.as_ref());
+    ret.as_ref() == expected.finalize().as_bytes()
+})]
 pub(crate) fn digest(
     domain: Domain,
     preimage: WireBytes<'_>,
@@ -482,22 +517,26 @@ pub const LEAST_CHILD_BYTES: EncodedLength = EncodedLength(48_usize);
 /// - requires: one accumulator per proof verification, charged before the work
 ///   it accounts for is performed.
 /// - ensures: after any sequence of charges the recorded totals are the
-///   saturated sums of the charged amounts, and a total that reached its
-///   ceiling stays refused for every later charge.
+///   saturated sums of the charged amounts. A counter beyond its ceiling
+///   remains beyond it under further charges to that counter.
 /// - provides: the artifact-total bound the per-structure ceilings do not
 ///   imply. The postcondition stays prose: it ranges over a sequence of
 ///   charges, and each charging method states its own step below.
 /// - fails: [`RecordTreeError::BudgetExceeded`] on the charge that crosses a
 ///   ceiling.
 /// - panics: none.
+/// - executable: none — this law quantifies over a sequence of charges;
+///   charging methods check individual state transitions.
 ///
 /// # Adequacy
-/// - hypothesis: L3 only — the decision surface is the two comparisons against
-///   the ceilings, separated by charging exactly to a ceiling (admitted) and
-///   one beyond it (refused), plus a saturating charge that would overflow.
+/// - hypothesis: L3 on mixed node/record charges at each ceiling, one beyond
+///   it, a zero charge and an overflowing charge observes exact counters and
+///   refusals. Premature refusal, wrapping, forgotten failed charges and
+///   interference between counters are distinguished.
 /// - witness: `wire::tests::work_admits_charges_up_to_the_ceiling`
 /// - witness: `wire::tests::work_refuses_the_charge_past_the_ceiling`
 /// - witness: `wire::tests::work_saturates_instead_of_wrapping`
+/// - witness: `wire::tests::node_charges_stop_at_their_own_ceiling`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DecodeWork
 {
@@ -519,8 +558,16 @@ impl DecodeWork
     ///   against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on fresh accumulators charged to each exact ceiling
+    ///   observes admission and final counts, distinguishing carried-over
+    ///   charges and nonzero initial counters.
+    /// - witness: `wire::tests::work_admits_charges_up_to_the_ceiling`
+    /// - witness: `wire::tests::node_charges_stop_at_their_own_ceiling`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.nodes == 0 && ret.records == 0)]
     pub const fn new() -> Self
     {
         Self {
@@ -534,11 +581,9 @@ impl DecodeWork
     /// # Specification
     /// - requires: one accumulator per proof verification, charged before the
     ///   work it accounts for.
-    /// - ensures: `|ret| self.nodes == entry_nodes.saturating_add(1) &&
-    ///   ret.is_ok() == (self.nodes <= u64::from(MAX_PROOF_NODES))`, for
-    ///   `entry_nodes` the total at entry — the node total is the saturating
-    ///   count of every charge, and a total that reached its ceiling stays
-    ///   refused.
+    /// - ensures: the node count increases by one, saturating at the width; the
+    ///   record count is unchanged. Success holds exactly when the new node
+    ///   count is within its ceiling.
     /// - fails: [`RecordTreeError::BudgetExceeded`] on the charge that crosses
     ///   [`MAX_PROOF_NODES`].
     /// - panics: none.
@@ -546,10 +591,18 @@ impl DecodeWork
     /// # Errors
     /// [`RecordTreeError::BudgetExceeded`] — the proof carries more nodes than
     /// [`MAX_PROOF_NODES`] admits.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a sequence through the exact node ceiling and two
+    ///   later charges observes counts, refusal and an unchanged nonzero record
+    ///   total, distinguishing skipped increments, reset-on-error, premature
+    ///   refusal and cross-counter interference.
+    /// - witness: `wire::tests::node_charges_stop_at_their_own_ceiling`
     #[inline]
     #[spec(
-        captures: entry_nodes = self.nodes,
-        ensures: |ret| self.nodes == entry_nodes.saturating_add(1_u64)
+        captures: entry = (self.nodes, self.records),
+        ensures: |ret| self.nodes == entry.0.saturating_add(1_u64)
+            && self.records == entry.1
             && ret.is_ok() == (self.nodes <= u64::from(MAX_PROOF_NODES)),
     )]
     pub fn charge_node(&mut self) -> Result<(), RecordTreeError>
@@ -570,11 +623,9 @@ impl DecodeWork
     /// # Specification
     /// - requires: one accumulator per proof verification, charged before the
     ///   work it accounts for.
-    /// - ensures: `|ret| self.records ==
-    ///   entry_records.saturating_add(u64::from(count)) && ret.is_ok() ==
-    ///   (self.records <= u64::from(MAX_PROOF_RECORDS))`, for `entry_records`
-    ///   the total at entry — the record total is the saturating sum of every
-    ///   charge, and a total that reached its ceiling stays refused.
+    /// - ensures: the record count increases by `count`, saturating at the
+    ///   width; the node count is unchanged. Success holds exactly when the new
+    ///   record count is within its ceiling, including a zero charge there.
     /// - fails: [`RecordTreeError::BudgetExceeded`] on the charge that crosses
     ///   [`MAX_PROOF_RECORDS`].
     /// - panics: none.
@@ -582,10 +633,20 @@ impl DecodeWork
     /// # Errors
     /// [`RecordTreeError::BudgetExceeded`] — the proof materializes more
     /// records in total than [`MAX_PROOF_RECORDS`] admits.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on exact-ceiling, zero, one-beyond and overflowing
+    ///   charges observes exact totals and refusals with a nonzero node
+    ///   counter. Wrapping, reset-on-error, incorrect zero handling and
+    ///   interference are distinguished.
+    /// - witness: `wire::tests::work_admits_charges_up_to_the_ceiling`
+    /// - witness: `wire::tests::work_refuses_the_charge_past_the_ceiling`
+    /// - witness: `wire::tests::work_saturates_instead_of_wrapping`
     #[inline]
     #[spec(
-        captures: entry_records = self.records,
-        ensures: |ret| self.records == entry_records.saturating_add(u64::from(count))
+        captures: entry = (self.nodes, self.records),
+        ensures: |ret| self.records == entry.1.saturating_add(u64::from(count))
+            && self.nodes == entry.0
             && ret.is_ok() == (self.records <= u64::from(MAX_PROOF_RECORDS)),
     )]
     pub fn charge_records(
@@ -644,6 +705,14 @@ impl DecodeWork
 /// # Errors
 /// [`RecordTreeError::BudgetExceeded`] — the carried nodes or the records the
 /// proof materializes exceed a proof budget.
+///
+/// # Adequacy
+/// - hypothesis: L3 at both exact ceilings and with each total separately one
+///   beyond its ceiling observes admission or the exact budget refusal,
+///   distinguishing wrong inequalities and an unchecked total.
+/// - witness: `wire::tests::the_prover_budget_admits_the_ceiling`
+/// - witness: `wire::tests::the_prover_budget_refuses_the_node_ceiling_plus_one`
+/// - witness: `wire::tests::the_prover_budget_refuses_the_record_ceiling_plus_one`
 #[spec(ensures: |ret| ret.is_ok() == (nodes <= MAX_PROOF_NODES && records <= MAX_PROOF_RECORDS))]
 pub(crate) fn ensure_proof_budget(
     nodes: NodeCount,
@@ -669,6 +738,21 @@ pub(crate) fn ensure_proof_budget(
 ///
 /// Encoding is always append-only and never seeks, so the buffer exposes only
 /// the four pushes the formats use.
+///
+/// # Specification
+/// - requires: nothing; callers choose the field sequence.
+/// - ensures: writes append field images in order without replacing the prefix.
+/// - provides: the shared byte accumulator for canonical encodings.
+/// - fails: individual fallible writers report their length refusal.
+/// - panics: none.
+/// - executable: none — append-only behavior relates successive states; writer
+///   predicates check each appended image.
+///
+/// # Adequacy
+/// - hypothesis: L2 on a mixed domain/word/long/length-prefixed image observes
+///   all bytes, distinguishing lost prefixes, field reordering and changed
+///   framing for that sequence.
+/// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct WireBuffer(Vec<u8>);
@@ -695,7 +779,15 @@ impl WireBuffer
     /// - provides: the domain prefix a self-describing encoding opens with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a record-domain prefix in a mixed-field image
+    ///   observes literal bytes, distinguishing changed byte order, dropped
+    ///   fields and overwritten prefixes.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
+    #[spec(captures: before = self.0.len(),
+        ensures: self.0.get(before..) == Some(domain.tag().as_ref()))]
     pub(crate) fn push_domain(
         &mut self,
         domain: Domain,
@@ -727,7 +819,15 @@ impl WireBuffer
     ///   endianness of its own.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a mixed-byte word in a mixed-field image observes
+    ///   literal bytes, distinguishing changed byte order, dropped fields and
+    ///   overwritten prefixes.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
+    #[spec(captures: before = self.0.len(),
+        ensures: self.0.get(before..) == Some(u16::from(value).to_le_bytes().as_slice()))]
     pub(crate) fn push_word(
         &mut self,
         value: WireWord,
@@ -747,7 +847,15 @@ impl WireBuffer
     ///   endianness of its own.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a mixed-byte long in a mixed-field image observes
+    ///   literal bytes, distinguishing changed byte order, dropped fields and
+    ///   overwritten prefixes.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
+    #[spec(captures: before = self.0.len(),
+        ensures: self.0.get(before..) == Some(u64::from(value).to_le_bytes().as_slice()))]
     pub(crate) fn push_long(
         &mut self,
         value: WireLong,
@@ -800,7 +908,24 @@ impl WireBuffer
     /// # Errors
     /// [`RecordTreeError::ArithmeticOverflow`] — the byte length exceeds the
     /// wire width.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on empty and two-byte payloads in a mixed-field image
+    ///   observes exact prefixes and bodies, distinguishing wrong lengths, byte
+    ///   order and missing payloads. A slice wider than the wire width is not
+    ///   constructible on the supported targets.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
+    #[spec(captures: before = self.0.len(), ensures: |ret| {
+        match u64::try_from(bytes.as_ref().len()) {
+            Ok(length) => ret.is_ok()
+                && self.0.get(before..before.saturating_add(8))
+                    == Some(length.to_le_bytes().as_slice())
+                && self.0.get(before.saturating_add(8)..) == Some(bytes.as_ref()),
+            Err(_) => ret == Err(RecordTreeError::ArithmeticOverflow { context })
+                && self.0.len() == before,
+        }
+    })]
     pub(crate) fn push_length_prefixed(
         &mut self,
         bytes: WireBytes<'_>,
@@ -857,6 +982,25 @@ pub enum DecodeCompletion
 ///
 /// Every read is bounds-checked and reports a [`FailureContext`] naming the
 /// field that was truncated, so a malformed encoding names its own defect.
+///
+/// # Specification
+/// - requires: nothing; the initial frame may be empty or malformed.
+/// - ensures: unread bytes remain a suffix of the original frame. Compound
+///   reads may consume their prefix before refusing the following field.
+/// - provides: bounded, forward-only access without copying borrowed fields.
+/// - fails: reading methods name the malformed field or a host-width overflow.
+/// - panics: none.
+/// - executable: none — the original frame and complete read history are not
+///   retained by this type; method predicates check each transition.
+///
+/// # Adequacy
+/// - hypothesis: L1 on mixed fields and L3 on truncation at each fixed width,
+///   short length-prefixed bodies and wrong domains observe values, remaining
+///   slices and exact errors, distinguishing skipped or repeated consumption.
+/// - witness: `wire::tests::cursor_reads_what_the_buffer_wrote`
+/// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
+/// - witness: `wire::tests::length_prefix_failures_preserve_the_unread_body`
+/// - witness: `wire::tests::domain_failures_observe_consumption`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Cursor<'bytes>
@@ -875,9 +1019,17 @@ impl<'bytes> Cursor<'bytes>
     /// - provides: the forward-only reader every decode is written against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on empty and mixed nonempty frames observes exact
+    ///   initial bytes and completion through subsequent reads, distinguishing
+    ///   skipped prefixes and substituted input.
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
     #[must_use]
-    pub(crate) const fn new(bytes: WireBytes<'bytes>) -> Self
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.remaining), core::ptr::from_ref(bytes.0)))]
+    pub(crate) fn new(bytes: WireBytes<'bytes>) -> Self
     {
         Self { remaining: bytes.0 }
     }
@@ -885,27 +1037,34 @@ impl<'bytes> Cursor<'bytes>
     /// Takes exactly `length` bytes.
     ///
     /// # Specification
-    /// - requires: at least `length` unread bytes. The precondition stays
-    ///   prose: a shortfall is the `- fails:` arm below and not a caller
-    ///   violation, so a clause here would turn a documented refusal into an
-    ///   abort.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|bytes|
-    ///   entry_remaining.get(.. usize::from(length)) == Some(bytes.as_ref()) &&
-    ///   entry_remaining.get(usize::from(length) ..) == Some(self.remaining))`,
-    ///   for `entry_remaining` the unread bytes at entry — consumes exactly
-    ///   `length` bytes and returns them.
+    /// - requires: nothing; a short input is a documented refusal.
+    /// - ensures: succeeds exactly when the requested prefix is available,
+    ///   borrowing that prefix and retaining its suffix. Refusal preserves the
+    ///   unread slice and names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   read truncates.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — fewer than `length` bytes remain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on empty, zero-length, exact and overlong reads
+    ///   observes borrowed bytes, cursor position and exact refusal,
+    ///   distinguishing off-by-one admission, copying/substitution and
+    ///   consumption on failure.
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|bytes| {
-            entry_remaining.get(.. usize::from(length)) == Some(bytes.as_ref())
-                && entry_remaining.get(usize::from(length) ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(bytes) => entry_remaining.get(..usize::from(length))
+                    .is_some_and(|prefix| core::ptr::eq(core::ptr::from_ref(prefix), core::ptr::from_ref(bytes.0)))
+                && entry_remaining.get(usize::from(length)..)
+                    .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining))),
+            Err(error) => usize::from(length) > entry_remaining.len()
+                && *error == RecordTreeError::MalformedNode { context }
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn take(
         &mut self,
@@ -928,27 +1087,34 @@ impl<'bytes> Cursor<'bytes>
     /// Takes exactly `LEN` bytes as one fixed-width field.
     ///
     /// # Specification
-    /// - requires: at least `LEN` unread bytes, prose for the reason
-    ///   [`Cursor::take`] states.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|field| { let field =
-    ///   <[u8; LEN]>::from(*field); entry_remaining.get(.. LEN) ==
-    ///   Some(field.as_slice()) && entry_remaining.get(LEN ..) ==
-    ///   Some(self.remaining) })`, for `entry_remaining` the unread bytes at
-    ///   entry — consumes exactly `LEN` bytes and returns them as one field.
+    /// - requires: nothing; a short input is a documented refusal.
+    /// - ensures: succeeds exactly when at least `LEN` bytes remain, copying
+    ///   the prefix into the field and retaining the suffix. Refusal leaves the
+    ///   cursor unchanged and names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   read truncates.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — fewer than `LEN` bytes remain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 mixed-byte word and long images observe byte order; L3
+    ///   on zero, exact and truncated fixed fields observes values, cursor
+    ///   position and exact refusal, distinguishing wrong widths and
+    ///   consumption on failure.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|field| {
-            let field = <[u8; LEN]>::from(*field);
-
-            entry_remaining.get(.. LEN) == Some(field.as_slice())
-                && entry_remaining.get(LEN ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(field) => entry_remaining.get(..LEN) == Some(field.0.as_slice())
+                && entry_remaining.get(LEN..)
+                    .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining))),
+            Err(error) => LEN > entry_remaining.len()
+                && *error == RecordTreeError::MalformedNode { context }
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn take_array<const LEN: usize>(
         &mut self,
@@ -965,26 +1131,36 @@ impl<'bytes> Cursor<'bytes>
     /// Reads one discriminator byte.
     ///
     /// # Specification
-    /// - requires: at least one unread byte, prose for the reason
-    ///   [`Cursor::take`] states.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|tag|
-    ///   entry_remaining.first().copied() == Some(u8::from(*tag)) &&
-    ///   entry_remaining.get(1 ..) == Some(self.remaining))`, for
-    ///   `entry_remaining` the unread bytes at entry — consumes the
-    ///   discriminator byte and returns it.
+    /// - requires: nothing; a truncated field is a documented refusal.
+    /// - ensures: succeeds exactly when the 1-byte field fits, reading the tag
+    ///   in little-endian order and retaining the suffix. A refusal leaves the
+    ///   cursor unchanged and names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   byte is missing.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — the field is truncated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a mixed-field image observes exact values and byte
+    ///   order; L3 on every shorter field length observes the exact error and
+    ///   unchanged cursor, distinguishing wrong widths and partial consumption.
+    /// - witness: `wire::tests::cursor_reads_what_the_buffer_wrote`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
     #[inline]
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|tag| {
-            entry_remaining.first().copied() == Some(u8::from(*tag))
-                && entry_remaining.get(1_usize ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(value) => entry_remaining.get(..1)
+                    == Some(u8::from(*value).to_le_bytes().as_slice())
+                && entry_remaining.get(1..)
+                    .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining))),
+            Err(error) => entry_remaining.is_empty()
+                && *error == RecordTreeError::MalformedNode { context }
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn read_tag(
         &mut self,
@@ -999,28 +1175,36 @@ impl<'bytes> Cursor<'bytes>
     /// Reads one little-endian sixteen-bit field.
     ///
     /// # Specification
-    /// - requires: at least two unread bytes, prose for the reason
-    ///   [`Cursor::take`] states.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|value| { let bytes =
-    ///   u16::from(*value).to_le_bytes(); entry_remaining.get(.. 2) ==
-    ///   Some(bytes.as_slice()) && entry_remaining.get(2 ..) ==
-    ///   Some(self.remaining) })`, for `entry_remaining` the unread bytes at
-    ///   entry — consumes the field and returns it in host order.
+    /// - requires: nothing; a truncated field is a documented refusal.
+    /// - ensures: succeeds exactly when the 2-byte field fits, reading the word
+    ///   in little-endian order and retaining the suffix. A refusal leaves the
+    ///   cursor unchanged and names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   field is truncated.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — the field is truncated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a mixed-field image observes exact values and byte
+    ///   order; L3 on every shorter field length observes the exact error and
+    ///   unchanged cursor, distinguishing wrong widths and partial consumption.
+    /// - witness: `wire::tests::cursor_reads_what_the_buffer_wrote`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
     #[inline]
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|value| {
-            let bytes = u16::from(*value).to_le_bytes();
-
-            entry_remaining.get(.. 2_usize) == Some(bytes.as_slice())
-                && entry_remaining.get(2_usize ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(value) => entry_remaining.get(..2)
+                    == Some(u16::from(*value).to_le_bytes().as_slice())
+                && entry_remaining.get(2..)
+                    .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining))),
+            Err(error) => entry_remaining.len() < 2
+                && *error == RecordTreeError::MalformedNode { context }
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn read_word(
         &mut self,
@@ -1035,28 +1219,36 @@ impl<'bytes> Cursor<'bytes>
     /// Reads one little-endian sixty-four-bit field.
     ///
     /// # Specification
-    /// - requires: at least eight unread bytes, prose for the reason
-    ///   [`Cursor::take`] states.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|value| { let bytes =
-    ///   u64::from(*value).to_le_bytes(); entry_remaining.get(.. 8) ==
-    ///   Some(bytes.as_slice()) && entry_remaining.get(8 ..) ==
-    ///   Some(self.remaining) })`, for `entry_remaining` the unread bytes at
-    ///   entry — consumes the field and returns it in host order.
+    /// - requires: nothing; a truncated field is a documented refusal.
+    /// - ensures: succeeds exactly when the 8-byte field fits, reading the long
+    ///   in little-endian order and retaining the suffix. A refusal leaves the
+    ///   cursor unchanged and names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   field is truncated.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — the field is truncated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a mixed-field image observes exact values and byte
+    ///   order; L3 on every shorter field length observes the exact error and
+    ///   unchanged cursor, distinguishing wrong widths and partial consumption.
+    /// - witness: `wire::tests::cursor_reads_what_the_buffer_wrote`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
     #[inline]
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|value| {
-            let bytes = u64::from(*value).to_le_bytes();
-
-            entry_remaining.get(.. 8_usize) == Some(bytes.as_slice())
-                && entry_remaining.get(8_usize ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(value) => entry_remaining.get(..8)
+                    == Some(u64::from(*value).to_le_bytes().as_slice())
+                && entry_remaining.get(8..)
+                    .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining))),
+            Err(error) => entry_remaining.len() < 8
+                && *error == RecordTreeError::MalformedNode { context }
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn read_long(
         &mut self,
@@ -1071,16 +1263,11 @@ impl<'bytes> Cursor<'bytes>
     /// Reads a sixty-four-bit length prefix and the bytes it counts.
     ///
     /// # Specification
-    /// - requires: a complete length prefix and the bytes it counts, prose for
-    ///   the reason [`Cursor::take`] states.
-    /// - ensures: `|ret| ret.as_ref().ok().is_none_or(|bytes| { let bytes =
-    ///   bytes.as_ref(); let prefix =
-    ///   u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes(); let
-    ///   consumed = 8.saturating_add(bytes.len()); entry_remaining.get(.. 8) ==
-    ///   Some(prefix.as_slice()) && entry_remaining.get(8 .. consumed) ==
-    ///   Some(bytes) && entry_remaining.get(consumed ..) ==
-    ///   Some(self.remaining) })`, for `entry_remaining` the unread bytes at
-    ///   entry — consumes the prefix and exactly the bytes it counts.
+    /// - requires: nothing; a truncated field is a documented refusal.
+    /// - ensures: success borrows exactly the bytes named by the little-endian
+    ///   prefix and retains the following suffix. A short prefix consumes
+    ///   nothing; a complete prefix stays consumed if the body or host-width
+    ///   check fails.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   prefix or its bytes truncate; [`RecordTreeError::ArithmeticOverflow`]
     ///   when the prefix exceeds the host width.
@@ -1091,17 +1278,31 @@ impl<'bytes> Cursor<'bytes>
     /// truncated.
     /// [`RecordTreeError::ArithmeticOverflow`] — the prefix exceeds the host
     /// width.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on empty and nonempty framed payloads observes exact
+    ///   images; L3 on every short prefix, a short body and a high-word prefix
+    ///   observes the error and unread suffix. Wrong lengths, rollback of a
+    ///   consumed prefix and accidental body consumption are distinguished.
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
+    /// - witness: `wire::tests::length_prefix_failures_preserve_the_unread_body`
     #[spec(
         captures: entry_remaining = self.remaining,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|bytes| {
-            let bytes = bytes.as_ref();
-            let prefix = u64::try_from(bytes.len()).unwrap_or(u64::MAX).to_le_bytes();
-            let consumed = 8_usize.saturating_add(bytes.len());
-
-            entry_remaining.get(.. 8_usize) == Some(prefix.as_slice())
-                && entry_remaining.get(8_usize .. consumed) == Some(bytes)
-                && entry_remaining.get(consumed ..) == Some(self.remaining)
-        }),
+        ensures: |ret| match ret.as_ref() {
+            Ok(bytes) => {
+                let length = u64::try_from(bytes.0.len());
+                let consumed = 8_usize.saturating_add(bytes.0.len());
+                length.is_ok_and(|length| entry_remaining.get(..8)
+                    == Some(length.to_le_bytes().as_slice()))
+                    && entry_remaining.get(8..consumed)
+                        .is_some_and(|body| core::ptr::eq(core::ptr::from_ref(body), core::ptr::from_ref(bytes.0)))
+                    && entry_remaining.get(consumed..)
+                        .is_some_and(|tail| core::ptr::eq(core::ptr::from_ref(tail), core::ptr::from_ref(self.remaining)))
+            },
+            Err(error) => matches!(error, &RecordTreeError::MalformedNode { context: held }
+                    | &RecordTreeError::ArithmeticOverflow { context: held } if held == context)
+                && core::ptr::eq(core::ptr::from_ref(entry_remaining.get(8..).unwrap_or(entry_remaining)), core::ptr::from_ref(self.remaining)),
+        },
     )]
     pub(crate) fn read_length_prefixed(
         &mut self,
@@ -1120,27 +1321,35 @@ impl<'bytes> Cursor<'bytes>
     /// Rejects a magic string that does not match `domain`.
     ///
     /// # Specification
-    /// - requires: `domain`'s tag unread at the cursor's head, prose for the
-    ///   reason [`Cursor::take`] states.
-    /// - ensures: `|ret| { let tag = domain.tag(); ret.is_err() ||
-    ///   (entry_remaining.get(.. usize::from(tag.len())) == Some(tag.as_ref())
-    ///   && entry_remaining.get(usize::from(tag.len()) ..) ==
-    ///   Some(self.remaining)) }`, for `entry_remaining` the unread bytes at
-    ///   entry — consumes the tag when it matches `domain`.
+    /// - requires: nothing; a wrong or truncated tag is a documented refusal.
+    /// - ensures: succeeds exactly when the unread prefix is the domain tag. A
+    ///   complete tag is consumed even when it differs; a truncated one is left
+    ///   unread. Every refusal names the supplied context.
     /// - fails: [`RecordTreeError::MalformedNode`] naming `context` when the
     ///   tag is truncated or differs.
     /// - panics: none.
     ///
     /// # Errors
     /// [`RecordTreeError::MalformedNode`] — the tag is truncated or differs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over all four domains observes accepted tags, every
+    ///   one-byte-short tag and a same-width mismatch with trailing data. Exact
+    ///   errors and remaining bytes distinguish wrong comparisons, wrong widths
+    ///   and incorrect failure consumption.
+    /// - witness: `wire::tests::domain_failures_observe_consumption`
     #[spec(
         captures: entry_remaining = self.remaining,
         ensures: |ret| {
             let tag = domain.tag();
 
-            ret.is_err()
-                || (entry_remaining.get(.. usize::from(tag.len())) == Some(tag.as_ref())
-                    && entry_remaining.get(usize::from(tag.len()) ..) == Some(self.remaining))
+            ret.is_ok() == entry_remaining.starts_with(tag.as_ref())
+                && ret.as_ref().err().is_none_or(|error|
+                    *error == RecordTreeError::MalformedNode { context })
+                && core::ptr::eq(
+                    core::ptr::from_ref(entry_remaining.get(usize::from(tag.len())..).unwrap_or(entry_remaining)),
+                    core::ptr::from_ref(self.remaining),
+                )
         },
     )]
     pub(crate) fn expect_domain(
@@ -1186,12 +1395,23 @@ impl<'bytes> Cursor<'bytes>
     /// remaining bytes could encode.
     /// [`RecordTreeError::ArithmeticOverflow`] — the count exceeds the host
     /// width.
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|capacity| {
-        usize::try_from(u64::from(count)) == Ok(usize::from(*capacity))
-            && usize::from(*capacity)
-                .checked_mul(usize::from(least_bytes_each))
-                .is_some_and(|least| least <= self.remaining.len())
-    }))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, an exact fit, one item beyond, zero width and
+    ///   multiplication/host-width boundaries observes exact capacities or
+    ///   named errors, distinguishing unchecked reservations, truncation and
+    ///   overflow. Host-width refusal depends on the target width.
+    /// - witness: `wire::tests::item_capacity_checks_zero_and_arithmetic_boundaries`
+    /// - witness: `wire::tests::cursor_refuses_a_count_the_bytes_cannot_carry`
+    #[spec(ensures: |ret| usize::try_from(u64::from(count)).map_or_else(
+        |_error| ret == Err(RecordTreeError::ArithmeticOverflow { context }),
+        |count| count.checked_mul(usize::from(least_bytes_each))
+            .filter(|least| *least <= self.remaining.len())
+            .map_or_else(
+                || ret == Err(RecordTreeError::MalformedNode { context }),
+                |_least| ret == Ok(ItemCapacity(count)),
+            ),
+    ))]
     pub(crate) fn admissible_item_count(
         &self,
         count: WireLong,
@@ -1225,8 +1445,17 @@ impl<'bytes> Cursor<'bytes>
     ///   complete structure are refused rather than ignored.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on empty, partially read and fully consumed frames
+    ///   observes the exact completion state, distinguishing inverted emptiness
+    ///   and overlooked trailing bytes.
+    /// - witness: `wire::tests::fixed_reads_preserve_position_on_truncation`
+    /// - witness: `wire::tests::cursor_reports_trailing_bytes`
+    /// - witness: `wire::tests::the_wire_round_trip_pins_little_endian_bytes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!(ret, DecodeCompletion::Complete) == self.remaining.is_empty())]
     pub(crate) const fn completion(&self) -> DecodeCompletion
     {
         if self.remaining.is_empty() {
@@ -1269,6 +1498,7 @@ mod tests
     fn domain_tags_are_distinct_and_prefix_free()
     {
         for (left_index, left) in DOMAINS.iter().enumerate() {
+            assert!(anodized::types::Spec::predicate(left));
             for (right_index, right) in DOMAINS.iter().enumerate() {
                 if left_index == right_index {
                     continue;
@@ -1286,9 +1516,12 @@ mod tests
     fn digests_of_one_body_differ_across_domains()
     {
         let body = WireBytes::from(b"the same bytes under two languages".as_slice());
-
-        assert_ne!(digest(Domain::Node, body), digest(Domain::Record, body));
-        assert_eq!(digest(Domain::Node, body), digest(Domain::Node, body));
+        let hashes = DOMAINS.map(|domain| digest(domain, body));
+        for (index, hash) in hashes.iter().enumerate() {
+            for other in hashes.iter().skip(index.saturating_add(1)) {
+                assert_ne!(hash, other);
+            }
+        }
     }
 
     #[test]
@@ -1300,34 +1533,46 @@ mod tests
         assert_eq!(work.records(), MAX_PROOF_RECORDS);
         assert_eq!(work.charge_node(), Ok(()));
         assert_eq!(u64::from(work.nodes()), 1_u64);
+        assert_eq!(work.records(), MAX_PROOF_RECORDS);
+        assert_eq!(work.charge_records(RecordCount::ZERO), Ok(()));
+        assert_eq!(u64::from(work.nodes()), 1_u64);
     }
 
     #[test]
     fn work_refuses_the_charge_past_the_ceiling()
     {
         let mut work = DecodeWork::new();
+        assert_eq!(work.charge_node(), Ok(()));
         assert_eq!(work.charge_records(MAX_PROOF_RECORDS), Ok(()));
 
-        assert_eq!(
+        assert!(matches!(
             work.charge_records(RecordCount::from(1_u64)),
-            Err(RecordTreeError::BudgetExceeded {
-                context: "proof total record count".into(),
-            })
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
+        assert_eq!(
+            u64::from(work.records()),
+            u64::from(MAX_PROOF_RECORDS).saturating_add(1)
         );
+        assert_eq!(u64::from(work.nodes()), 1_u64);
+        assert!(matches!(
+            work.charge_records(RecordCount::ZERO),
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
     }
 
     #[test]
     fn work_saturates_instead_of_wrapping()
     {
         let mut work = DecodeWork::new();
-        let _first = work.charge_records(RecordCount::from(u64::MAX));
-
-        assert_eq!(
+        assert!(matches!(
             work.charge_records(RecordCount::from(u64::MAX)),
-            Err(RecordTreeError::BudgetExceeded {
-                context: "proof total record count".into(),
-            })
-        );
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
+
+        assert!(matches!(
+            work.charge_records(RecordCount::from(u64::MAX)),
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
         assert_eq!(u64::from(work.records()), u64::MAX);
     }
 
@@ -1335,17 +1580,29 @@ mod tests
     fn node_charges_stop_at_their_own_ceiling()
     {
         let mut work = DecodeWork::new();
+        assert_eq!(work.charge_records(RecordCount::from(7_u64)), Ok(()));
 
         for _ in 0_u64 .. u64::from(MAX_PROOF_NODES) {
             assert_eq!(work.charge_node(), Ok(()));
         }
 
-        assert_eq!(
+        assert!(matches!(
             work.charge_node(),
-            Err(RecordTreeError::BudgetExceeded {
-                context: "proof node count".into(),
-            })
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
+        assert_eq!(
+            u64::from(work.nodes()),
+            u64::from(MAX_PROOF_NODES).saturating_add(1)
         );
+        assert!(matches!(
+            work.charge_node(),
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
+        assert_eq!(
+            u64::from(work.nodes()),
+            u64::from(MAX_PROOF_NODES).saturating_add(2)
+        );
+        assert_eq!(work.records(), RecordCount::from(7_u64));
     }
 
     #[test]
@@ -1362,12 +1619,10 @@ mod tests
     {
         let nodes = NodeCount::from(u64::from(MAX_PROOF_NODES).saturating_add(0x01_u64));
 
-        assert_eq!(
+        assert!(matches!(
             ensure_proof_budget(nodes, RecordCount::ZERO),
-            Err(RecordTreeError::BudgetExceeded {
-                context: "proof node count".into(),
-            })
-        );
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
     }
 
     #[test]
@@ -1375,12 +1630,10 @@ mod tests
     {
         let records = RecordCount::from(u64::from(MAX_PROOF_RECORDS).saturating_add(0x01_u64));
 
-        assert_eq!(
+        assert!(matches!(
             ensure_proof_budget(MAX_PROOF_NODES, records),
-            Err(RecordTreeError::BudgetExceeded {
-                context: "proof total record count".into(),
-            })
-        );
+            Err(RecordTreeError::BudgetExceeded { .. })
+        ));
     }
 
     #[test]
@@ -1488,19 +1741,33 @@ mod tests
     fn the_wire_round_trip_pins_little_endian_bytes()
     {
         let mut buffer = WireBuffer::new();
+        buffer.push_domain(Domain::Record);
         buffer.push_word(WireWord::from(0x0102_u16));
         buffer.push_long(WireLong::from(0x0102_0304_0506_0708_u64));
+        buffer
+            .push_length_prefixed(WireBytes::from([0xAB, 0xCD].as_slice()), "payload".into())
+            .expect("the payload fits");
+        buffer
+            .push_length_prefixed(WireBytes::from([].as_slice()), "empty".into())
+            .expect("the empty payload fits");
 
         let bytes: Vec<u8> = buffer.into();
         // The literal is the little-endian byte order the wire format
         // promises, asserted byte for byte on every host endianness,
         // then read back through the cursor: the round trip must
         // answer the exact values pushed.
-        assert_eq!(bytes, vec![
-            0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01
+        let mut expected = b"gandr:storage-records:record:v1".to_vec();
+        expected.extend_from_slice(&[
+            0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 2, 0, 0, 0, 0, 0, 0, 0,
+            0xAB, 0xCD, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
+        assert_eq!(bytes, expected);
 
         let mut cursor = Cursor::new(WireBytes::from(bytes.as_slice()));
+        assert_eq!(
+            cursor.expect_domain(Domain::Record, "domain".into()),
+            Ok(())
+        );
         assert_eq!(
             cursor.read_word("word".into()),
             Ok(WireWord::from(0x0102_u16))
@@ -1509,5 +1776,220 @@ mod tests
             cursor.read_long("long".into()),
             Ok(WireLong::from(0x0102_0304_0506_0708_u64))
         );
+        assert_eq!(
+            cursor.read_length_prefixed("payload".into()),
+            Ok(WireBytes::from([0xAB, 0xCD].as_slice()))
+        );
+        assert_eq!(
+            cursor.read_length_prefixed("empty".into()),
+            Ok(WireBytes::from([].as_slice()))
+        );
+        assert_eq!(cursor.completion(), DecodeCompletion::Complete);
+    }
+
+    #[test]
+    fn fixed_reads_preserve_position_on_truncation()
+    {
+        let bytes = [1_u8, 2, 3, 4, 5, 6, 7, 8];
+        let context = "fixed probe".into();
+        let refusal = RecordTreeError::MalformedNode { context };
+        for available in 0 .. 8 {
+            let input = &bytes[.. available];
+            let mut cursor = Cursor::new(WireBytes::from(input));
+            assert_eq!(cursor.read_long(context), Err(refusal.clone()));
+            assert!(core::ptr::eq(
+                core::ptr::from_ref(cursor.remaining),
+                core::ptr::from_ref(input)
+            ));
+        }
+        for available in 0 .. 2 {
+            let input = &bytes[.. available];
+            let mut cursor = Cursor::new(WireBytes::from(input));
+            assert_eq!(cursor.read_word(context), Err(refusal.clone()));
+            assert!(core::ptr::eq(
+                core::ptr::from_ref(cursor.remaining),
+                core::ptr::from_ref(input)
+            ));
+        }
+        let mut empty = Cursor::new(WireBytes::from([].as_slice()));
+        assert_eq!(empty.read_tag(context), Err(refusal.clone()));
+        assert_eq!(empty.completion(), DecodeCompletion::Complete);
+        assert_eq!(empty.take_array::<0>(context).map(<[u8; 0]>::from), Ok([]));
+
+        let mut cursor = Cursor::new(WireBytes::from(bytes.as_slice()));
+        let zero = cursor
+            .take(EncodedLength::from(0_usize), context)
+            .expect("zero fits");
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(zero.0),
+            &raw const bytes[.. 0]
+        ));
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            core::ptr::from_ref(bytes.as_slice())
+        ));
+        assert_eq!(
+            cursor.take(EncodedLength::from(9_usize), context),
+            Err(refusal.clone())
+        );
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            core::ptr::from_ref(bytes.as_slice())
+        ));
+        assert_eq!(cursor.take_array::<9>(context), Err(refusal));
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            core::ptr::from_ref(bytes.as_slice())
+        ));
+        assert_eq!(
+            cursor.take_array::<3>(context).map(<[u8; 3]>::from),
+            Ok([1, 2, 3])
+        );
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            &raw const bytes[3 ..]
+        ));
+        let rest = cursor
+            .take(EncodedLength::from(5_usize), context)
+            .expect("the rest fits");
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(rest.0),
+            &raw const bytes[3 ..]
+        ));
+        assert_eq!(cursor.completion(), DecodeCompletion::Complete);
+    }
+
+    #[test]
+    fn length_prefix_failures_preserve_the_unread_body()
+    {
+        let prefix = [3_u8, 0, 0, 0, 0, 0, 0, 0];
+        let context = "length probe".into();
+        for available in 0 .. 8 {
+            let input = &prefix[.. available];
+            let mut cursor = Cursor::new(WireBytes::from(input));
+            assert_eq!(
+                cursor.read_length_prefixed(context),
+                Err(RecordTreeError::MalformedNode { context })
+            );
+            assert!(core::ptr::eq(
+                core::ptr::from_ref(cursor.remaining),
+                core::ptr::from_ref(input)
+            ));
+        }
+        let short = [3_u8, 0, 0, 0, 0, 0, 0, 0, 0xAA, 0xBB];
+        let mut cursor = Cursor::new(WireBytes::from(short.as_slice()));
+        assert_eq!(
+            cursor.read_length_prefixed(context),
+            Err(RecordTreeError::MalformedNode { context })
+        );
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            &raw const short[8 ..]
+        ));
+        assert_eq!(cursor.read_word(context), Ok(WireWord::from(0xBBAA_u16)));
+
+        let maximum = [1_u8, 0, 0, 0, 1, 0, 0, 0, 0xCC];
+        let mut cursor = Cursor::new(WireBytes::from(maximum.as_slice()));
+        let refusal = if usize::try_from(0x0000_0001_0000_0001_u64).is_ok() {
+            RecordTreeError::MalformedNode { context }
+        }
+        else {
+            RecordTreeError::ArithmeticOverflow { context }
+        };
+        assert_eq!(cursor.read_length_prefixed(context), Err(refusal));
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.remaining),
+            &raw const maximum[8 ..]
+        ));
+
+        let zero = [0_u8, 0, 0, 0, 0, 0, 0, 0, 0xDD];
+        let mut cursor = Cursor::new(WireBytes::from(zero.as_slice()));
+        let field = cursor
+            .read_length_prefixed(context)
+            .expect("zero length is valid");
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(field.0),
+            &raw const zero[8 .. 8]
+        ));
+        assert_eq!(cursor.read_tag(context), Ok(WireTag::from(0xDD_u8)));
+    }
+
+    #[test]
+    fn domain_failures_observe_consumption()
+    {
+        let context = "domain probe".into();
+        for domain in DOMAINS {
+            let tag = domain.tag();
+            let bytes = tag.as_ref();
+            let mut exact = Cursor::new(WireBytes::from(bytes));
+            assert_eq!(exact.expect_domain(domain, context), Ok(()));
+            assert_eq!(exact.completion(), DecodeCompletion::Complete);
+
+            let short = &bytes[.. bytes.len().saturating_sub(1)];
+            let mut truncated = Cursor::new(WireBytes::from(short));
+            assert_eq!(
+                truncated.expect_domain(domain, context),
+                Err(RecordTreeError::MalformedNode { context })
+            );
+            assert!(core::ptr::eq(
+                core::ptr::from_ref(truncated.remaining),
+                core::ptr::from_ref(short)
+            ));
+
+            let mut wrong = bytes.to_vec();
+            *wrong.first_mut().expect("domain tags are nonempty") = b'!';
+            wrong.push(0xEE);
+            let mut cursor = Cursor::new(WireBytes::from(wrong.as_slice()));
+            assert_eq!(
+                cursor.expect_domain(domain, context),
+                Err(RecordTreeError::MalformedNode { context })
+            );
+            assert_eq!(cursor.read_tag(context), Ok(WireTag::from(0xEE_u8)));
+            assert_eq!(cursor.completion(), DecodeCompletion::Complete);
+        }
+    }
+
+    #[test]
+    fn item_capacity_checks_zero_and_arithmetic_boundaries()
+    {
+        let context = "capacity probe".into();
+        let empty = Cursor::new(WireBytes::from([].as_slice()));
+        assert_eq!(
+            empty.admissible_item_count(
+                WireLong::from(0_u64),
+                EncodedLength::from(usize::MAX),
+                context
+            ),
+            Ok(ItemCapacity::from(0_usize))
+        );
+        let maximum = u64::try_from(usize::MAX).expect("the supported host width fits the wire");
+        assert_eq!(
+            empty.admissible_item_count(
+                WireLong::from(maximum),
+                EncodedLength::from(0_usize),
+                context
+            ),
+            Ok(ItemCapacity::from(usize::MAX))
+        );
+        let wrap_to_zero =
+            u64::try_from(usize::MAX.midpoint(1)).expect("the supported host width fits the wire");
+        assert_eq!(
+            empty.admissible_item_count(
+                WireLong::from(wrap_to_zero),
+                EncodedLength::from(2_usize),
+                context
+            ),
+            Err(RecordTreeError::MalformedNode { context })
+        );
+        if usize::try_from(u64::MAX).is_err() {
+            assert_eq!(
+                empty.admissible_item_count(
+                    WireLong::from(u64::MAX),
+                    EncodedLength::from(0_usize),
+                    context
+                ),
+                Err(RecordTreeError::ArithmeticOverflow { context })
+            );
+        }
     }
 }

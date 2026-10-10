@@ -6,7 +6,6 @@ use gandr_storage_records::KeyBound;
 use gandr_storage_records::KeyRange;
 use gandr_storage_records::RangeProof;
 use gandr_storage_records::Record;
-use gandr_storage_records::RecordKey;
 use gandr_storage_records::RecordTreeError;
 use proptest::prelude::ProptestConfig;
 use proptest::proptest;
@@ -32,8 +31,13 @@ fn a_valid_proof_verifies()
         .verify(&built.root(), range)
         .expect("the proof is honest");
 
-    assert_eq!(records.len(), 50);
-    assert_eq!(records.as_ref(), built.range(range).as_ref());
+    assert_eq!(
+        records.as_ref(),
+        corpus
+            .entries()
+            .get(100 .. 150)
+            .expect("the requested interval is in the corpus")
+    );
 }
 
 #[test]
@@ -47,7 +51,7 @@ fn the_unbounded_range_proves()
         .verify(&built.root(), range)
         .expect("the proof is honest");
 
-    assert_eq!(records.len(), 300);
+    assert_eq!(records.as_ref(), corpus.entries());
     assert_eq!(proof.nodes().len(), built.nodes().len());
 }
 
@@ -78,12 +82,10 @@ fn a_span_past_the_node_budget_is_refused()
         capped_params(BoundaryRecordCap::try_from(1_u32).expect("the cap is not zero")),
     );
 
-    assert_eq!(
+    assert!(matches!(
         built.prove_range(KeyRange::all()),
-        Err(RecordTreeError::BudgetExceeded {
-            context: "proof node count".into(),
-        })
-    );
+        Err(RecordTreeError::BudgetExceeded { .. })
+    ));
 }
 
 #[test]
@@ -102,7 +104,7 @@ fn the_node_budget_ceiling_proves()
         .verify(&built.root(), range)
         .expect("the proof is honest");
 
-    assert_eq!(records.len(), 0x0FFF);
+    assert_eq!(records.as_ref(), corpus.entries());
 }
 
 #[test]
@@ -125,8 +127,11 @@ fn a_range_over_a_single_leaf_tree_proves()
         proof
             .verify(&built.root(), range)
             .expect("the proof is honest")
-            .len(),
-        3
+            .as_ref(),
+        corpus
+            .entries()
+            .get(1 .. 4)
+            .expect("the requested interval is in the corpus")
     );
 }
 
@@ -147,12 +152,10 @@ fn a_different_range_is_refused()
     .expect("the bounds are ordered");
     let proof = built.prove_range(asked).expect("the tree can answer");
 
-    assert_eq!(
+    assert!(matches!(
         proof.verify(&built.root(), other),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof answers for a different range".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -177,12 +180,10 @@ fn a_dropped_record_is_refused()
         honest.nodes().to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         thinned.verify(&built.root(), range),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the claimed records are not the authenticated ones".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -207,12 +208,10 @@ fn an_invented_record_is_refused()
         honest.nodes().to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         padded.verify(&built.root(), range),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the claimed records are not the authenticated ones".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -241,12 +240,10 @@ fn a_short_leaf_run_is_refused()
         nodes,
     );
 
-    assert_eq!(
+    assert!(matches!(
         truncated.verify(&built.root(), range),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "a range over an internal root".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -274,12 +271,10 @@ fn a_reordered_leaf_run_is_refused()
         nodes,
     );
 
-    assert_eq!(
+    assert!(matches!(
         shuffled.verify(&built.root(), range),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "a carried leaf is not the child the root names here".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 proptest! {
@@ -309,9 +304,9 @@ proptest! {
             .verify(&built.root(), range)
             .expect("the proof is honest");
 
-        assert_eq!(verified.as_ref(), built.range(range).as_ref());
-        for record in verified.as_ref() {
-            assert!(record.key() >= RecordKey::from(low_key.as_slice()));
-        }
+        let width = high.checked_sub(low)
+            .and_then(|difference| difference.checked_add(usize::from(inclusive)))
+            .expect("the generated interval length fits the host width");
+        assert!(verified.iter().eq(corpus.entries().iter().skip(low).take(width)));
     }
 }

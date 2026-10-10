@@ -1,12 +1,11 @@
-//! Sharing: what the content-defined boundary buys, measured rather than
-//! asserted.
+//! Leaf-content identity reuse across bounded record edits.
 //!
-//! The claim the tree shape exists for is that an edit perturbs the leaf it
-//! falls in and leaves its neighbours identical. A fixed-position cut would not
-//! do that under an insertion, because every later leaf would be renumbered.
-//! These are differentials against the leaf identities themselves, which is the
-//! only observation that can tell the two apart.
+//! The fixtures compare changed leaf identities for edits to 600 records and
+//! disjoint corpora of 200 records. They observe content identity, not memory
+//! aliasing, allocation counts or a universal bound on edit locality.
 
+use anodized::spec;
+use gandr_storage_records::BoundaryRecordCap;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordIndex;
@@ -15,7 +14,9 @@ use gandr_storage_records::RecordValue;
 
 use crate::common::Corpus;
 use crate::common::CorpusSize;
+use crate::common::capped_params;
 use crate::common::tree;
+use crate::common::tree_with;
 
 /// Counts the leaf identities of `after` that do not occur in `before`.
 ///
@@ -26,6 +27,23 @@ use crate::common::tree;
 /// - provides: the differential the sharing claim is measured by, since a leaf
 ///   that survives an edit keeps its identity exactly.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact fresh-leaf counts and bounded edit counts over
+///   600-record edits, disjoint 200-record corpora, and empty/single-record
+///   roots distinguish lost or inverted identity membership, omitted root
+///   leaves, and confusion between node content and manifest identity. These
+///   fixtures do not establish locality for arbitrary edits or hashes.
+/// - witness: `tests::sharing::changing_one_value_rebuilds_one_leaf`
+/// - witness: `tests::sharing::removing_one_record_rebuilds_a_bounded_neighbourhood`
+/// - witness: `tests::sharing::inserting_at_the_front_leaves_later_leaves_alone`
+/// - witness: `tests::sharing::appending_at_the_end_leaves_earlier_leaves_alone`
+/// - witness: `tests::sharing::an_unrelated_corpus_shares_nothing`
+/// - witness: `tests::sharing::root_leaves_share_by_content_not_manifest`
+#[spec(ensures: |ret| {
+    let old = before.leaf_hashes();
+    ret.0 == after.leaf_hashes().iter().filter(|hash| !old.contains(hash)).count()
+})]
 fn fresh_leaves(
     before: &RecordTree,
     after: &RecordTree,
@@ -59,26 +77,6 @@ impl From<usize> for FreshLeafCount
     }
 }
 
-impl core::fmt::Display for FreshLeafCount
-{
-    /// Writes the count.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: writes the carried count through the `usize` rendering, so
-    ///   the width and fill options the caller set apply to it.
-    /// - provides: the count an assertion message names.
-    /// - fails: propagates the formatter's own write failure unchanged.
-    /// - panics: none.
-    fn fmt(
-        &self,
-        f: &mut core::fmt::Formatter<'_>,
-    ) -> core::fmt::Result
-    {
-        self.0.fmt(f)
-    }
-}
-
 #[test]
 fn changing_one_value_rebuilds_one_leaf()
 {
@@ -103,7 +101,7 @@ fn removing_one_record_rebuilds_a_bounded_neighbourhood()
     assert!(
         fresh <= FreshLeafCount(2),
         "removing one record should disturb at most the leaf it falls in and \
-         the one that absorbs its boundary, disturbed {fresh}"
+         the one that absorbs its boundary, disturbed {fresh:?}"
     );
 }
 
@@ -126,7 +124,7 @@ fn inserting_at_the_front_leaves_later_leaves_alone()
     assert!(
         fresh <= FreshLeafCount(2),
         "inserting one record at the front should disturb a bounded \
-         neighbourhood of {total} leaves, disturbed {fresh}"
+         neighbourhood of {total} leaves, disturbed {fresh:?}"
     );
 }
 
@@ -166,4 +164,23 @@ fn an_unrelated_corpus_shares_nothing()
         FreshLeafCount(right.leaf_hashes().len()),
         "no leaf of one corpus should occur in an unrelated one"
     );
+}
+
+#[test]
+fn root_leaves_share_by_content_not_manifest()
+{
+    let empty = tree(&Corpus::of_size(CorpusSize::from(0)));
+    let corpus = Corpus::of_size(CorpusSize::from(1));
+    let single = tree(&corpus);
+    let same_content = tree_with(
+        &corpus,
+        capped_params(BoundaryRecordCap::try_from(64_u32).expect("the cap is positive")),
+    );
+    let changed = tree(&corpus.with_value_at(RecordIndex::from(0), RecordValue::from(b"changed")));
+
+    assert_eq!(fresh_leaves(&empty, &single), FreshLeafCount(1));
+    assert_eq!(fresh_leaves(&single, &empty), FreshLeafCount(1));
+    assert_ne!(single.root(), same_content.root());
+    assert_eq!(fresh_leaves(&single, &same_content), FreshLeafCount(0));
+    assert_eq!(fresh_leaves(&single, &changed), FreshLeafCount(1));
 }
