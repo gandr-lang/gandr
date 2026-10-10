@@ -5,6 +5,8 @@
 //! Mutable measures remain private; the public API exposes only the selected
 //! summary returned by [`crate::resolve::resolve`].
 
+use anodized::spec;
+
 use crate::error::RenderArithmetic;
 use crate::error::RenderError;
 use crate::plan::PlanId;
@@ -58,7 +60,7 @@ impl PhysicalLineEnding
     ///   complete rendered output; a wrong ending width makes the VM byte
     ///   reconciliation fail even when the scalar width is unchanged.
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| u64::from(ret) == match self { Self::Lf => 1, Self::CrLf => 2 }
     )]
     #[inline]
@@ -118,7 +120,7 @@ impl Default for LayoutOptions
     ///   identical fields rather than pinning incidental numeric defaults; a
     ///   reversed ordering changes that result.
     /// - witness: `measure::tests::width_options_preserve_policy_and_reject_reversal`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| u32::from(ret.computation_width) >= u32::from(ret.page_width)
     )]
     #[inline]
@@ -153,7 +155,7 @@ impl LayoutOptions
     ///   `InvalidWidth` distinguish a shifted boundary, swapped widths, lost
     ///   ending policy and an incorrect refusal.
     /// - witness: `measure::tests::width_options_preserve_policy_and_reject_reversal`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| u32::from(computation_width) < u32::from(page_width)
                 && *error == RenderError::InvalidWidth,
             |options| u32::from(computation_width) >= u32::from(page_width)
@@ -220,7 +222,7 @@ impl LayoutCost
     ///   with asymmetric and maximal components. A nonzero component changes
     ///   the sum or causes an otherwise absent overflow.
     /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| u64::from(ret.squared_overflow) == 0
                 && u64::from(ret.line_breaks) == 0
     )]
@@ -311,7 +313,7 @@ pub(crate) struct Measure
 ///   the cost or typed refusal. Allocation is outside this pure arithmetic
 ///   boundary.
 /// - witness: `measure::tests::fragment_costs_match_widened_endpoint_arithmetic`
-#[anodized::spec(
+#[spec(
     ensures: |ret| { let before = u128::from(u32::from(start)).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         let after = u128::from(u32::from(start)).saturating_add(u128::from(u32::from(width))).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         ret.as_ref().map_or_else(|error| after > u128::from(u64::MAX)
@@ -372,7 +374,7 @@ fn overflow_delta(
 ///   the cost or typed refusal. Allocation is outside this pure arithmetic
 ///   boundary.
 /// - witness: `measure::tests::fragment_costs_match_widened_endpoint_arithmetic`
-#[anodized::spec(
+#[spec(
     ensures: |ret| { let before = u128::from(0_u32).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         let after = u128::from(0_u32).saturating_add(u128::from(u32::from(width))).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         ret.as_ref().map_or_else(|error| after > u128::from(u64::MAX)
@@ -403,7 +405,7 @@ pub(crate) fn absolute_overflow(
 ///   typed arithmetic refusal. Swapping components, wrapping, dropping an
 ///   operand and reversing overflow precedence change the result.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-#[anodized::spec(
+#[spec(
     ensures: |ret| { let overflow = u128::from(u64::from(left.squared_overflow)).saturating_add(u128::from(u64::from(right.squared_overflow)));
         let breaks = u128::from(u64::from(left.line_breaks)).saturating_add(u128::from(u64::from(right.line_breaks)));
         ret.as_ref().map_or_else(|error| if overflow > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: RenderArithmetic::SquaredOverflow } }
@@ -447,7 +449,7 @@ pub(crate) fn add_cost(
 ///   pairwise; exact byte sums and `OutputBytes` refusals distinguish wrapping,
 ///   saturation, a lost operand and the wrong arithmetic classification.
 /// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
-#[anodized::spec(
+#[spec(
     ensures: |ret| { let sum = u128::from(u64::from(left)).saturating_add(u128::from(u64::from(right)));
         ret.as_ref().map_or_else(|error| sum > u128::from(u64::MAX)
             && *error == RenderError::ArithmeticOverflow { operation: RenderArithmetic::OutputBytes },
@@ -484,7 +486,7 @@ pub(crate) fn add_output_bytes(
 ///   the cost or typed refusal. Allocation is outside this pure arithmetic
 ///   boundary.
 /// - witness: `measure::tests::fragment_costs_match_widened_endpoint_arithmetic`
-#[anodized::spec(
+#[spec(
     ensures: |ret| { let before = u128::from(u32::from(column)).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         let after = u128::from(u32::from(column)).saturating_add(u128::from(u32::from(width))).saturating_sub(u128::from(u32::from(page))).saturating_pow(2);
         ret.as_ref().map_or_else(|error| after > u128::from(u64::MAX)
@@ -516,7 +518,7 @@ pub(crate) fn incoming_overflow(
 ///   Incoming-column contamination, off-by-one excess and a lost or doubled
 ///   break change the cost.
 /// - witness: `measure::tests::fragment_costs_match_widened_endpoint_arithmetic`
-#[anodized::spec(
+#[spec(
     ensures: |ret| ret.as_ref().is_ok_and(|cost| u64::from(cost.line_breaks) == 1
             && u64::from(cost.squared_overflow) == u64::from(u32::from(indentation).saturating_sub(u32::from(page))).saturating_pow(2))
 )]

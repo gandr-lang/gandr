@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned as _;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
@@ -75,7 +76,7 @@ pub fn root_digest(tree: &SyntaxTree<'_>) -> Option<NodeDigest>
 ///   Breadth-first traversal, source sorting, including grout and missing
 ///   subtree boundaries each change those lists.
 /// - witness: `testing::tests::readers_distinguish_tree_order_from_source_order`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let all_texts_are_tiles = ret.iter().all(|text| tree.positions().any(|position| {
         matches!(label(tree, position), Some(NodeLabel::Tile(_)))
             && tree.fragment(position).is_some_and(|fragment| fragment.as_ref() == text)
@@ -119,7 +120,7 @@ pub fn tile_texts(
 ///   unsorted traversal, omitted grout and duplicated text.
 /// - witness: `testing::tests::readers_distinguish_tree_order_from_source_order`
 /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
-#[anodized::spec(ensures: |ret| tree.positions().filter_map(|position| {
+#[spec(ensures: |ret| tree.positions().filter_map(|position| {
     let node = tree.node(position)?;
     if bool::from(node.label().carries_text()) { tree.source().fragment(node.span()).ok() } else { None }
 }).try_fold(0_usize, |length, fragment| length.checked_add(fragment.as_ref().len())) == Some(ret.len()))]

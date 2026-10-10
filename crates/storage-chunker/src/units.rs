@@ -7,6 +7,8 @@
 
 use core::fmt;
 
+use anodized::spec;
+
 use crate::error::ArithmeticOperation;
 use crate::error::ChunkerError;
 
@@ -169,7 +171,7 @@ impl ByteCount
     ///   first overflow; exact results and error payloads distinguish wrong
     ///   arithmetic, wrapping, off-by-one guards and lost operation identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_add(other.0).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
+    #[spec(ensures: |ret| ret == self.0.checked_add(other.0).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
     pub(crate) fn checked_plus(
         self,
         other: Self,
@@ -225,7 +227,7 @@ impl BytePosition
     ///   wrong arithmetic, wrapping, off-by-one guards and lost operation
     ///   identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_add(count.0).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
+    #[spec(ensures: |ret| ret == self.0.checked_add(count.0).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
     pub(crate) fn checked_advance(
         self,
         count: ByteCount,
@@ -256,7 +258,7 @@ impl BytePosition
     ///   inverted pair; exact results and error payloads distinguish wrong
     ///   arithmetic, wrapping, off-by-one guards and lost operation identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_sub(start.0).map(ByteCount).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
+    #[spec(ensures: |ret| ret == self.0.checked_sub(start.0).map(ByteCount).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
     pub(crate) fn checked_distance_from(
         self,
         start: Self,
@@ -310,7 +312,7 @@ impl RecordCount
     ///   `u32::MAX`; exact results and error payloads distinguish wrong
     ///   arithmetic, wrapping, off-by-one guards and lost operation identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_add(1_u32).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
+    #[spec(ensures: |ret| ret == self.0.checked_add(1_u32).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation }))]
     pub(crate) fn checked_increment(
         self,
         operation: ArithmeticOperation,
@@ -348,7 +350,7 @@ impl RecordPosition
     ///   wrong arithmetic, wrapping, off-by-one guards and lost operation
     ///   identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_add(u64::from(count.0)).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation: ArithmeticOperation::RecordIndex }))]
+    #[spec(ensures: |ret| ret == self.0.checked_add(u64::from(count.0)).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation: ArithmeticOperation::RecordIndex }))]
     pub(crate) fn checked_advance(
         self,
         count: RecordCount,
@@ -380,7 +382,7 @@ impl RecordPosition
     ///   `u64::MAX`; exact results and error payloads distinguish wrong
     ///   arithmetic, wrapping, off-by-one guards and lost operation identity.
     /// - witness: `units::tests::checked_arithmetic_preserves_values_and_failure_identity`
-    #[anodized::spec(ensures: |ret| ret == self.0.checked_add(1_u64).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation: ArithmeticOperation::RecordIndex }))]
+    #[spec(ensures: |ret| ret == self.0.checked_add(1_u64).map(Self).ok_or(ChunkerError::ArithmeticOverflow { operation: ArithmeticOperation::RecordIndex }))]
     pub(crate) fn checked_next(self) -> Result<Self, ChunkerError>
     {
         self.checked_advance(RecordCount(1_u32))
@@ -430,7 +432,7 @@ impl TokenCount
     ///   exact counts distinguish wrapping, premature saturation and lost
     ///   input.
     /// - witness: `units::tests::token_addition_saturates_only_past_the_width`
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(other.0))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(other.0))]
     #[must_use]
     pub(crate) const fn saturating_plus(
         self,
@@ -467,6 +469,8 @@ mod tests
     use alloc::format;
     use core::fmt;
     use core::fmt::Write as _;
+
+    use anodized::spec;
 
     use super::BoundaryResidue;
     use super::ByteCount;
@@ -600,7 +604,7 @@ mod tests
         /// - hypothesis: L3 on text emitted by this module's formatter cases;
         ///   the exact formatting result distinguishes falsely accepted writes.
         /// - witness: `units::tests::quantity_formatting_propagates_sink_failure`
-        #[anodized::spec(ensures: |ret| ret == Err(fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

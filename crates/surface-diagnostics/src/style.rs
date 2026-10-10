@@ -9,6 +9,8 @@
 
 use core::fmt;
 
+use anodized::spec;
+
 /// Whether an output destination is a terminal capable of styled rendering.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TerminalCapability
@@ -37,7 +39,7 @@ impl From<bool> for TerminalCapability
     ///   through the capability. A reversed or constant mapping changes one
     ///   result; operating-system detection is outside this conversion.
     /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
-    #[anodized::spec(ensures: |ret| matches!(ret, Self::Terminal) == is_terminal)]
+    #[spec(ensures: |ret| matches!(ret, Self::Terminal) == is_terminal)]
     #[inline]
     fn from(is_terminal: bool) -> Self
     {
@@ -81,7 +83,7 @@ impl RenderStyle
     ///   observed through their exact styles. Reversed or constant selection
     ///   changes a result; backend rendering is a separate decision surface.
     /// - witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`
-    #[anodized::spec(ensures: |ret| matches!((capability, ret),
+    #[spec(ensures: |ret| matches!((capability, ret),
         (TerminalCapability::NonTerminal, Self::Plain)
             | (TerminalCapability::Terminal, Self::Styled)
     ))]

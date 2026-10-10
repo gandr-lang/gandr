@@ -10,6 +10,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Membership;
@@ -81,7 +82,7 @@ pub enum Shown
 /// - witness: `report::tests::each_verb_shows_its_declarations`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Shown::Goal => declaration.settlement() == Settlement::Unsettled
         && unsettled_by(declaration) == Unsettled::Obligations && verb == Verb::Check(Goals::Reported),
     Shown::Line => (declaration.settlement() == Settlement::Unsettled
@@ -136,7 +137,7 @@ enum Unsettled
 ///   checks/refusal boundary, not every malformed expectation.
 /// - witness: `report::tests::each_verb_shows_its_declarations`
 /// - witness: `report::tests::each_count_decides_its_verdict`
-#[anodized::spec(ensures: |ret| (ret == Unsettled::Obligations)
+#[spec(ensures: |ret| (ret == Unsettled::Obligations)
     == matches!((declaration.stated(), declaration.outcome()),
         (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_))))]
 fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
@@ -292,7 +293,7 @@ impl SourceCounts
     /// - witness: `report::tests::report_rendering_preserves_numeric_roles_and_line_boundaries`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.0 == self.strict.0
+    #[spec(ensures: |ret| ret.0 == self.strict.0
         .saturating_add(self.fixture.0).saturating_add(self.pending.0))]
     pub fn read(&self) -> SourceCount
     {
@@ -366,7 +367,7 @@ impl SourceCount
     ///   boundary. These distinguish wraparound and premature saturation.
     /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
     /// - witness: `report::tests::each_count_decides_its_verdict`
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
     const fn one_more(self) -> Self
     {
         Self(self.0.saturating_add(1_usize))
@@ -510,7 +511,7 @@ impl RunReport
     /// - witness: `report::tests::each_count_decides_its_verdict`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let fault = self.sources.faulted.0 != 0
             || usize::from(self.tally.refusals().count(FailureClass::EngineFault)) != 0;
         let owed = usize::from(self.tally.declarations().unsettled());
@@ -566,7 +567,7 @@ impl RunReport
     ///   classification.
     /// - witness: `report::tests::each_count_decides_its_verdict`
     /// - witness: `report::tests::source_counts_saturate_without_counting_refusals`
-    #[anodized::spec(
+    #[spec(
         captures: [sources = self.sources],
         ensures: |_| self.sources.faulted.0 == sources.faulted.0.saturating_add(1_usize)
             && self.sources.strict == sources.strict && self.sources.fixture == sources.fixture
@@ -608,7 +609,7 @@ impl RunReport
     ///   observations are finite compositions, not arbitrary tally states.
     /// - witness: `report::tests::pending_sources_do_not_contribute_declarations_or_goals`
     /// - witness: `report::tests::each_count_decides_its_verdict`
-    #[anodized::spec(
+    #[spec(
         captures: [sources = self.sources, goals = usize::from(self.goals), lowerings = self.lowerings],
         ensures: |_| {
             let added_goals = if standing == Standing::Pending { 0_usize }

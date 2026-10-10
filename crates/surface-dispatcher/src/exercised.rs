@@ -17,6 +17,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::ConversionCount;
@@ -226,7 +227,7 @@ impl Exercised
     ///   representative settled declarations miss precisely the complement of
     ///   their rows.
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-    #[anodized::spec(ensures: |ref ret| ret.iter().copied().eq(
+    #[spec(ensures: |ref ret| ret.iter().copied().eq(
         Row::ALL.into_iter().filter(|&row| usize::from(self.count(row)) == 0_usize)
     ))]
     #[inline]
@@ -253,7 +254,7 @@ impl Exercised
     ///   reaching and then exceeding the ceiling never wraps another row.
     /// - witness: `exercised::tests::absorbing_sums_every_row`
     /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
-    #[anodized::spec(
+    #[spec(
         captures: [before = *self],
         ensures: |_| Row::ALL.into_iter().all(|row| usize::from(self.count(row))
             == usize::from(before.count(row)).saturating_add(usize::from(other.count(row))))
@@ -299,7 +300,7 @@ impl Exercised
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
     /// - witness: `exercised::tests::an_unsettled_declaration_carries_no_row`
     /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
-    #[anodized::spec(
+    #[spec(
         captures: [settled = report.declarations().iter()
             .filter(|declaration| declaration.settlement() == Settlement::Settled).count()],
         ensures: |ref ret| Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= settled)
@@ -335,7 +336,7 @@ impl Exercised
     /// - hypothesis: L3 — nested lambdas in one declaration mark its row once,
     ///   whereas lambdas in different declarations contribute separately.
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-    #[anodized::spec(
+    #[spec(
         captures: [before = *self],
         ensures: |_| Row::ALL.into_iter().all(|candidate| self.count(candidate)
             == if candidate == row { DeclarationCount::from(1_usize) }
@@ -394,7 +395,7 @@ impl Exercised
 ///   every core constructor are not separately generated here.
 /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
 /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
         && match declaration.produced() {
             Produced::Judged(Verdict::Owed(_)) => Row::ALL.into_iter().all(|row|
@@ -442,7 +443,7 @@ fn carried(
 /// - hypothesis: L3 — accepted conversions contribute independently of the four
 ///   direction rows; refusal-only declarations contribute no bridge.
 /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-#[anodized::spec(
+#[spec(
     captures: [before = *rows],
     ensures: |_| Row::ALL.into_iter().all(|row| rows.count(row)
         == if row == Row::SubsumptionBridge && conversions > ConversionCount::default() {
@@ -474,7 +475,7 @@ fn bridged(
 ///   counts; the table does not enumerate every unselected refusal variant.
 /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
 /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
-#[anodized::spec(
+#[spec(
     captures: [before = *rows],
     ensures: |_| {
         let selected = match refusal {
@@ -553,7 +554,7 @@ fn checking_row(
 /// - hypothesis: L3 — actual lowered declarations distinguish unsigned body
 ///   identity from another thunk, a signed body, an owed signature and refusal.
 /// - witness: `exercised::tests::only_an_identical_unsigned_body_is_whole`
-#[anodized::spec(ensures: |ret| (ret == WholeBody::Whole)
+#[spec(ensures: |ret| (ret == WholeBody::Whole)
     == matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk))]
 fn is_whole_unsigned_body(
     lowered: &LoweredDeclaration<'_>,
@@ -585,7 +586,7 @@ fn is_whole_unsigned_body(
 ///   sampled.
 /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
 /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
-#[anodized::spec(
+#[spec(
     captures: [before = *rows],
     ensures: |_| {
         let selected = match refusal {
@@ -656,7 +657,7 @@ fn lowering_row(
 ///   Pair, injection, lift, bind and case wrappers are not separately sampled.
 /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
 /// - witness: `exercised::tests::a_missing_root_discards_stale_work`
-#[anodized::spec(
+#[spec(
     captures: [before = *rows, missing = arena.value(body).is_none()],
     ensures: |_| worklist.is_empty() && Row::ALL.into_iter().all(|row|
         rows.count(row) == before.count(row) || (!missing
@@ -758,6 +759,7 @@ enum WholeBody
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationCount;
@@ -782,7 +784,7 @@ mod tests
     /// - hypothesis: L3 — real empty, accepted and refused source declarations
     ///   have independent exact row expectations, not a second composition.
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
-    #[anodized::spec(ensures: |ref ret| !source.as_ref().is_empty()
+    #[spec(ensures: |ref ret| !source.as_ref().is_empty()
         || Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) == 0_usize))]
     fn rows_of(source: SourceText<'_>) -> Exercised
     {
@@ -809,7 +811,7 @@ mod tests
     ///   saturation boundary distinguish last-write precedence from addition.
     /// - witness: `exercised::tests::absorbing_sums_every_row`
     /// - witness: `exercised::tests::absorption_saturates_and_preserves_other_rows`
-    #[anodized::spec(ensures: |ref ret| Row::ALL.into_iter().all(|row|
+    #[spec(ensures: |ref ret| Row::ALL.into_iter().all(|row|
         ret.count(row) == rows.iter().rev().find(|&&(candidate, _)| candidate == row)
             .map_or_else(DeclarationCount::default, |&(_, count)| count)))]
     fn only(rows: &[(Row, DeclarationCount)]) -> Exercised

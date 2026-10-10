@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_grammar::Pbg;
@@ -70,7 +71,7 @@ impl Ran<'_>
     /// - witness: `script::tests::each_kind_of_source_has_its_status`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         Self::Refused | Self::NoProgram => matches!(ret, RunStatus::Unreached),
         Self::Evaluated { ref evaluation, .. } => matches!((evaluation.status(), ret),
             (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
@@ -105,7 +106,7 @@ impl Ran<'_>
 ///   and resource failures are outside this finite set.
 /// - witness: `script::tests::each_kind_of_source_has_its_status`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [
         was_refused = match *composed {
             Composed::Refused(_) => true,
@@ -185,7 +186,7 @@ pub fn execute<'source>(composed: &mut Composed<'source>) -> Ran<'source>
 /// - witness: `run::run::run_source_runs_source_text`
 /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [before = usize::from(*lowerings)],
     ensures: |ref ret| usize::from(*lowerings) == if matches!(*ret, Err(ComposeFault::Parse(_))) {
         before
@@ -250,7 +251,7 @@ impl ScriptRun<'_>
     /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         Self::Fault { .. } => matches!(ret, RunStatus::Unreached),
         Self::Source { ref ran, .. } => matches!((ran.status(), ret),
             (RunStatus::Value, RunStatus::Value) | (RunStatus::Failed, RunStatus::Failed)
@@ -322,7 +323,7 @@ impl Script
     /// - witness: `run::run::run_source_file_reports_the_path_of_an_absent_file`
     /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [expected_path = self.path.as_path()],
         ensures: |ref ret| match *ret {
             ScriptRun::Fault { path, .. } => path == expected_path,

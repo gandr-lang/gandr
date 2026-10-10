@@ -18,6 +18,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
@@ -64,7 +65,7 @@ impl RenderDepth
     ///   exact successors; nested nodes on both sides of the rendering limit
     ///   distinguish a missing step, wraparound and an off-by-one cutoff.
     /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     const fn child(self) -> Self
     {
         Self(self.0.saturating_add(1))
@@ -95,7 +96,7 @@ impl RenderDepth
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret| if arena.command(command).is_none() {
+#[spec(ensures: |ref ret| if arena.command(command).is_none() {
     ret == "<dangling>"
 } else { ret.starts_with('⟨') && ret.ends_with('⟩') })]
 pub fn render_command(
@@ -125,7 +126,7 @@ pub fn render_command(
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret| match arena.producer(producer) {
+#[spec(ensures: |ref ret| match arena.producer(producer) {
     | None => ret == "<dangling>",
     | Some(&ProducerNode::Variable { zone, index }) => ret.strip_prefix(match zone {
         | Zone::Intuitionistic => 'x', | Zone::Linear => 'l',
@@ -160,7 +161,7 @@ pub fn render_producer(
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret| match arena.consumer(consumer) {
+#[spec(ensures: |ref ret| match arena.consumer(consumer) {
     | None => ret == "<dangling>",
     | Some(&ConsumerNode::Top) => ret == "★",
     | Some(&ConsumerNode::Covariable(index)) => ret.strip_prefix('α').and_then(|digits| digits.parse::<u32>().ok()) == Some(u32::from(index)),
@@ -216,7 +217,7 @@ macro_rules! text {
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
-#[anodized::spec(
+#[spec(
     captures: [fixed = match root { Piece::Text(Token(text)) => Some(text), _ => None },
         owned_length = match root { Piece::Owned(ref text) => Some(text.len()), _ => None },
         elided = matches!(root, Piece::Command(_, depth) | Piece::Producer(_, depth) | Piece::Consumer(_, depth) if depth >= RenderDepth::LIMIT)],
@@ -272,7 +273,7 @@ fn render(
 /// - witness: `pretty::tests::renders_terminal_cut`
 /// - witness: `pretty::tests::renders_lambda_cocase`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
-#[anodized::spec(ensures: |ref ret| match (arena.command(id), ret.as_slice()) {
+#[spec(ensures: |ref ret| match (arena.command(id), ret.as_slice()) {
     | (Some(&CommandNode::Cut { polarity, producer, consumer }), &[Piece::Text(Token("⟨")), Piece::Producer(p, pd), Piece::Text(Token(bar)), Piece::Consumer(c, cd), Piece::Text(Token("⟩"))]) =>
         producer == p && consumer == c && pd == depth && cd == depth
             && bar == match polarity { Polarity::Positive => " |+ ", Polarity::Negative => " |− " },
@@ -325,7 +326,7 @@ fn command(
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
-#[anodized::spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
+#[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) => true,
 }) && match arena.producer(id) {
@@ -416,7 +417,7 @@ fn producer(
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
-#[anodized::spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
+#[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
     | Piece::Text(_) | Piece::Owned(_) => true,
 }) && match arena.consumer(id) {
@@ -493,7 +494,7 @@ fn consumer(
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
-#[anodized::spec(ensures: |ref ret|
+#[spec(ensures: |ref ret|
     matches!(ret.first(), Some(&Piece::Text(Token(found))) if found == name.0)
         && matches!(ret.get(1), Some(&Piece::Text(Token("("))))
         && matches!(ret.last(), Some(&Piece::Text(Token(")"))))
@@ -549,7 +550,7 @@ fn applied(
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
-#[anodized::spec(ensures: |ret| match *tag {
+#[spec(ensures: |ret| match *tag {
     | ConstructorTag::Unit => matches!(ret.0.as_bytes(), b"unit"),
     | ConstructorTag::Pair => matches!(ret.0.as_bytes(), b"pair"),
     | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl"),
@@ -582,7 +583,7 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
 ///   the wrong binder count within the current vocabulary.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
-#[anodized::spec(ensures: |ret| match *tag {
+#[spec(ensures: |ret| match *tag {
     | ConstructorTag::Unit => matches!(ret.0.as_bytes(), b"() \xE2\x87\x92 "),
     | ConstructorTag::Pair => matches!(ret.0.as_bytes(), b"pair(x, x) \xE2\x87\x92 "),
     | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl(x) \xE2\x87\x92 "),
@@ -614,7 +615,7 @@ const fn pattern_text(tag: &ConstructorTag) -> Token
 ///   point, truncation and incorrect escaping.
 /// - witness: `pretty::tests::renders_structural_heads`
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
-#[anodized::spec(ensures: |ref ret| match *literal {
+#[spec(ensures: |ref ret| match *literal {
     | Literal::Integer(ref integer) => ret.strip_prefix(if integer.sign() == Sign::Negative { "-" } else { "" })
         == Some(integer.magnitude().as_ref()),
     | Literal::Numeric(ref numeric) => ret.strip_prefix(if numeric.sign() == Sign::Negative { "-" } else { "" })

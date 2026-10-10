@@ -1,6 +1,7 @@
 //! The core arena as a [`Source`]: checked types, and the values evaluation
 //! and readback leave in the arena.
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -93,7 +94,7 @@ impl<'arena> CoreSource<'arena>
     ///   admission position and the exact table end expose shifted names or a
     ///   missing-entry fallback. Arbitrary callback behavior is excluded.
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    #[anodized::spec(ensures: |ret| usize::from(constant) < self.names.len()
+    #[spec(ensures: |ret| usize::from(constant) < self.names.len()
         || matches!(ret, Former::Unreadable)
     )]
     fn named(
@@ -126,7 +127,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    #[anodized::spec(ensures: |ret| match (self.arena.value(id), ret) {
+    #[spec(ensures: |ret| match (self.arena.value(id), ret) {
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
@@ -201,7 +202,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    #[anodized::spec(ensures: |ret| match (self.arena.value_type(id), ret) {
+    #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (None, Former::Unreadable)
         | (Some(&ValueType::Unit), Former::UnitType)
         | (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
@@ -270,7 +271,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
-    #[anodized::spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
+    #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
         | (None, Former::Unreadable) => true,
         | (Some(&CompType::Returner(result)), Former::Returner(actual)) => actual == CoreNode::ValueType(result),
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
@@ -328,7 +329,7 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
-    #[anodized::spec(ensures: |ret| match node {
+    #[spec(ensures: |ret| match node {
         | CoreNode::Computation(id) => matches!((self.arena.computation(id).is_some(), ret),
             (true, Former::Computation) | (false, Former::Unreadable)),
         | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable),

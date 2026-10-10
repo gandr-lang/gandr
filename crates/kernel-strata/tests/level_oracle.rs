@@ -33,6 +33,7 @@ mod level_oracle
     use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
 
+    use anodized::spec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelError;
     use gandr_kernel_strata::LevelValue;
@@ -187,7 +188,7 @@ mod level_oracle
     ///   prefix beyond the selector width distinguish missing modulo, a bad
     ///   zero guard and narrowing overflow by exact optional child indices.
     /// - witness: `level_oracle::level_oracle::selector_and_topological_builder_boundaries`
-    #[anodized::spec(ensures: |ret| ret.map(|id| id.0) == u32::try_from(built.0).ok()
+    #[spec(ensures: |ret| ret.map(|id| id.0) == u32::try_from(built.0).ok()
         .and_then(|modulus| selector.0.checked_rem(modulus)).and_then(|index| usize::try_from(index).ok()))]
     fn pick(
         selector: NodeSelector,
@@ -216,7 +217,7 @@ mod level_oracle
     ///   resulting term distinguishes a forward edge, wrong fallback or changed
     ///   selector reduction.
     /// - witness: `level_oracle::level_oracle::selector_and_topological_builder_boundaries`
-    #[anodized::spec(ensures: |ret| ret.nodes.len() == shapes.len() && ret.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(ensures: |ret| ret.nodes.len() == shapes.len() && ret.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -319,7 +320,7 @@ mod level_oracle
     ///   shared child reuse distinguish missing traversal steps and an
     ///   incorrect root.
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -356,7 +357,7 @@ mod level_oracle
     ///   defaulted missing child by exact values and the dangling-child
     ///   variant.
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(ensures: |ret| ret.is_ok() == (id.0 < values.len()))]
+    #[spec(ensures: |ret| ret.is_ok() == (id.0 < values.len()))]
     fn child<Value>(
         values: &[Value],
         id: TermId,
@@ -388,7 +389,7 @@ mod level_oracle
     ///   must return `ReferenceOverflow`. These boundaries expose defaulting,
     ///   wrong join arithmetic, missing increments and wraparound.
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -441,7 +442,7 @@ mod level_oracle
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
     /// - witness: `level_oracle::level_oracle::prop_eq_agrees_with_semantic_reference`
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -484,7 +485,7 @@ mod level_oracle
     ///   u128 ceiling. Exact counts and overflow distinguish arena-node
     ///   counting from unfolding multiplicity and unchecked arithmetic.
     /// - witness: `level_oracle::level_oracle::unfolding_count_and_spike_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|count|
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|count|
         eval(term, &BTreeMap::new()).is_ok_and(|value| u128::from(value) <= count.0)))]
     fn succ_count(term: &Term) -> Result<SuccCount, TermFailure>
     {
@@ -520,7 +521,7 @@ mod level_oracle
     ///   one ascending entry each; the zero term yields none. The exact spike
     ///   family observes omission, duplication and altered variable identities.
     /// - witness: `level_oracle::level_oracle::unfolding_count_and_spike_boundaries`
-    #[anodized::spec(ensures: |ret| term.nodes.iter().all(|node| match *node {
+    #[spec(ensures: |ret| term.nodes.iter().all(|node| match *node {
         TermNode::Var(index) => ret.contains(&index),
         TermNode::Zero | TermNode::Succ(_) | TermNode::Max(_, _) => true,
     }) && ret.iter().all(|index| term.nodes.iter().any(|node| matches!(*node, TermNode::Var(found) if found == *index))))]
@@ -563,7 +564,7 @@ mod level_oracle
     ///   the next spike, exposing omissions, a wrong height and unchecked
     ///   increment.
     /// - witness: `level_oracle::level_oracle::unfolding_count_and_spike_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|family| {
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|family| {
         let mut names = variables(left);
         names.extend(variables(right));
         family.first().is_some_and(BTreeMap::is_empty)
@@ -615,7 +616,7 @@ mod level_oracle
     /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
     /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|answer|
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|answer|
         valuation_family(left, right).is_ok_and(|family| bool::from(*answer) ==
             family.iter().all(|valuation| match (eval(left, valuation), eval(right, valuation)) {
                 (Ok(left), Ok(right)) => u128::from(left).checked_add(u128::from(bool::from(strict)))
@@ -664,7 +665,7 @@ mod level_oracle
     ///   reversed comparison.
     /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
     /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
-    #[anodized::spec(requires: [left, right].iter().all(|term|
+    #[spec(requires: [left, right].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -709,7 +710,7 @@ mod level_oracle
     ///   with different syntax; lost normalization or wrong symmetry changes
     ///   that equality.
     /// - witness: `level_oracle::level_oracle::prop_eq_agrees_with_semantic_reference`
-    #[anodized::spec(requires: [left, right].iter().all(|term|
+    #[spec(requires: [left, right].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -751,7 +752,7 @@ mod level_oracle
     ///   refutation branches, exposing wrong modes, offsets and invalid
     ///   counter-valuations.
     /// - witness: `level_oracle::level_oracle::prop_evidence_validates`
-    #[anodized::spec(requires: [left, right].iter().all(|term|
+    #[spec(requires: [left, right].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -813,7 +814,7 @@ mod level_oracle
     ///   non-strict order; equal terms and one-successor gaps expose a missing
     ///   increment or an inclusive strict comparison.
     /// - witness: `level_oracle::level_oracle::prop_lt_equals_succ_leq`
-    #[anodized::spec(requires: [left, right].iter().all(|term|
+    #[spec(requires: [left, right].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -852,7 +853,7 @@ mod level_oracle
     ///   changed normalization, operand loss or an incorrect unit violates
     ///   those identities.
     /// - witness: `level_oracle::level_oracle::prop_max_laws`
-    #[anodized::spec(requires: [first, second, third].iter().all(|term|
+    #[spec(requires: [first, second, third].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -898,7 +899,7 @@ mod level_oracle
     ///   join-before-successor, including zero and shared operands; a missing
     ///   component increment or incorrect absorption breaks canonical equality.
     /// - witness: `level_oracle::level_oracle::prop_succ_distributes_over_max`
-    #[anodized::spec(requires: [first, second].iter().all(|term|
+    #[spec(requires: [first, second].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -940,7 +941,7 @@ mod level_oracle
     ///   join upper bounds; wrong strictness, an asymmetric equality decision
     ///   or a lost join component breaks the exact laws.
     /// - witness: `level_oracle::level_oracle::prop_order_laws`
-    #[anodized::spec(requires: [first, second].iter().all(|term|
+    #[spec(requires: [first, second].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -990,7 +991,7 @@ mod level_oracle
     ///   chains; when both premises hold, the conclusion must hold. A missing
     ///   transitive comparison fails the exact verdict implication.
     /// - witness: `level_oracle::level_oracle::prop_leq_is_transitive`
-    #[anodized::spec(requires: [first, second, third].iter().all(|term|
+    #[spec(requires: [first, second, third].iter().all(|term|
         !term.nodes.is_empty() && term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
@@ -1031,7 +1032,7 @@ mod level_oracle
     ///   and successor.
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
     /// - witness: `level_oracle::level_oracle::reference_arithmetic_and_absence_boundaries`
-    #[anodized::spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,

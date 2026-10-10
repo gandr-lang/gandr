@@ -25,6 +25,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::error::ChunkerError;
 use crate::error::ProfileField;
 use crate::error::RawDiscriminator;
@@ -80,7 +82,7 @@ impl AlgorithmVersion
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
     /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
-    #[anodized::spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16 })]
+    #[spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16 })]
     #[inline]
     #[must_use]
     pub const fn discriminator(self) -> RawDiscriminator
@@ -115,7 +117,7 @@ impl TryFrom<u16> for AlgorithmVersion
     ///   admitted discriminators, their successor and the maximum; exact
     ///   variants and refusal payloads distinguish changed guards and mappings.
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
-    #[anodized::spec(ensures: |ret| ret == match raw {
+    #[spec(ensures: |ret| ret == match raw {
         1 => Ok(Self::FastCdc2020),
         2 => Ok(Self::TypedCdc),
         _ => Err(ChunkerError::UnsupportedProfileValue {
@@ -231,7 +233,7 @@ impl CommitmentWriter
     /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
     /// - witness: `commitment::tests::field_encoding_preserves_order_and_all_widths`
-    #[anodized::spec(ensures: |ret| ret.0.len() == PARAMETER_DOMAIN.len().saturating_add(2)
+    #[spec(ensures: |ret| ret.0.len() == PARAMETER_DOMAIN.len().saturating_add(2)
         && ret.0.starts_with(PARAMETER_DOMAIN)
         && ret.0.ends_with(&algorithm.discriminator().0.to_le_bytes()))]
     pub(crate) fn open(algorithm: AlgorithmVersion) -> Self
@@ -259,7 +261,7 @@ impl CommitmentWriter
     ///   bytes distinguish truncation, endian swaps, prefix damage and
     ///   reordering.
     /// - witness: `commitment::tests::field_encoding_preserves_order_and_all_widths`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.0.len(),
         ensures: match field {
             CommitmentField::Byte(value) => self.0.get(before..) == Some([value].as_slice()),
@@ -304,6 +306,8 @@ mod tests
     use alloc::vec;
     use core::fmt;
     use core::fmt::Write as _;
+
+    use anodized::spec;
 
     use super::AlgorithmVersion;
     use super::CommitmentField;
@@ -356,7 +360,7 @@ mod tests
         /// - hypothesis: L3 on text emitted by this module's formatter cases;
         ///   the exact formatting result distinguishes falsely accepted writes.
         /// - witness: `commitment::tests::hexadecimal_rendering_preserves_bytes_and_sink_failure`
-        #[anodized::spec(ensures: |ret| ret == Err(fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

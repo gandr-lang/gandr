@@ -17,6 +17,7 @@ mod session
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_surface_diagnostics::Entry;
     use gandr_surface_diagnostics::Report;
     use gandr_surface_diagnostics::entries;
@@ -81,7 +82,7 @@ mod session
         ///   and emptiness, distinguishing skipped creation or retained stale
         ///   contents.
         /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
-        #[anodized::spec(requires: test.components().count() == 1
+        #[spec(requires: test.components().count() == 1
             && matches!(test.components().next(), Some(std::path::Component::Normal(_))),
             ensures: |ret| ret.0.is_dir() && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()))]
         fn new(test: &Path) -> Self
@@ -115,7 +116,7 @@ mod session
         ///   source; the instrumented absence check detects skipped or
         ///   incomplete removal.
         /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
-        #[anodized::spec(requires: self.0.is_dir(), ensures: !self.0.exists())]
+        #[spec(requires: self.0.is_dir(), ensures: !self.0.exists())]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -148,7 +149,7 @@ mod session
     ///   a pinned URI; corpus sessions link each published URI to its source.
     /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-    #[anodized::spec(requires: path.is_absolute() && path.to_str().is_some(),
+    #[spec(requires: path.is_absolute() && path.to_str().is_some(),
         ensures: |ret| ret.strip_prefix("file://").is_some_and(|encoded|
             percent_encoding::percent_decode_str(encoded).eq(path.as_os_str().as_encoded_bytes().iter().copied())))]
     fn uri(path: &Path) -> String
@@ -173,7 +174,7 @@ mod session
     ///   full sessions observe each protocol response and publication.
     /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
     /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
-    #[anodized::spec(ensures: |ret| ret.as_ref().windows(4)
+    #[spec(ensures: |ret| ret.as_ref().windows(4)
         .filter(|window| *window == b"\r\n\r\n").count() == messages.len())]
     fn frames(messages: &[Value]) -> Body
     {
@@ -200,7 +201,7 @@ mod session
     ///   meaning.
     /// - witness: `session::session::wire_helpers_preserve_escaped_paths_and_unicode_payloads`
     /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
-    #[anodized::spec(ensures: |ret| ret.len() == output.as_ref().windows(4)
+    #[spec(ensures: |ret| ret.len() == output.as_ref().windows(4)
         .filter(|window| *window == b"\r\n\r\n").count())]
     fn written(output: &Body) -> Vec<Value>
     {
@@ -230,7 +231,7 @@ mod session
     ///   ending and lost transport faults.
     /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
     /// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
-    #[anodized::spec(ensures: |ret| ret.1.len() <= messages.len()
+    #[spec(ensures: |ret| ret.1.len() <= messages.len()
         && ret.1.iter().all(|message| message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")))]
     fn session(messages: &[Value]) -> (Served, Vec<Value>)
     {
@@ -293,7 +294,7 @@ mod session
     ///   shifts.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
     /// - witness: `session::session::a_refusal_is_published_where_the_renderer_renders_it`
-    #[anodized::spec(
+    #[spec(
         requires: index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok(),
         ensures: |ret| index.utf16_pos_of_byte(ByteOffset::from(usize::from(byte))).is_ok_and(|position|
             ret.get("line").and_then(Value::as_u64) == u64::try_from(usize::from(position.row)).ok()
@@ -329,7 +330,7 @@ mod session
     ///   exact ranges, codes and labels distinguish lost or misprojected report
     ///   fields.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-    #[anodized::spec(ensures: |ret|
+    #[spec(ensures: |ret|
         ret.get("code").is_some_and(|code| code.is_null() == matches!(report.identifier(), Maybe::Absent(_)))
             && ret.get("message").is_some_and(Value::is_string)
             && ret.get("related").and_then(Value::as_array).is_some_and(|related|
@@ -377,7 +378,7 @@ mod session
     ///   renderer-stage observations, distinguishing dropped or reordered
     ///   diagnostics and missing codes, titles or causal labels.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-    #[anodized::spec(requires: publication.pointer("/params/diagnostics").is_some_and(Value::is_array),
+    #[spec(requires: publication.pointer("/params/diagnostics").is_some_and(Value::is_array),
         ensures: |ret| publication.pointer("/params/diagnostics").and_then(Value::as_array).is_some_and(|diagnostics|
             ret.len() == diagnostics.len() && ret.iter().zip(diagnostics).all(|(projected, original)|
                 projected.get("range") == original.get("range")
@@ -422,7 +423,7 @@ mod session
     ///   and fixture roots, distinguishing a wrong or unavailable corpus root.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
     /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-    #[anodized::spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
+    #[spec(ensures: |ret| ret.is_absolute() && ret.is_dir() && ret.ends_with("surface-corpus"))]
     fn corpus() -> PathBuf
     {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -450,7 +451,7 @@ mod session
     ///   grammar-classified bytes. Runtime checks distinguish URI shape,
     ///   duplicate paths and ordering deviations.
     /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-    #[anodized::spec(ensures: |ret|
+    #[spec(ensures: |ret|
         ret.iter().all(|source| source.uri.starts_with("file://")
             && Path::new(&source.uri).extension().is_some_and(|extension| extension == "gandr"))
             && ret.iter().zip(ret.iter().skip(1)).all(|(first, second)|

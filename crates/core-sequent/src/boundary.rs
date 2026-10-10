@@ -8,6 +8,8 @@
 
 use core::fmt;
 
+use anodized::spec;
+
 /// Defines a transparent copyable newtype over one `usize`, with `From`
 /// conversions both ways and `Display` passthrough.
 macro_rules! count_wrapper {
@@ -148,7 +150,7 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     ///   lossy conversions are excluded.
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Some(address) => {
             let offset: u32 = address.into();
             usize::try_from(offset) == Ok(family.len()) && offset < u32::MAX
@@ -183,7 +185,7 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     ///   excluded.
     /// - witness: `boundary::tests::address_reads_distinguish_end_and_truncation`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [offset = Into::<u32>::into(self)],
         ensures: |ret| match ret {
             | Some(node) => usize::try_from(offset).ok()

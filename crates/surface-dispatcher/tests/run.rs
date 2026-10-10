@@ -14,6 +14,7 @@ mod run
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Evaluation;
     use gandr_surface_dispatcher::LoweringCount;
@@ -54,7 +55,7 @@ mod run
         /// - witness: `run::run::run_source_file_runs_a_script_file`
         /// - witness: `run::run::run_source_file_accepts_an_executable_shebang_line`
         /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
-        #[anodized::spec(ensures: |ref ret| ret.0.metadata().is_ok_and(|metadata|
+        #[spec(ensures: |ref ret| ret.0.metadata().is_ok_and(|metadata|
             metadata.is_file() && u64::try_from(text.as_ref().len())
                 .is_ok_and(|offered| metadata.len() == offered)))]
         fn write(
@@ -88,7 +89,7 @@ mod run
         ///   skipped removal on normal exit. Unwinding and external filesystem
         ///   changes are outside this witness.
         /// - witness: `run::run::run_source_file_runs_a_script_file`
-        #[anodized::spec(ensures: self.0.try_exists().is_ok_and(|exists| !exists))]
+        #[spec(ensures: self.0.try_exists().is_ok_and(|exists| !exists))]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_file(&self.0);
@@ -112,7 +113,7 @@ mod run
     ///   not arbitrary evaluation errors or parser recovery.
     /// - witness: `run::run::run_source_runs_source_text`
     /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
-    #[anodized::spec(ensures: |ref ret| match *ret {
+    #[spec(ensures: |ref ret| match *ret {
         Ran::Evaluated { target, .. } => text.as_ref().contains(target.as_ref()),
         Ran::Refused | Ran::NoProgram => true,
     })]
@@ -143,7 +144,7 @@ mod run
     /// - witness: `run::run::run_source_file_runs_a_script_file`
     /// - witness: `run::run::run_source_file_accepts_an_executable_shebang_line`
     /// - witness: `run::run::run_source_file_surfaces_a_source_failure_unchanged`
-    #[anodized::spec(requires: expected.status() == expected_status)]
+    #[spec(requires: expected.status() == expected_status)]
     fn assert_runs_to(
         path: &Path,
         expected_text: SourceText<'_>,

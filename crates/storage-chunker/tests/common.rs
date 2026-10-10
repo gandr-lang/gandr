@@ -1,5 +1,6 @@
 //! Limits, corpora and partition checks the area suites share.
 
+use anodized::spec;
 use gandr_storage_chunker::ByteCount;
 use gandr_storage_chunker::BytePosition;
 use gandr_storage_chunker::ByteSpan;
@@ -30,7 +31,7 @@ use gandr_storage_chunker::SeedPolicy;
 ///   reasons separate substitutions of the limits those corpora exercise.
 /// - witness: `tests::gear::the_caps_force_their_reasons`
 /// - witness: `tests::gear::minimum_limits_suppress_an_early_hash_cut`
-#[anodized::spec(
+#[spec(
     requires: {
         let [min, target, max] = bytes;
         let [min_records, target_records, max_records] = records;
@@ -114,7 +115,7 @@ impl Concatenated
 /// - hypothesis: L2 on empty and nonuniform records including empty records;
 ///   exact prefix spans distinguish omitted lengths, gaps and off-by-one edges.
 /// - witness: `tests::common::record_edges_match_independent_prefixes`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let mut expected = 0_u64;
     ret.len() == records.as_ref().len() && ret.iter().zip(records.as_ref()).all(|(span, record)| {
         let start = expected;
@@ -153,7 +154,7 @@ pub fn record_spans(records: CanonicalRecords<'_>) -> Vec<ByteSpan>
 /// - hypothesis: L3 at empty, interior and maximum-width differences; exact
 ///   lengths distinguish reversed subtraction and narrowing.
 /// - witness: `tests::common::length_observers_preserve_empty_and_width_boundaries`
-#[anodized::spec(
+#[spec(
     requires: chunk.bytes().end() >= chunk.bytes().start(),
     ensures: |ret| u64::from(chunk.bytes().start()).checked_add(u64::from(ret)) == Some(u64::from(chunk.bytes().end())),
 )]
@@ -180,7 +181,7 @@ pub fn byte_len(chunk: &ChunkSpan) -> ByteCount
 /// - hypothesis: L3 at empty, interior and maximum-width differences; exact
 ///   counts distinguish reversed subtraction and narrowing.
 /// - witness: `tests::common::length_observers_preserve_empty_and_width_boundaries`
-#[anodized::spec(
+#[spec(
     requires: u64::from(chunk.records().end()).checked_sub(u64::from(chunk.records().start()))
         .is_some_and(|len| u32::try_from(len).is_ok()),
     ensures: |ret| u64::from(chunk.records().start()).checked_add(u64::from(u32::from(ret))) == Some(u64::from(chunk.records().end())),
@@ -215,7 +216,7 @@ pub fn record_len(chunk: &ChunkSpan) -> RecordCount
 /// - witness: `tests::gear::the_two_entry_points_agree`
 /// - witness: `tests::common::partition_oracle_rejects_empty_record_ranges`
 /// - witness: `tests::common::partition_oracle_rejects_broken_geometry`
-#[anodized::spec(ensures: {
+#[spec(ensures: {
     chunks.iter().all(|chunk| chunk.records().end() > chunk.records().start())
         && chunks.array_windows::<2>().all(|pair| pair[0].bytes().end() == pair[1].bytes().start()
             && pair[0].records().end() == pair[1].records().start())
@@ -296,7 +297,7 @@ pub fn assert_partition(
 ///   time; acceptance and rejection distinguish wrong-axis and strictness
 ///   faults.
 /// - witness: `tests::common::cap_oracle_rejects_each_excess`
-#[anodized::spec(ensures: chunks.iter().all(|chunk| {
+#[spec(ensures: chunks.iter().all(|chunk| {
     u64::from(chunk.bytes().end()).checked_sub(u64::from(chunk.bytes().start()))
         .is_some_and(|len| len <= u64::from(limits.max_bytes()))
         && u64::from(chunk.records().end()).checked_sub(u64::from(chunk.records().start()))

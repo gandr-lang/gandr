@@ -20,6 +20,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
@@ -157,7 +158,7 @@ enum Kind
 /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
 /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::UnitType | Former::Product(..)
         | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. }),
@@ -249,7 +250,7 @@ enum Reach
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let deep = admits == Admits::Value && depth.0 >= DEPTH_LIMIT.0;
     let admitted = matches!((admits, kind), (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
@@ -325,7 +326,7 @@ enum Children<Node>
 /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
 /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-#[anodized::spec(ensures: |ret| match *former {
+#[spec(ensures: |ret| match *former {
     | Former::Product(..) | Former::Sum(..) | Former::StaticPi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
@@ -404,7 +405,7 @@ where
 ///   golden observes the resulting presentation boundary.
 /// - witness: `walk::tests::depth_boundaries_preserve_precedence_and_saturation`
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
-#[anodized::spec(ensures: |ret| ret.0 == if kind == Kind::Value { depth.0.saturating_add(1_u32) } else { depth.0 })]
+#[spec(ensures: |ret| ret.0 == if kind == Kind::Value { depth.0.saturating_add(1_u32) } else { depth.0 })]
 fn below(
     depth: ValueDepth,
     kind: Kind,
@@ -482,7 +483,7 @@ impl Infix
     /// - hypothesis: L3 — product and sum spellings in the finite grammar
     ///   fixtures distinguish swapped operators and missing separators.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    #[anodized::spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
+    #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
         (Self::Product, &[b' ', b'*']) | (Self::Sum, &[b' ', b'+'])
     ))]
     const fn glyphs(self) -> Glyphs<'static>
@@ -504,7 +505,7 @@ impl Infix
     ///   distinguish reversed precedence and unnecessary parentheses; other
     ///   binding classes are not returned by this function.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (Self::Product, Binding::Product) | (Self::Sum, Binding::Sum)
     ))]
     const fn binding(self) -> Binding
@@ -529,7 +530,7 @@ impl Infix
     /// - hypothesis: L3 — left- and right-nested product and sum fixtures
     ///   distinguish a missing left parenthesis and lost right association.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (Self::Product, Binding::Prefix) | (Self::Sum, Binding::Product)
     ))]
     const fn left(self) -> Binding
@@ -667,7 +668,7 @@ impl<'names> Binders<'names>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
-    #[anodized::spec(
+    #[spec(
         captures: [cached = self.generated.get(position.0).map(|name| name.0.as_ptr())],
         ensures: |ret| match ret {
             | Maybe::Present(name) => cached.is_none_or(|held| core::ptr::eq(held, name.0.as_ptr()))
@@ -720,7 +721,7 @@ impl<'names> Binders<'names>
 ///   remaining ordinal interval is not enumerated.
 /// - witness: `walk::tests::candidate_names_cross_rounds_without_losing_the_last_ordinal`
 /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     | Maybe::Present(ref name) => {
         let letter = name.0.as_bytes().first().copied().and_then(|byte| byte.checked_sub(b'a'));
         let round = name.0.get(1..).and_then(|text| if text.is_empty() { Some(0_u32) } else { text.parse::<u32>().ok() });
@@ -776,7 +777,7 @@ fn candidate(ordinal: Ordinal) -> Maybe<BinderName, binder::Absent>
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref names) => u32::try_from(names.len()).is_ok_and(|count| count <= VISIT_BUDGET),
     Maybe::Absent(scan::Absent::OverBudget) => true,
 })]
@@ -834,7 +835,7 @@ where
 ///   parameter sort and a variable level distinguish polarity, lost levels and
 ///   unsupported forms. The fixtures do not enumerate large constants.
 /// - witness: `goldens::tests::universes_spell_their_sort_and_level`
-#[anodized::spec(ensures: |ref ret| match (sort, ret) {
+#[spec(ensures: |ref ret| match (sort, ret) {
     | (Sort::Parameter(_), &Maybe::Absent(universe::Absent::ParameterSort)) => true,
     | (Sort::Ground(_), &Maybe::Absent(universe::Absent::LevelVariable)) => level.atoms().next().is_some(),
     | (Sort::Ground(ground), &Maybe::Present(ref text)) => {
@@ -889,7 +890,7 @@ fn universe(
 ///   Arbitrary Unicode strings and all magnitudes are not enumerated.
 /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
 /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
-#[anodized::spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
+#[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
     | Literal::Integer(ref integer) => {
         let digits = match integer.sign() {
             Sign::Negative => ret.0.strip_prefix('-'),
@@ -989,7 +990,7 @@ impl Walk<'_, '_, '_>
     ///   and allocation failures are outside these fixtures.
     /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
-    #[anodized::spec(
+    #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
         ensures: |ref ret| match *ret {
             | Ok(doc) => glyphs.0.is_empty() || doc != self.builder.empty(),
@@ -1023,7 +1024,7 @@ impl Walk<'_, '_, '_>
     ///   failure phase.
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
-    #[anodized::spec(
+    #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| match *ret {
@@ -1067,7 +1068,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `walk::tests::failed_atoms_do_not_push_pieces_or_restore_fidelity`
-    #[anodized::spec(
+    #[spec(
         requires: !glyphs.0.contains(['\r', '\n', '\t']),
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.fidelity == Fidelity::Approximate && match *ret {
@@ -1105,7 +1106,7 @@ impl Walk<'_, '_, '_>
     ///   Other Unicode names are outside these finite fixtures.
     /// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`
     /// - witness: `walk::tests::unprintable_names_are_approximate_atoms`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| {
             let text: &str = name.as_ref();
@@ -1151,7 +1152,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity],
         ensures: |ref ret| ((fidelity != Fidelity::Approximate && index.0 < self.open.0)
             || self.fidelity == Fidelity::Approximate)
@@ -1201,7 +1202,7 @@ impl Walk<'_, '_, '_>
     ///   an incomplete join and an empty stack expose a swallowed underflow.
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), top = self.pieces.last().copied()],
         ensures: |ref ret| match *ret {
             | Ok(piece) => top.is_some_and(|held| held.doc == piece.doc && held.binding == piece.binding)
@@ -1234,7 +1235,7 @@ impl Walk<'_, '_, '_>
     ///   finite grammar cases do not exhaust all possible composite trees.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
             | Ok(doc) => (doc == piece.doc) == (piece.binding <= loosest),
@@ -1276,7 +1277,7 @@ impl Walk<'_, '_, '_>
     ///   width-tainted alternatives. Other widths are not enumerated.
     /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
     /// - witness: `goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
             | Ok(doc) => doc != head,
@@ -1317,7 +1318,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
     /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
     /// - witness: `goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len()],
         ensures: |ref ret| self.pieces.len() == entry && match *ret {
             | Ok(doc) => doc != head,
@@ -1367,7 +1368,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), pending = tasks.len(), opened = self.open, fidelity = self.fidelity],
         ensures: |ref ret| self.open == opened
             && (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
@@ -1509,7 +1510,7 @@ impl Walk<'_, '_, '_>
     ///   arbitrary changing sources are not enumerated.
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `walk::tests::spine_schedules_operator_first_at_the_depth_limit`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = tasks.len()],
         ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
@@ -1576,7 +1577,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `walk::tests::binder_exhaustion_preserves_existing_names`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), fidelity = self.fidelity,
             exhausted = self.open.0 >= self.binders.generated.len() && self.binders.next.0 == u32::MAX],
         ensures: |ref ret| self.pieces.len() == entry
@@ -1639,7 +1640,7 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right) => Some(1_usize),
             Join::Infix(_) | Join::Arrow | Join::Pi | Join::Bracket(Bracket::Pair) => Some(2_usize),
@@ -1799,7 +1800,7 @@ impl Walk<'_, '_, '_>
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     | Ok(Walked::Built { doc, .. }) => doc != builder.empty(),
     | Ok(Walked::OverBudget) | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => true,
     | Err(PresentationError::Render(_)) => false,
@@ -1864,6 +1865,7 @@ mod tests
 {
     use core::cell::Cell;
 
+    use anodized::spec;
     use gandr_surface_layout::units::PageWidth;
 
     use super::Fidelity;
@@ -1905,7 +1907,7 @@ mod tests
         ///   are outside this fixture, whose own cutoff keeps the failure
         ///   finite.
         /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-        #[anodized::spec(
+        #[spec(
             captures: [entry = self.reads.get()],
             ensures: |ret| self.reads.get() == entry.saturating_add(1_u32)
                 && matches!(ret, Former::UnitType | Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable),

@@ -27,6 +27,7 @@ use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_kernel_strata::LevelOffset;
 use quenchant_shape::shape::Maybe;
 
@@ -200,7 +201,7 @@ impl From<CodecError> for CheckpointStoreError
     /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
     /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
     /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match (error, ret) {
             | (CodecError::Corrupt, Self::Corrupt)
             | (CodecError::NonCanonical, Self::NonCanonical)
@@ -431,7 +432,7 @@ impl CheckpointStore for MemoryCheckpointStore
     ///   decoding twice.
     /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.records.len()],
         ensures: |ret| {
             self.records.len() == before
@@ -510,7 +511,7 @@ impl CheckpointStore for MemoryCheckpointStore
     /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
     /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
     /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
-    #[anodized::spec(
+    #[spec(
         captures: [
             before = self.records.len(),
             held = self.records.contains_key(&(address, backend)),
@@ -589,7 +590,7 @@ impl FileCheckpointStore
     ///
     /// # Errors
     /// [`CheckpointStoreError::Io`] — the directory cannot be created.
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)),
     )]
     #[inline]
@@ -642,7 +643,7 @@ impl CheckpointStore for FileCheckpointStore
     /// - witness: `persistence::tests::file_load_distinguishes_not_found_from_other_read_errors`
     /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
     /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             matches!(
                 ret,
@@ -734,7 +735,7 @@ impl CheckpointStore for FileCheckpointStore
     /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
     /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
     /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             matches!(
                 ret,
@@ -788,7 +789,7 @@ enum Failure
     clippy::std_instead_of_core,
     reason = "`core::io::ErrorKind` is not stable yet"
 )]
-#[anodized::spec(
+#[spec(
     ensures: |ret| match error.kind() {
         | std::io::ErrorKind::NotFound => ret == Failure::NotFound,
         | std::io::ErrorKind::AlreadyExists => ret == Failure::AlreadyExists,
@@ -868,7 +869,7 @@ impl TemporaryRecord
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
     /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match ret {
             | Ok(ref record) => {
                 record.published == Publication::Private
@@ -939,7 +940,7 @@ impl TemporaryRecord
     ///   without claiming that a refused removal could not leave a temporary.
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.published],
         ensures: |ret| match ret {
             | Ok(()) => self.published == Publication::Published,
@@ -1012,7 +1013,7 @@ struct ArtifactBytes(Vec<u8>);
 ///   unwitnessed.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 /// - witness: `persistence::tests::file_load_rejects_path_mismatch_corruption_truncation_and_trailing_bytes`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref artifact) => u64::try_from(payload.0.len()).is_ok_and(|length| {
             FILE_HEADER_LEN.checked_add(payload.0.len()) == Some(artifact.0.len())
@@ -1059,7 +1060,7 @@ fn artifact_bytes(
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.len() == program.references().len()
             && ret
@@ -1102,7 +1103,7 @@ fn contents_of(program: &Program) -> Vec<ItemContent>
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(_) => program.items().iter().all(|item| {
             let signature = match item.declaration().signature() {
@@ -1147,7 +1148,7 @@ pub fn address_of(program: &Program) -> Result<CheckpointAddress, CheckpointStor
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Err(CheckpointStoreError::LevelOffsetTooLarge { offset }) => {
             u64::from(offset) >= crate::codec::MAX_DECODED_LEVEL_OFFSET
@@ -1189,7 +1190,7 @@ pub fn encode_checkpoints(
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         matches!(
             ret,
@@ -1229,7 +1230,7 @@ pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, Checkp
 ///
 /// # Errors
 /// As [`address_of`] and [`CheckpointStore::store`].
-#[anodized::spec(
+#[spec(
     requires: checkpoints.items().len() == program.references().len()
         && checkpoints
             .items()
@@ -1292,7 +1293,7 @@ where
 ///
 /// # Errors
 /// As [`address_of`] and [`CheckpointStore::load`].
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(_) => program.items().iter().all(|item| {
             let signature = match item.declaration().signature() {
@@ -1346,6 +1347,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::body;
     use gandr_core_checker::signature;
@@ -1445,7 +1447,7 @@ mod tests
         ///   prefix.
         /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
         /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
-        #[anodized::spec(
+        #[spec(
             captures: [
                 before = self.stored.len(),
                 invalidated = self.invalidated.len(),
@@ -1477,7 +1479,7 @@ mod tests
         ///   cloning earlier entries.
         /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
         /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-        #[anodized::spec(
+        #[spec(
             captures: [before = self.invalidated.len(), stored = self.stored.len()],
             ensures: |ret| {
                 before.checked_add(1) == Some(self.invalidated.len())
@@ -1529,7 +1531,7 @@ mod tests
     ///   or machine widths.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-    #[anodized::spec(
+    #[spec(
         requires: checkpoints.items().iter().all(|checkpoint| {
             checkpoint
                 .content()
@@ -1565,7 +1567,7 @@ mod tests
     ///   graph.
     /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
     /// - witness: `persistence::tests::file_load_rejects_parseable_noncanonical_payload_after_integrity_checks`
-    #[anodized::spec(
+    #[spec(
         captures: [count = nodes.len()],
         ensures: |ret| {
             ret.budget() == CheckBudget::DEFAULT
@@ -1622,7 +1624,7 @@ mod tests
     ///   a rebuilt output buffer.
     /// - witness: `persistence::tests::rewriting_the_first_frame_preserves_unequal_length_neighbors`
     /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-    #[anodized::spec(
+    #[spec(
         requires: !from.as_ref().is_empty(),
         ensures: |ret| {
             bytes
@@ -1679,7 +1681,7 @@ mod tests
     ///   roots resolve.
     /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
     /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret.items().len() == 1
                 && ret.items().first().is_some_and(|item| {

@@ -11,6 +11,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::NodeIndex;
@@ -119,7 +120,7 @@ impl<'source> ParseResult<'source>
     /// - witness: `parse::tests::obligations_are_reported_in_severity_then_source_order`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end())))]
+    #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end())))]
     pub fn obligations(&self) -> &[ObligationInstance]
     {
         &self.obligations
@@ -163,7 +164,7 @@ impl<'source> ParseResult<'source>
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| [ClosingClass::Paren, ClosingClass::Bracket, ClosingClass::Brace].into_iter().all(|family| {
+    #[spec(ensures: |ret| [ClosingClass::Paren, ClosingClass::Bracket, ClosingClass::Brace].into_iter().all(|family| {
         ret.iter().filter(|&&class| class == family).count() == self.tree.positions().filter(|&position| self.tree.node(position).is_some_and(|node| matches!(node.label(), NodeLabel::GhostClose { class, .. } if class == family))).count()
     }))]
     pub fn minted_close_classes(&self) -> Vec<ClosingClass>
@@ -252,7 +253,7 @@ impl<'source> ParseResult<'source>
 /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
 /// - witness: `parse::tests::arbitrary_source_parses_totally`
 #[inline]
-#[anodized::spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|parsed| {
+#[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|parsed| {
     parsed.tree.source() == source && parsed.tree.grammar() == pbg.fingerprint()
         && parsed.tree.node(parsed.tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald)
         && parsed.obligations.iter().zip(parsed.obligations.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end()))
@@ -295,6 +296,7 @@ mod tests
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::SourceText;
@@ -519,7 +521,7 @@ mod tests
     ///   Exact nested members, suffixes and sorted paths detect shallow-only
     ///   walks, wrong extensions and nondeterministic ordering.
     /// - witness: `parse::tests::source_inventory_is_sorted_and_excludes_non_sources`
-    #[anodized::spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr"))
+    #[spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr"))
         && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left <= right))]
     fn gandr_files(dir: &Path) -> Vec<PathBuf>
     {
@@ -568,7 +570,7 @@ mod tests
     ///
     /// # Errors
     /// The read failure, carrying `path`.
-    #[anodized::spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| error.path == path))]
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| error.path == path))]
     fn read_source(path: &Path) -> Result<String, ReadSourceError>
     {
         std::fs::read_to_string(path).map_err(|source| ReadSourceError {

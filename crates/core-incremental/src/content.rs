@@ -26,6 +26,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
 use gandr_core_term::CompType;
@@ -341,7 +342,7 @@ impl Children
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(
+    #[spec(
         requires: children.len() <= 3,
         ensures: |ret| ret.count == children.len()
             && ret.slots.get(..ret.count) == Some(children),
@@ -391,7 +392,7 @@ impl ContentNode
     ///   values.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         | Self::Variable { .. }
         | Self::Constant(_)
         | Self::Unit
@@ -486,7 +487,7 @@ impl ContentNode
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         use Sort::CompType as C;
         use Sort::Computation as M;
         use Sort::Value as V;
@@ -604,7 +605,7 @@ impl ContentNode
     ///   from unreachable and unresolved entries; the attribute does not assert
     ///   borrowed payload identity in a const expression.
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) => matches!(ret, Maybe::Present(_)),
         _ => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
@@ -676,7 +677,7 @@ impl Sites
     /// - hypothesis: L2 — projection checks all four node families and an
     ///   unreached identifier in the same arena.
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
-    #[anodized::spec(ensures: |ret| match self.0.get(&node) {
+    #[spec(ensures: |ret| match self.0.get(&node) {
         Some(&index) => ret == Maybe::Present(index),
         None => ret == Maybe::Absent(site::Absent::Unreached),
     })]
@@ -828,7 +829,7 @@ impl ItemContent
     ///   independently encoding its root. Raw malformed roots are not covered
     ///   by that witness.
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Maybe::Present(ref content) => match self.signature {
             Maybe::Present(root) => self.nodes.get(usize::from(root)).map_or_else(
                 || content.nodes == [ContentNode::Unresolved(Sort::Value)],
@@ -908,7 +909,7 @@ impl TypeContent
     ///   path.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[anodized::spec(ensures: |ret| match program.arena().value_type(ty) {
+    #[spec(ensures: |ret| match program.arena().value_type(ty) {
             | Some(_) => ret.nodes.first().is_some_and(|node| {
                 node.sort() == Sort::ValueType && !matches!(*node, ContentNode::Unresolved(_))
             }),
@@ -939,7 +940,7 @@ impl TypeContent
     ///   claimed here.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
             ret.nodes.first().is_some_and(|node| {
                 node.sort()
                     == match root {
@@ -1010,7 +1011,7 @@ impl TypeContent
     ///   predicate checks successful seat resolution, not a second encoding.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Maybe::Present(id) => arena.value_type(id).is_some(),
         Maybe::Absent(_) => true,
     })]
@@ -1068,7 +1069,7 @@ pub struct Encoded
 /// - witness: `content::tests::content_is_free_of_arena_ids`
 /// - witness: `content::tests::a_shared_node_is_listed_once`
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-#[anodized::spec(ensures: |ret| ret.sites.0.len() == ret.content.nodes.len()
+#[spec(ensures: |ret| ret.sites.0.len() == ret.content.nodes.len()
     && ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
@@ -1137,7 +1138,7 @@ pub fn encode_item(
 ///   corpus separate opaque and resolving tables.
 /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(ensures: |ret| (ret == Opacity::Opaque)
+#[spec(ensures: |ret| (ret == Opacity::Opaque)
     == nodes.iter().any(|node| matches!(*node, ContentNode::Unresolved(_))))]
 pub fn opacity_of(nodes: &[ContentNode]) -> Opacity
 {
@@ -1211,7 +1212,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     /// - hypothesis: L2 — a shared node retains one number; separately
     ///   allocated equal nodes retain distinct numbers.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
-    #[anodized::spec(
+    #[spec(
         captures: [old = self.seen.get(&node).copied(), count = self.seen.len(), queued = self.queue.len()],
         ensures: |ret| self.seen.get(&node) == Some(&ret) && match old {
             Some(index) => ret == index && self.seen.len() == count && self.queue.len() == queued,
@@ -1245,7 +1246,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   discovery-numbered table.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[anodized::spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
+    #[spec(ensures: self.queue.is_empty() && self.nodes.len() == self.seen.len()
         && self.seen.values().all(|index| usize::from(*index) < self.nodes.len()))]
     fn drain(&mut self)
     {
@@ -1269,7 +1270,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   branch.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-    #[anodized::spec(ensures: |ret| ret.sort() == match node {
+    #[spec(ensures: |ret| ret.sort() == match node {
         ArenaNode::Value(_) => Sort::Value,
         ArenaNode::Computation(_) => Sort::Computation,
         ArenaNode::ValueType(_) => Sort::ValueType,
@@ -1314,7 +1315,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. The attribute does not independently reconstruct
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(ensures: |ret| ret.sort() == Sort::Value
+    #[spec(ensures: |ret| ret.sort() == Sort::Value
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value(
@@ -1368,7 +1369,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. The attribute does not independently reconstruct
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(ensures: |ret| ret.sort() == Sort::Computation
+    #[spec(ensures: |ret| ret.sort() == Sort::Computation
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_computation(
@@ -1423,7 +1424,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. The attribute does not independently reconstruct
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(ensures: |ret| ret.sort() == Sort::ValueType
+    #[spec(ensures: |ret| ret.sort() == Sort::ValueType
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_value_type(
@@ -1481,7 +1482,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ///   formers and sharing. The attribute does not independently reconstruct
     ///   every payload.
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-    #[anodized::spec(ensures: |ret| ret.sort() == Sort::CompType
+    #[spec(ensures: |ret| ret.sort() == Sort::CompType
         && !matches!(ret, ContentNode::Unresolved(_))
         && ret.children().iter().all(|(child, _)| usize::from(child) < self.seen.len()))]
     fn read_comp_type(
@@ -1529,7 +1530,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
 ///   explicit discovery-numbered tables.
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
         nodes.get(usize::from(root)).map_or_else(
             || ret == [ContentNode::Unresolved(Sort::Value)],
             |node| ret.first().is_some_and(|first| first.sort() == node.sort()),
@@ -1584,7 +1585,7 @@ pub fn renumber(
 ///   selection.
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `content::tests::renumbering_closes_dangling_and_cyclic_tables`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
         core::mem::discriminant(&ret) == core::mem::discriminant(node)
             && ret.sort() == node.sort()
             && ret
@@ -1776,7 +1777,7 @@ enum MintFrame
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Maybe::Present(Minted::ValueType(id)) => arena.value_type(id).is_some()
         && nodes.first().is_some_and(|node| node.sort() == Sort::ValueType),
     Maybe::Present(Minted::CompType(id)) => arena.comp_type(id).is_some()
@@ -1852,7 +1853,7 @@ fn mint_table(
 ///   and open states are not claimed as direct witness coverage.
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[anodized::spec(ensures: |ret| match states.get(usize::from(index)) {
+#[spec(ensures: |ret| match states.get(usize::from(index)) {
     Some(&MintState::Done(Minted::ValueType(id))) => ret == Maybe::Present(id),
     _ => ret == Maybe::Absent(seating::Absent::IllSorted),
 })]
@@ -1881,7 +1882,7 @@ fn minted_value_type(
 ///   and open states are not claimed as direct witness coverage.
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[anodized::spec(ensures: |ret| match states.get(usize::from(index)) {
+#[spec(ensures: |ret| match states.get(usize::from(index)) {
     Some(&MintState::Done(Minted::CompType(id))) => ret == Maybe::Present(id),
     _ => ret == Maybe::Absent(seating::Absent::IllSorted),
 })]
@@ -1916,7 +1917,7 @@ fn minted_comp_type(
 /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::malformed_type_tables_fail_by_structure`
-#[anodized::spec(
+#[spec(
     requires: node.children().iter().all(|(child, _)| matches!(states.get(usize::from(child)), Some(&MintState::Done(_)))),
     ensures: |ret| match ret {
         Maybe::Present(Minted::ValueType(id)) => node.sort() == Sort::ValueType && arena.value_type(id).is_some(),
@@ -2061,7 +2062,7 @@ fn mint_node(
 ///   and skipped positions distinguish successful relocation by occurrence.
 /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
 /// - witness: `content::tests::abstract_types_relocate_by_key_and_occurrence`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
         | Maybe::Present(position) => layout
             .items
             .iter()
@@ -2092,6 +2093,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_checker::Declaration;
     use gandr_core_checker::OriginToken;
     use gandr_core_checker::body;
@@ -2135,7 +2137,7 @@ mod tests
     /// - witness: `content::tests::content_is_free_of_arena_ids`
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
-    #[anodized::spec(ensures: |ret| ret.items().len() == 1
+    #[spec(ensures: |ret| ret.items().len() == 1
         && ret.items().first().is_some_and(|item| item.declaration().signature() == signature
             && item.declaration().body() == body
             && item.declaration().constant() == ConstantIndex::from(0_usize)))]
@@ -2179,7 +2181,7 @@ mod tests
     ///   and reconstruction in a noisy arena preserves that shared graph.
     /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[anodized::spec(ensures: |ret| match arena.value_type(ret) {
+    #[spec(ensures: |ret| match arena.value_type(ret) {
             | Some(&gandr_core_term::ValueType::Thunk(arrow)) => match arena.comp_type(arrow) {
                 | Some(&gandr_core_term::CompType::Arrow { domain, codomain }) => {
                     arena.value_type(domain)

@@ -6,6 +6,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -48,7 +49,7 @@ enum Pending
 ///   equality and unvalidated lookups. This observes the finite pure fragment,
 ///   not cyclic graphs or equivalence modulo reduction.
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
-#[anodized::spec(ensures: |ret| ret != Agreement::Same ||
+#[spec(ensures: |ret| ret != Agreement::Same ||
     (left_arena.computation(left).is_some() && right_arena.computation(right).is_some()))]
 pub fn same_computation(
     left_arena: &CoreArena,
@@ -75,7 +76,7 @@ pub fn same_computation(
 ///   equality and unvalidated lookups. This observes the finite pure fragment,
 ///   not cyclic graphs or equivalence modulo reduction.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
-#[anodized::spec(ensures: |ret| ret != Agreement::Same ||
+#[spec(ensures: |ret| ret != Agreement::Same ||
     (left_arena.value(left).is_some() && right_arena.value(right).is_some()))]
 pub fn same_value(
     left_arena: &CoreArena,
@@ -106,7 +107,7 @@ pub fn same_value(
 ///   comparison, not cyclic inputs or equivalence modulo evaluation.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
-#[anodized::spec(ensures: |ret| match start {
+#[spec(ensures: |ret| match start {
     | Pending::Values(left, right) => match (left_arena.value(left), right_arena.value(right)) {
         | (Some(left), Some(right)) => match *left {
             | Value::Unit | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),

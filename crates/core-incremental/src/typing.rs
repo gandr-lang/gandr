@@ -12,6 +12,7 @@
 //! projected: it is the producer's coordinate for the item, echoed from the
 //! edited declaration, never reused from a checkpoint.
 
+use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
@@ -350,7 +351,7 @@ impl Projection<'_, '_, '_>
     ///   all valid arenas have been exercised through this entry.
     /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
-    #[anodized::spec(ensures: |ret| match *verdict {
+    #[spec(ensures: |ret| match *verdict {
         | Verdict::Checked { evidence, .. } => {
             matches!(ret, Typing::Checked { conversions } if conversions == evidence.conversions())
         },
@@ -419,7 +420,7 @@ impl Projection<'_, '_, '_>
     ///   same-arena node outside the item walk distinguish absent membership
     ///   from arena validity. No arbitrary-table well-formedness is claimed.
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
-    #[anodized::spec(ensures: |ret| match self.sites.of(node) {
+    #[spec(ensures: |ret| match self.sites.of(node) {
         Maybe::Present(index) => ret == Site::Node(index),
         Maybe::Absent(_) => ret == Site::Unreached,
     })]
@@ -483,7 +484,7 @@ impl Projection<'_, '_, '_>
     ///   and machine-invariant cases are outside the witnessed domain.
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
-    #[anodized::spec(ensures: |ret| match (refusal, &ret) {
+    #[spec(ensures: |ret| match (refusal, &ret) {
         | (
             CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }),
             &Refusal::TypeMismatch { at: projected, .. },
@@ -759,7 +760,7 @@ impl Projection<'_, '_, '_>
 ///   does not establish all arena-growth histories or the truth of an arbitrary
 ///   verdict supplied without its judgement context.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
-#[anodized::spec(
+#[spec(
     requires: usize::from(ordinal) < program.items().len(),
     ensures: |ret| match *verdict {
         | Verdict::Checked { evidence, .. } => {
@@ -796,6 +797,7 @@ mod tests
     use alloc::string::String;
     use alloc::vec;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Declaration;
@@ -854,7 +856,7 @@ mod tests
     ///   resumed state.
     /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
-    #[anodized::spec(ensures: |ret| match ret.0 {
+    #[spec(ensures: |ret| match ret.0 {
         | Verdict::Checked { evidence, .. } => {
             matches!(ret.1, Typing::Checked { conversions } if conversions == evidence.conversions())
         },

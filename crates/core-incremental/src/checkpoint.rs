@@ -39,6 +39,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::FormedValueType;
@@ -224,7 +225,7 @@ impl ItemCheckpoint
     ///   and cardinality without retaining an owned copy of the incoming
     ///   support.
     /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
-    #[anodized::spec(
+    #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
             ret.support.len() <= count
@@ -342,7 +343,7 @@ impl ItemCheckpoint
     ///   before reuse.
     /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
     /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
-    #[anodized::spec(
+    #[spec(
         captures: [count = support.len()],
         ensures: |ret| {
             ret.support.len() <= count
@@ -612,7 +613,7 @@ impl Resume
     ///   handles; subsequent insertion and deletion check retained and stale
     ///   identities. Order-capacity failures are outside the witnessed domain.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
-    #[anodized::spec(
+    #[spec(
         captures: [count = checkpoints.items.len(), budget = checkpoints.budget],
         ensures: |ret| {
             ret.as_ref().is_ok_and(|restored| {
@@ -724,7 +725,7 @@ impl Resume
     /// - hypothesis: L2 — insertion orders retained and fresh identities;
     ///   deletion makes either stale operand fail independently.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match (
             self.handles.iter().position(|&handle| handle == left),
             self.handles.iter().position(|&handle| handle == right),
@@ -757,7 +758,7 @@ impl Resume
     ///   deleting an item makes its old handle stale rather than naming its
     ///   neighbour.
     /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             self.handles
                 .iter()
@@ -808,7 +809,7 @@ impl Resume
 /// - hypothesis: L2 — the property suite compares every generated program's
 ///   batch checkpoints against the checker's batch entry, projected.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.as_ref().is_ok_and(|checked| {
             checked.checkpoints.budget == budget
@@ -871,7 +872,7 @@ pub fn check_program(
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
-#[anodized::spec(
+#[spec(
     captures: [budget = base.checkpoints.budget],
     ensures: |ret| {
         ret.as_ref().is_ok_and(|resumed| {
@@ -928,7 +929,7 @@ pub fn resume(
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.as_ref().is_ok_and(|resumed| {
             resumed.checkpoints.budget == base.budget
@@ -1037,7 +1038,7 @@ impl MemoKey for ItemIdentity<'_>
     /// - witness: `tests::incremental::noop_edit_adopts_everything`
     /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
     /// - witness: `tests::incremental::type_change_retypes_the_dependent`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| (ret == ContentAgreement::Agree) == (self.content == other.content),
     )]
     #[inline]
@@ -1072,7 +1073,7 @@ impl MemoKey for ItemIdentity<'_>
 ///   hash computation.
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Maybe::Present(ref identity) => {
             core::ptr::eq(&raw const *identity.content, &raw const *content)
@@ -1193,7 +1194,7 @@ impl MemoChoice for OrderedMemoChoice
     ///   claimed as witnessed here.
     /// - witness: `tests::incremental::noop_edit_adopts_everything`
     /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             usize::from(ret.entry_count()) <= base.items.len()
                 && ret.plane_entry_count(ItemPlane::Items) == ret.entry_count()
@@ -1268,7 +1269,7 @@ struct Candidate<'base>
 /// - hypothesis: L3 — zero, the last representable increment and the saturated
 ///   boundary distinguish increment from wraparound or premature saturation.
 /// - witness: `checkpoint::tests::census_increment_saturates_at_the_boundary`
-#[anodized::spec(
+#[spec(
     captures: [before = usize::from(*count)],
     ensures: usize::from(*count) == before.saturating_add(1),
 )]
@@ -1316,7 +1317,7 @@ enum Standing
 ///   predicate checks input identity correspondence and output census shape.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `checkpoint::tests::revision_handles_track_insertions_and_deletions`
-#[anodized::spec(
+#[spec(
     requires: base_handles.len() == base.items.len()
         && base_handles.iter().zip(&base.items).all(|(&handle, item)| {
             order.reference(handle) == Maybe::Present(item.content.reference())
@@ -1410,7 +1411,7 @@ where
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
-#[anodized::spec(
+#[spec(
     requires: encoded.len() == edited.items().len()
         && encoded
             .iter()
@@ -1581,7 +1582,7 @@ where
 ///   named failures, rather than only successfully allocated seats.
 /// - witness: `tests::incremental::noop_edit_adopts_everything`
 /// - witness: `tests::incremental::satisfied_ascription_types_and_keeps_dependents_adoptable`
-#[anodized::spec(
+#[spec(
     captures: [before = usize::from(census.minted)],
     ensures: |ret| {
         if matches!(
@@ -1671,7 +1672,7 @@ struct AdoptionInput<'input, 'base>
 /// - witness: `tests::incremental::an_ascription_endpoint_is_a_read`
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
-#[anodized::spec(
+#[spec(
     requires: input.supplied.len() == usize::from(input.ordinal),
     ensures: |ret| {
         let transparent = input.item.content.opacity() == Opacity::Transparent;
@@ -1789,7 +1790,7 @@ fn adopt(
 ///   references and answers directly rather than the layout lookup map.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
-#[anodized::spec(
+#[spec(
     requires: input.supplied.len() == usize::from(input.ordinal),
     ensures: |ret| {
         (ret == Standing::Stands)
@@ -1848,7 +1849,7 @@ fn support_holds(
 ///   unrelated changed value and an untyped answer do not invalidate the guard.
 /// - witness: `tests::incremental::a_type_stable_body_edit_reaches_a_type_position`
 /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         (ret == Standing::Falls)
             == (input
@@ -1902,7 +1903,7 @@ fn touches(
 ///   judgement.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.len() <= support.consulted().len()
             && ret.windows(2).all(|pair| {
@@ -1943,7 +1944,7 @@ fn answered(
 ///   input changes the retained answers rather than preserving the previous
 ///   checkpoint support.
 /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
-#[anodized::spec(
+#[spec(
     captures: [count = support.len()],
     ensures: |ret| {
         ret.len() <= count
@@ -1974,7 +1975,7 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
 ///   typed and untyped answers against independently checked results.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
-#[anodized::spec(
+#[spec(
     captures: [present = matches!(answer, Maybe::Present(_))],
     ensures: |ret| match ret {
         | Answer::Typed(ref ty) => {
@@ -2025,7 +2026,7 @@ fn answer_of(
 /// - witness: `tests::incremental::a_changed_value_reaches_through_an_untouched_definition`
 /// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
 /// - witness: `checkpoint::tests::value_change_closure_handles_cycles_and_opaque_readers`
-#[anodized::spec(
+#[spec(
     requires: footprints.len() == encoded.len(),
     ensures: |ret| {
         usize::from(census.value_changed) == ret.len()

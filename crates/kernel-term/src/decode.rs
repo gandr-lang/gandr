@@ -2920,6 +2920,8 @@ mod tests
 {
     use alloc::vec;
 
+    use anodized::spec;
+
     use super::ByteReader;
     use crate::error::DecodeError;
     use crate::error::MalformedSite;
@@ -3334,7 +3336,7 @@ mod tests
     ///   and distinguishes every matching and mismatching reference family.
     /// - witness: `decode::tests::reference_families_preserve_order_and_failure_precedence`
     /// - witness: `decode::tests::decoded_entries_preserve_every_former_and_child_position`
-    #[anodized::spec(ensures: |ret| ret.nodes.len() == 8
+    #[spec(ensures: |ret| ret.nodes.len() == 8
         && ret.children.len() == 8
         && ret.families.as_slice() == [super::Family::ValueType, super::Family::Value,
             super::Family::CompType, super::Family::Computation, super::Family::ValueType,

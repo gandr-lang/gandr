@@ -21,6 +21,8 @@
 //! a parent's digest does not fold it, so reformatting a declaration leaves its
 //! identity unchanged.
 
+use anodized::spec;
+
 use crate::mold::ClosingClass;
 use crate::mold::GroutShape;
 use crate::mold::GroutSort;
@@ -194,7 +196,7 @@ impl NodeLabel
     ///   pinned values, and a duplicated row breaks distinctness.
     /// - witness: `label::tests::every_digest_tag_is_pinned`
     /// - witness: `label::tests::the_digest_tags_are_pairwise_distinct`
-    #[anodized::spec(ensures: |ret| ret.0 == match self {
+    #[spec(ensures: |ret| ret.0 == match self {
         Self::Wald => 1_u8, Self::Meld(_) => 2_u8, Self::Tile(_) => 3_u8,
         Self::Grout { .. } => 4_u8, Self::GhostClose { .. } => 5_u8, Self::Space => 6_u8,
     })]
@@ -232,7 +234,7 @@ impl NodeLabel
     ///   exhaustively with each variant's exact answer asserted, so promoting
     ///   or demoting any single variant breaks one assertion.
     /// - witness: `label::tests::only_leaves_carry_text`
-    #[anodized::spec(ensures: |ret| ret.0 == matches!(self, Self::Tile(_) | Self::Grout { .. } | Self::GhostClose { .. } | Self::Space))]
+    #[spec(ensures: |ret| ret.0 == matches!(self, Self::Tile(_) | Self::Grout { .. } | Self::GhostClose { .. } | Self::Space))]
     #[inline]
     #[must_use]
     pub const fn carries_text(self) -> CarriesText
@@ -255,7 +257,7 @@ impl NodeLabel
     ///   exhaustively with each variant's exact answer asserted; changing the
     ///   boundary between layout and content flips an observed answer.
     /// - witness: `label::tests::only_layout_is_insignificant`
-    #[anodized::spec(ensures: |ret| ret.0 != matches!(self, Self::Space))]
+    #[spec(ensures: |ret| ret.0 != matches!(self, Self::Space))]
     #[inline]
     #[must_use]
     pub const fn significance(self) -> Significance

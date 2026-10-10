@@ -4,6 +4,7 @@
 use core::error::Error;
 use core::fmt::Write as _;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Regex;
 use gandr_surface_grammar::Rule;
@@ -476,7 +477,7 @@ fn no_obligations_on_well_formed_fragments() -> Result<(), Box<dyn Error>>
 ///   it.
 /// - witness: `tests::contracts::arbitrary_real_mold_streams_parse_totally`
 /// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
-#[anodized::spec(ensures: |ret| usize::from(ret) >= 1 && (id != tree.root() || usize::from(ret) == usize::from(tree.node_count())) && (tree.node(id).is_some() || usize::from(ret) == 1))]
+#[spec(ensures: |ret| usize::from(ret) >= 1 && (id != tree.root() || usize::from(ret) == usize::from(tree.node_count())) && (tree.node(id).is_some() || usize::from(ret) == 1))]
 fn count_nodes(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -595,7 +596,7 @@ fn trace_precedence_climbs_like_figure_23() -> Result<(), Box<dyn Error>>
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_left_associates_like_figure_24`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["n", "*", "+", "(", ")"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["n", "*", "+", "(", ")"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
 fn arith_pbg() -> Result<Pbg, Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -663,7 +664,7 @@ fn arith_pbg() -> Result<Pbg, Box<dyn Error>>
 ///   API.
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == pbg.fingerprint() && tree.node(tree.root()).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Wald)))]
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == pbg.fingerprint() && tree.node(tree.root()).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Wald)))]
 fn commit_stream<'source>(
     pbg: &Pbg,
     tiles: &[MoldedTile],
@@ -690,7 +691,7 @@ fn commit_stream<'source>(
 ///   against the assembled source and retain exactly its text-carrying byte
 ///   coverage. Reordering, dropping or inserting text changes source agreement.
 /// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
-#[anodized::spec(ensures: |ret| tiles.iter().try_fold(ret.as_str(), |rest, tile| rest.strip_prefix(<&str>::from(tile.text()))) == Some(""))]
+#[spec(ensures: |ret| tiles.iter().try_fold(ret.as_str(), |rest, tile| rest.strip_prefix(<&str>::from(tile.text()))) == Some(""))]
 fn assembled(tiles: &[MoldedTile]) -> String
 {
     tiles.iter().map(|tile| <&str>::from(tile.text())).collect()
@@ -711,7 +712,7 @@ fn assembled(tiles: &[MoldedTile]) -> String
 ///   observations.
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
-#[anodized::spec(requires: labels.iter().all(|&label| pbg.candidates(label).len() == 1), ensures: |ret| ret.len() == labels.len() && ret.iter().zip(labels).all(|(tile, &label)| Some(&tile.mold()) == pbg.candidates(label).first() && <&str>::from(tile.text()) == label.0))]
+#[spec(requires: labels.iter().all(|&label| pbg.candidates(label).len() == 1), ensures: |ret| ret.len() == labels.len() && ret.iter().zip(labels).all(|(tile, &label)| Some(&tile.mold()) == pbg.candidates(label).first() && <&str>::from(tile.text()) == label.0))]
 fn stream(
     pbg: &Pbg,
     labels: &[TileLabel],
@@ -738,7 +739,7 @@ fn stream(
 ///   excluded by the documented precondition and the fixture predicate.
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_left_associates_like_figure_24`
-#[anodized::spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
+#[spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
 fn only(
     pbg: &Pbg,
     label: TileLabel,
@@ -764,7 +765,7 @@ fn only(
 ///   helper.
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
-#[anodized::spec(requires: tree.children(tree.root()).len() == 1, ensures: |ret| tree.children(tree.root()).next() == Some(ret))]
+#[spec(requires: tree.children(tree.root()).len() == 1, ensures: |ret| tree.children(tree.root()).next() == Some(ret))]
 fn sole_meld(tree: &SyntaxTree<'_>) -> NodeIndex
 {
     let top = children(tree, tree.root());
@@ -786,7 +787,7 @@ fn sole_meld(tree: &SyntaxTree<'_>) -> NodeIndex
 ///   leakage.
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
-#[anodized::spec(ensures: |ret| bool::from(ret) == tree.children(id).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).map_or("", <&str>::from) == <&str>::from(wanted)))]
+#[spec(ensures: |ret| bool::from(ret) == tree.children(id).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).map_or("", <&str>::from) == <&str>::from(wanted)))]
 fn has_tile(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -811,7 +812,7 @@ fn has_tile(
 ///   children.
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
 /// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
-#[anodized::spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
+#[spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
 fn direct_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,

@@ -17,6 +17,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::CmdPat;
@@ -198,7 +199,7 @@ impl From<MintRefusal> for ReifyRefusal
 /// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
 /// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [entry = arena.watermark()],
     ensures: |ref ret| match ret.as_ref() {
         | Ok(&command) => matches!(arena.command(command), Some(&crate::il::CommandNode::Cut { polarity, .. }) if polarity == pattern.polarity()),
@@ -240,7 +241,7 @@ pub fn reify_command(
 /// - witness: `bridge::tests::a_frozen_cut_reifies_to_the_command_il`
 /// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
 /// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
-#[anodized::spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&command|
+#[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&command|
     arena.command(command).is_some_and(|&crate::il::CommandNode::Cut { polarity, producer, consumer }|
         polarity == pattern.polarity() && arena.producer(producer).is_some() && arena.consumer(consumer).is_some())))]
 fn reify(
@@ -275,7 +276,7 @@ fn reify(
 /// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
 /// - witness: `bridge::tests::a_return_frame_reifies_to_a_mu_tilde`
 /// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
-#[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+#[spec(ensures: |ref ret| match ret.as_ref() {
     | Ok(tag) => resolver.get(symbol) == Some(tag) && tag.producer_arity() == found,
     | Err(error) => match *error {
         | ReifyRefusal::UnresolvedConstructor(ref missing) => missing == symbol && resolver.get(symbol).is_none(),
@@ -336,7 +337,7 @@ enum Step<'pattern>
 ///   refusal; arity is checked before children.
 /// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
 /// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
-#[anodized::spec(ensures: |ref ret| match root.view() {
+#[spec(ensures: |ref ret| match root.view() {
     | ProdView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
     | ProdView::Ctor { ctor, args } => ret.is_err() || ret.as_ref().is_ok_and(|&id|
         arena.producer(id).is_some_and(|node| matches!(*node, ProducerNode::Constructor { ref tag, ref producers, ref consumers }
@@ -408,7 +409,7 @@ fn reify_producer(
 /// - witness: `bridge::tests::an_operation_frame_is_the_opaque_boundary`
 /// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
 /// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
-#[anodized::spec(ensures: |ref ret| match root.view() {
+#[spec(ensures: |ref ret| match root.view() {
     | ConsView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
     | ConsView::Op { op, .. } => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::OperationFrame(ref found) if found == op)),
     | ConsView::Top => ret.is_err() || ret.as_ref().is_ok_and(|&id| matches!(arena.consumer(id), Some(&ConsumerNode::Top))),

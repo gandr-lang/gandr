@@ -14,6 +14,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::diagnostic::DiagnosticCode;
 
 /// A zero-based byte offset into a source document.
@@ -125,7 +127,7 @@ impl ByteRange
     /// - witness: `present::tests::an_empty_range_is_a_position`
     /// - witness: `present::tests::an_inverted_range_is_refused`
     #[inline]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(range) => start <= end && range.start == start && range.end == end,
         Err(error) => end < start && error.start == start && error.end == end,
     })]
@@ -199,7 +201,7 @@ impl<'input> serde::Deserialize<'input> for ByteRange
     /// - witness: `present::tests::byte_ranges_keep_the_existing_json_shape`
     /// - witness: `present::tests::an_inverted_range_is_refused_on_decode`
     #[inline]
-    #[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |range| range.start <= range.end))]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |range| range.start <= range.end))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'input>,
@@ -609,7 +611,7 @@ impl core::error::Error for PosOfByteError
 /// - witness: `present::tests::the_empty_source_has_one_position`
 /// - witness: `present::tests::the_end_of_the_source_is_a_position`
 #[inline]
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Ok(at) => text.0.get(..byte.0.min(text.0.len())).is_some_and(|prefix|
         at.row.0 == prefix.bytes().filter(|&ch| ch == b'\n').count()
             && at.col.0 == prefix.rsplit('\n').next().map_or(0, |line| line.chars().count())),
@@ -680,7 +682,7 @@ pub fn pos_of_byte(
 /// - witness: `present::tests::the_end_of_the_source_is_a_position`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| text.0.split('\n').nth(pos.row.0).map_or(
+#[spec(ensures: |ret| text.0.split('\n').nth(pos.row.0).map_or(
     ret.0 == text.0.len(),
     |line| {
         let start = text.0.split('\n').take(pos.row.0).fold(0_usize,
@@ -807,7 +809,7 @@ impl<'source> LineIndex<'source>
     /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ref ret| ret.text == text.0
+    #[spec(ensures: |ref ret| ret.text == text.0
         && ret.starts.iter().map(|start| start.0).eq(core::iter::once(0_usize).chain(
             text.0.match_indices(['\r', '\n'])
                 .filter(|&(offset, terminator)| terminator != "\r"
@@ -867,7 +869,7 @@ impl<'source> LineIndex<'source>
     /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
     /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(at) => self.starts.get(at.row.0).is_some_and(|start| {
             let end = byte.0.min(self.text.len());
             start.0 <= end
@@ -940,7 +942,7 @@ impl<'source> LineIndex<'source>
     /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let row = self.row_bytes(pos.row);
         row.start <= ret && ret <= row.end
             && self.text.get(row.start.0..ret.0).is_some_and(|prefix| {
@@ -993,7 +995,7 @@ impl<'source> LineIndex<'source>
     /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.start <= ret.end && ret.end.0 <= self.text.len()
+    #[spec(ensures: |ret| ret.start <= ret.end && ret.end.0 <= self.text.len()
         && self.starts.get(row.0).map_or(
             ret.start.0 == self.text.len() && ret.end.0 == self.text.len(),
             |&start| ret.start == start
@@ -1040,6 +1042,8 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec;
 
+    use anodized::spec;
+
     use super::ByteOffset;
     use super::ByteRange;
     use super::DiagCard;
@@ -1080,7 +1084,7 @@ mod tests
     ///   those fixtures. Invalid helper input is outside the admitted domain.
     /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
     /// - witness: `present::tests::byte_ranges_keep_the_existing_json_shape`
-    #[anodized::spec(
+    #[spec(
         requires: start <= end,
         ensures: |ret| ret.start.0 == start && ret.end.0 == end,
     )]

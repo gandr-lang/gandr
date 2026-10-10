@@ -7,6 +7,8 @@
 use alloc::string::String;
 use core::fmt;
 
+use anodized::spec;
+
 /// One localizable message template, its arguments named in braces.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -174,7 +176,7 @@ impl core::str::FromStr for DiagnosticCode
     ///   unallocated number is refused. The domain is exact UTF-8 spelling.
     /// - witness: `diagnostic::tests::registry_codes_are_dense_unique_and_round_trip`
     #[inline]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Ok(code) => code.text().0 == spelling,
         | Err(_) => !DIAGNOSTIC_CODES.iter().any(|code| code.text().0 == spelling),
     })]
@@ -280,7 +282,7 @@ impl serde::de::Visitor<'_> for CodeVisitor
     ///   visitor kind within the JSON string boundary.
     /// - witness: `diagnostic::tests::code_wire_image_is_its_stable_spelling`
     #[inline]
-    #[anodized::spec(ensures: |ref ret| match *ret {
+    #[spec(ensures: |ref ret| match *ret {
         | Ok(code) => code.text().0 == v,
         | Err(_) => !DIAGNOSTIC_CODES.iter().any(|code| code.text().0 == v),
     })]
@@ -451,7 +453,7 @@ impl DiagnosticMessage
     /// - witness: `diagnostic::tests::message_templates_preserve_argument_roles`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (&Self::TypeMismatch { .. }, DiagnosticCode::TypeMismatch)
         | (&Self::ShapeMismatch { .. }, DiagnosticCode::ShapeMismatch)
         | (&Self::StuckExpression { .. }, DiagnosticCode::StuckExpression)

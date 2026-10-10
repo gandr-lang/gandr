@@ -18,6 +18,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -108,7 +109,7 @@ impl From<UnfocusRefusal> for ReadbackRefusal
 /// - witness: `tests::differential::first_order_returns_compare_exactly`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
-#[anodized::spec(
+#[spec(
     captures: [entry = core.watermark()],
     ensures: |ret| match ret {
         | Ok(read) => store.value(value).is_some() && core.value(read).is_some(),
@@ -152,7 +153,7 @@ pub fn read_back_value(
 /// - witness: `tests::differential::first_order_returns_compare_exactly`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
-#[anodized::spec(
+#[spec(
     captures: [entry = core.watermark()],
     ensures: |ret| match ret {
         | Ok(read) => store.value(value).is_some_and(|held| match held {
@@ -198,7 +199,7 @@ pub fn read_back_terminal(
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `machine::tests::a_suspended_capture_has_no_reading`
 /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     | Ok(read) => store.value(value).is_some_and(|held| match held {
         | &HeapValue::Closure { .. } => matches!(core.computation(read), Some(&gandr_core_term::Computation::Lambda(_))),
         | _ => matches!(core.computation(read), Some(&gandr_core_term::Computation::Return(_))),
@@ -287,7 +288,7 @@ impl<'run> Reading<'run>
     ///   independent normaliser, distinguishing omitted or reversed closing.
     /// - witness: `readback::tests::closing_records_innermost_values_and_exact_lookup`
     /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
-    #[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+    #[spec(ensures: |ref ret| match ret.as_ref() {
         | Ok(values) => self.store.bound_values(environment).map(|id| self.read.get(&id).copied())
             .eq(values.iter().copied().map(Some))
             && values.iter().all(|id| self.core.value(*id).is_some()),
@@ -331,7 +332,7 @@ impl<'run> Reading<'run>
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
-    #[anodized::spec(
+    #[spec(
         requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| ret.is_err() || self.read.iter().all(|(held, read)|
             self.store.value(*held).is_some() && self.core.value(*read).is_some()),
@@ -388,7 +389,7 @@ impl<'run> Reading<'run>
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
-    #[anodized::spec(
+    #[spec(
         requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),
@@ -473,7 +474,7 @@ impl<'run> Reading<'run>
     ///   distinct recorded values return their exact core addresses; changing
     ///   the key, inventing a fallback or reversing the map is observable.
     /// - witness: `readback::tests::closing_records_innermost_values_and_exact_lookup`
-    #[anodized::spec(ensures: |ret| ret == self.read.get(&id).copied().ok_or(ReadbackRefusal::Dangling(id)))]
+    #[spec(ensures: |ret| ret == self.read.get(&id).copied().ok_or(ReadbackRefusal::Dangling(id)))]
     fn lookup(
         &self,
         id: HeapValueId,

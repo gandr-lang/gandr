@@ -14,6 +14,7 @@ use alloc::collections::BTreeMap;
 use std::io::BufRead;
 use std::io::Write;
 
+use anodized::spec;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -195,7 +196,7 @@ impl Server
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
-    #[anodized::spec(
+    #[spec(
         captures: phase = self.phase,
         ensures: |ret| ret.messages.len() <= 1
             && (self.phase == phase || matches!((phase, self.phase),
@@ -234,7 +235,7 @@ impl Server
     /// - hypothesis: L3 — `exit` before and after `shutdown`, each asserted at
     ///   its exact ending.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
-    #[anodized::spec(ensures: |ret| matches!((self.phase, ret),
+    #[spec(ensures: |ret| matches!((self.phase, ret),
         (Phase::ShuttingDown, Served::Clean) | (Phase::Waiting | Phase::Running, Served::Abrupt)))]
     #[inline]
     #[must_use]
@@ -264,7 +265,7 @@ impl Server
     ///   ending; L2 — token responses agree with pinned streams.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
-    #[anodized::spec(
+    #[spec(
         captures: [phase = self.phase, documents = self.documents.len()],
         ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
             (Phase::Waiting, "initialize") => self.phase == Phase::Running
@@ -369,7 +370,7 @@ impl Server
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
-    #[anodized::spec(
+    #[spec(
         captures: [phase = self.phase, count = self.documents.len()],
         ensures: |ret| self.phase == phase && ret.messages.len() <= 1
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
@@ -464,7 +465,7 @@ impl Server
     /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
     /// - witness: `server::tests::an_empty_range_yields_no_tokens`
     /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
@@ -512,7 +513,7 @@ impl Server
 ///   text through exact publications and subsequent token streams.
 /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
 /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
-#[anodized::spec(ensures: |ret| matches!(ret,
+#[spec(ensures: |ret| matches!(ret,
     Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
         if params.uri == *uri && params.version == Some(document.version)))]
 fn published(
@@ -584,6 +585,7 @@ where
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use serde_json::Value;
 
     use super::Flow;
@@ -611,7 +613,7 @@ mod tests
     ///   exactly.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
-    #[anodized::spec(ensures: |ret| match text.trim_start().as_bytes().first().copied() {
+    #[spec(ensures: |ret| match text.trim_start().as_bytes().first().copied() {
         Some(b'[') => ret.is_array(), Some(b'{') => ret.is_object(),
         Some(b'"') => ret.is_string(), Some(b't' | b'f') => ret.is_boolean(),
         Some(b'n') => ret.is_null(), _ => ret.is_number(),
@@ -638,7 +640,7 @@ mod tests
     ///   goldens distinguish lost, duplicate and misidentified messages.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
-    #[anodized::spec(ensures: |ret| ret.as_array().is_some_and(|messages|
+    #[spec(ensures: |ret| ret.as_array().is_some_and(|messages|
         messages.len() <= 1 && messages.iter().all(|message|
             message.get("jsonrpc").and_then(Value::as_str) == Some("2.0"))))]
     fn send(
@@ -670,7 +672,7 @@ mod tests
     /// - hypothesis: L3 — subsequent known-document requests distinguish a
     ///   waiting or closed fixture from the required running state.
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
-    #[anodized::spec(ensures: |ret| ret.phase == super::Phase::Running && ret.documents.is_empty())]
+    #[spec(ensures: |ret| ret.phase == super::Phase::Running && ret.documents.is_empty())]
     fn initialized() -> Server
     {
         let mut server = Server::default();
@@ -703,7 +705,7 @@ mod tests
     ///   lookup.
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
     /// - witness: `server::tests::a_range_returns_only_the_tokens_it_covers`
-    #[anodized::spec(ensures: |ret| ret.phase == super::Phase::Running
+    #[spec(ensures: |ret| ret.phase == super::Phase::Running
         && ret.documents.len() == 1
         && ret.documents.values().all(|document| document.text == "def f = 42 ;\n"))]
     fn server_over_the_known_document() -> Server
@@ -739,7 +741,7 @@ mod tests
     /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
     /// - witness: `server::tests::an_empty_range_yields_no_tokens`
     /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
-    #[anodized::spec(requires: serde_json::from_str::<crate::position::Range>(range).is_ok(),
+    #[spec(requires: serde_json::from_str::<crate::position::Range>(range).is_ok(),
         ensures: |ret| ret.as_array().is_some_and(|integers|
             integers.len().is_multiple_of(5) && integers.iter().all(Value::is_u64)))]
     fn ranged(Json(range): Json<'_>) -> Value

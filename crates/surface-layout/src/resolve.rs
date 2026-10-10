@@ -15,6 +15,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::DocArena;
@@ -211,7 +212,7 @@ impl Resolved
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| matches!((ret, self.width_taint), (WidthTaint::Untainted, WidthTaint::Untainted) | (WidthTaint::Tainted, WidthTaint::Tainted))
     )]
     #[inline]
@@ -572,7 +573,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: meter_identity = &raw const *meter,
         ensures: |ret| core::ptr::eq(&raw const *ret.arena, &raw const *arena)
                 && core::ptr::eq(&raw const *ret.meter, meter_identity)
@@ -625,7 +626,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.len(), self.meter.usage(), core::mem::discriminant(&item)),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.work.len() == before.0,
             |&()| before.0.checked_add(1) == Some(self.work.len())
@@ -681,7 +682,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.meter.usage(), self.work.len(), self.memo.len()),
         ensures: |ret| self.meter.usage() == before.0
                 && self.work.len() == before.1
@@ -734,7 +735,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
-    #[anodized::spec(
+    #[spec(
         captures: before = (match set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }, self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage()),
         ensures: |ret| if before.0 == 0 { ret.is_ok()
@@ -791,7 +792,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage().resolver_work_entries, self.plans.get(plan)),
         ensures: |ret| ret.as_ref().map_or(true,
@@ -846,7 +847,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
             |index| index.saturating_add(1)), self.meter.usage()),
         ensures: |ret| match promise { TaintPromise::Deferred { .. } => ret.is_ok()
@@ -891,7 +892,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = match set { MeasureSet::Frontier(ref frontier) => (frontier.first().copied().map(TaintPromise::Ready), frontier.len() > 1), MeasureSet::Tainted(promise) => (Some(promise), false) },
     ensures: |ret| ret.as_ref().map_or_else(|_error| before.1,
         |set| match *set { MeasureSet::Frontier(ref frontier) => before.0.is_none()
@@ -931,7 +932,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (match left { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }, match right { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }),
     ensures: |ret| ret.as_ref().map_or_else(|error| before.0.3.is_some() || before.1.3.is_some() || *error == RenderError::AllocationFailed { site: crate::error::RenderAllocationSite::Frontier },
         |set| match (before.0.3, before.1.3) { (None, None) => matches!(*set, MeasureSet::Frontier(ref frontier) if before.0.0.checked_add(before.1.0) == Some(frontier.len())
@@ -989,7 +990,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: bound = self.options.computation_width,
         ensures: |ret| ret.as_ref().map_or(true,
             |winner| matches!(winner.2.get(winner.0.plan), Maybe::Present(_))
@@ -1088,7 +1089,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (first(set), matches!(*set, MeasureSet::Tainted(_))),
         ensures: |ret| match before.0 { Maybe::Absent(_) => matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::MissingMeasure })), Maybe::Present(expected) => ret.as_ref().map_or(true,
             |winner| winner.0 == expected
@@ -1142,7 +1143,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.len(), matches!(item, WorkItem::StoreMemo { .. } | WorkItem::ReleasePlan { .. } | WorkItem::AfterNest | WorkItem::AfterAlign | WorkItem::AfterFlatten), match set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }, matches!(item, WorkItem::Eval { .. })),
         ensures: |ret| if before.3 { matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::Continuation })) }
             else { ret.as_ref().map_or(true,
@@ -1265,7 +1266,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.meter.usage(), self.work.len(), self.memo.len(), self.memo.get(&MemoKey { node, column, indentation }).map(|set| match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) })),
         ensures: |ret| ret.as_ref().map_or(true,
             |step| { if u64::from(before.0.layout_steps).checked_add(1) != Some(u64::from(self.meter.usage().layout_steps)) || self.memo.len() != before.2 { return false }
@@ -1475,7 +1476,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.meter.usage().frontier_entries,
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.meter.usage().frontier_entries == before,
             |set| matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.as_slice() == [measure])
@@ -1526,7 +1527,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |set| { let Maybe::Present(measure) = first(set) else { return false };
             matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == 1)
@@ -1577,7 +1578,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let Maybe::Present(identity) = self.arena.text_identity(text) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
             let end = u64::from(u32::from(column)).saturating_add(u64::from(u32::from(identity.width())));
             if end > u64::from(u32::MAX) { return matches!(ret, Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::Column })) }
@@ -1668,7 +1669,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let Maybe::Present(identity) = self.arena.verbatim_identity(verbatim) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
             ret.as_ref().map_or(true,
             |set| { let Maybe::Present(measure) = first(set) else { return false };
@@ -1803,7 +1804,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
     /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |set| { let Maybe::Present(measure) = first(set) else { return false };
             let excess = u128::from(u32::from(indentation).saturating_sub(u32::from(self.options.page_width)));
@@ -1879,7 +1880,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.len(), first(&left_set), match left_set { MeasureSet::Frontier(ref frontier) => (frontier.len().saturating_sub(1), frontier.get(1).copied(), if frontier.len() > 1 { frontier.last().copied() }
             else { None }, WidthTaint::Untainted), MeasureSet::Tainted(_) => (0, None, None, WidthTaint::Tainted) }),
         ensures: |ret| match before.1 { Maybe::Absent(_) => matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::MissingMeasure }))
@@ -1970,7 +1971,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.work.len(), match right_set { MeasureSet::Tainted(TaintPromise::Deferred { doc, column, indentation }) => Some((doc, column, indentation)), _ => None }, state.remaining.first().copied(), state.right, state.indentation, state.force, state.taint == WidthTaint::Tainted || matches!(right_set, MeasureSet::Tainted(TaintPromise::Ready(_))), state.left, state.remaining.len(), state.results.len(), match right_set { MeasureSet::Frontier(ref frontier) => frontier.last().copied(), MeasureSet::Tainted(TaintPromise::Ready(measure)) => Some(measure), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => None }, match right_set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }),
         ensures: |ret| ret.as_ref().map_or(true,
             |step| { if let Some((doc, column, indentation)) = before.1 { return matches!(*step, Step::Scheduled)
@@ -2148,7 +2149,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   model does not prove arbitrary document evaluation or allocation
     ///   failure.
     /// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
-    #[anodized::spec(
+    #[spec(
         captures: before = match set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.iter().enumerate().min_by_key(|&(index, measure)| (measure.cost, measure.last_column, index)).map(|(_index, measure)| *measure), None), MeasureSet::Tainted(promise) => (0, None, Some(promise)) },
         ensures: |ret| ret.as_ref().map_or(true,
             |set| match *set { MeasureSet::Frontier(ref frontier) => before.2.is_none()
@@ -2195,7 +2196,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///   model does not prove arbitrary document evaluation or allocation
     ///   failure.
     /// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
-    #[anodized::spec(
+    #[spec(
         captures: before = (candidates.len(), candidates.iter().enumerate().min_by_key(|&(index, measure)| (measure.cost, measure.last_column, index)).map(|(_index, measure)| *measure)),
         ensures: |ret| ret.as_ref().map_or(true,
             |frontier| frontier.len() <= before.0
@@ -2271,7 +2272,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
 ///   lexicographic order and wrong duplicate ownership. This finite model does
 ///   not prove arbitrary document evaluation or allocation failure.
 /// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
-#[anodized::spec(
+#[spec(
     ensures: |ret| (ret == Dominance::Strict) == ((left.cost < right.cost
             && left.last_column <= right.last_column) || (left.cost <= right.cost
             && left.last_column < right.last_column))
@@ -2321,7 +2322,7 @@ fn dominates(
 /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-#[anodized::spec(
+#[spec(
     captures: before = meter.usage(),
     ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
             && meter.usage() == before }
@@ -2370,7 +2371,7 @@ pub fn resolve(
 /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-#[anodized::spec(
+#[spec(
     captures: before = meter.usage(),
     ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
             && meter.usage() == before }
@@ -2422,7 +2423,7 @@ pub(crate) fn resolve_for_render(
 /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
 /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-#[anodized::spec(
+#[spec(
     captures: before = meter.usage(),
     ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
             && meter.usage() == before }
@@ -2496,7 +2497,7 @@ mod tests
     /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
     /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-    #[anodized::spec(
+    #[spec(
         captures: expected = match step { Step::Result(MeasureSet::Frontier(ref frontier)) => frontier.first().copied(), Step::Result(MeasureSet::Tainted(TaintPromise::Ready(measure))) => Some(measure), Step::Result(MeasureSet::Tainted(TaintPromise::Deferred { .. })) | Step::Scheduled => None },
         ensures: |ret| expected == Some(ret)
     )]

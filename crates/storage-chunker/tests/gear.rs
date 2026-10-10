@@ -5,6 +5,7 @@
 //! chunks must partition them on record edges and sit inside the caps — rather
 //! than against the scan's own arithmetic.
 
+use anodized::spec;
 use gandr_storage_chunker::BoundaryReason;
 use gandr_storage_chunker::ByteCount;
 use gandr_storage_chunker::BytePosition;
@@ -44,7 +45,7 @@ use crate::common::record_spans;
 ///   and altered error mapping.
 /// - witness: `tests::gear::invalid_limits_are_refused_by_reason`
 /// - witness: `tests::gear::equal_limits_are_admitted`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let [min, target, max] = bytes;
     let [min_records, target_records, max_records] = records;
     ret == ChunkLimits::new(min, target, max, min_records, target_records, max_records)

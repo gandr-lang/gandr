@@ -74,6 +74,7 @@ use core::num::NonZeroU32;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::ArenaKey;
@@ -232,7 +233,7 @@ impl<'meter> DocBuilder<'meter>
     ///   graph identity, usage or refusal.
     /// - witness: `algebra::tests::a_builder_with_a_node_ceiling_below_three_refuses_immediately`
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
-    #[anodized::spec(
+    #[spec(
         captures: before = meter.usage(),
         ensures: |ret| ret.as_ref().map_or(true,
             |builder| { let usage = builder.meter.usage();
@@ -312,7 +313,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
                 && self.texts.len() == before.1
@@ -358,7 +359,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
                 && self.texts.len() == before.1
@@ -405,7 +406,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.verbatim.len(), self.meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
                 && self.verbatim.len() == before.1
@@ -451,7 +452,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.verbatim.len(), self.meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
                 && self.verbatim.len() == before.1
@@ -519,7 +520,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -581,7 +582,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
     /// - witness: `algebra::tests::balanced_concatenation_preserves_odd_and_even_leaf_order`
     /// - witness: `algebra::tests::a_wide_shared_graph_finalizes_without_native_stack_growth`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -670,7 +671,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -719,7 +720,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -765,7 +766,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -812,7 +813,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
         ensures: |ret| self.texts.len() == before.1
                 && self.verbatim.len() == before.2
@@ -857,7 +858,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.nodes.len(),
         ensures: |ret| ret.as_ref().map_or(true,
             |handle| handle.arena_key() == self.arena
@@ -904,7 +905,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.arena, self.nodes.len()),
         ensures: |ret| ret.as_ref().map_or(true,
             |arena| { let count = u64::from(arena.node_count());
@@ -1049,7 +1050,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret == if doc.arena_key() == self.arena
                 && usize::try_from(u32::from(doc.node_id())).is_ok_and(|index| index < self.nodes.len()) { Ok(doc.node_id()) }
             else { Err(BuildError::UnknownDoc) }
@@ -1095,7 +1096,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.meter.usage(),
         ensures: |ret| { let usage = self.meter.usage();
             if doc.arena_key() == self.arena
@@ -1143,7 +1144,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.meter.usage()),
         ensures: |ret| { let usage = self.meter.usage();
             ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
@@ -1200,7 +1201,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len(), self.meter.usage(), text.as_ref().as_ptr(), text.as_ref().len(), text.width()),
         ensures: |ret| { let usage = self.meter.usage();
             ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
@@ -1282,7 +1283,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len(), self.meter.usage(), text.as_ref().as_ptr(), text.as_ref().len(), text.lines().as_ptr(), text.lines().len()),
         ensures: |ret| { let usage = self.meter.usage();
             ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
@@ -1364,7 +1365,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.meter.usage(), usize::try_from(u32::from(doc)).ok().and_then(|index| self.flattened.get(index)).copied()),
         ensures: |ret| { let usage = self.meter.usage();
             ret.as_ref().map_or_else(|error| usage == before.0
@@ -1419,7 +1420,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.meter.usage(), self.flatten_memo.get(&candidate).copied(), self.flatten_memo.len(), self.nodes.len()),
         ensures: |ret| { let usage = self.meter.usage();
             self.flatten_memo.len() == before.2
@@ -1468,7 +1469,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
-    #[anodized::spec(
+    #[spec(
         requires: !self.flatten_memo.contains_key(&candidate), captures: before = (self.nodes.len(), self.flatten_memo.len(), self.meter.usage()),
         ensures: |ret| { let usage = self.meter.usage();
             ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
@@ -1528,7 +1529,7 @@ impl<'meter> DocBuilder<'meter>
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
     /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.space_text, self.texts.len(), self.nodes.len(), self.meter.usage()),
         ensures: |ret| { let usage = self.meter.usage();
             self.nodes.len() == before.2
@@ -1598,7 +1599,7 @@ impl KeyCounter
     ///   change these observations.
     /// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
     /// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| NonZeroU32::new(self.next).map_or_else(|| ret == Err(BuildError::ArenaKeyExhausted),
             |token| ret.is_ok_and(|(key, next)| key == ArenaKey::from(token)
                 && next.next == self.next.checked_add(1).unwrap_or(0)))
@@ -1634,7 +1635,7 @@ impl KeyCounter
 ///   observations.
 /// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
 /// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
-#[anodized::spec(
+#[spec(
     captures: before = NonZeroU32::new(NEXT_ARENA_KEY.load(Ordering::Relaxed)).map(ArenaKey::from),
     ensures: |ret| { let after = NonZeroU32::new(NEXT_ARENA_KEY.load(Ordering::Relaxed)).map(ArenaKey::from);
         ret.as_ref().map_or_else(|error| *error == BuildError::ArenaKeyExhausted

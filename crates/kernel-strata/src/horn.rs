@@ -1432,6 +1432,8 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::ClauseIndex;
     use super::ClauseSystem;
     use super::DerivationRoundLimit;
@@ -1985,7 +1987,7 @@ mod tests
     ///   boundaries.
     /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
     /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
-    #[anodized::spec(ensures: |ret| ret.iter().map(|clause| clause.head().variable())
+    #[spec(ensures: |ret| ret.iter().map(|clause| clause.head().variable())
         .eq([v1(), v2(), v3(), v4()]))]
     fn paper_clauses() -> Vec<HornClause>
     {
