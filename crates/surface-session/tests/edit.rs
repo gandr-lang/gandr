@@ -51,8 +51,8 @@ use proptest::prop_assert_eq;
 use proptest::proptest;
 use quenchant_shape::shape::Maybe;
 
+use crate::common::GRAMMAR;
 use crate::common::Text;
-use crate::common::grammar;
 use crate::common::session;
 use crate::common::submit;
 use crate::generate::CASES;
@@ -98,10 +98,10 @@ const EDITED: &str = include_str!("fixtures/incremental-edited.gandr");
 fn snapshot<'text>(text: impl Into<Text<'text>>) -> Snapshot
 {
     let text = text.into().0;
-    let grammar = grammar();
+    let grammar = &*GRAMMAR;
     let mut lowerings = LoweringCount::default();
-    let lowering = lower_source(&grammar, SourceText::from(text), &mut lowerings)
-        .expect("the revision lowers");
+    let lowering =
+        lower_source(grammar, SourceText::from(text), &mut lowerings).expect("the revision lowers");
     let Lowered::Module { module, arena } = lowering.into_lowered()
     else {
         panic!("the lowering reads a module: {text:?}");

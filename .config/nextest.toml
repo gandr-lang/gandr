@@ -9,6 +9,24 @@ final-status-level = "slow"
 failure-output = "immediate"
 slow-timeout = { period = "30s", terminate-after = 4 }
 
+# Start the hosted heavy tail first; the ci profile inherits these overrides.
+# Priorities change scheduling only, never cases, domains or timeouts.
+[[profile.default.overrides]]
+filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)"
+priority = 100
+
+[[profile.default.overrides]]
+filter = "test(=corpus::every_source_submits_as_the_walk_composes_it) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds) or test(=session::every_corpus_report_is_published_where_the_walk_renders_it)"
+priority = 90
+
+[[profile.default.overrides]]
+filter = "test(corpus) or test(=highlight::spans_partition_the_tile_bytes) or test(=acceptance::minimization_prefers_clean_readings)"
+priority = 80
+
+[[profile.default.overrides]]
+filter = "test(=defects::items_visited_for_a_head_edit_grow_linearly) or test(=differential::fused_equals_two_step) or test(=deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack)"
+priority = 70
+
 [profile.ci]
 status-level = "slow"
 final-status-level = "slow"
@@ -18,3 +36,8 @@ slow-timeout = { period = "60s", terminate-after = 4 }
 
 [profile.ci.junit]
 path = "junit.xml"
+
+# Nextest stores reports by profile, independently of Cargo's target directory.
+# Separate names prevent the enforcing pass from overwriting the plain report.
+[profile.ci-enforcing]
+inherits = "ci"

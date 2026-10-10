@@ -4,6 +4,7 @@
 use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
@@ -29,13 +30,17 @@ use gandr_surface_session::Submission;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// The built-in grammar.
+/// The built-in grammar, assembled once per test process for borrowed fixtures.
+pub static GRAMMAR: LazyLock<Pbg> =
+    LazyLock::new(|| built_in().expect("the built-in grammar builds"));
+
+/// An owned grammar for sessions and lowering adapters.
 ///
 /// # Specification
 /// trivial.
 pub fn grammar() -> Pbg
 {
-    built_in().expect("the built-in grammar builds")
+    GRAMMAR.clone()
 }
 
 /// The backend identity every suite persists under.

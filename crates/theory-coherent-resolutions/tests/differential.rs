@@ -9,6 +9,8 @@
 //! tolerated divergence: the concurrency theorem of compositional rewriting
 //! is adopted as a property test rather than implemented as proof machinery.
 
+use std::sync::LazyLock;
+
 use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellId;
@@ -306,6 +308,10 @@ proptest! {
     #[test]
     fn fused_equals_two_step(a in nat(), b in nat())
     {
+        /// Immutable rules are independent of the generated ground instance.
+        static CELLS: LazyLock<(Cell, Cell, Cell)> = LazyLock::new(|| {
+            (fused_commutation_cell(), frame_defining_cell(&Sym::new("Succ")), add_s())
+        });
         for numeral in [&a, &b] {
             prop_assert!((1_usize ..= 64_usize).contains(&usize::from(numeral.size())));
             let mut view = numeral.view();
@@ -324,17 +330,15 @@ proptest! {
                 }
             }
         }
-        let fused = fused_commutation_cell();
-        let frame = frame_defining_cell(&Sym::new("Succ"));
-        let successor = add_s();
+        let (ref fused, ref frame, ref successor) = *CELLS;
         let instance = CmdPat::cut(
             Polarity::Positive,
             a,
             ConsPat::frame("Succ", ConsPat::op("add", [b], ConsPat::top())),
         );
-        let via_fused = rewrite_at(&fused, &instance, &Pos::root());
-        let via_two_step = rewrite_at(&frame, &instance, &Pos::root())
-            .and_then(|after_frame| rewrite_at(&successor, &after_frame, &Pos::root()));
+        let via_fused = rewrite_at(fused, &instance, &Pos::root());
+        let via_two_step = rewrite_at(frame, &instance, &Pos::root())
+            .and_then(|after_frame| rewrite_at(successor, &after_frame, &Pos::root()));
         prop_assert!(
             matches!(via_fused, Maybe::Present(_)),
             "the fused cell fires on the instance"
