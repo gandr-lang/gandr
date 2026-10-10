@@ -65,6 +65,7 @@
 //! | Area | Contract source |
 //! | ---- | --------------- |
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
+//! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
@@ -96,6 +97,7 @@
 
 extern crate alloc;
 
+pub mod admission;
 pub mod census;
 pub mod check;
 pub mod conv;
