@@ -470,6 +470,7 @@ enum TypeLevelFrame
 /// - witness: `check::tests::a_computation_decode_owes_its_code_to_the_computation_universe`
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
+/// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
 #[spec(ensures: |ret| {
     let closed_leaf = match root {
         TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_) | &ValueType::Unit)),
@@ -2525,10 +2526,11 @@ mod tests
     ///   does.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the universe and lift fixtures construct their
-    ///   requested scope before separating formation from strictness refusal.
+    /// - hypothesis: L3 — closed universes form in the zero-parameter fixture;
+    ///   the one-parameter boundary admits its last variable and refuses the
+    ///   next one, separating lost or enlarged scope through formation.
     /// - witness: `check::tests::a_universe_forms_one_level_up`
-    /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
+    /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
     #[anodized::spec(ensures: |ret| ret.params() == params)]
     fn level_context(params: LevelParamCount) -> LevelContext
     {
@@ -2975,6 +2977,50 @@ mod tests
             "checking pushes one expected type into both branches, where synthesis would have \
              required them to agree on their own"
         );
+    }
+
+    #[test]
+    fn a_prenex_scope_controls_universe_formation()
+    {
+        let mut arena = TermArena::new();
+        let variable = Level::var(gandr_kernel_strata::LevelVar::from(0_u32));
+        let expected = variable.succ().expect("a variable's successor fits");
+        let in_scope = arena.value_type_universe(GroundSort::Value, variable);
+        let out_of_scope = arena.value_type_universe(
+            GroundSort::Value,
+            Level::var(gandr_kernel_strata::LevelVar::from(1_u32)),
+        );
+        let levels = level_context(LevelParamCount::from(1_u32));
+        let entries = no_entries();
+        let formed = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(in_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert_eq!(formed, Ok(expected));
+        let refused = type_level(
+            &arena,
+            Judgement::new(&entries, &levels),
+            TypeLevelGoal::Value(out_of_scope),
+            Vec::new(),
+            Recording {
+                memo: &mut NullMemo,
+                session: &mut SupportContext::new(),
+                census: &mut ExpansionCensus::new(),
+                owed: &mut Vec::new(),
+            },
+        );
+        assert!(matches!(
+            refused,
+            Err(KernelError::LevelVariableOutOfScope { .. })
+        ));
     }
 
     #[test]
