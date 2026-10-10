@@ -9,7 +9,11 @@
 //!
 //! `template::harvest` groups that producer's equations by program, decision
 //! and shallow source shape. Joint anti-unification keeps peak choices
-//! correlated; `template::produce` prices generalized sides, decisions and
+//! correlated. `template::analyze` generalizes a family's first and last
+//! members before the rest: a point the two leave outside the peak stays
+//! outside however many members join them, so the family is refused from
+//! those two, and a family they leave open imports its other members into the
+//! same graph. `template::produce` prices generalized sides, decisions and
 //! guarded arms before replaying each distinct inheritance triple with the
 //! other points rigid. The original `s < floor(F / s)` price and the additional
 //! `s + T*c < F` price remain separately selectable. The latter uses `c = s`
@@ -222,10 +226,11 @@ pub enum Analysis
 {
     /// A generalized candidate, not an admission capability.
     Candidate(Candidate),
-    /// No uniform nonempty equation skeleton exists.
+    /// No candidate exists: the family is empty or mixes rules, or a point of
+    /// its generalization lies outside the peak.
     Refused
     {
-        /// Structural refusal, before a candidate exists.
+        /// The refusal, decided before any price or inheritance check.
         reason: TemplateRefusal,
         /// The available plain-family accounting.
         cost: FamilyCostReport,
@@ -236,7 +241,8 @@ pub enum Analysis
 ///
 /// # Specification
 /// - ensures: carries joint source/target columns and distinct guarded arms;
-///   neither discovery nor serialization certifies an equation.
+///   the source chooses every point. Neither discovery nor serialization
+///   certifies an equation.
 /// - panics: none.
 /// - executable: none — analyze owns construction; production and independent
 ///   image reconstruction check the relationships between its private fields.
@@ -260,15 +266,13 @@ pub struct Candidate
     rule: Rule,
     /// Producer namespace within this run.
     program: ProgramId,
-    /// Whether every entry is rooted in the source.
-    peak_roots: PeakRoots,
     /// Node accounting before checks or admissions.
     cost: FamilyCostReport,
     /// Cold-cache obligation count, determined by distinct arm groups.
     triples: gandr_theory_deep_inference::TripleCount,
 }
 
-/// Peak-rooting is decided during analysis, before inheritance can run.
+/// Whether the source chooses every generalized point.
 enum PeakRoots
 {
     /// Every generalized entry is chosen by the source.
@@ -497,16 +501,308 @@ fn materialize(
     }))
 }
 
+/// One family's imported sides, generalized together over one graph.
+struct Generalization
+{
+    /// The graph, the columns, the points and every member's arm column.
+    generalizer: Generalizer,
+    /// Generalized source and target.
+    sides: [Id; 2],
+    /// The plain size `F`: every member's source and target, plus one
+    /// decision per member.
+    plain: NodeCount,
+    /// Whether the source chooses every point.
+    rooting: PeakRoots,
+}
+
+/// Import members' sources and targets into `graph`, interleaved in member
+/// order.
+///
+/// # Specification
+/// - ensures: position `2i` holds member `i`'s source and `2i + 1` its target;
+///   content already in the graph keeps its coordinate.
+/// - fails: the arena's lookup error for an absent side.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `UnknownTerm`, `UnknownType` or Unbalanced from the import.
+///
+/// # Adequacy
+/// - hypothesis: L2 — independent side sizes and plain replay of every member
+///   distinguish a lost, duplicated or reordered side.
+/// - witness: `template::tests::a_template_is_emitted_only_below_its_expansion_factor`
+/// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| output.as_ref().ok().is_none_or(|ids|
+    ids.len() == members.len().saturating_mul(2)))]
+fn import_members(
+    graph: &mut Graph,
+    arena: &Arena,
+    members: &[Step],
+) -> Result<Vec<Id>, StageError>
+{
+    let roots = members
+        .iter()
+        .flat_map(|step| [step.source, step.target])
+        .collect::<Vec<_>>();
+    graph.import(arena, &roots)
+}
+
+/// Read interleaved imported sides as one source and target per member.
+///
+/// # Specification
+/// - ensures: pair `i` holds positions `2i` and `2i + 1`.
+/// - fails: Unbalanced for an odd count.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `StageError::Unbalanced`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — plain replay of every member distinguishes a source
+///   paired with another member's target.
+/// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+#[spec(ensures: |output| output.as_ref().ok().is_none_or(|pairs|
+    pairs.len().saturating_mul(2) == ids.len()))]
+fn pairs(ids: &[Id]) -> Result<&[[Id; 2]], StageError>
+{
+    let (pairs, rest) = ids.as_chunks::<2>();
+    if rest.is_empty() {
+        Ok(pairs)
+    }
+    else {
+        Err(StageError::Unbalanced)
+    }
+}
+
+/// Generalize imported members' sources into the peak, then their targets
+/// into the join.
+///
+/// # Specification
+/// - ensures: the peak's points are its disagreeing source columns; a join
+///   column equal to a peak point, or one below it by the stated predecessor
+///   relation, reuses it, and any other disagreeing join column is a point
+///   outside the peak. `rooting` names the first such point; `plain` charges
+///   every member's sides and decision. Arm columns keep member order.
+/// - fails: Unbalanced for no members or a malformed graph edge.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `StageError::Unbalanced`.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — reconstruction of every member, independent sizes and
+///   the predecessor near-misses distinguish lost correlations, undercharged
+///   sides and a target-only point counted inside the peak.
+/// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+/// - witness: `template::tests::a_template_is_emitted_only_below_its_expansion_factor`
+/// - witness: `template::tests::predecessor_discovery_refuses_zero_inner_and_other_offsets`
+#[spec(ensures: |output| output.as_ref().ok().is_none_or(|generalization|
+    generalization.generalizer.entries.len() == generalization.generalizer.arms.len()
+        && match generalization.rooting {
+            PeakRoots::Complete => true,
+            PeakRoots::Missing(point) => generalization.generalizer.entries.iter()
+                .any(|entry| entry.point == point),
+        }))]
+fn generalize<M>(
+    graph: Graph,
+    members: M,
+) -> Result<Generalization, StageError>
+where
+    M: Iterator<Item = [Id; 2]>,
+{
+    let mut generalizer = Generalizer {
+        graph,
+        columns: BTreeMap::new(),
+        entries: Vec::new(),
+        arms: Vec::new(),
+    };
+    let (count, _) = members.size_hint();
+    let mut peaks = Vec::with_capacity(count);
+    let mut joins = Vec::with_capacity(count);
+    let mut plain = 0_usize;
+    for [peak, join] in members {
+        peaks.push(peak);
+        joins.push(join);
+        let peak_size = generalizer.graph.size(peak)?;
+        let join_size = generalizer.graph.size(join)?;
+        plain = plain
+            .saturating_add(1)
+            .saturating_add(usize::from(peak_size))
+            .saturating_add(usize::from(join_size));
+    }
+    let peak = generalizer.column(peaks, EntryIndex::from(0))?;
+    let source_points = EntryIndex::from(generalizer.entries.len());
+    let join = generalizer.column(joins, source_points)?;
+    let mut points = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    let mut pending = Vec::from([peak]);
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let node = generalizer.graph.node(id)?;
+        if let Head::Point(point) = node.head {
+            points.insert(point);
+        }
+        pending.extend(node.children.0.into_iter().flatten());
+    }
+    let rooting = generalizer
+        .entries
+        .iter()
+        .find(|entry| !points.contains(&entry.point))
+        .map_or(PeakRoots::Complete, |entry| PeakRoots::Missing(entry.point));
+    Ok(Generalization {
+        generalizer,
+        sides: [peak, join],
+        plain: NodeCount::from(plain),
+        rooting,
+    })
+}
+
+/// Import every member into a fresh graph and generalize them together.
+///
+/// # Specification
+/// - ensures: the family's own generalization, no member skipped: its plain
+///   size counts at least three nodes per member. The probe's refusals are
+///   checked against it.
+/// - fails: the arena's lookup error for an absent side; Unbalanced for an
+///   empty family.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `UnknownTerm`, `UnknownType` or Unbalanced.
+///
+/// # Adequacy
+/// - hypothesis: L2 — harvested power and double-product families compare every
+///   verdict and cost the probe's path reports against this one's.
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+#[spec(ensures: |output| output.as_ref().ok().is_none_or(|all|
+    usize::from(all.plain) >= family.len().saturating_mul(3)))]
+fn generalize_all(
+    arena: &Arena,
+    family: &[Step],
+) -> Result<Generalization, StageError>
+{
+    let mut graph = Graph::default();
+    let ids = import_members(&mut graph, arena, family)?;
+    let members = pairs(&ids)?;
+    generalize(graph, members.iter().copied())
+}
+
+/// What a family's first and last members decide before the others are
+/// imported.
+enum Probe
+{
+    /// The two leave a point outside their peak, so the family does too.
+    Outside(EntryIndex),
+    /// Undecided: a graph holding the two members' imported sides and nothing
+    /// generalized from them.
+    Open
+    {
+        /// Both members' imported sides.
+        graph: Graph,
+        /// The first member's imported source and target.
+        first: [Id; 2],
+        /// The last member's imported source and target.
+        last: [Id; 2],
+    },
+}
+
+/// Generalize a family's first and last members alone, refusing the family
+/// when they leave a point outside the peak.
+///
+/// A join point lies outside the peak when its column — the members'
+/// subterms at one join position below agreeing constructors — disagrees,
+/// equals no column the peak made a point, and is not pointwise one below
+/// such a column. Adding members only splits agreement. Constructors that
+/// disagree on two members disagree on all; subterms equal on all members are
+/// equal on two; a column equals another, or lies pointwise one below it, only
+/// if it does so on every member. Follow the join towards the two members'
+/// outside point and stop where the family's members first disagree. Were the
+/// family's column there a peak point's, the two members' columns there and
+/// at that peak position would agree, so their peak would reach the same
+/// columns their join reaches down to their outside point, which would then
+/// lie inside their peak. Were it one below a peak point's, it would be a
+/// numeral column, so the stop is the outside point itself, and the relation
+/// would hold on the two members too. So the family leaves a point outside
+/// its peak. The implication holds for any two members; the first and last
+/// are the extremes of producer order.
+///
+/// # Specification
+/// - requires: every member's sides are terms of `arena`.
+/// - ensures: `Outside` only when the family's own generalization leaves a
+///   point outside its peak; it names the first such point of the two members'
+///   generalization. `Open` drops every node the two-member generalization
+///   added, keeping their import.
+/// - fails: Unbalanced for an empty family.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `StageError::Unbalanced`.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the full generalization judges the probe on every
+///   harvested power and double-product family and on constructed families
+///   whose first and last members are and are not the extreme ones, including
+///   families the two leave open and the rest refuse. A probe that misreads the
+///   predecessor relation, compares other members, keeps its pattern nodes or
+///   loses a member's import changes a verdict or a cost there.
+/// - witness: `template::tests::outside_peak_refusals_follow_from_the_first_and_last_members`
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+#[spec(
+    requires: family.iter().all(|step| arena.term(step.source).is_ok()
+        && arena.term(step.target).is_ok()),
+    ensures: |output| output.as_ref().ok().is_none_or(|probe|
+        !matches!(*probe, Probe::Outside(_)) || generalize_all(arena, family)
+            .is_ok_and(|all| matches!(all.rooting, PeakRoots::Missing(_)))),
+)]
+fn probe(
+    arena: &Arena,
+    family: &[Step],
+) -> Result<Probe, StageError>
+{
+    let (Some(first), Some(last)) = (family.first(), family.last())
+    else {
+        return Err(StageError::Unbalanced);
+    };
+    let mut graph = Graph::default();
+    let ids = import_members(&mut graph, arena, &[*first, *last])?;
+    let end = graph.end();
+    let &[first, last] = pairs(&ids)?
+    else {
+        return Err(StageError::Unbalanced);
+    };
+    let Generalization {
+        generalizer,
+        rooting,
+        ..
+    } = generalize(graph, [first, last].into_iter())?;
+    if let PeakRoots::Missing(point) = rooting {
+        return Ok(Probe::Outside(point));
+    }
+    let mut graph = generalizer.graph;
+    graph.truncate(end);
+    Ok(Probe::Open { graph, first, last })
+}
+
 /// Anti-unify and price a uniform family without replay or admission authority.
 ///
 /// # Specification
 /// - ensures: retains exact source correlations, permits only the stated outer
 ///   predecessor relation, and counts distinct triples before any check. Empty
-///   or mixed-rule families retain their structural refusal and cost.
-/// - fails: malformed arena references or graph-size overflow.
+///   or mixed-rule families retain their structural refusal and cost. A point
+///   outside the peak refuses the family: from its first and last members when
+///   the two alone leave one, with the family's member counts and no sizes, and
+///   otherwise from every member, with every size. A candidate's source chooses
+///   every point.
+/// - fails: the first absent side in member order, sources before targets,
+///   whether or not the probe would skip its member; graph-size overflow.
 /// - panics: none.
-/// - intension: discovery indexes are released before returning; member arm
-///   columns remain only until serialization or guarded production completes.
+/// - intension: a family of three or more members imports and generalizes its
+///   first and last members first; a family they leave open imports each other
+///   member once, into the same graph. Discovery indexes are released before
+///   returning; member arm columns remain only until serialization or guarded
+///   production completes.
 ///
 /// # Errors
 /// Propagates `StageError` from syntax import and arithmetic.
@@ -514,7 +810,8 @@ fn materialize(
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — independent sizes, plain replay, all three
 ///   adversarial classes and exact cache counts distinguish weakening any gate
-///   clause.
+///   clause; the full generalization judges every refusal for a point outside
+///   the peak, and a malformed member the probe would skip still fails.
 /// - witness: `template::tests::a_template_is_emitted_only_below_its_expansion_factor`
 /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
 /// - witness: `template::tests::a_skeleton_divergent_family_yields_no_template`
@@ -522,6 +819,8 @@ fn materialize(
 /// - witness: `template::tests::a_family_with_no_shared_content_yields_no_template`
 /// - witness: `template::tests::the_inheritance_check_runs_once_per_distinct_triple`
 /// - witness: `template::tests::empty_and_malformed_families_preserve_refusals`
+/// - witness: `template::tests::outside_peak_refusals_follow_from_the_first_and_last_members`
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|analysis| match *analysis {
     Analysis::Candidate(ref candidate) => usize::from(candidate.cost.members) == family.len()
         && candidate.entries.len() == candidate.arms.len()
@@ -532,6 +831,9 @@ fn materialize(
     Analysis::Refused { reason: TemplateRefusal::SkeletonDivergence { member }, .. } =>
         family.first().zip(family.get(usize::from(member)))
             .is_some_and(|(first, member)| first.rule != member.rule),
+    Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { .. }, cost } =>
+        usize::from(cost.members) == family.len() && generalize_all(arena, family)
+            .is_ok_and(|all| matches!(all.rooting, PeakRoots::Missing(_))),
     Analysis::Refused { .. } => false,
 }))]
 #[inline]
@@ -541,7 +843,7 @@ pub fn analyze(
     family: &[Step],
 ) -> Result<Analysis, StageError>
 {
-    let mut cost = FamilyCostReport {
+    let cost = FamilyCostReport {
         members: MemberCount::from(family.len()),
         plain_replayed_steps: ReplayStepCount::from(family.len()),
         ..FamilyCostReport::default()
@@ -561,51 +863,79 @@ pub fn analyze(
             cost,
         });
     }
-    let mut generalizer = Generalizer {
-        graph: Graph::default(),
-        columns: BTreeMap::new(),
-        entries: Vec::new(),
-        arms: Vec::new(),
+    // A member the probe skips still fails as its import would.
+    for step in family {
+        arena.term(step.source)?;
+        arena.term(step.target)?;
+    }
+    let generalization = match *family {
+        | [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family)? {
+            | Probe::Outside(entry) => {
+                return Ok(Analysis::Refused {
+                    reason: TemplateRefusal::EntryOutsidePeak { entry },
+                    cost,
+                });
+            },
+            | Probe::Open {
+                mut graph,
+                first,
+                last,
+            } => {
+                let ids = import_members(&mut graph, arena, middle)?;
+                let middle = pairs(&ids)?;
+                let members = core::iter::once(first)
+                    .chain(middle.iter().copied())
+                    .chain(core::iter::once(last));
+                generalize(graph, members)?
+            },
+        },
+        | _ => generalize_all(arena, family)?,
     };
-    let roots = family
-        .iter()
-        .flat_map(|step| [step.source, step.target])
-        .collect::<Vec<_>>();
-    let roots = generalizer.graph.import(arena, &roots)?;
-    let mut peaks = Vec::with_capacity(family.len());
-    let mut joins = Vec::with_capacity(family.len());
-    let mut plain = family.len();
-    for pair in roots.chunks_exact(2) {
-        let &[peak, join] = pair
-        else {
-            return Err(StageError::Unbalanced);
-        };
-        peaks.push(peak);
-        joins.push(join);
-        let peak_size = generalizer.graph.size(peak)?;
-        let join_size = generalizer.graph.size(join)?;
-        plain = plain
-            .saturating_add(usize::from(peak_size))
-            .saturating_add(usize::from(join_size));
-    }
-    cost.plain_size = NodeCount::from(plain);
-    let peak = generalizer.column(peaks, EntryIndex::from(0))?;
-    let source_points = EntryIndex::from(generalizer.entries.len());
-    let join = generalizer.column(joins, source_points)?;
-    let sides = [peak, join];
-    let mut points = BTreeSet::new();
-    let mut seen = BTreeSet::new();
-    let mut pending = Vec::from([peak]);
-    while let Some(id) = pending.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        let node = generalizer.graph.node(id)?;
-        if let Head::Point(point) = node.head {
-            points.insert(point);
-        }
-        pending.extend(node.children.0.into_iter().flatten());
-    }
+    conclude(generalization, program, first.rule, cost)
+}
+
+/// Size a family's generalization and price it as a candidate, refusing a
+/// point outside the peak.
+///
+/// # Specification
+/// - requires: `cost` counts the generalized family's members.
+/// - ensures: charges `F`, `s`, `F / s` and the distinct triples; refuses
+///   exactly when a point lies outside the peak, with every size, and otherwise
+///   yields the candidate under `program` and `rule`.
+/// - fails: Overflow when the distinct triples are unrepresentable; Unbalanced
+///   for a malformed graph edge.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `StageError::Overflow` or `StageError::Unbalanced`.
+///
+/// # Adequacy
+/// - hypothesis: L1/L2 — independent tree counts, cancellation prices and the
+///   staged families' fresh-import reference distinguish an undercharged size,
+///   a lost triple and a refusal that drops its sizes.
+/// - witness: `template::tests::a_template_is_emitted_only_below_its_expansion_factor`
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+#[spec(captures: [plain_size = generalization.plain], ensures: |output| output.as_ref().ok().is_none_or(|analysis| match *analysis {
+    Analysis::Candidate(ref candidate) => candidate.cost.plain_size == plain_size,
+    Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { .. }, cost } =>
+        cost.plain_size == plain_size && usize::from(cost.template_size) > 0,
+    Analysis::Refused { .. } => false,
+}))]
+fn conclude(
+    generalization: Generalization,
+    program: ProgramId,
+    rule: Rule,
+    mut cost: FamilyCostReport,
+) -> Result<Analysis, StageError>
+{
+    let Generalization {
+        generalizer,
+        sides,
+        plain,
+        rooting,
+    } = generalization;
+    cost.plain_size = plain;
+    let [peak, join] = sides;
     let peak_size = generalizer.graph.size(peak)?;
     let join_size = generalizer.graph.size(join)?;
     let mut size = usize::from(peak_size)
@@ -618,7 +948,8 @@ pub fn analyze(
         }
     }
     cost.template_size = NodeCount::from(size);
-    cost.expansion_factor = ExpansionFactor::from(plain.checked_div(size).unwrap_or_default());
+    cost.expansion_factor =
+        ExpansionFactor::from(usize::from(plain).checked_div(size).unwrap_or_default());
     let triples = generalizer
         .entries
         .iter()
@@ -628,11 +959,12 @@ pub fn analyze(
         })?
         .max(1);
     let triples = gandr_theory_deep_inference::TripleCount::from(triples);
-    let peak_roots = generalizer
-        .entries
-        .iter()
-        .find(|entry| !points.contains(&entry.point))
-        .map_or(PeakRoots::Complete, |entry| PeakRoots::Missing(entry.point));
+    if let PeakRoots::Missing(entry) = rooting {
+        return Ok(Analysis::Refused {
+            reason: TemplateRefusal::EntryOutsidePeak { entry },
+            cost,
+        });
+    }
     let Generalizer {
         graph,
         entries,
@@ -644,9 +976,8 @@ pub fn analyze(
         entries,
         arms,
         sides,
-        rule: first.rule,
+        rule,
         program,
-        peak_roots,
         cost,
         triples,
     }))
@@ -713,8 +1044,8 @@ impl Candidate
     /// Apply one selected price, then discharge inheritance before emission.
     ///
     /// # Specification
-    /// - ensures: Go passes the selected strict price, is peak-rooted and has
-    ///   inherited every distinct triple. Memoized checks spend at most c each.
+    /// - ensures: Go passes the selected strict price and has inherited every
+    ///   distinct triple. Memoized checks spend at most c each.
     /// - fails: caller budget exhaustion or malformed syntax; an insufficient
     ///   price-derived work allowance declines the candidate without caching a
     ///   lie.
@@ -761,17 +1092,10 @@ impl Candidate
             sides,
             rule,
             program,
-            peak_roots,
             mut cost,
             triples: _,
         } = self;
         let [peak, join] = sides;
-        if let PeakRoots::Missing(entry) = peak_roots {
-            return Ok(Production::Plain {
-                reason: TemplateRefusal::EntryOutsidePeak { entry },
-                cost,
-            });
-        }
         let pays = match gate {
             | PriceGate::Unmemoized => prices.unmemoized.is_ok(),
             | PriceGate::Memoized => prices.memoized.is_ok(),
