@@ -10,6 +10,8 @@ use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 use core::num::TryFromIntError;
 
+use anodized::spec;
+
 /// Defines a transparent newtype over one primitive with `From` conversions
 /// both ways; the `display` arm adds a `Display` that writes the primitive.
 macro_rules! primitive_newtype {
@@ -120,6 +122,20 @@ impl Iterator for NodeIdRange
     ///   reaches `end` every call yields nothing.
     /// - provides: the ascending enumeration every algorithm visits sources in.
     /// - panics: none; the advance saturates at `end`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For dense ranges, L3 observations distinguish skipping or
+    ///   repeating an id, crossing the exclusive bound, and resuming after
+    ///   exhaustion. Zero and the last representable bound are covered; the
+    ///   contract concerns enumeration, not an exact-size iterator guarantee.
+    /// - witness: `types::tests::node_ids_advance_and_remain_exhausted`
+    #[spec(
+        captures: [prior = self.next, end = self.end],
+        ensures: |result| self.end == end && match result {
+            Some(node) => prior < end && node.0 == prior && self.next == prior.saturating_add(1),
+            None => prior >= end && self.next == prior,
+        },
+    )]
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -150,6 +166,18 @@ impl TryFrom<NodeCount> for NodeCapacity
     ///
     /// # Errors
     /// [`TryFromIntError`] when the bound does not fit `usize`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every node bound, the result observer distinguishes
+    ///   numerical preservation from truncation and refusal from successful
+    ///   widening. L3 endpoint witnesses cover zero and the largest bound; a
+    ///   refusal on a narrower host is conditional on its address width, not
+    ///   simulated allocation failure.
+    /// - witness: `types::tests::host_positions_preserve_bounds`
+    #[spec(ensures: |result| result.map_or_else(
+        |_| usize::try_from(value.0).is_err(),
+        |capacity| u64::try_from(capacity.0).is_ok_and(|raw| raw == u64::from(value.0)),
+    ))]
     #[inline]
     fn try_from(value: NodeCount) -> Result<Self, Self::Error>
     {
@@ -189,6 +217,18 @@ impl TryFrom<NodeId> for NodePosition
     ///
     /// # Errors
     /// [`TryFromIntError`] when the id does not fit `usize`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every dense node id, L3 endpoint observations
+    ///   distinguish widening without a changed value from truncation or an
+    ///   incorrect refusal. Host-width refusal is exercised only where the host
+    ///   is narrower than the node representation; graph membership is
+    ///   deliberately not checked here.
+    /// - witness: `types::tests::host_positions_preserve_bounds`
+    #[spec(ensures: |result| result.map_or_else(
+        |_| usize::try_from(value.0).is_err(),
+        |position| u64::try_from(position.0).is_ok_and(|raw| raw == u64::from(value.0)),
+    ))]
     #[inline]
     fn try_from(value: NodeId) -> Result<Self, Self::Error>
     {
@@ -210,6 +250,18 @@ impl TryFrom<NodePosition> for NodeId
     ///
     /// # Errors
     /// [`TryFromIntError`] when the position does not fit `u32`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For host positions, L3 endpoint and first-overflow
+    ///   observations distinguish exact narrowing from truncation, off-by-one
+    ///   refusal and accepting an unrepresentable id. The overflow witness runs
+    ///   only when the host can represent that position; validity within any
+    ///   particular graph is outside this conversion.
+    /// - witness: `types::tests::host_positions_preserve_bounds`
+    #[spec(ensures: |result| result.map_or_else(
+        |_| u32::try_from(value.0).is_err(),
+        |node| usize::try_from(node.0).is_ok_and(|raw| raw == value.0),
+    ))]
     #[inline]
     fn try_from(value: NodePosition) -> Result<Self, Self::Error>
     {
@@ -431,5 +483,60 @@ impl AsRef<[u8]> for FingerprintBytes<'_>
     fn as_ref(&self) -> &[u8]
     {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+
+    use super::*;
+
+    #[test]
+    fn node_ids_advance_and_remain_exhausted()
+    {
+        let mut empty = NodeCount::from(0).ids();
+        assert_eq!(empty.next(), None);
+        assert_eq!(empty.next(), None);
+        assert_eq!(
+            NodeCount::from(3).ids().collect::<alloc::vec::Vec<_>>(),
+            vec![NodeId::from(0), NodeId::from(1), NodeId::from(2)]
+        );
+        let mut last = NodeIdRange {
+            next: u32::MAX.saturating_sub(1),
+            end: u32::MAX,
+        };
+        assert_eq!(last.next(), Some(NodeId::from(u32::MAX.saturating_sub(1))));
+        assert_eq!(last.next(), None);
+        assert_eq!(last.next(), None);
+    }
+
+    #[test]
+    fn host_positions_preserve_bounds()
+    {
+        for raw in [0_u32, u32::MAX] {
+            if let Ok(expected) = usize::try_from(raw) {
+                let capacity =
+                    NodeCapacity::try_from(NodeCount::from(raw)).expect("representable bound");
+                assert_eq!(usize::from(capacity), expected);
+                let position = NodePosition::try_from(NodeId::from(raw)).expect("representable id");
+                assert_eq!(usize::from(position), expected);
+                assert_eq!(
+                    NodeId::try_from(position).expect("round-trip id"),
+                    NodeId::from(raw)
+                );
+            }
+            else {
+                assert!(NodeCapacity::try_from(NodeCount::from(raw)).is_err());
+                assert!(NodePosition::try_from(NodeId::from(raw)).is_err());
+            }
+        }
+        if let Some(overflow) = usize::try_from(u32::MAX)
+            .ok()
+            .and_then(|raw| raw.checked_add(1))
+        {
+            assert!(NodeId::try_from(NodePosition::from(overflow)).is_err());
+        }
     }
 }

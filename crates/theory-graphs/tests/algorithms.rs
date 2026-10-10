@@ -4,6 +4,7 @@
 
 use core::error::Error;
 
+use anodized::spec;
 use gandr_theory_graphs::ComponentEdge;
 use gandr_theory_graphs::ComponentIndex;
 use gandr_theory_graphs::EdgeSource;
@@ -48,7 +49,31 @@ impl TestGraph
     /// source past the bound is dropped, an edge to a target past it kept.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the bound and raw source positions fit the host, allocation
+    ///   succeeds, and edge conversions are stable.
+    /// - ensures: rows retain exactly the input edges from declared sources,
+    ///   preserving target order and repetition, including foreign targets.
+    /// - panics: a bound or source does not fit the host.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For representable fixture graphs with stable conversions,
+    ///   the predicate observes the dense row count and retained-edge count. L3
+    ///   empty, permuted, repeated and malformed-target graphs distinguish
+    ///   dropped sources and fabricated entries; the algorithm observers and L2
+    ///   matrix comparisons check incidence. The consuming bound conversion has
+    ///   no independent borrowed observer, and allocation failure is outside
+    ///   the fixture domain.
+    /// - witness: `tests::algorithms::empty_graphs_have_no_invented_nodes_or_edges`
+    /// - witness: `tests::algorithms::successor_permutations_preserve_all_observers`
+    /// - witness: `tests::algorithms::out_of_bounds_edges_are_refused_by_name`
+    /// - witness: `tests::algorithms::reachability_agrees_with_the_closure_matrix`
+    #[spec(ensures: |ref built| usize::try_from(u32::from(built.node_count))
+        .is_ok_and(|count| built.rows.len() == count)
+        && built.rows.iter().try_fold(0_usize, |total, row| total.checked_add(row.len()))
+            == Some(edges.iter().filter(|&&edge| {
+                let RawEdge(source, _) = edge.into();
+                source < u32::from(built.node_count)
+            }).count()))]
     fn new<N, E>(
         node_count: N,
         edges: &[E],
@@ -88,7 +113,19 @@ impl EdgeSource for TestGraph
     /// Yields a node's successors as given.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the node names an existing fixture row.
+    /// - ensures: returns that row's successors in their supplied order.
+    /// - panics: the source has no row.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a declared fixture source, the precondition observes
+    ///   addressability and the row bound. L3 named, repeated and permuted
+    ///   graphs distinguish wrong-source lookup, reversal and dropped
+    ///   successors through full algorithm results. It does not promise a
+    ///   fallback for undeclared sources.
+    /// - witness: `tests::algorithms::reachability_rows_on_a_named_graph`
+    /// - witness: `tests::algorithms::successor_permutations_preserve_all_observers`
+    #[spec(requires: usize::try_from(u32::from(node)).is_ok_and(|position| position < self.rows.len()))]
     fn successors(
         &self,
         node: NodeId,
@@ -115,7 +152,29 @@ enum Reach
 /// leads from `a` to `b`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: every target names a row of the graph.
+/// - ensures: a square matrix records exactly non-empty-path reachability.
+/// - panics: a target has no row.
+///
+/// # Adequacy
+/// - hypothesis: For finite in-bounds raw rows, the predicate observes matrix
+///   shape, direct-edge inclusion and transitive closure. A hand-classified L3
+///   cycle, directed tail and isolated node distinguish reflexive closure,
+///   reversal and unreachable extras independently of the algorithms that use
+///   this oracle. Complete leastness is witnessed, not recomputed in the
+///   predicate.
+/// - witness: `tests::algorithms::closure_oracle_separates_direction_and_cycles`
+#[spec(
+    requires: graph.rows.iter().all(|row| row.iter().all(|&target|
+        usize::try_from(u32::from(target)).is_ok_and(|position| position < graph.rows.len()))),
+    ensures: |ref matrix| matrix.len() == graph.rows.len()
+        && matrix.iter().all(|row| row.len() == graph.rows.len())
+        && graph.rows.iter().zip(matrix).all(|(given, row)| given.iter().all(|&target|
+            usize::try_from(u32::from(target)).ok().and_then(|position| row.get(position)) == Some(&Reach::Reached)))
+        && matrix.iter().all(|row| row.iter().enumerate().all(|(middle, &reach)|
+            reach != Reach::Reached || matrix.get(middle).is_some_and(|through|
+                row.iter().zip(through).all(|(&end, &onward)| onward != Reach::Reached || end == Reach::Reached)))),
+)]
 fn closure_matrix(graph: &TestGraph) -> Vec<Vec<Reach>>
 {
     let size = graph.rows.len();
@@ -154,7 +213,21 @@ where
 /// Names the node at a vector position.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the position converts to a 32-bit node identity.
+/// - ensures: returns that converted identity without a graph-membership check.
+/// - panics: conversion refuses the position.
+/// - executable: none — the generic fallible conversion consumes its only input
+///   and exposes no borrowed numerical observer for a relation to the returned
+///   identity; adding such a bound changes the helper's domain.
+///
+/// # Adequacy
+/// - hypothesis: For representable host positions, L2 matrix comparisons
+///   observe every source identity and target position, distinguishing
+///   truncation or a shifted index. The witnesses instantiate standard integer
+///   conversions; arbitrary consuming conversion implementations and invalid
+///   positions are outside their valid-input domain.
+/// - witness: `tests::algorithms::reachability_agrees_with_the_closure_matrix`
+/// - witness: `tests::algorithms::condensation_agrees_with_mutual_reachability`
 fn node_at<P>(position: P) -> NodeId
 where
     P: TryInto<u32>,
@@ -390,4 +463,50 @@ proptest! {
         expected_edges.dedup();
         prop_assert_eq!(expected_edges, condensed.edges);
     }
+}
+
+#[test]
+fn empty_graphs_have_no_invented_nodes_or_edges() -> Result<(), GraphValidationError>
+{
+    let graph = TestGraph::new::<_, (u32, u32)>(0_u32, &[]);
+    assert_eq!(cycle_witness(&graph)?, None);
+    assert!(reachability(&graph)?.rows.is_empty());
+    let folded = condensation(&graph)?;
+    assert!(folded.components.is_empty());
+    assert!(folded.edges.is_empty());
+    Ok(())
+}
+
+#[test]
+fn successor_permutations_preserve_all_observers() -> Result<(), GraphValidationError>
+{
+    let graph = TestGraph::new(5_u32, &[(0, 1), (0, 3), (1, 2), (2, 1)]);
+    let reordered = TestGraph::new(5_u32, &[
+        (2, 1),
+        (0, 3),
+        (1, 2),
+        (0, 1),
+        (1, 2),
+        (0, 3),
+        (9, 0),
+    ]);
+    assert_eq!(cycle_witness(&graph)?, cycle_witness(&reordered)?);
+    assert_eq!(reachability(&graph)?, reachability(&reordered)?);
+    assert_eq!(condensation(&graph)?, condensation(&reordered)?);
+    Ok(())
+}
+
+#[test]
+fn closure_oracle_separates_direction_and_cycles()
+{
+    use Reach::Reached as R;
+    use Reach::Unreached as U;
+
+    let graph = TestGraph::new(4_u32, &[(0, 1), (1, 0), (1, 2)]);
+    assert_eq!(closure_matrix(&graph), vec![
+        vec![R, R, R, U],
+        vec![R, R, R, U],
+        vec![U, U, U, U],
+        vec![U, U, U, U]
+    ]);
 }

@@ -81,6 +81,10 @@ The algorithm half carries what the grammar reads and nothing else: cycle eviden
 
 The determinism probe — a binary that prints the byte-level projection of every public result while scratch allocation is perturbed — and the benchmarks are a lateral, outside this crate. Determinism is held here by construction and by test: every tie is broken by the smallest dense identifier, every collection the results are read from is ordered, no hasher is process-random, and the pinned fingerprints and permuted-insertion tests fail on any drift.
 
+Executable `#[spec]` predicates check arithmetic and refusal boundaries, dense incidence, precedence comparisons, walk shape and canonical-row invariants. They retain scalar snapshots or borrowed observers rather than copies of entire inputs. Each nontrivial operation names its same-crate witnesses and the boundary of their evidence under `# Adequacy`; the enforcing test lane runs the predicates. Complete closure and canonical tie-breaking are checked against independent fixtures and generated oracles, not assumed from the structural predicates.
+
+Required trait declarations, opaque iterator returns and consuming generic fingerprint conversions record why their contracts cannot be instrumented locally without changing a protocol or ownership boundary. Display evidence observes numeric fields and sink refusal without pinning wording.
+
 ## Graph library
 
 The condensation runs on petgraph, version `0.8.3`, every feature off; `condensation` and its `kosaraju_scc` build under `no_std` without `std`, `graphmap`, `stable_graph` or `matrix_graph`. petgraph is reached only through this crate and no public signature names one of its types: a graph enters as an `EdgeSource` and every result is in dense `NodeId`s and `ComponentIndex`es, so a consumer inherits no petgraph type and the library can change behind the boundary. The graph is built with `try_add_node` and `try_add_edge`, so an index-space overflow is `GraphValidationError::NodeCountTooLarge` or `EdgeCountTooLarge`, never petgraph's panic. The condensation is taken with `make_acyclic` off and its self-loops and parallel edges removed by one sort and deduplication afterwards, which avoids the per-edge neighbour scan `make_acyclic` performs; components are then renumbered in order of their smallest member, each member list ascending.
@@ -100,6 +104,8 @@ A group's associativity is one of three values, `Assoc::Left`, `Assoc::Right` an
 
 The linear extension is Kahn's order with the smallest ready group taken first, so it is one fixed order for a given specification, and `linear_extension` borrows it. Comparisons read the precomputed closure: each group's row lists, ascending, the groups strictly looser than it, so `lt` and `gt` are one binary search.
 
+Construction accepts all 65,536 group identities, but exhausting the `groups` iterator at that capacity can overflow its 16-bit enumeration counter when overflow checks are enabled. Capacity construction and complete iterator consumption are distinct boundaries.
+
 ## Walk index
 
 A walk alternates swings — non-empty runs of nonterminals — with the stances between them, starting and ending on a swing. A machine supplies walks directly between two ends, and generates them from swing arcs: an arc extends a swing, crosses a stance into a new swing, or emits the walk so far at an end, from a seed per direction and source. The swing arcs are indexed by source once per build. Swing closure keys a visited state on its sort and bounds; `WalkIndex::compare_seen_keys` reports whether keying on the sort alone would change any row, the diagnostic that shows the bounds part of the key is needed.
@@ -114,6 +120,8 @@ The `eq`, `lt` and `gt` projections are the direct rows filtered by query kind; 
 
 - `PrecDag::fingerprint` hashes the group count, then per group its name's length, its name and its associativity tag (`Non` 0, `Left` 1, `Right` 2), then the edge count and each edge as two 16-bit indices, in canonical edge order. Reordered or repeated edges agree; a renamed group, a changed associativity or a changed relation each move it.
 - `WalkIndex::fingerprint` hashes the frame `gandr.walk.v1` and the cap, the direct rows under tag `D`, the transitive rows under tag `T`, then under tag `M` each label's molds by ordinal, with every symbol written as its stable key. Two machines with the same rows have the same fingerprint, whatever their insertion order.
+
+The walk fingerprint witnesses include independently framed empty and directional machines with asymmetric symbol keys and a molds row. Zero-sized swing and stance inputs exercise representability and refusal precedence without allocating billions of elements.
 
 ## License
 
