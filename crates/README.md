@@ -19,50 +19,50 @@ workflow  repository tooling and gates
 
 ## Members
 
-One row per directory: the directory, its package, and what it is.
+One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
 
 ```text
 crates/
-├── theory-cell-complexes/         gandr-theory-cell-complexes         command patterns, matching, the reduction order, the cell alphabet and store
-├── theory-cell-complexes-tools/   gandr-theory-cell-complexes-tools   the toy alphabet and the adversary frame engine suites test against (dev only)
-├── theory-circuit-algebras/       gandr-theory-circuit-algebras       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
-├── theory-coherent-resolutions/   gandr-theory-coherent-resolutions   firing, critical pairs, replayable coherence certificates, budgeted completion
-├── theory-computads/              gandr-theory-computads              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
-├── theory-deep-inference/         gandr-theory-deep-inference         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection
-├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
-├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
-├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
-├── theory-sites/                  gandr-theory-sites                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
-├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
-├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets
-├── kernel-check-memo/             gandr-kernel-check-memo             the check-memo seam a checker consults
-├── kernel-conversion-trace/       gandr-kernel-conversion-trace       the conversion-decision vocabulary and its sink
-├── kernel-core/                   gandr-kernel-core                   the checking machine, conversion, admission, the check memo
-├── core-term/                     gandr-core-term                     the core syntax and the one unified context
-├── core-nbe/                      gandr-core-nbe                      the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay, its erasure and its measure
-├── core-checker/                  gandr-core-checker                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
-├── core-incremental/              gandr-core-incremental              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
-├── core-sequent/                  gandr-core-sequent                  the command IL a core program is focused into and the two-region store its machine runs in
-├── core-session/                  gandr-core-session                  contractive binary session types, coinductive relations, and endpoint replay
-├── storage-chunker/               gandr-storage-chunker               content-defined chunk boundaries and their committed parameters
-├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
-├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers
-├── storage-artifact/              gandr-storage-artifact              kernel artifacts on the record plane: declaration segments as keyed records under a BLAKE3 manifest identity, read back through the kernel's decoder
-├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
-├── surface-render-remote/         gandr-surface-render-remote         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
-├── surface-layout/                gandr-surface-layout                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-pretty/                gandr-surface-pretty                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
-├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
-├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
-├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
-├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
-├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
-├── surface-diagnostics/           gandr-surface-diagnostics           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
-├── surface-session/               gandr-surface-session               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
-├── surface-lsp/                   gandr-surface-lsp                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
-├── surface-repl/                  gandr-surface-repl                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
-├── surface-tui/                   gandr-surface-tui                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
-└── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
+├── theory-cell-complexes/         command patterns, matching, the reduction order, the cell alphabet and store
+├── theory-cell-complexes-tools/   the toy alphabet and the adversary frame engine suites test against (dev only)
+├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
+├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
+├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
+├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection
+├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
+├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
+├── theory-orders/                 order maintenance with constant-time comparison
+├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
+├── kernel-strata/                 the universe-level oracle with checkable order evidence
+├── kernel-term/                   the term arena, the sharing format, the decode budgets
+├── kernel-check-memo/             the check-memo seam a checker consults
+├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
+├── kernel-core/                   the checking machine, conversion, admission, the check memo
+├── core-term/                     the core syntax and the one unified context
+├── core-nbe/                      the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay, its erasure and its measure
+├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
+├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
+├── core-sequent/                  the command IL a core program is focused into and the two-region store its machine runs in
+├── core-session/                  contractive binary session types, coinductive relations, and endpoint replay
+├── storage-chunker/               content-defined chunk boundaries and their committed parameters
+├── storage-records/               the authenticated ordered-record plane
+├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
+├── storage-artifact/              kernel artifacts on the record plane: declaration segments as keyed records under a BLAKE3 manifest identity, read back through the kernel's decoder
+├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
+├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
+├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
+├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
+├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
+├── surface-lowering/              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
+├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
+├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
+├── surface-diagnostics/           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
+├── surface-session/               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
+├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
+├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
+├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
+└── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
 ```
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
