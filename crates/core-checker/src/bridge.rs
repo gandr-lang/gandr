@@ -140,6 +140,7 @@ use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
 use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_core::ReplayDecline;
 use gandr_kernel_core::ReplayNode;
 use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
@@ -223,6 +224,20 @@ fn fault(refusal: CheckRefusal) -> Refusal
 
 /// Why the bridge offered the kernel nothing for a declaration the judgement
 /// accepted.
+///
+/// # Specification
+/// - provides: a located reason the declaration cannot cross. A declined
+///   certificate retains both its unfolded step and the kernel's exact
+///   [`ReplayDecline`]; certification without a dialogue records
+///   [`ReplayDecline::EngineDeclined`]. Its [`Self::classify`] result is
+///   [`FailureClass::EngineFault`] for every decline reason.
+///
+/// # Adequacy
+/// - hypothesis: L3 — corrupted certificates yielding different replay refusals
+///   retain those reasons on the declaration; the pinned table separates every
+///   bridge refusal's class independently of its payload.
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `bridge::tests::every_refusal_carries_its_pinned_class`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Refusal
 {
@@ -275,6 +290,9 @@ pub enum Refusal
     {
         /// What the step unfolded.
         unfolded: Unfolded,
+        /// The replay's reason, or no dialogue when certification produced
+        /// none.
+        reason: ReplayDecline,
     },
     /// The machine's own bookkeeping disagreed with itself: a frame received
     /// an image of another family than it awaits. Unreachable while the
@@ -1542,9 +1560,11 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   positions, a static lambda's step prefixed by the unfolding of its
     ///   operator. Each replays as a convertibility claim. `target` holds the
     ///   images minted and nothing the replay minted.
-    /// - fails: [`Refusal::CertificateDeclined`] naming the first certificate
-    ///   that does not replay to convertible, beside the verdicts replayed up
-    ///   to it; the refusal erasing a side gives.
+    /// - fails: [`Refusal::CertificateDeclined`] naming the first declined
+    ///   certificate and preserving its [`ReplayDecline`], beside the verdicts
+    ///   replayed up to it; the refusal erasing a side gives. An impossible
+    ///   certified negative for a positive claim is
+    ///   [`Refusal::MachineInvariant`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1594,8 +1614,17 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 match self.replay_one(target, &certificate, &mut met) {
                     | Ok(Maybe::Present(entry)) => {
                         replayed.push(entry);
-                        if entry.verdict != KernelVerdict::Convertible {
-                            return Err((Refusal::CertificateDeclined { unfolded }, replayed));
+                        match entry.verdict {
+                            | KernelVerdict::Convertible => {},
+                            | KernelVerdict::Declined(reason) => {
+                                return Err((
+                                    Refusal::CertificateDeclined { unfolded, reason },
+                                    replayed,
+                                ));
+                            },
+                            | KernelVerdict::NotConvertible => {
+                                return Err((Refusal::MachineInvariant, replayed));
+                            },
                         }
                     },
                     | Ok(Maybe::Absent(_)) => {},
@@ -1867,8 +1896,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - requires: every body the positions hold lives in the arena.
     /// - ensures: the reduct [`CodeDefinitions::reduce`] gives, minted, with
     ///   the step's certificate queued for replay; nothing for a rigid code.
-    /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
-    ///   not certify; [`Refusal::DanglingNode`] for a node the arena does not
+    /// - fails: [`Refusal::CertificateDeclined`] with
+    ///   [`ReplayDecline::EngineDeclined`] when certification yields no
+    ///   dialogue; [`Refusal::DanglingNode`] for a node the arena does not
     ///   hold.
     /// - panics: none.
     ///
@@ -1905,7 +1935,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             .positions
             .definitions
             .certify(self.arena, reduction)
-            .map_err(|_undecided| Refusal::CertificateDeclined { unfolded })?;
+            .map_err(|_undecided| Refusal::CertificateDeclined {
+                unfolded,
+                reason: ReplayDecline::EngineDeclined,
+            })?;
         let reduct = certificate.reduct();
         self.certificates.push(certificate);
         Ok(Maybe::Present(reduct))
@@ -2863,6 +2896,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use gandr_core_nbe::TraceNode;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_core_term::Sort;
@@ -2872,8 +2906,12 @@ mod tests
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_kernel_check_memo::ContentDigest;
+    use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::TracePosition;
     use gandr_kernel_core::content_digest;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -3534,8 +3572,7 @@ mod tests
         // def Pair : Type -> Type = \X. El X * El X ;
         // def instance : Type = Pair Integer ;
         //
-        // A static step replays the normaliser's trace, so emptying it leaves
-        // the kernel no unfolding to take.
+        // Missing dialogue and a foreign answer retain different reasons.
         let mut arena = CoreArena::new();
         let small = small(&mut arena);
         let operator_type = arena.value_type_static_pi(small, small);
@@ -3556,42 +3593,46 @@ mod tests
             let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
             check_module(&mut context, &module)
         };
-        let readmission = readmit_with(&mut arena, &report, |certificate| {
-            certificate.with_decisions(Vec::new())
-        });
-        let [ref operator_entry, ref faulted] = *readmission.readmitted()
-        else {
-            panic!("one outcome per declaration");
-        };
-        assert_eq!(
-            operator_entry.outcome(),
-            &Outcome::Static,
-            "the operator itself replays nothing"
-        );
-        let refusal = Refusal::CertificateDeclined {
-            unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
-        };
-        assert_eq!(
-            faulted.outcome(),
-            &Outcome::Refused(refusal),
-            "an emptied trace does not replay, and the declaration resting on it is refused"
-        );
-        assert!(
-            matches!(faulted.certificates(), [Replayed {
-                verdict: KernelVerdict::Declined(_),
-                ..
-            }]),
-            "the kernel's decline travels on the outcome"
-        );
-        assert_eq!(
-            refusal.classify(),
-            FailureClass::EngineFault,
-            "a decline is the engine's"
-        );
-        assert!(
-            readmission.environment().entries().is_empty(),
-            "the refused declaration left the environment as it was"
-        );
+        let foreign = [ConversionDecision::Force {
+            thunk: TraceNode::Constant(ConstantIndex::from(0_usize)),
+        }];
+        for (decisions, reason) in [
+            (&[][..], ReplayRefusal::Exhausted),
+            (foreign.as_slice(), ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0),
+            }),
+        ] {
+            let readmission = readmit_with(&mut arena, &report, |certificate| {
+                certificate.with_decisions(decisions.to_vec())
+            });
+            let [ref operator_entry, ref faulted] = *readmission.readmitted()
+            else {
+                panic!("one outcome per declaration");
+            };
+            assert_eq!(
+                operator_entry.outcome(),
+                &Outcome::Static,
+                "the operator itself replays nothing"
+            );
+            let reason = ReplayDecline::Refused(reason);
+            let refusal = Refusal::CertificateDeclined {
+                unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
+                reason,
+            };
+            assert_eq!(faulted.outcome(), &Outcome::Refused(refusal));
+            assert!(
+                matches!(faulted.certificates(), [Replayed {
+                    verdict: KernelVerdict::Declined(recorded),
+                    ..
+                }] if *recorded == reason),
+                "the refusal and replay record preserve the same reason"
+            );
+            assert_eq!(refusal.classify(), FailureClass::EngineFault);
+            assert!(
+                readmission.environment().entries().is_empty(),
+                "the refused declaration left the environment as it was"
+            );
+        }
     }
 
     #[test]
@@ -3890,9 +3931,11 @@ mod tests
             (
                 Refusal::CertificateDeclined {
                     unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
+                    reason: ReplayDecline::EngineDeclined,
                 },
                 Refusal::CertificateDeclined {
                     unfolded: Unfolded::Abstraction(second_value),
+                    reason: ReplayDecline::Refused(ReplayRefusal::Exhausted),
                 },
                 FailureClass::EngineFault,
             ),

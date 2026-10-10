@@ -63,6 +63,18 @@ pub struct ReplayStep<A: CellAlphabet = SequentAlphabet>
 }
 
 /// Why a replayed step did not fire.
+///
+/// # Specification
+/// - provides: [`Self::UnissuedCell`] for an ill-formed query whose cell is
+///   absent; [`Self::DoesNotFire`] for a foreign answer whose issued cell
+///   cannot fire at the recorded position, preserving the firing reason. A
+///   reached term different from the join is a path disagreement, carried by
+///   [`ReplayPathOutcome::Reached`] rather than a stuck step.
+///
+/// # Adequacy
+/// - hypothesis: L3 — absent identifiers and issued cells at nonmatching or
+///   absent positions retain distinct, exact reasons in the replay trace.
+/// - witness: `tracelet::tests::every_stuck_step_carries_its_pinned_class`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StuckStep
 {
@@ -622,9 +634,13 @@ mod tests
     use gandr_theory_cell_complexes::ConsPat;
     use gandr_theory_cell_complexes::Orientation;
     use gandr_theory_cell_complexes::Polarity;
+    use gandr_theory_cell_complexes::PositionStep;
     use gandr_theory_cell_complexes::ProdPat;
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
     use crate::overlap::enumerate_overlaps;
@@ -804,5 +820,57 @@ mod tests
             ),
             "the certificate's replay is the peak-rooted replay of its boundary"
         );
+    }
+
+    #[test]
+    fn every_stuck_step_carries_its_pinned_class()
+    {
+        let mut store = CellStore::new();
+        let issued = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        let rows = [
+            (
+                CellApp {
+                    cell: CellId::from(1_usize),
+                    at: ToyAlphabet::root_position(),
+                },
+                StuckStep::UnissuedCell,
+                "ill-formed query",
+            ),
+            (
+                CellApp {
+                    cell: issued,
+                    at: ToyAlphabet::root_position(),
+                },
+                StuckStep::DoesNotFire(firing::Absent::NoMatch),
+                "foreign answer",
+            ),
+            (
+                CellApp {
+                    cell: issued,
+                    at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+                },
+                StuckStep::DoesNotFire(firing::Absent::NoCommand(
+                    gandr_theory_cell_complexes::command_subterm::Absent::OffTerm,
+                )),
+                "foreign answer",
+            ),
+        ];
+        let mut covered = [false; 2];
+        for (application, reason, class) in rows {
+            let row = match reason {
+                | StuckStep::UnissuedCell => 0,
+                | StuckStep::DoesNotFire(_) => 1,
+            };
+            covered[row] = true;
+            assert_eq!(
+                trace_path(&store, Toy::zero(), core::slice::from_ref(&application)).outcome,
+                ReplayPathOutcome::Stuck {
+                    application,
+                    reason
+                },
+                "{class} keeps {reason:?}",
+            );
+        }
+        assert_eq!(covered, [true; 2]);
     }
 }
