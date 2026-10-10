@@ -11,6 +11,10 @@ keywords = ["bidirectional", "call-by-push-value", "gandr", "no-std", "type-chec
 categories = ["compilers", "no-std"]
 publish.workspace = true
 
+[[example]]
+name = "staging_templates"
+test = true
+
 # The judgement is stated over the core language's own vocabulary and its
 # context, and reads the leaf vocabulary (admission positions, de Bruijn
 # indices, literals, base types, sorts) from the term crate that core-term
@@ -32,10 +36,14 @@ gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-deep-inference.workspace = true
 quenchant-shape.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
+allocation-counter.workspace = true
 proptest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
