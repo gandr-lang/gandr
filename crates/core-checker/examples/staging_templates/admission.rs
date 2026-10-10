@@ -48,7 +48,10 @@ use std::io::Write as _;
 use gandr_kernel_core::admission::Admission;
 use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Consumer;
+use gandr_kernel_core::admission::Phase;
+use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_core::admission::Refusal;
+use gandr_kernel_core::admission::RowScratch;
 use gandr_kernel_core::admission::Schema;
 use gandr_kernel_core::admission::Work;
 use gandr_kernel_term::stage::Step;
@@ -341,6 +344,7 @@ pub fn run(
                 return Err(StageError::Unbalanced.into());
             };
             let admission = candidate.admission_candidate()?;
+            let proposal: Proposal = admission.proposal.clone();
             let start = Instant::now();
             let schema = Schema::check(admission.proposal, &mut Budget(10_000_000))?;
             let schema_time = start.elapsed();
@@ -420,8 +424,19 @@ pub fn run(
                 schema_time,
                 binding_time,
                 largest,
+                fast: Schema::check_observed(
+                    proposal.clone(),
+                    &mut Budget(10_000_000),
+                    &mut |_: Phase| {},
+                    true,
+                )?,
+                proposal,
             });
         }
+    }
+    if std::env::var("GANDR_LEADS").is_ok() {
+        handoff::leads(output, &workload)?;
+        return Ok(());
     }
     handoff::run(output, &workload)?;
     Ok(())

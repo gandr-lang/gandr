@@ -617,12 +617,14 @@ where
             let parent = parent.clone();
             let ready = Arc::clone(&ready);
             let handle = scope.spawn(move || {
+                qos();
                 ready.wait();
                 worker(input, output, scratch, workload, wire, &parent, wake)
             });
             pool.workers.push(handle.thread().clone());
             handles.push(handle);
         }
+        qos();
         ready.wait();
         let result = experiment(&mut pool);
         if wire.kind == Kind::Steal {
@@ -652,4 +654,26 @@ where
         }
         result
     })
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    /// Darwin's per-thread quality-of-service request.
+    safe fn pthread_set_qos_class_self_np(
+        class: u32,
+        relative: i32,
+    ) -> i32;
+}
+
+/// Research: request user-interactive QoS when `GANDR_QOS` is set, biasing
+/// the thread onto performance cores.
+///
+/// # Specification
+/// trivial.
+fn qos()
+{
+    #[cfg(target_os = "macos")]
+    if std::env::var("GANDR_QOS").is_ok() {
+        let _status: i32 = pthread_set_qos_class_self_np(0x21, 0);
+    }
 }

@@ -282,6 +282,22 @@ impl Arena
             .ok_or(StageError::UnknownTerm(id))
     }
 
+    /// Look up an exact term without allocating (research scratch).
+    ///
+    /// # Specification
+    /// - ensures: returns the coordinate `alloc` would return for `term` when
+    ///   it is already interned, and nothing otherwise.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub fn find(
+        &self,
+        term: &Term,
+    ) -> Option<TermId>
+    {
+        self.term_ids.get(term).copied()
+    }
+
     /// Intern a classifier over existing children, without forming it.
     ///
     /// # Specification

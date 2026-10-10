@@ -77,6 +77,24 @@ impl Prepared
         }
         Ok(Self { dynamic, plan })
     }
+
+    /// Research scratch: the dependence bit per pattern coordinate.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn dynamic(&self) -> &[bool]
+    {
+        &self.dynamic.0
+    }
+
+    /// Research scratch: the dependent plan in child-before-parent order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn plan(&self) -> &[TermId]
+    {
+        &self.plan
+    }
 }
 
 /// Consumer syntax and schema coordinates, owned together so ids cannot escape
@@ -315,6 +333,217 @@ pub(super) fn compare(
     .zip(sides)
     {
         if instance.resolve(expected)? != actual {
+            return Err(Refusal::SidesMismatch);
+        }
+    }
+    Ok(work)
+}
+
+impl Instance
+{
+    /// Research scratch: a side coordinate is live in the bound arena.
+    ///
+    /// # Errors
+    /// Returns the unknown-term refusal.
+    pub(super) fn live(
+        &self,
+        id: TermId,
+    ) -> Result<(), Refusal>
+    {
+        self.arena.term(id)?;
+        Ok(())
+    }
+
+    /// Research scratch: resolve a fixed coordinate or a row-local one.
+    ///
+    /// # Errors
+    /// Returns Malformed on an absent coordinate.
+    fn resolve_row(
+        &self,
+        id: TermId,
+        row: &[Option<TermId>],
+    ) -> Result<TermId, Refusal>
+    {
+        match self.nodes.get(id.0).copied().ok_or(Refusal::Malformed)? {
+            | Slot::Known(id) => Ok(id),
+            | Slot::Pending => row.get(id.0).copied().flatten().ok_or(Refusal::Malformed),
+        }
+    }
+
+    /// Research scratch: `rebuild` over row-local dynamic coordinates.
+    ///
+    /// # Errors
+    /// Returns Malformed or the syntax refusal.
+    fn rebuild_row(
+        &self,
+        term: Term,
+        row: &[Option<TermId>],
+    ) -> Result<Term, Refusal>
+    {
+        let term = match term {
+            | Term::Code(ty) => Term::Code(self.classifier(ty)?),
+            | Term::Lambda(ty, body) => Term::Lambda(self.classifier(ty)?, body),
+            | Term::Eliminate(body, ty) => Term::Eliminate(body, self.classifier(ty)?),
+            | term => term,
+        };
+        let mut children = [Child::Vacant; 3];
+        for (child, output) in term.children().into_iter().zip(&mut children) {
+            if let Child::Present(child) = child {
+                *output = Child::Present(self.resolve_row(child, row)?);
+            }
+        }
+        Ok(term.rebuild(children)?)
+    }
+}
+
+/// Research scratch: evaluate the plan by lookup only; `None` when some
+/// instance record is absent from the canonical arena.
+///
+/// # Specification
+/// - ensures: `Some(roots)` exactly when every dependent record is interned; an
+///   absent record means no live term equals the instance.
+///
+/// # Errors
+/// Returns malformed-reference or work refusal.
+pub(super) fn instance_roots(
+    schema: &Schema,
+    guards: &[Guard],
+    instance: &Instance,
+    row: &mut [Option<TermId>],
+    budget: &mut Budget,
+) -> Result<Option<[TermId; 2]>, Refusal>
+{
+    for id in &schema.content.plan {
+        budget.spend()?;
+        let term = match schema.proposal.node(*id)? {
+            | Node::Point(point) => {
+                let arm = arm(schema, guards, point)?;
+                let value = instance.resolve_row(arm, row)?;
+                *row.get_mut(id.0).ok_or(Refusal::Malformed)? = Some(value);
+                continue;
+            },
+            | Node::Predecessor(point) => {
+                let arm = arm(schema, guards, point)?;
+                let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
+                    schema.proposal.node(arm)?
+                else {
+                    return Err(Refusal::Malformed);
+                };
+                Term::Natural(
+                    Stage::Outer,
+                    Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
+                )
+            },
+            | Node::Rigid(term) => instance.rebuild_row(term, row)?,
+        };
+        let Some(value) = instance.arena.find(&term)
+        else {
+            return Ok(None);
+        };
+        *row.get_mut(id.0).ok_or(Refusal::Malformed)? = Some(value);
+    }
+    Ok(Some([
+        instance.resolve_row(schema.proposal.equation.source, row)?,
+        instance.resolve_row(schema.proposal.equation.target, row)?,
+    ]))
+}
+
+/// Research scratch: `compare` over a shared binding, by lookup only.
+///
+/// # Specification
+/// - ensures: the verdict of `compare`; no allocation into the arena.
+///
+/// # Errors
+/// Returns `Refusal`, including `SidesMismatch`.
+pub(super) fn compare_shared(
+    schema: &Schema,
+    guards: &[Guard],
+    instance: &Instance,
+    sides: [TermId; 2],
+    row: &mut [Option<TermId>],
+    budget: &mut Budget,
+    mut work: Admission,
+) -> Result<Admission, Refusal>
+{
+    for side in sides {
+        budget.spend()?;
+        instance.arena.term(side)?;
+    }
+    let roots = instance_roots(schema, guards, instance, row, budget)?;
+    work.instantiations.0 = work
+        .instantiations
+        .0
+        .saturating_add(schema.content.plan.len());
+    if roots != Some(sides) {
+        return Err(Refusal::SidesMismatch);
+    }
+    Ok(work)
+}
+
+/// Research scratch: `compare` with producer hints; each dependent record is
+/// checked against its hinted coordinate by exact equality, never searched.
+///
+/// # Specification
+/// - ensures: success only when every hinted coordinate holds exactly the
+///   rebuilt record and the roots equal the sides.
+///
+/// # Errors
+/// Returns `Refusal`, including `SidesMismatch` for a wrong hint.
+#[expect(clippy::too_many_arguments, reason = "research scratch")]
+pub(super) fn compare_hinted(
+    schema: &Schema,
+    guards: &[Guard],
+    instance: &Instance,
+    sides: [TermId; 2],
+    hints: &[TermId],
+    row: &mut [Option<TermId>],
+    budget: &mut Budget,
+    work: Admission,
+) -> Result<Admission, Refusal>
+{
+    for side in sides {
+        budget.spend()?;
+        instance.arena.term(side)?;
+    }
+    if hints.len() != schema.content.plan.len() {
+        return Err(Refusal::SidesMismatch);
+    }
+    for (id, hint) in schema.content.plan.iter().zip(hints) {
+        budget.spend()?;
+        let term = match schema.proposal.node(*id)? {
+            | Node::Point(point) => {
+                let arm = arm(schema, guards, point)?;
+                let value = instance.resolve_row(arm, row)?;
+                *row.get_mut(id.0).ok_or(Refusal::Malformed)? = Some(value);
+                continue;
+            },
+            | Node::Predecessor(point) => {
+                let arm = arm(schema, guards, point)?;
+                let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
+                    schema.proposal.node(arm)?
+                else {
+                    return Err(Refusal::Malformed);
+                };
+                Term::Natural(
+                    Stage::Outer,
+                    Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
+                )
+            },
+            | Node::Rigid(term) => instance.rebuild_row(term, row)?,
+        };
+        if instance.arena.term(*hint).ok() != Some(term) {
+            return Err(Refusal::SidesMismatch);
+        }
+        *row.get_mut(id.0).ok_or(Refusal::Malformed)? = Some(*hint);
+    }
+    for (expected, actual) in [
+        schema.proposal.equation.source,
+        schema.proposal.equation.target,
+    ]
+    .into_iter()
+    .zip(sides)
+    {
+        if instance.resolve_row(expected, row)? != actual {
             return Err(Refusal::SidesMismatch);
         }
     }

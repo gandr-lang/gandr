@@ -193,6 +193,32 @@ pub struct Schema
     replay_work: Work,
     /// Distinct dependent rigid constructors in the two side skeletons.
     affected: Work,
+    /// Research scratch: fixed probe content shared by fast obligations.
+    base: Option<Base>,
+}
+
+/// Research scratch: a probe arena holding every fixed skeleton node.
+#[derive(Clone, Debug)]
+struct Base
+{
+    /// Classifiers plus fixed rigid nodes.
+    arena: Arena,
+    /// Fixed node coordinates in the probe arena, dense by pattern index.
+    known: Vec<Option<TermId>>,
+}
+
+/// Research scratch: schema-check phase boundaries for an observer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Phase
+{
+    /// Syntax, classification and transparency are validated.
+    Prepared,
+    /// One probe arena (or the shared base) is built.
+    Probed,
+    /// One inheritance replay finished.
+    Replayed,
+    /// The instantiation plan is built; the schema is complete.
+    Built,
 }
 
 /// Schema-bound consumer syntax; no mutable arena replacement is exposed.
@@ -280,9 +306,11 @@ impl Schema
     /// - witness: `admission::tests::schema_and_instance_refusals`
     /// - witness: `admission::tests::successor_and_transparency`
     #[inline]
-    pub fn check(
+    pub fn check_observed(
         proposal: Proposal,
         budget: &mut Budget,
+        observe: &mut dyn FnMut(Phase),
+        fast: bool,
     ) -> Result<Self, Refusal>
     {
         let bytes = core::mem::size_of_val(proposal.nodes.as_slice())
@@ -294,7 +322,7 @@ impl Schema
         });
         let available = budget.0.min(bytes);
         let mut limited = Budget(available);
-        let result = Self::check_limited(proposal, &mut limited);
+        let result = Self::check_limited(proposal, &mut limited, observe, fast);
         budget.0 = budget.0.saturating_sub(available.saturating_sub(limited.0));
         if result
             .as_ref()
@@ -304,6 +332,22 @@ impl Schema
             return Err(Refusal::SchemaWorkBound);
         }
         result
+    }
+
+    /// Establish schema inheritance once (research scratch wrapper).
+    ///
+    /// # Specification
+    /// - ensures: identical to `check_observed` with no observer, slow path.
+    ///
+    /// # Errors
+    /// Returns the named `Refusal`.
+    #[inline]
+    pub fn check(
+        proposal: Proposal,
+        budget: &mut Budget,
+    ) -> Result<Self, Refusal>
+    {
+        Self::check_observed(proposal, budget, &mut |_| {}, false)
     }
 
     /// Validate under the input-sized allowance selected by `check`.
@@ -322,6 +366,8 @@ impl Schema
     fn check_limited(
         proposal: Proposal,
         budget: &mut Budget,
+        observe: &mut dyn FnMut(Phase),
+        fast: bool,
     ) -> Result<Self, Refusal>
     {
         let mut vocabulary = Arena::default();
@@ -440,8 +486,10 @@ impl Schema
             checks: Work(0),
             replay_work: Work(0),
             affected,
+            base: None,
         };
         schema.transparent(budget)?;
+        observe(Phase::Prepared);
         let obligations: Vec<_> = schema
             .proposal
             .arms
@@ -449,14 +497,33 @@ impl Schema
             .enumerate()
             .flat_map(|(point, arms)| arms.iter().map(move |arm| (Point(point), *arm)))
             .collect();
+        if fast {
+            schema.content =
+                content::Prepared::build(content::Dependencies(dependent), &reached, budget)?;
+            schema.base = Some(schema.base_probe(budget)?);
+            observe(Phase::Probed);
+            if obligations.is_empty() {
+                let fuel = schema.obligation_fast(None, budget)?;
+                schema.count(fuel);
+                observe(Phase::Replayed);
+            }
+            for (point, arm) in obligations {
+                let fuel = schema.obligation_fast(Some((point, arm)), budget)?;
+                schema.count(fuel);
+                observe(Phase::Replayed);
+            }
+            observe(Phase::Built);
+            return Ok(schema);
+        }
         if obligations.is_empty() {
-            schema.inherit(&BTreeMap::new(), budget)?;
+            schema.inherit(&BTreeMap::new(), budget, observe)?;
         }
         for (point, arm) in obligations {
-            schema.inherit(&BTreeMap::from([(point, arm)]), budget)?;
+            schema.inherit(&BTreeMap::from([(point, arm)]), budget, observe)?;
         }
         schema.content =
             content::Prepared::build(content::Dependencies(dependent), &reached, budget)?;
+        observe(Phase::Built);
         Ok(schema)
     }
 
@@ -793,9 +860,11 @@ impl Schema
         &mut self,
         bindings: &BTreeMap<Point, TermId>,
         budget: &mut Budget,
+        observe: &mut dyn FnMut(Phase),
     ) -> Result<(), Refusal>
     {
         let (mut arena, step) = self.probe(bindings, budget)?;
+        observe(Phase::Probed);
         let endpoint = arena.alloc(Term::Natural(Stage::Outer, Natural(0)))?;
         let certificate = Certificate {
             source: endpoint,
@@ -808,6 +877,7 @@ impl Schema
             .replay_work
             .0
             .saturating_add(before.saturating_sub(budget.0));
+        observe(Phase::Replayed);
         match result {
             | Ok(_) => {
                 self.checks.0 = self.checks.0.saturating_add(1);
@@ -815,6 +885,467 @@ impl Schema
             },
             | Err(StageError::Exhausted) => Err(Refusal::Syntax(StageError::Exhausted)),
             | Err(_) => Err(Refusal::CorruptStep),
+        }
+    }
+
+    /// Research scratch: record one discharged obligation's fuel.
+    ///
+    /// # Specification
+    /// trivial.
+    fn count(
+        &mut self,
+        fuel: usize,
+    )
+    {
+        self.checks.0 = self.checks.0.saturating_add(1);
+        self.replay_work.0 = self.replay_work.0.saturating_add(fuel);
+    }
+
+    /// Research scratch: allocate every fixed rigid node once.
+    ///
+    /// # Specification
+    /// - ensures: fixed nodes have probe coordinates; dynamic nodes stay
+    ///   vacant.
+    ///
+    /// # Errors
+    /// Returns syntax or work refusal.
+    fn base_probe(
+        &self,
+        budget: &mut Budget,
+    ) -> Result<Base, Refusal>
+    {
+        let dynamic = self.content.dynamic();
+        let mut arena = self.vocabulary.clone();
+        let mut known = alloc::vec![None; self.proposal.nodes.len()];
+        for (index, node) in self.proposal.nodes.iter().enumerate() {
+            budget.spend()?;
+            if *dynamic.get(index).ok_or(Refusal::Malformed)? {
+                continue;
+            }
+            let Node::Rigid(term) = *node
+            else {
+                return Err(Refusal::Malformed);
+            };
+            let mut children = [Child::Vacant; 3];
+            for (source, target) in term.children().into_iter().zip(&mut children) {
+                if let Child::Present(source) = source {
+                    *target = Child::Present(
+                        known
+                            .get(source.0)
+                            .copied()
+                            .flatten()
+                            .ok_or(Refusal::Malformed)?,
+                    );
+                }
+            }
+            let slot = known.get_mut(index).ok_or(Refusal::Malformed)?;
+            *slot = Some(arena.alloc(term.rebuild(children)?)?);
+        }
+        Ok(Base { arena, known })
+    }
+
+    /// Research scratch: one obligation over the shared fixed base.
+    ///
+    /// # Specification
+    /// - ensures: the same probe content as `probe`, dynamic nodes only.
+    ///
+    /// # Errors
+    /// Returns the replay refusal, as `inherit` does.
+    fn obligation_fast(
+        &self,
+        binding: Option<(Point, TermId)>,
+        budget: &mut Budget,
+    ) -> Result<usize, Refusal>
+    {
+        let base = self.base.as_ref().ok_or(Refusal::Malformed)?;
+        budget.0 = budget
+            .0
+            .checked_sub(
+                self.proposal
+                    .classifiers
+                    .len()
+                    .saturating_add(self.skolems.len()),
+            )
+            .ok_or(StageError::Exhausted)?;
+        let dynamic = self.content.dynamic();
+        let mut arena = base.arena.clone();
+        let mut known = base.known.clone();
+        for (index, node) in self.proposal.nodes.iter().enumerate() {
+            if !*dynamic.get(index).ok_or(Refusal::Malformed)? {
+                continue;
+            }
+            budget.spend()?;
+            let term = match *node {
+                | Node::Point(point) => {
+                    if let Some((bound, arm)) = binding
+                        && bound == point
+                    {
+                        let value = known.get(arm.0).copied().flatten();
+                        *known.get_mut(index).ok_or(Refusal::Malformed)? = value;
+                        continue;
+                    }
+                    Term::Code(*self.skolems.get(point.0).ok_or(Refusal::Malformed)?)
+                },
+                | Node::Predecessor(point) => {
+                    if let Some((bound, arm)) = binding
+                        && bound == point
+                    {
+                        let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
+                            self.proposal.node(arm)?
+                        else {
+                            return Err(Refusal::Malformed);
+                        };
+                        Term::Natural(
+                            Stage::Outer,
+                            Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
+                        )
+                    }
+                    else {
+                        Term::Code(
+                            *self
+                                .skolems
+                                .get(point.0.saturating_add(self.proposal.arms.len()))
+                                .ok_or(Refusal::Malformed)?,
+                        )
+                    }
+                },
+                | Node::Rigid(term) => {
+                    let mut children = [Child::Vacant; 3];
+                    for (source, target) in term.children().into_iter().zip(&mut children) {
+                        if let Child::Present(source) = source {
+                            *target = Child::Present(
+                                known
+                                    .get(source.0)
+                                    .copied()
+                                    .flatten()
+                                    .ok_or(Refusal::Malformed)?,
+                            );
+                        }
+                    }
+                    term.rebuild(children)?
+                },
+            };
+            *known.get_mut(index).ok_or(Refusal::Malformed)? = Some(arena.alloc(term)?);
+        }
+        let side = |id: TermId| known.get(id.0).copied().flatten().ok_or(Refusal::Malformed);
+        let step = Step {
+            source: side(self.proposal.equation.source)?,
+            target: side(self.proposal.equation.target)?,
+            rule: self.proposal.equation.rule,
+        };
+        let endpoint = arena.alloc(Term::Natural(Stage::Outer, Natural(0)))?;
+        let certificate = Certificate {
+            source: endpoint,
+            target: endpoint,
+            steps: Vec::from([step]),
+        };
+        let before = budget.0;
+        match crate::stage::replay(&mut arena, &[], &certificate, budget) {
+            | Ok(_) => Ok(before.saturating_sub(budget.0)),
+            | Err(StageError::Exhausted) => Err(Refusal::Syntax(StageError::Exhausted)),
+            | Err(_) => Err(Refusal::CorruptStep),
+        }
+    }
+
+    /// Research scratch: the number of independent inheritance obligations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn obligation_count(&self) -> usize
+    {
+        self.proposal
+            .arms
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+            .max(1)
+    }
+
+    /// Research scratch: re-discharge obligation `index` on a fast schema.
+    ///
+    /// # Specification
+    /// - ensures: the same replay `check_observed(.., true)` ran for `index`.
+    ///
+    /// # Errors
+    /// Returns `Malformed` on a slow schema or an absent index.
+    pub fn discharge(
+        &self,
+        index: usize,
+        budget: &mut Budget,
+    ) -> Result<usize, Refusal>
+    {
+        if self.proposal.arms.iter().all(Vec::is_empty) {
+            return self.obligation_fast(None, budget);
+        }
+        let (point, arm) = self
+            .proposal
+            .arms
+            .iter()
+            .enumerate()
+            .flat_map(|(point, arms)| arms.iter().map(move |arm| (Point(point), *arm)))
+            .nth(index)
+            .ok_or(Refusal::Malformed)?;
+        self.obligation_fast(Some((point, arm)), budget)
+    }
+
+    /// Research scratch: validate a row into reusable buffers, allocation
+    /// free.
+    ///
+    /// # Specification
+    /// - ensures: the same refusals as `substitute`.
+    ///
+    /// # Errors
+    /// Returns the substitution refusal.
+    fn validate_into(
+        &self,
+        choices: &[Choice],
+        scratch: &mut RowScratch,
+    ) -> Result<(), Refusal>
+    {
+        scratch.selected.clear();
+        scratch.selected.resize(self.proposal.arms.len(), None);
+        for choice in choices {
+            let arms = self
+                .proposal
+                .arms
+                .get(choice.point.0)
+                .ok_or(Refusal::UnknownArm(choice.point))?;
+            if choice.guard.0 >= arms.len() {
+                return Err(Refusal::UnknownArm(choice.point));
+            }
+            let slot = scratch
+                .selected
+                .get_mut(choice.point.0)
+                .ok_or(Refusal::UnknownArm(choice.point))?;
+            if slot.is_some_and(|old| old != choice.guard) {
+                return Err(Refusal::Correlation(choice.point));
+            }
+            *slot = Some(choice.guard);
+        }
+        scratch.guards.clear();
+        for (point, guard) in scratch.selected.iter().enumerate() {
+            scratch
+                .guards
+                .push(guard.ok_or(Refusal::MissingPoint(Point(point)))?);
+        }
+        Ok(())
+    }
+
+    /// Research scratch: admit one row against a shared, immutable binding.
+    ///
+    /// # Specification
+    /// - ensures: the verdict of `substitute` then `admit`, by lookup only.
+    ///
+    /// # Errors
+    /// Returns the row or side refusal.
+    pub fn admit_shared(
+        &self,
+        consumer: &Consumer<'_>,
+        choices: &[Choice],
+        equation: Step,
+        scratch: &mut RowScratch,
+        budget: &mut Budget,
+    ) -> Result<Admission, Refusal>
+    {
+        if !core::ptr::eq(
+            core::ptr::from_ref(self),
+            core::ptr::from_ref(consumer.schema),
+        ) {
+            return Err(Refusal::Malformed);
+        }
+        if equation.rule != self.proposal.equation.rule {
+            return Err(Refusal::SidesMismatch);
+        }
+        self.validate_into(choices, scratch)?;
+        let work = Admission {
+            choices: Work(choices.len()),
+            affected: self.affected,
+            ..Admission::default()
+        };
+        content::compare_shared(
+            self,
+            &scratch.guards,
+            &consumer.content,
+            [equation.source, equation.target],
+            &mut scratch.row,
+            budget,
+            work,
+        )
+    }
+
+    /// Research scratch: admit a whole family, evaluating each distinct row
+    /// once.
+    ///
+    /// # Specification
+    /// - ensures: the verdict of `admit_shared` on every row; returns the
+    ///   admitted and distinct-row counts.
+    ///
+    /// # Errors
+    /// Returns the first row or side refusal.
+    pub fn admit_family_memo(
+        &self,
+        consumer: &Consumer<'_>,
+        rows: &[Vec<Choice>],
+        steps: &[Step],
+        scratch: &mut RowScratch,
+        budget: &mut Budget,
+    ) -> Result<[usize; 2], Refusal>
+    {
+        if !core::ptr::eq(
+            core::ptr::from_ref(self),
+            core::ptr::from_ref(consumer.schema),
+        ) {
+            return Err(Refusal::Malformed);
+        }
+        let mut memo: BTreeMap<Vec<usize>, [TermId; 2]> = BTreeMap::new();
+        let mut key = Vec::with_capacity(self.proposal.arms.len());
+        let mut admitted = 0_usize;
+        for (choices, equation) in rows.iter().zip(steps) {
+            if equation.rule != self.proposal.equation.rule {
+                return Err(Refusal::SidesMismatch);
+            }
+            self.validate_into(choices, scratch)?;
+            key.clear();
+            key.extend(scratch.guards.iter().map(|guard| guard.0));
+            let roots = if let Some(roots) = memo.get(key.as_slice()) {
+                *roots
+            }
+            else {
+                let roots = content::instance_roots(
+                    self,
+                    &scratch.guards,
+                    &consumer.content,
+                    &mut scratch.row,
+                    budget,
+                )?
+                .ok_or(Refusal::SidesMismatch)?;
+                memo.insert(key.clone(), roots);
+                roots
+            };
+            for side in [equation.source, equation.target] {
+                consumer.content.live(side)?;
+            }
+            if roots != [equation.source, equation.target] {
+                return Err(Refusal::SidesMismatch);
+            }
+            admitted = admitted.saturating_add(1);
+        }
+        Ok([admitted, memo.len()])
+    }
+
+    /// Research scratch: untrusted producer-side hint computation; one arena
+    /// id per plan entry, or `None` when the instance is not interned.
+    ///
+    /// # Errors
+    /// Returns the row refusal.
+    pub fn hints(
+        &self,
+        consumer: &Consumer<'_>,
+        choices: &[Choice],
+        scratch: &mut RowScratch,
+    ) -> Result<Option<Vec<TermId>>, Refusal>
+    {
+        self.validate_into(choices, scratch)?;
+        let roots = content::instance_roots(
+            self,
+            &scratch.guards,
+            &consumer.content,
+            &mut scratch.row,
+            &mut Budget(usize::MAX),
+        )?;
+        if roots.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.content
+                .plan()
+                .iter()
+                .map(|id| {
+                    scratch
+                        .row
+                        .get(id.0)
+                        .copied()
+                        .flatten()
+                        .unwrap_or(TermId(usize::MAX))
+                })
+                .collect(),
+        ))
+    }
+
+    /// Research scratch: admit a row whose dependent records arrive as
+    /// producer hints; each hint is checked by one indexed read and one exact
+    /// record comparison, never looked up.
+    ///
+    /// # Specification
+    /// - ensures: success exactly when `admit_shared` succeeds and the hints
+    ///   name the instance's records; wrong hints refuse, never admit.
+    ///
+    /// # Errors
+    /// Returns the row or side refusal.
+    pub fn admit_hinted(
+        &self,
+        consumer: &Consumer<'_>,
+        choices: &[Choice],
+        equation: Step,
+        hints: &[TermId],
+        scratch: &mut RowScratch,
+        budget: &mut Budget,
+    ) -> Result<Admission, Refusal>
+    {
+        if !core::ptr::eq(
+            core::ptr::from_ref(self),
+            core::ptr::from_ref(consumer.schema),
+        ) {
+            return Err(Refusal::Malformed);
+        }
+        if equation.rule != self.proposal.equation.rule {
+            return Err(Refusal::SidesMismatch);
+        }
+        self.validate_into(choices, scratch)?;
+        let work = Admission {
+            choices: Work(choices.len()),
+            affected: self.affected,
+            ..Admission::default()
+        };
+        content::compare_hinted(
+            self,
+            &scratch.guards,
+            &consumer.content,
+            [equation.source, equation.target],
+            hints,
+            &mut scratch.row,
+            budget,
+            work,
+        )
+    }
+}
+
+/// Research scratch: reusable per-worker row buffers.
+#[derive(Clone, Debug, Default)]
+pub struct RowScratch
+{
+    /// One optional guard per point while validating.
+    selected: Vec<Option<Guard>>,
+    /// The validated guard per point.
+    guards: Vec<Guard>,
+    /// Row-local dynamic coordinates, dense by pattern index.
+    row: Vec<Option<TermId>>,
+}
+
+impl RowScratch
+{
+    /// Buffers sized for `schema`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn new(schema: &Schema) -> Self
+    {
+        Self {
+            selected: Vec::with_capacity(schema.proposal.arms.len()),
+            guards: Vec::with_capacity(schema.proposal.arms.len()),
+            row: alloc::vec![None; schema.proposal.nodes.len()],
         }
     }
 }

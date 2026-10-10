@@ -6,7 +6,10 @@
 //! Stream time per family is amortized throughput, not single-family latency.
 //! The latter is measured separately, including dispatch and collection.
 
+use alloc::sync::Arc;
 use std::io::Write as _;
+
+use gandr_kernel_term::stage::TermId;
 
 use super::Admission;
 use super::Arena;
@@ -17,7 +20,10 @@ use super::Consumer;
 use super::Duration;
 use super::Instant;
 use super::Natural;
+use super::Phase;
+use super::Proposal;
 use super::Refusal;
+use super::RowScratch;
 use super::Schema;
 use super::StageError;
 use super::Step;
@@ -53,6 +59,10 @@ pub(super) struct Workload
     pub binding_time: Duration,
     /// Largest individually observed serial admission.
     pub largest: Duration,
+    /// Research: the same schema checked through the fast obligation path.
+    pub fast: Schema,
+    /// Research: the producer proposal, for repeated schema timing.
+    pub proposal: Proposal,
 }
 
 /// Which independent judgment a task runs.
@@ -65,6 +75,29 @@ pub(super) enum Mode
     Admission,
     /// A different rule must be refused, independently of scheduling.
     PoisonRule,
+    /// Research: admission into one reused binding per family per worker.
+    Warm,
+    /// Research: lookup-only admission against one binding shared by all
+    /// workers.
+    Shared,
+    /// Research: empty jobs, one per member; the transport floor.
+    Empty,
+    /// Research: one schema inheritance obligation per job.
+    Obligation,
+    /// Research: obligations and shared-member rows in one wave.
+    Overlap,
+    /// Research: shared-member rows first, obligations last (FIFO, not
+    /// largest-first).
+    OverlapLast,
+    /// Research: shared rows plus the two per-row heap allocations
+    /// `substitute` makes.
+    SharedAlloc,
+    /// Research: lookup-only rows on a per-worker clone of the binding.
+    WarmShared,
+    /// Research: rows whose dependent records arrive as producer hints.
+    Hinted,
+    /// Research: one family-memo call per contiguous chunk of rows.
+    Memo,
 }
 
 /// Task granularity, independent of transport publication.
@@ -183,6 +216,20 @@ pub(super) enum Scratch<'schema>
     Plain(Vec<Arena>),
     /// Bound schema namespaces, one per family instance.
     Admission(Vec<Consumer<'schema>>),
+    /// Research: one reused binding per family.
+    Warm(Vec<Consumer<'schema>>),
+    /// Research: bindings shared by every worker, private row buffers.
+    Shared(Arc<Vec<Consumer<'schema>>>, Vec<RowScratch>),
+    /// Research: per-worker binding clones with private row buffers.
+    WarmShared(Vec<Consumer<'schema>>, Vec<RowScratch>),
+    /// Research: shared bindings, shared per-member hints, private buffers.
+    Hinted(
+        Arc<Vec<Consumer<'schema>>>,
+        Arc<Vec<Vec<Vec<TermId>>>>,
+        Vec<RowScratch>,
+    ),
+    /// Research: no scratch.
+    Empty,
 }
 
 impl<'schema> Scratch<'schema>
@@ -220,6 +267,62 @@ impl<'schema> Scratch<'schema>
                     (0 .. 25).flat_map(|_| consumers.iter().cloned()).collect(),
                 ))
             },
+            | Mode::Warm => Ok(Self::Warm(
+                workload
+                    .iter()
+                    .map(|family| {
+                        family
+                            .schema
+                            .bind(family.arena.clone(), &mut Budget(10_000_000))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            | Mode::Shared
+            | Mode::Obligation
+            | Mode::Overlap
+            | Mode::OverlapLast
+            | Mode::SharedAlloc
+            | Mode::Memo
+            | Mode::WarmShared
+            | Mode::Hinted => {
+                let consumers = workload
+                    .iter()
+                    .map(|family| {
+                        family
+                            .fast
+                            .bind(family.arena.clone(), &mut Budget(10_000_000))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut rows: Vec<RowScratch> = workload
+                    .iter()
+                    .map(|family| RowScratch::new(&family.fast))
+                    .collect();
+                match mode {
+                    | Mode::WarmShared => Ok(Self::WarmShared(consumers, rows)),
+                    | Mode::Hinted => {
+                        let mut hints = Vec::with_capacity(workload.len());
+                        for ((family, consumer), buffer) in
+                            workload.iter().zip(&consumers).zip(&mut rows)
+                        {
+                            hints.push(
+                                family
+                                    .rows
+                                    .iter()
+                                    .map(|choices| {
+                                        family
+                                            .fast
+                                            .hints(consumer, choices, buffer)?
+                                            .ok_or(Refusal::SidesMismatch)
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            );
+                        }
+                        Ok(Self::Hinted(Arc::new(consumers), Arc::new(hints), rows))
+                    },
+                    | _ => Ok(Self::Shared(Arc::new(consumers), rows)),
+                }
+            },
+            | Mode::Empty => Ok(Self::Empty),
         }
     }
 
@@ -247,10 +350,22 @@ impl<'schema> Scratch<'schema>
     {
         let mut stats = Stats::default();
         for instance in task.instances[0].0 .. task.instances[1].0 {
-            let family = instance
+            let index = instance
                 .checked_rem(workload.len())
                 .ok_or(Failure::Coordinate)?;
-            let family = workload.get(family).ok_or(Failure::Coordinate)?;
+            let family = workload.get(index).ok_or(Failure::Coordinate)?;
+            if matches!(task.mode, Mode::Obligation) {
+                let end = task.members[1].0.min(family.fast.obligation_count());
+                for obligation in task.members[0].0 .. end {
+                    let fuel = family
+                        .fast
+                        .discharge(obligation, &mut Budget(10_000_000))
+                        .map_err(Failure::Admission)?;
+                    stats.fuel = stats.fuel.saturating_add(fuel);
+                    stats.members = stats.members.saturating_add(1);
+                }
+                continue;
+            }
             let end = task.members[1].0.min(family.members.len());
             let members = family
                 .members
@@ -260,7 +375,21 @@ impl<'schema> Scratch<'schema>
                 .rows
                 .get(task.members[0].0 .. end)
                 .ok_or(Failure::Coordinate)?;
-            for (step, choices) in members.iter().zip(rows) {
+            if matches!(task.mode, Mode::Memo) {
+                let Self::Shared(ref consumers, ref mut buffers) = *self
+                else {
+                    return Err(Failure::Coordinate);
+                };
+                let consumer = consumers.get(index).ok_or(Failure::Coordinate)?;
+                let buffer = buffers.get_mut(index).ok_or(Failure::Coordinate)?;
+                let [admitted, _distinct] = family
+                    .fast
+                    .admit_family_memo(consumer, rows, members, buffer, &mut Budget(10_000_000))
+                    .map_err(Failure::Admission)?;
+                stats.members = stats.members.saturating_add(admitted);
+                continue;
+            }
+            for (offset, (step, choices)) in members.iter().zip(rows).enumerate() {
                 match *self {
                     | Self::Plain(ref mut arenas) => {
                         let arena = arenas.get_mut(instance).ok_or(Failure::Coordinate)?;
@@ -292,6 +421,59 @@ impl<'schema> Scratch<'schema>
                             stats.instantiations.saturating_add(instantiations.0);
                         stats.classifiers = stats.classifiers.saturating_add(classifiers.0);
                     },
+                    | Self::Warm(ref mut consumers) => {
+                        let consumer = consumers.get_mut(index).ok_or(Failure::Coordinate)?;
+                        let Admission { choices, .. } =
+                            member(&family.schema, consumer, choices, *step)
+                                .map_err(Failure::Admission)?;
+                        stats.choices = stats.choices.saturating_add(choices.0);
+                    },
+                    | Self::Shared(ref consumers, ref mut buffers) => {
+                        let consumer = consumers.get(index).ok_or(Failure::Coordinate)?;
+                        let buffer = buffers.get_mut(index).ok_or(Failure::Coordinate)?;
+                        if matches!(task.mode, Mode::SharedAlloc) {
+                            let points = family.fast.obligation_count();
+                            let selected = std::hint::black_box(alloc::vec![[0_u64; 2]; points]);
+                            let guards: Vec<u64> =
+                                std::hint::black_box(selected.iter().map(|pair| pair[0]).collect());
+                            drop(std::hint::black_box(guards));
+                        }
+                        let Admission { choices, .. } = family
+                            .fast
+                            .admit_shared(consumer, choices, *step, buffer, &mut Budget(10_000_000))
+                            .map_err(Failure::Admission)?;
+                        stats.choices = stats.choices.saturating_add(choices.0);
+                    },
+                    | Self::WarmShared(ref consumers, ref mut buffers) => {
+                        let consumer = consumers.get(index).ok_or(Failure::Coordinate)?;
+                        let buffer = buffers.get_mut(index).ok_or(Failure::Coordinate)?;
+                        let Admission { choices, .. } = family
+                            .fast
+                            .admit_shared(consumer, choices, *step, buffer, &mut Budget(10_000_000))
+                            .map_err(Failure::Admission)?;
+                        stats.choices = stats.choices.saturating_add(choices.0);
+                    },
+                    | Self::Hinted(ref consumers, ref hints, ref mut buffers) => {
+                        let consumer = consumers.get(index).ok_or(Failure::Coordinate)?;
+                        let buffer = buffers.get_mut(index).ok_or(Failure::Coordinate)?;
+                        let hint = hints
+                            .get(index)
+                            .and_then(|family| family.get(task.members[0].0.saturating_add(offset)))
+                            .ok_or(Failure::Coordinate)?;
+                        let Admission { choices, .. } = family
+                            .fast
+                            .admit_hinted(
+                                consumer,
+                                choices,
+                                *step,
+                                hint,
+                                buffer,
+                                &mut Budget(10_000_000),
+                            )
+                            .map_err(Failure::Admission)?;
+                        stats.choices = stats.choices.saturating_add(choices.0);
+                    },
+                    | Self::Empty => {},
                 }
                 stats.members = stats.members.saturating_add(1);
             }
@@ -342,17 +524,36 @@ fn tasks(
     match grain {
         | Grain::Member => {
             for instance in instances[0].0 .. instances[1].0 {
-                let count = instance
+                let family = instance
                     .checked_rem(workload.len())
-                    .and_then(|index| workload.get(index))
-                    .map_or(0, |family| family.members.len());
-                for member in 0 .. count {
-                    tasks.push(Command::Run(Task {
-                        id: Natural(tasks.len()),
-                        instances: [Natural(instance), Natural(instance.saturating_add(1))],
-                        members: [Natural(member), Natural(member.saturating_add(1))],
-                        mode,
-                    }));
+                    .and_then(|index| workload.get(index));
+                let obligations = family.map_or(0, |family| family.fast.obligation_count());
+                let members = family.map_or(0, |family| family.members.len());
+                let mut push = |count: usize, mode: Mode, width: usize| {
+                    for member in (0 .. count).step_by(width.max(1)) {
+                        tasks.push(Command::Run(Task {
+                            id: Natural(tasks.len()),
+                            instances: [Natural(instance), Natural(instance.saturating_add(1))],
+                            members: [
+                                Natural(member),
+                                Natural(member.saturating_add(width.max(1)).min(count)),
+                            ],
+                            mode,
+                        }));
+                    }
+                };
+                match mode {
+                    | Mode::Obligation => push(obligations, Mode::Obligation, 1),
+                    | Mode::Overlap => {
+                        push(obligations, Mode::Obligation, 1);
+                        push(members, Mode::Shared, 1);
+                    },
+                    | Mode::OverlapLast => {
+                        push(members, Mode::Shared, 1);
+                        push(obligations, Mode::Obligation, 1);
+                    },
+                    | Mode::Memo => push(members, Mode::Memo, members.div_ceil(8)),
+                    | _ => push(members, mode, 1),
                 }
             }
         },
@@ -446,6 +647,26 @@ fn measure(
     schedule: Schedule,
 ) -> io::Result<Duration>
 {
+    Ok(
+        measure_batches(workload, wire, threads, grain, mode, schedule)?
+            .into_iter()
+            .sum(),
+    )
+}
+
+/// Research: `measure`, keeping every batch's elapsed time.
+///
+/// # Errors
+/// Returns the transport or differential error.
+fn measure_batches(
+    workload: &[Workload],
+    wire: Wire,
+    threads: Threads,
+    grain: Grain,
+    mode: Mode,
+    schedule: Schedule,
+) -> io::Result<Vec<Duration>>
+{
     let count = workload.len().saturating_mul(25);
     let span = match schedule {
         | Schedule::Stream => count,
@@ -473,7 +694,7 @@ fn measure(
             Ok((jobs, expected))
         })
         .collect::<io::Result<Vec<_>>>()?;
-    let mut elapsed = Duration::ZERO;
+    let mut elapsed = Vec::with_capacity(batches.len());
     standing(wire, threads, workload, mode, |pool| {
         for batch in &batches {
             let jobs = &batch.0;
@@ -482,7 +703,7 @@ fn measure(
             let mut receipts = Vec::with_capacity(jobs.len());
             let start = Instant::now();
             pool.exchange(&wave, &mut receipts)?;
-            elapsed = elapsed.saturating_add(start.elapsed());
+            elapsed.push(start.elapsed());
             verify(&mut receipts, expected)?;
         }
         Ok(())
@@ -697,6 +918,398 @@ pub(super) fn run(
                         }
                     }
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Research: minimum, median and mean of a sample set, in nanoseconds.
+///
+/// # Specification
+/// trivial.
+fn summary(samples: &mut [Duration]) -> [u128; 3]
+{
+    samples.sort_unstable();
+    let count = u128::try_from(samples.len().max(1)).unwrap_or(1);
+    let total: u128 = samples.iter().map(Duration::as_nanos).sum();
+    [
+        samples.first().map_or(0, Duration::as_nanos),
+        samples.get(samples.len() / 2).map_or(0, Duration::as_nanos),
+        total / count,
+    ]
+}
+
+/// Research: phase boundaries of one observed schema check.
+///
+/// # Specification
+/// - ensures: `[prepare, base_or_probes, sum_obligations, max_obligation,
+///   build, total]` in nanoseconds.
+///
+/// # Errors
+/// Returns the schema refusal.
+fn phases(
+    proposal: &Proposal,
+    fast: bool,
+) -> Result<[u128; 6], Refusal>
+{
+    let proposal = proposal.clone();
+    let mut marks: Vec<(Phase, Instant)> = Vec::with_capacity(64);
+    let start = Instant::now();
+    Schema::check_observed(
+        proposal,
+        &mut Budget(10_000_000),
+        &mut |phase| marks.push((phase, Instant::now())),
+        fast,
+    )?;
+    let end = Instant::now();
+    let mut prepare = 0;
+    let mut probes = 0;
+    let mut obligations = 0;
+    let mut largest = 0;
+    let mut build = 0;
+    let mut previous = start;
+    let mut opened = start;
+    for (phase, at) in marks {
+        let span = at.duration_since(previous).as_nanos();
+        match phase {
+            | Phase::Prepared => {
+                prepare = span;
+                opened = at;
+            },
+            | Phase::Probed => {
+                probes += span;
+                if fast {
+                    opened = at;
+                }
+            },
+            | Phase::Replayed => {
+                let obligation = at.duration_since(opened).as_nanos();
+                obligations += obligation;
+                largest = largest.max(obligation);
+                opened = at;
+            },
+            | Phase::Built => build = span,
+        }
+        previous = at;
+    }
+    Ok([
+        prepare,
+        probes,
+        obligations,
+        largest,
+        build,
+        end.duration_since(start).as_nanos(),
+    ])
+}
+
+/// Research: serial and pooled measurements of every lead, per family.
+///
+/// # Specification
+/// - ensures: every pooled cell is verified against its serial oracle.
+///
+/// # Errors
+/// Returns the originating I/O, refusal or differential error.
+pub(super) fn leads(
+    output: &mut io::BufWriter<io::StdoutLock<'_>>,
+    workload: &[Workload],
+) -> io::Result<()>
+{
+    let qos = std::env::var("GANDR_QOS").is_ok();
+    for family in workload {
+        let label = format!(
+            "{},family={},k={},obligations={}",
+            family.case,
+            family.index.0,
+            family.members.len(),
+            family.fast.obligation_count()
+        );
+        let mut row = |metric: &str, samples: &mut [Duration]| -> io::Result<()> {
+            let [min, median, mean] = summary(samples);
+            writeln!(
+                output,
+                "SERIAL,{label},qos={qos},metric={metric},min_ns={min},median_ns={median},mean_ns={mean}"
+            )
+        };
+        let reps = 0_usize .. 25;
+        let mut samples = Vec::with_capacity(25);
+        for _ in reps.clone() {
+            let proposal = family.proposal.clone();
+            let start = Instant::now();
+            Schema::check(proposal, &mut Budget(10_000_000)).map_err(io::Error::other)?;
+            samples.push(start.elapsed());
+        }
+        row("schema_slow", &mut samples)?;
+        for fast in [false, true] {
+            let mut columns: [Vec<Duration>; 6] = Default::default();
+            for _ in reps.clone() {
+                let observed = phases(&family.proposal, fast).map_err(io::Error::other)?;
+                for (column, value) in columns.iter_mut().zip(observed) {
+                    column.push(Duration::from_nanos(
+                        u64::try_from(value).unwrap_or(u64::MAX),
+                    ));
+                }
+            }
+            let names = [
+                "prepare",
+                "probes",
+                "obligations",
+                "largest_obligation",
+                "build",
+                "total",
+            ];
+            for (name, column) in names.iter().zip(&mut columns) {
+                let speed = if fast { "fast" } else { "slow" };
+                row(&format!("schema_{speed}_{name}"), column)?;
+            }
+        }
+        samples.clear();
+        for _ in reps.clone() {
+            let start = Instant::now();
+            family
+                .schema
+                .bind(family.arena.clone(), &mut Budget(10_000_000))
+                .map_err(io::Error::other)?;
+            samples.push(start.elapsed());
+        }
+        row("bind_with_clone", &mut samples)?;
+        samples.clear();
+        for _ in reps.clone() {
+            let mut arena = family.arena.clone();
+            let start = Instant::now();
+            for step in &family.members {
+                plain(&mut arena, *step).map_err(io::Error::other)?;
+            }
+            samples.push(start.elapsed());
+        }
+        row("plain_hot", &mut samples)?;
+        let bound = family
+            .schema
+            .bind(family.arena.clone(), &mut Budget(10_000_000))
+            .map_err(io::Error::other)?;
+        samples.clear();
+        for _ in reps.clone() {
+            let mut consumer = bound.clone();
+            let start = Instant::now();
+            for (step, choices) in family.members.iter().zip(&family.rows) {
+                member(&family.schema, &mut consumer, choices, *step).map_err(io::Error::other)?;
+            }
+            samples.push(start.elapsed());
+        }
+        row("admit_hot", &mut samples)?;
+        let mut cold: Vec<_> = reps.clone().map(|_| bound.clone()).collect();
+        samples.clear();
+        for consumer in &mut cold {
+            let start = Instant::now();
+            for (step, choices) in family.members.iter().zip(&family.rows) {
+                member(&family.schema, consumer, choices, *step).map_err(io::Error::other)?;
+            }
+            samples.push(start.elapsed());
+        }
+        row("admit_precloned", &mut samples)?;
+        let shared = family
+            .fast
+            .bind(family.arena.clone(), &mut Budget(10_000_000))
+            .map_err(io::Error::other)?;
+        let mut buffer = RowScratch::new(&family.fast);
+        samples.clear();
+        for _ in reps.clone() {
+            let start = Instant::now();
+            for (step, choices) in family.members.iter().zip(&family.rows) {
+                family
+                    .fast
+                    .admit_shared(
+                        &shared,
+                        choices,
+                        *step,
+                        &mut buffer,
+                        &mut Budget(10_000_000),
+                    )
+                    .map_err(io::Error::other)?;
+            }
+            samples.push(start.elapsed());
+        }
+        row("admit_shared", &mut samples)?;
+        let hints = family
+            .rows
+            .iter()
+            .map(|choices| {
+                family
+                    .fast
+                    .hints(&shared, choices, &mut buffer)
+                    .map_err(io::Error::other)?
+                    .ok_or_else(|| io::Error::other("instance not interned"))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        samples.clear();
+        for _ in reps.clone() {
+            let start = Instant::now();
+            for ((step, choices), hint) in family.members.iter().zip(&family.rows).zip(&hints) {
+                family
+                    .fast
+                    .admit_hinted(
+                        &shared,
+                        choices,
+                        *step,
+                        hint,
+                        &mut buffer,
+                        &mut Budget(10_000_000),
+                    )
+                    .map_err(io::Error::other)?;
+            }
+            samples.push(start.elapsed());
+        }
+        row("admit_hinted", &mut samples)?;
+        let mut wrong = hints.first().cloned().unwrap_or_default();
+        if let (Some(first), Some(member), Some(choices)) = (
+            wrong.last_mut(),
+            family.members.first(),
+            family.rows.first(),
+        ) {
+            first.0 = first.0.wrapping_add(1);
+            if family
+                .fast
+                .admit_hinted(
+                    &shared,
+                    choices,
+                    *member,
+                    &wrong,
+                    &mut buffer,
+                    &mut Budget(10_000_000),
+                )
+                .is_ok()
+            {
+                return Err(io::Error::other("a wrong hint admitted"));
+            }
+        }
+        samples.clear();
+        let mut distinct = 0;
+        for _ in reps.clone() {
+            let start = Instant::now();
+            let [admitted, rows] = family
+                .fast
+                .admit_family_memo(
+                    &shared,
+                    &family.rows,
+                    &family.members,
+                    &mut buffer,
+                    &mut Budget(10_000_000),
+                )
+                .map_err(io::Error::other)?;
+            samples.push(start.elapsed());
+            if admitted != family.members.len() {
+                return Err(io::Error::other("memo admitted a different count"));
+            }
+            distinct = rows;
+        }
+        row(&format!("admit_memo_distinct{distinct}"), &mut samples)?;
+        let mut largest = [Duration::ZERO; 2];
+        let mut warm = bound.clone();
+        for (step, choices) in family.members.iter().zip(&family.rows) {
+            let start = Instant::now();
+            for _ in 0 .. 100 {
+                member(&family.schema, &mut warm, choices, *step).map_err(io::Error::other)?;
+            }
+            largest[0] = largest[0].max(start.elapsed() / 100);
+            let start = Instant::now();
+            for _ in 0 .. 100 {
+                family
+                    .fast
+                    .admit_shared(
+                        &shared,
+                        choices,
+                        *step,
+                        &mut buffer,
+                        &mut Budget(10_000_000),
+                    )
+                    .map_err(io::Error::other)?;
+            }
+            largest[1] = largest[1].max(start.elapsed() / 100);
+        }
+        row("largest_member_warm", &mut [largest[0]])?;
+        row("largest_member_shared", &mut [largest[1]])?;
+        let mut obligation = Duration::ZERO;
+        for index in 0 .. family.fast.obligation_count() {
+            let start = Instant::now();
+            for _ in 0 .. 25 {
+                family
+                    .fast
+                    .discharge(index, &mut Budget(10_000_000))
+                    .map_err(io::Error::other)?;
+            }
+            obligation = obligation.max(start.elapsed() / 25);
+        }
+        row("largest_obligation_fast_warm", &mut [obligation])?;
+        let wire = Wire {
+            kind: Kind::Rtrb(Wake::Busy),
+            publication: Publication::Batch,
+            drain: Natural(32),
+        };
+        let selection = core::slice::from_ref(family);
+        for threads in [1, 2, 4, 5, 8] {
+            for (name, mode) in [
+                ("cold", Mode::Admission),
+                ("warm", Mode::Warm),
+                ("shared", Mode::Shared),
+                ("empty", Mode::Empty),
+                ("obligations", Mode::Obligation),
+                ("overlap", Mode::Overlap),
+                ("overlap_last", Mode::OverlapLast),
+                ("shared_alloc", Mode::SharedAlloc),
+                ("warm_shared", Mode::WarmShared),
+                ("hinted", Mode::Hinted),
+                ("memo", Mode::Memo),
+            ] {
+                let mut samples = measure_batches(
+                    selection,
+                    wire,
+                    Threads(threads),
+                    Grain::Member,
+                    mode,
+                    Schedule::Latency,
+                )?;
+                let [min, median, mean] = summary(&mut samples);
+                writeln!(
+                    output,
+                    "LEAD,{label},qos={qos},threads={threads},mode={name},min_ns={min},median_ns={median},mean_ns={mean}"
+                )?;
+            }
+        }
+        output.flush()?;
+    }
+    let wire = Wire {
+        kind: Kind::Rtrb(Wake::Busy),
+        publication: Publication::Batch,
+        drain: Natural(32),
+    };
+    for threads in [1, 8] {
+        for (name, mode) in [
+            ("cold", Mode::Admission),
+            ("shared", Mode::Shared),
+            ("hinted", Mode::Hinted),
+            ("memo", Mode::Memo),
+        ] {
+            for (grain_name, grain) in [
+                ("member", Grain::Member),
+                ("family", Grain::Families(Natural(1))),
+            ] {
+                if matches!(mode, Mode::Memo) && matches!(grain, Grain::Families(_)) {
+                    continue;
+                }
+                let elapsed = measure(
+                    workload,
+                    wire,
+                    Threads(threads),
+                    grain,
+                    mode,
+                    Schedule::Stream,
+                )?;
+                writeln!(
+                    output,
+                    "STREAM,qos={qos},threads={threads},mode={name},grain={grain_name},families={},total_ns={}",
+                    workload.len().saturating_mul(25),
+                    elapsed.as_nanos()
+                )?;
             }
         }
     }
