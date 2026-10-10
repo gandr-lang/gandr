@@ -31,6 +31,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Trace pairing witnesses](#trace-pairing-witnesses)
 - [Sharing overlay and duplication](#sharing-overlay-and-duplication)
 - [Specification attributes](#specification-attributes)
+- [Experimental stage normalization](#experimental-stage-normalization)
 - [License](#license)
 <!-- tocstop -->
 
@@ -303,6 +304,10 @@ The sharing half of the crate has its own page, [docs/sharing.md](docs/sharing.m
 ## Specification attributes
 
 Each item's `# Specification` prose is the statement of record; a `#[spec(...)]` attribute states a clause verbatim where it is a cheap predicate over one call. `SchedulingPolicy::share` asserts its share is strictly positive, so a stance answering zero aborts at its first call under enforcement. `SharingMeasure::of` asserts the measure's four laws: occurrences at least shares, depth at most shares, nodes above shares and occurrences together, and an expansion of at least one. `duplicate_value` and `duplicate_computation` assert that a duplicate validates; `TracedDuplication::install` asserts that the spinal stance installs exactly over a sink that records; and the installation's evaluators assert that they leave the overlay at its entry watermark and spend no more fuel than they were given. The erasure property is a statement over trees and stays prose, carried by its witnesses. The machines' `step` dispatchers stay prose: an assembly frame pops its operands in the same step that pushes its result, so no relation between entry and exit stack lengths states that the result reached the stack of its polarity. Where a clause covers part of a prose line, the block's `provides` names the residue and the witnesses that carry it.
+
+## Experimental stage normalization
+
+The strict stage producer has its own page, [docs/staging.md](docs/staging.md): what `stage::normalize` [reduces and leaves residual](docs/staging.md#experimental-stage-normalization), the strict-over-full decision with its reversal condition, the `stage::power` witnesses and the equation census. The language it produces for is the kernel's [stage universe](../kernel-core/docs/staging.md#experimental-stage-universe); readmission of a residual is in [core-checker](../core-checker/README.md#experimental-stage-readmission).
 
 ## License
 
