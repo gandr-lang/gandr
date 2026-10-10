@@ -97,6 +97,14 @@ pub enum Recognized
     BuiltinNamespace(SeedPosition),
     /// A member a seed table binds.
     BuiltinMember(SeedPosition),
+    /// A native prelude member with its table-owned signature and operation.
+    BuiltinPrimitive
+    {
+        /// The winning seed coordinate.
+        position: SeedPosition,
+        /// The shared native table row.
+        primitive: gandr_core_term::primitive::Primitive,
+    },
     /// A `module` declaration, or a module nested in one.
     ModuleNamespace,
     /// A value component of a `module` declaration.
@@ -251,6 +259,8 @@ pub enum SeedKind
     Namespace,
     /// A member.
     Member,
+    /// A native member with its table-owned semantics.
+    Primitive(gandr_core_term::primitive::Primitive),
 }
 
 /// One entry of an ordered seed table.
@@ -299,6 +309,49 @@ impl From<Vec<SeedEntry>> for SeedTable
 
 impl SeedTable
 {
+    /// Derive recognition names and namespaces from the native vocabulary.
+    ///
+    /// # Specification
+    /// - ensures: every native row appears once, after any namespace prefix it
+    ///   needs.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every table name resolves with its own operation;
+    ///   declared shadows displace the subtree.
+    /// - witness: `namespace::recognition::tests::native_prelude_seeds_names_and_shadowing`
+    #[spec(ensures: |ref ret| gandr_core_term::primitive::PRELUDE.iter().all(|primitive|
+        ret.entries().iter().filter(|entry| entry.kind == SeedKind::Primitive(*primitive)).count() == 1))]
+    #[inline]
+    #[must_use]
+    pub fn prelude() -> Self
+    {
+        let mut entries: Vec<SeedEntry> = Vec::new();
+        for &primitive in gandr_core_term::primitive::PRELUDE {
+            let spelling: &'static str = primitive.name().into();
+            let mut segments = Vec::new();
+            let mut parts = spelling.split('.').peekable();
+            while let Some(part) = parts.next() {
+                segments.push(Segment::from(part));
+                let path = NamePath::from(segments.clone());
+                if parts.peek().is_some() {
+                    if !entries.iter().any(|entry| entry.path == path) {
+                        entries.push(SeedEntry {
+                            path,
+                            kind: SeedKind::Namespace,
+                        });
+                    }
+                }
+                else {
+                    entries.push(SeedEntry {
+                        path,
+                        kind: SeedKind::Primitive(primitive),
+                    });
+                }
+            }
+        }
+        Self(entries)
+    }
     /// The entries, in order.
     ///
     /// # Specification
@@ -488,14 +541,14 @@ pub struct Recognition
 
 impl Default for Recognition
 {
-    /// The outermost scope of no table, under warn-and-allow.
+    /// The native prelude's outermost scope, under warn-and-allow.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn default() -> Self
     {
-        Self::new(&[], ShadowPolicy::WarnAndAllow)
+        Self::new(&[SeedTable::prelude()], ShadowPolicy::WarnAndAllow)
     }
 }
 
@@ -530,6 +583,7 @@ impl Recognition
                     let (position, kind) = match found.data {
                         | Recognized::BuiltinNamespace(position) => (position, SeedKind::Namespace),
                         | Recognized::BuiltinMember(position) => (position, SeedKind::Member),
+                        | Recognized::BuiltinPrimitive { position, primitive } => (position, SeedKind::Primitive(primitive)),
                         | Recognized::ModuleNamespace
                         | Recognized::ModuleComponent
                         | Recognized::Definition => return false,
@@ -566,6 +620,10 @@ impl Recognition
                 let recognized = match seed.kind {
                     | SeedKind::Namespace => Recognized::BuiltinNamespace(position),
                     | SeedKind::Member => Recognized::BuiltinMember(position),
+                    | SeedKind::Primitive(primitive) => Recognized::BuiltinPrimitive {
+                        position,
+                        primitive,
+                    },
                 };
                 let _displaced = builtins.insert(
                     &seed.path,
@@ -907,6 +965,41 @@ impl Recognition
 #[cfg(test)]
 mod tests
 {
+
+    #[test]
+    fn native_prelude_seeds_names_and_shadowing()
+    {
+        let recognition = Recognition::default();
+        assert!(
+            matches!(recognition.resolve(&path("add")), Maybe::Present(Recognized::BuiltinPrimitive { primitive, .. }) if primitive.operator() == gandr_core_term::primitive::Operator::Infix("+"))
+        );
+        assert!(
+            matches!(recognition.resolve(&path("int.div")), Maybe::Present(Recognized::BuiltinPrimitive { primitive, .. }) if primitive.name().as_ref() == "int.div")
+        );
+        let mut shadowed = Recognition::new(
+            &[
+                SeedTable::prelude(),
+                SeedTable::from(Vec::from([member("int")])),
+            ],
+            ShadowPolicy::WarnAndAllow,
+        );
+        assert_eq!(
+            shadowed.resolve(&path("int")),
+            Maybe::Present(&Recognized::BuiltinMember(SeedPosition {
+                table: 1,
+                entry: 0
+            }))
+        );
+        shadowed.declare_resumed(
+            crate::namespace::path::Segment::from("int"),
+            crate::namespace::Trie::empty(),
+        );
+        assert!(
+            matches!(shadowed.resolve(&path("int.div")), Maybe::Absent(_)),
+            "rebinding the prefix removes the seeded subtree"
+        );
+    }
+
     use alloc::vec::Vec;
 
     use quenchant_shape::shape::Maybe;

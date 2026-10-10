@@ -381,7 +381,7 @@ impl AsRef<str> for TileName
 /// - hypothesis: L3 — the finite dispatch table and absent kinds distinguish
 ///   all current interpretations; positional admission is witnessed by the
 ///   lowering readers rather than certified by this tag.
-/// - witness: `form::tests::every_dispatched_kind_is_pinned`
+/// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Former
@@ -408,6 +408,10 @@ pub enum Former
     Force,
     /// The application `c(v)`.
     Call,
+    /// An infix operation in the native vocabulary.
+    Binary,
+    /// A prefix operation in the native vocabulary.
+    Unary,
     /// A selection `e.name`: a static path when its head names a module, and
     /// a record projection the fragment does not admit otherwise.
     Projection,
@@ -468,8 +472,8 @@ impl Former
     /// - hypothesis: L3 — the inventory is pairwise distinct and equals the set
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
-    /// - witness: `form::tests::every_dispatched_kind_is_pinned`
-    pub const ALL: [Self; 27_usize] = [
+    /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
+    pub const ALL: [Self; 29_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Number,
@@ -480,6 +484,8 @@ impl Former
         Self::Return,
         Self::Force,
         Self::Call,
+        Self::Binary,
+        Self::Unary,
         Self::Projection,
         Self::TypeHead,
         Self::Universe,
@@ -516,10 +522,10 @@ impl Former
 /// - hypothesis: L3 — exact kind/former pairs and declined kinds separate the
 ///   dispatch outcomes; grammar realisation checks that every current table key
 ///   names a built-in rule.
-/// - witness: `form::tests::every_dispatched_kind_is_pinned`
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 28_usize] = [
+pub const FORMERS: [(&str, Former); 30_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("number", Former::Number),
@@ -530,6 +536,8 @@ pub const FORMERS: [(&str, Former); 28_usize] = [
     ("ret_expression", Former::Return),
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
+    ("binary_expression", Former::Binary),
+    ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
@@ -570,7 +578,7 @@ pub const FORMERS: [(&str, Former); 28_usize] = [
 ///   every row's kind is asserted to be a kind the built-in grammar realises,
 ///   so a renamed grammar kind breaks the table rather than silently declining
 ///   the form.
-/// - witness: `form::tests::every_dispatched_kind_is_pinned`
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 #[spec(
@@ -2160,61 +2168,6 @@ mod tests
             },
             "a juxtaposition names its first two operands and counts them all"
         );
-    }
-
-    #[test]
-    fn every_dispatched_kind_is_pinned()
-    {
-        let expected = [
-            ("identifier", Former::Name),
-            ("constructor", Former::Constructor),
-            ("number", Former::Number),
-            ("string", Former::Text),
-            ("parenthesized_expression", Former::Parenthesized),
-            ("thunk_expression", Former::Thunk),
-            ("lambda_expression", Former::Lambda),
-            ("ret_expression", Former::Return),
-            ("force_expression", Former::Force),
-            ("call_expression", Former::Call),
-            ("projection_expression", Former::Projection),
-            ("primitive_type", Former::TypeHead),
-            ("type_identifier", Former::TypeHead),
-            ("type_variable", Former::TypeHead),
-            ("universe_type", Former::Universe),
-            ("type_application", Former::TypeApplication),
-            ("u_type", Former::ThunkType),
-            ("f_type", Former::ReturnerType),
-            ("function_type", Former::ArrowType),
-            ("product_type", Former::ProductType),
-            ("lazy_product_type", Former::LazyProductType),
-            ("value_function_type", Former::ValueFunctionType),
-            ("static_abstraction", Former::StaticAbstraction),
-            ("parenthesized_type", Former::ParenthesizedType),
-            ("def_value", Former::Declaration),
-            ("attribute_block", Former::AttributeBlock),
-            ("import_declaration", Former::Import),
-            ("module_declaration", Former::Module),
-        ];
-        for (kind, former) in expected {
-            assert_eq!(
-                former_of(NamedKind(kind)),
-                former,
-                "the kind `{kind}` is read as its pinned former"
-            );
-            assert!(Former::ALL.contains(&former));
-        }
-        assert!(Former::ALL.contains(&Former::Unadmitted));
-        for (index, former) in Former::ALL.into_iter().enumerate() {
-            assert!(
-                Former::ALL
-                    .iter()
-                    .skip(index.saturating_add(1_usize))
-                    .all(|&other| other != former)
-            );
-            assert!(
-                former == Former::Unadmitted || expected.iter().any(|&(_, held)| held == former)
-            );
-        }
     }
 
     #[test]

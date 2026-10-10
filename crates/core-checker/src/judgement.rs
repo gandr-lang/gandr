@@ -577,6 +577,22 @@ enum Frame
         /// The certificate classifier.
         path_type: ValueTypeId,
     },
+    /// Check the second argument of a saturated native operation.
+    PrimitiveSecond
+    {
+        /// The second argument.
+        argument: ValueId,
+        /// Its table-declared classifier.
+        expected: ValueTypeId,
+        /// The operation's returner type.
+        result: CompTypeId,
+    },
+    /// Complete a native operation after its arguments checked.
+    PrimitiveResult
+    {
+        /// The operation's returner type.
+        result: CompTypeId,
+    },
     /// Await the path classifier.
     TransportPath
     {
@@ -1126,6 +1142,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let produced = |found: FormedValueType| Ok(Step::Ascend(Produced::ValueType(found.id())));
         match *self.value(term)? {
+            | Value::Primitive { primitive, .. } => {
+                let computation = primitive.declared_type(self.context.arena_mut());
+                let classifier = self.context.arena_mut().value_type_thunk(computation);
+                Ok(Step::Ascend(Produced::ValueType(classifier)))
+            },
             | Value::PathRefl(code) => {
                 let _endpoint = crate::formation::path_code(self.context.arena(), code)?;
                 let classifier = self
@@ -1319,6 +1340,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::PathRefl(_)
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
+            | Value::Primitive { .. }
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Unit
@@ -1457,6 +1479,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
             | Value::PathRefl(_)
+            | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }
@@ -1505,6 +1528,44 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.computation(term)? {
+            | Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                let domains = primitive.arguments();
+                if domains.len() != arguments.len() {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                let arena = self.context.arena_mut();
+                let result = primitive.result().mint(arena);
+                let result = arena.comp_type_returner(result);
+                let first_domain = domains
+                    .first()
+                    .ok_or(CheckRefusal::MachineInvariant)?
+                    .mint(arena);
+                let first = match arguments {
+                    | gandr_core_term::primitive::Arguments::Unary(argument) => {
+                        self.frames.push(Frame::PrimitiveResult { result });
+                        argument
+                    },
+                    | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                        let expected = domains
+                            .get(1)
+                            .ok_or(CheckRefusal::MachineInvariant)?
+                            .mint(arena);
+                        self.frames.push(Frame::PrimitiveSecond {
+                            argument: second,
+                            expected,
+                            result,
+                        });
+                        first
+                    },
+                };
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Check(first_domain),
+                }))
+            },
             | Computation::Transport(path, value) => {
                 self.frames.push(Frame::TransportPath { path, value });
                 Ok(Step::Descend(Goal::Value {
@@ -1595,7 +1656,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(result),
                 }))
             },
-            | Computation::Transport(..) | Computation::Force(_) | Computation::Application(..) => {
+            | Computation::Primitive { .. }
+            | Computation::Transport(..)
+            | Computation::Force(_)
+            | Computation::Application(..) => {
                 self.frames.push(Frame::CompBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Computation {
                     term,
@@ -2374,6 +2438,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match (frame, produced) {
+            | (
+                Frame::PrimitiveSecond {
+                    argument,
+                    expected,
+                    result,
+                },
+                Produced::Checked,
+            ) => {
+                self.frames.push(Frame::PrimitiveResult { result });
+                Ok(Step::Descend(Goal::Value {
+                    term: argument,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            | (
+                Frame::PrimitiveResult { result } | Frame::TransportOperand { result },
+                Produced::Checked,
+            ) => Ok(Step::Ascend(Produced::CompType(result))),
             | (Frame::PathProductFirst { at, second }, Produced::ValueType(classifier)) => {
                 let (source, target) = self.path_endpoints(at, classifier)?;
                 self.frames.push(Frame::PathProductSecond {
@@ -2426,9 +2508,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: value,
                     direction: Direction::Check(source),
                 }))
-            },
-            | (Frame::TransportOperand { result }, Produced::Checked) => {
-                Ok(Step::Ascend(Produced::CompType(result)))
             },
             | (
                 Frame::CaseScrutinee {
@@ -2732,6 +2811,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | (
                 Frame::PathBackward { .. }
                 | Frame::PathChecked { .. }
+                | Frame::PrimitiveSecond { .. }
+                | Frame::PrimitiveResult { .. }
                 | Frame::TransportOperand { .. }
                 | Frame::CaseRight { .. }
                 | Frame::ApplicationArgument { .. }
@@ -3970,7 +4051,7 @@ mod tests
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(term) }),
                         "a thunk does not synthesise"
                     ),
-                    | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
+                    | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();
                             value_bridge(&mut context, term, found.produced().id(), expected_value.id(), &mut tally)
@@ -4022,7 +4103,7 @@ mod tests
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Return(term) }),
                         "a return does not synthesise"
                     ),
-                    | Computation::Force(_) | Computation::Application(..) => {
+                    | Computation::Primitive { .. } | Computation::Force(_) | Computation::Application(..) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();
                             comp_bridge(&mut context, term, found.produced().id(), expected_comp.id(), &mut tally)

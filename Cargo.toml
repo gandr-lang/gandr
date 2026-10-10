@@ -565,6 +565,15 @@ path = "crates/theory-levitation"
 [workspace.dependencies.gandr-theory-orders]
 path = "crates/theory-orders"
 
+# Exact, dynamically sized integers for native arithmetic.
+# features:
+# - none: allocation works without std or optional integrations
+# consumers:
+# - core-term
+[workspace.dependencies.num-bigint]
+version = "0.5.1"
+default-features = false
+
 # Percent-decoding: the path a `file` URI names. The choice and its reversal
 # are in the language server's README.
 # features:

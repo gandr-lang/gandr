@@ -95,6 +95,17 @@ impl Source for ContentTable<'_>
     /// - witness: `render::tests::a_malformed_table_spells_unknown`
     /// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
     #[spec(ensures: |ret| match (self.0.get(usize::from(node)), ret) {
+        (Some(&ContentNode::PrimitiveValue(primitive)), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
+        (Some(&ContentNode::Primitive(..) | &ContentNode::Transport(..) |
+&ContentNode::Lambda(_) | &ContentNode::Application(..) |
+&ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
+&ContentNode::Case { .. }), Former::Computation) |
+(Some(&ContentNode::Unit), Former::Unit) |
+(Some(&ContentNode::Thunk(_)), Former::Thunk) |
+(Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
+(Some(&ContentNode::UnitType), Former::UnitType) |
+(Some(&ContentNode::TypeLift { .. }), Former::TypeLift) |
+(None | Some(&ContentNode::Unresolved(_)), Former::Unreadable) => true,
         (Some(&ContentNode::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         (Some(&ContentNode::Constant(Reference::Item { ref key, .. })), Former::Constant(name))
@@ -127,14 +138,6 @@ impl Source for ContentTable<'_>
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
 
-        (Some(&ContentNode::Transport(..) | &ContentNode::Lambda(_) | &ContentNode::Application(..) | &ContentNode::Return(_)
-            | &ContentNode::Bind(..) | &ContentNode::Force(_) | &ContentNode::Case { .. }), Former::Computation)
-        | (Some(&ContentNode::Unit), Former::Unit)
-        | (Some(&ContentNode::Thunk(_)), Former::Thunk)
-        | (Some(&ContentNode::ValueLift { .. }), Former::ValueLift)
-        | (Some(&ContentNode::UnitType), Former::UnitType)
-        | (Some(&ContentNode::TypeLift { .. }), Former::TypeLift)
-        | (None | Some(&ContentNode::Unresolved(_)), Former::Unreadable) => true,
         (Some(&ContentNode::Constant(ref reference) | &ContentNode::Abstract(ref reference)), Former::Unreadable) =>
             match *reference {
                 Reference::Unoccupied => true,
@@ -153,6 +156,17 @@ impl Source for ContentTable<'_>
             return Former::Unreadable;
         };
         match *content {
+            | ContentNode::PrimitiveValue(primitive) => {
+                Former::Constant(Name::from(<&'static str>::from(primitive.name())))
+            },
+            | ContentNode::Primitive(..)
+            | ContentNode::Transport(..)
+            | ContentNode::Lambda(_)
+            | ContentNode::Application(..)
+            | ContentNode::Return(_)
+            | ContentNode::Bind(..)
+            | ContentNode::Force(_)
+            | ContentNode::Case { .. } => Former::Computation,
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::PathRefl(code) => Former::PathRefl(code),
             | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
@@ -169,13 +183,6 @@ impl Source for ContentTable<'_>
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
-            | ContentNode::Transport(..)
-            | ContentNode::Lambda(_)
-            | ContentNode::Application(..)
-            | ContentNode::Return(_)
-            | ContentNode::Bind(..)
-            | ContentNode::Force(_)
-            | ContentNode::Case { .. } => Former::Computation,
             | ContentNode::Base(base) => Former::BaseType(base),
             | ContentNode::UnitType => Former::UnitType,
             | ContentNode::Product(first, second) => Former::Product(first, second),

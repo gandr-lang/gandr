@@ -452,6 +452,16 @@ where
 #[derive(Clone, Debug)]
 enum Task
 {
+    /// Complete a saturated native operation after translating its operands.
+    Primitive
+    {
+        /// The table's operation.
+        primitive: gandr_core_term::primitive::Primitive,
+        /// The source operand shape.
+        arguments: gandr_core_term::primitive::Arguments,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
     /// Translate a value; leaves one producer.
     Value(ValueId),
     /// Translate a computation under a continuation; leaves one command.
@@ -610,6 +620,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     #[spec(
         requires: match &task {
+            | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::Pair => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
@@ -625,6 +636,30 @@ impl<'run> Focusing<'run>
     ) -> Result<(), FocusRefusal>
     {
         match task {
+            | Task::Primitive {
+                primitive,
+                arguments,
+                continuation,
+            } => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    | Arguments::Unary(_) => Arguments::Unary(self.pop_producer()?),
+                    | Arguments::Binary(_) => {
+                        let second = self.pop_producer()?;
+                        Arguments::Binary([self.pop_producer()?, second])
+                    },
+                };
+                let producer = self.arena.mint_producer(ProducerNode::Primitive {
+                    primitive,
+                    arguments,
+                })?;
+                self.cut(
+                    FocusOrigin::Return,
+                    Polarity::Positive,
+                    producer,
+                    continuation,
+                )
+            },
             | Task::Value(value) => self.value(value),
             | Task::Computation {
                 computation,
@@ -788,7 +823,7 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(body));
                 return Ok(());
             },
-            | Value::Thunk(body) => {
+            | Value::Thunk(body) | Value::Primitive { body, .. } => {
                 let return_point = self.innermost_covariable()?;
                 self.tasks.push(Task::Thunk);
                 self.tasks.push(Task::Computation {
@@ -851,6 +886,19 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
+            | Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                self.tasks.push(Task::Primitive {
+                    primitive,
+                    arguments,
+                    continuation,
+                });
+                for argument in arguments.iter().rev() {
+                    self.tasks.push(Task::Value(*argument));
+                }
+            },
             | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
             | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {

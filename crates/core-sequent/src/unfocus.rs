@@ -354,6 +354,11 @@ pub fn decode(
 #[derive(Clone, Debug)]
 enum Task
 {
+    /// Mint a saturated core operation from decoded arguments.
+    Primitive(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<ProducerId>,
+    ),
     /// Decode a producer as a value; leaves one value.
     Value(ProducerId, Depth),
     /// Decode a command as a computation; leaves one computation.
@@ -479,6 +484,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     #[spec(
         requires: match &task {
+            | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::Pair => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
             | &Task::Thunk | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
@@ -496,6 +502,19 @@ impl Unfocusing<'_>
     ) -> Result<(), UnfocusRefusal>
     {
         match task {
+            | Task::Primitive(primitive, arguments) => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    | Arguments::Unary(_) => Arguments::Unary(self.pop_value()?),
+                    | Arguments::Binary(_) => {
+                        let second = self.pop_value()?;
+                        Arguments::Binary([self.pop_value()?, second])
+                    },
+                };
+                let computation = self.core.computation_primitive(primitive, arguments);
+                self.computations.push(computation);
+                Ok(())
+            },
             | Task::Value(producer, depth) => self.value(producer, depth),
             | Task::Command(command, depth) => self.command(command, depth),
             | Task::Spine(consumer, depth) => self.spine(consumer, depth),
@@ -648,7 +667,9 @@ impl Unfocusing<'_>
                     .push(Task::Command(body, depth.under_covariable()));
                 return Ok(());
             },
-            | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => {
+            | ProducerNode::Primitive { .. }
+            | ProducerNode::Cocase { .. }
+            | ProducerNode::Mu { .. } => {
                 return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
             },
         };
@@ -760,6 +781,17 @@ impl Unfocusing<'_>
             .producer(producer)
             .ok_or(UnfocusRefusal::DanglingProducer(producer))?;
         match *head {
+            | ProducerNode::Primitive {
+                primitive,
+                arguments,
+            } => {
+                self.tasks.push(Task::Spine(consumer, depth));
+                self.tasks.push(Task::Primitive(primitive, arguments));
+                for argument in arguments.iter().rev() {
+                    self.tasks.push(Task::Value(*argument, depth));
+                }
+                return Ok(());
+            },
             | ProducerNode::Mu { body } => {
                 self.tasks.push(Task::Spine(consumer, depth));
                 self.tasks

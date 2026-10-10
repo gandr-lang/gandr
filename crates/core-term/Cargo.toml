@@ -25,6 +25,7 @@ publish.workspace = true
 anodized.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+num-bigint.workspace = true
 quenchant-arith.workspace = true
 quenchant-shape.workspace = true
 

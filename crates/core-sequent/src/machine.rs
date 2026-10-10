@@ -49,6 +49,7 @@ use crate::boundary::StepCount;
 use crate::il::CommandArena;
 use crate::il::CommandId;
 use crate::il::CommandNode;
+use crate::il::ConstructorTag;
 use crate::il::ConsumerId;
 use crate::il::ConsumerNode;
 use crate::il::CovariableIndex;
@@ -66,7 +67,6 @@ use crate::store::HeapValue;
 use crate::store::HeapValueId;
 use crate::store::Store;
 use crate::store::StoreFault;
-
 /// What a constant stands for when a run meets it.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Definition
@@ -161,6 +161,10 @@ impl Definitions
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stuck
 {
+    /// A native operation refused its arguments, including zero division.
+    Primitive(gandr_core_term::primitive::PrimitiveError),
+    /// A native operand has no scalar interpretation, retaining its blame site.
+    NonScalar(HeapValueId),
     /// A producer variable no binding of the environment answers.
     UnboundVariable
     {
@@ -214,6 +218,8 @@ impl fmt::Display for Stuck
     ) -> fmt::Result
     {
         match *self {
+            | Self::Primitive(error) => write!(f, "native operation: {error}"),
+            | Self::NonScalar(value) => write!(f, "native operand {value} is not a scalar"),
             | Self::UnboundVariable { index, .. } => {
                 write!(f, "variable {} is unbound", u32::from(index))
             },
@@ -370,6 +376,8 @@ struct FieldPosition(usize);
 #[derive(Clone, Copy, Debug)]
 enum Evaluation
 {
+    /// Apply a table operation to the evaluated operands.
+    Primitive(ProducerId),
     /// Evaluate a producer under an environment; leaves one value.
     Producer(ProducerId, Environment),
     /// Pop a constructor's evaluated fields and allocate it.
@@ -1240,6 +1248,7 @@ impl<'program> Machine<'program>
         ensures: |ref ret| !self.unfoldings.contains(&Unfolding::Running)
             && (ret.is_err() || ret.as_ref().is_ok_and(|&value|
                 self.arena.producer(root).zip(self.store.value(value)).is_some_and(|(node, held)| match *node {
+                    | ProducerNode::Primitive { .. } => self.scalar(value).is_ok(),
                     | ProducerNode::Variable { zone, index } => zone == Zone::Intuitionistic
                         && self.store.lookup_value(environment, index) == Some(value),
                     | ProducerNode::Constant(constant) => self.unfolding(constant) == Ok(Unfolding::Done(value)),
@@ -1312,6 +1321,13 @@ impl<'program> Machine<'program>
                 | Evaluation::Producer(id, environment) => {
                     let node = arena.producer(id).ok_or(Stuck::IllFormedProducer(id))?;
                     let value = match *node {
+                        | ProducerNode::Primitive { arguments, .. } => {
+                            tasks.push(Evaluation::Primitive(id));
+                            for argument in arguments.iter().rev() {
+                                tasks.push(Evaluation::Producer(*argument, environment));
+                            }
+                            continue;
+                        },
                         | ProducerNode::Variable { zone, index } => {
                             let bound = match zone {
                                 | Zone::Intuitionistic => {
@@ -1399,6 +1415,43 @@ impl<'program> Machine<'program>
                     })?;
                     results.push(value);
                 },
+                | Evaluation::Primitive(id) => {
+                    use gandr_core_term::primitive::Arguments;
+                    use gandr_core_term::primitive::Scalar;
+                    let Some(&ProducerNode::Primitive {
+                        primitive,
+                        arguments,
+                    }) = arena.producer(id)
+                    else {
+                        return Err(Stuck::IllFormedProducer(id).into());
+                    };
+                    let last = results.pop().ok_or(Stuck::IllFormedProducer(id))?;
+                    let last = self.scalar(last)?;
+                    let arguments = match arguments {
+                        | Arguments::Unary(_) => Arguments::Unary(last),
+                        | Arguments::Binary(_) => {
+                            let first = results.pop().ok_or(Stuck::IllFormedProducer(id))?;
+                            Arguments::Binary([self.scalar(first)?, last])
+                        },
+                    };
+                    let result = primitive.evaluate(&arguments).map_err(Stuck::Primitive)?;
+                    let value = match result {
+                        | Scalar::Integer(integer) => self.store.allocate(HeapValue::Literal(
+                            gandr_kernel_term::Literal::Integer(integer),
+                        ))?,
+                        | Scalar::Boolean(side) => {
+                            let unit = self.store.allocate(HeapValue::Constructed {
+                                tag: ConstructorTag::Unit,
+                                fields: Box::from([]),
+                            })?;
+                            self.store.allocate(HeapValue::Constructed {
+                                tag: ConstructorTag::Injection(side),
+                                fields: Box::from([unit]),
+                            })?
+                        },
+                    };
+                    results.push(value);
+                },
                 | Evaluation::Remember(constant, body) => {
                     let &value = results.last().ok_or(Stuck::IllFormedProducer(body))?;
                     self.record(constant, Unfolding::Done(value));
@@ -1453,11 +1506,84 @@ impl<'program> Machine<'program>
             *slot = state;
         }
     }
+
+    /// Read the native scalar carried by a terminal operand.
+    ///
+    /// # Specification
+    /// - ensures: integers and unit injections retain their exact payload; all
+    ///   other shapes are refused.
+    /// - fails: a non-scalar operand yields the table's argument-type refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the native argument-type refusal for malformed or non-scalar
+    /// values.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal operands and both injection tags separate
+    ///   classifier and order errors.
+    /// - witness: `machine::tests::native_arithmetic_and_partial_application`
+    #[spec(ensures: |ref ret| ret.is_ok() || matches!(ret, Err(Stop::Stuck(Stuck::NonScalar(actual))) if *actual == value))]
+    fn scalar(
+        &self,
+        value: HeapValueId,
+    ) -> Result<gandr_core_term::primitive::Scalar<&gandr_kernel_term::IntegerLiteral>, Stop>
+    {
+        use gandr_core_term::primitive::Scalar;
+        match self.store.value(value) {
+            | Some(&HeapValue::Literal(gandr_kernel_term::Literal::Integer(ref integer))) => {
+                Ok(Scalar::Integer(integer))
+            },
+            | Some(&HeapValue::Constructed {
+                tag: ConstructorTag::Injection(side),
+                ref fields,
+            }) => {
+                if let &[body] = fields.as_ref()
+                    && matches!(self.store.value(body), Some(&HeapValue::Constructed { tag: ConstructorTag::Unit, ref fields }) if fields.is_empty())
+                {
+                    Ok(Scalar::Boolean(side))
+                }
+                else {
+                    Err(Stuck::NonScalar(value).into())
+                }
+            },
+            | _ => Err(Stuck::NonScalar(value).into()),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
+
+    #[test]
+    fn native_arithmetic_and_partial_application()
+    {
+        let mut core = CoreArena::new();
+        let sub = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "sub")
+            .unwrap();
+        let value = sub.thunk(&mut core);
+        let forced = core.computation_force(value);
+        let first = integer(&mut core, Digits("19"));
+        let partial = core.computation_application(forced, first);
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let command = focus_computation(&core, partial, &mut arena, &mut provenance).unwrap();
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Outcome::Halted(value) = machine.run(command, budget()).unwrap()
+        else {
+            panic!("partial application halts with a closure");
+        };
+        let partial = machine.read_back(value, &mut core).unwrap();
+        let second = integer(&mut core, Digits("7"));
+        let saturated = core.computation_application(partial, second);
+        assert_eq!(evaluated(&mut core, saturated), "⟨12 |+ ★⟩");
+    }
+
     use alloc::string::String;
 
     use gandr_core_term::Computation;

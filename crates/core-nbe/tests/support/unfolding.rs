@@ -120,12 +120,15 @@ pub struct Unfolded(pub u64);
         let minimum = match root {
             CoreNode::Value(id) => match erased.value(id) {
                 Some(&Value::PathEquiv { .. }) => 4,
-                Some(&(Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_))) => 1,
+                Some(&Value::Primitive { .. } |
+&(Value::Variable { .. } | Value::Constant(_) | Value::Unit |
+Value::Literal(_))) => 1,
                 Some(&(Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _))) => 3,
                 Some(&(Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_))) => 2,
                 None => return false,
             },
             CoreNode::Computation(id) => match erased.computation(id) {
+                Some(&Computation::Primitive { arguments, .. }) => if arguments.len() == 1 { 2 } else { 3 },
                 Some(&(Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_))) => 2,
                 Some(&(Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _))) => 3,
                 Some(&Computation::Case { .. }) => 4,
@@ -179,8 +182,11 @@ pub fn unfolded(
                     CoreNode::Value(forward),
                     CoreNode::Value(backward),
                 ]),
-                | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
-                },
+                | Value::Primitive { .. }
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Unit
+                | Value::Literal(_) => {},
                 | Value::PathProduct(first, second)
                 | Value::Pair(first, second)
                 | Value::StaticApplication(first, second) => {
@@ -200,6 +206,9 @@ pub fn unfolded(
                     .computation(id)
                     .expect("an erased computation resolves")
                 {
+                    | Computation::Primitive { arguments, .. } => {
+                        pending.extend(arguments.iter().copied().map(CoreNode::Value));
+                    },
                     | Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },

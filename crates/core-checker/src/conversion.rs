@@ -680,6 +680,7 @@ fn convert(
                         },
                         | (
                             Value::PathRefl(_)
+                            | Value::Primitive { .. }
                             | Value::PathProduct(..)
                             | Value::PathEquiv { .. }
                             | Value::Variable { .. }

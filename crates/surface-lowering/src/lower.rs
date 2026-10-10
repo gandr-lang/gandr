@@ -83,9 +83,11 @@ use core::ops::ControlFlow;
 
 use anodized::spec;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
@@ -724,6 +726,8 @@ enum Family
                     | Former::Return
                     | Former::Force
                     | Former::Call
+                    | Former::Binary
+                    | Former::Unary
                     | Former::Projection,
                 Family::Term
             ) | (
@@ -763,6 +767,8 @@ const fn family_of(former: Former) -> Family
         | Former::Return
         | Former::Force
         | Former::Call
+        | Former::Binary
+        | Former::Unary
         | Former::Projection => Family::Term,
         | Former::TypeHead
         | Former::Universe
@@ -1201,6 +1207,13 @@ enum Plan
     Variable(DeBruijnIndex),
     /// A constant at this admission position.
     Constant(ConstantIndex),
+    /// A table-typed native prelude thunk.
+    Primitive(gandr_core_term::primitive::Primitive),
+    /// A saturated table operation selected by source operator syntax.
+    PrimitiveCall(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<NodeIndex>,
+    ),
     /// The unit value.
     Unit,
     /// A literal, already parsed from the node's own text.
@@ -2761,6 +2774,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Return => self.keyed(site, cursor, TileName::RET),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Call => self.call(site, cursor),
+            | Former::Binary | Former::Unary => self.operator(site, pieces),
             | Former::Projection => self.projection(site, pieces),
             | Former::TypeHead => self.type_head(site),
             | Former::Universe => self.universe(site, cursor),
@@ -3007,7 +3021,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Variable(_) | Plan::Constant(_)))
+                    Some(&(Plan::Variable(_) | Plan::Constant(_) | Plan::Primitive(_)))
                 )
         },
     )]
@@ -3023,10 +3037,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 self.plan(site, resolved.term());
                 Ok(())
             },
-            | Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
-                span: site.at.span,
-                name,
-            }),
+            | Maybe::Absent(_) => {
+                let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
+                if let PathResolution::Complete(Recognized::BuiltinPrimitive {
+                    primitive, ..
+                }) = self.recognition.resolve_path(&path)
+                {
+                    self.plan(site, Plan::Primitive(primitive));
+                    Ok(())
+                }
+                else {
+                    Err(LoweringRefusal::UnresolvedName {
+                        span: site.at.span,
+                        name,
+                    })
+                }
+            },
         }
     }
 
@@ -3957,6 +3983,64 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Lower native prefix and infix syntax using the shared vocabulary.
+    ///
+    /// # Specification
+    /// - ensures: the table row selected by the operator receives value
+    ///   operands in source order.
+    /// - fails: malformed tiles or operators outside the admitted vocabulary
+    ///   are refused.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the form or fragment refusal at the source operator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric operands separate order and operator
+    ///   choice; unsupported operators are rejected.
+    /// - witness: `lower::tests::native_operator_plans_preserve_order`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(Plan::PrimitiveCall(..))))]
+    fn operator(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        use gandr_core_term::primitive::Arguments;
+        use gandr_core_term::primitive::Operator;
+        use gandr_core_term::primitive::PRELUDE;
+        let frame = self.require(site, Produced::Computation)?;
+        let (label, arguments) = match pieces.pieces.as_slice() {
+            | &[Piece::Tile { label, .. }, Piece::Operand(argument)] => {
+                (label, Arguments::Unary(argument.node))
+            },
+            | &[
+                Piece::Operand(first),
+                Piece::Tile { label, .. },
+                Piece::Operand(second),
+            ] => (label, Arguments::Binary([first.node, second.node])),
+            | _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
+        };
+        let Some(&primitive) =
+            PRELUDE
+                .iter()
+                .find(|primitive| match (primitive.operator(), arguments) {
+                    | (Operator::Prefix(spelling), Arguments::Unary(_))
+                    | (Operator::Infix(spelling), Arguments::Binary(_)) => {
+                        spelling == label.as_ref()
+                    },
+                    | _ => false,
+                })
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        for argument in arguments.iter() {
+            self.read(*argument, Reading::Value(frame));
+        }
+        self.plan(site, Plan::PrimitiveCall(primitive, arguments));
+        Ok(())
+    }
+
     /// Classify a selection `e.name`.
     ///
     /// # Specification
@@ -3995,7 +4079,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::Constant(_))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_)))
                 )
         },
     )]
@@ -4030,7 +4114,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     target = inner;
                 },
                 | Shape::Form {
-                    former: Former::Constructor,
+                    former: Former::Constructor | Former::Name,
                     ..
                 } => break target,
                 | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
@@ -4045,6 +4129,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let path = NamePath::from(segments);
         match self.recognition.resolve_path(&path) {
+            | PathResolution::Complete(Recognized::BuiltinPrimitive { primitive, .. }) => {
+                self.plan(site, Plan::Primitive(primitive));
+                Ok(())
+            },
             | PathResolution::Complete(Recognized::ModuleComponent) => {
                 let Some(&exported) = self.exported.get(&path)
                 else {
@@ -5642,13 +5730,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             match plan {
                 | Plan::Variable(_)
                 | Plan::Constant(_)
+                | Plan::Primitive(_)
                 | Plan::Unit
                 | Plan::Literal(_)
                 | Plan::StaticApplication(..)
                 | Plan::Pair(_)
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_) => Some(Produced::Value),
-                | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) => {
+                | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -5717,6 +5806,48 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         match plan {
+            | Plan::Primitive(primitive) => {
+                let id = primitive.thunk(sink.arena);
+                if let Some(&Value::Primitive { body, .. }) = sink.arena.value(id) {
+                    let mut current = body;
+                    let mut ancestors = [body; 3];
+                    let mut count = 0_usize;
+                    for ancestor in &mut ancestors {
+                        *ancestor = current;
+                        count = count.saturating_add(1);
+                        match sink.arena.computation(current) {
+                            | Some(&Computation::Lambda(inner)) => current = inner,
+                            | Some(&Computation::Primitive { ref arguments, .. }) => {
+                                for &argument in arguments.iter().rev() {
+                                    sink.origins.record_value(argument, origin);
+                                }
+                                break;
+                            },
+                            | _ => break,
+                        }
+                    }
+                    for &computation in ancestors.iter().take(count).rev() {
+                        sink.origins.record_computation(computation, origin);
+                    }
+                }
+                Maybe::Present(sink.value(id, origin))
+            },
+            | Plan::PrimitiveCall(primitive, arguments) => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    | Arguments::Unary(argument) => self.value_at(argument).map(Arguments::Unary),
+                    | Arguments::Binary([first, second]) => {
+                        self.value_at(first).and_then(|first| {
+                            self.value_at(second)
+                                .map(|second| Arguments::Binary([first, second]))
+                        })
+                    },
+                };
+                arguments.map(|arguments| {
+                    let id = sink.arena.computation_primitive(primitive, arguments);
+                    sink.computation(id, origin)
+                })
+            },
             | Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
             | Plan::Variable(index) => {
                 let id = sink.arena.value_variable(Zone::Intuitionistic, index);
@@ -6287,6 +6418,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Unplanned
             | Plan::Variable(_)
             | Plan::Constant(_)
+            | Plan::Primitive(_)
+            | Plan::PrimitiveCall(..)
             | Plan::Unit
             | Plan::Literal(_)
             | Plan::Atom(_)
@@ -7862,14 +7995,11 @@ impl Sink<'_>
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
         ensures: |ret| match ret {
-            | Lowered::ValueType(id) => {
-                self.origins.value_type(id) == Maybe::Present(origin)
-                    && self.arena.value_type(id)
-                        == Some(&match atom {
-                            | TypeAtom::Unit => ValueType::Unit,
-                            | TypeAtom::Integer => ValueType::Base(BaseType::Integer),
-                            | TypeAtom::Text => ValueType::Base(BaseType::String),
-                        })
+            | Lowered::ValueType(id) => self.origins.value_type(id) == Maybe::Present(origin) && match atom {
+                TypeAtom::Boolean => matches!(self.arena.value_type(id), Some(&ValueType::Sum(first, second)) if self.arena.value_type(first) == Some(&ValueType::Unit) && self.arena.value_type(second) == Some(&ValueType::Unit)),
+                TypeAtom::Unit => self.arena.value_type(id) == Some(&ValueType::Unit),
+                TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
+                TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
             },
             | _ => false,
         },
@@ -7881,6 +8011,11 @@ impl Sink<'_>
     ) -> Lowered
     {
         let id = match atom {
+            | TypeAtom::Boolean => {
+                let unit = self.arena.value_type_unit();
+                self.origins.record_value_type(unit, origin);
+                self.arena.value_type_sum(unit, unit)
+            },
             | TypeAtom::Unit => self.arena.value_type_unit(),
             | TypeAtom::Integer => self.arena.value_type_base(BaseType::Integer),
             | TypeAtom::Text => self.arena.value_type_base(BaseType::String),
@@ -8431,6 +8566,8 @@ fn parse_literal(
                 ))))
             }),
         | Former::Name
+        | Former::Binary
+        | Former::Unary
         | Former::Constructor
         | Former::Parenthesized
         | Former::Thunk
@@ -8612,6 +8749,98 @@ fn fractional(text: SourceFragment<'_>) -> Fractional
 #[cfg(test)]
 mod tests
 {
+
+    #[test]
+    fn native_boolean_results_have_the_written_classifier()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def answer : +U (-F Bool) ; def answer = thunk { 19 < 7 } ;"),
+            &mut arena,
+        );
+        let declared = declared_of(module.declarations()[0].outcome());
+        let Some(&ValueType::Thunk(computation)) = arena.value_type(declared)
+        else {
+            panic!("thunk classifier");
+        };
+        let Some(&CompType::Returner(boolean)) = arena.comp_type(computation)
+        else {
+            panic!("result classifier");
+        };
+        let Some(&ValueType::Sum(first, second)) = arena.value_type(boolean)
+        else {
+            panic!("canonical boolean sum");
+        };
+        assert_eq!(arena.value_type(first), Some(&ValueType::Unit));
+        assert_eq!(arena.value_type(second), Some(&ValueType::Unit));
+        assert!(matches!(
+            module.origins().value_type(first),
+            Maybe::Present(_)
+        ));
+    }
+
+    #[test]
+    fn native_bindings_keep_generated_origins()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from("def subtract = sub ;"), &mut arena);
+        let value = body_of(module.declarations()[0].outcome());
+        let Some(&Value::Primitive { mut body, .. }) = arena.value(value)
+        else {
+            panic!("native binding");
+        };
+        loop {
+            assert!(matches!(
+                module.origins().computation(body),
+                Maybe::Present(_)
+            ));
+            match arena.computation(body) {
+                | Some(&Computation::Lambda(inner)) => body = inner,
+                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                    for &argument in arguments.iter() {
+                        assert!(matches!(
+                            module.origins().value(argument),
+                            Maybe::Present(_)
+                        ));
+                    }
+                    break;
+                },
+                | other => panic!("native closure shape: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn native_operator_plans_preserve_order()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def answer = thunk { 19 - 7 } ;"),
+            &mut arena,
+        );
+        let body = body_of(module.declarations()[0].outcome());
+        let Some(&Value::Thunk(body)) = arena.value(body)
+        else {
+            panic!("thunk");
+        };
+        let Some(&Computation::Primitive {
+            primitive,
+            arguments: gandr_core_term::primitive::Arguments::Binary(arguments),
+        }) = arena.computation(body)
+        else {
+            panic!("native subtraction");
+        };
+        let operands = arguments.map(|argument| match arena.value(argument) {
+            | Some(&Value::Literal(Literal::Integer(ref integer))) => integer.magnitude().as_ref(),
+            | _ => panic!("integer operand"),
+        });
+        assert_eq!(operands, ["19", "7"]);
+        assert_eq!(
+            primitive.operator(),
+            gandr_core_term::primitive::Operator::Infix("-")
+        );
+    }
+
     use alloc::format;
     use alloc::string::String;
     use alloc::vec;

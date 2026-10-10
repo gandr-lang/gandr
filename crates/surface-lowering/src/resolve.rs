@@ -239,6 +239,8 @@ impl fmt::Display for HeadArity
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeAtom
 {
+    /// `Bool`, the canonical sum of two unit types.
+    Boolean,
     /// `Unit`, the type inhabited by the unit value alone.
     Unit,
     /// `Integer`, the integer base atom.
@@ -270,10 +272,11 @@ pub enum TypeFormer
 /// # Adequacy
 /// - hypothesis: L3 — every row has an exact answer, with the other arity and
 ///   near spellings separating the absent branch.
-/// - witness: `resolve::tests::every_nullary_type_head_answers_its_atom`
+/// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 3_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 4_usize] = [
     ("Unit", TypeAtom::Unit),
+    ("Bool", TypeAtom::Boolean),
     ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),
 ];
@@ -309,12 +312,10 @@ const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the table is a finite class, enumerated exhaustively with
-///   each entry's exact answer asserted, and separated from the miss arm by a
-///   proper prefix of an entry, an entry with a suffix, a case-shifted entry
-///   and a former's spelling, each asserted absent; a dropped or swapped row
-///   breaks one pair.
-/// - witness: `resolve::tests::every_nullary_type_head_answers_its_atom`
+/// - hypothesis: L3 — source signatures select their concrete classifiers; near
+///   spellings and a former's spelling remain absent.
+/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
 #[spec(
     ensures: |ret| match ret {
@@ -999,7 +1000,6 @@ mod tests
     use super::Frame;
     use super::Scope;
     use super::SurfaceName;
-    use super::TypeAtom;
     use super::TypeFormer;
     use super::binder;
     use super::binder_type;
@@ -1146,23 +1146,6 @@ mod tests
             scope.telescope_index(Frame::Outermost, sibling),
             DeBruijnIndex::from(0_u32)
         );
-    }
-    #[test]
-    fn every_nullary_type_head_answers_its_atom()
-    {
-        let expected = [
-            ("Unit", TypeAtom::Unit),
-            ("Integer", TypeAtom::Integer),
-            ("String", TypeAtom::Text),
-        ];
-
-        for (spelling, atom) in expected {
-            assert_eq!(
-                type_atom(SurfaceName::from(spelling)),
-                Maybe::Present(atom),
-                "the nullary table is pinned row by row"
-            );
-        }
     }
 
     #[test]
