@@ -44,6 +44,7 @@ members = [
   "crates/theory-nominal-automata",
   "crates/theory-orders",
   "crates/theory-sites",
+  "crates/theory-virtual-doctrines",
 ]
 
 [workspace.package]
@@ -128,6 +129,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-orders
 # - theory-sites
+# - theory-virtual-doctrines
 [workspace.dependencies.anodized]
 git = "https://github.com/gandr-lang/anodized"
 rev = "372f70b50ef7af68f4e8a750132d90d54e780426"
@@ -486,6 +488,7 @@ path = "crates/surface-tui"
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
+# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
 
@@ -512,6 +515,7 @@ path = "crates/theory-circuit-algebras"
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
+# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
 
@@ -529,6 +533,7 @@ default-features = false
 # - none: alloc-only theory machinery.
 # consumers:
 # - theory-deep-inference (dev)
+# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-decomposition-spaces]
 path = "crates/theory-decomposition-spaces"
 default-features = false
@@ -555,6 +560,7 @@ path = "crates/theory-graphs"
 # consumers:
 # - theory-computads
 # - theory-decomposition-spaces (dev)
+# - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-levitation]
 path = "crates/theory-levitation"
 
@@ -619,6 +625,7 @@ default-features = false
 # - theory-graphs (dev)
 # - theory-levitation (dev)
 # - theory-orders (dev)
+# - theory-virtual-doctrines (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"
 default-features = false
@@ -663,6 +670,7 @@ default-features = false
 # - theory-levitation
 # - theory-nominal-automata
 # - theory-sites
+# - theory-virtual-doctrines
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"

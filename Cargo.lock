@@ -920,6 +920,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-virtual-doctrines"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "gandr-theory-cell-complexes",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-decomposition-spaces",
+ "gandr-theory-levitation",
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

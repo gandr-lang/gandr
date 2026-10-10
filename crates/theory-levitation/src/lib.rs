@@ -45,7 +45,7 @@ mod desc;
 mod elaborate;
 mod generic;
 mod rule;
-mod tree;
+pub mod tree;
 mod typed_rule;
 mod wellformed;
 

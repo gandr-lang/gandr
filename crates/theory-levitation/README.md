@@ -131,7 +131,7 @@ Decoding is the large elimination from a code over the first-order fragment into
 
 ## Flat representation
 
-No datum here owns its way back to itself. A code, a value-type reference, a free term and a payload are each one flat table: the nodes below the root in reverse pre-order, then the root, every node carrying its subtree's node count, so a child is found by skipping its elder siblings and a subtree is one contiguous slice. Equality and hashing are derived over the table, and the layout is canonical, so they are structural. Building an application concatenates its arguments' tables. A whiskered composite is a list of whiskers outermost first around its active cell.
+No datum here owns its way back to itself. A code, a value-type reference, a free term and a payload are each one flat table: the nodes below the root in reverse pre-order, then the root, every node carrying its subtree's node count, so a child is found by skipping its elder siblings and a subtree is one contiguous slice. Equality and hashing are derived over the table, and the layout is canonical, so they are structural. Building an application concatenates its arguments' tables. The public `tree` module shares that representation with other theory crates: `Head` supplies each node's arity, `Tree` owns the table, and `TreeRef` and `Children` borrow it. A constructor's head must agree with its supplied children. A whiskered composite is a list of whiskers outermost first around its active cell.
 
 - **Alternatives.** Boxed children are recursive owned pointers, which the workspace denies: a deep term overflows the stack on drop. One arena shared by every description couples a value to the arena's lifetime and gives equal values one identity before anything sanctions it.
 - **Reversal.** A measured cost from copying tables when building applications moves the representation to a shared arena, with the identity question answered first.
@@ -164,6 +164,8 @@ Executable specifications check structural relationships, ordering and multiplic
 Test prose names items plainly: the suites carry no intra-doc links, which rustdoc does not check in a test target.
 
 ## Consumers
+
+The virtual-doctrine reflection retains real `SignDesc<G>` values and uses the public flat-tree representation for signatures, protypes, proterms and derivations. It does not decode grades or introduce a second description format.
 
 The cell layer reads the declaration table, its operations' arities, its rule faces and its circuit rules: it elaborates a description into cells and instantiates circuit rules at an application, through `SignDesc`, `OperDesc`, `BridgeArity`, `DeclPolarity`, `RuleFace`, `FreeTerm`, `CircuitRule`, `CircuitBody`, `WhiskeredCell`, `RedexOccurrence`, `elaborate_body`, `redex_occurrences` and `derive_boundaries`. The surface's description route lowers declarations into the table, runs `check_desc`, and decodes codes into core types on its core side.
 
