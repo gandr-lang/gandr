@@ -63,6 +63,22 @@ use crate::units::SquaredOverflow;
 /// - ensures: cost, taint, output bytes, and plan identity describe one winner.
 /// - provides: the observable resolution surface.
 /// - panics: none.
+/// - executable: none — this owned summary is a data carrier; resolution and
+///   rendering construct and consume its coherent plan and metadata.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
 pub struct Resolved
 {
@@ -87,6 +103,24 @@ impl Resolved
     /// - ensures: the identity remains valid in this result's retained arena.
     /// - provides: the handoff to the render machine.
     /// - panics: none.
+    /// - executable: none — `PlanId` hides its slot and generation in the plan
+    ///   module and exposes no const value observer; derived equality produces
+    ///   E0015 here. A const identity observer in that module is the missing
+    ///   API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
     #[must_use]
     pub const fn plan(&self) -> PlanId
@@ -101,6 +135,24 @@ impl Resolved
     /// - ensures: every returned plan identity is validated against this arena.
     /// - provides: read-only plan-node access without copying the arena.
     /// - panics: none.
+    /// - executable: none — the borrowed arena has no const identity observer;
+    ///   `core::ptr::eq` produces E0015, and its private stores cannot be
+    ///   inspected here. Runtime consumers check this borrow against the
+    ///   selected plan.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
     pub(crate) const fn plan_arena(&self) -> &PlanArena
     {
@@ -114,6 +166,23 @@ impl Resolved
     /// - ensures: the cost is the direct projection of the selected measure.
     /// - provides: observable optimality metadata.
     /// - panics: none.
+    /// - executable: none — the cost components are opaque quantity types with
+    ///   no const numeric observers; their derived equality produces E0015.
+    ///   Const quantity projections are the missing API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
     #[must_use]
     pub const fn cost(&self) -> LayoutCost
@@ -128,6 +197,23 @@ impl Resolved
     /// - ensures: taint is reported without truncating output.
     /// - provides: the root theorem-status projection.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        ensures: |ret| matches!((ret, self.width_taint), (WidthTaint::Untainted, WidthTaint::Untainted) | (WidthTaint::Tainted, WidthTaint::Tainted))
+    )]
     #[inline]
     #[must_use]
     pub const fn width_taint(&self) -> WidthTaint
@@ -142,6 +228,23 @@ impl Resolved
     /// - ensures: the count includes stored bytes and layout-owned endings.
     /// - provides: the size the render machine reserves once.
     /// - panics: none.
+    /// - executable: none — `OutputBytes` hides its integer in the units module
+    ///   and exposes no const numeric observer; derived equality produces
+    ///   E0015. A const numeric projection is the missing API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
     #[inline]
     #[must_use]
     pub const fn output_bytes(&self) -> OutputBytes
@@ -183,6 +286,29 @@ enum Dominance
 /// What one machine step left for the loop: a finished result for the
 /// continuation on top of the work stack, or nothing because the step pushed
 /// work of its own.
+///
+/// # Specification
+/// - requires: the value comes from an enter or resume operation.
+/// - ensures: a result owns its measure set; a scheduled step has put its
+///   continuation and child work on the resolver stack.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary; enter,
+///   resume, retention and release operations carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
 enum Step
 {
@@ -193,6 +319,29 @@ enum Step
 }
 
 /// Memoization key for one in-bound context.
+///
+/// # Specification
+/// - requires: the fields describe one finalized document context.
+/// - ensures: node, incoming column and indentation all participate in memo
+///   identity and ordering.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary; enter,
+///   resume, retention and release operations carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct MemoKey
 {
@@ -205,6 +354,29 @@ struct MemoKey
 }
 
 /// Continuation state for one left measure in concatenation.
+///
+/// # Specification
+/// - requires: each retained measure owns its plan reference.
+/// - ensures: the active left measure, remaining left frontier, accumulated
+///   products and right context remain distinct across suspension.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary; enter,
+///   resume, retention and release operations carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
 struct ConcatState
 {
@@ -225,6 +397,29 @@ struct ConcatState
 }
 
 /// One explicit resolver work entry.
+///
+/// # Specification
+/// - requires: the work belongs to one resolver invocation.
+/// - ensures: each variant carries the context or owned state required by its
+///   enter, resume or release transition.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary; enter,
+///   resume, retention and release operations carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 #[derive(Debug)]
 enum WorkItem
 {
@@ -303,6 +498,30 @@ enum WorkItem
 }
 
 /// The iterative resolver and its one private work vector.
+///
+/// # Specification
+/// - requires: the document arena is finalized and the meter belongs to this
+///   invocation.
+/// - ensures: memo keys preserve exact contexts; work and plan ownership are
+///   managed by the same metered state machine.
+/// - provides: the state represented by this item.
+/// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary; enter,
+///   resume, retention and release operations carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
 struct Resolver<'arena, 'meter>
 {
     /// Finalized document arena being resolved.
@@ -333,7 +552,34 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// Creates a resolver with empty memo, plan, and work stores.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the document arena and meter remain borrowed for this
+    ///   resolver.
+    /// - ensures: the resolver preserves the arena, options and meter and
+    ///   begins with empty memo and work stores.
+    /// - provides: one isolated resolution state.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: meter_identity = &raw const *meter,
+        ensures: |ret| core::ptr::eq(&raw const *ret.arena, &raw const *arena)
+                && core::ptr::eq(&raw const *ret.meter, meter_identity)
+                && ret.options == options
+                && ret.memo.is_empty()
+                && ret.work.is_empty()
+    )]
     fn new(
         arena: &'arena DocArena,
         options: LayoutOptions,
@@ -365,6 +611,28 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// Returns [`RenderError::LimitExceeded`] at a resolver ceiling,
     /// [`RenderError::ArithmeticOverflow`] for an uncountable depth, and
     /// [`RenderError::AllocationFailed`] when the vector cannot grow.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.work.len(), self.meter.usage(), core::mem::discriminant(&item)),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.work.len() == before.0,
+            |&()| before.0.checked_add(1) == Some(self.work.len())
+                && self.work.last().map(core::mem::discriminant) == Some(before.2)
+                && u64::from(before.1.resolver_work_entries).checked_add(1) == Some(u64::from(self.meter.usage().resolver_work_entries))
+                && u64::try_from(self.work.len()).is_ok_and(|depth| u64::from(self.meter.usage().peak_resolver_stack) == u64::from(before.1.peak_resolver_stack).max(depth)))
+    )]
     fn push(
         &mut self,
         item: WorkItem,
@@ -398,6 +666,29 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error [`PlanArena::retain`] returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
+    #[anodized::spec(
+        captures: before = (self.meter.usage(), self.work.len(), self.memo.len()),
+        ensures: |ret| self.meter.usage() == before.0
+                && self.work.len() == before.1
+                && self.memo.len() == before.2
+                && ret.as_ref().map_or(true,
+            |&()| match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })
+    )]
     fn retain_set(
         &mut self,
         set: &MeasureSet,
@@ -428,6 +719,31 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error [`Self::release_plan`] returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
+    #[anodized::spec(
+        captures: before = (match set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }, self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
+            |index| index.saturating_add(1)), self.meter.usage()),
+        ensures: |ret| if before.0 == 0 { ret.is_ok()
+                && self.work.len() == before.1
+                && self.meter.usage() == before.3 }
+            else { ret.as_ref().map_or(true,
+            |&()| self.work.len() == before.2
+                && u64::try_from(before.0).ok().and_then(|count| u64::from(before.3.resolver_work_entries).checked_add(count)).is_some_and(|minimum| u64::from(self.meter.usage().resolver_work_entries) >= minimum)) }
+    )]
     fn release_set(
         &mut self,
         set: MeasureSet,
@@ -460,6 +776,30 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// # Errors
     /// Returns the first error [`Self::push`] or [`PlanArena::release_one`]
     /// returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    /// - witness: `resolve::tests::retained_aliases_release_without_consuming_pending_continuations`
+    #[anodized::spec(
+        captures: before = (self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
+            |index| index.saturating_add(1)), self.meter.usage().resolver_work_entries, self.plans.get(plan)),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |&()| matches!(before.2, Maybe::Present(_))
+                && self.work.len() == before.0
+                && u64::from(before.1).checked_add(1).is_some_and(|minimum| u64::from(self.meter.usage().resolver_work_entries) >= minimum)
+                && (self.plans.get(plan) == before.2 || self.plans.get(plan) == Maybe::Absent(crate::plan::lookup::Absent::Released)))
+    )]
     fn release_plan(
         &mut self,
         plan: PlanId,
@@ -492,6 +832,29 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error [`Self::release_plan`] returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.work.len(), self.work.iter().rposition(|item| !matches!(*item, WorkItem::ReleasePlan { .. })).map_or(0,
+            |index| index.saturating_add(1)), self.meter.usage()),
+        ensures: |ret| match promise { TaintPromise::Deferred { .. } => ret.is_ok()
+                && self.work.len() == before.0
+                && self.meter.usage() == before.2, TaintPromise::Ready(_) => ret.as_ref().map_or(true,
+            |&()| self.work.len() == before.1
+                && u64::from(before.2.resolver_work_entries).checked_add(1).is_some_and(|minimum| u64::from(self.meter.usage().resolver_work_entries) >= minimum)) }
+    )]
     fn release_promise(
         &mut self,
         promise: TaintPromise,
@@ -514,6 +877,27 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error a release returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = match set { MeasureSet::Frontier(ref frontier) => (frontier.first().copied().map(TaintPromise::Ready), frontier.len() > 1), MeasureSet::Tainted(promise) => (Some(promise), false) },
+    ensures: |ret| ret.as_ref().map_or_else(|_error| before.1,
+        |set| match *set { MeasureSet::Frontier(ref frontier) => before.0.is_none()
+
+                && frontier.is_empty(), MeasureSet::Tainted(promise) => before.0 == Some(promise) })
+    )]
     fn taint_set(
         &mut self,
         set: MeasureSet,
@@ -533,6 +917,41 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns [`RenderError::AllocationFailed`] or the first release error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (match left { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }, match right { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }),
+    ensures: |ret| ret.as_ref().map_or_else(|error| before.0.3.is_some() || before.1.3.is_some() || *error == RenderError::AllocationFailed { site: crate::error::RenderAllocationSite::Frontier },
+        |set| match (before.0.3, before.1.3) { (None, None) => matches!(*set, MeasureSet::Frontier(ref frontier) if before.0.0.checked_add(before.1.0) == Some(frontier.len())
+
+                && (before.0.0 == 0 || (frontier.first() == before.0.1.as_ref()
+
+                && frontier.get(before.0.0.saturating_sub(1)) == before.0.2.as_ref()))
+
+                && (before.1.0 == 0 || (frontier.get(before.0.0) == before.1.1.as_ref()
+
+                && frontier.last() == before.1.2.as_ref()))), (None, Some(_)) => matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == before.0.0
+
+                && frontier.first() == before.0.1.as_ref()
+
+                && frontier.last() == before.0.2.as_ref()), (Some(_), None) => matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == before.1.0
+
+                && frontier.first() == before.1.1.as_ref()
+
+                && frontier.last() == before.1.2.as_ref()), (Some(left), Some(_)) => matches!(*set, MeasureSet::Tainted(actual) if left == actual) })
+    )]
     fn merge_sets(
         &mut self,
         left: MeasureSet,
@@ -556,6 +975,26 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] a step returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: bound = self.options.computation_width,
+        ensures: |ret| ret.as_ref().map_or(true,
+            |winner| matches!(winner.2.get(winner.0.plan), Maybe::Present(_))
+                && (winner.1 == WidthTaint::Tainted || u32::from(winner.0.last_column) <= u32::from(bound)))
+    )]
     fn run(
         mut self,
         root: NodeId,
@@ -635,6 +1074,27 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// # Errors
     /// Returns [`RenderError::Invariant`] for a set offering no measure, and
     /// the first release error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (first(set), matches!(*set, MeasureSet::Tainted(_))),
+        ensures: |ret| match before.0 { Maybe::Absent(_) => matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::MissingMeasure })), Maybe::Present(expected) => ret.as_ref().map_or(true,
+            |winner| winner.0 == expected
+                && (winner.1 == WidthTaint::Tainted) == before.1
+                && matches!(winner.2.get(winner.0.plan), Maybe::Present(_))) }
+    )]
     fn finish(
         mut self,
         set: &MeasureSet,
@@ -668,6 +1128,32 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] the step returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.work.len(), matches!(item, WorkItem::StoreMemo { .. } | WorkItem::ReleasePlan { .. } | WorkItem::AfterNest | WorkItem::AfterAlign | WorkItem::AfterFlatten), match set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }, matches!(item, WorkItem::Eval { .. })),
+        ensures: |ret| if before.3 { matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::Continuation })) }
+            else { ret.as_ref().map_or(true,
+            |step| match *step { Step::Scheduled => before.0.checked_add(2) == Some(self.work.len())
+                && self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { .. })), Step::Result(ref set) => self.work.len() <= before.0
+                && (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })
+                && if before.1 { (match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }) == before.2 }
+            else { match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().zip(frontier.iter().skip(1)).all(|(left, right)| left.cost < right.cost
+                && left.last_column > right.last_column)
+                && frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(_) => true } } }) }
+    )]
     fn resume(
         &mut self,
         item: WorkItem,
@@ -767,10 +1253,107 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// Returns the first [`RenderError`] the step meets.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surface is the bound: two out-of-bound contexts
-    ///   of one node defer to promises carrying their own contexts, and forcing
-    ///   each yields the measure of its own column.
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
     /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.meter.usage(), self.work.len(), self.memo.len(), self.memo.get(&MemoKey { node, column, indentation }).map(|set| match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) })),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |step| { if u64::from(before.0.layout_steps).checked_add(1) != Some(u64::from(self.meter.usage().layout_steps)) || self.memo.len() != before.2 { return false }
+        if force == ResolutionMode::Memoized
+
+                && (u32::from(column) > u32::from(self.options.computation_width) || u32::from(indentation) > u32::from(self.options.computation_width)) { return self.work.len() == before.1
+
+                && self.meter.usage().memo_states == before.0.memo_states
+
+                && matches!(*step, Step::Result(MeasureSet::Tainted(TaintPromise::Deferred { doc, column: actual_column, indentation: actual_indentation })) if doc == node
+
+                && actual_column == column
+
+                && actual_indentation == indentation) }
+        if force == ResolutionMode::Memoized
+
+                && before.3.is_some() { return self.work.len() == before.1
+
+                && self.meter.usage().memo_states == before.0.memo_states
+
+                && matches!(*step, Step::Result(ref set) if Some(match *set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }) == before.3
+
+                && (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })) } let memo_work = usize::from(force == ResolutionMode::Memoized);
+            if u64::from(before.0.memo_states).checked_add(u64::from(force == ResolutionMode::Memoized)) != Some(u64::from(self.meter.usage().memo_states)) { return false } match *step { Step::Scheduled => before.1.checked_add(memo_work).and_then(|depth| depth.checked_add(2)) == Some(self.work.len())
+
+                && (match self.arena.node(node) { Maybe::Present(DocNode::Nest { amount, doc }) => u32::from(indentation).checked_add(amount).is_some_and(|raised| self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == doc
+
+                && actual_column == column
+
+                && actual_indentation == Indentation::from(raised)
+
+                && actual_force == force))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::AfterNest))), Maybe::Present(DocNode::Align { doc }) => self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == doc
+
+                && actual_column == column
+
+                && actual_indentation == Indentation::from(u32::from(column))
+
+                && actual_force == force))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::AfterAlign)), Maybe::Present(DocNode::Flatten { .. }) => match self.arena.flattened_node(node) { Maybe::Present(image) => self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == image
+
+                && actual_column == column
+
+                && actual_indentation == indentation
+
+                && actual_force == force))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::AfterFlatten)), Maybe::Absent(_) => false }, Maybe::Present(DocNode::Choice { left, right }) => self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == left
+
+                && actual_column == column
+
+                && actual_indentation == indentation
+
+                && actual_force == force))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::AfterChoiceLeft { right: actual_right, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_right == right
+
+                && actual_column == column
+
+                && actual_indentation == indentation
+
+                && actual_force == force)), Maybe::Present(DocNode::Concat { left, right }) => self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == left
+
+                && actual_column == column
+
+                && actual_indentation == indentation
+
+                && actual_force == force))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::AfterConcatLeft { right: actual_right, indentation: actual_indentation, force: actual_force }
+        if actual_right == right
+
+                && actual_indentation == indentation
+
+                && actual_force == force)), _ => false }), Step::Result(ref set) => before.1.checked_add(memo_work) == Some(self.work.len())
+
+                && matches!(self.arena.node(node), Maybe::Present(DocNode::Empty | DocNode::Text(_) | DocNode::Verbatim(_) | DocNode::Line | DocNode::HardLine))
+
+                && (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true }) } })
+    )]
     fn begin_eval(
         &mut self,
         node: NodeId,
@@ -869,14 +1452,35 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Specification
     /// - requires: `measure` owns its plan.
-    /// - ensures: a one-measure frontier; on a refused charge the plan is
-    ///   released and the charge's error returned.
+    /// - ensures: a one-measure frontier; a refused charge starts releasing the
+    ///   plan. A release failure takes precedence over the refused charge.
     /// - provides: every leaf's result.
     /// - fails: a frontier ceiling or a frontier that cannot grow.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns [`RenderError::AllocationFailed`] or the frontier ceiling.
+    /// Returns [`RenderError::AllocationFailed`], the frontier ceiling or a
+    /// release error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, Unicode text, physical endings, indentation
+    ///   and mixed verbatim fragments expose exact columns, widened
+    ///   squared-overflow costs, line counts, byte counts and taint at width
+    ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
+    ///   omitted ending and indentation bytes change these observations.
+    ///   Allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    #[anodized::spec(
+        captures: before = self.meter.usage().frontier_entries,
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.meter.usage().frontier_entries == before,
+            |set| matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.as_slice() == [measure])
+                && u64::from(before).checked_add(1) == Some(u64::from(self.meter.usage().frontier_entries)))
+    )]
     fn singleton(
         &mut self,
         measure: Measure,
@@ -908,6 +1512,29 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error the plan or frontier charge returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, Unicode text, physical endings, indentation
+    ///   and mixed verbatim fragments expose exact columns, widened
+    ///   squared-overflow costs, line counts, byte counts and taint at width
+    ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
+    ///   omitted ending and indentation bytes change these observations.
+    ///   Allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |set| { let Maybe::Present(measure) = first(set) else { return false };
+            matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == 1)
+                && measure.last_column == column
+                && measure.cost == LayoutCost::zero()
+                && u64::from(measure.output_bytes) == 0
+                && self.plans.get(measure.plan) == Maybe::Present(PlanNode::Empty) })
+    )]
     fn empty(
         &mut self,
         column: Column,
@@ -936,6 +1563,42 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] the leaf meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, Unicode text, physical endings, indentation
+    ///   and mixed verbatim fragments expose exact columns, widened
+    ///   squared-overflow costs, line counts, byte counts and taint at width
+    ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
+    ///   omitted ending and indentation bytes change these observations.
+    ///   Allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    #[anodized::spec(
+        ensures: |ret| { let Maybe::Present(identity) = self.arena.text_identity(text) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
+            let end = u64::from(u32::from(column)).saturating_add(u64::from(u32::from(identity.width())));
+            if end > u64::from(u32::MAX) { return matches!(ret, Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::Column })) }
+            ret.as_ref().map_or(true,
+            |set| { let Maybe::Present(measure) = first(set) else { return false };
+            let page = u64::from(u32::from(self.options.page_width));
+            let start_excess = u128::from(u64::from(u32::from(column)).saturating_sub(page));
+            let end_excess = u128::from(end.saturating_sub(page));
+            u64::from(u32::from(measure.last_column)) == end
+
+                && u128::from(u64::from(measure.cost.squared_overflow)) == end_excess.saturating_mul(end_excess).saturating_sub(start_excess.saturating_mul(start_excess))
+
+                && u64::from(measure.cost.line_breaks) == 0
+
+                && identity.bytes_used().is_ok_and(|bytes| u64::from(measure.output_bytes) == u64::from(bytes))
+
+                && self.plans.get(measure.plan) == Maybe::Present(PlanNode::Text(text))
+
+                && (if end > u64::from(u32::from(self.options.computation_width)) { matches!(*set, MeasureSet::Tainted(TaintPromise::Ready(_))) }
+            else { matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == 1) }) }) }
+    )]
     fn text(
         &mut self,
         text: TextId,
@@ -991,6 +1654,52 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] the leaf meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, Unicode text, physical endings, indentation
+    ///   and mixed verbatim fragments expose exact columns, widened
+    ///   squared-overflow costs, line counts, byte counts and taint at width
+    ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
+    ///   omitted ending and indentation bytes change these observations.
+    ///   Allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    #[anodized::spec(
+        ensures: |ret| { let Maybe::Present(identity) = self.arena.verbatim_identity(verbatim) else { return matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::DocumentIdentity })) };
+            ret.as_ref().map_or(true,
+            |set| { let Maybe::Present(measure) = first(set) else { return false };
+            let page = u64::from(u32::from(self.options.page_width));
+            let mut squared = 0_u128;
+            let mut last = u64::from(u32::from(column));
+            let mut breaks = 0_u128;
+            let mut tainted = false;
+            for (index, line) in identity.lines().iter().enumerate() { let start = if index == 0 { u64::from(u32::from(column)) }
+            else { 0 };
+            last = start.saturating_add(u64::from(u32::from(line.scalar_width())));
+            let from = u128::from(start.saturating_sub(page));
+            let to = u128::from(last.saturating_sub(page));
+            squared = squared.saturating_add(to.saturating_mul(to).saturating_sub(from.saturating_mul(from)));
+            if matches!(line.ending(), Maybe::Present(_)) { breaks = breaks.saturating_add(1);
+            } tainted |= last > u64::from(u32::from(self.options.computation_width));
+            } !identity.lines().is_empty()
+
+                && u64::from(u32::from(measure.last_column)) == last
+
+                && u128::from(u64::from(measure.cost.squared_overflow)) == squared
+
+                && u128::from(u64::from(measure.cost.line_breaks)) == breaks
+
+                && identity.bytes_used().is_ok_and(|bytes| u64::from(measure.output_bytes) == u64::from(bytes))
+
+                && self.plans.get(measure.plan) == Maybe::Present(PlanNode::Verbatim(verbatim))
+
+                && (if tainted { matches!(*set, MeasureSet::Tainted(TaintPromise::Ready(_))) }
+            else { matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == 1) }) }) }
+    )]
     fn verbatim(
         &mut self,
         verbatim: VerbatimId,
@@ -1080,6 +1789,37 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] the leaf meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, Unicode text, physical endings, indentation
+    ///   and mixed verbatim fragments expose exact columns, widened
+    ///   squared-overflow costs, line counts, byte counts and taint at width
+    ///   boundaries. Wrong first-fragment origins, byte/scalar confusion or
+    ///   omitted ending and indentation bytes change these observations.
+    ///   Allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_with_several_middle_lines_stores_absolute_widths`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::render_preserves_verbatim_bytes_and_physical_endings`
+    /// - witness: `resolve::tests::leaf_measures_preserve_unicode_fragments_and_width_boundaries`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |set| { let Maybe::Present(measure) = first(set) else { return false };
+            let excess = u128::from(u32::from(indentation).saturating_sub(u32::from(self.options.page_width)));
+            measure.last_column == Column::from(u32::from(indentation))
+
+                && u128::from(u64::from(measure.cost.squared_overflow)) == excess.saturating_mul(excess)
+
+                && u64::from(measure.cost.line_breaks) == 1
+
+                && u64::from(measure.output_bytes) == u64::from(u32::from(indentation)).saturating_add(u64::from(self.options.line_ending.byte_width()))
+
+                && self.plans.get(measure.plan) == Maybe::Present(PlanNode::Newline { indentation, ending: self.options.line_ending })
+
+                && (if u32::from(indentation) > u32::from(self.options.computation_width) { matches!(*set, MeasureSet::Tainted(TaintPromise::Ready(_))) }
+            else { matches!(*set, MeasureSet::Frontier(ref frontier) if frontier.len() == 1) }) })
+    )]
     fn line(
         &mut self,
         indentation: Indentation,
@@ -1125,6 +1865,40 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// # Errors
     /// Returns [`RenderError::Invariant`] for a left set with no measure, and
     /// the first push error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.work.len(), first(&left_set), match left_set { MeasureSet::Frontier(ref frontier) => (frontier.len().saturating_sub(1), frontier.get(1).copied(), if frontier.len() > 1 { frontier.last().copied() }
+            else { None }, WidthTaint::Untainted), MeasureSet::Tainted(_) => (0, None, None, WidthTaint::Tainted) }),
+        ensures: |ret| match before.1 { Maybe::Absent(_) => matches!(ret, Err(RenderError::Invariant { invariant: RenderInvariant::MissingMeasure }))
+                && self.work.len() == before.0, Maybe::Present(left) => ret.as_ref().map_or(true,
+            |&()| before.0.checked_add(2) == Some(self.work.len())
+                && self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force } if actual_node == right
+                && actual_column == left.last_column
+                && actual_indentation == indentation
+                && actual_force == force))
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::ConcatNext(ref state) if state.left == left
+                && state.right == right
+                && state.indentation == indentation
+                && state.force == force
+                && state.remaining.len() == before.2.0
+                && state.remaining.first().copied() == before.2.1
+                && state.remaining.last().copied() == before.2.2
+                && state.taint == before.2.3
+                && state.results.is_empty()))) }
+    )]
     fn start_concat(
         &mut self,
         right: NodeId,
@@ -1182,6 +1956,96 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first [`RenderError`] the join meets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: before = (self.work.len(), match right_set { MeasureSet::Tainted(TaintPromise::Deferred { doc, column, indentation }) => Some((doc, column, indentation)), _ => None }, state.remaining.first().copied(), state.right, state.indentation, state.force, state.taint == WidthTaint::Tainted || matches!(right_set, MeasureSet::Tainted(TaintPromise::Ready(_))), state.left, state.remaining.len(), state.results.len(), match right_set { MeasureSet::Frontier(ref frontier) => frontier.last().copied(), MeasureSet::Tainted(TaintPromise::Ready(measure)) => Some(measure), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => None }, match right_set { MeasureSet::Frontier(ref frontier) => frontier.len(), MeasureSet::Tainted(TaintPromise::Ready(_)) => 1, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => 0 }),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |step| { if let Some((doc, column, indentation)) = before.1 { return matches!(*step, Step::Scheduled)
+
+                && before.0.checked_add(2) == Some(self.work.len())
+
+                && self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == doc
+
+                && actual_column == column
+
+                && actual_indentation == indentation
+
+                && actual_force == ResolutionMode::Forced))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::ForceConcatRight(ref state) if state.left == before.7
+
+                && state.right == before.3
+
+                && state.indentation == before.4
+
+                && state.force == before.5
+
+                && state.remaining.first().copied() == before.2
+
+                && state.remaining.len() == before.8
+
+                && state.results.len() == before.9)) }
+        if let Some(next) = before.2 { return matches!(*step, Step::Scheduled)
+
+                && before.0.checked_add(2) == Some(self.work.len())
+
+                && self.work.last().is_some_and(|item| matches!(*item, WorkItem::Eval { node: actual_node, column: actual_column, indentation: actual_indentation, force: actual_force }
+        if actual_node == before.3
+
+                && actual_column == next.last_column
+
+                && actual_indentation == before.4
+
+                && actual_force == before.5))
+
+                && self.work.get(self.work.len().saturating_sub(2)).is_some_and(|item| matches!(*item, WorkItem::ConcatNext(ref state) if state.left == next
+
+                && state.right == before.3
+
+                && state.indentation == before.4
+
+                && state.force == before.5
+
+                && state.remaining.len().checked_add(1) == Some(before.8)
+
+                && before.9.checked_add(before.11) == Some(state.results.len())
+
+                && (state.taint == WidthTaint::Tainted) == before.6
+
+                && before.10.is_none_or(|right| state.results.last().is_some_and(|product| product.last_column == right.last_column
+
+                && u64::from(before.7.cost.squared_overflow).checked_add(u64::from(right.cost.squared_overflow)) == Some(u64::from(product.cost.squared_overflow))
+
+                && u64::from(before.7.cost.line_breaks).checked_add(u64::from(right.cost.line_breaks)) == Some(u64::from(product.cost.line_breaks))
+
+                && u64::from(before.7.output_bytes).checked_add(u64::from(right.output_bytes)) == Some(u64::from(product.output_bytes))
+
+                && self.plans.get(product.plan) == Maybe::Present(PlanNode::Seq { left: before.7.plan, right: right.plan }))))) } self.work.len() <= before.0
+
+                && matches!(*step, Step::Result(ref set) if (match *set { MeasureSet::Frontier(ref frontier) => frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_))), MeasureSet::Tainted(TaintPromise::Ready(measure)) => matches!(self.plans.get(measure.plan), Maybe::Present(_)), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => true })
+
+                && match *set { MeasureSet::Frontier(ref frontier) => (!before.6 || frontier.is_empty())
+
+                && (frontier.iter().zip(frontier.iter().skip(1)).all(|(left, right)| left.cost < right.cost
+
+                && left.last_column > right.last_column)
+
+                && frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_)))), MeasureSet::Tainted(TaintPromise::Ready(_)) => before.6, MeasureSet::Tainted(TaintPromise::Deferred { .. }) => false }) })
+    )]
     fn resume_concat(
         &mut self,
         mut state: ConcatState,
@@ -1274,6 +2138,26 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Errors
     /// Returns the first error [`Self::normalize`] returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every bag of up to three live-plan candidates over
+    ///   nine cost/column ranks is compared with an independent pairwise Pareto
+    ///   oracle, including stable ties. Complete retained identities and
+    ///   released identities expose missing alternatives, reversed dominance,
+    ///   changed lexicographic order and wrong duplicate ownership. This finite
+    ///   model does not prove arbitrary document evaluation or allocation
+    ///   failure.
+    /// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
+    #[anodized::spec(
+        captures: before = match set { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.iter().enumerate().min_by_key(|&(index, measure)| (measure.cost, measure.last_column, index)).map(|(_index, measure)| *measure), None), MeasureSet::Tainted(promise) => (0, None, Some(promise)) },
+        ensures: |ret| ret.as_ref().map_or(true,
+            |set| match *set { MeasureSet::Frontier(ref frontier) => before.2.is_none()
+                && frontier.len() <= before.0
+                && frontier.first().copied() == before.1
+                && (frontier.iter().zip(frontier.iter().skip(1)).all(|(left, right)| left.cost < right.cost
+                && left.last_column > right.last_column)
+                && frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_)))), MeasureSet::Tainted(promise) => before.2 == Some(promise) })
+    )]
     fn normalize_set(
         &mut self,
         set: MeasureSet,
@@ -1303,9 +2187,23 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     /// Returns the first [`RenderError`] the normalization meets.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every small document over the algebra is resolved and
-    ///   its winning cost compared with a direct enumeration of its layouts.
-    /// - witness: `algebra::tests::exhaustive_small_documents_match_the_direct_oracle`
+    /// - hypothesis: L2 — every bag of up to three live-plan candidates over
+    ///   nine cost/column ranks is compared with an independent pairwise Pareto
+    ///   oracle, including stable ties. Complete retained identities and
+    ///   released identities expose missing alternatives, reversed dominance,
+    ///   changed lexicographic order and wrong duplicate ownership. This finite
+    ///   model does not prove arbitrary document evaluation or allocation
+    ///   failure.
+    /// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
+    #[anodized::spec(
+        captures: before = (candidates.len(), candidates.iter().enumerate().min_by_key(|&(index, measure)| (measure.cost, measure.last_column, index)).map(|(_index, measure)| *measure)),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |frontier| frontier.len() <= before.0
+                && frontier.first().copied() == before.1
+                && (frontier.iter().zip(frontier.iter().skip(1)).all(|(left, right)| left.cost < right.cost
+                && left.last_column > right.last_column)
+                && frontier.iter().all(|measure| matches!(self.plans.get(measure.plan), Maybe::Present(_)))))
+    )]
     fn normalize(
         &mut self,
         candidates: Vec<Measure>,
@@ -1364,6 +2262,20 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
 ///   in ending column and strictly better in one of them.
 /// - provides: the Pareto order the frontier is pruned by.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every bag of up to three live-plan candidates over nine
+///   cost/column ranks is compared with an independent pairwise Pareto oracle,
+///   including stable ties. Complete retained identities and released
+///   identities expose missing alternatives, reversed dominance, changed
+///   lexicographic order and wrong duplicate ownership. This finite model does
+///   not prove arbitrary document evaluation or allocation failure.
+/// - witness: `resolve::tests::small_candidate_bags_match_a_stable_pairwise_pareto_oracle`
+#[anodized::spec(
+    ensures: |ret| (ret == Dominance::Strict) == ((left.cost < right.cost
+            && left.last_column <= right.last_column) || (left.cost <= right.cost
+            && left.last_column < right.last_column))
+)]
 fn dominates(
     left: Measure,
     right: Measure,
@@ -1382,8 +2294,8 @@ fn dominates(
 /// Resolves a document root into its winning plan summary.
 ///
 /// # Specification
-/// - requires: `root` belongs to `arena`, and `options` has computation width
-///   at least as large as page width.
+/// - requires: the finalized arena, candidate root and width options are
+///   supplied; foreign handles and reversed widths are checked refusals.
 /// - ensures: the selected plan has least lexicographic cost among the
 ///   untainted frontier and preserves exact tainted fallback context; the
 ///   selected output bytes are charged to `meter`.
@@ -1397,14 +2309,29 @@ fn dominates(
 /// allocation failure, a named render limit, or a broken engine invariant.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — every small document over the algebra, at two page and
-///   two computation widths and both endings, is resolved and its cost compared
-///   with a direct enumeration; memo reuse and the line and choice cost rules
-///   are each asserted at their exact counts.
-/// - witness: `algebra::tests::exhaustive_small_documents_match_the_direct_oracle`
-/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
 /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
 /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+#[anodized::spec(
+    captures: before = meter.usage(),
+    ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
+            && meter.usage() == before }
+        else if u32::from(options.computation_width) < u32::from(options.page_width) { matches!(ret, Err(RenderError::InvalidWidth))
+            && meter.usage() == before }
+        else { ret.as_ref().map_or(true,
+        |winner| matches!(winner.plans.get(winner.plan), Maybe::Present(_))
+            && if true { u64::from(before.output_bytes).checked_add(u64::from(winner.output_bytes)) == Some(u64::from(meter.usage().output_bytes)) }
+        else { meter.usage().output_bytes == before.output_bytes }) }
+)]
 #[inline]
 pub fn resolve(
     arena: &DocArena,
@@ -1419,8 +2346,8 @@ pub fn resolve(
 /// Resolves a root for the fused render machine.
 ///
 /// # Specification
-/// - requires: `root` belongs to `arena`, and `options` has computation width
-///   at least as large as page width.
+/// - requires: the finalized arena, candidate root and width options are
+///   supplied; foreign handles and reversed widths are checked refusals.
 /// - ensures: output bytes remain uncharged until the machine appends them.
 /// - provides: the selected plan, cost, taint status, and exact output count.
 /// - fails: returns the same checked resolution errors as [`resolve`].
@@ -1431,11 +2358,29 @@ pub fn resolve(
 /// allocation failure, a named render limit, or a broken engine invariant.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the selected text, taint, cost and the
-///   output charge, each asserted on a rendered result and its meter.
-/// - witness: `algebra::tests::render_text_and_layout_metadata_are_exact`
-/// - witness: `algebra::tests::render_tainted_root_preserves_promise_columns_and_indentation`
-/// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+#[anodized::spec(
+    captures: before = meter.usage(),
+    ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
+            && meter.usage() == before }
+        else if u32::from(options.computation_width) < u32::from(options.page_width) { matches!(ret, Err(RenderError::InvalidWidth))
+            && meter.usage() == before }
+        else { ret.as_ref().map_or(true,
+        |winner| matches!(winner.plans.get(winner.plan), Maybe::Present(_))
+            && if false { u64::from(before.output_bytes).checked_add(u64::from(winner.output_bytes)) == Some(u64::from(meter.usage().output_bytes)) }
+        else { meter.usage().output_bytes == before.output_bytes }) }
+)]
 pub(crate) fn resolve_for_render(
     arena: &DocArena,
     root: DocId,
@@ -1449,7 +2394,8 @@ pub(crate) fn resolve_for_render(
 /// Resolves one root and applies the selected output-accounting phase.
 ///
 /// # Specification
-/// - requires: `root` and `options` satisfy the public resolver preconditions.
+/// - requires: the finalized arena, candidate root and width options are
+///   supplied; foreign handles and reversed widths are checked refusals.
 /// - ensures: the handle and the widths are checked before any work; the
 ///   returned plan owns its retained plan arena; output bytes are charged now
 ///   under [`OutputAccounting::AtResolve`] and left for the appends otherwise.
@@ -1462,6 +2408,31 @@ pub(crate) fn resolve_for_render(
 /// Returns [`RenderError::UnknownDoc`] for a foreign handle,
 /// [`RenderError::InvalidWidth`] for reversed widths, and the first error
 /// resolution meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+///   tainted contexts expose selected cost, exact bytes, taint and budget
+///   counts. Losing a retained plan, changing width or handle precedence, using
+///   the wrong context or charging output in both phases changes these
+///   observations. The bounded choice fixtures do not enumerate arbitrary
+///   document graphs; allocation exhaustion is not injected.
+/// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+/// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+/// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+/// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+#[anodized::spec(
+    captures: before = meter.usage(),
+    ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
+            && meter.usage() == before }
+        else if u32::from(options.computation_width) < u32::from(options.page_width) { matches!(ret, Err(RenderError::InvalidWidth))
+            && meter.usage() == before }
+        else { ret.as_ref().map_or(true,
+        |winner| matches!(winner.plans.get(winner.plan), Maybe::Present(_))
+            && if accounting == OutputAccounting::AtResolve { u64::from(before.output_bytes).checked_add(u64::from(winner.output_bytes)) == Some(u64::from(meter.usage().output_bytes)) }
+        else { meter.usage().output_bytes == before.output_bytes }) }
+)]
 fn resolve_with_output_accounting(
     arena: &DocArena,
     root: DocId,
@@ -1505,7 +2476,30 @@ mod tests
     /// The measure a forced context answers, whether frontier or ready.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test supplies the result of forcing a leaf.
+    /// - ensures: the returned measure is the unique frontier member or exact
+    ///   ready promise.
+    /// - provides: a plan-bearing observation for forced-context witnesses.
+    /// - panics: for a scheduled or deferred step, or a frontier without
+    ///   exactly one member.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation, choice, repeated memo contexts and
+    ///   tainted contexts expose selected cost, exact bytes, taint and budget
+    ///   counts. Losing a retained plan, changing width or handle precedence,
+    ///   using the wrong context or charging output in both phases changes
+    ///   these observations. The bounded choice fixtures do not enumerate
+    ///   arbitrary document graphs; allocation exhaustion is not injected.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    /// - witness: `algebra::tests::shared_contexts_reuse_memo_states`
+    /// - witness: `resolve::tests::tainted_promises_retain_distinct_contexts_and_forced_measures`
+    /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+    #[anodized::spec(
+        captures: expected = match step { Step::Result(MeasureSet::Frontier(ref frontier)) => frontier.first().copied(), Step::Result(MeasureSet::Tainted(TaintPromise::Ready(measure))) => Some(measure), Step::Result(MeasureSet::Tainted(TaintPromise::Deferred { .. })) | Step::Scheduled => None },
+        ensures: |ret| expected == Some(ret)
+    )]
     fn forced(step: Step) -> Measure
     {
         match step {
@@ -1591,5 +2585,405 @@ mod tests
             second_measure.cost.squared_overflow,
             SquaredOverflow::from(5u64)
         );
+    }
+
+    /// Validation precedes work, and standalone and fused resolution each spend
+    /// output once.
+    #[test]
+    fn resolution_validates_inputs_before_work_and_charges_output_once()
+    {
+        let mut build_meter = BuildMeter::new(BuildLimits::default());
+        let mut builder = DocBuilder::try_new(&mut build_meter).expect("builder");
+        let root = builder.text(TextSource::from("é𐐀")).expect("Unicode text");
+        let arena = builder.finish().expect("arena");
+        let mut foreign_meter = BuildMeter::new(BuildLimits::default());
+        let foreign_builder = DocBuilder::try_new(&mut foreign_meter).expect("foreign builder");
+        let foreign = foreign_builder.empty();
+        let invalid = LayoutOptions {
+            page_width: PageWidth::from(3_u32),
+            computation_width: ComputationWidth::from(2_u32),
+            line_ending: PhysicalLineEnding::Lf,
+        };
+        let options = LayoutOptions::try_new(
+            PageWidth::from(1_u32),
+            ComputationWidth::from(2_u32),
+            PhysicalLineEnding::Lf,
+        )
+        .expect("widths");
+        let mut refused = RenderMeter::new(RenderLimits {
+            max_layout_steps: 0_u64.into(),
+            ..RenderLimits::default()
+        });
+        refused
+            .charge_output_bytes(OutputBytes::from(5_u64))
+            .expect("prior output");
+        let before = refused.usage();
+        assert!(matches!(
+            resolve(&arena, foreign, invalid, &mut refused),
+            Err(RenderError::UnknownDoc)
+        ));
+        assert_eq!(refused.usage(), before);
+        assert!(matches!(
+            resolve(&arena, root, invalid, &mut refused),
+            Err(RenderError::InvalidWidth)
+        ));
+        assert_eq!(refused.usage(), before);
+        assert!(
+            matches!(resolve(&arena, root, options, &mut refused), Err(RenderError::LimitExceeded { kind: crate::error::RenderLimitKind::LayoutSteps, limit }) if u64::from(limit) == 0)
+        );
+        assert_eq!(refused.usage().output_bytes, before.output_bytes);
+        let expected_cost = LayoutCost {
+            squared_overflow: SquaredOverflow::from(1_u64),
+            line_breaks: LineBreaks::from(0_u64),
+        };
+        let mut standalone = RenderMeter::new(RenderLimits::default());
+        standalone
+            .charge_output_bytes(OutputBytes::from(5_u64))
+            .expect("prior output");
+        let resolved =
+            resolve(&arena, root, options, &mut standalone).expect("standalone resolution");
+        assert_eq!(resolved.cost(), expected_cost);
+        assert_eq!(resolved.width_taint(), WidthTaint::Untainted);
+        assert_eq!(resolved.output_bytes(), OutputBytes::from(6_u64));
+        assert_eq!(u64::from(standalone.usage().output_bytes), 11_u64);
+        let mut fused = RenderMeter::new(RenderLimits::default());
+        fused
+            .charge_output_bytes(OutputBytes::from(5_u64))
+            .expect("prior output");
+        let resolved =
+            resolve_for_render(&arena, root, options, &mut fused).expect("fused resolution");
+        assert_eq!(u64::from(fused.usage().output_bytes), 5_u64);
+        let output = crate::vm::execute(
+            &arena,
+            resolved.plan_arena(),
+            resolved.plan(),
+            resolved.output_bytes(),
+            &mut fused,
+        )
+        .expect("retained plan execution")
+        .into_text();
+        assert_eq!(output, "é𐐀");
+        assert_eq!(u64::from(fused.usage().output_bytes), 11_u64);
+        assert_eq!(resolved.cost(), expected_cost);
+        assert_eq!(resolved.width_taint(), WidthTaint::Untainted);
+    }
+
+    /// Aliased ownership is released exactly, without consuming unrelated
+    /// continuation work.
+    #[test]
+    fn retained_aliases_release_without_consuming_pending_continuations()
+    {
+        let mut build_meter = BuildMeter::new(BuildLimits::default());
+        let builder = DocBuilder::try_new(&mut build_meter).expect("builder");
+        let empty = builder.empty();
+        let arena = builder.finish().expect("arena");
+        let mut meter = RenderMeter::new(RenderLimits::default());
+        let mut resolver = Resolver::new(&arena, LayoutOptions::default(), &mut meter);
+        resolver
+            .push(WorkItem::AfterAlign)
+            .expect("pending continuation");
+        let promise = TaintPromise::Deferred {
+            doc: empty.node_id(),
+            column: Column::from(7_u32),
+            indentation: Indentation::from(9_u32),
+        };
+        let before = resolver.meter.usage();
+        resolver
+            .retain_set(&MeasureSet::Tainted(promise))
+            .expect("deferred retain");
+        resolver
+            .release_set(MeasureSet::Tainted(promise))
+            .expect("deferred release");
+        resolver
+            .release_promise(promise)
+            .expect("deferred promise release");
+        assert_eq!(resolver.meter.usage(), before);
+        assert!(matches!(resolver.work.as_slice(), &[WorkItem::AfterAlign]));
+        let child = resolver
+            .plans
+            .alloc(PlanNode::Empty, resolver.meter)
+            .expect("child");
+        let parent = resolver
+            .plans
+            .alloc_seq(child, child, resolver.meter)
+            .expect("aliased sequence");
+        let measure = Measure {
+            last_column: Column::from(0_u32),
+            cost: LayoutCost::zero(),
+            plan: parent,
+            output_bytes: OutputBytes::from(0_u64),
+        };
+        resolver
+            .plans
+            .retain(parent)
+            .expect("second owned parent reference");
+        let aliases = MeasureSet::Frontier(alloc::vec![measure, measure]);
+        resolver.retain_set(&aliases).expect("copy both references");
+        resolver
+            .release_set(aliases)
+            .expect("drop original references");
+        resolver
+            .retain_set(&MeasureSet::Tainted(TaintPromise::Ready(measure)))
+            .expect("ready retain");
+        resolver
+            .release_promise(TaintPromise::Ready(measure))
+            .expect("ready release");
+        resolver
+            .release_plan(parent)
+            .expect("first retained reference");
+        assert_eq!(
+            resolver.plans.get(parent),
+            Maybe::Present(PlanNode::Seq {
+                left: child,
+                right: child
+            })
+        );
+        resolver
+            .release_plan(parent)
+            .expect("last parent reference");
+        assert_eq!(
+            resolver.plans.get(parent),
+            Maybe::Absent(crate::plan::lookup::Absent::Released)
+        );
+        assert_eq!(resolver.plans.get(child), Maybe::Present(PlanNode::Empty));
+        resolver.release_plan(child).expect("last child reference");
+        assert_eq!(
+            resolver.plans.get(child),
+            Maybe::Absent(crate::plan::lookup::Absent::Released)
+        );
+        assert!(matches!(resolver.work.as_slice(), &[WorkItem::AfterAlign]));
+        let mut refused = RenderMeter::new(RenderLimits {
+            max_resolver_work_entries: 0_u64.into(),
+            ..RenderLimits::default()
+        });
+        let mut resolver = Resolver::new(&arena, LayoutOptions::default(), &mut refused);
+        let plan = resolver
+            .plans
+            .alloc(PlanNode::Empty, resolver.meter)
+            .expect("refusal subject");
+        let before = resolver.meter.usage();
+        assert_eq!(
+            resolver.release_plan(plan),
+            Err(RenderError::LimitExceeded {
+                kind: crate::error::RenderLimitKind::ResolverWorkEntries,
+                limit: crate::units::LimitBound::from(0_u64)
+            })
+        );
+        assert_eq!(resolver.plans.get(plan), Maybe::Present(PlanNode::Empty));
+        assert_eq!(resolver.meter.usage(), before);
+        assert!(resolver.work.is_empty());
+    }
+
+    /// Leaf costs distinguish Unicode widths, every fragment origin and
+    /// inclusive computation bounds.
+    #[test]
+    fn leaf_measures_preserve_unicode_fragments_and_width_boundaries()
+    {
+        let mut build_meter = BuildMeter::new(BuildLimits::default());
+        let mut builder = DocBuilder::try_new(&mut build_meter).expect("builder");
+        let text_doc = builder.text(TextSource::from("é𐐀")).expect("text");
+        let short_doc = builder
+            .verbatim(crate::arena::VerbatimSource::from("é\r\n𐐀\n"))
+            .expect("short verbatim");
+        let wide_doc = builder
+            .verbatim(crate::arena::VerbatimSource::from("é\r\n𐐀𐐀𐐀\n"))
+            .expect("wide verbatim");
+        let arena = builder.finish().expect("arena");
+        let Maybe::Present(DocNode::Text(text)) = arena.node(text_doc.node_id())
+        else {
+            panic!("text identity")
+        };
+        for ending in [PhysicalLineEnding::Lf, PhysicalLineEnding::CrLf] {
+            let options = LayoutOptions::try_new(
+                PageWidth::from(1_u32),
+                ComputationWidth::from(2_u32),
+                ending,
+            )
+            .expect("widths");
+            let mut meter = RenderMeter::new(RenderLimits::default());
+            let mut resolver = Resolver::new(&arena, options, &mut meter);
+            for column in [0_u32, 1, 2, u32::MAX.saturating_sub(2)] {
+                let set = resolver
+                    .text(text, Column::from(column))
+                    .expect("text measure");
+                let end = column.saturating_add(2);
+                assert_eq!(matches!(set, MeasureSet::Tainted(_)), end > 2);
+                let measure = forced(Step::Result(set));
+                let from = u128::from(column.saturating_sub(1));
+                let to = u128::from(end.saturating_sub(1));
+                assert_eq!(
+                    u128::from(u64::from(measure.cost.squared_overflow)),
+                    to.saturating_mul(to)
+                        .saturating_sub(from.saturating_mul(from))
+                );
+                assert_eq!(measure.last_column, Column::from(end));
+                assert_eq!(measure.cost.line_breaks, LineBreaks::from(0_u64));
+                assert_eq!(measure.output_bytes, OutputBytes::from(6_u64));
+                assert_eq!(
+                    resolver.plans.get(measure.plan),
+                    Maybe::Present(PlanNode::Text(text))
+                );
+            }
+            let before = resolver.meter.usage();
+            assert!(matches!(
+                resolver.text(text, Column::from(u32::MAX)),
+                Err(RenderError::ArithmeticOverflow {
+                    operation: RenderArithmetic::Column
+                })
+            ));
+            assert_eq!(resolver.meter.usage(), before);
+            assert!(matches!(
+                resolver.text(TextId::from(u32::MAX), Column::from(0_u32)),
+                Err(RenderError::Invariant {
+                    invariant: RenderInvariant::DocumentIdentity
+                })
+            ));
+            assert_eq!(resolver.meter.usage(), before);
+            for (doc, width, bytes) in [(short_doc, 1_u32, 9_u64), (wide_doc, 3_u32, 17_u64)] {
+                let Maybe::Present(DocNode::Verbatim(verbatim)) = arena.node(doc.node_id())
+                else {
+                    panic!("verbatim identity")
+                };
+                for column in [0_u32, 1, 2] {
+                    let set = resolver
+                        .verbatim(verbatim, Column::from(column))
+                        .expect("verbatim measure");
+                    assert_eq!(
+                        matches!(set, MeasureSet::Tainted(_)),
+                        column.saturating_add(1) > 2 || width > 2
+                    );
+                    let measure = forced(Step::Result(set));
+                    let from = u128::from(column.saturating_sub(1));
+                    let to = u128::from(column);
+                    let middle = u128::from(width.saturating_sub(1));
+                    assert_eq!(
+                        u128::from(u64::from(measure.cost.squared_overflow)),
+                        to.saturating_mul(to)
+                            .saturating_sub(from.saturating_mul(from))
+                            .saturating_add(middle.saturating_mul(middle))
+                    );
+                    assert_eq!(measure.last_column, Column::from(0_u32));
+                    assert_eq!(measure.cost.line_breaks, LineBreaks::from(2_u64));
+                    assert_eq!(measure.output_bytes, OutputBytes::from(bytes));
+                    assert_eq!(
+                        resolver.plans.get(measure.plan),
+                        Maybe::Present(PlanNode::Verbatim(verbatim))
+                    );
+                }
+            }
+            for indentation in [0_u32, 1, 2, 3, u32::MAX] {
+                let set = resolver
+                    .line(Indentation::from(indentation))
+                    .expect("line measure");
+                assert_eq!(matches!(set, MeasureSet::Tainted(_)), indentation > 2);
+                let measure = forced(Step::Result(set));
+                let excess = u128::from(indentation.saturating_sub(1));
+                assert_eq!(
+                    u128::from(u64::from(measure.cost.squared_overflow)),
+                    excess.saturating_mul(excess)
+                );
+                assert_eq!(measure.last_column, Column::from(indentation));
+                assert_eq!(measure.cost.line_breaks, LineBreaks::from(1_u64));
+                let ending_bytes = match ending {
+                    | PhysicalLineEnding::Lf => 1_u64,
+                    | PhysicalLineEnding::CrLf => 2_u64,
+                };
+                assert_eq!(
+                    measure.output_bytes,
+                    OutputBytes::from(u64::from(indentation).saturating_add(ending_bytes))
+                );
+            }
+        }
+    }
+
+    /// Every small abstract candidate bag agrees with stable pairwise dominance
+    /// and exact ownership.
+    #[test]
+    fn small_candidate_bags_match_a_stable_pairwise_pareto_oracle()
+    {
+        let mut build_meter = BuildMeter::new(BuildLimits::default());
+        let arena = DocBuilder::try_new(&mut build_meter)
+            .expect("builder")
+            .finish()
+            .expect("arena");
+        for length in 0_u32 ..= 3 {
+            for encoded in 0_usize .. 9_usize.saturating_pow(length) {
+                let mut meter = RenderMeter::new(RenderLimits::default());
+                let mut resolver = Resolver::new(&arena, LayoutOptions::default(), &mut meter);
+                let mut candidates = Vec::new();
+                let mut digits = encoded;
+                for _position in 0 .. length {
+                    let rank = digits % 9;
+                    digits = digits.div_euclid(9);
+                    let (squared, lines) = match rank.div_euclid(3) {
+                        | 0 => (0_u64, 0_u64),
+                        | 1 => (0, 1),
+                        | _ => (1, 0),
+                    };
+                    let plan = resolver
+                        .plans
+                        .alloc(PlanNode::Empty, resolver.meter)
+                        .expect("candidate plan");
+                    candidates.push(Measure {
+                        last_column: Column::from(u32::try_from(rank % 3).expect("bounded column")),
+                        cost: LayoutCost {
+                            squared_overflow: SquaredOverflow::from(squared),
+                            line_breaks: LineBreaks::from(lines),
+                        },
+                        plan,
+                        output_bytes: OutputBytes::from(0_u64),
+                    });
+                }
+                let all_plans: [Option<PlanId>; 3] =
+                    core::array::from_fn(|index| candidates.get(index).map(|measure| measure.plan));
+                let mut expected: Vec<Measure> = candidates
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter(|&(index, candidate)| {
+                        !candidates.iter().enumerate().any(|(other_index, other)| {
+                            match (
+                                other.cost.cmp(&candidate.cost),
+                                other.last_column.cmp(&candidate.last_column),
+                            ) {
+                                | (
+                                    core::cmp::Ordering::Less,
+                                    core::cmp::Ordering::Less | core::cmp::Ordering::Equal,
+                                )
+                                | (core::cmp::Ordering::Equal, core::cmp::Ordering::Less) => true,
+                                | (core::cmp::Ordering::Equal, core::cmp::Ordering::Equal) => {
+                                    other_index < index
+                                },
+                                | _ => false,
+                            }
+                        })
+                    })
+                    .map(|(_index, candidate)| candidate)
+                    .collect();
+                expected.sort_by_key(|measure| measure.cost);
+                let frontier = resolver.normalize(candidates).expect("normalized frontier");
+                assert_eq!(frontier, expected);
+                for plan in all_plans.into_iter().flatten() {
+                    if expected.iter().any(|measure| measure.plan == plan) {
+                        assert_eq!(resolver.plans.get(plan), Maybe::Present(PlanNode::Empty));
+                    }
+                    else {
+                        assert_eq!(
+                            resolver.plans.get(plan),
+                            Maybe::Absent(crate::plan::lookup::Absent::Released)
+                        );
+                    }
+                }
+                for measure in frontier {
+                    resolver
+                        .release_plan(measure.plan)
+                        .expect("one retained reference");
+                    assert_eq!(
+                        resolver.plans.get(measure.plan),
+                        Maybe::Absent(crate::plan::lookup::Absent::Released)
+                    );
+                }
+            }
+        }
     }
 }

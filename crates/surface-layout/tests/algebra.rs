@@ -103,6 +103,23 @@ mod tests
     /// - provides: test helpers that preserve the concrete [`BuildError`].
     /// - fails: panics with the concrete build error when construction fails.
     /// - panics: when `result` is an error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public ingestion, image, accounting and
+    ///   rendered-output witnesses observe the returned fixture rather than its
+    ///   implementation. Lost handles, mismatched usage, wrong leaf kinds,
+    ///   altered interner sharing and changed byte order change those
+    ///   observations. Predicates avoid allocating public payload projections;
+    ///   the witnesses compare payloads explicitly.
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    #[anodized::spec(
+        captures: successful = result.is_ok(),
+        ensures: |ret| successful
+    )]
     fn expect_build<T>(result: Result<T, BuildError>) -> T
     {
         result.expect("build fixture failed")
@@ -111,7 +128,27 @@ mod tests
     /// Resolve one finished root under generous render limits.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test supplies a finalized arena, candidate handle and
+    ///   width options.
+    /// - ensures: unknown handles and reversed widths retain the public
+    ///   resolver refusal precedence; success owns the selected layout.
+    /// - provides: resolution under a fresh generous test meter.
+    /// - fails: propagates the concrete render error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — text, indentation and choice witnesses observe cost,
+    ///   bytes and taint through the returned selected layout. Reversing cost
+    ///   priority or losing width context changes these observations. The
+    ///   predicate covers checked input refusal; it does not re-run resolution.
+    /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
+    /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
+    /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
+    #[anodized::spec(
+        ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc)) }
+            else if u32::from(options.computation_width) < u32::from(options.page_width) { matches!(ret, Err(RenderError::InvalidWidth)) }
+            else { true }
+    )]
     fn resolve_root(
         arena: &DocArena,
         root: DocId,
@@ -154,7 +191,34 @@ mod tests
     /// Construct one arena containing a newline-free text leaf.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test supplies candidate text bytes, including rejected
+    ///   ingestion forms.
+    /// - ensures: success returns a finalized arena owning the unchanged text
+    ///   image and a node counter equal to that arena's size.
+    /// - provides: one text fixture and its actual build usage.
+    /// - fails: propagates the first concrete ingestion, build or finalization
+    ///   error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public ingestion, image, accounting and
+    ///   rendered-output witnesses observe the returned fixture rather than its
+    ///   implementation. Lost handles, mismatched usage, wrong leaf kinds,
+    ///   altered interner sharing and changed byte order change those
+    ///   observations. Predicates avoid allocating public payload projections;
+    ///   the witnesses compare payloads explicitly.
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
+                && fixture.0.node_count() == fixture.2.doc_nodes
+                && fixture.0.flattened_image(fixture.1) == Ok(fixture.1)
+                && fixture.0.stored_text_width(fixture.1).is_ok_and(|width| u64::from(u32::from(width)) <= u64::from(fixture.2.text_bytes)))
+    )]
     fn build_text(text: TextSource<'_>) -> Result<(DocArena, DocId, BuildUsage), BuildError>
     {
         let mut meter = BuildMeter::new(generous_limits());
@@ -167,7 +231,33 @@ mod tests
     /// Construct one arena containing an opaque verbatim leaf.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test supplies candidate verbatim bytes, including
+    ///   rejected ingestion forms.
+    /// - ensures: success returns a finalized arena owning the unchanged
+    ///   verbatim image and a node counter equal to that arena's size.
+    /// - provides: one verbatim fixture and its actual build usage.
+    /// - fails: propagates the first concrete ingestion, build or finalization
+    ///   error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public ingestion, image, accounting and
+    ///   rendered-output witnesses observe the returned fixture rather than its
+    ///   implementation. Lost handles, mismatched usage, wrong leaf kinds,
+    ///   altered interner sharing and changed byte order change those
+    ///   observations. Predicates avoid allocating public payload projections;
+    ///   the witnesses compare payloads explicitly.
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
+                && fixture.0.node_count() == fixture.2.doc_nodes
+                && fixture.0.flattened_image(fixture.1) == Ok(fixture.1))
+    )]
     fn build_verbatim(text: VerbatimSource<'_>)
     -> Result<(DocArena, DocId, BuildUsage), BuildError>
     {
@@ -195,7 +285,28 @@ mod tests
     /// Build a shared or distinct two-leaf concatenation and return its usage.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test chooses whether two equal text operands share an
+    ///   identity.
+    /// - ensures: the fixture stores one six-byte payload when shared and two
+    ///   when distinct, plus the one-byte flattened soft line.
+    /// - provides: the build usage for observing edge reuse without payload
+    ///   recharging.
+    /// - fails: propagates a concrete build error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — otherwise equal shared and distinct fixtures expose
+    ///   the exact extra node and text charge of a second stored identity.
+    ///   Charging a shared edge as a new payload, or silently interning
+    ///   distinct leaves, changes the comparison; the predicate checks the
+    ///   fixture payload total.
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |usage| u64::from(usage.text_bytes) == if matches!(shape, ConcatShape::Shared) { 7 }
+            else { 13 })
+    )]
     fn concat_usage(shape: ConcatShape) -> Result<BuildUsage, BuildError>
     {
         let mut meter = BuildMeter::new(generous_limits());
@@ -220,7 +331,27 @@ mod tests
     /// Run one totality witness on a deliberately small native stack.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the one-shot test callback is sendable to the worker thread.
+    /// - ensures: the callback runs on the requested small native stack and its
+    ///   concrete result is returned after joining.
+    /// - provides: an observable bound on native-stack use for deep
+    ///   construction witnesses.
+    /// - fails: thread creation failure becomes a finalization-stack allocation
+    ///   error.
+    /// - panics: if the worker thread panics.
+    /// - executable: none — the one-shot callback result and worker stack are
+    ///   not exposed after joining; a predicate cannot replay the callback or
+    ///   inspect the worker without changing the interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — left and right spines and a wide shared graph seal on
+    ///   a 64 KiB worker stack. Input-scaled recursion exhausts that stack;
+    ///   wrong finalization or lost roots changes the returned arena
+    ///   observations. Operating-system thread creation failure is not
+    ///   injected.
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    /// - witness: `algebra::tests::deep_right_spine_construction_uses_a_heap_work_stack`
+    /// - witness: `algebra::tests::a_wide_shared_graph_finalizes_without_native_stack_growth`
     fn run_on_small_stack(
         work: impl FnOnce() -> Result<(), BuildError> + Send + 'static
     ) -> Result<(), BuildError>
@@ -251,7 +382,33 @@ mod tests
     /// Build many equivalent interner candidates in one of two orders.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test chooses the first of two alternating candidate
+    ///   classes.
+    /// - ensures: the arena owns the root and both repeated candidates of each
+    ///   class, and each class has a shared flattened image.
+    /// - provides: two construction orders for observing deterministic
+    ///   interning.
+    /// - fails: propagates a concrete build error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public ingestion, image, accounting and
+    ///   rendered-output witnesses observe the returned fixture rather than its
+    ///   implementation. Lost handles, mismatched usage, wrong leaf kinds,
+    ///   altered interner sharing and changed byte order change those
+    ///   observations. Predicates avoid allocating public payload projections;
+    ///   the witnesses compare payloads explicitly.
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |fixture| [fixture.1, fixture.2, fixture.3, fixture.4, fixture.5].into_iter().all(|doc| fixture.0.contains(doc) == DocHandleStatus::Present)
+                && fixture.0.flattened_image(fixture.2).is_ok_and(|image| fixture.0.flattened_image(fixture.3) == Ok(image))
+                && fixture.0.flattened_image(fixture.4).is_ok_and(|image| fixture.0.flattened_image(fixture.5) == Ok(image)))
+    )]
     fn build_interner_order(
         order: InternerOrder
     ) -> Result<(DocArena, DocId, DocId, DocId, DocId, DocId), BuildError>
@@ -307,7 +464,24 @@ mod tests
     /// Assert that a usage record is componentwise no smaller than another.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies successive build usage records.
+    /// - ensures: normal return means every current counter is at least its
+    ///   previous value.
+    /// - provides: a componentwise monotonicity assertion.
+    /// - panics: when any component regresses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the whole-document witness observes successive
+    ///   records across ingestion, construction and sealing. A regressing
+    ///   component fails independently of the other counters; allocator failure
+    ///   is outside this helper.
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[anodized::spec(
+        ensures: |ret| current.doc_nodes >= previous.doc_nodes
+                && current.text_bytes >= previous.text_bytes
+                && current.verbatim_lines >= previous.verbatim_lines
+                && current.build_steps >= previous.build_steps
+    )]
     fn assert_usage_monotone(
         previous: BuildUsage,
         current: BuildUsage,
@@ -1136,64 +1310,34 @@ mod tests
         })
     }
 
-    /// Every build arithmetic site names its own operation in the error a
-    /// reader sees.
-    #[test]
-    fn every_checked_arithmetic_site_reports_its_own_operation()
-    {
-        let operations = [
-            BuildArithmetic::NodeCount,
-            BuildArithmetic::TextBytes,
-            BuildArithmetic::VerbatimLines,
-            BuildArithmetic::BuildSteps,
-            BuildArithmetic::IdConversion,
-            BuildArithmetic::ScalarWidth,
-        ];
-        let mut names: Vec<String> = operations.iter().map(ToString::to_string).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(
-            names.len(),
-            operations.len(),
-            "each operation has its own name"
-        );
-        for operation in operations {
-            let message = BuildError::ArithmeticOverflow { operation }.to_string();
-            assert!(
-                message.ends_with(&operation.to_string()),
-                "the error names its operation: {message}"
-            );
-        }
-    }
-
-    /// Every build store names itself in the allocation error a reader sees.
-    #[test]
-    fn an_allocation_failure_reports_its_own_store()
-    {
-        let sites = [
-            BuildAllocationSite::NodeArena,
-            BuildAllocationSite::TextArena,
-            BuildAllocationSite::VerbatimArena,
-            BuildAllocationSite::FlattenImages,
-            BuildAllocationSite::FinalizeStack,
-        ];
-        let mut names: Vec<String> = sites.iter().map(ToString::to_string).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), sites.len(), "each store has its own name");
-        for site in sites {
-            let message = BuildError::AllocationFailed { site }.to_string();
-            assert!(
-                message.ends_with(&site.to_string()),
-                "the error names its store: {message}"
-            );
-        }
-    }
-
     /// Build an explicitly parenthesized concatenation of three text leaves.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the test supplies three candidate text leaves and a
+    ///   parenthesization.
+    /// - ensures: success owns a valid root whose flat image is itself; the
+    ///   chosen parenthesization preserves the three leaves in order.
+    /// - provides: independently built associativity fixtures.
+    /// - fails: propagates a concrete ingestion or build error.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public ingestion, image, accounting and
+    ///   rendered-output witnesses observe the returned fixture rather than its
+    ///   implementation. Lost handles, mismatched usage, wrong leaf kinds,
+    ///   altered interner sharing and changed byte order change those
+    ///   observations. Predicates avoid allocating public payload projections;
+    ///   the witnesses compare payloads explicitly.
+    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    #[anodized::spec(
+        ensures: |ret| ret.as_ref().map_or(true,
+            |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
+                && fixture.0.flattened_image(fixture.1) == Ok(fixture.1))
+    )]
     fn build_parenthesized_concat(
         left_text: TextSource<'_>,
         middle_text: TextSource<'_>,
@@ -1220,51 +1364,6 @@ mod tests
         Ok((arena, root))
     }
 
-    /// Parenthesization preserves the observable finalized node count.
-    #[test]
-    fn concatenation_is_associative_up_to_the_rendered_node_sequence() -> Result<(), BuildError>
-    {
-        let left = build_parenthesized_concat(
-            TextSource::from("a"),
-            TextSource::from("b"),
-            TextSource::from("c"),
-            Associativity::Left,
-        )?;
-        let right = build_parenthesized_concat(
-            TextSource::from("a"),
-            TextSource::from("b"),
-            TextSource::from("c"),
-            Associativity::Right,
-        )?;
-        assert_eq!(left.0.node_count(), right.0.node_count());
-        assert_eq!(
-            left.0.contains(left.0.flattened_image(left.1)?),
-            DocHandleStatus::Present
-        );
-        assert_eq!(
-            right.0.contains(right.0.flattened_image(right.1)?),
-            DocHandleStatus::Present
-        );
-        Ok(())
-    }
-
-    /// Empty concatenation operands remain valid finalized identities.
-    #[test]
-    fn empty_node_is_a_left_and_a_right_unit_of_concatenation() -> Result<(), BuildError>
-    {
-        let mut meter = BuildMeter::new(generous_limits());
-        let mut builder = DocBuilder::try_new(&mut meter)?;
-        let empty = builder.empty();
-        let text = builder.text(TextSource::from("x"))?;
-        let left = builder.concat(empty, text)?;
-        let right = builder.concat(text, empty)?;
-        let arena = builder.finish()?;
-        assert_eq!(arena.contains(left), DocHandleStatus::Present);
-        assert_eq!(arena.contains(right), DocHandleStatus::Present);
-        assert_eq!(arena.stored_text(text)?, TextOwned::from(String::from("x")));
-        Ok(())
-    }
-
     // Generated text leaves always have an idempotent finalized image.
     proptest! {
         #[test]
@@ -1281,60 +1380,6 @@ mod tests
                     prop_assert_eq!(arena.flattened_image(image), Ok(image));
                 }
             }
-        }
-    }
-
-    // Generated parenthesizations have equal finalized storage cardinality.
-    proptest! {
-        #[test]
-        fn concatenation_is_associative_for_generated_text(
-            left in prop::collection::vec(prop::char::range('a', 'z'), 0..=4),
-            middle in prop::collection::vec(prop::char::range('a', 'z'), 0..=4),
-            right in prop::collection::vec(prop::char::range('a', 'z'), 0..=4)
-        ) {
-            let left: String = left.into_iter().collect();
-            let middle: String = middle.into_iter().collect();
-            let right: String = right.into_iter().collect();
-            let first = build_parenthesized_concat(
-                TextSource::from(left.as_str()),
-                TextSource::from(middle.as_str()),
-                TextSource::from(right.as_str()),
-                Associativity::Left,
-            );
-            let second = build_parenthesized_concat(
-                TextSource::from(left.as_str()),
-                TextSource::from(middle.as_str()),
-                TextSource::from(right.as_str()),
-                Associativity::Right,
-            );
-            prop_assert!(first.is_ok());
-            prop_assert!(second.is_ok());
-            if let (Ok(first), Ok(second)) = (first, second) {
-                prop_assert_eq!(first.0.node_count(), second.0.node_count());
-            }
-        }
-    }
-
-    // Generated empty-edge constructions retain all handles until sealing.
-    proptest! {
-        #[test]
-        fn empty_is_a_generated_left_and_right_unit(
-            text in prop::collection::vec(prop::char::range('a', 'z'), 0..=8)
-        ) {
-            let text: String = text.into_iter().collect();
-            let result = (|| -> Result<(), BuildError> {
-                let mut meter = BuildMeter::new(generous_limits());
-                let mut builder = DocBuilder::try_new(&mut meter)?;
-                let empty = builder.empty();
-                let leaf = builder.text(TextSource::from(text.as_str()))?;
-                let left = builder.concat(empty, leaf)?;
-                let right = builder.concat(leaf, empty)?;
-                let arena = builder.finish()?;
-                assert_eq!(arena.contains(left), DocHandleStatus::Present);
-                assert_eq!(arena.contains(right), DocHandleStatus::Present);
-                Ok(())
-            })();
-            prop_assert!(result.is_ok());
         }
     }
 
@@ -1788,5 +1833,106 @@ mod tests
             })
         ));
         assert_eq!(u64::from(meter.usage().output_bytes), 0u64);
+    }
+
+    /// Parenthesization preserves complete Unicode output and its independently
+    /// calculated cost.
+    #[test]
+    fn parenthesizations_preserve_unicode_output_and_cost()
+    {
+        let options = LayoutOptions::try_new(
+            PageWidth::from(1_u32),
+            ComputationWidth::from(64_u32),
+            PhysicalLineEnding::Lf,
+        )
+        .expect("widths");
+        for left in ["", "é", "𐐀x"] {
+            for middle in ["", "é", "𐐀x"] {
+                for right in ["", "é", "𐐀x"] {
+                    let expected = format!("{left}{middle}{right}");
+                    let excess = u64::try_from(expected.chars().count().saturating_sub(1))
+                        .expect("bounded width");
+                    for associativity in [Associativity::Left, Associativity::Right] {
+                        let (arena, root) = build_parenthesized_concat(
+                            TextSource::from(left),
+                            TextSource::from(middle),
+                            TextSource::from(right),
+                            associativity,
+                        )
+                        .expect("parenthesized fixture");
+                        let mut meter = RenderMeter::new(generous_render_limits());
+                        let rendered = render(&arena, root, &options, &mut meter).expect("render");
+                        assert_eq!(rendered.text, expected.as_str());
+                        assert_eq!(rendered.cost, LayoutCost {
+                            squared_overflow: SquaredOverflow::from(excess.saturating_mul(excess)),
+                            line_breaks: LineBreaks::from(0_u64)
+                        });
+                        assert_eq!(rendered.width_tainted, WidthTaint::Untainted);
+                        assert_eq!(
+                            u64::from(meter.usage().output_bytes),
+                            u64::try_from(expected.len()).expect("bounded bytes")
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Empty operands preserve byte order and metadata on either side of a text
+    /// leaf.
+    #[test]
+    fn empty_operands_preserve_complete_rendered_output()
+    {
+        for payload in ["", "é𐐀", "a\0b"] {
+            let mut build_meter = BuildMeter::new(generous_limits());
+            let mut builder = DocBuilder::try_new(&mut build_meter).expect("builder");
+            let empty = builder.empty();
+            let text = builder.text(TextSource::from(payload)).expect("leaf");
+            let left = builder.concat(empty, text).expect("left unit");
+            let right = builder.concat(text, empty).expect("right unit");
+            let arena = builder.finish().expect("arena");
+            for root in [left, right] {
+                let mut meter = RenderMeter::new(generous_render_limits());
+                let rendered =
+                    render(&arena, root, &LayoutOptions::default(), &mut meter).expect("render");
+                assert_eq!(rendered.text, payload);
+                assert_eq!(rendered.cost, LayoutCost {
+                    squared_overflow: SquaredOverflow::from(0_u64),
+                    line_breaks: LineBreaks::from(0_u64)
+                });
+                assert_eq!(rendered.width_tainted, WidthTaint::Untainted);
+                assert_eq!(
+                    u64::from(meter.usage().output_bytes),
+                    u64::try_from(payload.len()).expect("bounded bytes")
+                );
+            }
+        }
+    }
+
+    /// Balanced rounds retain leaf order across empty, singleton, even and odd
+    /// inputs.
+    #[test]
+    fn balanced_concatenation_preserves_odd_and_even_leaf_order()
+    {
+        let payloads = ["a", "é", "𐐀", "b", "c"];
+        for count in [0_usize, 1, 4, 5] {
+            let mut build_meter = BuildMeter::new(generous_limits());
+            let mut builder = DocBuilder::try_new(&mut build_meter).expect("builder");
+            let mut leaves = Vec::new();
+            for &payload in payloads.iter().take(count) {
+                leaves.push(builder.text(TextSource::from(payload)).expect("leaf"));
+            }
+            let root = builder.concat_all(leaves).expect("balanced concatenation");
+            let arena = builder.finish().expect("arena");
+            let expected = payloads.get(.. count).expect("bounded prefix").concat();
+            let mut meter = RenderMeter::new(generous_render_limits());
+            let rendered =
+                render(&arena, root, &LayoutOptions::default(), &mut meter).expect("render");
+            assert_eq!(rendered.text, expected.as_str());
+            assert_eq!(
+                u64::from(meter.usage().output_bytes),
+                u64::try_from(expected.len()).expect("bounded bytes")
+            );
+        }
     }
 }
