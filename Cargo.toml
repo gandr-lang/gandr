@@ -40,6 +40,7 @@ members = [
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-orders",
+  "crates/theory-sites",
 ]
 
 [workspace.package]
@@ -111,6 +112,7 @@ default-features = false
 # - theory-graphs
 # - theory-levitation
 # - theory-orders
+# - theory-sites
 [workspace.dependencies.anodized]
 git = "https://github.com/silvanshade/anodized"
 rev = "2ccb1b0ef982a064c0ac5681b7b32b074344dae3"
@@ -457,6 +459,13 @@ path = "crates/theory-cell-complexes"
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
 
+# The diagram view of circuit algebras: monogamous acyclic wirings with
+# interfaces, their canonical form and the relabelling that checks it.
+# consumers:
+# - theory-sites
+[workspace.dependencies.gandr-theory-circuit-algebras]
+path = "crates/theory-circuit-algebras"
+
 # The rewriting engine: firing, the overlap enumerator and its support,
 # replayable coherence certificates, budgeted completion.
 # consumers:
@@ -578,6 +587,7 @@ default-features = false
 # - theory-computads
 # - theory-deep-inference
 # - theory-levitation
+# - theory-sites
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"

@@ -858,6 +858,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-sites"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "gandr-theory-circuit-algebras",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
