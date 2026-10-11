@@ -13,15 +13,17 @@
 //! members before the rest: a point the two leave outside the peak stays
 //! outside however many members join them, so the family is refused from
 //! those two, and a family they leave open imports its other members into the
-//! same graph. `template::produce` prices generalized sides, decisions and
-//! guarded arms before replaying each distinct inheritance triple with the
-//! other points rigid. The original `s < floor(F / s)` price and the additional
-//! `s + T*c < F` price remain separately selectable. The latter uses `c = s`
-//! as an enforced per-check kernel-fuel allowance; an unfinished check declines
-//! without memoizing a verdict. Neither price is a wall-clock bound. Admission
-//! chooses arms from the member's peak and ordinary kernel replay remains
-//! authoritative, even with a poisoned cache. Complete certificates retain
-//! their original congruence premises.
+//! same graph. Members with equal sides generalize alike, so that family is
+//! generalized over its distinct members, each imported once, and every member
+//! reads its arms from its row. `template::produce` prices generalized sides,
+//! decisions and guarded arms before replaying each distinct inheritance
+//! triple with the other points rigid. The original `s < floor(F / s)` price
+//! and the additional `s + T*c < F` price remain separately selectable. The
+//! latter uses `c = s` as an enforced per-check kernel-fuel allowance; an
+//! unfinished check declines without memoizing a verdict. Neither price is a
+//! wall-clock bound. Admission chooses arms from the member's peak and
+//! ordinary kernel replay remains authoritative, even with a poisoned cache.
+//! Complete certificates retain their original congruence premises.
 //!
 //! The peak-rooted representation retains no member list; one instance can be
 //! materialized, replayed and dropped. Storing substitutions per member would
@@ -515,6 +517,88 @@ struct Generalization
     rooting: PeakRoots,
 }
 
+/// A member's index among its family's distinct members.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Row(usize);
+
+/// A family's distinct members, and every member's row among them.
+///
+/// Members with one source and one target generalize alike. Two columns are
+/// equal, agree on a constructor, or lie pointwise one below each other over
+/// every member exactly when they do over one member of each distinct pair,
+/// and a column's distinct bodies are the same set. So a family generalized
+/// over its distinct members, each member reading its arms from its row, is
+/// the family generalized over every member.
+///
+/// # Specification
+/// - ensures: `firsts` holds, ascending, the family position of each distinct
+///   source and target pair's first member; member `i`'s row indexes the entry
+///   of `firsts` whose member has member `i`'s sides.
+/// - panics: none.
+/// - executable: none — this private aggregate has no call to instrument;
+///   [`Distinct::of`] checks the relationship at construction.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every harvested staging family's candidate, generalized
+///   over its distinct members, equals the candidate generalized over every
+///   member, coordinates, points, guards and member arms included.
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
+struct Distinct
+{
+    /// The first member of each distinct pair, in family order.
+    firsts: Vec<MemberIndex>,
+    /// Each member's row, in family order.
+    rows: Vec<Row>,
+}
+
+impl Distinct
+{
+    /// Group a family's members by their sides, in first-occurrence order.
+    ///
+    /// # Specification
+    /// - ensures: one row per member; the member a row names has that member's
+    ///   sides; first members ascend, so the first member is the first row.
+    /// - panics: none.
+    /// - intension: one ordered-map probe per member.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every harvested staging family's candidate,
+    ///   generalized over its distinct members, equals the candidate
+    ///   generalized over every member; a row naming another pair's member or a
+    ///   member left out changes an arm column or a point.
+    /// - witness: `template::tests::distinct_members_generalize_as_every_member`
+    #[spec(ensures: |output| output.rows.len() == family.len()
+        && output.firsts.windows(2).all(|pair| pair.first() < pair.get(1))
+        && output.rows.iter().zip(family).all(|(row, step)| output.firsts.get(row.0)
+            .and_then(|first| family.get(usize::from(*first)))
+            .is_some_and(|first| first.source == step.source && first.target == step.target)))]
+    fn of(family: &[Step]) -> Self
+    {
+        let mut seen = BTreeMap::new();
+        let mut firsts = Vec::new();
+        let mut rows = Vec::with_capacity(family.len());
+        for (position, step) in family.iter().enumerate() {
+            let next = Row(firsts.len());
+            let row = *seen.entry((step.source, step.target)).or_insert(next);
+            if row == next {
+                firsts.push(MemberIndex::from(position));
+            }
+            rows.push(row);
+        }
+        Self { firsts, rows }
+    }
+
+    /// Every member its own row.
+    ///
+    /// # Specification
+    /// trivial.
+    fn each(count: MemberCount) -> Vec<Row>
+    {
+        (0 .. usize::from(count)).map(Row).collect()
+    }
+}
+
 /// Import members' sources and targets into `graph`, interleaved in member
 /// order.
 ///
@@ -575,16 +659,21 @@ fn pairs(ids: &[Id]) -> Result<&[[Id; 2]], StageError>
 }
 
 /// Generalize imported members' sources into the peak, then their targets
-/// into the join.
+/// into the join, over the distinct members `rows` names.
 ///
 /// # Specification
+/// - requires: every row indexes `members`, and every member is some row's.
 /// - ensures: the peak's points are its disagreeing source columns; a join
 ///   column equal to a peak point, or one below it by the stated predecessor
 ///   relation, reuses it, and any other disagreeing join column is a point
 ///   outside the peak. `rooting` names the first such point; `plain` charges
-///   every member's sides and decision. Arm columns keep member order.
-/// - fails: Unbalanced for no members or a malformed graph edge.
+///   every row's sides and decision. Arm columns hold one arm per row, in row
+///   order.
+/// - fails: Unbalanced for no members, a row outside `members` or a malformed
+///   graph edge.
 /// - panics: none.
+/// - intension: columns are as wide as `members`; only the arm columns are read
+///   out to one entry per row.
 ///
 /// # Errors
 /// Returns `StageError::Unbalanced`.
@@ -592,23 +681,30 @@ fn pairs(ids: &[Id]) -> Result<&[[Id; 2]], StageError>
 /// # Adequacy
 /// - hypothesis: L2/L3 — reconstruction of every member, independent sizes and
 ///   the predecessor near-misses distinguish lost correlations, undercharged
-///   sides and a target-only point counted inside the peak.
+///   sides and a target-only point counted inside the peak; generalizing every
+///   staged family over its distinct members and over every member
+///   distinguishes an arm read from the wrong row or a duplicate charged once.
 /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
 /// - witness: `template::tests::a_template_is_emitted_only_below_its_expansion_factor`
 /// - witness: `template::tests::predecessor_discovery_refuses_zero_inner_and_other_offsets`
-#[spec(ensures: |output| output.as_ref().ok().is_none_or(|generalization|
-    generalization.generalizer.entries.len() == generalization.generalizer.arms.len()
-        && match generalization.rooting {
-            PeakRoots::Complete => true,
-            PeakRoots::Missing(point) => generalization.generalizer.entries.iter()
-                .any(|entry| entry.point == point),
-        }))]
-fn generalize<M>(
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
+#[spec(
+    requires: rows.iter().all(|row| row.0 < members.len())
+        && (0 .. members.len()).all(|member| rows.contains(&Row(member))),
+    ensures: |output| output.as_ref().ok().is_none_or(|generalization|
+        generalization.generalizer.entries.len() == generalization.generalizer.arms.len()
+            && generalization.generalizer.arms.iter().all(|column| column.len() == rows.len())
+            && match generalization.rooting {
+                PeakRoots::Complete => true,
+                PeakRoots::Missing(point) => generalization.generalizer.entries.iter()
+                    .any(|entry| entry.point == point),
+            }),
+)]
+fn generalize(
     graph: Graph,
-    members: M,
+    members: &[[Id; 2]],
+    rows: &[Row],
 ) -> Result<Generalization, StageError>
-where
-    M: Iterator<Item = [Id; 2]>,
 {
     let mut generalizer = Generalizer {
         graph,
@@ -616,19 +712,24 @@ where
         entries: Vec::new(),
         arms: Vec::new(),
     };
-    let (count, _) = members.size_hint();
-    let mut peaks = Vec::with_capacity(count);
-    let mut joins = Vec::with_capacity(count);
-    let mut plain = 0_usize;
-    for [peak, join] in members {
+    let mut peaks = Vec::with_capacity(members.len());
+    let mut joins = Vec::with_capacity(members.len());
+    let mut charges = Vec::with_capacity(members.len());
+    for &[peak, join] in members {
         peaks.push(peak);
         joins.push(join);
         let peak_size = generalizer.graph.size(peak)?;
         let join_size = generalizer.graph.size(join)?;
-        plain = plain
-            .saturating_add(1)
-            .saturating_add(usize::from(peak_size))
-            .saturating_add(usize::from(join_size));
+        charges.push(
+            1_usize
+                .saturating_add(usize::from(peak_size))
+                .saturating_add(usize::from(join_size)),
+        );
+    }
+    let mut plain = 0_usize;
+    for row in rows {
+        let charge = charges.get(row.0).copied().ok_or(StageError::Unbalanced)?;
+        plain = plain.saturating_add(charge);
     }
     let peak = generalizer.column(peaks, EntryIndex::from(0))?;
     let source_points = EntryIndex::from(generalizer.entries.len());
@@ -651,6 +752,15 @@ where
         .iter()
         .find(|entry| !points.contains(&entry.point))
         .map_or(PeakRoots::Complete, |entry| PeakRoots::Missing(entry.point));
+    generalizer.arms = generalizer
+        .arms
+        .iter()
+        .map(|column| {
+            rows.iter()
+                .map(|row| column.get(row.0).copied().ok_or(StageError::Unbalanced))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<_, _>>()?;
     Ok(Generalization {
         generalizer,
         sides: [peak, join],
@@ -686,7 +796,8 @@ fn generalize_all(
     let mut graph = Graph::default();
     let ids = import_members(&mut graph, arena, family)?;
     let members = pairs(&ids)?;
-    generalize(graph, members.iter().copied())
+    let rows = Distinct::each(MemberCount::from(members.len()));
+    generalize(graph, members, &rows)
 }
 
 /// What a family's first and last members decide before the others are
@@ -776,13 +887,73 @@ fn probe(
         generalizer,
         rooting,
         ..
-    } = generalize(graph, [first, last].into_iter())?;
+    } = generalize(graph, &[first, last], &[Row(0), Row(1)])?;
     if let PeakRoots::Missing(point) = rooting {
         return Ok(Probe::Outside(point));
     }
     let mut graph = generalizer.graph;
     graph.truncate(end);
     Ok(Probe::Open { graph, first, last })
+}
+
+/// Import the distinct members a probe left open into its graph, and
+/// generalize the family over its distinct members.
+///
+/// # Specification
+/// - requires: `graph` holds the first and last members' import alone, at
+///   `ends`, and the family has three or more members.
+/// - ensures: the family's generalization: each distinct pair is imported once,
+///   in family order after the two ends, so every node keeps the coordinate an
+///   import of every member would give it, and every member's arms are its
+///   row's.
+/// - fails: the arena's lookup error for an absent side; Unbalanced for a
+///   malformed graph edge.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `UnknownTerm`, `UnknownType` or Unbalanced.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every harvested staging family's candidate equals the one
+///   generalized over every member imported in the same order; an import out of
+///   order moves a coordinate and a lost or extra member changes an arm column.
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
+#[spec(
+    requires: family.len() >= 3,
+    ensures: |output| output.as_ref().ok().is_none_or(|generalization|
+        generalization.generalizer.arms.iter().all(|column| column.len() == family.len())),
+)]
+fn generalize_rest(
+    mut graph: Graph,
+    arena: &Arena,
+    family: &[Step],
+    ends: [[Id; 2]; 2],
+) -> Result<Generalization, StageError>
+{
+    let distinct = Distinct::of(family);
+    let first = MemberIndex::from(0_usize);
+    let last = MemberIndex::from(family.len().saturating_sub(1));
+    let middle = distinct
+        .firsts
+        .iter()
+        .filter(|&&member| member != first && member != last)
+        .map(|&member| {
+            family
+                .get(usize::from(member))
+                .copied()
+                .ok_or(StageError::Unbalanced)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ids = import_members(&mut graph, arena, &middle)?;
+    let middle = pairs(&ids)?;
+    let [first_sides, last_sides] = ends;
+    let mut members = Vec::with_capacity(distinct.firsts.len());
+    members.push(first_sides);
+    members.extend_from_slice(middle);
+    if distinct.firsts.last() == Some(&last) {
+        members.push(last_sides);
+    }
+    generalize(graph, &members, &distinct.rows)
 }
 
 /// Anti-unify and price a uniform family without replay or admission authority.
@@ -800,9 +971,9 @@ fn probe(
 /// - panics: none.
 /// - intension: a family of three or more members imports and generalizes its
 ///   first and last members first; a family they leave open imports each other
-///   member once, into the same graph. Discovery indexes are released before
-///   returning; member arm columns remain only until serialization or guarded
-///   production completes.
+///   distinct member once, into the same graph, and generalizes its distinct
+///   members. Discovery indexes are released before returning; member arm
+///   columns remain only until serialization or guarded production completes.
 ///
 /// # Errors
 /// Propagates `StageError` from syntax import and arithmetic.
@@ -821,6 +992,7 @@ fn probe(
 /// - witness: `template::tests::empty_and_malformed_families_preserve_refusals`
 /// - witness: `template::tests::outside_peak_refusals_follow_from_the_first_and_last_members`
 /// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|analysis| match *analysis {
     Analysis::Candidate(ref candidate) => usize::from(candidate.cost.members) == family.len()
         && candidate.entries.len() == candidate.arms.len()
@@ -876,17 +1048,8 @@ pub fn analyze(
                     cost,
                 });
             },
-            | Probe::Open {
-                mut graph,
-                first,
-                last,
-            } => {
-                let ids = import_members(&mut graph, arena, middle)?;
-                let middle = pairs(&ids)?;
-                let members = core::iter::once(first)
-                    .chain(middle.iter().copied())
-                    .chain(core::iter::once(last));
-                generalize(graph, members)?
+            | Probe::Open { graph, first, last } => {
+                generalize_rest(graph, arena, family, [first, last])?
             },
         },
         | _ => generalize_all(arena, family)?,

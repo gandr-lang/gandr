@@ -1719,3 +1719,142 @@ fn staged_families_keep_their_verdicts_under_the_probe()
     }
     assert!(decided_by_the_two > 0);
 }
+
+/// Analyze a family with every member generalized, none read from a row: the
+/// first and last members imported first, then every other member in family
+/// order.
+///
+/// # Specification
+/// - requires: a nonempty single-rule family of arena terms.
+/// - ensures: the probe's refusal, or the family generalized over every member
+///   in the coordinates the probe's import gives, priced.
+/// - panics: a malformed fixture.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the reference the distinct-member analysis is compared
+///   against, field by field.
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
+#[spec(requires: !family.is_empty())]
+fn every_member_analysis(
+    arena: &Arena,
+    family: &[Step],
+) -> Analysis
+{
+    let cost = members_only(family);
+    let generalization = match *family {
+        | [_, ref middle @ .., _] if !middle.is_empty() => match probe(arena, family).unwrap() {
+            | Probe::Outside(entry) => {
+                return Analysis::Refused {
+                    reason: TemplateRefusal::EntryOutsidePeak { entry },
+                    cost,
+                };
+            },
+            | Probe::Open {
+                mut graph,
+                first,
+                last,
+            } => {
+                let ids = import_members(&mut graph, arena, middle).unwrap();
+                let mut members = Vec::from([first]);
+                members.extend_from_slice(pairs(&ids).unwrap());
+                members.push(last);
+                let rows = Distinct::each(MemberCount::from(members.len()));
+                generalize(graph, &members, &rows).unwrap()
+            },
+        },
+        | _ => generalize_all(arena, family).unwrap(),
+    };
+    conclude(generalization, ProgramId(0), family[0].rule, cost).unwrap()
+}
+
+/// Compare two candidates field by field: every graph coordinate, every point
+/// and guard, every member's arms, the sides, the cost and the triples.
+///
+/// # Specification
+/// - ensures: returns only when both candidates hold the same graph, node for
+///   node, the same classifier vocabulary, entries, arm columns, sides, rule,
+///   program, cost and triples.
+/// - panics: on any difference.
+/// - executable: none — the assertions are the comparison; a predicate would
+///   repeat them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the observer behind the distinct-member comparison.
+/// - witness: `template::tests::distinct_members_generalize_as_every_member`
+fn assert_same_candidate(
+    actual: &Candidate,
+    expected: &Candidate,
+)
+{
+    assert_eq!(actual.graph.end(), expected.graph.end());
+    for index in 0 .. expected.graph.end().0 {
+        let id = Id(index);
+        assert_eq!(actual.graph.node(id), expected.graph.node(id));
+        assert_eq!(actual.graph.size(id), expected.graph.size(id));
+        assert_eq!(actual.graph.address(id), expected.graph.address(id));
+    }
+    assert_eq!(
+        actual.graph.vocabulary_address(),
+        expected.graph.vocabulary_address()
+    );
+    assert_eq!(actual.entries.len(), expected.entries.len());
+    for (actual, expected) in actual.entries.iter().zip(&expected.entries) {
+        assert_eq!(actual.point, expected.point);
+        assert_eq!(actual.arms, expected.arms);
+    }
+    assert_eq!(actual.arms, expected.arms);
+    assert_eq!(actual.sides, expected.sides);
+    assert_eq!(actual.rule, expected.rule);
+    assert_eq!(actual.program, expected.program);
+    assert_eq!(actual.cost, expected.cost);
+    assert_eq!(actual.triples, expected.triples);
+}
+
+#[test]
+fn distinct_members_generalize_as_every_member()
+{
+    let mut families = Vec::new();
+    // Three distinct predecessor pairs cycled: the last member repeats none,
+    // the first, a middle member, then both kinds of repetition at once.
+    let pairs = [
+        (Natural(1), Natural(0)),
+        (Natural(2), Natural(1)),
+        (Natural(3), Natural(2)),
+    ];
+    for count in 3 ..= 7 {
+        families.push(numeral_successors(Stage::Outer, &pairs, Members(count)));
+    }
+    for program in [Staged::Power, Staged::DoubleProduct] {
+        let (arena, certificates) = staged_program(program);
+        let harvested = harvest(&arena, ProgramId(0), &certificates).unwrap();
+        for family in harvested {
+            families.push((arena.clone(), family.members));
+        }
+    }
+    let mut repeated = 0_usize;
+    for workload in &families {
+        let (arena, family) = (&workload.0, &workload.1);
+        let actual = analyze(arena, ProgramId(0), family).unwrap();
+        let expected = every_member_analysis(arena, family);
+        match (&actual, &expected) {
+            | (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
+                assert_same_candidate(actual, expected);
+                if Distinct::of(family).firsts.len() < family.len() {
+                    repeated = repeated.checked_add(1).unwrap();
+                }
+            },
+            | (
+                &Analysis::Refused { reason, cost },
+                &Analysis::Refused {
+                    reason: expected_reason,
+                    cost: expected_cost,
+                },
+            ) => {
+                assert_eq!(reason, expected_reason);
+                assert_eq!(cost, expected_cost);
+            },
+            | _ => panic!("one analysis refuses and the other does not"),
+        }
+    }
+    assert!(repeated >= 4);
+}
