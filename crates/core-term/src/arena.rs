@@ -222,6 +222,108 @@ impl CoreArena
         }
     }
 
+    /// The value ids allocated after `after`, in allocation order.
+    ///
+    /// A mark beyond the current family answers no ids; truncation neither
+    /// authenticates an old mark nor resurrects discarded allocations.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current value suffix beginning at the mark.
+    /// - provides: the nodes a rewrite minted, for a caller that records where
+    ///   each came from.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the specification facade cannot expand an opaque
+    ///   iterator return type; the witness checks exact ids across truncation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — allocations in every family before and after the
+    ///   mark, and a truncation below it, separate each family's suffix from
+    ///   the others and from a stale mark.
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    #[must_use]
+    pub fn values_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ValueId> + use<>
+    {
+        (after.values .. self.values.len()).map(|index| ValueId(id_index(ArenaLength(index)).0))
+    }
+
+    /// The computation ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current computation suffix beginning at the mark;
+    ///   none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    #[must_use]
+    pub fn computations_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ComputationId> + use<>
+    {
+        (after.computations .. self.computations.len())
+            .map(|index| ComputationId(id_index(ArenaLength(index)).0))
+    }
+
+    /// The value-type ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current value-type suffix beginning at the mark;
+    ///   none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    #[must_use]
+    pub fn value_types_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = ValueTypeId> + use<>
+    {
+        (after.value_types .. self.value_types.len())
+            .map(|index| ValueTypeId(id_index(ArenaLength(index)).0))
+    }
+
+    /// The computation-type ids allocated after `after`, in allocation order.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the current computation-type suffix beginning at the
+    ///   mark; none for a mark beyond the family.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::values_since`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::values_since`].
+    /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
+    #[inline]
+    #[must_use]
+    pub fn comp_types_since(
+        &self,
+        after: ArenaWatermark,
+    ) -> impl ExactSizeIterator<Item = CompTypeId> + use<>
+    {
+        (after.comp_types .. self.comp_types.len())
+            .map(|index| CompTypeId(id_index(ArenaLength(index)).0))
+    }
+
     /// Truncate every family back to `watermark`, dropping later allocations.
     ///
     /// # Specification
@@ -1666,6 +1768,8 @@ impl CoreArena
 #[cfg(test)]
 mod tests
 {
+    use alloc::vec::Vec;
+
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -1802,6 +1906,52 @@ mod tests
             arena.value(kept).is_some(),
             "truncating twice to the same mark is a no-op"
         );
+    }
+
+    #[test]
+    fn allocation_suffixes_keep_their_family()
+    {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        let returner = arena.comp_type_returner(unit_type);
+        let before = arena.watermark();
+        let product = arena.value_type_product(unit_type, unit_type);
+        let pair = arena.value_pair(unit, unit);
+        let bound = arena.computation_bind(returned, returned);
+        let thunked = arena.value_type_thunk(returner);
+        let lifted = arena.comp_type_returner(thunked);
+        let after = arena.watermark();
+        assert_eq!(arena.values_since(before).collect::<Vec<_>>(), [pair]);
+        assert_eq!(arena.computations_since(before).collect::<Vec<_>>(), [
+            bound
+        ]);
+        assert_eq!(
+            arena.value_types_since(before).collect::<Vec<_>>(),
+            [product, thunked],
+            "the suffix keeps allocation order"
+        );
+        assert_eq!(arena.comp_types_since(before).collect::<Vec<_>>(), [lifted]);
+        assert_eq!(
+            arena.values_since(after).len(),
+            0,
+            "nothing follows the latest mark"
+        );
+        arena.truncate_to(before);
+        assert_eq!(
+            arena.values_since(after).len(),
+            0,
+            "a stale mark answers nothing"
+        );
+        assert_eq!(arena.comp_types_since(after).len(), 0);
+        let replacement = arena.value_unit();
+        assert_eq!(
+            arena.values_since(before).collect::<Vec<_>>(),
+            [replacement],
+            "a truncated suffix is not resurrected"
+        );
+        assert_eq!(arena.computations_since(before).len(), 0);
     }
 
     #[test]
