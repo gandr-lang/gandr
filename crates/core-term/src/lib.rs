@@ -36,6 +36,7 @@ mod arena;
 mod classifier;
 mod context;
 mod definition;
+pub mod description;
 mod failure;
 pub mod hole;
 pub mod pattern;
