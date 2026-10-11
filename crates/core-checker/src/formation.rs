@@ -38,6 +38,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
+use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
 use crate::judgement::form;
@@ -348,10 +349,10 @@ pub fn level_of(
             },
             | Task::Enter(TypeNode::Value(at)) => match value_type_view(arena, at)? {
                 | ValueTypeView::Data { declaration, .. } => {
-                    let signature = context
-                        .data_signatures()
-                        .get(&declaration)
-                        .ok_or(CheckRefusal::NotADataType(declaration))?;
+                    let Maybe::Present(signature) = context.data_in_scope(declaration)
+                    else {
+                        return Err(CheckRefusal::NotADataType(declaration));
+                    };
                     levels.push(crate::former::kind_level(context, signature.kind())?);
                 },
                 | ValueTypeView::Record(fields) => {

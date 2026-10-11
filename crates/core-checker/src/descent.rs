@@ -117,7 +117,7 @@ impl Branch
     /// # Adequacy
     /// - hypothesis: L3 — a call at a field and at a function field's result
     ///   replays; a call at the scrutinee does not.
-    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
     #[spec(ensures: |ret| ret == Descent::Smaller || ret == Descent::Unrelated)]
     fn descent(
         &self,
@@ -156,7 +156,7 @@ impl Branch
 /// - hypothesis: L3 — the self variable is recognised at every depth the
 ///   derived eliminator's calls stand at, and a variable bound outside the
 ///   fixpoint is never mistaken for it.
-/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
 #[spec(ensures: |ret| matches!(ret, Maybe::Present(found) if u32::from(found) < u32::from(depth)) || matches!(ret, Maybe::Absent(_)))]
 fn variable_level(
     arena: &CoreArena,
@@ -196,7 +196,7 @@ fn variable_level(
 /// # Adequacy
 /// - hypothesis: L3 — a function field's hypothesis replays through the bind it
 ///   introduces.
-/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
 #[spec(ensures: |ret| ret == Descent::Smaller || ret == Descent::Unrelated)]
 fn forced_field(
     arena: &CoreArena,
@@ -275,7 +275,7 @@ fn reference(
 /// - hypothesis: L3 — a call at a field, at a function field's result and under
 ///   a nested binder replays; a call at the scrutinee itself and a bare forced
 ///   self reference refuse.
-/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(DescentRefusal::UnguardedSelfReference | DescentRefusal::NonDescendingCall)))]
 fn walk(
     arena: &CoreArena,
@@ -537,7 +537,7 @@ fn walk(
 ///   not case on its argument, a branch missing a field lambda, an unguarded
 ///   self reference and a call at the scrutinee itself each refuse by their own
 ///   reason, here and in the kernel.
-/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
 /// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::DescentNotReplayed { at: refused, .. }) if refused == at))]
 pub fn replay(

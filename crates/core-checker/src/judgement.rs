@@ -1808,7 +1808,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `recursive_data::recursive_data::a_fixpoint_checks_at_every_computation_type`
-    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_in_both_checkers`
+    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
