@@ -7,6 +7,10 @@ allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
 
+# The report format nextest writes, named as its documentation names it; `..`
+# keeps clippy's default list.
+doc-valid-idents = ["JUnit", ".."]
+
 # `multiple_crate_versions` stays denied for every split but these three.
 #
 # `hashbrown`: petgraph 0.8.3 pins `hashbrown` 0.15 and kasuari 0.4, the

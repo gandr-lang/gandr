@@ -1,0 +1,28 @@
+[package]
+name = "gandr-workflow-test-timing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Proposes nextest priority levels from the per-test durations of recent merge-queue runs"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["ci", "gandr", "junit", "nextest"]
+categories = ["development-tools::testing"]
+publish.workspace = true
+
+[[bin]]
+name = "test-timing"
+path = "src/main.rs"
+
+# The pinned anodized facade supplies the specification attribute; the shape
+# crate the `Maybe` a summary of no samples returns.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+quenchant-shape.workspace = true
+roxmltree.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

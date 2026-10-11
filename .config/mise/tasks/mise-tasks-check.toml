@@ -97,6 +97,18 @@ run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 description = "Compile every plain workspace target without running tests"
 run = "cargo build --locked --workspace --all-targets --profile test"
 
+# The enforcing run is CI's full test pass, so the plain lane compiles and
+# runs only what that run cannot: the tests gated `cfg(not(anodized_panic))`.
+# A new such test joins both filters below. Plain Clippy covers the rest of
+# the plain graph's compilation.
+["build:tests-plain-only"]
+description = "Compile the plain-only test targets without running them"
+run = "cargo nextest run --locked --package gandr-surface-parser --test tests --no-run"
+
+["check:tests-plain-only"]
+description = "The tests that exist only without specification enforcement"
+run = "cargo nextest run --locked --package gandr-surface-parser --test tests --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)'"
+
 # Flags and target directory match the enforcing test gate.
 ["build:tests-enforcing"]
 description = "Compile enforcing test targets without running them"

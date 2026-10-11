@@ -46,6 +46,7 @@ members = [
   "crates/theory-orders",
   "crates/theory-sites",
   "crates/theory-virtual-doctrines",
+  "crates/workflow-test-timing",
 ]
 
 [workspace.package]
@@ -133,6 +134,7 @@ default-features = false
 # - theory-orders
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-test-timing
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
 git = "https://github.com/gandr-lang/quenchant"
@@ -163,6 +165,7 @@ default-features = false
 # - env: `GANDR_JOBS`, the environment's default for `--jobs`
 # consumers:
 # - surface-driver
+# - workflow-test-timing
 [workspace.dependencies.clap]
 version = "4.6.6"
 default-features = false
@@ -749,6 +752,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "8b8d0702d69409549e855606a85492c777e05fc9"
@@ -791,6 +795,19 @@ default-features = false
 version = "0.5.3"
 default-features = false
 features = ["alloc"]
+
+# JUnit reports read as a read-only tree: the test-timing report reads each
+# `<testcase>`'s binary, name and time. Defaults off: `std` only adds
+# memchr's std path and `positions` node offsets the report never reads.
+# Chosen over quick-xml, the streaming de facto standard, for no required
+# dependency beyond memchr, no unsafe code and no published advisory;
+# quick-xml carries two from 2026. Reversal: an advisory against roxmltree
+# or reports too large to hold as a tree.
+# consumers:
+# - workflow-test-timing
+[workspace.dependencies.roxmltree]
+version = "0.21.1"
+default-features = false
 
 # Wait-free per-worker observer queues.
 # features:
@@ -847,6 +864,20 @@ features = ["alloc"]
 [workspace.dependencies.sysctl]
 version = "0.7.1"
 default-features = false
+
+# TOML, read into a table: the test-timing report reads the priority
+# overrides of `.config/nextest.toml`. `display` and `std` stay off: the
+# report writes no TOML through the crate.
+# features:
+# - parse: the parser
+# - serde: `from_str` into a `Table`, the one entry point that reads a whole
+#   document
+# consumers:
+# - workflow-test-timing
+[workspace.dependencies.toml]
+version = "1.1.8"
+default-features = false
+features = ["parse", "serde"]
 
 # Optional structured diagnostics, with no runtime or output backend.
 # features:

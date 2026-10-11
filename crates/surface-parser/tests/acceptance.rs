@@ -1386,6 +1386,7 @@ fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
 // A wall-clock budget measures the parser, not its predicates: under
 // `anodized_panic` every `#[spec]` predicate runs inside the timed parse, so
 // the enforcing lane is not a timing lane and this assertion stays out of it.
+// CI's plain lane runs it by name (`mise run check:tests-plain-only`).
 #[cfg(not(anodized_panic))]
 #[test]
 fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Error>>

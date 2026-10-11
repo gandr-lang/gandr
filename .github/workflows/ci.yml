@@ -81,7 +81,9 @@ jobs:
       #
       # Main promotes queue state into shared caches. Manual test runs warm
       # only their own branch, making a second dispatch a warm measurement.
-      # A promote job that found no state skips the setup.
+      # A promote job that found no state skips the setup. Each platform has
+      # one writer: the plain lane on Linux, the enforcing lane on macOS,
+      # which runs no plain lane.
       - &setup-rust
         id: setup-rust
         name: setup rust
@@ -89,7 +91,7 @@ jobs:
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
-          cache-save: ${{ env.CI_ENFORCING != 'true' && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       - &install-policy-tools
@@ -103,7 +105,7 @@ jobs:
           version: 2026.10.3
           cache: true
           cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
-          cache_save: ${{ env.CI_ENFORCING != 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache_save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Policy caches never use a restore prefix: Cargo can consider a library
       # from another Git revision fresh. The metadata revision is in Cargo.toml.
       - &restore-dylint-drivers
@@ -122,7 +124,7 @@ jobs:
           path: &policy-state |
             target/dylint
             target/workflow-tools
-          key: policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
+          key: &policy-state-key policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
       - &save-policy-state
         name: save Dylint library and gate binary
         if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
@@ -151,20 +153,26 @@ jobs:
             target/nextest/ci-enforcing/junit.xml
           if-no-files-found: ignore
       # Compute once, before any restored build directory can add manifests.
-      # Artifacts and cache prefixes must describe the same compiler inputs.
+      # The fingerprint names one exact state; the generation is the toolchain
+      # pin alone. A restore takes the newest state of its generation and
+      # Cargo's own fingerprints, which hash a Git dependency's revision and
+      # check source checksums, rebuild what the manifests changed. A toolchain
+      # bump starts a new generation: every artifact of the old one is stale,
+      # and the superseded ones a generation accumulates go with it.
       - &identify-build-state
         name: identify build-state inputs
         env:
           CI_STATE_INPUTS: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
-        run: printf 'CI_BUILD_FINGERPRINT=%s\n' "$CI_STATE_INPUTS" >> "$GITHUB_ENV"
+          CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
+        run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
       - &restore-test-state
         name: restore complete test state
         id: test-state-restore
         uses: *cache-restore
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
-          key: gandr-v2-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
-          restore-keys: gandr-v2-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_FINGERPRINT }}-
+          key: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
+          restore-keys: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-${{ env.CI_BUILD_GENERATION }}-
           # Promotion already downloads the verified queue artifact.
           lookup-only: ${{ github.event_name == 'push' }}
       - &save-test-state
@@ -191,20 +199,20 @@ jobs:
         uses: *upload-artifact
         with:
           path: build-state-${{ github.job }}.tar.zst
-          name: build-state-${{ github.job }}--${{ env.CI_BUILD_FINGERPRINT }}
+          name: build-state-${{ github.job }}--${{ env.CI_BUILD_GENERATION }}
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
       # Only this workflow's queue runs are trusted artifact producers:
       # GitHub sets the event, and only an owner-queued PR reaches the queue.
-      # Exact cache hits need no artifact download. A different manifest or
-      # toolchain fingerprint must never overwrite a compatible cache prefix.
+      # Exact cache hits need no artifact download. Another toolchain
+      # generation's state is never downloaded.
       - &download-build-state
         name: download reusable queue build state
-        if: ${{ steps.test-state-restore.outputs.cache-hit != 'true' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_FINGERPRINT)) }}
+        if: ${{ steps.test-state-restore.outputs.cache-hit != 'true' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_GENERATION)) }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_FINGERPRINT }}
+          name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_GENERATION }}
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - &unpack-build-state
@@ -325,10 +333,11 @@ jobs:
           IMAGE_REF: ${{ needs.ci-image-tag.outputs.ref }}
         run: test "$TAG_RESULT" = success && test "$BUILD_RESULT" != failure && echo "ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
 
-  # Plain and enforcing work run independently on each existing platform.
-  # Each flavor owns its compiled state; plain also runs corpus and rustdoc.
-  cargo-test-plain:
-    name: test plain targets (linux)
+  # The enforcing run is the full test pass on each platform. The plain lane
+  # compiles and runs only what enforcement removes, the corpus roots and
+  # rustdoc; plain Clippy covers the rest of the plain graph's compilation.
+  cargo-test-plain-only:
+    name: test plain-only targets (linux)
     needs: &cached-test-needs [changes, ci-image-ref, build-state]
     if: &heavy-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
@@ -339,7 +348,7 @@ jobs:
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
-      CI_BUILD_STATE: cargo-test-plain
+      CI_BUILD_STATE: cargo-test-plain-only
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
@@ -352,15 +361,27 @@ jobs:
       - name: build workspace targets
         id: build-workspace
         env:
-          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || 'build:tests' }}
+          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || 'build:tests-plain-only' }}
         run: mise run "$CI_BUILD_TASK"
       # The enforcing task sets the graph-wide cfg, including host-built
       # macros. Runtime sentinels reject a silently non-enforcing build.
       - name: test workspace targets
         env:
-          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || 'check:tests' }}
+          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
+      # Witness discovery lists the enforcing test inventory, so it runs where
+      # that graph is already built: anywhere else it compiles the graph again.
+      # The gate binary comes from the policy lane's exact cache when present.
+      - name: restore the gate binary
+        if: ${{ env.CI_WITNESSES == 'true' }}
+        uses: *cache-restore
+        with:
+          path: *policy-state
+          key: *policy-state-key
+      - name: resolve adequacy witnesses
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
+        run: mise run check:witnesses
       - name: run the corpus roots
         if: &plain-flavor ${{ env.CI_ENFORCING != 'true' }}
         run: mise run check:corpus
@@ -385,12 +406,14 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
+      CI_WITNESSES: "true"
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
-  # remains the other hosted platform for both flavors and their verdict.
-  cargo-test-macos-plain:
-    name: test plain targets (macos-arm64)
+  # remains the other hosted platform. Its enforcing run is the full test pass;
+  # the plain delta is platform-neutral and runs on Linux.
+  cargo-test-macos-enforcing:
+    name: test enforcing targets (macos-arm64)
     needs: *cached-test-needs
     if: *heavy-lane
     runs-on: macos-latest
@@ -400,68 +423,56 @@ jobs:
     timeout-minutes: 45
     env:
       CI_INSTALL_TOOLCHAIN: "true"
-      CI_BUILD_STATE: cargo-test-macos-plain
-    steps: *workspace-test-steps
-
-  cargo-test-macos-enforcing:
-    name: test enforcing targets (macos-arm64)
-    needs: *cached-test-needs
-    if: *heavy-lane
-    runs-on: macos-latest
-    permissions: *macos-read-permissions
-    timeout-minutes: 45
-    env:
-      CI_INSTALL_TOOLCHAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
     steps: *workspace-test-steps
 
   # Preserve the required gate identities. These must run after a failed,
-  # skipped or cancelled flavor: accepting either alone would weaken CI.
+  # skipped or cancelled lane: accepting a partial result would weaken CI.
   cargo-test:
     name: test the workspace (linux)
-    needs: [cargo-test-plain, cargo-test-enforcing]
+    needs: [cargo-test-plain-only, cargo-test-enforcing]
     if: &test-verdict ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: {}
     timeout-minutes: 5
     env:
-      PLAIN_RESULT: ${{ needs.cargo-test-plain.result }}
+      PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
       ENFORCING_RESULT: ${{ needs.cargo-test-enforcing.result }}
-    steps: &test-verdict-steps
+    steps:
       - name: require both test flavors
         run: test "$PLAIN_RESULT:$ENFORCING_RESULT" = success:success
 
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: [cargo-test-macos-plain, cargo-test-macos-enforcing]
+    needs: [cargo-test-macos-enforcing]
     if: *test-verdict
     runs-on: macos-latest
     permissions: {}
     timeout-minutes: 5
     env:
-      PLAIN_RESULT: ${{ needs.cargo-test-macos-plain.result }}
       ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
-    steps: *test-verdict-steps
+    steps:
+      - name: require the enforcing test pass
+        run: test "$ENFORCING_RESULT" = success
 
+  # Clippy writes check metadata, which a restored build directory does not
+  # hold, so this lane restores only the shared crate downloads. Both passes
+  # cover the workspace: the plain expansion keeps each predicate as
+  # `(true || predicate)` with no panic, which is code the enforcing pass never
+  # lints. The plain pass is also the plain graph's compile check over every
+  # target, which the plain test lane no longer builds.
   cargo-clippy-crate:
     name: check Clippy wall
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: &light-rust-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && github.event_name != 'push' }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
-    env:
-      CI_BUILD_STATE: cargo-test-enforcing
     steps:
       - *git-checkout
-      - *identify-build-state
-      # Shared crate downloads are restore-only in this lane.
       - *install-policy-tools
       - *setup-rust
-      - *restore-test-state
-      - *download-build-state
-      - *unpack-build-state
       - name: lint every target
         run: cargo clippy --locked --workspace --all-targets -- --deny warnings
       - name: lint every target with specification enforcement
@@ -472,22 +483,16 @@ jobs:
   # restores the exact compiler- and revision-matched policy artifacts.
   cargo-dylint-crate:
     name: check quenchant compiler policy
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: *heavy-lane
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
-    env:
-      # Witness discovery uses the same enforcing binaries as the test lane.
-      CI_BUILD_STATE: cargo-test-enforcing
     steps:
       - *git-checkout
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
-      - *restore-test-state
-      - *download-build-state
-      - *unpack-build-state
       - *restore-dylint-drivers
       - *restore-policy-state
       - name: lint every workspace target
@@ -496,15 +501,13 @@ jobs:
         # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
       # The specification gates run from the gate binary installed at the
-      # policy's metadata revision: the invocation state, the enforcing
-      # requirement, and adequacy-witness resolution.
+      # policy's metadata revision: the invocation state and the enforcing
+      # requirement. The enforcing test lane resolves adequacy witnesses.
       - name: check the specification invocation state
         id: invocation-state
         run: mise run check:anodized
       - name: require specification enforcement
         run: mise run check:anodized-enforcing
-      - name: resolve adequacy witnesses
-        run: mise run check:witnesses
       # This lane hands over its policy caches, not the dependency cache.
       - name: archive Dylint library and gate binary
         id: build-state-archive
@@ -625,15 +628,15 @@ jobs:
           --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
           >> "$GITHUB_OUTPUT"
 
-  promote-cargo-test-plain:
+  promote-cargo-test-plain-only:
     name: promote plain build state (linux)
     needs: &promote-needs [build-state, ci-image-ref]
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain--') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
-      CI_BUILD_STATE: cargo-test-plain
+      CI_BUILD_STATE: cargo-test-plain-only
     steps: &promote-steps
       - *git-checkout
       - *trust-workspace
@@ -656,17 +659,6 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
-    steps: *promote-steps
-
-  promote-test-macos-plain:
-    name: promote plain build state (macos-arm64)
-    needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-macos-plain--') }}
-    runs-on: macos-latest
-    permissions: *macos-read-permissions
-    env:
-      CI_BUILD_STATE: cargo-test-macos-plain
-      CI_INSTALL_TOOLCHAIN: "true"
     steps: *promote-steps
 
   promote-test-macos-enforcing:
