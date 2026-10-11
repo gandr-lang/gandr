@@ -9,6 +9,7 @@
 //! lost — a total function: any [`SourceText`] yields a well-formed
 //! [`ParseResult`], never a panic.
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -24,11 +25,43 @@ use crate::FormUnit;
 use crate::MeldError;
 use crate::MeldState;
 use crate::Molder;
+use crate::TokenIndex;
 use crate::TokenRun;
 use crate::UnitSeam;
+use crate::label::Lexeme;
 use crate::label::Token;
 use crate::label::label;
+use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
+
+/// What a form run's molding depends on, spelled out.
+///
+/// The spelling is whether the run starts the source, its length in tokens,
+/// and the run's tokens followed by the tokens past it its molding reads as
+/// lookahead, each by its lexical class and its extent, then their bytes.
+///
+/// Two runs with one identity mold to equal [`FormUnit`]s, whichever
+/// sources and positions they sit at, so a unit parked
+/// ([`FormUnit::park`]) in one revision serves the run of a later revision
+/// that carries its identity. Identity is equality of the spellings: exact,
+/// with no digest to collide.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: holds the spelling [`FormSplit::identity`] computed.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the split's
+///   identity carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over edited corpus sources, every run whose identity a
+///   run of the unedited source carries molds to an equal unit, and the run
+///   whose lookahead the edit reaches does not keep its identity.
+/// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+/// - witness: `parse::tests::hostile_edits_reuse_only_equal_units`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FormIdentity(Box<[u8]>);
 
 /// Whether a batch parse produced no obligations.
 #[repr(transparent)]
@@ -397,6 +430,93 @@ impl<'source> FormSplit<'source>
         &self.runs
     }
 
+    /// The identity of `run`: what its molding depends on, spelled out.
+    ///
+    /// A unit molds the run's tokens and reads, as lookahead, the tokens
+    /// past the run up to the eighth significant one; it begins from the
+    /// empty slope when the run starts the source and from the form-boundary
+    /// stand-in otherwise. The spelling covers exactly those: the base, the
+    /// run's length in tokens, each token's lexical class and end relative to
+    /// the run's first byte, and the bytes from the run's first token to the
+    /// last token read.
+    ///
+    /// # Specification
+    /// - requires: `run` is one of [`runs`](Self::runs); a run past the tokens
+    ///   covers what of it lies inside them.
+    /// - ensures: one byte for the base (one past the source's start), the
+    ///   run's token count as eight little-endian bytes, then per window token
+    ///   one byte for its class and its relative end as four little-endian
+    ///   bytes, then the window's bytes.
+    /// - provides: the key a parked unit is reused under across revisions.
+    /// - panics: none.
+    /// - executable: none — the spelling restates the window; its contract,
+    ///   that equal spellings mold equal units, only molding both runs
+    ///   observes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over edited corpus sources, every run whose identity
+    ///   a run of the unedited source carries molds to an equal unit, and the
+    ///   run whose lookahead the edit reaches does not keep its identity; a
+    ///   window short of the lookahead, or a spelling blind to the base or the
+    ///   token classes, reuses a unit the run would not mold.
+    /// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+    /// - witness: `parse::tests::hostile_edits_reuse_only_equal_units`
+    /// - witness: `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`
+    #[inline]
+    #[must_use]
+    pub fn identity(
+        &self,
+        run: TokenRun,
+    ) -> FormIdentity
+    {
+        let start = usize::from(run.start()).min(self.tokens.len());
+        let end = usize::from(run.end()).clamp(start, self.tokens.len());
+        let reach = usize::from(lookahead_reach(&self.tokens, TokenIndex::from(end)));
+        let window = self.tokens.get(start .. reach).unwrap_or_default();
+        let origin = window.first().map_or(0, |token| token.start);
+        let bytes_end = window.last().map_or(origin, |token| token.end);
+        let bytes = <&str>::from(self.source)
+            .as_bytes()
+            .get(
+                usize::try_from(origin).unwrap_or(usize::MAX)
+                    .. usize::try_from(bytes_end).unwrap_or(usize::MAX),
+            )
+            .unwrap_or_default();
+        let length = u64::try_from(end.saturating_sub(start)).unwrap_or(u64::MAX);
+        let mut spelling = Vec::with_capacity(
+            9_usize
+                .saturating_add(window.len().saturating_mul(5))
+                .saturating_add(bytes.len()),
+        );
+        spelling.push(u8::from(start != 0));
+        spelling.extend_from_slice(&length.to_le_bytes());
+        for token in window {
+            spelling.push(match token.lexeme {
+                | Lexeme::LowerWord => 0_u8,
+                | Lexeme::UpperWord => 1,
+                | Lexeme::Number => 2,
+                | Lexeme::TypedNumber => 3,
+                | Lexeme::Character => 4,
+                | Lexeme::Quote => 5,
+                | Lexeme::StringFragment => 6,
+                | Lexeme::EscapeSequence => 7,
+                | Lexeme::Punct => 8,
+                | Lexeme::ShellWord => 9,
+                | Lexeme::EnvAssign => 10,
+                | Lexeme::SingleQuotedContent => 11,
+                | Lexeme::VariableName => 12,
+                | Lexeme::SubshellOpen => 13,
+                | Lexeme::SubshellClose => 14,
+                | Lexeme::FileDescriptor => 15,
+                | Lexeme::Space => 16,
+                | Lexeme::Unknown => 17,
+            });
+            spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
+        }
+        spelling.extend_from_slice(bytes);
+        FormIdentity(spelling.into_boxed_slice())
+    }
+
     /// Mold `run` into its form unit.
     ///
     /// # Specification
@@ -565,6 +685,8 @@ mod tests
 {
     use alloc::borrow::ToOwned as _;
     use alloc::boxed::Box;
+    use alloc::collections::BTreeMap;
+    use alloc::format;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -580,10 +702,14 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use proptest::prelude::*;
 
+    use super::FormIdentity;
     use super::FormSplit;
+    use super::ParseResult;
     use super::parse;
     use super::parse_by_form;
+    use crate::FormUnit;
     use crate::Molder;
+    use crate::ParkedUnit;
     use crate::SeamBreak;
     use crate::UnitSeam;
     use crate::label::label;
@@ -959,6 +1085,187 @@ ret greeting
     }
 
     #[test]
+    fn a_parked_unit_joins_as_the_unit_it_parked() -> Result<(), Box<dyn Error>>
+    {
+        // Every corpus source's units, parked and taken up again, meet the
+        // seams the fresh units met and join into the whole parse.
+        let pbg = built_in()?;
+        let files = gandr_files(&corpus_root());
+        assert!(!files.is_empty(), "the corpus sources are present");
+        let mut molder = Molder::new(&pbg);
+        for path in &files {
+            let src = read_source(path)?;
+            let source = SourceText::from(src.as_str());
+            let split = FormSplit::new(&molder, source);
+            let fresh: Vec<_> = split
+                .runs()
+                .iter()
+                .map(|&run| split.mold(&mut molder, run))
+                .collect();
+            let parked: Vec<ParkedUnit> = fresh.iter().map(FormUnit::park).collect();
+            let resumed: Vec<_> = split
+                .runs()
+                .iter()
+                .zip(&parked)
+                .map(|(&run, parked)| FormUnit::resume(&pbg, run, parked))
+                .collect();
+            let fresh = split.join(&mut molder, fresh)?;
+            let resumed = split.join(&mut molder, resumed)?;
+            assert_eq!(resumed.seams(), fresh.seams(), "{}", path.display());
+            assert_eq!(
+                *resumed.result(),
+                parse(&pbg, source)?,
+                "{}",
+                path.display()
+            );
+        }
+        Ok(())
+    }
+
+    /// How many units a rejoin took up rather than molded.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Reused(usize);
+
+    /// Mold every run of `after`, take up the unit `parked` holds under a
+    /// run's identity in place of the fresh one, and join.
+    ///
+    /// # Specification
+    /// - requires: `parked` holds units molded over `molder`'s grammar.
+    /// - ensures: each run whose identity `parked` holds molds to the parked
+    ///   unit; the answer is the join of the taken-up and fresh units and how
+    ///   many were taken up.
+    /// - fails: the join's [`MeldError`], or a description of the first run
+    ///   whose fresh unit differs from the parked unit under its identity.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus and hostile edit witnesses call it on
+    ///   every edited source they build.
+    /// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+    /// - witness: `parse::tests::hostile_edits_reuse_only_equal_units`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(_, Reused(reused))| reused <= after.runs().len()))]
+    fn rejoin<'source>(
+        molder: &mut Molder<'_>,
+        after: &FormSplit<'source>,
+        parked: &BTreeMap<FormIdentity, ParkedUnit>,
+    ) -> Result<(ParseResult<'source>, Reused), Box<dyn Error>>
+    {
+        let pbg = molder.pbg();
+        let mut units = Vec::with_capacity(after.runs().len());
+        let mut reused = 0_usize;
+        for &run in after.runs() {
+            let fresh = after.mold(molder, run);
+            match parked.get(&after.identity(run)) {
+                | Some(unit) => {
+                    if fresh.park() != *unit {
+                        return Err(
+                            format!("{run:?} molds otherwise than its identity's unit").into()
+                        );
+                    }
+                    units.push(FormUnit::resume(pbg, run, unit));
+                    reused = reused.saturating_add(1);
+                },
+                | None => units.push(fresh),
+            }
+        }
+        Ok((after.join(molder, units)?.into_result(), Reused(reused)))
+    }
+
+    /// Every unit of `split`, parked under its run's identity.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per distinct identity among the runs.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus and hostile edit witnesses park every
+    ///   unedited source through it.
+    /// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+    /// - witness: `parse::tests::hostile_edits_reuse_only_equal_units`
+    #[spec(ensures: |ret| ret.len() <= split.runs().len())]
+    fn parked_by_identity(
+        molder: &mut Molder<'_>,
+        split: &FormSplit<'_>,
+    ) -> BTreeMap<FormIdentity, ParkedUnit>
+    {
+        split
+            .runs()
+            .iter()
+            .map(|&run| (split.identity(run), split.mold(molder, run).park()))
+            .collect()
+    }
+
+    #[test]
+    fn an_equal_identity_molds_an_equal_unit() -> Result<(), Box<dyn Error>>
+    {
+        // Each corpus source of three forms or more, a declaration inserted
+        // at its middle boundary: every run of the edited source whose
+        // identity a run of the original carries molds to that run's unit,
+        // the run before the insertion — whose lookahead now reads the new
+        // declaration — takes a new identity, and the edited source joined
+        // from reused and fresh units parses whole.
+        let pbg = built_in()?;
+        let mut molder = Molder::new(&pbg);
+        let mut edited_sources = 0_usize;
+        let mut reused_units = 0_usize;
+        for path in gandr_files(&corpus_root()) {
+            let src = read_source(&path)?;
+            let before = FormSplit::new(&molder, SourceText::from(src.as_str()));
+            if before.runs().len() < 3 {
+                continue;
+            }
+            let middle = before.runs().len().div_euclid(2);
+            let (Some(&previous), Some(&run)) = (
+                before.runs().get(middle.saturating_sub(1)),
+                before.runs().get(middle),
+            )
+            else {
+                continue;
+            };
+            let tokens = label(SourceFragment::from(src.as_str()));
+            let at = tokens
+                .get(usize::from(run.start()))
+                .and_then(|token| usize::try_from(token.start).ok())
+                .ok_or("the middle run starts at a token")?;
+            let (head, tail) = src
+                .split_at_checked(at)
+                .ok_or("a token starts at a character")?;
+            let edited = format!("{head}def inserted = 1;\n{tail}");
+            let parked = parked_by_identity(&mut molder, &before);
+            let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
+            assert_eq!(after.runs().get(middle.saturating_sub(1)), Some(&previous));
+            assert!(
+                !parked.contains_key(&after.identity(previous)),
+                "{}: the run before the insertion reads it as lookahead",
+                path.display()
+            );
+            let (joined, Reused(reused)) = rejoin(&mut molder, &after, &parked)?;
+            assert_eq!(
+                joined,
+                parse(&pbg, SourceText::from(edited.as_str()))?,
+                "{}",
+                path.display()
+            );
+            edited_sources = edited_sources.saturating_add(1);
+            reused_units = reused_units.saturating_add(reused);
+        }
+        assert!(
+            edited_sources > 0,
+            "the corpus holds sources of three forms"
+        );
+        assert!(
+            reused_units >= edited_sources,
+            "every edited source reuses a unit"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
@@ -1064,6 +1371,41 @@ ret greeting
             let whole = parse(pbg, SourceText::from(src.as_str())).expect("commit is total");
             let by_form = parse_by_form(pbg, SourceText::from(src.as_str())).expect("commit is total");
             prop_assert_eq!(by_form, whole);
+        }
+    }
+
+    proptest! {
+        // Each case molds, parks, splits and joins twice, so the enforcing
+        // lane, whose checked clauses multiply that cost, draws fewer.
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(anodized_panic) { 64 } else { 400 }))]
+
+        #[test]
+        fn hostile_edits_reuse_only_equal_units(
+            parts in prop::collection::vec(hostile_source(), 2 .. 6),
+            replacement in hostile_source(),
+            slot in any::<prop::sample::Index>(),
+        ) {
+            use std::sync::OnceLock;
+            static PBG: OnceLock<Pbg> = OnceLock::new();
+            let pbg = PBG.get_or_init(|| built_in().expect("built-in grammar"));
+
+            // One hostile fragment of several replaced by another: every run
+            // of the edited source that keeps an identity of the original
+            // molds to the original's unit, and the edited source joined
+            // from reused and fresh units parses whole.
+            let before = parts.join("\n");
+            let mut edited_parts = parts;
+            let at = slot.index(edited_parts.len());
+            if let Some(part) = edited_parts.get_mut(at) {
+                *part = replacement;
+            }
+            let edited = edited_parts.join("\n");
+            let mut molder = Molder::new(pbg);
+            let unedited = FormSplit::new(&molder, SourceText::from(before.as_str()));
+            let parked = parked_by_identity(&mut molder, &unedited);
+            let after = FormSplit::new(&molder, SourceText::from(edited.as_str()));
+            let (joined, _reused) = rejoin(&mut molder, &after, &parked).expect("equal identities mold equal units");
+            prop_assert_eq!(joined, parse(pbg, SourceText::from(edited.as_str())).expect("commit is total"));
         }
     }
 }

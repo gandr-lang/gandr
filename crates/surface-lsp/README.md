@@ -9,7 +9,7 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Every synchronisation rechecks the whole document](#every-synchronisation-rechecks-the-whole-document)
+- [Every synchronisation submits the document to its session](#every-synchronisation-submits-the-document-to-its-session)
 - [Diagnostics are the renderer's reports](#diagnostics-are-the-renderers-reports)
 - [Tokens are the highlighter's roles](#tokens-are-the-highlighters-roles)
 - [Positions count UTF-16 code units](#positions-count-utf-16-code-units)
@@ -25,11 +25,11 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 
 ## Synopsis
 
-**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, full document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, and `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`. `serve` runs one session over any `BufRead` and `Write` pair; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output.
+**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, and `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output and logs to standard error.
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are the reports `gandr-surface-diagnostics` renders for the dispatcher's step, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** A synchronisation composes the document whole through `gandr-surface-dispatcher`'s `compose`, under the source root its `file` URI's path classifies as, reads the step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title as the message, its context loci as related information. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and one grammar per process; nothing else outlives a request.
+**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and submits the text to the session, reads the submission's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title as the message, its context loci as related information. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
 
 ## References
 
@@ -39,7 +39,8 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 
 ## Provided features
 
-- `serve` and `Served`: one session over a stream pair, ending cleanly at `exit` or boundary EOF after `shutdown`, and abruptly before shutdown. Witnesses: `session::session::a_session_round_trips_over_in_memory_streams`, `session::session::a_stream_closed_without_exit_ends_abruptly`, `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`.
+- `serve` and `Served`: one session over a stream pair and a log, ending cleanly at `exit` or boundary EOF after `shutdown`, and abruptly before shutdown. Witnesses: `session::session::a_session_round_trips_over_in_memory_streams`, `session::session::a_stream_closed_without_exit_ends_abruptly`, `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`.
+- Incremental synchronisation: each content change applied in order, a ranged one to its range and one naming no range as the whole text, and the document resubmitted to its session, which molds only the forms the change touched; one log line per synchronisation names the forms molded, the items the incremental checker judged and the wall. Witnesses: `server::tests::ranged_changes_edit_the_held_text_in_order`, `session::session::an_edit_to_a_large_document_rechecks_its_forms`.
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body. Witnesses: `transport::tests::a_round_trip_preserves_the_payload`, `transport::tests::eof_at_a_boundary_is_clean`, `transport::tests::a_header_block_the_framing_cannot_read_is_refused`.
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error, including invalid UTF-8 and exceeded number or nesting limits; a decoded batch or other invalid message refused as an invalid request. Witnesses: `rpc::tests::a_request_is_classified`, `rpc::tests::a_batch_is_rejected`, `rpc::tests::decoder_rejections_keep_the_parse_error_class`.
 - Published diagnostics: one per report the renderer gives the document's step, at its range, under its code, with its related information; republished at every change, cleared at close. Witnesses: `server::tests::a_refused_program_is_published_as_an_editor_diagnostic`, `server::tests::synchronisation_publishes_and_close_clears`, `recheck::tests::causal_contexts_become_lsp_related_information`, `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`, `recheck::tests::a_fault_is_published_at_the_origin`, `session::session::a_refusal_is_published_where_the_renderer_renders_it`, `session::session::every_corpus_report_is_published_where_the_walk_renders_it`.
@@ -80,18 +81,22 @@ for message in [
     write_frame(&mut input, &Body::from(message.as_bytes().to_vec()))?;
 }
 let mut output = Vec::new();
-let served = serve(&mut Cursor::new(input), &mut output)?;
+let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new())?;
 assert_eq!(served, Served::Clean, "exit after shutdown ends the session cleanly");
 # Ok::<(), Box<dyn core::error::Error>>(())
 ```
 
 The crate's tests run with `cargo nextest run -p gandr-surface-lsp`; the crate-level example runs with `cargo test -p gandr-surface-lsp --doc`.
 
-## Every synchronisation rechecks the whole document
+## Every synchronisation submits the document to its session
 
-`didOpen` and `didChange` compose the document's whole text through the dispatcher's composition, the same call `gandr check` makes for one source, and publish what it yields; a token request parses the whole text again. The grammar and its role table are built once per process and shared; nothing else is kept, so a document's diagnostics are exactly as current as its last synchronisation and no cached state can disagree with the text.
+**Choice.** `didOpen` starts a session for the document and submits its text; `didChange` applies each content change to the held text in order — a ranged change replaces the bytes its two positions resolve to, an end before its start read as the start, and a change naming no range replaces the whole text — and submits the result to the same session. The session's form store takes up every top-level form the change left unchanged and molds the rest, and its submission is the dispatcher's composition of the whole text, so the published diagnostics are what `gandr check` prints for it. A token request parses the whole text again.
 
-This is the first cut. The alternative is an incremental recheck that keeps a checking session per open document and resubmits only what an edit touched; it needs an interactive session that reconstructs an edit as a change to the lowered module and resumes the incremental checker over it, which the pipeline does not yet carry, and the dispatcher's composition does not call the incremental checker. The choice reverses when that session lands: the server then keeps one session per document, accepts incremental synchronisation, and answers from the session's state. Until then a whole-file recheck is the one use of the dispatcher's composition that stays correct after an arbitrary edit, and its cost is one composition per change the client sends.
+**The log.** Each synchronisation writes one line to the log `serve` is given — `<uri> at version <n>: <molded>/<forms> forms molded, <judged>/<items> items judged, <wall> ms` — naming the forms the parse molded, the items the incremental checker judged, and the recheck's wall from the submission to the diagnostics. A line the log refuses is dropped; the protocol never depends on it. Over a generated document of two thousand forms, one edit molds one to eight forms and publishes what opening the edited text publishes.
+
+**Alternatives.** The recorded design keeps a checking session per open document and accepts incremental synchronisation; this is that design. Full synchronisation alone ships the whole buffer per keystroke and leaves the session nothing a change names; it stays as the change that names no range. The timing line could go to `window/logMessage`, which a client shows in its own channel, at the cost of a notification per change on the protocol stream; the server's log is where an operator reads it without touching the protocol.
+
+**Reversal.** A client sending many small changes per notification, measured paying a line index per change, would batch them into one pass over the text; a client that reads only the protocol stream moves the timing line to `window/logMessage`.
 
 ## Diagnostics are the renderer's reports
 
@@ -110,7 +115,7 @@ Every diagnostic's `source` is `gandr`. The code is the spelling a corpus `refus
 
 A goal is published at information severity because `check --goals` prints it as a report that does not fail the run. The alternative was the verb `check`, which withholds goals; an editor showing an open hole's goal beside it is the use the goal report exists for.
 
-The standing the renderer reads to choose what a pending source prints is restated here from the dispatcher's walk, which computes it privately: under the pending root, a source refused whole or carrying a refusal no expectation can state is pending, any other lowered; under the strict and fixture roots, a source refused whole is refused, any other settled or unsettled as its report's tally is. The L2 witness over every corpus source holds the restatement to the walk's own reports. The restatement goes when the dispatcher exposes the standing it computes.
+The standing the renderer reads to choose what a pending source prints is the dispatcher's `Standing::of`, carried into the step by the session's submission: under the pending root, a source refused whole or carrying a refusal no expectation can state is pending, any other lowered; under the strict and fixture roots, a source refused whole is refused, any other settled or unsettled as its report's tally is. The L2 witness over every corpus source holds it to the walk's own reports.
 
 ## Tokens are the highlighter's roles
 
@@ -179,7 +184,6 @@ A document's URI is kept as the client spelled it, as the key it is synchronised
 | ------ | ------------- |
 | `textDocument/hover` | the hover over a hole's goal, once the hole surface carries goals and the checker spells their types |
 | `textDocument/completion` | the completion over goals, with the same two prerequisites |
-| incremental synchronisation | the interactive session over the incremental checker, with the recheck it replaces |
 | the render-bus attach and custom `gandr/` methods | a renderer in another process reading `gandr-surface-render-remote`'s frames |
 | formatting | the printer, once the surface has one |
 

@@ -399,29 +399,18 @@ impl CodeDefinitions
         else {
             return;
         };
-        let mut chain = self.lowered.chain().clone();
-        if chain
+        if self
+            .lowered
             .define(
                 constant,
                 GlobalIndex::from(entry),
                 Transparency::Manifest,
                 &[],
+                body,
             )
-            .is_err()
+            .is_ok()
         {
-            return;
-        }
-        let mut bodies = self.bodies.clone();
-        bodies.insert(constant, body);
-        let lowered = LoweredChain::lower(chain, |defined| {
-            bodies
-                .get(&defined.constant())
-                .copied()
-                .ok_or_else(|| defined.constant())
-        });
-        if let Ok(lowered) = lowered {
-            self.lowered = lowered;
-            self.bodies = bodies;
+            self.bodies.insert(constant, body);
         }
     }
 

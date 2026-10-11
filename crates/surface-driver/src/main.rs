@@ -358,9 +358,9 @@ fn main() -> ExitCode
 /// - requires: nothing; the streams come from the process.
 /// - ensures: client frames are fed to `gandr-surface-lsp` and its protocol
 ///   responses written to standard output until exit or EOF; notifications do
-///   not acquire request replies. A session exits `0` after shutdown and `1`
-///   before it. A failed stream is noted on standard error when writable and
-///   exits `2`.
+///   not acquire request replies; each synchronisation's timing line goes to
+///   standard error. A session exits `0` after shutdown and `1` before it. A
+///   failed stream is noted on standard error when writable and exits `2`.
 /// - provides: the editor's entry point.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -376,7 +376,8 @@ fn lsp() -> ExitCode
 {
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
-    match gandr_surface_lsp::serve(&mut input, &mut output) {
+    let mut log = std::io::stderr();
+    match gandr_surface_lsp::serve(&mut input, &mut output, &mut log) {
         | Ok(Served::Clean) => ExitCode::SUCCESS,
         | Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
         | Err(fault) => {

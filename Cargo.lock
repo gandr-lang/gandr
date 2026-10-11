@@ -747,12 +747,14 @@ dependencies = [
 name = "gandr-surface-lsp"
 version = "0.0.0"
 dependencies = [
- "gandr-surface-corpus",
+ "gandr-core-incremental",
+ "gandr-storage-records",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-render-remote",
+ "gandr-surface-session",
  "gandr-surface-syntax",
  "percent-encoding",
  "quenchant-anodized",
@@ -824,6 +826,7 @@ dependencies = [
 name = "gandr-surface-session"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-nbe",

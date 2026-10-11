@@ -43,6 +43,7 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
+use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -415,6 +416,53 @@ pub fn lower_source<'source>(
 ) -> Result<Lowering<'source>, ComposeFault<'source>>
 {
     let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+    lower_parsed(grammar, parsed, lowerings)
+}
+
+/// Lower one source the parser has committed: [`lower_source`] past its
+/// parse.
+///
+/// # Specification
+/// - requires: `grammar` is the checked grammar `parsed` was committed under.
+/// - ensures: the tree is lowered once into a fresh arena against the empty
+///   outermost scope and `lowerings` advances once, saturating. A module the
+///   lowering reads is [`Lowered::Module`] with its arena; a whole-source
+///   refusal outside the engine-fault class is [`Lowered::Refused`]. Either
+///   carries the parse's completion obligations unchanged.
+/// - provides: the lowering of a parse joined from reused form units — the
+///   session's — exactly as [`lower_source`] lowers the whole parse.
+/// - fails: [`ComposeFault::Lowering`] for a whole-module refusal of the
+///   engine-fault class.
+/// - panics: none.
+///
+/// # Errors
+/// [`ComposeFault::Lowering`]: the lowering faulted before any declaration
+/// could be trusted.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every witness of [`lower_source`] lowers through here,
+///   and the session's corpus and edit witnesses lower joined parses through it
+///   to the walk's compositions.
+/// - witness: `compose::tests::a_lowering_carries_the_parse_obligations`
+/// - witness: `compose::tests::each_composition_lowers_once`
+#[inline]
+#[spec(
+    captures: [before = lowerings.0, obligations = parsed.obligations().to_vec()],
+    ensures: |ref ret| lowerings.0 == before.saturating_add(1) && match *ret {
+        Ok(ref lowering) => lowering.obligations == obligations && match lowering.lowered {
+            Lowered::Refused(ref refusal) => refusal.classify() != FailureClass::EngineFault,
+            Lowered::Module { .. } => true,
+        },
+        Err(ComposeFault::Lowering(ref refusal)) => refusal.classify() == FailureClass::EngineFault,
+        Err(ComposeFault::Parse(_) | ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => false,
+    },
+)]
+pub fn lower_parsed<'source>(
+    grammar: &Pbg,
+    parsed: ParseResult<'source>,
+    lowerings: &mut LoweringCount,
+) -> Result<Lowering<'source>, ComposeFault<'source>>
+{
     let obligations = parsed.obligations().to_vec();
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();

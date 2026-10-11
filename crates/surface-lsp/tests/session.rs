@@ -214,6 +214,40 @@ mod session
         messages
     }
 
+    /// Serve `messages` to the end and return how the session ended, what the
+    /// server wrote, and the lines it logged.
+    ///
+    /// # Specification
+    /// - requires: messages serialize into frames within the reader ceiling.
+    /// - ensures: the session stops at exit or EOF, returning its lifecycle
+    ///   ending, every emitted JSON-RPC message in order, and every log line in
+    ///   order.
+    /// - provides: an in-memory client observation of the public service loop.
+    /// - fails: never for the admitted in-memory streams.
+    /// - panics: transport or output decoding rejects a fixture stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an editor-shaped edit reads one log line per
+    ///   synchronisation, at the versions it sent.
+    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[spec(ensures: |ret| ret.1.len() <= messages.len() && ret.2.len() <= messages.len()
+        && ret.1.iter().all(|message| message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")))]
+    fn logged(messages: &[Value]) -> (Served, Vec<Value>, Vec<String>)
+    {
+        let input = frames(messages);
+        let mut stream = input.as_ref();
+        let mut output = Vec::new();
+        let mut log = Vec::new();
+        let served =
+            serve(&mut stream, &mut output, &mut log).expect("the streams carry the session");
+        let log = String::from_utf8(log).expect("the log is UTF-8");
+        (
+            served,
+            written(&Body::from(output)),
+            log.lines().map(str::to_owned).collect(),
+        )
+    }
+
     /// Serve `messages` to the end and return how the session ended and what
     /// the server wrote.
     ///
@@ -235,11 +269,8 @@ mod session
         && ret.1.iter().all(|message| message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")))]
     fn session(messages: &[Value]) -> (Served, Vec<Value>)
     {
-        let input = frames(messages);
-        let mut stream = input.as_ref();
-        let mut output = Vec::new();
-        let served = serve(&mut stream, &mut output).expect("the streams carry the session");
-        (served, written(&Body::from(output)))
+        let (served, written, _log) = logged(messages);
+        (served, written)
     }
 
     /// The messages opening a session.
@@ -577,7 +608,10 @@ mod session
         let mut cut: &[u8] = b"Content-Length: 40\r\n\r\n{\"jsonrpc\"";
         let mut output = Vec::new();
         assert!(
-            matches!(serve(&mut cut, &mut output), Err(TransportFault::Truncated)),
+            matches!(
+                serve(&mut cut, &mut output, &mut Vec::new()),
+                Err(TransportFault::Truncated)
+            ),
             "a stream breaking inside a frame is a transport fault"
         );
     }
@@ -815,6 +849,156 @@ mod session
             );
         }
     }
+
+    /// One line of the server log.
+    #[repr(transparent)]
+    #[derive(Clone, Copy)]
+    struct Line<'text>(&'text str);
+
+    /// What one timing line counts.
+    #[derive(Debug, Eq, PartialEq)]
+    struct Census
+    {
+        /// The version the line names.
+        version: i32,
+        /// The forms molded.
+        molded: usize,
+        /// The revision's forms.
+        forms: usize,
+    }
+
+    /// The census `line`, one timing line of the server log, carries: the
+    /// version it names, the forms molded, and the revision's forms.
+    ///
+    /// # Specification
+    /// - requires: `line` is a timing line the server logged.
+    /// - ensures: the three counts the line spells.
+    /// - provides: the log's census as numbers a transcript compares.
+    /// - fails: never in the valid domain.
+    /// - panics: a line not in the logged shape violates the requirement.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the transcript's open molds every form and its edit a
+    ///   handful; a misread count breaks one of the two.
+    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[spec(ensures: |ret| ret.molded <= ret.forms)]
+    fn census(Line(line): Line<'_>) -> Census
+    {
+        let (_, after) = line
+            .split_once(" at version ")
+            .expect("the line names a version");
+        let (version, timing) = after.split_once(": ").expect("the line carries a timing");
+        let (forms, _) = timing
+            .split_once(" forms molded")
+            .expect("the line counts forms");
+        let (molded, forms) = forms.split_once('/').expect("molded of forms");
+        Census {
+            version: version.parse().expect("a version"),
+            molded: molded.parse().expect("a molded count"),
+            forms: forms.parse().expect("a form count"),
+        }
+    }
+
+    #[test]
+    fn an_edit_to_a_large_document_rechecks_its_forms()
+    {
+        use core::fmt::Write as _;
+
+        let mut text = String::new();
+        for i in 0 .. 1_000_usize {
+            if i.is_multiple_of(2) {
+                writeln!(text, "def v{i} : Integer ;\ndef v{i} = {i} ;")
+            }
+            else {
+                writeln!(
+                    text,
+                    "def p{i} : +U (Integer -> Integer -> -F Integer) ;\n\
+                     def p{i} = thunk {{ fn (x) {{ fn (y) {{ ret x }} }} }} ;"
+                )
+            }
+            .expect("a string takes text");
+        }
+        let uri = "file:///tmp/large.gandr".to_owned();
+        let edited = text.replacen("def v500 = 500 ;", "def v500 = \"text\" ;", 1);
+        let mut messages = opening();
+        messages.push(open(&Source {
+            uri: uri.clone(),
+            text,
+        }));
+        messages.push(
+            json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri, "version": 2_i32},
+                "contentChanges": [{
+                    "range": {
+                        "start": {"line": 1_001_i32, "character": 11_i32},
+                        "end": {"line": 1_001_i32, "character": 14_i32},
+                    },
+                    "text": "\"text\"",
+                }],
+            }}),
+        );
+        messages.extend(closing());
+        let (served, written, log) = logged(&messages);
+        assert_eq!(served, Served::Clean);
+
+        let mut whole = opening();
+        whole.push(open(&Source {
+            uri: uri.clone(),
+            text: edited,
+        }));
+        whole.extend(closing());
+        let (_, rechecked) = session(&whole);
+        let diagnostics = |messages: &[Value], at: usize| {
+            messages
+                .get(at)
+                .and_then(|message| message.pointer("/params/diagnostics"))
+                .cloned()
+                .expect("a publication")
+        };
+        assert_eq!(
+            written
+                .get(2)
+                .and_then(|message| message.pointer("/params/version")),
+            Some(&json!(2_i32)),
+            "the edit is published at the version it brought"
+        );
+        assert_eq!(
+            diagnostics(&written, 2),
+            diagnostics(&rechecked, 1),
+            "the edit publishes what opening the edited text publishes"
+        );
+        assert_eq!(
+            diagnostics(&written, 2).pointer("/0/code"),
+            Some(&json!("TypeMismatch")),
+            "the edit is a type mismatch"
+        );
+
+        let [ref opened, ref changed] = *log.as_slice()
+        else {
+            panic!("one timing line per synchronisation: {log:?}");
+        };
+        assert!(opened.starts_with(&uri), "{opened}");
+        assert_eq!(
+            census(Line(opened)),
+            Census {
+                version: 1,
+                molded: 2_000,
+                forms: 2_000
+            },
+            "opening molds every form: {opened}"
+        );
+        let changed_census = census(Line(changed));
+        assert_eq!(
+            (changed_census.version, changed_census.forms),
+            (2_i32, 2_000_usize),
+            "{changed}"
+        );
+        assert!(
+            (1_usize ..= 8_usize).contains(&changed_census.molded),
+            "the edit molds the form it changed and the forms reading it: {changed}"
+        );
+    }
+
     #[test]
     fn wire_helpers_preserve_escaped_paths_and_unicode_payloads()
     {

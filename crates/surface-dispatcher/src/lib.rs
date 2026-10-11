@@ -38,7 +38,8 @@
 //! [`judge_module`] judges, readmits and settles what the lowering read.
 //! [`compose()`] is exactly the one then the other; the halves exist for the
 //! session, which keeps the lowered module to hand the incremental checker
-//! beside the verdicts.
+//! beside the verdicts. [`lower_parsed`] is [`lower_source`] past its parse,
+//! for the session, which parses through its form store.
 //!
 //! # The run stage follows the check
 //!
@@ -93,6 +94,7 @@ pub use crate::compose::LoweringCount;
 pub use crate::compose::adapt;
 pub use crate::compose::compose;
 pub use crate::compose::judge_module;
+pub use crate::compose::lower_parsed;
 pub use crate::compose::lower_source;
 pub use crate::evaluate::Evaluation;
 pub use crate::evaluate::Program;

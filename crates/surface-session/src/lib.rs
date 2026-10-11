@@ -1,10 +1,11 @@
 //! The interactive session above the dispatcher: each revision of one source
 //! lowered, judged, resumed through the incremental checker and persisted.
 //!
-//! A [`Session`] holds what the batch pipeline does not: the incremental
-//! checker's latest resume, the checkpoint store it persists into, and the
-//! import scope of the latest accepted revision. Its faces — the REPL, the
-//! language server, a terminal interface — read it; it reads none of them.
+//! A [`Session`] holds what the batch pipeline does not: the form store of the
+//! latest parsed revision, the incremental checker's latest resume, the
+//! checkpoint store it persists into, and the import scope of the latest
+//! accepted revision. Its faces — the REPL, the language server, a terminal
+//! interface — read it; it reads none of them.
 //!
 //! # A submission is a whole revision the caller owns
 //!
@@ -13,14 +14,25 @@
 //! accumulates lines, or applies an editor's changes, owns the buffer and
 //! submits it whole.
 //!
+//! # The form store parses only the forms an edit touched
+//!
+//! The session keeps every top-level form of the latest parsed revision,
+//! molded and parked under its identity — the exact spelling of everything
+//! its molding reads. A revision takes up each form whose identity the store
+//! holds and molds the rest across the session's width, so an edit molds the
+//! forms it changed and the few whose lookahead reaches into it, and the
+//! joined parse equals the whole parse of the revision. [`Submission::forms`]
+//! counts them.
+//!
 //! # The report is the dispatcher's composition
 //!
-//! A submission runs the dispatcher's two composition halves —
-//! [`lower_source`](gandr_surface_dispatcher::lower_source), then
-//! [`judge_module`](gandr_surface_dispatcher::judge_module) — so its verdicts
-//! are exactly the ones `gandr check` gives the same text, and hands the same
-//! lowered declarations, through [`program`], to the incremental checker,
-//! which adopts what still answers and persists the checkpoints.
+//! A submission lowers its parse with the dispatcher's
+//! [`lower_parsed`](gandr_surface_dispatcher::lower_parsed), then runs
+//! [`judge_module`](gandr_surface_dispatcher::judge_module) — the two halves
+//! of the composition — so its verdicts are exactly the ones `gandr check`
+//! gives the same text, and hands the same lowered declarations, through
+//! [`program`], to the incremental checker, which adopts what still answers
+//! and persists the checkpoints.
 //!
 //! # Edits are reconstructed from the lowered core
 //!
@@ -45,6 +57,7 @@
 extern crate alloc;
 
 mod edit;
+mod forms;
 mod item_source;
 mod live_match;
 mod session;
@@ -64,6 +77,8 @@ pub use crate::edit::body_path;
 pub use crate::edit::diff;
 pub use crate::edit::located;
 pub use crate::edit::spanned;
+pub use crate::forms::FormCensus;
+pub use crate::forms::FormCount;
 pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;

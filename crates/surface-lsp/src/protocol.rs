@@ -6,6 +6,7 @@
 //! a client sends is ignored, as the protocol requires of a field a server
 //! does not know.
 
+use core::fmt;
 use std::path::PathBuf;
 
 use anodized::spec;
@@ -89,11 +90,43 @@ impl DocumentUri
     }
 }
 
+impl fmt::Display for DocumentUri
+{
+    /// Writes the URI as the client spelled it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
 /// A document's version, as the client numbers it.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct DocumentVersion(i32);
+
+impl fmt::Display for DocumentVersion
+{
+    /// Writes the version's number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// The parameters of `textDocument/didOpen`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -124,8 +157,7 @@ pub struct DidChangeParams
 {
     /// The document changed, at its new version.
     pub text_document: VersionedDocument,
-    /// The changes, in order; under full synchronisation each carries the
-    /// whole text, so the last is the document.
+    /// The changes, in order, each against the text the ones before it left.
     pub content_changes: Vec<ContentChange>,
 }
 
@@ -139,12 +171,15 @@ pub struct VersionedDocument
     pub version: DocumentVersion,
 }
 
-/// One change to a document under full synchronisation: its whole new text.
+/// One change to a document: the text replacing a range of it, or, with no
+/// range, the document's whole new text.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct ContentChange
 {
-    /// The document's whole text after the change.
+    /// The range the text replaces; none for the whole document.
+    #[serde(default)]
+    pub range: Option<Range>,
+    /// The text replacing the range, or the document's whole text.
     pub text: String,
 }
 
@@ -196,7 +231,7 @@ impl InitializeResult
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: positions counted in UTF-16 code units; full document
+    /// - ensures: positions counted in UTF-16 code units; incremental document
     ///   synchronisation with open and close notifications; semantic tokens
     ///   over the whole document and over a range, under the legend of
     ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; the server named `gandr` at
@@ -215,7 +250,7 @@ impl InitializeResult
     #[spec(ensures: |ret|
         matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
             && ret.capabilities.text_document_sync.open_close
-            && ret.capabilities.text_document_sync.change.0 == SyncKind::FULL.0
+            && ret.capabilities.text_document_sync.change.0 == SyncKind::INCREMENTAL.0
             && ret.capabilities.semantic_tokens_provider.full
             && ret.capabilities.semantic_tokens_provider.range)]
     #[inline]
@@ -227,7 +262,7 @@ impl InitializeResult
                 position_encoding: "utf-16",
                 text_document_sync: TextDocumentSync {
                     open_close: true,
-                    change: SyncKind::FULL,
+                    change: SyncKind::INCREMENTAL,
                 },
                 semantic_tokens_provider: SemanticTokensProvider {
                     legend: Legend {
@@ -278,8 +313,9 @@ pub struct SyncKind(u8);
 
 impl SyncKind
 {
-    /// Every change carries the whole document.
-    pub const FULL: Self = Self(1);
+    /// A change carries the text replacing one range, or the whole document
+    /// when it names none.
+    pub const INCREMENTAL: Self = Self(2);
 }
 
 /// The semantic-token provider, as advertised.

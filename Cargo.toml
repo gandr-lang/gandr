@@ -62,11 +62,13 @@ publish = false
 # on only because a build or a test failed without it.
 [workspace.dependencies]
 
-# Thread-local heap high-water measurements in the staging example.
+# Thread-local heap high-water measurements in the staging example, and the
+# heap the edit loop keeps in the session's measurement.
 # features:
 # - none: the allocator counter has no optional features.
 # consumers:
 # - core-checker (dev)
+# - surface-session (dev)
 [workspace.dependencies.allocation-counter]
 version = "0.8.1"
 default-features = false
@@ -213,6 +215,7 @@ path = "crates/core-checker"
 # Incremental checking over the core judgement: the item seam, validated
 # resume, content-addressed checkpoints and the synthesis stream.
 # consumers:
+# - surface-lsp
 # - surface-repl
 # - surface-session
 # - surface-tui (dev)
@@ -362,6 +365,7 @@ path = "crates/storage-chunker"
 # - storage-artifact
 # - storage-values (dev)
 # - surface-corpus (dev)
+# - surface-lsp
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-storage-records]
@@ -372,7 +376,6 @@ path = "crates/storage-records"
 # consumers:
 # - surface-diagnostics
 # - surface-dispatcher
-# - surface-lsp
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-corpus]
@@ -483,6 +486,7 @@ path = "crates/surface-repl"
 # The interactive session: each revision lowered, judged, resumed through the
 # incremental checker and checkpointed.
 # consumers:
+# - surface-lsp
 # - surface-repl
 [workspace.dependencies.gandr-surface-session]
 path = "crates/surface-session"

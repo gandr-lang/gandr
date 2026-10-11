@@ -1,25 +1,28 @@
 //! **The language server**: diagnostics and semantic tokens over the Language
 //! Server Protocol, served over any pair of byte streams.
 //!
-//! # Every request rechecks the whole document
+//! # Every synchronisation submits the document to its session
 //!
-//! A synchronisation composes the document whole through the dispatcher's
-//! composition and publishes, as editor diagnostics, the reports the
-//! diagnostics renderer gives that step: the same reports, at the same spans,
-//! under the same refusal names `gandr check --goals` prints. A token request
-//! highlights the document whole through the grammar's role table, the same
-//! classification a terminal face styles. Positions are counted in UTF-16 code
-//! units through the renderer seam's line index. The server keeps nothing
-//! between requests but the open documents' text and the one grammar the
-//! process builds.
+//! Each open document holds a session. A synchronisation applies the
+//! client's changes to the held text — a ranged change replaces its range, a
+//! change naming none the whole text — and submits the text to the session,
+//! whose form store molds only the forms the change touched; the submission
+//! is the dispatcher's composition of the whole text. The server publishes,
+//! as editor diagnostics, the reports the diagnostics renderer gives that
+//! step: the same reports, at the same spans, under the same refusal names
+//! `gandr check --goals` prints. Each synchronisation logs one line: the forms
+//! molded, the items the incremental checker judged, and the wall. A token
+//! request highlights the document whole through the grammar's role table,
+//! the same classification a terminal face styles. Positions are counted in
+//! UTF-16 code units through the renderer seam's line index.
 //!
 //! # The transport is the base protocol, written here
 //!
 //! A frame is a `Content-Length` header block and a JSON-RPC 2.0 body;
-//! [`serve`] reads frames from one stream, handles each, and writes every
-//! answer and notification to the other until `exit`. [`Capabilities`] is what
-//! `initialize` answers, for a client that reads it before starting a
-//! session.
+//! [`serve`] reads frames from one stream, handles each, writes every answer
+//! and notification to the other, and every timing line to the log, until
+//! `exit`. [`Capabilities`] is what `initialize` answers, for a client that
+//! reads it before starting a session.
 //!
 //! # Example
 //!
@@ -40,7 +43,7 @@
 //!     write_frame(&mut input, &Body::from(message.as_bytes().to_vec()))?;
 //! }
 //! let mut output = Vec::new();
-//! let served = serve(&mut Cursor::new(input), &mut output)?;
+//! let served = serve(&mut Cursor::new(input), &mut output, &mut Vec::new())?;
 //! assert_eq!(
 //!     served,
 //!     Served::Clean,

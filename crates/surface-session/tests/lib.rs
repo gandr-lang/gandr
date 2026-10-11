@@ -9,6 +9,8 @@ extern crate alloc;
 mod common;
 #[cfg(test)]
 mod generate;
+#[cfg(test)]
+mod large;
 
 #[cfg(test)]
 mod checkpoint;
@@ -22,6 +24,8 @@ mod diag_attr;
 mod diag_obligations;
 #[cfg(test)]
 mod edit;
+#[cfg(test)]
+mod forms;
 #[cfg(test)]
 mod goals;
 #[cfg(test)]
