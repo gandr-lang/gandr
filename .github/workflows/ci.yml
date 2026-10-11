@@ -81,7 +81,9 @@ jobs:
       #
       # Main promotes queue state into shared caches. Manual test runs warm
       # only their own branch, making a second dispatch a warm measurement.
-      # A promote job that found no state skips the setup.
+      # A promote job that found no state skips the setup. Each platform has
+      # one writer: the plain lane on Linux, the enforcing lane on macOS,
+      # which runs no plain lane.
       - &setup-rust
         id: setup-rust
         name: setup rust
@@ -89,7 +91,7 @@ jobs:
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
-          cache-save: ${{ env.CI_ENFORCING != 'true' && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache-save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       - &install-policy-tools
@@ -103,7 +105,7 @@ jobs:
           version: 2026.10.3
           cache: true
           cache_key: mise-ci-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml', 'mise.lock', 'rust-toolchain.toml') }}
-          cache_save: ${{ env.CI_ENFORCING != 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
+          cache_save: ${{ (env.CI_ENFORCING != 'true' || runner.os == 'macOS') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test'))) }}
       # Policy caches never use a restore prefix: Cargo can consider a library
       # from another Git revision fresh. The metadata revision is in Cargo.toml.
       - &restore-dylint-drivers
@@ -331,10 +333,11 @@ jobs:
           IMAGE_REF: ${{ needs.ci-image-tag.outputs.ref }}
         run: test "$TAG_RESULT" = success && test "$BUILD_RESULT" != failure && echo "ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
 
-  # Plain and enforcing work run independently on each existing platform.
-  # Each flavor owns its compiled state; plain also runs corpus and rustdoc.
-  cargo-test-plain:
-    name: test plain targets (linux)
+  # The enforcing run is the full test pass on each platform. The plain lane
+  # compiles and runs only what enforcement removes, the corpus roots and
+  # rustdoc; plain Clippy covers the rest of the plain graph's compilation.
+  cargo-test-plain-only:
+    name: test plain-only targets (linux)
     needs: &cached-test-needs [changes, ci-image-ref, build-state]
     if: &heavy-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
@@ -345,7 +348,7 @@ jobs:
     container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
-      CI_BUILD_STATE: cargo-test-plain
+      CI_BUILD_STATE: cargo-test-plain-only
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
@@ -358,13 +361,13 @@ jobs:
       - name: build workspace targets
         id: build-workspace
         env:
-          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || 'build:tests' }}
+          CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || 'build:tests-plain-only' }}
         run: mise run "$CI_BUILD_TASK"
       # The enforcing task sets the graph-wide cfg, including host-built
       # macros. Runtime sentinels reject a silently non-enforcing build.
       - name: test workspace targets
         env:
-          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || 'check:tests' }}
+          CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || 'check:tests-plain-only' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
       # Witness discovery lists the enforcing test inventory, so it runs where
@@ -407,9 +410,10 @@ jobs:
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
-  # remains the other hosted platform for both flavors and their verdict.
-  cargo-test-macos-plain:
-    name: test plain targets (macos-arm64)
+  # remains the other hosted platform. Its enforcing run is the full test pass;
+  # the plain delta is platform-neutral and runs on Linux.
+  cargo-test-macos-enforcing:
+    name: test enforcing targets (macos-arm64)
     needs: *cached-test-needs
     if: *heavy-lane
     runs-on: macos-latest
@@ -419,55 +423,45 @@ jobs:
     timeout-minutes: 45
     env:
       CI_INSTALL_TOOLCHAIN: "true"
-      CI_BUILD_STATE: cargo-test-macos-plain
-    steps: *workspace-test-steps
-
-  cargo-test-macos-enforcing:
-    name: test enforcing targets (macos-arm64)
-    needs: *cached-test-needs
-    if: *heavy-lane
-    runs-on: macos-latest
-    permissions: *macos-read-permissions
-    timeout-minutes: 45
-    env:
-      CI_INSTALL_TOOLCHAIN: "true"
       CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
     steps: *workspace-test-steps
 
   # Preserve the required gate identities. These must run after a failed,
-  # skipped or cancelled flavor: accepting either alone would weaken CI.
+  # skipped or cancelled lane: accepting a partial result would weaken CI.
   cargo-test:
     name: test the workspace (linux)
-    needs: [cargo-test-plain, cargo-test-enforcing]
+    needs: [cargo-test-plain-only, cargo-test-enforcing]
     if: &test-verdict ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: {}
     timeout-minutes: 5
     env:
-      PLAIN_RESULT: ${{ needs.cargo-test-plain.result }}
+      PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
       ENFORCING_RESULT: ${{ needs.cargo-test-enforcing.result }}
-    steps: &test-verdict-steps
+    steps:
       - name: require both test flavors
         run: test "$PLAIN_RESULT:$ENFORCING_RESULT" = success:success
 
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: [cargo-test-macos-plain, cargo-test-macos-enforcing]
+    needs: [cargo-test-macos-enforcing]
     if: *test-verdict
     runs-on: macos-latest
     permissions: {}
     timeout-minutes: 5
     env:
-      PLAIN_RESULT: ${{ needs.cargo-test-macos-plain.result }}
       ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
-    steps: *test-verdict-steps
+    steps:
+      - name: require the enforcing test pass
+        run: test "$ENFORCING_RESULT" = success
 
   # Clippy writes check metadata, which a restored build directory does not
   # hold, so this lane restores only the shared crate downloads. Both passes
   # cover the workspace: the plain expansion keeps each predicate as
   # `(true || predicate)` with no panic, which is code the enforcing pass never
-  # lints.
+  # lints. The plain pass is also the plain graph's compile check over every
+  # target, which the plain test lane no longer builds.
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
@@ -634,15 +628,15 @@ jobs:
           --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
           >> "$GITHUB_OUTPUT"
 
-  promote-cargo-test-plain:
+  promote-cargo-test-plain-only:
     name: promote plain build state (linux)
     needs: &promote-needs [build-state, ci-image-ref]
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain--') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-plain-only--') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
-      CI_BUILD_STATE: cargo-test-plain
+      CI_BUILD_STATE: cargo-test-plain-only
     steps: &promote-steps
       - *git-checkout
       - *trust-workspace
@@ -665,17 +659,6 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
-    steps: *promote-steps
-
-  promote-test-macos-plain:
-    name: promote plain build state (macos-arm64)
-    needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-macos-plain--') }}
-    runs-on: macos-latest
-    permissions: *macos-read-permissions
-    env:
-      CI_BUILD_STATE: cargo-test-macos-plain
-      CI_INSTALL_TOOLCHAIN: "true"
     steps: *promote-steps
 
   promote-test-macos-enforcing:
