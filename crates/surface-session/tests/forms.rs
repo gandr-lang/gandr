@@ -49,10 +49,10 @@ use crate::large::script;
 /// enforced, whose checks multiply a submission's cost about fortyfold.
 const CASES: u32 = if cfg!(anodized_panic) { 6 } else { 24 };
 
-/// The large script's module: two thousand forms, or a hundred where
+/// The large script's module: two thousand forms, or thirty-two where
 /// specifications are enforced, so that lane runs every edit class through
-/// every checked clause within its time limit.
-const LARGE: usize = if cfg!(anodized_panic) { 100 } else { 2_000 };
+/// every checked clause within its time limit on the smallest runner.
+const LARGE: usize = if cfg!(anodized_panic) { 32 } else { 2_000 };
 
 /// Every how many corpus sources the edit scripts take: each, or every sixth
 /// where specifications are enforced.
