@@ -1096,20 +1096,20 @@ fn scan_variable_name(
 ///
 /// The interior is a bare parameter name `[A-Za-z0-9_]+` (tree-sitter
 /// `variable_name`); the `${name:-word}` / `${#name}` operator forms are not
-/// scanned yet. A stray non-name, non-`}` byte advances one as a shell
-/// word so the scan stays total on malformed input.
+/// scanned yet. A stray non-name, non-`}` scalar advances by its UTF-8 width
+/// as a shell word, preserving source boundaries on malformed input.
 ///
 /// # Specification
 /// - requires: the cursor identifies a byte in this scanner's lexical domain.
 /// - ensures: scanning advances; the closing brace is punctuation, names are
-///   variable runs and stray bytes are shell words.
+///   variable runs and stray scalars are shell words with complete UTF-8 spans.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — closing braces, parameter-name runs and stray ASCII bytes
-///   at two offsets expose exact class and width. Treating a closer as content
-///   or stopping a name early changes the parameter subtree; multibyte stray
-///   content is outside this witness matrix.
+/// - hypothesis: L3 — closing braces, parameter-name runs and stray scalars of
+///   every UTF-8 width at two offsets expose exact class and width. Treating a
+///   closer as content, stopping a name early or splitting a scalar changes the
+///   parameter subtree or loses source bytes.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 #[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
@@ -1132,9 +1132,9 @@ fn scan_braced_shell_interior(
         ScanResult::new(Lexeme::VariableName, cursor)
     }
     else {
-        // A stray byte inside the braces (not a name char, not `}`): emit one
-        // shell-word byte and stay in brace mode, keeping the scan total.
-        ScanResult::new(Lexeme::ShellWord, pos.advance(ByteWidth::ONE))
+        // Preserve the complete scalar so token spans remain UTF-8 boundaries.
+        let width = bytes.byte(pos).map_or(ByteWidth::ONE, utf8_width);
+        ScanResult::new(Lexeme::ShellWord, pos.advance(width))
     }
 }
 
@@ -2629,6 +2629,9 @@ mod tests
                 ("}x", Lexeme::Punct, 1),
                 ("a9_}", Lexeme::VariableName, 3),
                 (":x", Lexeme::ShellWord, 1),
+                ("éx", Lexeme::ShellWord, 2),
+                ("�x", Lexeme::ShellWord, 3),
+                ("\u{10000}x", Lexeme::ShellWord, 4),
             ]),
             (super::scan_shell_double_interior, &[
                 ("\"x", Lexeme::Punct, 1),
