@@ -781,6 +781,17 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseValue(id));
                     match *node {
+                        | Value::Constructor {
+                            datatype,
+                            ref fields,
+                            ..
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(datatype));
+                            tasks.extend(fields.iter().copied().map(ReachTask::OpenValue));
+                        },
+                        | Value::Record(ref fields) => {
+                            tasks.extend(fields.values().copied().map(ReachTask::OpenValue));
+                        },
                         | Value::Variable(_)
                         | Value::Constant(_)
                         | Value::Unit
@@ -835,6 +846,18 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseComp(id));
                     match *node {
+                        | Computation::DataCase {
+                            scrutinee,
+                            motive,
+                            ref branches,
+                        } => {
+                            tasks.push(ReachTask::OpenValue(scrutinee));
+                            tasks.push(ReachTask::OpenCompType(motive));
+                            tasks.extend(branches.iter().copied().map(ReachTask::OpenComp));
+                        },
+                        | Computation::RecordProjection(record, _) => {
+                            tasks.push(ReachTask::OpenValue(record));
+                        },
                         | Computation::Transport(path, value) => {
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
@@ -879,6 +902,12 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseValueType(id));
                     match *node {
+                        | ValueType::Data { ref arguments, .. } => {
+                            tasks.extend(arguments.iter().copied().map(ReachTask::OpenValue));
+                        },
+                        | ValueType::Record(ref fields) => {
+                            tasks.extend(fields.values().copied().map(ReachTask::OpenValueType));
+                        },
                         | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Empty
@@ -1083,15 +1112,16 @@ impl LooseDepths
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
-    #[spec(ensures: |ret| ret == match arena.value_type(id) {
-        None => LooseDepth::WIDEST,
-        Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => LooseDepth(0),
-        Some(&ValueType::PathUniverse(a, b)) => self.cached_value(a).join(self.cached_value(b)),
-        Some(&ValueType::Product(a, b) | &ValueType::Sum(a, b) | &ValueType::StaticPi { domain: a, codomain: b }) => self.cached_value_type(a).join(self.cached_value_type(b)),
-        Some(&ValueType::Session { payloads: inner, .. } | &ValueType::Lift { inner, .. } | &ValueType::List(inner)) => self.cached_value_type(inner),
-        Some(&ValueType::Thunk(body)) => self.cached_comp_type(body),
-        Some(&ValueType::Element { code, .. }) => self.cached_value(code),
-    })]
+    #[spec(ensures: |ret| ret == arena.value_type(id).map_or(LooseDepth::WIDEST, |matched_native_node| match *matched_native_node {
+ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
+ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
+ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
+ValueType::PathUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
+ValueType::Product(a, b) | ValueType::Sum(a, b) | ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
+ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) => self.cached_value_type(inner),
+ValueType::Thunk(body) => self.cached_comp_type(body),
+ValueType::Element { code, .. } => self.cached_value(code),
+}))]
     fn combine_value_type(
         &self,
         arena: &TermArena,
@@ -1103,6 +1133,14 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | ValueType::Data { ref arguments, .. } => {
+                arguments.iter().fold(LooseDepth(0), |depth, id| {
+                    depth.join(self.cached_value(*id))
+                })
+            },
+            | ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
+                depth.join(self.cached_value_type(*id))
+            }),
             | ValueType::PathUniverse(source, target) => {
                 self.cached_value(source).join(self.cached_value(target))
             },
@@ -1206,18 +1244,19 @@ impl LooseDepths
     /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
-    #[spec(ensures: |ret| ret == match arena.value(id) {
-        None => LooseDepth::WIDEST,
-        Some(&Value::Variable(index)) => LooseDepth(u32::from(index).saturating_add(1)),
-        Some(&Value::Constant(_) | &Value::Unit | &Value::Literal(_)) => LooseDepth(0),
-        Some(&Value::PathEquiv { path_type, forward, backward, .. }) => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
-        Some(&Value::SessionPath { path_type, payload_paths, .. }) => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
-        Some(&Value::PathRefl(body) | &Value::Injection(_, body) | &Value::Lift { body, .. }) => self.cached_value(body),
-        Some(&Value::PathProduct(a, b) | &Value::Pair(a, b) | &Value::StaticApplication(a, b)) => self.cached_value(a).join(self.cached_value(b)),
-        Some(&Value::Thunk(body)) => self.cached_comp(body),
-        Some(&Value::Quote(ty)) => self.cached_value_type(ty),
-        Some(&Value::QuoteComputation(ty)) => self.cached_comp_type(ty),
-    })]
+    #[spec(ensures: |ret| ret == arena.value(id).map_or(LooseDepth::WIDEST, |matched_native_node| match *matched_native_node {
+Value::Constructor { datatype, ref fields, .. } => fields.iter().fold(self.cached_value_type(datatype), |depth, id| depth.join(self.cached_value(*id))),
+Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
+Value::Variable(index) => LooseDepth(u32::from(index).saturating_add(1)),
+Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
+Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
+Value::SessionPath { path_type, payload_paths, .. } => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
+Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::PathProduct(a, b) | Value::Pair(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
+Value::Thunk(body) => self.cached_comp(body),
+Value::Quote(ty) => self.cached_value_type(ty),
+Value::QuoteComputation(ty) => self.cached_comp_type(ty),
+}))]
     fn combine_value(
         &self,
         arena: &TermArena,
@@ -1229,6 +1268,18 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | Value::Constructor {
+                datatype,
+                ref fields,
+                ..
+            } => fields
+                .iter()
+                .fold(self.cached_value_type(datatype), |depth, id| {
+                    depth.join(self.cached_value(*id))
+                }),
+            | Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| {
+                depth.join(self.cached_value(*id))
+            }),
             | Value::Variable(index) => {
                 // reason: an unrepresentable reach conservatively uses the whole context.
                 LooseDepth(u32::from(arith::saturating_add(
@@ -1295,6 +1346,8 @@ impl LooseDepths
     /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     #[spec(ensures: |ret| ret == match arena.computation(id) {
+        Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
+        Some(&Computation::RecordProjection(record, _)) => self.cached_value(record),
         None => LooseDepth::WIDEST,
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
         Some(&Computation::Lambda(body)) => self.cached_comp(body).under_binder(),
@@ -1314,6 +1367,16 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+            } => branches.iter().fold(
+                self.cached_value(scrutinee)
+                    .join(self.cached_comp_type(motive).under_binder()),
+                |depth, id| depth.join(self.cached_comp(*id)),
+            ),
+            | Computation::RecordProjection(record, _) => self.cached_value(record),
             | Computation::Transport(path, value) => {
                 self.cached_value(path).join(self.cached_value(value))
             },

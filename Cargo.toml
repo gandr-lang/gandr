@@ -296,6 +296,7 @@ default-features = false
 # - storage-artifact (dev)
 # - surface-lowering
 # - surface-pretty
+# - surface-session (dev)
 [workspace.dependencies.gandr-kernel-strata]
 path = "crates/kernel-strata"
 

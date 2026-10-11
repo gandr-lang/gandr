@@ -145,6 +145,8 @@ pub enum GuardTag
     Force,
     /// A static application stacked on a spine.
     StaticApply,
+    /// A structural record in canonical label order.
+    Record,
 }
 
 /// The FNV-1a 64-bit offset basis.
@@ -232,20 +234,23 @@ impl Guard
     /// - witness: `guard::tests::a_flexible_child_makes_its_parent_flexible`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| matches!(ret, Self::Flexible)
-        == children.iter().any(|child| matches!(child, Self::Flexible)))]
-    pub(crate) fn compose<Content>(
+    #[spec(captures: flexible = children.clone().into_iter().any(|child| matches!(core::borrow::Borrow::<Self>::borrow(&child),Self::Flexible)),
+        ensures: |ret| matches!(ret,Self::Flexible) == flexible)]
+    pub(crate) fn compose<Content, Children>(
         tag: GuardTag,
         content: &Content,
-        children: &[Self],
+        children: Children,
     ) -> Self
     where
         Content: Hash + ?Sized,
+        Children: IntoIterator + Clone,
+        Children::Item: core::borrow::Borrow<Self>,
     {
         let mut fold = Fold(FNV_OFFSET);
         tag.hash(&mut fold);
         content.hash(&mut fold);
-        for &child in children {
+        for child in children {
+            let child = *core::borrow::Borrow::<Self>::borrow(&child);
             match child {
                 | Self::Rigid(ContentHash(hash)) => fold.write_u64(hash),
                 | Self::Flexible => return Self::Flexible,

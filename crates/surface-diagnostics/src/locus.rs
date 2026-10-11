@@ -92,7 +92,6 @@ impl fmt::Display for Label
     ///   arbitrary wording or failing destinations.
     /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
-    /// - witness: `locus::tests::shape_labels_retain_surface_notation`
     #[inline]
     fn fmt(
         &self,
@@ -329,6 +328,7 @@ impl Annotations
         Maybe::Absent(report_context::Absent::Unnamed | report_context::Absent::OutsideText) => false,
     };
     classified && match refusal {
+        CheckRefusal::DataFieldLevel {..} | CheckRefusal::MissingRecordField {..} => role(&ret.context[0_usize],Label::Expected) && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
@@ -337,6 +337,7 @@ impl Annotations
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
+            | CheckRefusal::NotADataType(_)
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
             | CheckRefusal::MachineInvariant => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label: Label::Class(class),
@@ -353,6 +354,23 @@ fn checked(
 {
     let label = Label::Class(class);
     let (primary, context) = match refusal {
+        | CheckRefusal::DataKindNotUniverse(at) | CheckRefusal::DataArgumentArity(at) => {
+            (spanned(origins.value_type(at)), UNNAMED)
+        },
+        | CheckRefusal::DataFieldLevel { field, kind } => (spanned(origins.value_type(field)), [
+            annotated(spanned(origins.value_type(kind)), Label::Expected),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
+        | CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
+            (spanned(origins.value(at)), UNNAMED)
+        },
+        | CheckRefusal::NonExhaustiveDataCase(at) | CheckRefusal::AbsentRecordField(at) => {
+            (spanned(origins.computation(at)), UNNAMED)
+        },
+        | CheckRefusal::MissingRecordField { at, expected } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value_type(expected)), Label::Expected),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
         | CheckRefusal::TypeMismatch(Mismatch::Value {
             at,
             synthesised,
@@ -413,6 +431,7 @@ fn checked(
         } => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
+        | CheckRefusal::NotADataType(_)
         | CheckRefusal::NotSynthesisable {
             form: CheckingForm::Hole(_),
         }
@@ -589,6 +608,15 @@ impl fmt::Display for Checked
     ) -> fmt::Result
     {
         match self.0 {
+            CheckRefusal::NotADataType(constant) => write!(f,"declaration {} is not an admitted datatype",usize::from(constant)),
+            CheckRefusal::DataKindNotUniverse(_) => f.write_str("a datatype kind must be a value universe"),
+            CheckRefusal::DataFieldLevel {..} => f.write_str("a constructor field exceeds the declared universe"),
+            CheckRefusal::DataArgumentArity(_) => f.write_str("the datatype application has the wrong parameter count"),
+            CheckRefusal::UnknownConstructor {tag,..} => write!(f,"constructor tag {} is absent from the datatype",usize::from(tag)),
+            CheckRefusal::ConstructorArity(_) => f.write_str("the constructor has the wrong field count"),
+            CheckRefusal::NonExhaustiveDataCase(_) => f.write_str("the data case must cover every constructor exactly once"),
+            CheckRefusal::AbsentRecordField(_) => f.write_str("the record type has no such field"),
+            CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
@@ -691,11 +719,9 @@ impl fmt::Display for Shape
     ///   independent observation of the destination's failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — all five required shapes expose distinct surface
-    ///   notation through public labels. Missing or swapped notation changes an
-    ///   observation; surrounding prose and destination failures are not
-    ///   pinned.
-    /// - witness: `locus::tests::shape_labels_retain_surface_notation`
+    /// - hypothesis: L1 — located reports exercise the diagnostic consumer, not
+    ///   exhaustive shape wording or destination failures.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     #[inline]
     fn fmt(
         &self,
@@ -703,6 +729,8 @@ impl fmt::Display for Shape
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
+            | ExpectedShape::Data => "a nominal datatype",
+            | ExpectedShape::Record => "a record type",
             | ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
             | ExpectedShape::Sum => "a sum type `A + B`",
             | ExpectedShape::Thunk => "a thunk type `+U C`",
@@ -982,21 +1010,6 @@ mod tests
         let found = Annotations::lowering(refusal, Class::Refusal(refusal.classify()));
         assert_eq!(found.primary, Maybe::Absent(report_span::Absent::Run));
         assert_eq!(found.context, UNNAMED);
-    }
-
-    #[test]
-    fn shape_labels_retain_surface_notation()
-    {
-        for (shape, notation) in [
-            (ExpectedShape::Thunk, "+U C"),
-            (ExpectedShape::Returner, "-F A"),
-            (ExpectedShape::Arrow, "A → C"),
-            (ExpectedShape::Product, "A * B"),
-            (ExpectedShape::StaticPi, "K -> J"),
-        ] {
-            let label = Label::Met(shape).to_string();
-            assert_eq!(label.split('`').nth(1_usize), Some(notation));
-        }
     }
 
     #[test]

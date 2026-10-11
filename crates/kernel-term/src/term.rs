@@ -182,6 +182,18 @@ pub enum Side
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Value
 {
+    /// A datatype constructor with an explicit instantiated classifier.
+    Constructor
+    {
+        /// The nominal datatype application.
+        datatype: ValueTypeId,
+        /// Position in the declaration's constructor table.
+        tag: crate::ConstructorTag,
+        /// Constructor fields in declaration order.
+        fields: alloc::vec::Vec<ValueId>,
+    },
+    /// A structural record in canonical label order.
+    Record(alloc::collections::BTreeMap<crate::FieldLabel, ValueId>),
     /// A session bisimulation inhabiting a native `Path_U` classifier.
     SessionPath
     {
@@ -277,6 +289,18 @@ pub enum Value
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {
+    /// Eliminate a nominal datatype with a motive under one scrutinee binder.
+    DataCase
+    {
+        /// The value whose datatype determines the constructor table.
+        scrutinee: ValueId,
+        /// Result classifier under the scrutinee binder.
+        motive: CompTypeId,
+        /// One branch per constructor, each binding its fields in order.
+        branches: alloc::vec::Vec<ComputationId>,
+    },
+    /// Return one named field of a structural record.
+    RecordProjection(ValueId, crate::FieldLabel),
     /// Empty elimination: checks against any computation type when its
     /// scrutinee checks at Empty. There is no beta rule.
     Absurd(ValueId),
@@ -517,5 +541,67 @@ mod tests
                 "unknown tags and overflowing premises cannot be truncated into accepted evidence"
             );
         }
+    }
+}
+
+/// Position of a constructor within one nominal declaration.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConstructorTag(usize);
+
+impl From<usize> for ConstructorTag
+{
+    /// Preserve the constructor ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<ConstructorTag> for usize
+{
+    /// Read the constructor ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(tag: ConstructorTag) -> Self
+    {
+        tag.0
+    }
+}
+
+/// An exact UTF-8 record label; ordering is lexical, without normalization.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FieldLabel(alloc::string::String);
+
+impl From<alloc::string::String> for FieldLabel
+{
+    /// Preserve the label's exact text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(text: alloc::string::String) -> Self
+    {
+        Self(text)
+    }
+}
+
+impl AsRef<str> for FieldLabel
+{
+    /// Borrow the label text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
     }
 }

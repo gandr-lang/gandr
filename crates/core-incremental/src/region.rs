@@ -508,7 +508,7 @@ impl Program
         self.layout
             .items
             .iter()
-            .map(|item| item.declaration)
+            .map(|item| item.declaration.clone())
             .collect()
     }
 

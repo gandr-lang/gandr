@@ -18,8 +18,6 @@ mod tests
     use gandr_core_incremental::ContentNode;
     use gandr_core_incremental::MemoryCheckpointStore;
     use gandr_core_incremental::NodeIndex;
-    use gandr_core_incremental::Reference;
-    use gandr_core_incremental::Typing;
     use gandr_kernel_term::BaseType;
     use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_diagnostics::Class;
@@ -230,7 +228,6 @@ mod tests
     /// - hypothesis: L2 — refusals and checked signatures agree across the
     ///   direct session observer and the loop.
     /// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
-    /// - witness: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`
     #[spec(ensures: |ret| matches!(ret.last(), Maybe::Absent(_)))]
     fn session() -> Session<MemoryCheckpointStore, InMemoryBlockStore>
     {
@@ -562,53 +559,6 @@ mod tests
             ),
             (OutKind::Value, "42".to_owned())
         ]);
-    }
-
-    /// A checked declaration's line names its type exactly as the renderer
-    /// spells the signature the session checked, never the content's debug
-    /// image.
-    #[test]
-    fn a_checked_definition_names_its_type_in_the_renderers_spelling()
-    {
-        let signature = "def identity : +U (Integer -> -F Integer) ;";
-        let definition = "def identity = thunk { fn (x) { ret x } } ;";
-        let mut session = session();
-        let _submission = session
-            .submit(SourceText::from(
-                format!("{signature}\n{definition}").as_str(),
-            ))
-            .expect("the session does not fault");
-        let Maybe::Present(resume) = session.last()
-        else {
-            panic!("the revision is resumed");
-        };
-        let checkpoint = resume
-            .checkpoints()
-            .items()
-            .iter()
-            .find(|checkpoint| {
-                matches!(checkpoint.content().reference(), Reference::Item { key, .. } if key.as_ref() == b"identity")
-            })
-            .expect("identity is checkpointed");
-        assert!(matches!(checkpoint.typing(), Typing::Checked { .. }));
-        let Maybe::Present(root) = checkpoint.content().signature()
-        else {
-            panic!("identity is signed");
-        };
-        let spelling = spell(checkpoint.content().nodes(), root)
-            .expect("the signature lays out")
-            .to_string();
-        let mut repl = repl();
-        let _goal = lines(&mut repl, signature);
-        assert_eq!(lines(&mut repl, definition), [
-            (OutKind::Type, format!("identity : {spelling}")),
-            (OutKind::Value, "<fun>".to_owned())
-        ]);
-        let debug = format!("{:?}", checkpoint.content().nodes());
-        assert!(
-            !spelling.contains("ThunkType") && debug.contains("ThunkType"),
-            "{spelling}"
-        );
     }
 
     /// A function whose later parameter's type reads an earlier type

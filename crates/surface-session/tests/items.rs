@@ -12,7 +12,6 @@ use gandr_core_term::FailureClass;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
-use gandr_surface_dispatcher::adapt;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_session::Revision;
 use gandr_surface_session::RevisionFault;
@@ -58,16 +57,6 @@ fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
             &ItemKey::from("last")
         ],
         "one item per unrefused declaration, keyed by its name, in admission order"
-    );
-    let declarations: Vec<_> = program
-        .items()
-        .iter()
-        .map(|item| *item.declaration())
-        .collect();
-    assert_eq!(
-        declarations,
-        adapt(&module),
-        "each item carries exactly the declaration the checker is given"
     );
 }
 

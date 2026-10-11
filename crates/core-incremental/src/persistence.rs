@@ -1106,15 +1106,14 @@ fn contents_of(program: &Program) -> Vec<ItemContent>
 #[spec(
     ensures: |ret| match ret {
         | Ok(_) => program.items().iter().all(|item| {
-            let signature = match item.declaration().signature() {
-                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            let body = match item.declaration().body() {
-                | Maybe::Present(id) => program.arena().value(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            signature && body
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+}
         }),
         | Err(error) => matches!(
             error,
@@ -1239,15 +1238,14 @@ pub fn decode_checkpoints(bytes: &CheckpointBytes) -> Result<Checkpoints, Checkp
             .all(|(checkpoint, reference)| checkpoint.content().reference() == reference),
     ensures: |ret| match ret {
         | Ok(_) => program.items().iter().all(|item| {
-            let signature = match item.declaration().signature() {
-                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            let body = match item.declaration().body() {
-                | Maybe::Present(id) => program.arena().value(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            signature && body
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+}
         }),
         | Err(_) => true,
     },
@@ -1296,15 +1294,14 @@ where
 #[spec(
     ensures: |ret| match ret {
         | Ok(_) => program.items().iter().all(|item| {
-            let signature = match item.declaration().signature() {
-                | Maybe::Present(id) => program.arena().value_type(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            let body = match item.declaration().body() {
-                | Maybe::Present(id) => program.arena().value(id).is_some(),
-                | Maybe::Absent(_) => true,
-            };
-            signature && body
+match *(item.declaration().content()) {
+gandr_core_checker::DeclarationContent::Value {ref signature,ref body} => {
+        let signature = match *signature {Maybe::Present(id) => program.arena().value_type(id).is_some(),Maybe::Absent(_) => true};
+        let body = match *body {Maybe::Present(id) => program.arena().value(id).is_some(),Maybe::Absent(_) => true};
+        signature && body
+    },
+gandr_core_checker::DeclarationContent::Data(ref signature) => signature.parameters().iter().chain(signature.constructors().iter().flatten()).chain(core::iter::once(&signature.kind())).all(|&id| program.arena().value_type(id).is_some()),
+}
         }),
         | Err(_) => true,
     },
@@ -1575,8 +1572,7 @@ mod tests
                 && ret.items().first().is_some_and(|checkpoint| {
                     let content = checkpoint.content();
                     content.nodes().len() == count
-                        && content.signature() == Maybe::Absent(signature::Absent::Unsigned)
-                        && content.body() == Maybe::Present(NodeIndex::from(0_usize))
+                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root)} if *root == NodeIndex::from(0_usize))
                         && checkpoint.support().is_empty()
                         && matches!(checkpoint.typing(), &Typing::Owed)
                         && match *content.reference() {
@@ -1596,8 +1592,10 @@ mod tests
                 key: ItemKey::from("hand"),
                 occurrence: Occurrence::from(0_usize),
             },
-            Maybe::Absent(signature::Absent::Unsigned),
-            Maybe::Present(NodeIndex::from(0_usize)),
+            crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+            },
             nodes,
         );
         let footprint = footprint_of(&content);
@@ -1685,7 +1683,7 @@ mod tests
         ensures: |ret| {
             ret.items().len() == 1
                 && ret.items().first().is_some_and(|item| {
-                    item.declaration().signature() == signature && item.declaration().body() == body
+                    matches!(item.declaration().content(), gandr_core_checker::DeclarationContent::Value {signature:held_signature,body:held_body} if *held_signature == signature && *held_body == body)
                 })
                 && ret
                     .references()
@@ -1719,6 +1717,16 @@ mod tests
     fn kind(typing: &Typing) -> Key
     {
         Key(match *typing {
+            | Typing::Data => "data",
+            | Typing::Refused(Refusal::NotADataType(_)) => "not-a-data-type",
+            | Typing::Refused(Refusal::DataKindNotUniverse(_)) => "data-kind-not-universe",
+            | Typing::Refused(Refusal::DataFieldLevel { .. }) => "data-field-level",
+            | Typing::Refused(Refusal::DataArgumentArity(_)) => "data-argument-arity",
+            | Typing::Refused(Refusal::UnknownConstructor { .. }) => "unknown-constructor",
+            | Typing::Refused(Refusal::ConstructorArity(_)) => "constructor-arity",
+            | Typing::Refused(Refusal::NonExhaustiveDataCase(_)) => "non-exhaustive-data-case",
+            | Typing::Refused(Refusal::AbsentRecordField(_)) => "absent-record-field",
+            | Typing::Refused(Refusal::MissingRecordField { .. }) => "missing-record-field",
             | Typing::Checked { .. } => "checked",
             | Typing::Synthesised { .. } => "synthesised",
             | Typing::Owed => "owed",

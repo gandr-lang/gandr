@@ -94,6 +94,16 @@ impl From<FragmentRefusal> for CheckRefusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ValueTypeView<'arena>
 {
+    /// A nominal identity applied to genuine value arguments.
+    Data
+    {
+        /// The admission position defining the datatype.
+        declaration: gandr_kernel_term::ConstantIndex,
+        /// Arguments in telescope order.
+        arguments: &'arena [ValueId],
+    },
+    /// Structural record fields in exact label order.
+    Record(&'arena alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>),
     /// A native universe-path classifier over two codes.
     PathUniverse(ValueId, ValueId),
     /// A sum of two value types.
@@ -206,6 +216,8 @@ pub enum CompTypeView<'arena>
 /// - witness: `formation::tests::abstract_sort_raises_the_exact_variant`
 /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
 #[spec(ensures: |ret| match ret {
+    | Ok(ValueTypeView::Data { declaration, arguments }) => matches!(arena.value_type(value_type), Some(ValueType::Data { declaration: actual, arguments: args }) if *actual == declaration && args == arguments),
+    | Ok(ValueTypeView::Record(fields)) => matches!(arena.value_type(value_type), Some(ValueType::Record(actual)) if actual == fields),
     | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
     | Ok(ValueTypeView::Unit) => matches!(arena.value_type(value_type), Some(ValueType::Unit)),
@@ -237,6 +249,14 @@ pub fn value_type_view(
     };
     let unadmitted = |former| FragmentRefusal::OutOfFragment { at, former };
     match *node {
+        | ValueType::Data {
+            declaration,
+            ref arguments,
+        } => Ok(ValueTypeView::Data {
+            declaration,
+            arguments,
+        }),
+        | ValueType::Record(ref fields) => Ok(ValueTypeView::Record(fields)),
         | ValueType::PathUniverse(source, target) => {
             Ok(ValueTypeView::PathUniverse(source, target))
         },

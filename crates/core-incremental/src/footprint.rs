@@ -211,10 +211,10 @@ enum Position
 /// - witness: `footprint::tests::a_quoted_abstract_type_reads_its_own_reference_in_type_position`
 #[spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
     && ret.opacity == content.opacity()
-    && ret.hole == match content.body() {
-        Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
-        Maybe::Present(_) => HoleMark::Filled,
-    })]
+    && ret.hole == match *(content.declaration()) {
+crate::content::DeclarationRoots::Value { body:Maybe::Absent(body::Absent::Hole),.. } => HoleMark::Hole,
+crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) => HoleMark::Filled,
+})]
 #[inline]
 #[must_use]
 pub fn footprint_of(content: &ItemContent) -> Footprint
@@ -223,12 +223,12 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
     let mut type_reads = BTreeSet::new();
     let mut reached: Vec<[bool; 2]> = alloc::vec![[false; 2]; content.nodes().len()];
     let mut queue = VecDeque::new();
-    if let Maybe::Present(root) = content.signature() {
-        queue.push_back((root, Position::Type));
-    }
-    if let Maybe::Present(root) = content.body() {
-        queue.push_back((root, Position::Term));
-    }
+    queue.extend(content.declaration().iter().map(|(root, sort)| {
+        (root, match sort {
+            | Sort::ValueType | Sort::CompType => Position::Type,
+            | Sort::Value | Sort::Computation => Position::Term,
+        })
+    }));
     while let Some((index, position)) = queue.pop_front() {
         let (Some(marks), Some(node)) = (
             reached.get_mut(usize::from(index)),
@@ -261,9 +261,16 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
         reads,
         type_reads,
         opacity: content.opacity(),
-        hole: match content.body() {
-            | Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
-            | Maybe::Present(_) => HoleMark::Filled,
+        hole: match *(content.declaration()) {
+            | crate::content::DeclarationRoots::Value {
+                body: Maybe::Absent(body::Absent::Hole),
+                ..
+            } => HoleMark::Hole,
+            | crate::content::DeclarationRoots::Value {
+                body: Maybe::Present(_),
+                ..
+            }
+            | crate::content::DeclarationRoots::Data(_) => HoleMark::Filled,
         },
     }
 }
@@ -551,8 +558,10 @@ mod tests
         let key = ItemKey::from("reachable");
         let cyclic = super::ItemContent::from_parts(
             Reference::Unoccupied,
-            Maybe::Absent(signature::Absent::Unsigned),
-            Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+            crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+            },
             vec![
                 crate::content::ContentNode::Pair(
                     crate::boundary::NodeIndex::from(0_usize),
@@ -573,8 +582,10 @@ mod tests
 
         let dangling = super::ItemContent::from_parts(
             Reference::Unoccupied,
-            Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
-            Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+            crate::content::DeclarationRoots::Value {
+                signature: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+                body: Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+            },
             vec![crate::content::ContentNode::Unresolved(super::Sort::Value)],
         );
         let footprint = footprint_of(&dangling);
@@ -589,8 +600,10 @@ mod tests
 
         let empty = super::ItemContent::from_parts(
             Reference::Unoccupied,
-            Maybe::Absent(signature::Absent::Unsigned),
-            Maybe::Absent(body::Absent::Hole),
+            crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Absent(body::Absent::Hole),
+            },
             vec![],
         );
         let footprint = footprint_of(&empty);

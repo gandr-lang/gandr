@@ -802,6 +802,7 @@ dependencies = [
  "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-term",
+ "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-storage-artifact",
  "gandr-storage-records",

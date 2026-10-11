@@ -124,6 +124,16 @@ impl fmt::Display for GroundSort
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
+    /// A generative datatype applied to its declaration telescope.
+    Data
+    {
+        /// Admission position of the datatype declaration; never unfolds.
+        declaration: ConstantIndex,
+        /// Arguments in telescope order, including quoted type parameters.
+        arguments: alloc::vec::Vec<ValueId>,
+    },
+    /// A structural record, canonically ordered by field label.
+    Record(alloc::collections::BTreeMap<crate::FieldLabel, ValueTypeId>),
     /// A closed finite session graph with a product telescope of payload codes.
     Session
     {

@@ -118,28 +118,35 @@ pub struct Unfolded(pub u64);
         };
         if opaque { return ret.0 == 1; }
         let minimum = match root {
-            CoreNode::Value(id) => match erased.value(id) {
-                Some(&Value::PathEquiv { .. }) => 4,
-                Some(&Value::Primitive { .. } |
-&(Value::Variable { .. } | Value::Constant(_) | Value::Unit |
-Value::Literal(_))) => 1,
-                Some(&(Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _))) => 3,
-                Some(&(Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_))) => 2,
-                None => return false,
-            },
-            CoreNode::Computation(id) => match erased.computation(id) {
-                Some(&Computation::Primitive { arguments, .. }) => if arguments.len() == 1 { 2 } else { 3 },
-                Some(&(Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_))) => 2,
-                Some(&(Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _))) => 3,
-                Some(&Computation::Case { .. }) => 4,
-                None => return false,
-            },
-            CoreNode::ValueType(id) => match erased.value_type(id) {
-                Some(&(ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_))) => 1,
-                Some(&(ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. })) => 3,
-                Some(&(ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. })) => 2,
-                None => return false,
-            },
+            CoreNode::Value(id) => match erased.value(id) { Some(matched_native_node) => match *matched_native_node {
+Value::Constructor {ref fields,..} => 2_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+Value::PathEquiv { .. } => 4,
+Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) |
+Value::Unit | Value::Literal(_) => 1,
+Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
+Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) => 2,
+},
+None => return false,
+},
+            CoreNode::Computation(id) => match erased.computation(id) { Some(matched_native_node) => match *matched_native_node {
+Computation::DataCase {ref branches,..} => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) => 2,
+Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
+Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
+Computation::Case { .. } => 4,
+},
+None => return false,
+},
+            CoreNode::ValueType(id) => match erased.value_type(id) { Some(matched_native_node) => match *matched_native_node {
+ValueType::Data {ref arguments,..} => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
+ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 1,
+ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. } => 3,
+ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
+},
+None => return false,
+},
             CoreNode::CompType(id) => match erased.comp_type(id) {
                 Some(&(CompType::Returner(_) | CompType::Element { .. })) => 2,
                 Some(&(CompType::Arrow { .. } | CompType::Pi { .. })) => 3,
@@ -172,6 +179,17 @@ pub fn unfolded(
         }
         match node {
             | CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
+                | Value::Constructor {
+                    datatype,
+                    ref fields,
+                    ..
+                } => {
+                    pending.push(CoreNode::ValueType(datatype));
+                    pending.extend(fields.iter().copied().map(CoreNode::Value));
+                },
+                | Value::Record(ref fields) => {
+                    pending.extend(fields.values().copied().map(CoreNode::Value));
+                },
                 | Value::PathEquiv {
                     path_type,
                     forward,
@@ -206,6 +224,17 @@ pub fn unfolded(
                     .computation(id)
                     .expect("an erased computation resolves")
                 {
+                    | Computation::DataCase {
+                        scrutinee,
+                        motive,
+                        ref branches,
+                    } => {
+                        pending.extend([CoreNode::Value(scrutinee), CoreNode::CompType(motive)]);
+                        pending.extend(branches.iter().copied().map(CoreNode::Computation));
+                    },
+                    | Computation::RecordProjection(record, _) => {
+                        pending.push(CoreNode::Value(record));
+                    },
                     | Computation::Primitive { arguments, .. } => {
                         pending.extend(arguments.iter().copied().map(CoreNode::Value));
                     },
@@ -240,6 +269,12 @@ pub fn unfolded(
                     .value_type(id)
                     .expect("an erased value type resolves")
                 {
+                    | ValueType::Data { ref arguments, .. } => {
+                        pending.extend(arguments.iter().copied().map(CoreNode::Value));
+                    },
+                    | ValueType::Record(ref fields) => {
+                        pending.extend(fields.values().copied().map(CoreNode::ValueType));
+                    },
                     | ValueType::PathUniverse(source, target) => {
                         pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
                     },

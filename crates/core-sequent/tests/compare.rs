@@ -115,7 +115,7 @@ pub fn same_value(
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
             | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
-            | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) => ret == Agreement::Differ,
+            Value::Constructor { .. } | Value::Record(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },

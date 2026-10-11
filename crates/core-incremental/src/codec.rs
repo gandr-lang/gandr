@@ -75,9 +75,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x04";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x05";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x02";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x03";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1219,6 +1219,47 @@ where
     Out: Sink,
 {
     match *node {
+        | ContentNode::Data {
+            ref declaration,
+            ref arguments,
+        } => {
+            writer.tag(Tag(0x50));
+            write_reference(writer, declaration)?;
+            write_indices(writer, arguments)?;
+        },
+        | ContentNode::RecordType(ref fields) => {
+            writer.tag(Tag(0x51));
+            write_fields(writer, fields)?;
+        },
+        | ContentNode::Constructor {
+            datatype,
+            tag,
+            ref fields,
+        } => {
+            writer.tag(Tag(0x52));
+            write_index(writer, datatype)?;
+            writer.count(Count(usize::from(tag)))?;
+            write_indices(writer, fields)?;
+        },
+        | ContentNode::Record(ref fields) => {
+            writer.tag(Tag(0x53));
+            write_fields(writer, fields)?;
+        },
+        | ContentNode::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+        } => {
+            writer.tag(Tag(0x54));
+            write_index(writer, scrutinee)?;
+            write_index(writer, motive)?;
+            write_indices(writer, branches)?;
+        },
+        | ContentNode::RecordProjection(record, ref label) => {
+            writer.tag(Tag(0x55));
+            write_index(writer, record)?;
+            writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        },
         | ContentNode::PrimitiveValue(primitive) => {
             writer.tag(Tag(0x0D));
             writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
@@ -1450,6 +1491,227 @@ where
     Ok(())
 }
 
+/// Write a variadic sequence of child indices.
+///
+/// # Specification
+/// - ensures: the sequence length precedes its indices in order.
+/// - fails: an unrepresentable length or index.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native round trips distinguish argument and branch order.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+fn write_indices<Out>(
+    writer: &mut Writer<'_, Out>,
+    indices: &[NodeIndex],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(indices.len()))?;
+    for &index in indices {
+        write_index(writer, index)?;
+    }
+    Ok(())
+}
+
+/// Read child indices without allocating from an untrusted count.
+///
+/// # Specification
+/// - ensures: a successful result consumes a count and exactly its indices.
+/// - fails: malformed or truncated words.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native round trips retain variadic order and reject
+///   truncation.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.as_ref().map_or(true,|indices| reader.cursor == before.saturating_add(8).saturating_add(indices.len().saturating_mul(8))))]
+fn read_indices(reader: &mut Reader<'_>) -> Result<Vec<NodeIndex>, CodecError>
+{
+    let count = reader.count()?;
+    let mut indices = Vec::new();
+    for _ in 0 .. count.0 {
+        indices.push(read_index(reader)?);
+    }
+    Ok(indices)
+}
+
+/// Read one exact UTF-8 field label.
+///
+/// # Specification
+/// - ensures: successful reads advance over one length-prefixed string.
+/// - fails: invalid UTF-8 or a truncated frame.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native records preserve exact labels across persistence.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.as_ref().map_or(true,|label| reader.cursor == before.saturating_add(8).saturating_add(label.as_ref().len())))]
+fn read_field_label(reader: &mut Reader<'_>) -> Result<gandr_core_term::FieldLabel, CodecError>
+{
+    let bytes = reader.bytes()?;
+    let text = core::str::from_utf8(bytes.0).map_err(|_cause| CodecError::Corrupt)?;
+    Ok(gandr_core_term::FieldLabel::from(String::from(text)))
+}
+
+/// Write record labels and children in lexical order.
+///
+/// # Specification
+/// - ensures: every exact label and child follows the field count.
+/// - fails: an unrepresentable count, string length or index.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — record persistence retains labels and field association.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+fn write_fields<Out>(
+    writer: &mut Writer<'_, Out>,
+    fields: &alloc::collections::BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(fields.len()))?;
+    for (label, &field) in fields {
+        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        write_index(writer, field)?;
+    }
+    Ok(())
+}
+
+/// Read record fields, refusing duplicate or out-of-order labels.
+///
+/// # Specification
+/// - ensures: a successful table has one child for each strictly ordered label.
+/// - fails: malformed fields or noncanonical label order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — duplicate labels cannot silently overwrite a record
+///   field.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(8))]
+fn read_fields(
+    reader: &mut Reader<'_>
+) -> Result<alloc::collections::BTreeMap<gandr_core_term::FieldLabel, NodeIndex>, CodecError>
+{
+    let count = reader.count()?;
+    let mut fields = alloc::collections::BTreeMap::new();
+    for _ in 0 .. count.0 {
+        let label = read_field_label(reader)?;
+        if fields
+            .last_key_value()
+            .is_some_and(|(previous, _)| previous >= &label)
+        {
+            return Err(CodecError::NonCanonical);
+        }
+        let field = read_index(reader)?;
+        let _previous = fields.insert(label, field);
+    }
+    Ok(fields)
+}
+
+/// Write every root of a nominal signature.
+///
+/// # Specification
+/// - ensures: parameters, constructor rows and kind retain their order.
+/// - fails: an unrepresentable count or index.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — signatures with equal kinds but unequal constructors stay
+///   distinct.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+fn write_data_roots<Out>(
+    writer: &mut Writer<'_, Out>,
+    roots: &crate::content::DataRoots,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_indices(writer, &roots.parameters)?;
+    writer.count(Count(roots.constructors.len()))?;
+    for fields in &roots.constructors {
+        write_indices(writer, fields)?;
+    }
+    write_index(writer, roots.kind)
+}
+
+/// Read all nominal roots without allocating from untrusted counts.
+///
+/// # Specification
+/// - ensures: successful reads consume parameters, constructor rows and kind.
+/// - fails: truncated or malformed root frames.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nominal round trips retain the complete constructor
+///   table.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(captures:[before=reader.cursor],ensures: |ret| ret.is_err() || reader.cursor >= before.saturating_add(24))]
+fn read_data_roots(reader: &mut Reader<'_>) -> Result<crate::content::DataRoots, CodecError>
+{
+    let parameters = read_indices(reader)?;
+    let count = reader.count()?;
+    let mut constructors = Vec::new();
+    for _ in 0 .. count.0 {
+        constructors.push(read_indices(reader)?);
+    }
+    let kind = read_index(reader)?;
+    Ok(crate::content::DataRoots {
+        parameters,
+        constructors,
+        kind,
+    })
+}
+
+/// Write a nominal signature's roots and shared node table.
+///
+/// # Specification
+/// - ensures: successful writes retain every signature root and reachable node.
+/// - fails: unrepresentable or process-local content.
+/// - executable: none — a generic sink exposes no byte observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted support distinguishes equal-kind constructor
+///   edits.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+fn write_data_content<Out>(
+    writer: &mut Writer<'_, Out>,
+    content: &crate::content::DataContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    write_data_roots(writer, content.roots())?;
+    write_nodes(writer, content.nodes())
+}
+
+/// Read and validate a complete nominal signature table.
+///
+/// # Specification
+/// - ensures: every signature root is a value type in a discovery-numbered
+///   table.
+/// - fails: malformed, ill-sorted or noncanonical content.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native checkpoints preserve signatures and reject
+///   malformed roots.
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+#[spec(ensures: |ret| ret.as_ref().map_or(true,|content| content.roots().iter().all(|root| content.nodes().get(usize::from(root)).is_some_and(|node| node.sort() == Sort::ValueType))))]
+fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataContent, CodecError>
+{
+    let roots = read_data_roots(reader)?;
+    let nodes = read_nodes(reader)?;
+    for root in roots.iter() {
+        root_of_sort(&nodes, root, Sort::ValueType)?;
+    }
+    check_discovery(&nodes, roots.iter())?;
+    Ok(crate::content::DataContent::from_parts(roots, nodes))
+}
+
 /// Read one content node.
 ///
 /// # Specification
@@ -1474,6 +1736,12 @@ where
             reader.cursor > before
                 && reader.cursor <= reader.bytes.len()
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
+                    ContentNode::Data { .. } => tag == 0x50,
+                    ContentNode::RecordType(_) => tag == 0x51,
+                    ContentNode::Constructor { .. } => tag == 0x52,
+                    ContentNode::Record(_) => tag == 0x53,
+                    ContentNode::DataCase { .. } => tag == 0x54,
+                    ContentNode::RecordProjection(..) => tag == 0x55,
                     | ContentNode::PrimitiveValue(_) => tag == 0x0D,
                     | ContentNode::Primitive(..) => tag == 0x16,
                     | ContentNode::PathUniverse(..) => tag == 0x40,
@@ -1530,13 +1798,30 @@ where
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
             u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
         },
-        | Err(error) => error == CodecError::Corrupt,
+        | Err(error) => matches!(error,CodecError::Corrupt | CodecError::NonCanonical),
     },
 )]
 fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 {
     let tag = reader.tag()?;
     let node = match tag.0 {
+        | 0x50 => ContentNode::Data {
+            declaration: read_reference(reader)?,
+            arguments: read_indices(reader)?,
+        },
+        | 0x51 => ContentNode::RecordType(read_fields(reader)?),
+        | 0x52 => ContentNode::Constructor {
+            datatype: read_index(reader)?,
+            tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
+            fields: read_indices(reader)?,
+        },
+        | 0x53 => ContentNode::Record(read_fields(reader)?),
+        | 0x54 => ContentNode::DataCase {
+            scrutinee: read_index(reader)?,
+            motive: read_index(reader)?,
+            branches: read_indices(reader)?,
+        },
+        | 0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
         | 0x0D | 0x16 => {
             use gandr_core_term::primitive::Arguments;
             use gandr_core_term::primitive::PRELUDE;
@@ -1853,7 +2138,7 @@ where
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
             u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
         },
-        | Err(error) => error == CodecError::Corrupt,
+        | Err(error) => matches!(error,CodecError::Corrupt | CodecError::NonCanonical),
     },
 )]
 fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
@@ -1899,10 +2184,11 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
             .iter()
             .all(|(child, _)| usize::from(child) < nodes.len())
     }),
+    captures:[expected_roots=roots.clone()],
     ensures: |ret| {
         ret == 'discovery: {
             let mut next = 0_usize;
-            for root in roots.iter().copied() {
+            for root in expected_roots.clone() {
                 let index = usize::from(root);
                 if index >= nodes.len() {
                     break 'discovery Err(CodecError::Corrupt);
@@ -1932,10 +2218,12 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
         }
     },
 )]
-fn check_discovery(
+fn check_discovery<Roots>(
     nodes: &[ContentNode],
-    roots: &[NodeIndex],
+    roots: Roots,
 ) -> Result<(), CodecError>
+where
+    Roots: Iterator<Item = NodeIndex> + Clone,
 {
     let mut seen = alloc::vec![false; nodes.len()];
     let mut next = 0_usize;
@@ -1956,7 +2244,7 @@ fn check_discovery(
         }
         Ok(())
     };
-    for &root in roots {
+    for root in roots {
         discover(root, &mut queue)?;
     }
     while let Some(index) = queue.pop_front() {
@@ -2024,19 +2312,31 @@ where
     Out: Sink,
 {
     write_reference(writer, content.reference())?;
-    match content.signature() {
-        | Maybe::Present(root) => {
-            writer.tag(Tag(1));
-            write_index(writer, root)?;
+    match *(content.declaration()) {
+        | crate::content::DeclarationRoots::Value {
+            ref signature,
+            ref body,
+        } => {
+            writer.tag(Tag(0));
+            match *signature {
+                | Maybe::Present(root) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, root)?;
+                },
+                | Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
+            }
+            match *body {
+                | Maybe::Present(root) => {
+                    writer.tag(Tag(1));
+                    write_index(writer, root)?;
+                },
+                | Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
+            }
         },
-        | Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
-    }
-    match content.body() {
-        | Maybe::Present(root) => {
+        | crate::content::DeclarationRoots::Data(ref roots) => {
             writer.tag(Tag(1));
-            write_index(writer, root)?;
+            write_data_roots(writer, roots)?;
         },
-        | Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
     }
     write_nodes(writer, content.nodes())
 }
@@ -2061,16 +2361,7 @@ where
     ensures: |ret| match ret {
         | Ok(ref content) => {
             let nodes = content.nodes();
-            let roots = [
-                match content.signature() {
-                    | Maybe::Present(root) => Some((root, Sort::ValueType)),
-                    | Maybe::Absent(_) => None,
-                },
-                match content.body() {
-                    | Maybe::Present(root) => Some((root, Sort::Value)),
-                    | Maybe::Absent(_) => None,
-                },
-            ];
+            let roots = content.declaration().iter();
             nodes.iter().all(|node| {
                 !matches!(*node, ContentNode::Unresolved(_))
                     && node.children().iter().all(|(child, sort)| {
@@ -2078,13 +2369,13 @@ where
                             .get(usize::from(child))
                             .is_some_and(|found| found.sort() == sort)
                     })
-            }) && roots.iter().flatten().all(|&(root, sort)| {
+            }) && roots.clone().all(|(root, sort)| {
                 nodes
                     .get(usize::from(root))
                     .is_some_and(|node| node.sort() == sort)
             }) && 'discovery: {
                 let mut next = 0_usize;
-                for root in roots.into_iter().flatten().map(|(root, _)| root) {
+                for root in roots.map(|(root, _)| root) {
                     let index = usize::from(root);
                     if index >= nodes.len() {
                         break 'discovery Err(CodecError::Corrupt);
@@ -2123,36 +2414,29 @@ where
 fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
-    let signed = reader.tag()?;
-    let signature = match signed.0 {
-        | 0 => Maybe::Absent(signature::Absent::Unsigned),
-        | 1 => {
-            let root = read_index(reader)?;
-            Maybe::Present(root)
+    let declaration = match reader.tag()?.0 {
+        | 0 => {
+            let signature = match reader.tag()?.0 {
+                | 0 => Maybe::Absent(signature::Absent::Unsigned),
+                | 1 => Maybe::Present(read_index(reader)?),
+                | _ => return Err(CodecError::Corrupt),
+            };
+            let body = match reader.tag()?.0 {
+                | 0 => Maybe::Absent(body::Absent::Hole),
+                | 1 => Maybe::Present(read_index(reader)?),
+                | _ => return Err(CodecError::Corrupt),
+            };
+            crate::content::DeclarationRoots::Value { signature, body }
         },
-        | _ => return Err(CodecError::Corrupt),
-    };
-    let bodied = reader.tag()?;
-    let body = match bodied.0 {
-        | 0 => Maybe::Absent(body::Absent::Hole),
-        | 1 => {
-            let root = read_index(reader)?;
-            Maybe::Present(root)
-        },
+        | 1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     let nodes = read_nodes(reader)?;
-    let mut roots = Vec::with_capacity(2);
-    if let Maybe::Present(root) = signature {
-        root_of_sort(&nodes, root, Sort::ValueType)?;
-        roots.push(root);
+    for (root, sort) in declaration.iter() {
+        root_of_sort(&nodes, root, sort)?;
     }
-    if let Maybe::Present(root) = body {
-        root_of_sort(&nodes, root, Sort::Value)?;
-        roots.push(root);
-    }
-    check_discovery(&nodes, &roots)?;
-    Ok(ItemContent::from_parts(reference, signature, body, nodes))
+    check_discovery(&nodes, declaration.iter().map(|(root, _)| root))?;
+    Ok(ItemContent::from_parts(reference, declaration, nodes))
 }
 
 /// Require that the root `root` of `nodes` has sort `sort`.
@@ -2277,7 +2561,7 @@ fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
         | Some(Sort::ValueType | Sort::CompType) => {},
         | Some(Sort::Value | Sort::Computation) | None => return Err(CodecError::Corrupt),
     }
-    check_discovery(&nodes, &[NodeIndex::from(0_usize)])?;
+    check_discovery(&nodes, core::iter::once(NodeIndex::from(0_usize)))?;
     Ok(TypeContent::from_nodes(nodes))
 }
 
@@ -2576,7 +2860,7 @@ const FORMERS: [UnadmittedFormer; 8] = [
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 7] = [
+const SHAPES: [ExpectedShape; 9] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -2584,6 +2868,8 @@ const SHAPES: [ExpectedShape; 7] = [
     ExpectedShape::StaticPi,
     ExpectedShape::PathUniverse,
     ExpectedShape::Sum,
+    ExpectedShape::Data,
+    ExpectedShape::Record,
 ];
 
 /// Write the position of `wanted` in `table` as a tag.
@@ -2704,7 +2990,7 @@ where
                 ref expected,
                 ..
             } => [synthesised.nodes(), expected.nodes()],
-            | Refusal::ShapeMismatch { ref found, .. }
+            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
             | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
             | Refusal::DependentBind {
                 ref synthesised, ..
@@ -2735,6 +3021,45 @@ where
     Out: Sink,
 {
     match *refusal {
+        | Refusal::NotADataType(ref reference) => {
+            writer.tag(Tag(19));
+            write_reference(writer, reference)?;
+        },
+        | Refusal::DataKindNotUniverse(at) => {
+            writer.tag(Tag(20));
+            write_site(writer, at)?;
+        },
+        | Refusal::DataFieldLevel { field, ref kind } => {
+            writer.tag(Tag(21));
+            write_site(writer, field)?;
+            write_type(writer, kind)?;
+        },
+        | Refusal::DataArgumentArity(at) => {
+            writer.tag(Tag(22));
+            write_site(writer, at)?;
+        },
+        | Refusal::UnknownConstructor { at, tag } => {
+            writer.tag(Tag(23));
+            write_site(writer, at)?;
+            writer.count(Count(usize::from(tag)))?;
+        },
+        | Refusal::ConstructorArity(at) => {
+            writer.tag(Tag(24));
+            write_site(writer, at)?;
+        },
+        | Refusal::NonExhaustiveDataCase(at) => {
+            writer.tag(Tag(25));
+            write_site(writer, at)?;
+        },
+        | Refusal::AbsentRecordField(at) => {
+            writer.tag(Tag(26));
+            write_site(writer, at)?;
+        },
+        | Refusal::MissingRecordField { at, ref expected } => {
+            writer.tag(Tag(27));
+            write_site(writer, at)?;
+            write_type(writer, expected)?;
+        },
         | Refusal::PathCode(site) => {
             writer.tag(Tag(18));
             write_site(writer, site)?;
@@ -2961,6 +3286,15 @@ where
         | Ok(ref refusal) => {
             reader.bytes.get(before)
                 == Some(&match *refusal {
+                    Refusal::NotADataType(_) => 19,
+                    Refusal::DataKindNotUniverse(_) => 20,
+                    Refusal::DataFieldLevel {..} => 21,
+                    Refusal::DataArgumentArity(_) => 22,
+                    Refusal::UnknownConstructor {..} => 23,
+                    Refusal::ConstructorArity(_) => 24,
+                    Refusal::NonExhaustiveDataCase(_) => 25,
+                    Refusal::AbsentRecordField(_) => 26,
+                    Refusal::MissingRecordField {..} => 27,
                     | Refusal::TypeMismatch { .. } => 0,
                     | Refusal::ShapeMismatch { .. } => 1,
                     | Refusal::NotSynthesisable { .. } => 2,
@@ -2993,6 +3327,24 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 {
     let tag = reader.tag()?;
     let refusal = match tag.0 {
+        | 19 => Refusal::NotADataType(read_reference(reader)?),
+        | 20 => Refusal::DataKindNotUniverse(read_site(reader)?),
+        | 21 => Refusal::DataFieldLevel {
+            field: read_site(reader)?,
+            kind: read_type(reader)?,
+        },
+        | 22 => Refusal::DataArgumentArity(read_site(reader)?),
+        | 23 => Refusal::UnknownConstructor {
+            at: read_site(reader)?,
+            tag: gandr_core_term::ConstructorTag::from(reader.count()?.0),
+        },
+        | 24 => Refusal::ConstructorArity(read_site(reader)?),
+        | 25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
+        | 26 => Refusal::AbsentRecordField(read_site(reader)?),
+        | 27 => Refusal::MissingRecordField {
+            at: read_site(reader)?,
+            expected: read_type(reader)?,
+        },
         | 0 => {
             let at = read_site(reader)?;
             let synthesised = read_type(reader)?;
@@ -3156,7 +3508,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
     ensures: |ret| match *typing {
-        | Typing::Owed => ret == Ok(()),
+        | Typing::Data | Typing::Owed => ret == Ok(()),
         | Typing::Checked { conversions } => {
             ret == u64::try_from(usize::from(conversions))
                 .map(|_| ())
@@ -3166,6 +3518,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let tables: [&[ContentNode]; 2] = match *typing {
                 | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
                 | Typing::Refused(ref refusal) => match *refusal {
+            Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} => [found.nodes(),&[]],
                     | Refusal::TypeMismatch {
                         ref synthesised,
                         ref expected,
@@ -3195,7 +3548,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                     } => [synthesised.nodes(), &[]],
                     | _ => [&[], &[]],
                 },
-                | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+                | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
             };
             match ret {
                 | Ok(()) => tables
@@ -3222,6 +3575,7 @@ where
     Out: Sink,
 {
     match *typing {
+        | Typing::Data => writer.tag(Tag(4)),
         | Typing::Checked { conversions } => {
             writer.tag(Tag(0));
             writer.count(Count(usize::from(conversions)))?;
@@ -3263,6 +3617,7 @@ where
         | Ok(ref typing) => {
             reader.bytes.get(before)
                 == Some(&match *typing {
+                    Typing::Data => 4,
                     | Typing::Checked { .. } => 0,
                     | Typing::Synthesised { .. } => 1,
                     | Typing::Owed => 2,
@@ -3280,6 +3635,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
+        | 4 => Ok(Typing::Data),
         | 0 => {
             let conversions = reader.count()?;
             Ok(Typing::Checked {
@@ -3315,22 +3671,14 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 #[spec(
-    ensures: |ret| match *answer {
-        | Answer::Untyped => ret == Ok(()),
-        | Answer::Typed(ref ty) => match ret {
-            | Ok(()) => ty
-                .nodes()
-                .iter()
-                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
-            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
-                ty.nodes().iter().find_map(|node| match *node {
-                    | ContentNode::Unresolved(found) => Some(found),
-                    | _ => None,
-                }) == Some(sort)
-            },
-            | Err(CodecError::Unrepresentable) => true,
-            | _ => false,
-        },
+    ensures: |ret| match ret {
+        Ok(()) => answer.nodes().iter().all(|node| !matches!(node,ContentNode::Unresolved(_))),
+        Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node) {
+ContentNode::Unresolved(ref found) => Some(*found),
+_ => None
+}) == Some(sort),
+        Err(CodecError::Unrepresentable) => true,
+        _ => false,
     },
 )]
 fn write_answer<Out>(
@@ -3341,6 +3689,11 @@ where
     Out: Sink,
 {
     match *answer {
+        | Answer::Data(None) => writer.tag(Tag(2)),
+        | Answer::Data(Some(ref signature)) => {
+            writer.tag(Tag(3));
+            write_data_content(writer, signature)?;
+        },
         | Answer::Untyped => writer.tag(Tag(0)),
         | Answer::Typed(ref ty) => {
             writer.tag(Tag(1));
@@ -3353,8 +3706,8 @@ where
 /// Read an answer.
 ///
 /// # Specification
-/// - ensures: tag zero yields an untyped answer; tag one yields a value- or
-///   computation-type table.
+/// - ensures: tags zero and one retain absent and present value-signature
+///   answers; tags two and three retain absent and complete data signatures.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — persisted support contains structured typed answers and
@@ -3366,6 +3719,8 @@ where
 #[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
+        Ok(Answer::Data(None)) => reader.bytes.get(before) == Some(&2),
+        Ok(Answer::Data(Some(_))) => reader.bytes.get(before) == Some(&3),
         | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
         | Ok(Answer::Typed(ref ty)) => {
             reader.bytes.get(before) == Some(&1)
@@ -3385,6 +3740,8 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 {
     let tag = reader.tag()?;
     match tag.0 {
+        | 2 => Ok(Answer::Data(None)),
+        | 3 => Ok(Answer::Data(Some(read_data_content(reader)?))),
         | 0 => Ok(Answer::Untyped),
         | 1 => {
             let ty = read_type(reader)?;
@@ -3413,7 +3770,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
         let tables: [&[ContentNode]; 2] = match *typing {
             | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
             | Typing::Refused(ref refusal) => match *refusal {
-                | Refusal::TypeMismatch {
+            | Refusal::TypeMismatch {
                     ref synthesised,
                     ref expected,
                     ..
@@ -3433,23 +3790,20 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
                     ref expected,
                     ..
                 } => [synthesised.nodes(), expected.nodes()],
-                | Refusal::ShapeMismatch { ref found, .. }
+                Refusal::DataFieldLevel {kind:ref found,..} | Refusal::MissingRecordField {expected:ref found,..} | Refusal::ShapeMismatch { ref found, .. }
                 | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
                 | Refusal::DependentBind {
                     ref synthesised, ..
                 } => [synthesised.nodes(), &[]],
                 | _ => [&[], &[]],
             },
-            | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+            | Typing::Data | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
         };
         let support =
             checkpoint
                 .support()
                 .iter()
-                .flat_map(|answered| match *answered.answer() {
-                    | Answer::Typed(ref ty) => ty.nodes(),
-                    | Answer::Untyped => &[],
-                });
+                .flat_map(|answered| answered.answer().nodes());
         let mut nodes = checkpoint
             .content()
             .nodes()
@@ -3534,7 +3888,7 @@ where
                 && support
                     .iter()
                     .zip(support.iter().skip(1))
-                    .all(|(first, second)| first.reference() < second.reference())
+                    .all(|(first,second)| (first.reference(),first.answer().consultation()) < (second.reference(),second.answer().consultation()))
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
             u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
@@ -3619,6 +3973,13 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
                 ref expected,
                 ..
             } => [Some(synthesised), Some(expected)],
+            | Refusal::DataFieldLevel {
+                kind: ref found, ..
+            }
+            | Refusal::MissingRecordField {
+                expected: ref found,
+                ..
+            }
             | Refusal::ShapeMismatch { ref found, .. }
             | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
             | Refusal::DependentBind {
@@ -3626,15 +3987,12 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             } => [Some(synthesised), None],
             | _ => [None, None],
         },
-        | Typing::Checked { .. } | Typing::Owed => [None, None],
+        | Typing::Data | Typing::Checked { .. } | Typing::Owed => [None, None],
     };
     let support = checkpoint
         .support()
         .iter()
-        .filter_map(|answered| match *answered.answer() {
-            | Answer::Typed(ref content) => Some(content.nodes()),
-            | Answer::Untyped => None,
-        });
+        .map(|answered| answered.answer().nodes());
     let nodes = core::iter::once(checkpoint.content().nodes())
         .chain(support)
         .chain(types.into_iter().flatten().map(TypeContent::nodes))
@@ -4089,20 +4447,20 @@ mod tests
     #[test]
     fn discovery_accepts_cycles_repeated_roots_and_empty_tables()
     {
-        assert_eq!(check_discovery(&[], &[]), Ok(()));
+        assert_eq!(check_discovery(&[], core::iter::empty()), Ok(()));
         let nodes = [
             ContentNode::Product(NodeIndex::from(0_usize), NodeIndex::from(1_usize)),
             ContentNode::UnitType,
         ];
         assert_eq!(
-            check_discovery(&nodes, &[
-                NodeIndex::from(0_usize),
-                NodeIndex::from(0_usize)
-            ]),
+            check_discovery(
+                &nodes,
+                [NodeIndex::from(0_usize), NodeIndex::from(0_usize)].into_iter()
+            ),
             Ok(())
         );
         assert_eq!(
-            check_discovery(&nodes, &[NodeIndex::from(usize::MAX)]),
+            check_discovery(&nodes, [NodeIndex::from(usize::MAX)].into_iter()),
             Err(CodecError::Corrupt)
         );
     }
@@ -4211,7 +4569,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 4, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -4221,14 +4579,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 3;
+        *wrong_version.get_mut(7).expect("version byte") = 4;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x02\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x03\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -4249,8 +4607,10 @@ mod tests
         let encode = |nodes: Vec<ContentNode>, answer, typing| {
             let content = ItemContent::from_parts(
                 Reference::Unoccupied,
-                Maybe::Absent(signature::Absent::Unsigned),
-                Maybe::Present(NodeIndex::from(0_usize)),
+                crate::content::DeclarationRoots::Value {
+                    signature: Maybe::Absent(signature::Absent::Unsigned),
+                    body: Maybe::Present(NodeIndex::from(0_usize)),
+                },
                 nodes,
             );
             let footprint = Footprint::from_parts(
@@ -4486,8 +4846,10 @@ mod tests
         for (nodes, answer, typing) in cases {
             let content = ItemContent::from_parts(
                 Reference::Unoccupied,
-                Maybe::Absent(signature::Absent::Unsigned),
-                Maybe::Present(NodeIndex::from(0_usize)),
+                crate::content::DeclarationRoots::Value {
+                    signature: Maybe::Absent(signature::Absent::Unsigned),
+                    body: Maybe::Present(NodeIndex::from(0_usize)),
+                },
                 nodes,
             );
             let item = ItemCheckpoint::new(
@@ -4592,8 +4954,10 @@ mod tests
         for (answer, typing) in cases {
             let content = ItemContent::from_parts(
                 Reference::Unoccupied,
-                Maybe::Absent(signature::Absent::Unsigned),
-                Maybe::Present(NodeIndex::from(0_usize)),
+                crate::content::DeclarationRoots::Value {
+                    signature: Maybe::Absent(signature::Absent::Unsigned),
+                    body: Maybe::Present(NodeIndex::from(0_usize)),
+                },
                 vec![ContentNode::Unit],
             );
             let item = ItemCheckpoint::new(

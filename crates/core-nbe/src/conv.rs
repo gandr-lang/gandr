@@ -852,6 +852,101 @@ impl<'run> Walk<'run>
         };
         match (one, other) {
             | (
+                DomainValue::Constructor {
+                    datatype: left_code,
+                    tag: left_tag,
+                    fields: left_fields,
+                    ..
+                },
+                DomainValue::Constructor {
+                    datatype: right_code,
+                    tag: right_tag,
+                    fields: right_fields,
+                    ..
+                },
+            ) => {
+                let left_fields = self
+                    .domain
+                    .fields(left_fields)
+                    .map_err(ConversionFault::Domain)?;
+                let right_fields = self
+                    .domain
+                    .fields(right_fields)
+                    .map_err(ConversionFault::Domain)?;
+                if left_tag != right_tag || left_fields.len() != right_fields.len() {
+                    return Ok(Local::Disagree);
+                }
+                match compare_codes(
+                    self.core,
+                    self.domain,
+                    ConstantReading::Unread,
+                    left_code,
+                    right_code,
+                )? {
+                    | CodeComparison::Apart => return Ok(Local::Disagree),
+                    | CodeComparison::Undecided => return Ok(Local::Defer(Deferral::Unfolding)),
+                    | CodeComparison::Equal => {},
+                }
+                self.goals.extend(
+                    left_fields
+                        .iter()
+                        .zip(right_fields)
+                        .rev()
+                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                );
+                Ok(Local::Agree)
+            },
+            | (
+                DomainValue::Record {
+                    source: left_source,
+                    fields: left_fields,
+                    ..
+                },
+                DomainValue::Record {
+                    source: right_source,
+                    fields: right_fields,
+                    ..
+                },
+            ) => {
+                let (Some(left_node), Some(right_node)) =
+                    (self.core.value(left_source), self.core.value(right_source))
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let gandr_core_term::Value::Record(ref left_labels) = *left_node
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let gandr_core_term::Value::Record(ref right_labels) = *right_node
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let left_fields = self
+                    .domain
+                    .fields(left_fields)
+                    .map_err(ConversionFault::Domain)?;
+                let right_fields = self
+                    .domain
+                    .fields(right_fields)
+                    .map_err(ConversionFault::Domain)?;
+                if left_labels.len() != left_fields.len()
+                    || right_labels.len() != right_fields.len()
+                {
+                    return Err(ConversionFault::MachineInvariant);
+                }
+                if !left_labels.keys().eq(right_labels.keys()) {
+                    return Ok(Local::Disagree);
+                }
+                self.goals.extend(
+                    left_fields
+                        .iter()
+                        .zip(right_fields)
+                        .rev()
+                        .map(|(a, b)| Goal::Values(*a, *b, context)),
+                );
+                Ok(Local::Agree)
+            },
+            | (
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
                 DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             ) => Ok(
@@ -1025,6 +1120,8 @@ impl<'run> Walk<'run>
             | (_, DomainValue::Neutral { neutral, .. }) => self.neutral_against_former(neutral),
             | (
                 DomainValue::PathCertificate { .. }
+                | DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
@@ -1226,6 +1323,23 @@ impl<'run> Walk<'run>
         let mut queued = Vec::new();
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
+                | (Elimination::DataCase(left), Elimination::DataCase(right)) => {
+                    let (_, left_branches) =
+                        crate::rules::case_source(self.core, self.domain, left)?;
+                    let (_, right_branches) =
+                        crate::rules::case_source(self.core, self.domain, right)?;
+                    if left_branches.len() != right_branches.len() {
+                        return Ok(mismatch);
+                    }
+                    queued.push(Goal::Closures(left, right));
+                },
+                | (Elimination::RecordProjection(left), Elimination::RecordProjection(right)) => {
+                    if crate::rules::projection_label(self.core, left)?
+                        != crate::rules::projection_label(self.core, right)?
+                    {
+                        return Ok(mismatch);
+                    }
+                },
                 | (
                     Elimination::Transport(left_argument),
                     Elimination::Transport(right_argument),
@@ -1260,6 +1374,8 @@ impl<'run> Walk<'run>
                 },
                 | (
                     Elimination::Transport(_)
+                    | Elimination::DataCase(_)
+                    | Elimination::RecordProjection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::Apply(_)
                     | Elimination::Force
