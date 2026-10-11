@@ -4648,6 +4648,9 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: on [`UnitSeam::Joined`] the source is this state's followed
     ///   by the unit's; on [`UnitSeam::Broken`] the state is unchanged.
     /// - panics: none.
+    /// - economy: the executable check reads this state's buffer lengths and
+    ///   the unit's source, never a copy of this state, so a join costs the
+    ///   unit and not the forms joined before it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
@@ -4658,7 +4661,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
     /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
     #[inline]
-    #[spec(requires: self.live_marks == 0, captures: before = (self.checkpoint(), unit.state.source.clone()), ensures: |ret| match ret { UnitSeam::Broken(_) => self.checkpoint() == before.0, UnitSeam::Joined => self.source.len() == before.0.source.len().saturating_add(before.1.len()) && self.source.ends_with(before.1.as_str()) })]
+    #[spec(requires: self.live_marks == 0, captures: before = (self.source.len(), self.emit.len(), self.stack.len(), self.obligations.len(), self.spaces.len(), unit.state.source.clone()), ensures: |ret| match ret { UnitSeam::Broken(_) => (self.source.len(), self.emit.len(), self.stack.len(), self.obligations.len(), self.spaces.len()) == (before.0, before.1, before.2, before.3, before.4), UnitSeam::Joined => self.source.len() == before.0.saturating_add(before.5.len()) && self.source.ends_with(before.5.as_str()) })]
     pub fn join_unit(
         &mut self,
         unit: FormUnit<'pbg>,
@@ -5228,6 +5231,153 @@ impl<'pbg> FormUnit<'pbg>
     pub(crate) const fn state_mut(&mut self) -> &mut MeldState<'pbg>
     {
         &mut self.state
+    }
+
+    /// Set the unit aside, borrowing no grammar, so a later revision whose
+    /// run has the same identity takes it up instead of molding the run
+    /// again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the parked unit holds the unit's base, the checkpoint of its
+    ///   melder, and whether its fold touched its stand-in.
+    /// - provides: the store side of reusing a form's molding across revisions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source's units, parked and taken up
+    ///   again, join to the whole parse with the seams the fresh units met; a
+    ///   unit whose fold touched its stand-in still breaks its seam once taken
+    ///   up. Dropping the reach, the base or a checkpoint buffer changes a seam
+    ///   or the joined tree.
+    /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.base == self.base && ret.checkpoint == self.state.checkpoint()
+        && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0))]
+    pub fn park(&self) -> ParkedUnit
+    {
+        ParkedUnit {
+            base: self.base,
+            reach: if self.state.low_water == 0 {
+                StandInReach::Reached
+            }
+            else {
+                StandInReach::Untouched
+            },
+            checkpoint: self.state.checkpoint(),
+        }
+    }
+
+    /// Take `parked` up again over `pbg` as the unit for `run`, the run its
+    /// tokens hold in the revision now being parsed.
+    ///
+    /// # Specification
+    /// - requires: `parked` was parked over a grammar with `pbg`'s fingerprint,
+    ///   from a unit whose run had the identity
+    ///   ([`FormSplit::identity`](crate::FormSplit::identity)) `run` has.
+    /// - ensures: a unit for `run` on the parked base whose melder resumes the
+    ///   parked checkpoint and has touched its stand-in exactly when the parked
+    ///   unit had; joining it is joining the unit that was parked.
+    /// - provides: the reuse side of a form's molding across revisions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source's units, parked and taken up
+    ///   again, join to the whole parse with the seams the fresh units met;
+    ///   over edited corpus sources, a run whose identity a parked unit carries
+    ///   molds to that unit. A reach reset on resume would join a unit whose
+    ///   fold reached past its boundary.
+    /// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+    /// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    #[inline]
+    #[must_use]
+    #[spec(requires: parked.checkpoint.fingerprint == pbg.fingerprint(),
+        ensures: |ret| ret.run == run && ret.base == parked.base && ret.state.checkpoint() == parked.checkpoint
+            && (ret.state.low_water == 0) == (parked.reach == StandInReach::Reached))]
+    pub fn resume(
+        pbg: &'pbg Pbg,
+        run: TokenRun,
+        parked: &ParkedUnit,
+    ) -> Self
+    {
+        let mut state = MeldState::resume(pbg, &parked.checkpoint);
+        if parked.reach == StandInReach::Reached {
+            state.low_water = 0;
+        }
+        Self {
+            base: parked.base,
+            run,
+            state,
+        }
+    }
+}
+
+/// Whether a [`FormUnit`]'s fold, dry-runs included, touched its stand-in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StandInReach
+{
+    /// The fold never touched the stand-in: the seam may hold.
+    Untouched,
+    /// The fold touched the stand-in: the seam breaks.
+    Reached,
+}
+
+/// A [`FormUnit`] set aside between revisions: its base, its melder's
+/// checkpoint, and whether its fold touched its stand-in.
+///
+/// A parked unit borrows no grammar and names no token position, so it
+/// outlives the revision it was molded in. [`FormUnit::resume`] takes it up
+/// for whichever run of a later revision has the identity its run had.
+///
+/// # Specification
+/// - requires: constructed by [`FormUnit::park`].
+/// - ensures: holds exactly what joining the unit reads besides its run.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; parking and
+///   resuming carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source's units, parked and taken up again,
+///   join to the whole parse; a parked unit that kept less changes a seam or
+///   the joined tree.
+/// - witness: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`
+/// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParkedUnit
+{
+    /// Where the unit's slope began.
+    base: UnitBase,
+    /// Whether the unit's fold touched its stand-in.
+    reach: StandInReach,
+    /// The unit's melder.
+    checkpoint: Checkpoint,
+}
+
+impl ParkedUnit
+{
+    /// Where the unit's slope began.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> UnitBase
+    {
+        self.base
+    }
+
+    /// The fingerprint of the grammar the unit was molded over.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fingerprint(&self) -> GrammarFingerprint
+    {
+        self.checkpoint.fingerprint
     }
 }
 
@@ -6758,12 +6908,17 @@ mod tests
     use super::CheckpointBytesRef;
     use super::CheckpointError;
     use super::Expected;
+    use super::FormUnit;
     use super::Kind;
     use super::MeldError;
     use super::MeldState;
     use super::MoldedTile;
+    use super::SeamBreak;
     use super::SpaceText;
+    use super::StandInReach;
     use super::TileText;
+    use super::UnitBase;
+    use super::UnitSeam;
     use crate::label::Lexeme;
     use crate::oblig::Oblig;
     use crate::testing::children;
@@ -8571,6 +8726,46 @@ mod tests
 
         assert_eq!(resumed_root, plain_root, "resume yields an identical parse");
         assert_eq!(resumed_obligations, plain_obligations);
+        Ok(())
+    }
+
+    #[test]
+    fn a_parked_unit_keeps_whether_it_reached_its_stand_in() -> Result<(), Box<dyn Error>>
+    {
+        // A unit taken up again meets its seam as the parked unit would: one
+        // whose fold touched its stand-in still breaks, one whose fold did
+        // not still joins.
+        let pbg = built_in()?;
+        let source = SourceText::from("def a = 1;\ndef b = 2;\n");
+        let mut molder = crate::Molder::new(&pbg);
+        let split = crate::FormSplit::new(&molder, source);
+        let &[first, second] = split.runs()
+        else {
+            return Err("the source splits into two runs".into());
+        };
+        for (reach, seam) in [
+            (StandInReach::Untouched, UnitSeam::Joined),
+            (StandInReach::Reached, UnitSeam::Broken(SeamBreak::Reached)),
+        ] {
+            let mut unit = split.mold(&mut molder, second);
+            assert_ne!(unit.state.low_water, 0, "a declaration never reaches back");
+            if reach == StandInReach::Reached {
+                unit.state_mut().low_water = 0;
+            }
+            let parked = unit.park();
+            assert_eq!(parked.reach, reach);
+            assert_eq!(parked.base(), UnitBase::FormBoundary);
+            assert_eq!(parked.fingerprint(), pbg.fingerprint());
+            let resumed = FormUnit::resume(&pbg, second, &parked);
+            assert_eq!(resumed.run(), second);
+            assert_eq!(resumed.park(), parked);
+            let mut whole = MeldState::new(&pbg);
+            assert_eq!(
+                whole.join_unit(split.mold(&mut molder, first)),
+                UnitSeam::Joined
+            );
+            assert_eq!(whole.join_unit(resumed), seam);
+        }
         Ok(())
     }
     #[test]

@@ -645,6 +645,58 @@ fn next_significant(
     None
 }
 
+/// The position after the last token a run ending before `end` reads past
+/// its end: the [`LOOKAHEAD`]-th significant token from `end` on, the spaces
+/// before it included, or the stream's end when fewer remain.
+///
+/// A run's last token is the farthest-reaching: its tie-breaking window
+/// ([`Molder::mold_window`]) begins at `end` and molds at most [`LOOKAHEAD`]
+/// significant tokens, recording the spaces among them and none after the
+/// last; the direct-binder check reads two significant tokens, inside that
+/// window.
+///
+/// # Specification
+/// - requires: nothing; an `end` past the stream reads as the stream's end.
+/// - ensures: the least position at or after `end` whose prefix from `end`
+///   holds [`LOOKAHEAD`] significant tokens, the last of them just before it;
+///   the stream's length when fewer than [`LOOKAHEAD`] remain.
+/// - provides: the extent of the tokens past its run a form unit depends on,
+///   which [`FormSplit::identity`](crate::FormSplit::identity) covers.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — streams of spaced and adjacent significant tokens,
+///   shorter and longer than the window, from every origin; counting spaces
+///   against the window, stopping one short or swallowing the spaces after the
+///   last token moves the reach.
+/// - witness: `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`
+/// - witness: `parse::tests::an_equal_identity_molds_an_equal_unit`
+#[spec(ensures: |ret| usize::from(ret) <= tokens.len()
+    && usize::from(ret) >= usize::from(end).min(tokens.len())
+    && tokens.get(usize::from(end).min(tokens.len()) .. usize::from(ret)).is_some_and(|window|
+        window.iter().filter(|token| token.lexeme != Lexeme::Space).count() == LOOKAHEAD
+            || usize::from(ret) == tokens.len()))]
+pub fn lookahead_reach(
+    tokens: &[Token],
+    end: TokenIndex,
+) -> TokenIndex
+{
+    let mut significant = 0_usize;
+    let mut reach = usize::from(end).min(tokens.len());
+    while significant < LOOKAHEAD {
+        let Some(token) = tokens.get(reach)
+        else {
+            break;
+        };
+        if !matches!(token.lexeme, Lexeme::Space) {
+            significant = significant.saturating_add(1);
+        }
+        reach = reach.saturating_add(1);
+    }
+    TokenIndex::from(reach)
+}
+
 /// The obligation-minimizing mold selector over a checked PBG.
 ///
 /// The molder owns a reusable candidate buffer so the per-token dry-run loop
@@ -2156,6 +2208,52 @@ mod tests
         assert_eq!(
             super::next_significant(&[], super::TokenIndex::from(0_usize)),
             None
+        );
+    }
+
+    #[test]
+    fn a_run_reads_eight_significant_tokens_past_its_end()
+    {
+        // Positions: significant tokens at even positions 0..=20, one space
+        // after each but the last.
+        let tokens = label(SourceFragment::from("a b c d e f g h i j k"));
+        assert_eq!(tokens.len(), 21);
+        for (end, expected) in [
+            // Eight significant tokens from position 0 end at position 14.
+            (0_usize, 15_usize),
+            // From a space, the window still counts only significant tokens.
+            (1, 17),
+            (2, 17),
+            // Exactly eight remain, then fewer: the stream's end.
+            (6, 21),
+            (8, 21),
+            (20, 21),
+            (21, 21),
+            (usize::MAX, 21),
+        ] {
+            assert_eq!(
+                usize::from(super::lookahead_reach(
+                    &tokens,
+                    super::TokenIndex::from(end)
+                )),
+                expected,
+                "from {end}"
+            );
+        }
+        let adjacent = label(SourceFragment::from("((((((((((("));
+        assert_eq!(
+            usize::from(super::lookahead_reach(
+                &adjacent,
+                super::TokenIndex::from(1_usize)
+            )),
+            9
+        );
+        assert_eq!(
+            usize::from(super::lookahead_reach(
+                &[],
+                super::TokenIndex::from(0_usize)
+            )),
+            0
         );
     }
 

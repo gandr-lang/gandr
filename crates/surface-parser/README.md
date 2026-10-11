@@ -20,6 +20,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Commit reads the caller's source](#commit-reads-the-callers-source)
 - [Repair stops at the declaration boundary](#repair-stops-at-the-declaration-boundary)
 - [Forms as units](#forms-as-units)
+  - [A molded form outlives its revision](#a-molded-form-outlives-its-revision)
 - [No recursion over input](#no-recursion-over-input)
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
@@ -52,6 +53,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - `Oblig`, `ObligationInstance`, `Delta`, `DeltaEmptyStatus`, `ObligClassIndex`, `ObligationCount` and `OBLIG_CLASS_COUNT`: the completion-obligation taxonomy and its minimization order. Witnesses: `oblig::tests::severity_ladder_is_low_to_high`, `oblig::tests::higher_severity_class_dominates_the_order`, `oblig::tests::minimization_never_prefers_ambiguous_prec`.
 - `parse`, `ParseResult` and `ParseCleanStatus`: the batch entry point. Witnesses: `tests::acceptance::corpus_molds_to_zero_obligations`, `parse::tests::parse_is_lossless_and_hash_stable`, `parse::tests::arbitrary_source_parses_totally`.
 - `parse_by_form`, `FormSplit`, `FormJoin`, `FormUnit`, `UnitBase`, `UnitSeam` and `SeamBreak`: one source parsed by its top-level forms, each form molded apart from a form-boundary checkpoint and joined into the whole parse. Witnesses: `parse::tests::form_split_parses_as_the_whole_source`, `parse::tests::a_source_splits_before_each_declaration_head`, `parse::tests::arbitrary_source_parses_by_form_as_whole`.
+- `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
 
 ## Expected features
 
@@ -171,6 +173,13 @@ The join decides whether the boundary was real. `MeldState::join_unit` appends a
 
 - Alternatives: re-lexing and parsing each form's text alone reproduces the whole tree on the corpus but makes the form boundary a fact about the corpus, not the parser; resuming each unit from the real state before it serializes the units.
 - Reversal: a grammar change that lets a declaration read the forms before it — a form that continues across a `;` at the top level — breaks the seams; the join still re-molds, and the split stops paying.
+
+### A molded form outlives its revision
+
+A `FormUnit` borrows the split it was molded in. `FormUnit::park` keeps what the join reads of it — its base, whether its fold reached its stand-in, and its melder state as a `Checkpoint` — in a `ParkedUnit` that borrows nothing, and `FormUnit::resume` rebuilds the unit over a run of another revision. Resuming is sound exactly when molding that run would have built the same unit, and `FormSplit::identity` names when: a `FormIdentity` spells everything a molding reads — whether the run starts the source or follows a boundary, each token's class and end relative to the run's start, and the bytes from the run's first token through the eighth significant token past its end, the furthest the molder's lookahead reaches (`lookahead_reach`). Two runs with one identity mold to one unit, so a store keyed by identity serves a unit only where molding would rebuild it.
+
+- Alternatives: a digest of the same window is a fixed-width key at the cost of a hash per form and a collision bound; keying by the run's text alone would serve a unit whose lookahead now reads different tokens.
+- Reversal: a molder whose lookahead grows past eight significant tokens widens the window with it; a store persisted across processes keys by a digest of the identity.
 
 ## No recursion over input
 
