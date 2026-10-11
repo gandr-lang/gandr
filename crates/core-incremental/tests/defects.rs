@@ -323,11 +323,12 @@ fn items_visited_for_a_head_edit_grow_linearly()
         ret.items().len() == 1
             && ret.items().first().is_some_and(|item| {
                 let declaration = item.declaration();
+                let gandr_core_checker::DeclarationContent::Value { ref signature, ref body } = *declaration.content() else { return false; };
                 item.key().as_ref() == b"opaque"
                     && usize::from(declaration.constant()) == 0
                     && usize::from(declaration.origin()) == 0
-                    && declaration.signature() == Maybe::Absent(signature::Absent::Unsigned)
-                    && match declaration.body() {
+                    && *signature == Maybe::Absent(signature::Absent::Unsigned)
+                    && match *body {
                         | Maybe::Present(root) => match ret.arena().value(root) {
                             | Some(&gandr_core_term::Value::Pair(first, second)) => {
                                 ret.arena().value(first).is_some()

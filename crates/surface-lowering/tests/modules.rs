@@ -1010,6 +1010,9 @@ mod modules
             .iter()
             .map(|judged| {
                 let judgement = match judged.verdict() {
+                    | Verdict::Data => {
+                        panic!("native declarations have no source reader in this fixture")
+                    },
                     | Verdict::Checked { .. } => Judgement::Checked,
                     | Verdict::Synthesised { .. } => Judgement::Synthesised,
                     | Verdict::Owed(_) => Judgement::Owed,
@@ -1213,6 +1216,7 @@ mod modules
                 let body = match *marked.declaration().content() {
                     | DeclarationContent::Def { body, .. } => artifact.arena().value(body).cloned(),
                     | DeclarationContent::Axiom { .. }
+                    | DeclarationContent::Data { .. }
                     | DeclarationContent::AbstractType { .. } => None,
                 };
                 let segments = marked

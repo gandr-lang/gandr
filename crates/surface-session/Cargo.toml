@@ -45,6 +45,7 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
 proptest.workspace = true
 

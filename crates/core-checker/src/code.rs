@@ -529,6 +529,8 @@ impl CodeDefinitions
                 (Unfolded::Definition(constant), body)
             },
             | Value::PathRefl(_)
+            | Value::Constructor { .. }
+            | Value::Record(_)
             | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -722,6 +724,23 @@ pub fn loose_reach(
         match node {
             | CoreNode::Term(TermNode::Value(at)) => {
                 match *core.value(at).ok_or_else(|| dangling(node))? {
+                    | Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    } => {
+                        work.push((CoreNode::Type(TypeNode::Value(datatype)), depth));
+                        work.extend(
+                            fields
+                                .iter()
+                                .map(|&field| (CoreNode::Term(TermNode::Value(field)), depth)),
+                        );
+                    },
+                    | Value::Record(ref fields) => work.extend(
+                        fields
+                            .values()
+                            .map(|&field| (CoreNode::Term(TermNode::Value(field)), depth)),
+                    ),
                     | Value::PathEquiv {
                         path_type,
                         forward,
@@ -776,6 +795,22 @@ pub fn loose_reach(
             },
             | CoreNode::Term(TermNode::Computation(at)) => {
                 match *core.computation(at).ok_or_else(|| dangling(node))? {
+                    | Computation::DataCase {
+                        scrutinee,
+                        motive,
+                        ref branches,
+                    } => {
+                        work.push((CoreNode::Term(TermNode::Value(scrutinee)), depth));
+                        work.push((CoreNode::Type(TypeNode::Computation(motive)), under));
+                        work.extend(
+                            branches.iter().map(|&branch| {
+                                (CoreNode::Term(TermNode::Computation(branch)), depth)
+                            }),
+                        );
+                    },
+                    | Computation::RecordProjection(record, _) => {
+                        work.push((CoreNode::Term(TermNode::Value(record)), depth));
+                    },
                     | Computation::Primitive { arguments, .. } => {
                         work.extend(
                             arguments.iter().map(|argument| {
@@ -814,6 +849,16 @@ pub fn loose_reach(
             },
             | CoreNode::Type(TypeNode::Value(at)) => {
                 match *core.value_type(at).ok_or_else(|| dangling(node))? {
+                    | ValueType::Data { ref arguments, .. } => work.extend(
+                        arguments
+                            .iter()
+                            .map(|&argument| (CoreNode::Term(TermNode::Value(argument)), depth)),
+                    ),
+                    | ValueType::Record(ref fields) => work.extend(
+                        fields
+                            .values()
+                            .map(|&field| (CoreNode::Type(TypeNode::Value(field)), depth)),
+                    ),
                     | ValueType::PathUniverse(source, target) => {
                         work.push((CoreNode::Term(TermNode::Value(source)), depth));
                         work.push((CoreNode::Term(TermNode::Value(target)), depth));

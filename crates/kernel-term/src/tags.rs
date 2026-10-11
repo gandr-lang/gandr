@@ -333,6 +333,21 @@ pub const NODE_VT_SESSION: WireTag = WireTag(0x52);
 
 /// Node tag: finite bisimulation, classifier and payload-proof tuple.
 pub const NODE_V_SESSION_PATH: WireTag = WireTag(0x5A);
+
+/// Declaration tag: a generative datatype with a checked constructor table.
+pub const KIND_DATA: WireTag = WireTag(0x06);
+/// Node tag: nominal application with a counted argument vector.
+pub const NODE_VT_DATA: WireTag = WireTag(0x5d);
+/// Node tag: structural record classifier with counted labels and children.
+pub const NODE_VT_RECORD: WireTag = WireTag(0x5e);
+/// Node tag: constructor ordinal and counted field vector.
+pub const NODE_V_CONSTRUCTOR: WireTag = WireTag(0x5f);
+/// Node tag: record literal with counted labels and children.
+pub const NODE_V_RECORD: WireTag = WireTag(0x60);
+/// Node tag: motive-bearing nominal elimination with counted branches.
+pub const NODE_C_DATA_CASE: WireTag = WireTag(0x61);
+/// Node tag: named record projection.
+pub const NODE_C_RECORD_PROJECTION: WireTag = WireTag(0x62);
 /// Reserved tag for persisted recursive inhabitants; currently refused.
 pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
@@ -359,34 +374,13 @@ pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ChildArity(u8);
-
-impl From<ChildArity> for u8
+pub enum ChildArity
 {
-    /// The child count the arity carries.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(arity: ChildArity) -> Self
-    {
-        arity.0
-    }
-}
-
-impl From<ChildArity> for usize
-{
-    /// The child count the arity carries, widened for indexing.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(arity: ChildArity) -> Self
-    {
-        Self::from(arity.0)
-    }
+    /// Exactly this many child references follow the inline payload.
+    Fixed(u8),
+    /// This many fixed children precede an inline-counted child vector.
+    Counted(u8),
 }
 
 /// A count of storage tokens: a tag's own contribution, or the finite bound on
@@ -525,7 +519,7 @@ pub struct NodeTagDescription
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 42 native rows with independently constructed
+/// - hypothesis: L2 compares the native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
 ///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
@@ -537,10 +531,10 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0)
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
-            && ret.child_arity.0 == child_arity.0
+            && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
             && ret.token_contribution.0 == 1
             && match (ret.max_token_bound, max_token_bound) { (Some(actual), Some(expected)) => actual.0 == expected.0, (None, None) => true, _ => false }
             && matches!((ret.alias_verdict, alias_verdict), (NodeTagVerdict::Alias, NodeTagVerdict::Alias) | (NodeTagVerdict::Boundary, NodeTagVerdict::Boundary))
@@ -577,7 +571,7 @@ const fn row(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 42 native rows with independently constructed
+/// - hypothesis: L2 compares the native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
 ///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
@@ -589,10 +583,10 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0)
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
             && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
     ensures: |ret| ret.tag.0 == tag.0
-            && ret.child_arity.0 == child_arity.0
+            && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
             && ret.token_contribution.0 == 1
             && ret.max_token_bound.is_none()
             && matches!(ret.alias_verdict, NodeTagVerdict::Boundary)
@@ -639,7 +633,7 @@ const fn unbounded(
 #[spec(
     requires: match tag { NODE_VT_UNIT | NODE_V_UNIT | NODE_VT_EMPTY => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
     ensures: |ret| ret.tag.0 == tag.0
-            && ret.child_arity.0 == 0
+            && matches!(ret.child_arity, ChildArity::Fixed(0))
             && ret.token_contribution.0 == 1
             && match ret.max_token_bound { Some(actual) => actual.0 == bound.0, None => false }
             && matches!(ret.alias_verdict, NodeTagVerdict::Alias)
@@ -652,7 +646,7 @@ const fn bounded_alias(
 {
     row(
         tag,
-        ChildArity(0),
+        ChildArity::Fixed(0),
         Some(bound),
         NodeTagVerdict::Alias,
         NodeTagVerdict::Alias,
@@ -678,7 +672,7 @@ const fn bounded_alias(
 ///   protocol table.
 ///
 /// # Adequacy
-/// - hypothesis: L2 compares all 42 native rows with independently constructed
+/// - hypothesis: L2 compares the native rows with independently constructed
 ///   arena formers through their child relation. L3 observes the complete tag
 ///   vocabulary, the reserved sharing boundary, one-token contributions,
 ///   finite/unbounded classifications and the base-atom split. These
@@ -689,55 +683,61 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 42] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
     row(
         NODE_VT_BASE,
-        ChildArity(0),
+        ChildArity::Fixed(0),
         Some(TokenCount(2)),
         NodeTagVerdict::Boundary,
         NodeTagVerdict::Alias,
     ),
     bounded_alias(NODE_VT_UNIT, TokenCount(1)),
-    unbounded(NODE_VT_UNIVERSE, ChildArity(0)),
-    unbounded(NODE_VT_PRODUCT, ChildArity(2)),
-    unbounded(NODE_VT_SUM, ChildArity(2)),
-    unbounded(NODE_VT_THUNK, ChildArity(1)),
-    unbounded(NODE_VT_LIFT, ChildArity(1)),
-    unbounded(NODE_CT_RETURNER, ChildArity(1)),
-    unbounded(NODE_CT_ARROW, ChildArity(2)),
+    unbounded(NODE_VT_UNIVERSE, ChildArity::Fixed(0)),
+    unbounded(NODE_VT_PRODUCT, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_SUM, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_THUNK, ChildArity::Fixed(1)),
+    unbounded(NODE_VT_LIFT, ChildArity::Fixed(1)),
+    unbounded(NODE_CT_RETURNER, ChildArity::Fixed(1)),
+    unbounded(NODE_CT_ARROW, ChildArity::Fixed(2)),
     bounded_alias(NODE_V_VARIABLE, TokenCount(2)),
     bounded_alias(NODE_V_CONSTANT, TokenCount(2)),
     bounded_alias(NODE_V_UNIT, TokenCount(1)),
-    unbounded(NODE_V_LITERAL, ChildArity(0)),
-    unbounded(NODE_V_PAIR, ChildArity(2)),
-    unbounded(NODE_V_INJECTION, ChildArity(1)),
-    unbounded(NODE_V_THUNK, ChildArity(1)),
-    unbounded(NODE_V_LIFT, ChildArity(1)),
-    unbounded(NODE_C_LAMBDA, ChildArity(1)),
-    unbounded(NODE_C_APPLICATION, ChildArity(2)),
-    unbounded(NODE_C_RETURN, ChildArity(1)),
-    unbounded(NODE_C_BIND, ChildArity(2)),
-    unbounded(NODE_C_FORCE, ChildArity(1)),
-    unbounded(NODE_C_CASE, ChildArity(3)),
+    unbounded(NODE_V_LITERAL, ChildArity::Fixed(0)),
+    unbounded(NODE_V_PAIR, ChildArity::Fixed(2)),
+    unbounded(NODE_V_INJECTION, ChildArity::Fixed(1)),
+    unbounded(NODE_V_THUNK, ChildArity::Fixed(1)),
+    unbounded(NODE_V_LIFT, ChildArity::Fixed(1)),
+    unbounded(NODE_C_LAMBDA, ChildArity::Fixed(1)),
+    unbounded(NODE_C_APPLICATION, ChildArity::Fixed(2)),
+    unbounded(NODE_C_RETURN, ChildArity::Fixed(1)),
+    unbounded(NODE_C_BIND, ChildArity::Fixed(2)),
+    unbounded(NODE_C_FORCE, ChildArity::Fixed(1)),
+    unbounded(NODE_C_CASE, ChildArity::Fixed(3)),
     bounded_alias(NODE_VT_ABSTRACT, TokenCount(2)),
-    unbounded(NODE_CT_PI, ChildArity(2)),
-    unbounded(NODE_VT_ELEMENT, ChildArity(1)),
-    unbounded(NODE_VT_COMPUTATION_UNIVERSE, ChildArity(0)),
-    unbounded(NODE_CT_ELEMENT, ChildArity(1)),
-    unbounded(NODE_V_QUOTE, ChildArity(1)),
-    unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
-    unbounded(NODE_VT_STATIC_PI, ChildArity(2)),
-    unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
+    unbounded(NODE_CT_PI, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_ELEMENT, ChildArity::Fixed(1)),
+    unbounded(NODE_VT_COMPUTATION_UNIVERSE, ChildArity::Fixed(0)),
+    unbounded(NODE_CT_ELEMENT, ChildArity::Fixed(1)),
+    unbounded(NODE_V_QUOTE, ChildArity::Fixed(1)),
+    unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity::Fixed(1)),
+    unbounded(NODE_VT_STATIC_PI, ChildArity::Fixed(2)),
+    unbounded(NODE_V_STATIC_APPLICATION, ChildArity::Fixed(2)),
     bounded_alias(NODE_VT_EMPTY, TokenCount(1)),
-    unbounded(NODE_C_ABSURD, ChildArity(1)),
-    unbounded(NODE_VT_PATH_UNIVERSE, ChildArity(2)),
-    unbounded(NODE_V_PATH_REFL, ChildArity(1)),
-    unbounded(NODE_V_PATH_EQUIV, ChildArity(3)),
-    unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
-    unbounded(NODE_C_TRANSPORT, ChildArity(2)),
-    unbounded(NODE_VT_LIST, ChildArity(1)),
-    unbounded(NODE_VT_SESSION, ChildArity(1)),
-    unbounded(NODE_V_SESSION_PATH, ChildArity(2)),
+    unbounded(NODE_C_ABSURD, ChildArity::Fixed(1)),
+    unbounded(NODE_VT_PATH_UNIVERSE, ChildArity::Fixed(2)),
+    unbounded(NODE_V_PATH_REFL, ChildArity::Fixed(1)),
+    unbounded(NODE_V_PATH_EQUIV, ChildArity::Fixed(3)),
+    unbounded(NODE_V_PATH_PRODUCT, ChildArity::Fixed(2)),
+    unbounded(NODE_C_TRANSPORT, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
+    unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
+    unbounded(NODE_V_SESSION_PATH, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_DATA, ChildArity::Counted(0)),
+    unbounded(NODE_VT_RECORD, ChildArity::Counted(0)),
+    unbounded(NODE_V_CONSTRUCTOR, ChildArity::Counted(1)),
+    unbounded(NODE_V_RECORD, ChildArity::Counted(0)),
+    unbounded(NODE_C_DATA_CASE, ChildArity::Counted(2)),
+    unbounded(NODE_C_RECORD_PROJECTION, ChildArity::Fixed(1)),
 ];
 
 #[cfg(test)]
@@ -787,6 +787,8 @@ mod tests
         ensures: |ret| ret.1.len() == NODE_TAG_TABLE.len()
                 && ret.1.iter().zip(NODE_TAG_TABLE.iter()).all(|(&node, row)| match node {
                     AnyNode::Value(id) => match ret.0.value(id) {
+                        Some(&crate::Value::Constructor { .. }) => row.tag == super::NODE_V_CONSTRUCTOR,
+                        Some(&crate::Value::Record(_)) => row.tag == super::NODE_V_RECORD,
                         Some(&crate::Value::Variable(_)) => row.tag == super::NODE_V_VARIABLE,
                         Some(&crate::Value::Constant(_)) => row.tag == super::NODE_V_CONSTANT,
                         Some(&crate::Value::Unit) => row.tag == super::NODE_V_UNIT,
@@ -805,6 +807,8 @@ mod tests
                         None => false,
                     },
                     AnyNode::Computation(id) => match ret.0.computation(id) {
+                        Some(&crate::Computation::DataCase { .. }) => row.tag == super::NODE_C_DATA_CASE,
+                        Some(&crate::Computation::RecordProjection(..)) => row.tag == super::NODE_C_RECORD_PROJECTION,
                         Some(&crate::Computation::Lambda(_)) => row.tag == super::NODE_C_LAMBDA,
                         Some(&crate::Computation::Application(_, _)) => row.tag == super::NODE_C_APPLICATION,
                         Some(&crate::Computation::Return(_)) => row.tag == super::NODE_C_RETURN,
@@ -816,6 +820,8 @@ mod tests
                         None => false,
                     },
                     AnyNode::ValueType(id) => match ret.0.value_type(id) {
+                        Some(&crate::ValueType::Data { .. }) => row.tag == super::NODE_VT_DATA,
+                        Some(&crate::ValueType::Record(_)) => row.tag == super::NODE_VT_RECORD,
                         Some(&crate::ValueType::Base(_)) => row.tag == super::NODE_VT_BASE,
                         Some(&crate::ValueType::Unit) => row.tag == super::NODE_VT_UNIT,
                         Some(&crate::ValueType::Universe { sort: GroundSort::Value, .. }) => row.tag == super::NODE_VT_UNIVERSE,
@@ -898,6 +904,18 @@ mod tests
             unit_type,
         );
         let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
+        let datatype = arena.value_type_data(ConstantIndex::from(0), alloc::vec![quote]);
+        let label = crate::FieldLabel::from(alloc::string::String::from("field"));
+        let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([(
+            label.clone(),
+            unit_type,
+        )]));
+        let constructor =
+            arena.value_constructor(datatype, crate::ConstructorTag::from(0), alloc::vec![unit]);
+        let record =
+            arena.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
+        let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);
+        let projection = arena.computation_record_projection(record, label);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -941,6 +959,12 @@ mod tests
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::ValueType(session),
             AnyNode::Value(session_path),
+            AnyNode::ValueType(datatype),
+            AnyNode::ValueType(record_type),
+            AnyNode::Value(constructor),
+            AnyNode::Value(record),
+            AnyNode::Computation(data_case),
+            AnyNode::Computation(projection),
         ];
         (arena, nodes)
     }
@@ -956,12 +980,34 @@ mod tests
         );
         for (row, node) in NODE_TAG_TABLE.iter().zip(nodes.iter()) {
             let children = arena.children_of(*node);
-            assert_eq!(
-                usize::from(row.child_arity),
-                children.len(),
-                "the declared arity of tag {} matches the arena's child relation",
-                row.tag
-            );
+            let inline_count = match *node {
+                | AnyNode::Value(id) => match arena.value(id) {
+                    | Some(matched_native_node) => match *matched_native_node {
+                        | crate::Value::Constructor { ref fields, .. } => fields.len(),
+                        | crate::Value::Record(ref fields) => fields.len(),
+                        | _ => 0,
+                    },
+                    | None => 0,
+                },
+                | AnyNode::ValueType(id) => match arena.value_type(id) {
+                    | Some(matched_native_node) => match *matched_native_node {
+                        | crate::ValueType::Data { ref arguments, .. } => arguments.len(),
+                        | crate::ValueType::Record(ref fields) => fields.len(),
+                        | _ => 0,
+                    },
+                    | None => 0,
+                },
+                | AnyNode::Computation(id) => match arena.computation(id) {
+                    | Some(&crate::Computation::DataCase { ref branches, .. }) => branches.len(),
+                    | _ => 0,
+                },
+                | AnyNode::CompType(_) => 0,
+            };
+            let expected = match row.child_arity {
+                | super::ChildArity::Fixed(count) => usize::from(count),
+                | super::ChildArity::Counted(prefix) => usize::from(prefix) + inline_count,
+            };
+            assert_eq!(expected, children.len(), "tag {} child arity", row.tag);
         }
     }
 
@@ -1025,16 +1071,16 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .chain(0x28 ..= 0x2e)
             .chain([0x50, 0x52, 0x5a])
+            .chain(0x5d ..= 0x62)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
-        assert_eq!(actual.last(), Some(&0x5a));
         assert!(!actual.contains(&0x51));
         let empty = NODE_TAG_TABLE
             .iter()
             .find(|row| row.tag == super::NODE_VT_EMPTY)
             .expect("Empty has a wire former");
-        assert_eq!(empty.child_arity, super::ChildArity(0));
+        assert_eq!(empty.child_arity, super::ChildArity::Fixed(0));
         assert_eq!(empty.max_token_bound, Some(super::TokenCount(1)));
         assert_eq!(empty.alias_verdict, NodeTagVerdict::Alias);
         assert_eq!(empty.threshold_verdict, NodeTagVerdict::Alias);

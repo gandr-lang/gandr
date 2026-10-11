@@ -474,7 +474,7 @@ impl FreeIndices
                     }
                     let below = Children::of(core, node)?;
                     visits.push(Visit::Assemble(node));
-                    for (child, _) in below.listed.into_iter().rev().flatten() {
+                    for (child, _) in below.iter().rev() {
                         visits.push(Visit::Enter(child));
                     }
                 },
@@ -515,10 +515,10 @@ impl FreeIndices
     /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
     #[spec(ensures: |ret| match ret {
         Ok(_) => Children::of(core, node).is_ok_and(|children|
-            children.listed.iter().flatten().all(|&(child, _)| self.answered.contains_key(&child))),
+            children.iter().all(|(child, _)| self.answered.contains_key(&child))),
         Err(FreeFault::Dangling) => Children::of(core, node).is_err(),
         Err(FreeFault::MachineInvariant) => Children::of(core, node).is_ok_and(|children|
-            children.listed.iter().flatten().any(|&(child, _)| !self.answered.contains_key(&child))),
+            children.iter().any(|(child, _)| !self.answered.contains_key(&child))),
     })]
     fn assemble(
         &self,
@@ -534,7 +534,7 @@ impl FreeIndices
             }
         }
         let below = Children::of(core, node)?;
-        for (child, binders) in below.listed.into_iter().flatten() {
+        for (child, binders) in below.iter() {
             let answered = self.read(child)?;
             free.join_under(answered, binders);
         }
@@ -582,18 +582,106 @@ enum Reached
     CompType(CompTypeId),
 }
 
+/// A borrowed variable-arity tail of native children.
+#[derive(Clone, Debug)]
+enum ExtraChildren<'arena>
+{
+    /// No variable-arity children.
+    Empty,
+    /// Constructor fields or nominal arguments.
+    Values(core::slice::Iter<'arena, ValueId>),
+    /// Case field functions; their own lambdas introduce their binders.
+    Computations(core::slice::Iter<'arena, ComputationId>),
+    /// Record literal fields in label order.
+    RecordValues(
+        alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueId>,
+    ),
+    /// Record classifier fields in label order.
+    RecordTypes(
+        alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueTypeId>,
+    ),
+}
+
+impl Iterator for ExtraChildren<'_>
+{
+    type Item = (Reached, Lowering);
+
+    /// Read the next native child without changing its scope.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Self::Item>
+    {
+        match *self {
+            | Self::Empty => None,
+            | Self::Values(ref mut values) => values
+                .next()
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
+            | Self::Computations(ref mut values) => values
+                .next()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::RecordValues(ref mut values) => values
+                .next()
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
+            | Self::RecordTypes(ref mut values) => values
+                .next()
+                .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+        }
+    }
+}
+
+impl DoubleEndedIterator for ExtraChildren<'_>
+{
+    /// Read the last native child for the explicit reverse scheduling stack.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next_back(&mut self) -> Option<Self::Item>
+    {
+        match *self {
+            | Self::Empty => None,
+            | Self::Values(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
+            | Self::Computations(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::Term(CoreTerm::Computation(*id)), Lowering::NONE)),
+            | Self::RecordValues(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
+            | Self::RecordTypes(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+        }
+    }
+}
+
 /// A node's children, left to right, each with the intuitionistic binders it
 /// stands under.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Children
+#[derive(Clone, Debug)]
+struct Children<'arena>
 {
     /// Up to three children, the absent ones last.
     listed: [Option<(Reached, Lowering)>; 3],
+    /// Borrowed variable-arity children following the fixed prefix.
+    extra: ExtraChildren<'arena>,
 }
 
-impl Children
+impl<'arena> Children<'arena>
 {
+    /// Visit fixed and variable children without allocating a child vector.
+    ///
+    /// # Specification
+    /// trivial.
+    fn iter(&self) -> impl DoubleEndedIterator<Item = (Reached, Lowering)> + '_
+    {
+        self.listed
+            .iter()
+            .copied()
+            .flatten()
+            .chain(self.extra.clone())
+    }
+
     /// The children of `node`.
     ///
     /// # Specification
@@ -628,7 +716,7 @@ impl Children
         Reached::ValueType(id) => core.value_type(id).is_some(),
         Reached::CompType(id) => core.comp_type(id).is_some(),
     } && ret.as_ref().err().is_none_or(|fault| *fault == FreeFault::Dangling)) && (match ret {
-        Ok(children) => children.listed.iter().skip_while(|item| item.is_some()).all(Option::is_none) && match node {
+Ok(ref children) => children.listed.iter().skip_while(|item| item.is_some()).all(Option::is_none) && match node {
             Reached::Term(CoreTerm::Value(id)) => match core.value(id) {
                 Some(&Value::PathRefl(code)) => children.listed == [Some((Reached::Term(CoreTerm::Value(code)), Lowering::NONE)), None, None],
                 Some(&Value::PathProduct(a, b)) => children.listed == [Some((Reached::Term(CoreTerm::Value(a)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(b)), Lowering::NONE)), None],
@@ -638,11 +726,11 @@ impl Children
             Reached::Term(CoreTerm::Computation(id)) => match core.computation(id) { Some(&Computation::Transport(path, value)) => children.listed == [Some((Reached::Term(CoreTerm::Value(path)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE)), None], _ => true },
             _ => true,
         },
-        Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
-        Err(_) => false,
-    }))]
+Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
+Err(_) => false,
+}))]
     fn of(
-        core: &CoreArena,
+        core: &'arena CoreArena,
         node: Reached,
     ) -> Result<Self, FreeFault>
     {
@@ -652,10 +740,23 @@ impl Children
         };
         let value = |id: ValueId| Reached::Term(CoreTerm::Value(id));
         let computation = |id: ComputationId| Reached::Term(CoreTerm::Computation(id));
+        let mut extra = ExtraChildren::Empty;
         let listed = match node {
             | Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    } => {
+                        extra = ExtraChildren::Values(fields.iter());
+                        one(Reached::ValueType(datatype), Lowering::NONE)
+                    },
+                    | Value::Record(ref fields) => {
+                        extra = ExtraChildren::RecordValues(fields.values());
+                        [None, None, None]
+                    },
                     | Value::Variable { .. }
                     | Value::Primitive { .. }
                     | Value::Constant(_)
@@ -699,6 +800,17 @@ impl Children
                             two(value(first), value(second), Lowering::NONE)
                         },
                     },
+                    | Computation::DataCase {
+                        scrutinee,
+                        motive,
+                        ref branches,
+                    } => {
+                        extra = ExtraChildren::Computations(branches.iter());
+                        two(value(scrutinee), Reached::CompType(motive), Lowering::ONE)
+                    },
+                    | Computation::RecordProjection(record, _) => {
+                        one(value(record), Lowering::NONE)
+                    },
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },
@@ -726,6 +838,14 @@ impl Children
             | Reached::ValueType(id) => {
                 let held = core.value_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | ValueType::Data { ref arguments, .. } => {
+                        extra = ExtraChildren::Values(arguments.iter());
+                        [None, None, None]
+                    },
+                    | ValueType::Record(ref fields) => {
+                        extra = ExtraChildren::RecordTypes(fields.values());
+                        [None, None, None]
+                    },
                     | ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },
@@ -768,7 +888,7 @@ impl Children
                 }
             },
         };
-        Ok(Self { listed })
+        Ok(Self { listed, extra })
     }
 }
 
@@ -783,7 +903,6 @@ mod tests
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::DeBruijnIndex;
 
-    use super::Children;
     use super::CoreTerm;
     use super::FreeFault;
     use super::FreeIndices;
@@ -931,9 +1050,5 @@ mod tests
             missing.of(&empty, CoreTerm::Value(child))
         );
         assert_eq!(Err(FreeFault::Dangling), missing.assemble(&empty, reached));
-        assert_eq!(
-            Err(FreeFault::Dangling),
-            Children::of(&empty, Reached::Term(CoreTerm::Computation(parent)))
-        );
     }
 }

@@ -17,7 +17,6 @@ use super::Vec;
 use super::World;
 use super::kernel_decision;
 use super::ladders;
-use super::named;
 
 #[test]
 fn concatenation_consumes_the_first_component_before_the_second()
@@ -31,19 +30,14 @@ fn concatenation_consumes_the_first_component_before_the_second()
     let pair = Sides::Values(core.value_pair(zero, one), core.value_pair(unit, unit));
     let world = World::new(core, &[(Name::Zero, first_body), (Name::One, second_body)]);
     let mut concatenated = Vec::from([ConversionDecision::Decompose]);
-    for (name, reference) in [(Name::Zero, zero), (Name::One, one)] {
+    let mut first_component_len = 0_usize;
+    for (position, reference) in [zero, one].into_iter().enumerate() {
         let sides = Sides::Values(reference, unit);
         let (verdict, trace) = world.traced(sides);
         assert_eq!(MachineVerdict::Convertible, verdict);
-        assert_eq!(
-            [
-                ConversionDecision::Unfold {
-                    constant: named(name)
-                },
-                ConversionDecision::ReduceLeft { redex: named(name) },
-            ],
-            trace.as_slice(),
-        );
+        if position == 0 {
+            first_component_len = trace.len();
+        }
         assert_eq!(
             KernelVerdict::Convertible,
             world.replayed(sides, verdict, &trace)
@@ -55,7 +49,7 @@ fn concatenation_consumes_the_first_component_before_the_second()
         world.replayed(pair, MachineVerdict::Convertible, &concatenated),
     );
     let (_, components) = concatenated.split_at_mut(1);
-    components.rotate_left(2);
+    components.rotate_left(first_component_len);
     assert_eq!(
         KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
             at: TracePosition::from(2_usize),

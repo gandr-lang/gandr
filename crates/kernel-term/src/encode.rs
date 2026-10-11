@@ -214,7 +214,7 @@ impl Interner
 /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
 #[inline]
 #[must_use]
-#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
+#[spec(requires: declarations.iter().all(|marked| { let declaration = marked.declaration(); arena.value_type(declaration.declared_id()).is_some() && match *declaration.content() { DeclarationContent::Def { body, .. } => arena.value(body).is_some(), DeclarationContent::Data { ref parameters, ref constructors, .. } => parameters.iter().chain(constructors.iter().flatten()).all(|id| arena.value_type(*id).is_some()), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true } }),
 ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice())
     && ret
         .as_image()
@@ -373,7 +373,7 @@ fn encode_minted_atom_table(
     ensures: |ret| { let image = out.as_image();
         let bytes = image.as_ref();
         bytes.get(entry.0).copied() == Some(u8::from(match marked.mark() { AdmissionMark::Checked => tags::ADMISSION_CHECKED, AdmissionMark::UncheckedBypass => tags::ADMISSION_UNCHECKED }))
-            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Def { .. } => tags::KIND_DEF, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
+            && bytes.get(entry.0.saturating_add(1)).copied() == Some(u8::from(match *marked.declaration().content() { DeclarationContent::Data { .. } => tags::KIND_DATA, DeclarationContent::Def { .. } => tags::KIND_DEF, DeclarationContent::Axiom { .. } => tags::KIND_AXIOM, DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE }))
             && interner.by_node.contains_key(&AnyNode::ValueType(marked.declaration().declared_id()))
             && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => interner.by_node.contains_key(&AnyNode::Value(body)), _ => true }
             && interner.by_content.len() >= entry.1
@@ -393,6 +393,7 @@ fn encode_declaration(
     let declaration = marked.declaration();
     let content = declaration.content();
     out.put_tag(match *content {
+        | DeclarationContent::Data { .. } => tags::KIND_DATA,
         | DeclarationContent::Def { .. } => tags::KIND_DEF,
         | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
         | DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
@@ -401,7 +402,23 @@ fn encode_declaration(
     encode_level_signature(out, declaration.levels());
 
     let mut segment: Vec<EncodedEntry> = Vec::new();
+    let mut data_roots = Vec::new();
     let roots = match *content {
+        | DeclarationContent::Data {
+            kind,
+            ref parameters,
+            ref constructors,
+        } => {
+            let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(kind));
+            for group in core::iter::once(parameters).chain(constructors.iter()) {
+                let roots = group
+                    .iter()
+                    .map(|id| intern(arena, interner, &mut segment, AnyNode::ValueType(*id)))
+                    .collect::<Vec<_>>();
+                data_roots.push(roots);
+            }
+            (declared, None)
+        },
         | DeclarationContent::Def { declared, body } => {
             let declared = intern(arena, interner, &mut segment, AnyNode::ValueType(declared));
             let body = intern(arena, interner, &mut segment, AnyNode::Value(body));
@@ -422,6 +439,23 @@ fn encode_declaration(
     }
     let (root_declared, root_body) = roots;
     out.put_uvarint(WireU64::from(u64::from(u32::from(root_declared))));
+    if let DeclarationContent::Data {
+        ref constructors, ..
+    } = *(content)
+    {
+        for (index, group) in data_roots.iter().enumerate() {
+            if index == 1 {
+                out.put_uvarint(WireU64::from(WireUsize::from(constructors.len())));
+            }
+            out.put_uvarint(WireU64::from(WireUsize::from(group.len())));
+            for root in group {
+                out.put_uvarint(WireU64::from(u64::from(u32::from(*root))));
+            }
+        }
+        if constructors.is_empty() {
+            out.put_uvarint(WireU64::from(0_u64));
+        }
+    }
     if let Some(root_body) = root_body {
         out.put_uvarint(WireU64::from(u64::from(u32::from(root_body))));
         // The four per-definition annotation slots. Erasure, modes and grades,
@@ -676,6 +710,8 @@ fn intern(
 ensures: |ret| ret.0.as_image().as_ref().first().copied()
     == Some(u8::from(match node {
         AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::Data { .. }) => tags::NODE_VT_DATA,
+            Some(&ValueType::Record(_)) => tags::NODE_VT_RECORD,
             Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
             None | Some(&ValueType::Unit) => tags::NODE_VT_UNIT,
             Some(&ValueType::Empty) => tags::NODE_VT_EMPTY,
@@ -701,6 +737,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
         },
         AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::Constructor { .. }) => tags::NODE_V_CONSTRUCTOR,
+            Some(&Value::Record(_)) => tags::NODE_V_RECORD,
             Some(&Value::SessionPath { .. }) => tags::NODE_V_SESSION_PATH,
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
@@ -718,6 +756,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::StaticApplication(..)) => tags::NODE_V_STATIC_APPLICATION,
         },
         AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::DataCase { .. }) => tags::NODE_C_DATA_CASE,
+            Some(&Computation::RecordProjection(..)) => tags::NODE_C_RECORD_PROJECTION,
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
@@ -739,6 +779,21 @@ fn encode_entry(
         | AnyNode::ValueType(id) => match arena.value_type(id) {
             | None => out.put_tag(tags::NODE_VT_UNIT),
             | Some(value_type) => match *value_type {
+                | ValueType::Data {
+                    declaration,
+                    ref arguments,
+                } => {
+                    out.put_tag(tags::NODE_VT_DATA);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(declaration))));
+                    out.put_uvarint(WireU64::from(WireUsize::from(arguments.len())));
+                },
+                | ValueType::Record(ref fields) => {
+                    out.put_tag(tags::NODE_VT_RECORD);
+                    out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
+                    for label in fields.keys() {
+                        encode_text(&mut out, ArtifactText::from(label.as_ref()));
+                    }
+                },
                 | ValueType::Base(base) => {
                     out.put_tag(tags::NODE_VT_BASE);
                     out.put_tag(base_type_tag(base));
@@ -795,6 +850,20 @@ fn encode_entry(
         | AnyNode::Value(id) => match arena.value(id) {
             | None => out.put_tag(tags::NODE_V_UNIT),
             | Some(value) => match *value {
+                | Value::Constructor {
+                    tag, ref fields, ..
+                } => {
+                    out.put_tag(tags::NODE_V_CONSTRUCTOR);
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(tag))));
+                    out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
+                },
+                | Value::Record(ref fields) => {
+                    out.put_tag(tags::NODE_V_RECORD);
+                    out.put_uvarint(WireU64::from(WireUsize::from(fields.len())));
+                    for label in fields.keys() {
+                        encode_text(&mut out, ArtifactText::from(label.as_ref()));
+                    }
+                },
                 | Value::Variable(index) => {
                     out.put_tag(tags::NODE_V_VARIABLE);
                     out.put_uvarint(WireU64::from(u64::from(u32::from(index))));
@@ -836,6 +905,14 @@ fn encode_entry(
             },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
+            | Some(&Computation::DataCase { ref branches, .. }) => {
+                out.put_tag(tags::NODE_C_DATA_CASE);
+                out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+            },
+            | Some(&Computation::RecordProjection(_, ref label)) => {
+                out.put_tag(tags::NODE_C_RECORD_PROJECTION);
+                encode_text(&mut out, ArtifactText::from(label.as_ref()));
+            },
             | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
             | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
             | Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),

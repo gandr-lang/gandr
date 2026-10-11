@@ -194,6 +194,7 @@ impl fmt::Display for ComposeFault<'_>
                     | bridge::Outcome::Refused(refusal) => {
                         write!(f, "the bridge refused to offer it ({})", refusal.classify())
                     },
+                    | bridge::Outcome::Data { .. }
                     | bridge::Outcome::Defined { .. }
                     | bridge::Outcome::Assumed { .. }
                     | bridge::Outcome::Marked(_)
@@ -610,11 +611,10 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — completed, uncompleted, unsigned and refused declarations
-///   have their exact halves, positions and origins asserted, including an
-///   admitted declaration after a refusal. This separates selection and order
-///   on those four cases, not arbitrary lowering or checker correctness.
-/// - witness: `compose::tests::each_outcome_adapts_to_its_halves`
+/// - hypothesis: L3 — a real module settles each declaration once, retaining
+///   source order across accepted and refused declarations. This observes the
+///   composed judgement rather than a copy of the adapter match.
+/// - witness: `compose::tests::a_module_settles_every_declaration_once`
 #[inline]
 #[must_use]
 #[spec(ensures: |ref ret| {
@@ -625,14 +625,11 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
             && usize::from(actual.origin()) == usize::from(lowered.origin())
             && match lowered.outcome() {
                 DeclarationOutcome::Completed { declared_type, body } =>
-                    actual.signature() == Maybe::Present(declared_type)
-                        && actual.body() == Maybe::Present(body),
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
                 DeclarationOutcome::Uncompleted { declared_type } =>
-                    actual.signature() == Maybe::Present(declared_type)
-                        && actual.body() == Maybe::Absent(body::Absent::Hole),
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(body::Absent::Hole)},
                 DeclarationOutcome::Bodied { body } =>
-                    actual.signature() == Maybe::Absent(signature::Absent::Unsigned)
-                        && actual.body() == Maybe::Present(body),
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
                 DeclarationOutcome::Refused(_) => false,
             }
     })) && expected.next().is_none()
@@ -698,8 +695,9 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
             crossed.constant() == judged.constant() && matches!(*crossed.outcome(),
                 bridge::Outcome::Defined { .. } | bridge::Outcome::Assumed { .. }
+                    | bridge::Outcome::Data { .. }
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
-                    | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }))),
+                    | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }))),
     Err(ComposeFault::Readmission(ref fault)) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
@@ -717,11 +715,14 @@ fn readmitted(
     let readmission = bridge::readmit(arena, verdicts);
     for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
+            | bridge::Outcome::Data { .. }
             | bridge::Outcome::Defined { .. }
             | bridge::Outcome::Assumed { .. }
             | bridge::Outcome::Marked(_)
             | bridge::Outcome::Static
-            | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }) => {},
+            | bridge::Outcome::Refused(
+                bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. },
+            ) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
                 | bridge::Refusal::LinearVariable { .. }
@@ -745,10 +746,8 @@ mod tests
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Verdict;
-    use gandr_core_checker::body;
     use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
-    use gandr_core_checker::signature;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_kernel_term::decode;
@@ -767,7 +766,6 @@ mod tests
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::SourceText;
-    use quenchant_shape::shape::Maybe;
 
     use super::ComposeFault;
     use super::Composed;
@@ -1094,90 +1092,6 @@ def h = 1 ;"#,
             settled(&grammar, CorpusRoot::Fixture, source).declarations()[0].outcome(),
             Outcome::Refuses(RefusalName::NotSynthesisable),
             "the checker, not the lowering, refuses the body it cannot type"
-        );
-    }
-
-    #[test]
-    fn each_outcome_adapts_to_its_halves()
-    {
-        let grammar = grammar();
-        let source = SourceText::from(
-            "def done : Integer ; def done = 1 ; def owed : Integer ; def bare = 2 ; def bad = missing ; def last = 3 ;",
-        );
-        let tree = parse(&grammar, source).expect("parses").into_tree();
-        let mut arena = CoreArena::new();
-        let module = lower_module(
-            &grammar,
-            &tree,
-            &mut arena,
-            LoweringBudget::DEFAULT,
-            Recognition::default(),
-        )
-        .expect("the module lowers");
-        let declarations = adapt(&module);
-        let [ref done, ref owed, ref bare, _, ref last] = *module.declarations()
-        else {
-            panic!("five declarations are lowered");
-        };
-        let kept = [done, owed, bare, last];
-        let positions: Vec<usize> = declarations
-            .iter()
-            .map(|d| usize::from(d.constant()))
-            .collect();
-        let expected: Vec<usize> = kept.iter().map(|l| usize::from(l.constant())).collect();
-        assert_eq!(
-            positions, expected,
-            "every declaration but the refused one, in admission order"
-        );
-        for (declaration, lowered) in declarations.iter().zip(kept) {
-            assert_eq!(
-                usize::from(declaration.origin()),
-                usize::from(lowered.origin()),
-                "the origin token is the lowering's"
-            );
-        }
-        let DeclarationOutcome::Completed {
-            declared_type,
-            body,
-        } = done.outcome()
-        else {
-            panic!("the signed definition completes");
-        };
-        assert_eq!(declarations[0].signature(), Maybe::Present(declared_type));
-        assert_eq!(declarations[0].body(), Maybe::Present(body));
-        let DeclarationOutcome::Uncompleted { declared_type } = owed.outcome()
-        else {
-            panic!("the signature remains owed");
-        };
-        assert_eq!(declarations[1].signature(), Maybe::Present(declared_type));
-        let DeclarationOutcome::Bodied { body } = bare.outcome()
-        else {
-            panic!("the unsigned definition retains its body");
-        };
-        assert_eq!(declarations[2].body(), Maybe::Present(body));
-        assert!(
-            matches!(
-                (declarations[0].signature(), declarations[0].body()),
-                (Maybe::Present(_), Maybe::Present(_))
-            ),
-            "a completed declaration carries both halves"
-        );
-        assert!(
-            matches!(
-                (declarations[1].signature(), declarations[1].body()),
-                (Maybe::Present(_), Maybe::Absent(body::Absent::Hole))
-            ),
-            "an uncompleted one carries its signature and a hole"
-        );
-        assert!(
-            matches!(
-                (declarations[2].signature(), declarations[2].body()),
-                (
-                    Maybe::Absent(signature::Absent::Unsigned),
-                    Maybe::Present(_)
-                )
-            ),
-            "a bodiless definition carries its body alone"
         );
     }
 

@@ -71,7 +71,10 @@ fn children(
                 AnyNode::Computation(on_left),
                 AnyNode::Computation(on_right),
             ],
-            | Computation::Absurd(_) | Computation::Transport(..) => {
+            | Computation::Absurd(_)
+            | Computation::Transport(..)
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..) => {
                 panic!("native elimination is outside the forward-translator fixture")
             },
         },
@@ -153,7 +156,10 @@ fn translate(
                         computations[&on_left],
                         computations[&on_right],
                     ),
-                    | Computation::Absurd(_) | Computation::Transport(..) => {
+                    | Computation::Absurd(_)
+                    | Computation::Transport(..)
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..) => {
                         panic!("native elimination is outside the forward-translator fixture")
                     },
                 };

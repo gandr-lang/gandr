@@ -832,6 +832,10 @@ enum Head
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Elimination
 {
+    /// Nominal elimination; the arena node retains its motive and branches.
+    DataCase(ComputationId),
+    /// Record projection; the arena node retains its exact label.
+    RecordProjection(ComputationId),
     /// Transport under a neutral path head, retaining its operand.
     Transport(ValueId),
     /// Product transport waiting for a neutral pair operand.
@@ -1339,7 +1343,7 @@ where
                     return Err(self.refuse(next));
                 }
                 self.take();
-                let premises = match spines(left_spine, right_spine) {
+                let premises = match spines(self.arena, left_spine, right_spine)? {
                     | Structure::Leaf(verdict) => {
                         return self.close(goal.expect, verdict).map(|()| Flow::Settled);
                     },
@@ -1462,6 +1466,8 @@ where
             },
             | Some(
                 &(Value::PathRefl(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
@@ -1678,13 +1684,13 @@ where
         (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
             Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
                 matches!((premise.left, premise.right), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))),
-            Ok(Structure::Leaf(_)) => true,
+            Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
             Err(_) => false,
         },
         _ => ret == Ok(Structure::Leaf(Expect::NotConvertible)),
     })]
     fn decompose(
-        &self,
+        &mut self,
         goal: &Goal,
         left: &Shape,
         right: &Shape,
@@ -1707,7 +1713,7 @@ where
             | (
                 &Shape::Neutral(left_head, ref left_spine),
                 &Shape::Neutral(right_head, ref right_spine),
-            ) if left_head == right_head => spines(left_spine, right_spine),
+            ) if left_head == right_head => spines(self.arena, left_spine, right_spine)?,
             | (
                 &(Shape::Former
                 | Shape::Thunk(_)
@@ -1742,26 +1748,29 @@ where
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
-    #[spec(ensures: |ret| match (self.arena.value(left), self.arena.value(right)) {
-        (None, _) | (_, None) => ret == Err(unreadable()),
-        (Some(one @ &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })), Some(other)) =>
-            matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
-                && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)),
-        (Some(&Value::Unit), Some(&Value::Unit)) => ret == Ok(Structure::Leaf(Expect::Convertible)),
-        (Some(one @ &Value::Literal(_)), Some(other @ &Value::Literal(_))) =>
-            ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })),
-        (Some(&Value::Pair(one_first, one_second)), Some(&Value::Pair(other_first, other_second))) =>
-            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]),
-        (Some(&Value::Injection(one_side, one_body)), Some(&Value::Injection(other_side, other_body))) if one_side == other_side =>
-            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]),
-        (Some(&Value::Lift { target: ref one_target, body: one_body }), Some(&Value::Lift { target: ref other_target, body: other_body })) if one_target == other_target =>
-            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]),
-        (Some(&Value::Quote(_)), Some(&Value::Quote(_))) | (Some(&Value::QuoteComputation(_)), Some(&Value::QuoteComputation(_))) =>
-            matches!(ret, Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable))),
-        _ => ret == Ok(Structure::Leaf(Expect::NotConvertible)),
-    })]
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (self.arena.value(left), self.arena.value(right));
+if let Some(matched_left_node) = matched_left_value && let Value::Constructor { datatype:a,tag:a_tag,fields:ref a_fields } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Constructor { datatype:b,tag:b_tag,fields:ref b_fields } = *matched_right_node { {
+            if a_tag != b_tag || a_fields.len() != b_fields.len() { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+            else { matches!(&ret,Ok(Structure::Premises(premises)) if premises.len() == a_fields.len().saturating_add(1_usize)
+                && premises.first().is_some_and(|premise| matches!((premise.left,premise.right), (Term::Value(left),Term::Value(right)) if self.arena.value(left) == Some(&Value::Quote(a)) && self.arena.value(right) == Some(&Value::Quote(b))))
+                && premises.iter().skip(1).copied().eq(a_fields.iter().zip(b_fields).map(|(a,b)| Premise::values(*a,*b)))) }
+        } }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Record(ref a) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Record(ref b) = *matched_right_node { {
+            if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+        } }
+ else if (matched_left_value.is_none()) || (matched_right_value.is_none()) { ret == Err(unreadable()) }
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+                && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
+ else if matched_left_value.is_some_and(|node| matches!(*node, Value::Unit)) && matched_right_value.is_some_and(|node| matches!(*node, Value::Unit)) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ Value::Literal(_) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let ref other @ Value::Literal(_) = *matched_right_node { ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })) }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Pair(one_first, one_second) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Pair(other_first, other_second) = *matched_right_node { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]) }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Injection(one_side, one_body) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Injection(other_side, other_body) = *matched_right_node && (one_side == other_side) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
+ else if let Some(matched_left_node) = matched_left_value && let Value::Lift { target: ref one_target, body: one_body } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Lift { target: ref other_target, body: other_body } = *matched_right_node && (one_target == other_target) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
+ else if (matched_left_value.is_some_and(|node| matches!(*node, Value::Quote(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::Quote(_)))) || (matched_left_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_)))) { matches!(ret, Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable))) }
+ else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
+})]
     fn formers(
-        &self,
+        &mut self,
         left: ValueId,
         right: ValueId,
     ) -> Result<Structure, Stop>
@@ -1771,6 +1780,66 @@ where
             return Err(unreadable());
         };
         let structure = match (one, other) {
+            | (
+                &Value::Constructor {
+                    datatype: a,
+                    tag: one_tag,
+                    fields: ref a_fields,
+                },
+                &Value::Constructor {
+                    datatype: b,
+                    tag: other_tag,
+                    fields: ref b_fields,
+                },
+            ) => {
+                if one_tag != other_tag || a_fields.len() != b_fields.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let count = a_fields.len();
+                let a_quote = self.arena.value_quote(a);
+                let b_quote = self.arena.value_quote(b);
+                let mut premises = Vec::with_capacity(count.saturating_add(1_usize));
+                premises.push(Premise::values(a_quote, b_quote));
+                let (Some(left_node), Some(right_node)) =
+                    (self.arena.value(left), self.arena.value(right))
+                else {
+                    return Err(unreadable());
+                };
+                let Value::Constructor {
+                    fields: ref a_fields,
+                    ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Value::Constructor {
+                    fields: ref b_fields,
+                    ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                premises.extend(
+                    a_fields
+                        .iter()
+                        .zip(b_fields)
+                        .map(|(a, b)| Premise::values(*a, *b)),
+                );
+                Structure::of(premises)
+            },
+            | (&Value::Record(ref a), &Value::Record(ref b)) => {
+                if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+                else {
+                    Structure::of(
+                        a.values()
+                            .zip(b.values())
+                            .map(|(a, b)| Premise::values(*a, *b))
+                            .collect(),
+                    )
+                }
+            },
             | (
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
@@ -1837,6 +1906,8 @@ where
             },
             | (
                 &(Value::Variable(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
                 | Value::Constant(_)
                 | Value::Unit
                 | Value::Literal(_)
@@ -1957,6 +2028,17 @@ where
         while let Some(next) = work.pop() {
             match next {
                 | AnyNode::Value(value) => match self.arena.value(value) {
+                    | Some(&Value::Constructor {
+                        datatype,
+                        ref fields,
+                        ..
+                    }) => work.extend(
+                        core::iter::once(AnyNode::ValueType(datatype))
+                            .chain(fields.iter().copied().map(AnyNode::Value)),
+                    ),
+                    | Some(&Value::Record(ref fields)) => {
+                        work.extend(fields.values().copied().map(AnyNode::Value));
+                    },
                     | Some(
                         &(Value::Unit
                         | Value::Literal(_)
@@ -1998,6 +2080,8 @@ where
                     },
                     | Some(
                         &(Computation::Transport(..)
+                        | Computation::DataCase { .. }
+                        | Computation::RecordProjection(..)
                         | Computation::Lambda(_)
                         | Computation::Bind(..)
                         | Computation::Case { .. }),
@@ -2007,6 +2091,12 @@ where
                     },
                 },
                 | AnyNode::ValueType(value_type) => match self.arena.value_type(value_type) {
+                    | Some(&ValueType::Data { ref arguments, .. }) => {
+                        work.extend(arguments.iter().copied().map(AnyNode::Value));
+                    },
+                    | Some(&ValueType::Record(ref fields)) => {
+                        work.extend(fields.values().copied().map(AnyNode::ValueType));
+                    },
                     | Some(
                         &(ValueType::Base(_)
                         | ValueType::Unit
@@ -2115,6 +2205,8 @@ where
                         spine.as_slice() == [Elimination::ProductTransport(path)]
                     } else { spine.as_slice() == [Elimination::Transport(value)] },
                     Computation::Case { on_left, on_right, .. } => spine.as_slice() == [Elimination::Case(on_left, on_right)],
+                    Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
+                    Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
                     _ => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
@@ -2156,6 +2248,8 @@ where
                     },
                     | Some(
                         &(Value::PathRefl(_)
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
                         | Value::PathEquiv { .. }
@@ -2176,6 +2270,14 @@ where
         let mut focus = start;
         let head = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::DataCase { scrutinee, .. }) => {
+                    spine.push(Elimination::DataCase(focus));
+                    break self.value_head(scrutinee, frozen, side)?;
+                },
+                | Some(&Computation::RecordProjection(record, _)) => {
+                    spine.push(Elimination::RecordProjection(focus));
+                    break self.value_head(record, frozen, side)?;
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         spine.push(Elimination::ProductTransport(path));
@@ -2263,6 +2365,8 @@ where
             | Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
             | Some(
                 &(Value::PathRefl(_)
+                | Value::Constructor { .. }
+                | Value::Record(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
@@ -2380,6 +2484,20 @@ where
         let mut focus = start;
         let mut rebuilt = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::DataCase {
+                    motive,
+                    ref branches,
+                    ..
+                }) => {
+                    break self
+                        .arena
+                        .computation_data_case(body, motive, branches.clone());
+                },
+                | Some(&Computation::RecordProjection(_, ref label)) => {
+                    break self
+                        .arena
+                        .computation_record_projection(body, label.clone());
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
                         self.arena.computation_transport(path, body)
@@ -2565,6 +2683,46 @@ where
         loop {
             self.charge()?;
             match self.arena.computation(focus) {
+                | Some(&Computation::DataCase {
+                    scrutinee,
+                    ref branches,
+                    ..
+                }) => match self.arena.value(scrutinee) {
+                    | Some(&Value::Constructor {
+                        tag, ref fields, ..
+                    }) => {
+                        let branch = *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
+                        let field_count = fields.len();
+                        focus = branch;
+                        for position in 0 .. field_count {
+                            self.charge()?;
+                            let Some(matched_native_node) = self.arena.value(scrutinee)
+                            else {
+                                return Err(unreadable());
+                            };
+                            let Value::Constructor { ref fields, .. } = *matched_native_node
+                            else {
+                                return Err(unreadable());
+                            };
+                            let field = *fields.get(position).ok_or_else(unreadable)?;
+                            focus = self.arena.computation_application(focus, field);
+                        }
+                        progress = Progress::Reduced;
+                    },
+                    | Some(_) => break,
+                    | None => return Err(unreadable()),
+                },
+                | Some(&Computation::RecordProjection(record, ref label)) => {
+                    match self.arena.value(record) {
+                        | Some(&Value::Record(ref fields)) => {
+                            let value = *fields.get(label).ok_or_else(unreadable)?;
+                            focus = self.arena.computation_return(value);
+                            progress = Progress::Reduced;
+                        },
+                        | Some(_) => break,
+                        | None => return Err(unreadable()),
+                    }
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     match crate::path_universe::beta(self.arena, crate::path_universe::Transport {
                         path,
@@ -2912,11 +3070,18 @@ fn rule(
 /// - requires: nothing.
 /// - ensures: a refuting leaf when the spines differ in length or in any
 ///   elimination's kind; else an application's or a static application's
-///   arguments, a bind's continuations and a case's two branches, in spine
-///   order, a force contributing none.
+///   arguments, a bind's continuations and a sum case's two branches, in spine
+///   order. A native data case first compares its quoted motive, then its
+///   ordinary branch functions; a force or matching record projection
+///   contributes none.
 /// - provides: the decomposition of two neutrals over one head.
-/// - fails: never.
+/// - fails: unreadable native metadata when a retained source is missing or
+///   malformed.
 /// - panics: none.
+///
+/// # Errors
+/// Returns an unreadable replay refusal for missing or ill-shaped native
+/// sources.
 ///
 /// # Adequacy
 /// - hypothesis: L3: case branches followed by an application distinguish
@@ -2927,61 +3092,129 @@ fn rule(
 /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
 /// - witness: `path_universe::tests::refl_collapses`
 #[spec(ensures: |ret| {
-    let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| core::mem::discriminant(one) == core::mem::discriminant(other));
+    let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
+        (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
+        (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
+        _ => core::mem::discriminant(one) == core::mem::discriminant(other),
+    });
     match ret {
-        Structure::Leaf(Expect::NotConvertible) => !compatible,
-        Structure::Leaf(Expect::Convertible) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::Absurd)),
-        Structure::Premises(ref premises) => compatible && !premises.is_empty() && {
+Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+Err(_) => false,
+Ok(Structure::Leaf(Expect::NotConvertible)) => !compatible,
+Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::Absurd | Elimination::RecordProjection(_))),
+Ok(Structure::Premises(ref premises)) => compatible && !premises.is_empty() && {
             let mut pending = premises.iter();
             let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
-                (Elimination::Force, Elimination::Force) | (Elimination::Absurd, Elimination::Absurd) => true,
+                (Elimination::Force, Elimination::Force) | (Elimination::Absurd, Elimination::Absurd) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) => true,
+                (Elimination::DataCase(a),Elimination::DataCase(b)) => { let (matched_left_value, matched_right_value) = (arena.computation(a),arena.computation(b));
+if let Some(matched_left_node) = matched_left_value && let Computation::DataCase{motive:ref a_motive,branches:ref a,..} = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Computation::DataCase{motive:ref b_motive,branches:ref b,..} = *matched_right_node { pending.next().is_some_and(|premise| matches!((premise.left,premise.right),(Term::Value(left),Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(*a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(*b_motive)))) && a.iter().zip(b).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
+ else { false }
+},
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
                 (Elimination::Bind(one), Elimination::Bind(other)) => pending.next() == Some(&Premise::computations(one, other)),
-                (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) =>
-                    pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
+                (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) => pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
                 _ => false,
             });
             ordered && pending.next().is_none()
         },
-    }
+}
 })]
 fn spines(
+    arena: &mut TermArena,
     left: &[Elimination],
     right: &[Elimination],
-) -> Structure
+) -> Result<Structure, Stop>
 {
     if left.len() != right.len() {
-        return Structure::Leaf(Expect::NotConvertible);
+        return Ok(Structure::Leaf(Expect::NotConvertible));
     }
     let mut premises = Vec::new();
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
+            | (Elimination::DataCase(a_case), Elimination::DataCase(b_case)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a_case), arena.computation(b_case))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    motive: ref a_motive,
+                    branches: ref a,
+                    ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    motive: ref b_motive,
+                    branches: ref b,
+                    ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a.len() != b.len() {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+                let (a_motive, b_motive) = (*a_motive, *b_motive);
+                let a_quote = arena.value_quote_computation(a_motive);
+                let b_quote = arena.value_quote_computation(b_motive);
+                premises.push(Premise::values(a_quote, b_quote));
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a_case), arena.computation(b_case))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    branches: ref a, ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::DataCase {
+                    branches: ref b, ..
+                } = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                premises.extend(a.iter().zip(b).map(|(a, b)| Premise::computations(*a, *b)));
+            },
+            | (Elimination::RecordProjection(a), Elimination::RecordProjection(b)) => {
+                let (Some(left_node), Some(right_node)) =
+                    (arena.computation(a), arena.computation(b))
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::RecordProjection(_, ref a) = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::RecordProjection(_, ref b) = *right_node
+                else {
+                    return Err(unreadable());
+                };
+                if a != b {
+                    return Ok(Structure::Leaf(Expect::NotConvertible));
+                }
+            },
             | (Elimination::Force, Elimination::Force)
             | (Elimination::Absurd, Elimination::Absurd) => {},
-            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
-            | (
-                Elimination::ProductTransport(left_argument),
-                Elimination::ProductTransport(right_argument),
-            )
-            | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
-            | (
-                Elimination::StaticApply(left_argument),
-                Elimination::StaticApply(right_argument),
-            ) => {
-                premises.push(Premise::values(left_argument, right_argument));
+            | (Elimination::Transport(a), Elimination::Transport(b))
+            | (Elimination::ProductTransport(a), Elimination::ProductTransport(b))
+            | (Elimination::Apply(a), Elimination::Apply(b))
+            | (Elimination::StaticApply(a), Elimination::StaticApply(b)) => {
+                premises.push(Premise::values(a, b));
             },
-            | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
-                premises.push(Premise::computations(left_body, right_body));
+            | (Elimination::Bind(a), Elimination::Bind(b)) => {
+                premises.push(Premise::computations(a, b));
+            },
+            | (Elimination::Case(a, b), Elimination::Case(c, d)) => {
+                premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
             | (
-                Elimination::Case(left_on_left, left_on_right),
-                Elimination::Case(right_on_left, right_on_right),
-            ) => {
-                premises.push(Premise::computations(left_on_left, right_on_left));
-                premises.push(Premise::computations(left_on_right, right_on_right));
-            },
-            | (
-                Elimination::Transport(_)
+                Elimination::DataCase(_)
+                | Elimination::RecordProjection(_)
+                | Elimination::Transport(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Absurd
                 | Elimination::Force
@@ -2990,10 +3223,10 @@ fn spines(
                 | Elimination::Case(..)
                 | Elimination::StaticApply(_),
                 _,
-            ) => return Structure::Leaf(Expect::NotConvertible),
+            ) => return Ok(Structure::Leaf(Expect::NotConvertible)),
         }
     }
-    Structure::of(premises)
+    Ok(Structure::of(premises))
 }
 
 #[cfg(test)]

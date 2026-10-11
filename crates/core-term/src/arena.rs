@@ -1391,6 +1391,100 @@ impl CoreArena
     {
         self.alloc_value(Value::PathRefl(code))
     }
+    /// Apply a nominal declaration to its telescope arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_data(
+        &mut self,
+        declaration: gandr_kernel_term::ConstantIndex,
+        arguments: alloc::vec::Vec<ValueId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Data {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Form a structural record classifier in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Record(fields))
+    }
+
+    /// Introduce a nominal constructor with explicit application and fields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor(
+        &mut self,
+        datatype: ValueTypeId,
+        tag: gandr_kernel_term::ConstructorTag,
+        fields: alloc::vec::Vec<ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constructor {
+            datatype,
+            tag,
+            fields,
+        })
+    }
+
+    /// Introduce a structural record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Record(fields))
+    }
+
+    /// Eliminate nominal data with an explicit motive and field functions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: alloc::vec::Vec<ComputationId>,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        })
+    }
+
+    /// Return the selected field of a record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_record_projection(
+        &mut self,
+        record: ValueId,
+        label: gandr_kernel_term::FieldLabel,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RecordProjection(record, label))
+    }
 
     /// Mint the componentwise product of two paths.
     ///

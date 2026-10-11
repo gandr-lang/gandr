@@ -195,6 +195,9 @@ fn children(
                 AnyNode::Computation(on_right),
             ],
             | Computation::Transport(..) => panic!("no native transport in fixtures"),
+            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                panic!("no nominal or record eliminator in this fixture")
+            },
             | Computation::Absurd(_) => panic!("no Empty eliminator in fixtures"),
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
@@ -277,6 +280,9 @@ fn translate(
                         computations[&on_right],
                     ),
                     | Computation::Transport(..) => panic!("no native transport in fixtures"),
+                    | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                        panic!("no nominal or record eliminator in this fixture")
+                    },
                     | Computation::Absurd(_) => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);

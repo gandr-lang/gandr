@@ -281,7 +281,7 @@ impl Tree
             NodeIndex::from(0_usize),
             |at, &slot| {
                 let node = self.nodes.get(usize::from(at))?;
-                children(node).get(slot)
+                children(node).nth(slot.0)
             },
         );
     match (ret, expected) {
@@ -301,7 +301,7 @@ impl Tree
             let next = self
                 .nodes
                 .get(usize::from(at))
-                .and_then(|node| children(node).get(slot));
+                .and_then(|node| children(node).nth(slot.0));
             match next {
                 | Some(child) => at = child,
                 | None => return Maybe::Absent(addressed::Absent::NoChild),
@@ -343,7 +343,6 @@ impl Tree
                         .iter()
                         .all(|node| {
                             children(node)
-                                .iter()
                                 .all(|child| {
                                     let correct = usize::from(child) == expected;
                                     expected = expected.saturating_add(1_usize);
@@ -379,6 +378,31 @@ impl Tree
     }
 }
 
+/// Arena-independent declaration content, retaining native signatures
+/// separately.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DeclarationTree
+{
+    /// An ordinary value declaration's independent halves.
+    Value
+    {
+        /// Its optional classifier.
+        signature: Maybe<Tree, signature::Absent>,
+        /// Its body or a genuine value obligation.
+        body: Maybe<Tree, body::Absent>,
+    },
+    /// A nominal signature; none of these roots is a value obligation.
+    Data
+    {
+        /// The parameter telescope, in order.
+        parameters: Vec<Tree>,
+        /// Constructor field classifiers, in tag and field order.
+        constructors: Vec<Vec<Tree>>,
+        /// The declared universe.
+        kind: Tree,
+    },
+}
+
 /// One item of a revision: its identity, its signature and its body, each
 /// read out of the arena.
 ///
@@ -402,10 +426,9 @@ pub struct ItemTree
 {
     /// The item's identity across revisions: its key and occurrence.
     reference: Reference,
-    /// The declared type.
-    signature: Maybe<Tree, signature::Absent>,
-    /// The body.
-    body: Maybe<Tree, body::Absent>,
+    /// The declaration content, with native signatures distinct from value
+    /// halves.
+    declaration: DeclarationTree,
 }
 
 impl ItemTree
@@ -421,29 +444,58 @@ impl ItemTree
         &self.reference
     }
 
-    /// The declared type.
+    /// The complete value or nominal declaration.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn signature(&self) -> Maybe<&Tree, signature::Absent>
+    #[must_use]
+    pub const fn declaration(&self) -> &DeclarationTree
     {
-        match self.signature {
-            | Maybe::Present(ref tree) => Maybe::Present(tree),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        &self.declaration
+    }
+
+    /// The present classifier of a value declaration; native signatures are
+    /// separate.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn signature(&self) -> Option<&Tree>
+    {
+        match self.declaration {
+            | DeclarationTree::Value {
+                signature: Maybe::Present(ref tree),
+                ..
+            } => Some(tree),
+            | DeclarationTree::Value {
+                signature: Maybe::Absent(_),
+                ..
+            }
+            | DeclarationTree::Data { .. } => None,
         }
     }
 
-    /// The body.
+    /// The present body of a value declaration. A native declaration has no
+    /// body.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn body(&self) -> Maybe<&Tree, body::Absent>
+    #[must_use]
+    pub const fn body(&self) -> Option<&Tree>
     {
-        match self.body {
-            | Maybe::Present(ref tree) => Maybe::Present(tree),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        match self.declaration {
+            | DeclarationTree::Value {
+                body: Maybe::Present(ref tree),
+                ..
+            } => Some(tree),
+            | DeclarationTree::Value {
+                body: Maybe::Absent(_),
+                ..
+            }
+            | DeclarationTree::Data { .. } => None,
         }
     }
 }
@@ -531,52 +583,34 @@ impl Snapshot
             .zip(program.items().iter().zip(program.references()))
             .all(|((item, spans), (original, reference))| {
                 item.reference == *reference
-                    && match (item.signature(), original.declaration().signature()) {
-                        (Maybe::Present(tree), Maybe::Present(_)) => {
-                            tree.nodes.is_empty()
-                                || {
-                                    let mut expected = 1_usize;
-                                    tree
-                                        .nodes
-                                        .iter()
-                                        .all(|node| {
-                                            children(node)
-                                                .iter()
-                                                .all(|child| {
-                                                    let correct = usize::from(child) == expected;
-                                                    expected = expected.saturating_add(1_usize);
-                                                    correct
-                                                })
-                                        }) && expected == tree.nodes.len()
-                                }
-                        }
-                        (Maybe::Absent(left), Maybe::Absent(right)) => left == right,
-                        _ => false,
-                    }
-                    && match (item.body(), original.declaration().body()) {
-                        (Maybe::Present(tree), Maybe::Present(_)) => {
-                            spans.len() == tree.nodes.len()
-                                && (tree.nodes.is_empty()
-                                    || {
-                                        let mut expected = 1_usize;
-                                        tree
-                                            .nodes
-                                            .iter()
-                                            .all(|node| {
-                                                children(node)
-                                                    .iter()
-                                                    .all(|child| {
-                                                        let correct = usize::from(child) == expected;
-                                                        expected = expected.saturating_add(1_usize);
-                                                        correct
-                                                    })
-                                            }) && expected == tree.nodes.len()
-                                    })
-                        }
-                        (Maybe::Absent(left), Maybe::Absent(right)) => {
-                            left == right && spans.is_empty()
-                        }
-                        _ => false,
+                    && {
+                        let ordered = |tree:&Tree| {
+                            let mut expected = 1_usize;
+                            tree.nodes.is_empty() || (tree.nodes.iter().all(|node| children(node).all(|child| {
+                                let correct = usize::from(child) == expected;
+                                expected = expected.saturating_add(1);correct
+                            })) && expected == tree.nodes.len())
+                        };
+                        { let (matched_left_value, matched_right_value) = (&item.declaration,original.declaration().content());
+if let DeclarationTree::Value {ref signature,ref body} = *matched_left_value && let gandr_core_checker::DeclarationContent::Value {signature:ref source_signature,body:ref source_body} = *matched_right_value { {
+                                ({ let (matched_left_value, matched_right_value) = (signature,source_signature);
+if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right_value, Maybe::Present(_)) { ordered(tree) }
+ else if let Maybe::Absent(left) = *matched_left_value && let Maybe::Absent(right) = *matched_right_value { left == right }
+ else { false }
+}) && { let (matched_left_value, matched_right_value) = (body,source_body);
+if let Maybe::Present(ref tree) = *matched_left_value && matches!(*matched_right_value, Maybe::Present(_)) { ordered(tree) && spans.len() == tree.nodes.len() }
+ else if let Maybe::Absent(left) = *matched_left_value && let Maybe::Absent(right) = *matched_right_value { left == right && spans.is_empty() }
+ else { false }
+}
+                            } }
+ else if let DeclarationTree::Data {ref parameters,ref constructors,ref kind} = *matched_left_value && let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_right_value { {
+                                parameters.len() == signature.parameters().len()
+                                    && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
+                                    && parameters.iter().chain(constructors.iter().flatten()).chain(core::iter::once(kind)).all(ordered)
+                                    && spans.is_empty()
+                            } }
+ else { false }
+}
                     }
             })
         && ret
@@ -615,24 +649,55 @@ impl Snapshot
         for (ordinal, (item, reference)) in
             program.items().iter().zip(program.references()).enumerate()
         {
-            let declaration = item.declaration();
-            let signature = declaration
-                .signature()
-                .map(|root| read(program, origins, Root::ValueType(root)).0);
-            let (body, located) = match declaration.body() {
-                | Maybe::Present(root) => {
-                    let (tree, located) = read(program, origins, Root::Value(root));
-                    (Maybe::Present(tree), located)
+            let (declaration, located) = match *(item.declaration().content()) {
+                | gandr_core_checker::DeclarationContent::Value {
+                    ref signature,
+                    ref body,
+                } => {
+                    let signature =
+                        signature.map(|root| read(program, origins, Root::ValueType(root)).0);
+                    let (body, located) = match *body {
+                        | Maybe::Present(root) => {
+                            let (tree, located) = read(program, origins, Root::Value(root));
+                            (Maybe::Present(tree), located)
+                        },
+                        | Maybe::Absent(reason) => (Maybe::Absent(reason), Vec::new()),
+                    };
+                    (DeclarationTree::Value { signature, body }, located)
                 },
-                | Maybe::Absent(reason) => (Maybe::Absent(reason), Vec::new()),
+                | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+                    let parameters = signature
+                        .parameters()
+                        .iter()
+                        .map(|&root| read(program, origins, Root::ValueType(root)).0)
+                        .collect();
+                    let constructors = signature
+                        .constructors()
+                        .iter()
+                        .map(|fields| {
+                            fields
+                                .iter()
+                                .map(|&root| read(program, origins, Root::ValueType(root)).0)
+                                .collect()
+                        })
+                        .collect();
+                    let kind = read(program, origins, Root::ValueType(signature.kind())).0;
+                    (
+                        DeclarationTree::Data {
+                            parameters,
+                            constructors,
+                            kind,
+                        },
+                        Vec::new(),
+                    )
+                },
             };
             if let Some(&Maybe::Present(span)) = located.first() {
                 bodies.push((span, ItemOrdinal::from(ordinal)));
             }
             items.push(ItemTree {
                 reference: reference.clone(),
-                signature,
-                body,
+                declaration,
             });
             spans.push(located);
         }
@@ -678,12 +743,7 @@ impl Snapshot
         .get(usize::from(path.item))
         .map_or(
             matches!(ret, Maybe::Absent(addressed::Absent::NoItem)),
-            |item| match item.body {
-                Maybe::Absent(_) => {
-                    matches!(ret, Maybe::Absent(addressed::Absent::NoBody))
-                }
-                Maybe::Present(ref tree) => {
-                    match tree.resolve(&path.slots) {
+            |item| item.body().map_or(matches!(ret, Maybe::Absent(addressed::Absent::NoBody)), |tree| match tree.resolve(&path.slots) {
                         Maybe::Present(index) => {
                             tree.nodes
                                 .get(usize::from(index))
@@ -701,9 +761,7 @@ impl Snapshot
                         Maybe::Absent(_) => {
                             matches!(ret, Maybe::Absent(addressed::Absent::NoChild))
                         }
-                    }
-                }
-            },
+                    }),
         )
 },
     )]
@@ -713,16 +771,13 @@ impl Snapshot
         path: &CorePath,
     ) -> Maybe<&ContentNode, addressed::Absent>
     {
-        let tree = match self.items.get(usize::from(path.item)) {
-            | None => return Maybe::Absent(addressed::Absent::NoItem),
-            | Some(&ItemTree {
-                body: Maybe::Absent(_),
-                ..
-            }) => return Maybe::Absent(addressed::Absent::NoBody),
-            | Some(&ItemTree {
-                body: Maybe::Present(ref tree),
-                ..
-            }) => tree,
+        let Some(item) = self.items.get(usize::from(path.item))
+        else {
+            return Maybe::Absent(addressed::Absent::NoItem);
+        };
+        let Some(tree) = item.body()
+        else {
+            return Maybe::Absent(addressed::Absent::NoBody);
         };
         tree.resolve(&path.slots)
             .and_then(|at| match tree.nodes.get(usize::from(at)) {
@@ -758,9 +813,7 @@ impl Snapshot
             self.spans.get(usize::from(path.item)),
         ) {
             (Some(item), Some(spans)) => {
-                match item.body {
-                    Maybe::Present(ref tree) => {
-                        match tree.resolve(&path.slots) {
+                item.body().map_or(Maybe::Absent(spanned::Absent::Unaddressed), |tree| match tree.resolve(&path.slots) {
                             Maybe::Present(index) => {
                                 spans
                                     .get(usize::from(index))
@@ -770,10 +823,7 @@ impl Snapshot
                             Maybe::Absent(_) => {
                                 Maybe::Absent(spanned::Absent::Unaddressed)
                             }
-                        }
-                    }
-                    Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unaddressed),
-                }
+                        })
             }
             _ => Maybe::Absent(spanned::Absent::Unaddressed),
         }
@@ -787,7 +837,11 @@ impl Snapshot
     {
         let (
             Some(&ItemTree {
-                body: Maybe::Present(ref tree),
+                declaration:
+                    DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
                 ..
             }),
             Some(spans),
@@ -945,11 +999,11 @@ impl Snapshot
             Maybe::Present(ref path) => {
                 self.items
                     .get(usize::from(path.item))
-                    .is_some_and(|item| match item.body {
-                        Maybe::Present(ref tree) => {
+                    .is_some_and(|item| match item.body() {
+                        Some(tree) => {
                             ret.1.0 > 0_usize && ret.1.0 <= tree.nodes.len()
                         }
-                        Maybe::Absent(_) => false,
+                        None => false,
                     })
             }
             Maybe::Absent(_) => ret.1.0 == 0_usize,
@@ -975,7 +1029,11 @@ impl Snapshot
         let (
             true,
             Some(&ItemTree {
-                body: Maybe::Present(ref tree),
+                declaration:
+                    DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
                 ..
             }),
             Some(spans),
@@ -1007,7 +1065,7 @@ impl Snapshot
                 else {
                     continue;
                 };
-                for (slot, child) in children(node).iter().enumerate() {
+                for (slot, child) in children(node).enumerate() {
                     visited = visited.saturating_add(1_usize);
                     let Some(&Maybe::Present(span)) = spans.get(usize::from(child))
                     else {
@@ -1378,15 +1436,10 @@ impl EditScript
                 | Action::SetConstant { ref path, .. } => {
                     old.items
                         .get(usize::from(path.item))
-                        .is_some_and(|item| match item.body {
-                            Maybe::Present(ref tree) => {
-                                matches!(
+                        .is_some_and(|item| item.body().is_some_and(|tree| matches!(
                                     tree.resolve(& path.slots), Maybe::Present(index) if
                                     usize::from(index) < tree.nodes.len()
-                                )
-                            }
-                            Maybe::Absent(_) => false,
-                        })
+                                )))
                 }
             })
         && ret
@@ -1399,17 +1452,17 @@ impl EditScript
                 Action::SetSignature { at, ref from, .. } => {
                     old.items
                         .get(usize::from(at))
-                        .is_some_and(|item| item.signature == *from)
+                        .is_some_and(|item| matches!(item.declaration,DeclarationTree::Value {ref signature,..} if signature == from))
                 }
                 Action::FillHole { at, .. } => {
                     old.items
                         .get(usize::from(at))
-                        .is_some_and(|item| matches!(item.body, Maybe::Absent(_)))
+                        .is_some_and(|item| matches!(item.declaration,DeclarationTree::Value {body:Maybe::Absent(_),..}))
                 }
                 Action::EraseToHole { at } => {
                     old.items
                         .get(usize::from(at))
-                        .is_some_and(|item| matches!(item.body, Maybe::Present(_)))
+                        .is_some_and(|item| item.body().is_some())
                 }
                 Action::SetLiteral { ref path, ref from, .. } => {
                     match old.node(path) {
@@ -1484,14 +1537,42 @@ pub fn diff(
         else {
             continue;
         };
-        if before.signature != after.signature {
+        let DeclarationTree::Value {
+            signature: ref before_signature,
+            body: ref before_body,
+        } = before.declaration
+        else {
+            if before.declaration != after.declaration {
+                actions.push(Action::DeleteItem { at });
+                actions.push(Action::InsertItem {
+                    at: new_at,
+                    item: after.clone(),
+                });
+            }
+            continue;
+        };
+        let DeclarationTree::Value {
+            signature: ref after_signature,
+            body: ref after_body,
+        } = after.declaration
+        else {
+            if before.declaration != after.declaration {
+                actions.push(Action::DeleteItem { at });
+                actions.push(Action::InsertItem {
+                    at: new_at,
+                    item: after.clone(),
+                });
+            }
+            continue;
+        };
+        if before_signature != after_signature {
             actions.push(Action::SetSignature {
                 at,
-                from: before.signature.clone(),
-                to: after.signature.clone(),
+                from: before_signature.clone(),
+                to: after_signature.clone(),
             });
         }
-        match (&before.body, &after.body) {
+        match (before_body, after_body) {
             | (&Maybe::Absent(_), &Maybe::Absent(_)) => {},
             | (&Maybe::Absent(_), &Maybe::Present(ref body)) => {
                 actions.push(Action::FillHole {
@@ -1581,18 +1662,26 @@ pub fn apply(
                 }
             },
             | Action::SetSignature { at, ref to, .. } => {
-                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at)) {
-                    item.signature.clone_from(to);
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value {
+                        ref mut signature, ..
+                    } = item.declaration
+                {
+                    signature.clone_from(to);
                 }
             },
             | Action::FillHole { at, ref to } => {
-                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at)) {
-                    item.body = Maybe::Present(to.clone());
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value { ref mut body, .. } = item.declaration
+                {
+                    *body = Maybe::Present(to.clone());
                 }
             },
             | Action::EraseToHole { at } => {
-                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at)) {
-                    item.body = Maybe::Absent(body::Absent::Hole);
+                if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
+                    && let DeclarationTree::Value { ref mut body, .. } = item.declaration
+                {
+                    *body = Maybe::Absent(body::Absent::Hole);
                 }
             },
             | Action::Replace { ref path, ref to } => {
@@ -1631,9 +1720,12 @@ pub fn apply(
     }
     for (at, edits) in grafts {
         if let Some(&mut Some(ref mut item)) = items.get_mut(usize::from(at))
-            && let Maybe::Present(ref body) = item.body
+            && let DeclarationTree::Value {
+                body: Maybe::Present(ref mut body),
+                ..
+            } = item.declaration
         {
-            item.body = Maybe::Present(graft(body, &edits));
+            *body = graft(body, &edits);
         }
     }
     let mut result: Vec<ItemTree> = items.into_iter().flatten().collect();
@@ -1729,7 +1821,6 @@ enum Source<'script>
                 .iter()
                 .all(|node| {
                     children(node)
-                        .iter()
                         .all(|child| {
                             let correct = usize::from(child) == expected;
                             expected = expected.saturating_add(1_usize);
@@ -2079,7 +2170,7 @@ fn diff_trees(
         if agreement(before, after) == Agreement::Same {
             let first = frames.len();
             let (old_children, new_children) = (children(before), children(after));
-            for (slot, nodes) in old_children.iter().zip(new_children.iter()).enumerate() {
+            for (slot, nodes) in old_children.zip(new_children).enumerate() {
                 frames.push(Frame {
                     nodes,
                     parent: Some(at),
@@ -2179,6 +2270,12 @@ enum Agreement
     (ret == Agreement::Same)
         == (mem::discriminant(old) == mem::discriminant(new)
             && match *old {
+                ContentNode::Data {declaration:ref left,ref arguments} => matches!(*new,ContentNode::Data {declaration:ref right,arguments:ref other} if left == right && arguments.len() == other.len()),
+                ContentNode::Constructor {tag,ref fields,..} => matches!(*new,ContentNode::Constructor {tag:other,fields:ref theirs,..} if tag == other && fields.len() == theirs.len()),
+                ContentNode::Record(ref fields) => matches!(*new,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
+                ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
+                ContentNode::RecordProjection(_,ref label) => matches!(*new,ContentNode::RecordProjection(_,ref other) if label == other),
                 ContentNode::PathEquiv { evidence: ref left, .. } => {
                     matches!(
                         * new, ContentNode::PathEquiv { evidence : ref right, .. } if
@@ -2212,7 +2309,7 @@ enum Agreement
                         if left == right
                     )
                 }
-                _ if children(old).count == 0_usize => old == new,
+                _ if children(old).next().is_none() => old == new,
                 _ => true,
             })
 },
@@ -2223,6 +2320,45 @@ fn agreement(
 ) -> Agreement
 {
     let same = match (old, new) {
+        | (
+            &ContentNode::Data {
+                declaration: ref left,
+                arguments: ref a,
+            },
+            &ContentNode::Data {
+                declaration: ref right,
+                arguments: ref b,
+            },
+        ) => left == right && a.len() == b.len(),
+        | (
+            &ContentNode::Constructor {
+                tag: a,
+                fields: ref left,
+                ..
+            },
+            &ContentNode::Constructor {
+                tag: b,
+                fields: ref right,
+                ..
+            },
+        ) => a == b && left.len() == right.len(),
+        | (&ContentNode::Record(ref left), &ContentNode::Record(ref right))
+        | (&ContentNode::RecordType(ref left), &ContentNode::RecordType(ref right)) => {
+            left.keys().eq(right.keys())
+        },
+        | (
+            &ContentNode::DataCase {
+                branches: ref left, ..
+            },
+            &ContentNode::DataCase {
+                branches: ref right,
+                ..
+            },
+        ) => left.len() == right.len(),
+        | (
+            &ContentNode::RecordProjection(_, ref left),
+            &ContentNode::RecordProjection(_, ref right),
+        ) => left == right,
         | (
             &ContentNode::PathEquiv {
                 evidence: ref left, ..
@@ -2265,7 +2401,7 @@ fn agreement(
                 target: ref right, ..
             },
         ) => left == right,
-        | _ if children(old).count == 0_usize => old == new,
+        | _ if children(old).next().is_none() => old == new,
         | _ => mem::discriminant(old) == mem::discriminant(new),
     };
     if same {
@@ -2276,235 +2412,13 @@ fn agreement(
     }
 }
 
-/// The children of one content node, in its former's order.
+/// The canonical children of a node, with sort annotations omitted.
 ///
 /// # Specification
-/// - requires: nothing beyond the documented producer and consumer contracts.
-/// - ensures: The used prefix contains zero through three children in former
-///   order; unused array slots have no semantic meaning.
-/// - executable: none — The originating content node is not held by this data
-///   record and there is no callable type boundary; children, get and iter
-///   check the prefix relation.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the cited independently constructed revision images,
-///   paths and edit transitions distinguish wrong identities, ordering or
-///   source interpretation. The predicates live on the operations that possess
-///   the necessary context.
-/// - witness: `tests::edit::apply_of_diff_reproduces_new`
-/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
-/// - witness: `tests::edit::constructor_change_is_one_replace`
-#[derive(Clone, Copy, Debug, Default)]
-struct Children
+/// trivial.
+fn children(node: &ContentNode) -> impl DoubleEndedIterator<Item = NodeIndex> + Clone + '_
 {
-    /// The children; slots from `count` on are unused.
-    slots: [NodeIndex; 3],
-    /// How many slots are used.
-    count: usize,
-}
-
-impl Children
-{
-    /// The child at `slot`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: returns the selected slot exactly when it lies in both the
-    ///   used prefix and the physical array; unused slots have no child.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — child orders of multi-child body formers and an
-    ///   out-of-range path; wrong slot order and exposing an unused slot change
-    ///   the observed leaf or absence.
-    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
-    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
-    #[spec(
-        ensures: |ret| {
-    ret == if slot.0 < self.count { self.slots.get(slot.0).copied() } else { None }
-},
-    )]
-    fn get(
-        &self,
-        slot: ChildSlot,
-    ) -> Option<NodeIndex>
-    {
-        if slot.0 < self.count {
-            self.slots.get(slot.0).copied()
-        }
-        else {
-            None
-        }
-    }
-
-    /// The children, in order.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: yields exactly the used child-slot prefix, in order, without
-    ///   exposing unused array cells.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — every multi-child body former and replayed
-    ///   constructor edits; the yielded order selects independently stated leaf
-    ///   paths. Cloning the borrowing iterator checks it without consuming the
-    ///   caller’s result.
-    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
-    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
-    /// - witness: `tests::edit::constructor_change_is_one_replace`
-    #[spec(
-        ensures: |ret| ret.clone().eq(self.slots.iter().take(self.count).copied()),
-    )]
-    fn iter(&self) -> core::iter::Copied<core::iter::Take<core::slice::Iter<'_, NodeIndex>>>
-    {
-        self.slots.iter().take(self.count).copied()
-    }
-}
-
-/// The children of `node`, in its former's order.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: returns exactly the node’s children in former order: zero through
-///   three used slots, with case ordered scrutinee, left branch, right branch.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — hand-built multi-child body formers, localized leaf edits
-///   and replayed source revisions; a changed arity or permuted child moves the
-///   independently named leaf path. Zero-child and out-of-range observations
-///   distinguish unused slots.
-/// - witness: `tests::edit::apply_of_diff_reproduces_new`
-/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
-/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
-/// - witness: `tests::edit::constructor_change_is_one_replace`
-#[spec(
-    ensures: |ret| match *node {
-    ContentNode::PrimitiveValue(_) => ret.count == 0,
-    ContentNode::Primitive(_, arguments) => ret.iter().eq(arguments.iter().copied()),
-    ContentNode::PathEquiv { path_type, forward, backward, .. } => {
-        ret.count == 3_usize
-            && ret.slots.get(..ret.count) == Some(&[path_type, forward, backward])
-    }
-    ContentNode::Variable { .. }
-    | ContentNode::Constant(_)
-    | ContentNode::Unit
-    | ContentNode::Literal(_)
-    | ContentNode::Base(_)
-    | ContentNode::UnitType
-    | ContentNode::Universe { .. }
-    | ContentNode::Abstract(_)
-    | ContentNode::Unresolved(_) => {
-        ret.count == 0_usize && ret.slots.get(..ret.count) == Some(&[])
-    }
-    ContentNode::PathRefl(only)
-    | ContentNode::Injection(_, only)
-    | ContentNode::Thunk(only)
-    | ContentNode::ValueLift { body: only, .. }
-    | ContentNode::Quote(only)
-    | ContentNode::QuoteComputation(only)
-    | ContentNode::StaticLambda(only)
-    | ContentNode::Lambda(only)
-    | ContentNode::Return(only)
-    | ContentNode::Force(only)
-    | ContentNode::ThunkType(only)
-    | ContentNode::TypeLift { inner: only, .. }
-    | ContentNode::Element { code: only, .. }
-    | ContentNode::ComputationElement { code: only, .. }
-    | ContentNode::Returner(only) => {
-        ret.count == 1_usize && ret.slots.get(..ret.count) == Some(&[only])
-    }
-    ContentNode::PathUniverse(first, second)
-    | ContentNode::PathProduct(first, second)
-    | ContentNode::Transport(first, second)
-    | ContentNode::Pair(first, second)
-    | ContentNode::Application(first, second)
-    | ContentNode::Bind(first, second)
-    | ContentNode::Product(first, second)
-    | ContentNode::StaticApplication(first, second)
-    | ContentNode::Sum(first, second)
-    | ContentNode::Arrow { domain: first, codomain: second }
-    | ContentNode::Pi { domain: first, codomain: second }
-    | ContentNode::StaticPi { domain: first, codomain: second } => {
-        ret.count == 2_usize && ret.slots.get(..ret.count) == Some(&[first, second])
-    }
-    ContentNode::Case { scrutinee, on_left, on_right } => {
-        ret.count == 3_usize
-            && ret.slots.get(..ret.count) == Some(&[scrutinee, on_left, on_right])
-    }
-},
-)]
-fn children(node: &ContentNode) -> Children
-{
-    let unused = NodeIndex::default();
-    let (slots, count) = match *node {
-        | ContentNode::Primitive(_, gandr_core_term::primitive::Arguments::Unary(argument)) => {
-            ([argument, unused, unused], 1)
-        },
-        | ContentNode::Primitive(
-            _,
-            gandr_core_term::primitive::Arguments::Binary([first, second]),
-        )
-        | ContentNode::PathUniverse(first, second)
-        | ContentNode::PathProduct(first, second)
-        | ContentNode::Transport(first, second)
-        | ContentNode::Pair(first, second)
-        | ContentNode::Application(first, second)
-        | ContentNode::Bind(first, second)
-        | ContentNode::Product(first, second)
-        | ContentNode::StaticApplication(first, second)
-        | ContentNode::Sum(first, second)
-        | ContentNode::Arrow {
-            domain: first,
-            codomain: second,
-        }
-        | ContentNode::Pi {
-            domain: first,
-            codomain: second,
-        }
-        | ContentNode::StaticPi {
-            domain: first,
-            codomain: second,
-        } => ([first, second, unused], 2),
-        | ContentNode::PathEquiv {
-            path_type,
-            forward,
-            backward,
-            ..
-        } => ([path_type, forward, backward], 3_usize),
-        | ContentNode::PrimitiveValue(_)
-        | ContentNode::Variable { .. }
-        | ContentNode::Constant(_)
-        | ContentNode::Unit
-        | ContentNode::Literal(_)
-        | ContentNode::Base(_)
-        | ContentNode::UnitType
-        | ContentNode::Universe { .. }
-        | ContentNode::Abstract(_)
-        | ContentNode::Unresolved(_) => ([unused; 3], 0_usize),
-        | ContentNode::PathRefl(only)
-        | ContentNode::Injection(_, only)
-        | ContentNode::Thunk(only)
-        | ContentNode::ValueLift { body: only, .. }
-        | ContentNode::Quote(only)
-        | ContentNode::QuoteComputation(only)
-        | ContentNode::StaticLambda(only)
-        | ContentNode::Lambda(only)
-        | ContentNode::Return(only)
-        | ContentNode::Force(only)
-        | ContentNode::ThunkType(only)
-        | ContentNode::TypeLift { inner: only, .. }
-        | ContentNode::Element { code: only, .. }
-        | ContentNode::ComputationElement { code: only, .. }
-        | ContentNode::Returner(only) => ([only, unused, unused], 1_usize),
-        | ContentNode::Case {
-            scrutinee,
-            on_left,
-            on_right,
-        } => ([scrutinee, on_left, on_right], 3_usize),
-    };
-    Children { slots, count }
+    node.child_indices().map(|(child, _)| child)
 }
 
 /// The root a tree is read from.
@@ -2574,7 +2488,6 @@ enum Root
                     .iter()
                     .all(|node| {
                         children(node)
-                            .iter()
                             .all(|child| {
                                 let correct = usize::from(child) == expected;
                                 expected = expected.saturating_add(1_usize);
@@ -2589,7 +2502,6 @@ enum Root
             .enumerate()
             .all(|(index, node)| {
                 children(node)
-                    .iter()
                     .all(|child| match ret.1.get(usize::from(child)) {
                         Some(&Maybe::Present(child_span)) => {
                             matches!(
@@ -2675,6 +2587,8 @@ fn read(
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::Value)),
             |node| match *node {
+                Value::Constructor {tag,ref fields,..} => matches!(ret,ContentNode::Constructor {tag:found,fields:ref other,..} if tag == found && fields.len() == other.len()),
+                Value::Record(ref fields) => matches!(ret,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
                 Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
                 Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
@@ -2735,6 +2649,24 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value(id) {
+        | Some(&Value::Constructor {
+            datatype,
+            tag,
+            ref fields,
+        }) => ContentNode::Constructor {
+            datatype: child(Root::ValueType(datatype)),
+            tag,
+            fields: fields
+                .iter()
+                .map(|&field| child(Root::Value(field)))
+                .collect(),
+        },
+        | Some(&Value::Record(ref fields)) => ContentNode::Record(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), child(Root::Value(field))))
+                .collect(),
+        ),
         | Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
         | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
         | Some(&Value::PathProduct(first, second)) => {
@@ -2810,6 +2742,8 @@ where
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::Computation)),
             |node| match *node {
+                Computation::DataCase {ref branches,..} => matches!(ret,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
+                Computation::RecordProjection(_,ref label) => matches!(ret,ContentNode::RecordProjection(_,ref other) if label == other),
                 Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
@@ -2833,6 +2767,21 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().computation(id) {
+        | Some(&Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+        }) => ContentNode::DataCase {
+            scrutinee: child(Root::Value(scrutinee)),
+            motive: child(Root::CompType(motive)),
+            branches: branches
+                .iter()
+                .map(|&branch| child(Root::Computation(branch)))
+                .collect(),
+        },
+        | Some(&Computation::RecordProjection(record, ref label)) => {
+            ContentNode::RecordProjection(child(Root::Value(record)), label.clone())
+        },
         | Some(&Computation::Primitive {
             primitive,
             arguments,
@@ -2907,6 +2856,8 @@ where
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::ValueType)),
             |node| match *node {
+                ValueType::Data {declaration,ref arguments} => matches!(ret,ContentNode::Data {declaration:ref found,arguments:ref other} if *found == program.resolve(declaration) && arguments.len() == other.len()),
+                ValueType::Record(ref fields) => matches!(ret,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
                 ValueType::PathUniverse(..) => {
                     matches!(ret, ContentNode::PathUniverse(..))
                 }
@@ -2958,6 +2909,22 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value_type(id) {
+        | Some(&ValueType::Data {
+            declaration,
+            ref arguments,
+        }) => ContentNode::Data {
+            declaration: program.resolve(declaration),
+            arguments: arguments
+                .iter()
+                .map(|&argument| child(Root::Value(argument)))
+                .collect(),
+        },
+        | Some(&ValueType::Record(ref fields)) => ContentNode::RecordType(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
+                .collect(),
+        ),
         | Some(&ValueType::PathUniverse(source, target)) => {
             let source = child(Root::Value(source));
             ContentNode::PathUniverse(source, child(Root::Value(target)))
@@ -3102,7 +3069,6 @@ where
                 .iter()
                 .all(|node| {
                     children(node)
-                        .iter()
                         .all(|child| {
                             let correct = usize::from(child) == expected;
                             expected = expected.saturating_add(1_usize);
@@ -3122,7 +3088,6 @@ where
             .enumerate()
             .all(|(index, node)| {
                 children(node)
-                    .iter()
                     .all(|child| match spans.get(usize::from(child)) {
                         Some(&Maybe::Present(child_span)) => {
                             matches!(
@@ -3148,7 +3113,7 @@ fn hull(
             | Some(&Maybe::Present(span)) => Some(span),
             | Some(&Maybe::Absent(_)) | None => None,
         };
-        for child in children(node).iter() {
+        for child in children(node) {
             if let Some(&Maybe::Present(span)) = spans.get(usize::from(child)) {
                 covered = Some(covered.map_or(span, |held| held.join(span)));
             }
@@ -3267,7 +3232,11 @@ mod tests
         let mut best: Option<(ByteSpan, usize, CorePath)> = None;
         for (ordinal, (item, spans)) in snapshot.items.iter().zip(&snapshot.spans).enumerate() {
             let &ItemTree {
-                body: Maybe::Present(ref tree),
+                declaration:
+                    super::DeclarationTree::Value {
+                        body: Maybe::Present(ref tree),
+                        ..
+                    },
                 ..
             } = item
             else {
@@ -3282,7 +3251,7 @@ mod tests
                     .copied()
                     .unwrap_or_default()
                     .saturating_add(1);
-                for (slot, child) in children(node).iter().enumerate() {
+                for (slot, child) in children(node).enumerate() {
                     if let (Some(parent), Some(level)) = (
                         reached.get_mut(usize::from(child)),
                         depth.get_mut(usize::from(child)),
@@ -3410,10 +3379,7 @@ def body = 1 ;
             unrecorded.localize(range),
             Maybe::Absent(located::Absent::Outside)
         );
-        assert_eq!(
-            children(&super::ContentNode::Unit).get(ChildSlot::from(0_usize)),
-            None
-        );
+        assert_eq!(children(&super::ContentNode::Unit).next(), None);
     }
 
     #[test]
@@ -3443,7 +3409,7 @@ def body = 1 ;
             on_left: NodeIndex::from(21_usize),
             on_right: NodeIndex::from(22_usize)
         });
-        assert_eq!(children(&mapped).get(ChildSlot::from(3_usize)), None);
+        assert_eq!(children(&mapped).nth(3), None);
         let left = ContentNode::Injection(Side::Left, NodeIndex::from(7_usize));
         let changed = super::map_children(&left, &mut |_| NodeIndex::from(8_usize));
         assert_eq!(
@@ -3556,8 +3522,10 @@ def body = 1 ;
                     key: ItemKey::from("equivalence"),
                     occurrence: Occurrence::from(0_usize),
                 },
-                signature: Maybe::Present(signature),
-                body: Maybe::Present(body),
+                declaration: super::DeclarationTree::Value {
+                    signature: Maybe::Present(signature),
+                    body: Maybe::Present(body),
+                },
             }],
             spans: vec![spans],
             bodies: Vec::new(),
@@ -3574,7 +3542,10 @@ def body = 1 ;
         ] {
             let mut new = old.clone();
             let item = new.items.first_mut().expect("one item");
-            let Maybe::Present(Tree { ref mut nodes }) = item.body
+            let super::DeclarationTree::Value {
+                body: Maybe::Present(Tree { ref mut nodes }),
+                ..
+            } = item.declaration
             else {
                 panic!("the equivalence body");
             };

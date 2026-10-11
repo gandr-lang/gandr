@@ -175,14 +175,15 @@ pub struct Encoded
     pub disposition: Disposition,
 }
 
-/// The type of the item named `name`, read from the latest checkpoints.
+/// A value classifier or native declaration universe from the latest
+/// checkpoints.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the last checkpoint whose item key is `name`'s bytes answers: a
-///   checked or owed item by its signature, a synthesised item by the type it
-///   produced, each laid out through [`spell`]; a layout the printer refuses is
-///   an absence.
+///   checked or owed value by its signature, a synthesised value by its
+///   produced classifier, and a native declaration by its declared universe,
+///   each laid out through [`spell`]; a refused layout is an absence.
 /// - provides: the type a transcript line names a declaration by.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -203,9 +204,9 @@ pub struct Encoded
         .map_or(matches!(ret, Maybe::Absent(spelled::Absent::Uncheckpointed)), |checkpoint| match *checkpoint.typing() {
             Typing::Refused(_) => matches!(ret, Maybe::Absent(spelled::Absent::Refused)),
             Typing::Checked { .. } | Typing::Owed
-                if matches!(checkpoint.content().signature(), Maybe::Absent(_)) =>
+                if matches!(checkpoint.content().declaration(), gandr_core_incremental::DeclarationRoots::Value {signature:Maybe::Absent(_),..}) =>
                 matches!(ret, Maybe::Absent(spelled::Absent::Unsigned)),
-            Typing::Checked { .. } | Typing::Owed | Typing::Synthesised { .. } =>
+            Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Synthesised { .. } =>
                 matches!(ret, Maybe::Present(_) | Maybe::Absent(spelled::Absent::Unpresentable)),
         }),
 })]
@@ -237,9 +238,26 @@ fn type_of(
         )
     };
     match *checkpoint.typing() {
-        | Typing::Checked { .. } | Typing::Owed => match content.signature() {
-            | Maybe::Present(root) => laid_out(spell(content.nodes(), root)),
-            | Maybe::Absent(_) => Maybe::Absent(spelled::Absent::Unsigned),
+        | Typing::Data => match *(content.declaration()) {
+            | gandr_core_incremental::DeclarationRoots::Data(ref roots) => {
+                laid_out(spell(content.nodes(), roots.kind))
+            },
+            | gandr_core_incremental::DeclarationRoots::Value { .. } => {
+                Maybe::Absent(spelled::Absent::Unpresentable)
+            },
+        },
+        | Typing::Checked { .. } | Typing::Owed => match *(content.declaration()) {
+            | gandr_core_incremental::DeclarationRoots::Value {
+                signature: Maybe::Present(ref root),
+                ..
+            } => laid_out(spell(content.nodes(), *root)),
+            | gandr_core_incremental::DeclarationRoots::Value {
+                signature: Maybe::Absent(_),
+                ..
+            } => Maybe::Absent(spelled::Absent::Unsigned),
+            | gandr_core_incremental::DeclarationRoots::Data(_) => {
+                Maybe::Absent(spelled::Absent::Unpresentable)
+            },
         },
         | Typing::Synthesised { ref produced, .. } => {
             laid_out(spell(produced.nodes(), NodeIndex::from(0)))
@@ -389,7 +407,6 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 ///   the fragment writes are each asserted at their exact lines and
 ///   disposition.
 /// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
-/// - witness: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`
 /// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
 /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
 /// - witness: `loop::tests::a_refused_chunk_is_not_kept`

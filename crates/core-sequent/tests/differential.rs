@@ -329,6 +329,10 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
         | EvalFault::TransportedNonPath
+        | EvalFault::CasedNonConstructor
+        | EvalFault::UnknownConstructor { .. }
+        | EvalFault::ProjectedNonRecord
+        | EvalFault::AbsentRecordField
         | EvalFault::NativePrimitive(_)
         | EvalFault::OutOfFuel
         | EvalFault::DanglingTerm

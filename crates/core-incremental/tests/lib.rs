@@ -14,3 +14,6 @@ mod generate;
 mod defects;
 #[cfg(test)]
 mod incremental;
+
+#[cfg(test)]
+mod native_formers;

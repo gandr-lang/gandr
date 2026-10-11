@@ -69,14 +69,65 @@ impl Consulted
     }
 }
 
+/// One nominal-signature answer, including a missing declaration.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataConsulted
+{
+    /// The declaration identity that was read.
+    constant: ConstantIndex,
+    /// The complete constructor table, not only its universe.
+    signature: Option<alloc::sync::Arc<gandr_core_term::DataSignature>>,
+}
+
+impl DataConsulted
+{
+    /// Retain a nominal answer without copying its constructor table.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn new(
+        constant: ConstantIndex,
+        signature: Option<alloc::sync::Arc<gandr_core_term::DataSignature>>,
+    ) -> Self
+    {
+        Self {
+            constant,
+            signature,
+        }
+    }
+
+    /// The nominal identity that was read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// The signature that existed when this judgment ran, or its absence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn signature(&self) -> Option<&gandr_core_term::DataSignature>
+    {
+        self.signature.as_deref()
+    }
+}
+
 /// The answers one declaration's judgement consulted, ascending by position,
 /// each position once.
-#[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Support
 {
     /// The answers, ascending by position, without repeats.
     consulted: Vec<Consulted>,
+    /// Nominal answers, ascending by position, without repeats.
+    data: Vec<DataConsulted>,
 }
 
 impl Support
@@ -100,18 +151,32 @@ impl Support
             before = log.len(),
             first = log.iter().min_by_key(|entry| entry.constant).copied(),
             last = log.iter().max_by_key(|entry| entry.constant).copied(),
+            data_before = data.len(),
+            data_first = data.iter().map(DataConsulted::constant).min(),
+            data_last = data.iter().map(DataConsulted::constant).max(),
         ],
         ensures: |ret| ret.consulted.len() <= before
             && ret.consulted.first().copied() == first
             && ret.consulted.last().copied() == last
             && ret.consulted.iter().zip(ret.consulted.iter().skip(1))
-                .all(|(left, right)| left.constant < right.constant),
+                .all(|(left, right)| left.constant < right.constant)
+            && ret.data.len() <= data_before && ret.data.first().map(DataConsulted::constant) == data_first
+            && ret.data.last().map(DataConsulted::constant) == data_last
+            && ret.data.iter().zip(ret.data.iter().skip(1)).all(|(left,right)| left.constant < right.constant),
     )]
-    pub(crate) fn from_log(mut log: Vec<Consulted>) -> Self
+    pub(crate) fn from_log(
+        mut log: Vec<Consulted>,
+        mut data: Vec<DataConsulted>,
+    ) -> Self
     {
         log.sort_by_key(|consulted| consulted.constant);
         log.dedup_by_key(|consulted| consulted.constant);
-        Self { consulted: log }
+        data.sort_by_key(DataConsulted::constant);
+        data.dedup_by_key(|entry| entry.constant);
+        Self {
+            consulted: log,
+            data,
+        }
     }
 
     /// The answers, ascending by position, each position once.
@@ -123,6 +188,17 @@ impl Support
     pub fn consulted(&self) -> &[Consulted]
     {
         &self.consulted
+    }
+
+    /// Nominal answers, ascending by position, including absent signatures.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn data_consulted(&self) -> &[DataConsulted]
+    {
+        &self.data
     }
 }
 
@@ -179,5 +255,11 @@ pub enum SupportLog
     /// No supported judgement runs; nothing is logged.
     Off,
     /// A supported judgement runs; each answer is logged in the order read.
-    Recording(Vec<Consulted>),
+    Recording
+    {
+        /// Value-signature answers in consultation order.
+        values: Vec<Consulted>,
+        /// Nominal-signature answers in consultation order.
+        data: Vec<DataConsulted>,
+    },
 }

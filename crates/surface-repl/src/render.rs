@@ -79,6 +79,7 @@ impl Source for ContentTable<'_>
     ///   indices; every computation former as [`Former::Computation`]; an
     ///   unresolved node, and an index past the table, as
     ///   [`Former::Unreadable`].
+    /// Native data and record syntax is outside this source adapter's fragment.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -96,7 +97,11 @@ impl Source for ContentTable<'_>
     /// - witness: `loop::tests::corpus_types_spell_as_their_source_writes_them`
     #[spec(ensures: |ret| match (self.0.get(usize::from(node)), ret) {
         (Some(&ContentNode::PrimitiveValue(primitive)), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
-        (Some(&ContentNode::Primitive(..) | &ContentNode::Transport(..) |
+        (Some(&ContentNode::Data { .. } | &ContentNode::RecordType(_) |
+&ContentNode::Constructor { .. } | &ContentNode::Record(_) |
+&ContentNode::Unresolved(_)) | None, Former::Unreadable) |
+(Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) |
+&ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
 &ContentNode::Case { .. }), Former::Computation) |
@@ -104,8 +109,7 @@ impl Source for ContentTable<'_>
 (Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
 (Some(&ContentNode::UnitType), Former::UnitType) |
-(Some(&ContentNode::TypeLift { .. }), Former::TypeLift) |
-(None | Some(&ContentNode::Unresolved(_)), Former::Unreadable) => true,
+(Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
         (Some(&ContentNode::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         (Some(&ContentNode::Constant(Reference::Item { ref key, .. })), Former::Constant(name))
@@ -156,6 +160,9 @@ impl Source for ContentTable<'_>
             return Former::Unreadable;
         };
         match *content {
+            | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) => {
+                Former::Computation
+            },
             | ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
@@ -201,6 +208,10 @@ impl Source for ContentTable<'_>
                 Former::StaticApplication(operator, argument)
             },
             | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
+            | ContentNode::Data { .. }
+            | ContentNode::RecordType(_)
+            | ContentNode::Constructor { .. }
+            | ContentNode::Record(_)
             | ContentNode::Unresolved(_) => Former::Unreadable,
         }
     }

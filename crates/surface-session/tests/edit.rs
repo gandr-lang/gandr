@@ -8,6 +8,8 @@
 //! and the oracle, `apply` of a diff reproducing the new revision over
 //! generated pairs.
 
+extern crate alloc;
+
 use anodized::spec;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -584,10 +586,8 @@ struct Leaf(usize);
             .items()
             .first()
             .is_some_and(|item| {
-                matches!(item.signature(), Maybe::Absent(signature::Absent::Unsigned))
-                    && match item.body() {
-                        Maybe::Present(tree) => {
-                            match tree.nodes() {
+                matches!(item.declaration(), gandr_surface_session::DeclarationTree::Value {signature:Maybe::Absent(signature::Absent::Unsigned),..})
+                    && item.body().is_some_and(|tree| match tree.nodes() {
                                 &[ContentNode::Thunk(thunk),
                                 ContentNode::Case { scrutinee, on_left, on_right },
                                 ContentNode::Pair(pair_first, pair_second),
@@ -645,10 +645,7 @@ struct Leaf(usize);
                                             })
                                 }
                                 _ => false,
-                            }
-                        }
-                        Maybe::Absent(_) => false,
-                    }
+                            })
             })
 },
 )]
@@ -818,6 +815,168 @@ fn a_submission_carries_the_edits_from_the_last_accepted_revision()
         Maybe::Present(&diff(&snapshot(EDITED), &snapshot(BASE))),
         "the edits run from the latest accepted revision, past the refused one"
     );
+}
+
+/// A native revision with four parameters, constructors, fields and branches.
+/// Leaves 3, 4 and 5 change the fourth literal, fourth signature field, and
+/// declaration category respectively.
+///
+/// # Specification
+/// - requires: the changed leaf is absent or lies from 3 through 5.
+/// - ensures: four ordered items; the first is a native signature except for
+///   the category-changing revision. No native signature becomes a value hole.
+/// - panics: the fixed dense item order is rejected.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fourth-child edits expose a fixed three-child traversal;
+///   schema and category changes expose a discarded native declaration root.
+/// - witness: `tests::edit::native_snapshots_preserve_schema_and_fourth_children`
+#[spec(requires: changed.is_none_or(|leaf| (3..=5).contains(&leaf.0)), ensures: |ret| ret.items().len() == 4 && ret.items().first().is_some_and(|item| matches!(item.declaration(), gandr_surface_session::DeclarationTree::Data {..}) == (changed != Some(Leaf(5)))))]
+fn native_snapshot(changed: Option<Leaf>) -> Snapshot
+{
+    use alloc::collections::BTreeMap;
+
+    use gandr_core_term::ConstructorTag;
+    use gandr_core_term::DataSignature;
+    use gandr_core_term::FieldLabel;
+    use gandr_core_term::Sort;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::GroundSort;
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let last_field = if changed == Some(Leaf(4)) {
+        arena.value_type_unit()
+    }
+    else {
+        string
+    };
+    let native = if changed == Some(Leaf(5)) {
+        let quoted = arena.value_quote(string);
+        Declaration::new(
+            ConstantIndex::from(0_usize),
+            Maybe::Present(kind),
+            Maybe::Present(quoted),
+            OriginToken::from(0_usize),
+        )
+    }
+    else {
+        Declaration::data(
+            ConstantIndex::from(0_usize),
+            DataSignature::new(
+                vec![string; 4],
+                vec![vec![string, string, string, last_field]; 4],
+                kind,
+            ),
+            OriginToken::from(0_usize),
+        )
+    };
+    let values = [0_usize, 1, 2, 3].map(|at| arena.value_literal(leaf_content(Leaf(at), changed)));
+    let datatype = arena.value_type_data(ConstantIndex::from(0_usize), values.to_vec());
+    let constructor =
+        arena.value_constructor(datatype, ConstructorTag::from(3_usize), values.to_vec());
+    let fields = ["a", "b", "c", "d"].map(|name| FieldLabel::from(String::from(name)));
+    let record_type = arena.value_type_record(
+        fields
+            .iter()
+            .cloned()
+            .zip([string, string, string, datatype])
+            .collect::<BTreeMap<_, _>>(),
+    );
+    let record = arena.value_record(
+        fields
+            .into_iter()
+            .zip([values[0], values[1], values[2], constructor])
+            .collect(),
+    );
+    let motive = arena.comp_type_returner(record_type);
+    let mut branch = arena.computation_return(record);
+    for _ in 0_usize .. 4_usize {
+        branch = arena.computation_lambda(branch);
+    }
+    let case = arena.computation_data_case(constructor, motive, vec![branch; 4]);
+    let case = arena.value_thunk(case);
+    let projection =
+        arena.computation_record_projection(record, FieldLabel::from(String::from("d")));
+    let projection = arena.value_thunk(projection);
+    let mut items = vec![Item::new(ItemKey::from("native"), native)];
+    for (at, name, body) in [
+        (1_usize, "record", record),
+        (2, "case", case),
+        (3, "projection", projection),
+    ] {
+        items.push(Item::new(
+            ItemKey::from(name),
+            Declaration::new(
+                ConstantIndex::from(at),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(body),
+                OriginToken::from(at),
+            ),
+        ));
+    }
+    let program = Program::new(arena, items).expect("four dense declarations");
+    Snapshot::of(&program, &OriginTable::new())
+}
+
+#[test]
+fn native_snapshots_preserve_schema_and_fourth_children()
+{
+    use gandr_surface_session::DeclarationTree;
+    let old = native_snapshot(None);
+    let changed = native_snapshot(Some(Leaf(3)));
+    let script = diff_sound(&old, &changed);
+    for (item, slots) in [
+        (1_usize, slots![3, 0, 3]),
+        (1, slots![3, 4]),
+        (2, slots![0, 5, 0, 0, 0, 0, 0, 3, 4]),
+        (3, slots![0, 0, 3, 4]),
+    ] {
+        let path = CorePath::new(ItemOrdinal::from(item), slots);
+        assert_eq!(
+            old.node(&path),
+            Maybe::Present(&ContentNode::Literal(leaf_content(Leaf(3), None)))
+        );
+        assert_eq!(
+            changed.node(&path),
+            Maybe::Present(&ContentNode::Literal(leaf_content(Leaf(3), Some(Leaf(3)))))
+        );
+        assert!(
+            script.actions().iter().any(
+                |action| matches!(action,Action::SetLiteral {path:found,..} if *found == path)
+            ),
+            "{path:?}: {script:?}"
+        );
+    }
+    let DeclarationTree::Data {
+        ref parameters,
+        ref constructors,
+        ref kind,
+    } = *(old.items()[0].declaration())
+    else {
+        panic!("native signature preserved");
+    };
+    assert_eq!(parameters[3].nodes(), [ContentNode::Base(
+        gandr_kernel_term::BaseType::String
+    )]);
+    assert_eq!(constructors[3][3].nodes(), parameters[3].nodes());
+    assert!(matches!(kind.nodes(), [ContentNode::Universe { .. }]));
+    assert!(old.items()[0].body().is_none());
+    for leaf in [Leaf(4), Leaf(5)] {
+        let revised = native_snapshot(Some(leaf));
+        let script = diff_sound(&old, &revised);
+        assert!(
+            matches!(script.actions(),[Action::DeleteItem {at},Action::InsertItem {at:inserted,..}] if *at == ItemOrdinal::from(0_usize) && at == inserted),
+            "{script:?}"
+        );
+        if let DeclarationTree::Data {
+            ref constructors, ..
+        } = *(revised.items()[0].declaration())
+        {
+            assert_eq!(constructors[3][3].nodes(), [ContentNode::UnitType]);
+        }
+    }
 }
 
 proptest! {

@@ -26,6 +26,14 @@ use crate::image::NodeKind;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Form
 {
+    /// A nominal constructor.
+    Constructor,
+    /// A structural record.
+    Record,
+    /// Nominal case elimination.
+    DataCase,
+    /// Named record projection.
+    RecordProjection,
     /// A native function or operation.
     Primitive,
     /// Function introduction.
@@ -74,6 +82,10 @@ impl core::fmt::Display for Form
     ) -> core::fmt::Result
     {
         f.write_str(match *self {
+            | Self::Constructor => "a nominal constructor",
+            | Self::Record => "a structural record",
+            | Self::DataCase => "a nominal case",
+            | Self::RecordProjection => "a record projection",
             | Self::Primitive => "a native primitive",
             | Self::Lambda => "an abstraction",
             | Self::Application => "an application",
@@ -269,6 +281,12 @@ pub fn lower_computation(
                     .computation(id)
                     .ok_or(LowerError::DanglingComputation(id))?;
                 match *computation {
+                    | Computation::DataCase { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::DataCase));
+                    },
+                    | Computation::RecordProjection(..) => {
+                        return Err(LowerError::OutsideSlice(Form::RecordProjection));
+                    },
                     | Computation::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
@@ -309,6 +327,10 @@ pub fn lower_computation(
                     operands: Vec::new(),
                 };
                 match *value {
+                    | Value::Constructor { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Constructor));
+                    },
+                    | Value::Record(_) => return Err(LowerError::OutsideSlice(Form::Record)),
                     | Value::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
