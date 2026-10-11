@@ -1209,7 +1209,6 @@ mod tests
             .filter_map(|(index, family)| {
                 let production = produce(
                     &input.arena,
-                    family.program,
                     &family.members,
                     PriceGate::Memoized,
                     &mut InheritanceCache::new(),
@@ -1217,7 +1216,7 @@ mod tests
                 )
                 .unwrap();
                 let Analysis::Candidate(candidate) =
-                    analyze(&input.arena, family.program, &family.members).unwrap()
+                    analyze(&input.arena, &family.members).unwrap()
                 else {
                     return None;
                 };

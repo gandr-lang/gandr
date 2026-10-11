@@ -602,7 +602,7 @@ fn observe_family(
             .checked_add(serde_json::to_vec(&image)?.len())
             .ok_or(StageError::Overflow)?;
     }
-    let candidate = match analyze(arena, family.program, &family.members)? {
+    let candidate = match analyze(arena, &family.members)? {
         | Analysis::Candidate(candidate) => candidate,
         | Analysis::Refused {
             reason: gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. },
@@ -787,14 +787,8 @@ fn main() -> Result<(), ObservationError>
             let production_heap = allocation_counter::measure(|| {
                 error = families.iter().try_for_each(|family| {
                     let mut budget = Budget(10_000_000);
-                    let production = produce(
-                        &input.arena,
-                        family.program,
-                        &family.members,
-                        gate,
-                        &mut cache,
-                        &mut budget,
-                    )?;
+                    let production =
+                        produce(&input.arena, &family.members, gate, &mut cache, &mut budget)?;
                     fuels.push(KernelFuel(
                         10_000_000_usize
                             .checked_sub(budget.0)
@@ -969,7 +963,6 @@ mod tests
                     .map(|family| {
                         produce(
                             &input.arena,
-                            family.program,
                             &family.members,
                             gate,
                             &mut cache,
@@ -1025,7 +1018,6 @@ mod tests
         let family = &families[0];
         let produced = produce(
             &input.arena,
-            family.program,
             &family.members,
             PriceGate::Memoized,
             &mut InheritanceCache::new(),
@@ -1082,7 +1074,7 @@ mod tests
             .into_iter()
             .find(|family| {
                 matches!(
-                    analyze(&power.arena, family.program, &family.members),
+                    analyze(&power.arena, &family.members),
                     Ok(Analysis::Refused {
                         reason: gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. },
                         ..
@@ -1105,7 +1097,6 @@ mod tests
         );
         let plain = produce(
             &input.arena,
-            ProgramId(0),
             &[],
             PriceGate::Memoized,
             &mut InheritanceCache::new(),

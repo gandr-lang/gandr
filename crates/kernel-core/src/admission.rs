@@ -83,8 +83,9 @@ impl Node
     }
 }
 
-/// A producer claim with no authority and no inheritance-cache input.
-#[derive(Clone, Debug)]
+/// A producer claim with no authority and no inheritance-cache input; equal
+/// proposals are equal field for field, byte for byte.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proposal
 {
     /// Canonical classifier descriptors, with backward type references.
@@ -191,6 +192,8 @@ pub struct Schema
     checks: Work,
     /// Fuel consumed by those replays.
     replay_work: Work,
+    /// Fuel consumed by the most expensive of those replays.
+    largest_replay: Work,
     /// Distinct dependent rigid constructors in the two side skeletons.
     affected: Work,
 }
@@ -537,6 +540,7 @@ impl Schema
             vocabulary,
             checks: Work(0),
             replay_work: Work(0),
+            largest_replay: Work(0),
             affected,
         };
         schema.transparent(budget)?;
@@ -574,6 +578,17 @@ impl Schema
     pub const fn work(&self) -> (Work, Work, Work)
     {
         (self.checks, self.replay_work, self.affected)
+    }
+
+    /// Observe the fuel of the most expensive single inheritance replay.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn largest_replay(&self) -> Work
+    {
+        self.largest_replay
     }
 
     /// Borrow the exact classifier namespace carried by this schema.
@@ -834,7 +849,8 @@ impl Schema
     /// Replay one reified probe equation under a closed reflexive endpoint.
     ///
     /// # Specification
-    /// - ensures: success records one valid local equation and consumed fuel.
+    /// - ensures: success records one valid local equation and consumed fuel;
+    ///   the largest single replay's fuel is the maximum of those recorded.
     /// - fails: `CorruptStep` on an invalid equation; preserves exhausted fuel.
     /// - panics: none.
     ///
@@ -845,9 +861,11 @@ impl Schema
     /// - hypothesis: L3 — a changed target or decision cannot mint a schema.
     /// - witness: `admission::tests::schema_and_instance_refusals`
     #[spec(
-        captures: [before = budget.0, checks = self.checks.0, replayed = self.replay_work.0],
+        captures: [before = budget.0, checks = self.checks.0, replayed = self.replay_work.0,
+            largest = self.largest_replay.0],
         ensures: |ret| budget.0 <= before
             && self.replay_work.0 == replayed.saturating_add(before.saturating_sub(budget.0))
+            && self.largest_replay.0 == largest.max(before.saturating_sub(budget.0))
             && self.checks.0 == checks.saturating_add(usize::from(ret.is_ok())),
     )]
     fn discharge(
@@ -865,10 +883,9 @@ impl Schema
         };
         let before = budget.0;
         let result = crate::stage::replay(&mut arena, &[], &certificate, budget);
-        self.replay_work.0 = self
-            .replay_work
-            .0
-            .saturating_add(before.saturating_sub(budget.0));
+        let spent = before.saturating_sub(budget.0);
+        self.replay_work.0 = self.replay_work.0.saturating_add(spent);
+        self.largest_replay.0 = self.largest_replay.0.max(spent);
         match result {
             | Ok(_) => {
                 self.checks.0 = self.checks.0.saturating_add(1);

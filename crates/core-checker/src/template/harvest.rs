@@ -20,6 +20,23 @@ use super::ProgramId;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Shape(Vec<Discriminant<Term>>);
 
+/// What harvest groups a family by: its decision and its members' shallow
+/// source shape, never its program.
+///
+/// # Specification
+/// - provides: equality exactly when two families, from any programs, share
+///   their rule and shallow source shape; the template memo's lookup key.
+/// - panics: none.
+/// - executable: none — a plain pair of private values with derived equality.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct FamilyKey
+{
+    /// The shared local decision.
+    rule: Rule,
+    /// The shared shallow source shape.
+    shape: Shape,
+}
+
 /// One recurring decision region from a single meta-program.
 ///
 /// # Specification
@@ -41,7 +58,19 @@ pub struct Family
     /// Equations in producer order.
     pub members: Vec<Step>,
     /// Rule and source shape; the result never determines a family.
-    key: (Rule, Shape),
+    key: FamilyKey,
+}
+
+impl Family
+{
+    /// The key this family was harvested under.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn key(&self) -> &FamilyKey
+    {
+        &self.key
+    }
 }
 
 /// Observe root and immediate child constructors without numeral payloads.
@@ -97,7 +126,7 @@ fn shape(
 /// - witness: `template::tests::empty_and_malformed_families_preserve_refusals`
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|families|
     families.iter().all(|family| family.program == program && !family.members.is_empty()
-        && family.members.iter().all(|step| step.rule == family.key.0))
+        && family.members.iter().all(|step| step.rule == family.key.rule))
         && families.iter().map(|family| family.members.len()).sum::<usize>()
             == certificates.iter().map(|certificate| certificate.steps.len()).sum::<usize>()))]
 #[inline]
@@ -113,7 +142,10 @@ pub fn harvest(
         .flat_map(|certificate| &certificate.steps)
     {
         let source = shape(arena, step.source)?;
-        let key = (step.rule, source);
+        let key = FamilyKey {
+            rule: step.rule,
+            shape: source,
+        };
         if let Some(family) = families.iter_mut().find(|family| family.key == key) {
             family.members.push(*step);
         }
