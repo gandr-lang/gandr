@@ -62,11 +62,13 @@ publish = false
 # on only because a build or a test failed without it.
 [workspace.dependencies]
 
-# Thread-local heap high-water measurements in the staging example.
+# Thread-local heap high-water measurements in the staging example, and the
+# heap the edit loop keeps in the session's measurement.
 # features:
 # - none: the allocator counter has no optional features.
 # consumers:
 # - core-checker (dev)
+# - surface-session (dev)
 [workspace.dependencies.allocation-counter]
 version = "0.8.1"
 default-features = false

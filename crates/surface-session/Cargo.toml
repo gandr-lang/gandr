@@ -12,6 +12,12 @@ categories = ["compilers", "development-tools"]
 publish.workspace = true
 autotests = false
 
+# The edit-loop measurement prints its matrix; `test = true` builds it with
+# the test targets so its witnesses run.
+[[example]]
+name = "edit_loop"
+test = true
+
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -45,6 +51,7 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+allocation-counter.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-surface-diagnostics.workspace = true
 proptest.workspace = true

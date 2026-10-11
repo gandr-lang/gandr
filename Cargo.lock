@@ -821,6 +821,7 @@ dependencies = [
 name = "gandr-surface-session"
 version = "0.0.0"
 dependencies = [
+ "allocation-counter",
  "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-term",

@@ -24,7 +24,7 @@ filter = "test(corpus) or test(=highlight::spans_partition_the_tile_bytes) or te
 priority = 80
 
 [[profile.default.overrides]]
-filter = "test(=defects::items_visited_for_a_head_edit_grow_linearly) or test(=differential::fused_equals_two_step) or test(=deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack)"
+filter = "test(=defects::items_visited_for_a_head_edit_grow_linearly) or test(=differential::fused_equals_two_step) or test(=deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack) or test(=forms::a_large_module_edit_script_submits_as_the_walk_composes_it) or test(=forms::every_generated_edit_submits_as_the_walk_composes_it) or test(=parse::tests::hostile_edits_reuse_only_equal_units) or test(=parse::tests::a_parked_unit_joins_as_the_unit_it_parked) or test(=parse::tests::an_equal_identity_molds_an_equal_unit)"
 priority = 70
 
 [profile.ci]

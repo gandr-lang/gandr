@@ -72,8 +72,10 @@ use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge_module;
-use gandr_surface_dispatcher::lower_source;
+use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
@@ -88,6 +90,8 @@ use quenchant_shape::shape::Maybe;
 use crate::edit::EditScript;
 use crate::edit::Snapshot;
 use crate::edit::diff;
+use crate::forms::FormCensus;
+use crate::forms::FormStore;
 use crate::item_source::program;
 
 quenchant_shape::reason_enum! {
@@ -497,6 +501,8 @@ pub struct Submission<'text>
     kernel: Maybe<KernelCheckpoint, resumed::Absent>,
     /// The parse's completion obligations, in source order.
     obligations: Vec<ObligationInstance>,
+    /// How the parse was assembled from the form store.
+    forms: FormCensus,
 }
 
 impl<'text> Submission<'text>
@@ -581,6 +587,18 @@ impl<'text> Submission<'text>
             | Maybe::Present(ref kernel) => Maybe::Present(kernel),
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         }
+    }
+
+    /// How the revision's parse was assembled: its top-level forms, and how
+    /// many were molded rather than taken up from the session's form store.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forms(&self) -> FormCensus
+    {
+        self.forms
     }
 
     /// The completion obligations the parse of the revision recorded, in
@@ -985,6 +1003,10 @@ pub struct Session<Store, Blocks>
     snapshot: Snapshot,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
+    /// Every form of the latest parsed revision, by identity.
+    forms: FormStore,
+    /// The threads a revision's changed forms are molded on.
+    threads: Threads,
 }
 
 impl<Store, Blocks> fmt::Debug for Session<Store, Blocks>
@@ -1031,8 +1053,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: retains the supplied grammar, root and stores, with the
-    ///   default checking budget, no accepted revision, imports or snapshot,
-    ///   and zero lowering attempts.
+    ///   default checking budget, no accepted revision, imports or snapshot, an
+    ///   empty form store molding on the host's performance cores
+    ///   ([`Width::PerformanceCores`]), and zero lowering attempts.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1066,6 +1089,36 @@ impl<Store, Blocks> Session<Store, Blocks>
             imports: Imports::empty(),
             snapshot: Snapshot::default(),
             lowerings: LoweringCount::default(),
+            forms: FormStore::default(),
+            threads: Width::PerformanceCores.threads(),
+        }
+    }
+
+    /// The session molding each revision's changed forms on the threads
+    /// `width` answers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the session unchanged but for the threads it molds on, asked
+    ///   of `width` once, here.
+    /// - provides: the driver's width, carried to the edit loop.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — generated edits submit to the walk's compositions at
+    ///   one thread and at the host's width alike.
+    /// - witness: `tests::forms::every_generated_edit_submits_as_the_walk_composes_it`
+    #[spec(ensures: |ret| ret.threads == width.threads())]
+    #[inline]
+    #[must_use]
+    pub fn with_width(
+        self,
+        width: Width,
+    ) -> Self
+    {
+        Self {
+            threads: width.threads(),
+            ..self
         }
     }
 
@@ -1074,13 +1127,14 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `revision` is lowered once. When the lowering reads a module
-    ///   and `store` holds checkpoints `backend` judged for its program, the
+    /// - ensures: `revision` is parsed through a fresh form store, which the
+    ///   session keeps, and lowered once. When the lowering reads a module and
+    ///   `store` holds checkpoints `backend` judged for its program, the
     ///   session resumes from them and their item count is reported; otherwise
     ///   the incremental session has no resume, and the reason is reported. The
     ///   lowering attempt is counted in either case. The import scope and
-    ///   snapshot are the revision's, and it reads and commits kernel
-    ///   checkpoints in `blocks`.
+    ///   snapshot are the revision's, it molds on the host's performance cores,
+    ///   and it reads and commits kernel checkpoints in `blocks`.
     /// - provides: a session that outlives the process that wrote its
     ///   checkpoints: its next submission adopts every restored checkpoint that
     ///   still answers.
@@ -1136,8 +1190,13 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
     {
         let mut lowerings = LoweringCount::default();
+        let mut forms = FormStore::default();
+        let threads = Width::PerformanceCores.threads();
+        let (parsed, _census) = forms
+            .parse(&grammar, revision, threads)
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
         let lowering =
-            lower_source(&grammar, revision, &mut lowerings).map_err(SessionFault::Compose)?;
+            lower_parsed(&grammar, parsed, &mut lowerings).map_err(SessionFault::Compose)?;
         let (imports, snapshot, restored) = match lowering.into_lowered() {
             | Lowered::Refused(_) => (
                 Imports::empty(),
@@ -1184,17 +1243,25 @@ impl<Store, Blocks> Session<Store, Blocks>
                 imports,
                 snapshot,
                 lowerings,
+                forms,
+                threads,
             },
             restored,
         })
     }
 
-    /// Submit one revision: lower it, judge it, resume the incremental checker
-    /// over it and persist its checkpoints and its kernel checkpoint.
+    /// Submit one revision: parse it through the form store, lower it, judge
+    /// it, resume the incremental checker over it and persist its checkpoints
+    /// and its kernel checkpoint.
     ///
     /// # Specification
     /// - requires: `revision` is the whole text of the session's source.
-    /// - ensures: `revision` is lowered exactly once, and the lowering count is
+    /// - ensures: `revision` is parsed through the session's form store — every
+    ///   form whose identity the store holds taken up, the rest molded on the
+    ///   session's threads — into the parse
+    ///   [`parse`](gandr_surface_parser::parse) gives it, and the store then
+    ///   holds the revision's forms; the submission carries how many forms were
+    ///   molded. The parse is lowered exactly once, and the lowering count is
     ///   one more. A revision the lowering reads is judged by the dispatcher's
     ///   [`judge_module`] — the composition `gandr check` gives the same text
     ///   under the same root — and the same declarations are submitted to the
@@ -1219,10 +1286,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   fails, the incremental checker then holding no resume so the next
     ///   revision is judged whole.
     /// - panics: none.
-    /// - economy: the lowered arena is cloned once per accepted revision, so
-    ///   the judgement and the resume each check over their own copy; the
-    ///   snapshot and its diff are each one walk of the revision's terms; the
-    ///   kernel artifact is decoded, cut and hashed once, linear in its bytes.
+    /// - economy: each taken-up form's checkpoint is cloned once into the join
+    ///   and each molded form parked once; the lowered arena is cloned once per
+    ///   accepted revision, so the judgement and the resume each check over
+    ///   their own copy; the snapshot and its diff are each one walk of the
+    ///   revision's terms; the kernel artifact is decoded, cut and hashed once,
+    ///   linear in its bytes.
     ///
     /// # Errors
     /// As above. A persistence failure with a retained resume is carried as
@@ -1308,7 +1377,11 @@ impl<Store, Blocks> Session<Store, Blocks>
         Store: CheckpointStore,
         Blocks: BlockStore,
     {
-        let lowering = lower_source(&self.grammar, revision, &mut self.lowerings)
+        let (parsed, forms) = self
+            .forms
+            .parse(&self.grammar, revision, self.threads)
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
+        let lowering = lower_parsed(&self.grammar, parsed, &mut self.lowerings)
             .map_err(SessionFault::Compose)?;
         let mut obligations = lowering.obligations().to_vec();
         obligations.sort_by_key(|obligation| obligation.span);
@@ -1325,6 +1398,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     edits: Maybe::Absent(resumed::Absent::RefusedWhole),
                     kernel: Maybe::Absent(resumed::Absent::RefusedWhole),
                     obligations,
+                    forms,
                 });
             },
         };
@@ -1368,6 +1442,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             edits: Maybe::Present(edits),
             kernel,
             obligations,
+            forms,
         })
     }
 
