@@ -511,9 +511,12 @@ path = "crates/surface-tui"
 
 # The cell-shape substrate: command patterns, matching, the reduction order,
 # the cell alphabet and its store.
+# features:
+# - none: alloc-only cell patterns and stores.
 # consumers:
 # - core-sequent
 # - storage-artifact
+# - surface-lowering
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
@@ -523,6 +526,7 @@ path = "crates/surface-tui"
 # - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
+default-features = false
 
 # The toy alphabet and the adversary frame, for engine suites; a
 # dev-dependency only, which its workspace test checks.
@@ -536,26 +540,35 @@ path = "crates/theory-cell-complexes-tools"
 
 # The diagram view of circuit algebras: monogamous acyclic wirings with
 # interfaces, their canonical form and the relabelling that checks it.
+# features:
+# - none: alloc-only wiring and embedding matching.
 # consumers:
+# - surface-lowering
 # - theory-sites
 [workspace.dependencies.gandr-theory-circuit-algebras]
 path = "crates/theory-circuit-algebras"
+default-features = false
 
 # The rewriting engine: firing, the overlap enumerator and its support,
 # replayable coherence certificates, budgeted completion.
+# features:
+# - none: alloc-only bounded completion and replay.
 # consumers:
 # - storage-artifact (dev)
+# - surface-lowering
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
 # - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
+default-features = false
 
 # Description elaboration into rewriting cells.
 # features:
 # - none: the certificate fixtures use the alloc-only elaborator.
 # consumers:
+# - surface-lowering
 # - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-computads]
 path = "crates/theory-computads"
@@ -605,12 +618,17 @@ default-features = false
 
 # The levitated description table: codes, rule faces, circuit rules and their
 # occurrence record, bridge arities.
+# features:
+# - none: allocation-only description syntax.
 # consumers:
+# - core-term
+# - surface-lowering
 # - theory-computads
 # - theory-decomposition-spaces (dev)
 # - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-levitation]
 path = "crates/theory-levitation"
+default-features = false
 
 # The order-maintenance structure: stable handles over a total order with
 # constant-time comparison.
