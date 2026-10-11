@@ -1,19 +1,27 @@
+@[ refuses("DescentNotReplayed") ]
 def rec fact(n: Integer) -> -F Integer {
   fact[<](n)
 }
 
+@[ refuses("MalformedForm") ]
 def rec nats(n: Integer) -> Stream(Integer) {
   .head => n,
   .tail => nats[>](plus(n, 1))
 }
 
+@[ refuses("MalformedForm") ]
 def rec loopy(n: Integer) -> Stream(Integer) {
   .head => n,
   _ => nats(n)
 }
 
+@[ refuses("OutOfFragment") ]
 def rec measured(n: Integer) -> -F Integer { ret measured[n <](n) }
+@[ refuses("OutOfFragment") ]
 def rec explicit(n: Integer) -> -F Integer { ret explicit[n = 1](n) }
+@[ refuses("OutOfFragment") ]
 def rec sized(n: Integer) -> -F Integer { ret sized[size = 1](n) }
+@[ refuses("OutOfFragment") ]
 def rec bounded(n: Integer) -> -F Integer { ret bounded[cost = 1](n) }
+@[ refuses("OutOfFragment") ]
 def rec tailing(n: Integer) -> -F Integer { ret tailing[tail](n) }

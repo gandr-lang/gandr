@@ -22,6 +22,8 @@ use gandr_core_term::ValueType;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::pattern::Pattern;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -357,6 +359,349 @@ fn a_data_declaration_lowers_to_its_signature()
             .all(|judged| judged.verdict() == Verdict::Data),
         "the checker forms both signatures: {report:?}"
     );
+}
+
+#[test]
+fn a_recursive_family_names_itself_in_its_fields()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndata List(a : Type) : Type { Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }\ndata Bad : Type { MkBad : (f : +U (Bad -> -F Nat)) --> Bad; }\ndef self_named : Later ;\ndata Later : Type { Now : Later; }\n",
+        ),
+        &mut arena,
+    );
+    let (DeclarationOutcome::Data(nat), DeclarationOutcome::Data(list)) = (
+        outcome_of(&module, SurfaceName::from("Nat")),
+        outcome_of(&module, SurfaceName::from("List")),
+    )
+    else {
+        panic!("both families lower to their signatures");
+    };
+    let (Maybe::Present(nat), Maybe::Present(list)) = (module.data(nat), module.data(list))
+    else {
+        panic!("each index names a signature");
+    };
+    let [ref zero, ref succ] = *nat.constructors()
+    else {
+        panic!("two constructors");
+    };
+    assert!(zero.is_empty());
+    let [predecessor] = **succ
+    else {
+        panic!("one field");
+    };
+    assert_eq!(
+        arena.value_type(predecessor),
+        Some(&ValueType::Data {
+            declaration: ConstantIndex::from(0_usize),
+            arguments: Vec::new(),
+        }),
+        "the successor's field is the family at its own position"
+    );
+    let [_, ref cons] = *list.constructors()
+    else {
+        panic!("two constructors");
+    };
+    let [_, tail] = **cons
+    else {
+        panic!("two fields");
+    };
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(tail)
+    else {
+        panic!("the tail is a nominal type");
+    };
+    assert_eq!(declaration, ConstantIndex::from(1_usize));
+    assert!(
+        matches!(
+            arguments.as_slice(),
+            [argument] if matches!(arena.value(*argument), Some(&Value::Variable { index, .. }) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+        ),
+        "the tail applies the family to its own parameter"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("self_named")),
+            LoweringRefusal::UnresolvedTypeHead { .. }
+        ),
+        "a later family stays unresolved"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Data,
+            Verdict::Data,
+            Verdict::Refused(gandr_core_checker::CheckRefusal::NegativeOccurrence(_)),
+            Verdict::Data,
+        ]),
+        "the positive families form and the negative one is refused by name: {verdicts:?}"
+    );
+}
+
+/// The unary naturals every recursive-function witness recurses over.
+const NAT: &str = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n";
+
+/// The variable `index` binders out.
+///
+/// # Specification
+/// trivial.
+fn variable(index: DeBruijnIndex) -> Value
+{
+    Value::Variable {
+        zone: gandr_core_term::Zone::Intuitionistic,
+        index,
+    }
+}
+
+#[test]
+fn a_recursive_function_closes_a_fixpoint_over_its_last_parameter()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec plus(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => ret n, Succ(p) => {{ run r <- plus[<](n, p); ret Succ(r) }} }} }}\ndef rec idle(n : Nat) -> -F Nat {{ ret n }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let opened = |name: &'static str| {
+        let Some(&Value::Thunk(mut computation)) =
+            arena.value(body_named(&module, SurfaceName::from(name)))
+        else {
+            panic!("`{name}` lowers to a thunk");
+        };
+        let mut lambdas = Vec::new();
+        while let Some(&Computation::Lambda(under)) = arena.computation(computation) {
+            lambdas.push(computation);
+            computation = under;
+        }
+        (lambdas.len(), computation)
+    };
+
+    let (outside, fixpoint) = opened("plus");
+    assert_eq!(
+        outside, 1_usize,
+        "the leading parameter is bound outside the fixpoint"
+    );
+    let Some(&Computation::Fixpoint {
+        body,
+        evidence: FixpointEvidence::StructuralDescent,
+    }) = arena.computation(fixpoint)
+    else {
+        panic!("a claimed call makes the fixpoint claim descent");
+    };
+    assert_eq!(
+        module
+            .origins()
+            .computation(fixpoint)
+            .map(|origin| origin.provenance()),
+        Maybe::Present(crate::origin::Provenance::Inserted(
+            crate::origin::Insertion::Fixpoint
+        )),
+        "the fixpoint is the lowering's, not the source's"
+    );
+    let Some(&Computation::Lambda(cased)) = arena.computation(body)
+    else {
+        panic!("the fixpoint closes the last parameter's lambda");
+    };
+    let Some(&Computation::DataCase {
+        scrutinee,
+        ref branches,
+        ..
+    }) = arena.computation(cased)
+    else {
+        panic!("the body cases on the last parameter");
+    };
+    assert_eq!(
+        arena.value(scrutinee),
+        Some(&variable(DeBruijnIndex::from(0_u32)))
+    );
+    let [_, successor] = **branches
+    else {
+        panic!("one branch per constructor");
+    };
+    let calls: Vec<ComputationId> = reachable(&arena, successor)
+        .into_iter()
+        .filter(|&at| matches!(arena.computation(at), Some(&Computation::Application(..))))
+        .collect();
+    let [call] = *calls
+    else {
+        panic!("one recursive call: {calls:?}");
+    };
+    let Some(&Computation::Application(head, argument)) = arena.computation(call)
+    else {
+        panic!("the call is an application");
+    };
+    assert!(
+        matches!(arena.computation(head), Some(&Computation::Force(forced)) if arena.value(forced) == Some(&variable(DeBruijnIndex::from(2_u32)))),
+        "the head forces the fixpoint's own binder, past the field and the parameter"
+    );
+    assert_eq!(
+        arena.value(argument),
+        Some(&variable(DeBruijnIndex::from(0_u32))),
+        "the call applies the field alone, the leading parameter left out"
+    );
+
+    let (outside, fixpoint) = opened("idle");
+    assert_eq!(outside, 0_usize);
+    assert!(
+        matches!(
+            arena.computation(fixpoint),
+            Some(&Computation::Fixpoint {
+                evidence: FixpointEvidence::Partial,
+                ..
+            })
+        ),
+        "a recursive function claiming nothing is partial"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+#[test]
+fn an_unmarked_self_reference_is_refused_with_its_claim()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec bare(n : Nat) -> -F Nat {{ case n {{ Zero => ret n, Succ(p) => bare(p) }} }}\ndef rec shadow(shadow : Nat) -> -F Nat {{ ret shadow }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(start) = source.find("bare(p)")
+    else {
+        panic!("the fixture writes the call");
+    };
+    let Some(end) = start.checked_add(4_usize)
+    else {
+        panic!("the span fits");
+    };
+
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("bare")),
+        LoweringRefusal::UnmarkedSelfReference {
+            span: crate::fixture::span(
+                gandr_surface_syntax::ByteOffset::from(start),
+                gandr_surface_syntax::ByteOffset::from(end)
+            ),
+            name: SurfaceName::from("bare"),
+        }
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("shadow")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "a parameter of the function's own name shadows it"
+    );
+}
+
+#[test]
+fn a_recursive_call_passes_its_leading_parameters_unchanged()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec varied(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => ret n, Succ(p) => varied[<](p, p) }} }}\ndef rec short(n : Nat, m : Nat) -> -F Nat {{ case m {{ Zero => ret n, Succ(p) => short[<](p) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let at = |text: &str, length: usize| {
+        let start = source.find(text).unwrap_or_default();
+        crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add(length)),
+        )
+    };
+
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("varied")),
+        LoweringRefusal::OutOfFragment {
+            span: at("p, p)", 1_usize),
+            form: FormName::from(gandr_surface_grammar::NamedKind("call_expression")),
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::NonUniform,
+        },
+        "a leading parameter passed as anything else varies it"
+    );
+    assert_eq!(
+        refusal_of(&module, SurfaceName::from("short")),
+        LoweringRefusal::OutOfFragment {
+            span: at("short[<](p)", 11_usize),
+            form: FormName::from(gandr_surface_grammar::NamedKind("call_expression")),
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::Arity(OperandCount::from(1_usize)),
+        },
+        "a recursive call passes one argument per parameter"
+    );
+}
+
+#[test]
+fn only_the_descent_claim_heads_a_recursive_call()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}def rec ahead(n : Nat) -> -F Nat {{ case n {{ Zero => ret n, Succ(p) => ahead[>](p) }} }}\ndef rec both(n : Nat) -> -F Nat {{ case n {{ Zero => ret n, Succ(p) => both[<, >](p) }} }}\ndef other(n : Nat) -> -F Nat {{ ret n }}\ndef rec borrowed(n : Nat) -> -F Nat {{ case n {{ Zero => ret n, Succ(p) => other[<](p) }} }}\ndef rec loose(n : Nat) -> -F Nat {{ run held <- ret loose[<]; ret n }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let declined = |name: &'static str, boundary: FragmentBoundary| {
+        matches!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::OutOfFragment { form, boundary: refused, .. }
+                if form == FormName::INSTANTIATION && refused == boundary
+        )
+    };
+
+    assert!(
+        declined("ahead", FragmentBoundary::Reserved),
+        "productivity is reserved"
+    );
+    assert!(
+        declined("both", FragmentBoundary::Reserved),
+        "combined claims are reserved"
+    );
+    assert!(
+        declined("borrowed", FragmentBoundary::Unadmitted),
+        "a claim names the recursive function it stands in"
+    );
+    assert!(
+        declined("loose", FragmentBoundary::Unadmitted),
+        "a claim stands at the head of a call"
+    );
+}
+
+#[test]
+fn a_data_family_named_where_a_value_is_read_is_quoted()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{NAT}{MAYBE}def code : Type ;\ndef code = Nat ;\ndef partial : Type ;\ndef partial = Maybe ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(&Value::Quote(quoted)) = arena.value(body_named(&module, SurfaceName::from("code")))
+    else {
+        panic!("the family is quoted");
+    };
+
+    assert_eq!(
+        arena.value_type(quoted),
+        Some(&ValueType::Data {
+            declaration: ConstantIndex::from(0_usize),
+            arguments: Vec::new(),
+        }),
+        "the code is the family's own type"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("partial")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Arity(count),
+                ..
+            } if count == OperandCount::from(0_usize)
+        ),
+        "a family of parameters named alone is applied to none"
+    );
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]

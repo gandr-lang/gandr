@@ -1497,9 +1497,7 @@ mod tests
         );
         scratch.file(
             Path::new("corpus/fixture/pending/form.gandr"),
-            SourceText::from(
-                "def rec f(x: Integer) -> -F Integer { ret x }\ndef broken = missing ;",
-            ),
+            SourceText::from("def f @[a : Type] (x: a) -> -F a { ret x }\ndef broken = missing ;"),
         );
         let (seen, walk) = steps(&scratch.0, vec![scratch.0.join("corpus")]);
         assert_eq!(

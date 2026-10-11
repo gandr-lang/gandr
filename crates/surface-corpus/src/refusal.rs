@@ -301,6 +301,8 @@ pub enum RefusalName
     LowercaseModuleName,
     /// A match some scrutinee value reaches no arm of.
     NonExhaustiveMatch,
+    /// A recursive definition's own name written without a descent claim.
+    UnmarkedSelfReference,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -360,7 +362,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 56_usize] = [
+    pub const VOCABULARY: [Self; 57_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -397,6 +399,7 @@ impl RefusalName
         Self::UnreadAscription,
         Self::LowercaseModuleName,
         Self::NonExhaustiveMatch,
+        Self::UnmarkedSelfReference,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -453,6 +456,7 @@ impl RefusalName
         (Self::UnknownMember, b"UnknownMember") | (Self::UnreadAscription,
         b"UnreadAscription") | (Self::LowercaseModuleName, b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
+        (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -526,6 +530,7 @@ impl RefusalName
             | Self::UnreadAscription => "UnreadAscription",
             | Self::LowercaseModuleName => "LowercaseModuleName",
             | Self::NonExhaustiveMatch => "NonExhaustiveMatch",
+            | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -702,6 +707,8 @@ impl Refusal<'_>
         RefusalName::LowercaseModuleName) |
         (Self::Lowering(LoweringRefusal::NonExhaustiveMatch { .. }),
         RefusalName::NonExhaustiveMatch) |
+        (Self::Lowering(LoweringRefusal::UnmarkedSelfReference { .. }),
+        RefusalName::UnmarkedSelfReference) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -728,6 +735,21 @@ impl Refusal<'_>
         RefusalName::StaticLambdaArgument) |
         (Self::Checking(CheckRefusal::StaticClassifierExpected { .. }),
         RefusalName::StaticClassifierExpected) |
+        (Self::Checking(CheckRefusal::NotADataType(_)), RefusalName::NotADataType)
+        | (Self::Checking(CheckRefusal::DataKindNotUniverse(_)), RefusalName::DataKindNotUniverse)
+        | (Self::Checking(CheckRefusal::DataFieldLevel { .. }), RefusalName::DataFieldLevel)
+        | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
+        | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
+        | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
+        | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
+        | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
+        | (Self::Checking(CheckRefusal::MissingRecordField { .. }), RefusalName::MissingRecordField)
+        | (Self::Checking(CheckRefusal::NegativeOccurrence(_)), RefusalName::NegativeOccurrence)
+        | (Self::Checking(CheckRefusal::NestedOccurrence(_)), RefusalName::NestedOccurrence)
+        | (Self::Checking(CheckRefusal::IndexOccurrence(_)), RefusalName::IndexOccurrence)
+        | (Self::Checking(CheckRefusal::NonUniformOccurrence(_)), RefusalName::NonUniformOccurrence)
+        | (Self::Checking(CheckRefusal::CrossBlockReference { .. }), RefusalName::CrossBlockReference)
+        | (Self::Checking(CheckRefusal::DescentNotReplayed { .. }), RefusalName::DescentNotReplayed) |
         (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
         RefusalName::ExpectationOutsideFixtureRoot)
     )
@@ -822,7 +844,8 @@ impl Refusal<'_>
         RefusalName::UnknownMember) | (LoweringRefusal::UnreadAscription { .. },
         RefusalName::UnreadAscription) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::NonExhaustiveMatch { .. },
-        RefusalName::NonExhaustiveMatch) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
+        RefusalName::UnmarkedSelfReference) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold)
@@ -852,6 +875,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
         | LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         | LoweringRefusal::NonExhaustiveMatch { .. } => RefusalName::NonExhaustiveMatch,
+        | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,

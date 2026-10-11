@@ -91,7 +91,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 44_usize] = [
+    pub const ALL: [Self; 45_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -99,6 +99,7 @@ impl FormName
         Self::SIGNATURE,
         Self::FUNCTION,
         Self::RECURSIVE,
+        Self::INSTANTIATION,
         Self::PARAMETERS,
         Self::PARAMETER,
         Self::TYPE_ABSTRACTION,
@@ -162,6 +163,9 @@ impl FormName
     pub const GRADE: Self = Self("grade");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
+    /// The instantiation `e[i, …]`, a recursive call's claim among its
+    /// residents.
+    pub const INSTANTIATION: Self = Self("instantiation_expression");
     /// The statement `leta x = e ;`, inlined into its block.
     pub const LETA_STATEMENT: Self = Self("leta_statement");
     /// The statement `val p = e ;`, inlined into its block.
@@ -333,6 +337,8 @@ impl TileName
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `leta`, opening a statement.
     pub const LETA: Self = Self("leta");
+    /// The less-than sign `<`: an instantiation's structural-descent claim.
+    pub const LESS_THAN: Self = Self("<");
     /// The sort literal `-` of a universe: the computation types.
     pub const MINUS: Self = Self("-");
     /// The module keyword `module`.
@@ -482,6 +488,9 @@ pub enum Former
     Thunk,
     /// The lambda `fn (x) { c }`.
     Lambda,
+    /// A block standing as a computation, `{ run x <- c ; … c }`: its
+    /// statements bound over its last computation.
+    Block,
     /// The returner `ret v`.
     Return,
     /// The force `force v`.
@@ -536,6 +545,9 @@ pub enum Former
     Module,
     /// The nominal data declaration `data T(a : A) : U { C : … ; … }`.
     Data,
+    /// The instantiation `e[i, …]`: a recursive definition's descent claim
+    /// `f[<]` at the head of its own call, and nothing else.
+    Instantiation,
     /// Every other kind: a form the fragment does not admit.
     Unadmitted,
 }
@@ -558,7 +570,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 32_usize] = [
+    pub const ALL: [Self; 34_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -567,6 +579,7 @@ impl Former
         Self::Parenthesized,
         Self::Thunk,
         Self::Lambda,
+        Self::Block,
         Self::Return,
         Self::Force,
         Self::Call,
@@ -590,6 +603,7 @@ impl Former
         Self::Import,
         Self::Module,
         Self::Data,
+        Self::Instantiation,
         Self::Unadmitted,
     ];
 }
@@ -613,7 +627,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 33_usize] = [
+pub const FORMERS: [(&str, Former); 35_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -622,6 +636,7 @@ pub const FORMERS: [(&str, Former); 33_usize] = [
     ("parenthesized_expression", Former::Parenthesized),
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),
+    ("block", Former::Block),
     ("ret_expression", Former::Return),
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
@@ -647,6 +662,7 @@ pub const FORMERS: [(&str, Former); 33_usize] = [
     ("import_declaration", Former::Import),
     ("module_declaration", Former::Module),
     ("data_declaration", Former::Data),
+    ("instantiation_expression", Former::Instantiation),
 ];
 
 /// The former a form of named kind `kind` is read as.

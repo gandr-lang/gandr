@@ -1,0 +1,103 @@
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+@[ checks ]
+def rec plus(n : Nat, m : Nat) -> -F Nat {
+  case m {
+    Zero => ret n,
+    Succ(p) => { run r <- plus[<](n, p); ret Succ(r) }
+  }
+}
+
+@[ checks ]
+def rec length(a : Type, xs : List(a)) -> -F Nat {
+  case xs {
+    Nil => ret Zero,
+    Cons(x, rest) => { run r <- length[<](a, rest); ret Succ(r) }
+  }
+}
+
+@[ checks ]
+def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+  case xs {
+    Nil => ret ys,
+    Cons(x, rest) => { run r <- append[<](a, ys, rest); ret (Cons(x, r) : List(a)) }
+  }
+}
+
+@[ checks ]
+def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+  case xs {
+    Nil => ret (Nil : List(b)),
+    Cons(x, rest) => { run y <- f(x); run r <- map[<](a, b, f, rest); ret (Cons(y, r) : List(b)) }
+  }
+}
+
+@[ checks ]
+def rec length_nat(xs : List(Nat)) -> -F Nat {
+  case xs {
+    Nil => ret Zero,
+    Cons(x, rest) => { run r <- length_nat[<](rest); ret Succ(r) }
+  }
+}
+
+@[ checks ]
+def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => ret ys,
+    Cons(x, rest) => { run r <- append_nat[<](ys, rest); ret (Cons(x, r) : List(Nat)) }
+  }
+}
+
+@[ checks ]
+def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+  case xs {
+    Nil => ret (Nil : List(Nat)),
+    Cons(x, rest) => { run y <- f(x); run r <- map_nat[<](f, rest); ret (Cons(y, r) : List(Nat)) }
+  }
+}
+
+@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+def two : Nat ;
+def two = Succ(Succ(Zero)) ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())))") ]
+def three : Nat ;
+def three = Succ(two) ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))))") ]
+def five : +U (-F Nat) ;
+def five = thunk { plus(two, three) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]()))") ]
+def small : List(Nat) ;
+def small = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat)) ;
+
+@[ runs("<fun>") ]
+def bump : Nat => Nat ;
+def bump = thunk { fn (n) { ret Succ(n) } } ;
+
+@[ runs("ctor[1](ctor[1](ctor[0]()))") ]
+def counted : +U (-F Nat) ;
+def counted = thunk { length_nat(small) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[1](ctor[0]())), ctor[1](ctor[0](), ctor[0]())))") ]
+def joined : +U (-F List(Nat)) ;
+def joined = thunk { append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat))) } ;
+
+@[ runs("ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]()))), ctor[1](ctor[1](ctor[0]()), ctor[0]()))") ]
+def bumped : +U (-F List(Nat)) ;
+def bumped = thunk { map_nat(bump, small) } ;
+
+@[ checks ]
+def lengthened : +U (-F Nat) ;
+def lengthened = thunk { length(Nat, small) } ;

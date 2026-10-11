@@ -70,14 +70,16 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the insertions the lowering writes at a checked site: the five
-/// bridges, the classifier of a constructor written without one, and the
-/// eliminations a match compiles to.
+/// One of the insertions the lowering writes at a checked site.
+///
+/// The five bridges, the classifier of a constructor written without one,
+/// the eliminations a match compiles to, and a recursive function's
+/// fixpoint.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
-///   classifier and match.
+///   classifier, match and fixpoint.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -112,6 +114,9 @@ pub enum Insertion
     /// native or sum case, a field lambda, a literal test, or a binding an arm
     /// body is read under.
     Match,
+    /// The fixpoint a recursive function closes over its last parameter's
+    /// lambda, binding the function's own name.
+    Fixpoint,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

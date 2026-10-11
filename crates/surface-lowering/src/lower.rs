@@ -729,13 +729,15 @@ enum Family
                     | Former::Parenthesized
                     | Former::Thunk
                     | Former::Lambda
+                    | Former::Block
                     | Former::Return
                     | Former::Force
                     | Former::Call
                     | Former::Binary
                     | Former::Unary
                     | Former::Projection
-                    | Former::Case,
+                    | Former::Case
+                    | Former::Instantiation,
                 Family::Term
             ) | (
                 Former::TypeHead
@@ -773,13 +775,15 @@ const fn family_of(former: Former) -> Family
         | Former::Parenthesized
         | Former::Thunk
         | Former::Lambda
+        | Former::Block
         | Former::Return
         | Former::Force
         | Former::Call
         | Former::Binary
         | Former::Unary
         | Former::Projection
-        | Former::Case => Family::Term,
+        | Former::Case
+        | Former::Instantiation => Family::Term,
         | Former::TypeHead
         | Former::Universe
         | Former::TypeApplication
@@ -870,6 +874,18 @@ quenchant_shape::reason_enum! {
             /// The source wrote no `: T` after the binder, or no `-> T` after
             /// the parameter list.
             Unstated,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a function tail closes no fixpoint.
+    pub mod recursion {
+        /// The function names nothing recursively.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration was not written `def rec`.
+            Plain,
         }
     }
 }
@@ -1161,7 +1177,8 @@ impl Resolved
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
 /// - ensures: The parameter range, optional result and block are retained
-///   separately so an incomplete signature does not discard the body.
+///   separately so an incomplete signature does not discard the body; a
+///   recursive tail retains the frame binding its own name.
 /// - provides: The two spines of a function tail.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
@@ -1184,6 +1201,9 @@ struct Function
     result: Maybe<NodeIndex, stated::Absent>,
     /// The body.
     block: Block,
+    /// The frame binding the function's own name, between the last parameter
+    /// and the ones before it, when the tail recurses.
+    recursion: Maybe<ScopeId, recursion::Absent>,
 }
 
 /// What the mint sweep does for one node, decided by the classification.
@@ -1269,6 +1289,8 @@ enum Plan
     Force(NodeIndex),
     /// A lambda over its block.
     Lambda(Block),
+    /// A block's statements bound over its last computation.
+    Block(Block),
     /// An application of its head to its arguments, left to right, in the
     /// lowerer's operand store.
     Application(NodeIndex, Stretch),
@@ -1655,6 +1677,11 @@ struct Lowerer<'run, 'source>
     signatures: BTreeMap<usize, DataIndex>,
     /// The data declarations' signatures, by [`DataIndex`].
     data: Vec<Arc<DataSignature>>,
+    /// Each recursive function's own name, by the frame that binds it.
+    recursions: BTreeMap<ScopeId, native::Recursion>,
+    /// Each recursive call, by its head: the instantiation whose claim checks
+    /// it.
+    descents: BTreeMap<NodeIndex, native::Descent>,
 }
 
 /// Where the mint sweep writes: the arena and the origin table.
@@ -2038,6 +2065,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             cases: Vec::new(),
             signatures: BTreeMap::new(),
             data: Vec::new(),
+            recursions: BTreeMap::new(),
+            descents: BTreeMap::new(),
         }
     }
 
@@ -2843,6 +2872,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Parenthesized => self.parenthesized(site, cursor),
             | Former::Thunk => self.thunk(site, cursor),
             | Former::Lambda => self.lambda(site, cursor),
+            | Former::Block => self.sequenced(site, cursor),
             | Former::Return => self.keyed(site, cursor, TileName::RET),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Call => self.call(site, cursor),
@@ -2859,6 +2889,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ValueFunctionType => self.value_function(site, cursor),
             | Former::StaticAbstraction => self.static_abstraction(site, cursor),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
+            | Former::Instantiation => self.instantiation(site, cursor),
             | Former::Declaration | Former::Module => self.function(site, cursor),
             | Former::AttributeBlock | Former::Import | Former::Data | Former::Unadmitted => {
                 Err(site.out(FragmentBoundary::WrongSort))
@@ -2960,8 +2991,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// What `name`, written at `site` under `frame`, resolves to: the
     /// innermost binder carrying it, else a declaration strictly earlier than
-    /// the one `site` belongs to, searched from that declaration's own module
-    /// outward to the top level.
+    /// the one `site` belongs to, or that declaration itself when it is a data
+    /// declaration, searched from that declaration's own module outward to
+    /// the top level.
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
@@ -2970,15 +3002,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   member when that member's admission position is strictly earlier, and
     ///   the forward-member refusal when it is not; else a top-level
     ///   declaration strictly earlier, with its admission position and its
-    ///   signature's written type; the unresolved absence when nothing answers.
+    ///   signature's written type; the data declaration `site` belongs to,
+    ///   untyped, for its own name: a family's self reference, whose positivity
+    ///   the checker judges; the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
-    /// - fails: [`LoweringRefusal::ForwardMemberReference`] for a member of an
+    /// - fails: [`LoweringRefusal::UnmarkedSelfReference`] for the name a
+    ///   recursive function's fixpoint binds, which only a descent claim reads;
+    ///   [`LoweringRefusal::ForwardMemberReference`] for a member of an
     ///   enclosing module declared at or after the referring declaration;
     ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
+    /// [`LoweringRefusal::UnmarkedSelfReference`],
     /// [`LoweringRefusal::ForwardMemberReference`] and
     /// [`LoweringRefusal::BudgetExceeded`].
     ///
@@ -2989,20 +3026,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
     /// - witness: `modules::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::tests::a_self_reference_is_unresolved`
+    /// - witness: `lower::native::tests::a_recursive_family_names_itself_in_its_fields`
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
+    /// - witness: `lower::native::tests::an_unmarked_self_reference_is_refused_with_its_claim`
     #[spec(
         captures: before = self.fuel.remaining,
         ensures: |ret| {
             self.fuel.remaining <= before
                 && match ret {
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
-                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if usize::from(constant) < usize::from(own) && self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
+                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. })))) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
                     },
-                    | Err(LoweringRefusal::ForwardMemberReference {
-                        span,
-                        name: refused,
-                        ..
-                    }) => span == site.at.span && refused == name,
+                    | Err(
+                        LoweringRefusal::ForwardMemberReference {
+                            span,
+                            name: refused,
+                            ..
+                        }
+                        | LoweringRefusal::UnmarkedSelfReference {
+                            span,
+                            name: refused,
+                        },
+                    ) => span == site.at.span && refused == name,
                     | _ => true,
                 }
         },
@@ -3015,6 +3060,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
     {
         if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)? {
+            if self.recursions.contains_key(&bound.binder) {
+                return Err(LoweringRefusal::UnmarkedSelfReference {
+                    span: site.at.span,
+                    name,
+                });
+            }
             return Ok(Maybe::Present(Resolved::Binder(bound)));
         }
         let Maybe::Present(own) = self.collected.owner_of(site.at.node)
@@ -3031,7 +3082,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(&target) = self.collected.by_name.get(&(container, name))
                 && let Some(entry) = self.collected.slots.get(usize::from(target))
             {
-                if target < own {
+                let own_family = target == own
+                    && matches!(
+                        entry.definition,
+                        Maybe::Present(Half {
+                            operand: Operand::Data(_),
+                            ..
+                        })
+                    );
+                if target < own || own_family {
                     let declared = match entry.signature {
                         | Maybe::Present(Half {
                             operand: Operand::Written(written),
@@ -3134,16 +3193,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a constructor in term position.
     /// - ensures: a constructor of a data family declared strictly earlier
-    ///   stands as that constructor applied to no fields; otherwise a name a
-    ///   binder or an earlier declaration answers stands as the value it
-    ///   resolved to; otherwise a type atom, or `Type` for the value universe
-    ///   at the fuss-free level, stands as a type, which a value position
-    ///   quotes.
+    ///   stands as that constructor applied to no fields; otherwise a data
+    ///   family an earlier declaration answers stands as its type, which a
+    ///   value position quotes, and any other name a binder or an earlier
+    ///   declaration answers stands as the value it resolved to; otherwise a
+    ///   type atom, or `Type` for the value universe at the fuss-free level,
+    ///   stands as a type, which a value position quotes.
     /// - provides: the term-position spelling of a type, of a nullary
     ///   constructor, and of a declaration named with a capital.
     /// - fails: yields the wrong-sort refusal for a resolved name or a type
-    ///   where its position reads neither; a constructor's own refusals; a name
-    ///   nothing answers is unadmitted.
+    ///   where its position reads neither; a constructor's own refusals; the
+    ///   arity refusal for a family of parameters named alone; a name nothing
+    ///   answers is unadmitted.
     /// - panics: none.
     ///
     /// # Errors
@@ -3157,6 +3218,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_data_family_named_where_a_value_is_read_is_quoted`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -3167,7 +3229,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             | Plan::Constant(_)
                             | Plan::Atom(_)
                             | Plan::Universe(_)
-                            | Plan::Constructor(_))
+                            | Plan::Constructor(_)
+                            | Plan::Data(..))
                     )
                 )
         },
@@ -3186,6 +3249,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.construct(site, constructor, none);
         }
         if let Maybe::Present(resolved) = self.resolve_name(site, site.reading.frame(), name)? {
+            if let Resolved::Declaration { constant, .. } = resolved
+                && let Maybe::Present(arity) = self.data_family(constant)
+            {
+                let none = Stretch {
+                    start: self.operands.len(),
+                    end: self.operands.len(),
+                };
+                return self.family(site, constant, arity, none);
+            }
             let _frame = self.require(site, Produced::Value)?;
             self.plan(site, resolved.term());
             return Ok(());
@@ -3544,6 +3616,50 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Classify a block standing as a computation, `{ run x <- c ; … c }`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a block in term position.
+    /// - ensures: a block standing as a computation reads its statements and
+    ///   its last computation as a thunk's or a lambda's block does, under its
+    ///   own frame, passes the answer its position states to its last
+    ///   computation, and is planned over them.
+    /// - provides: sequencing where one computation is read, a match arm's body
+    ///   among them.
+    /// - fails: yields the wrong-sort refusal outside computation position and
+    ///   the block's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The block's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block arm binds its statement over its last
+    ///   computation, and a block where a value is read is refused.
+    /// - witness: `lower::tests::a_block_standing_as_a_computation_binds_its_statements`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Block(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+        },
+    )]
+    fn sequenced(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let body = self.block(site, &mut cursor, frame)?;
+        if let Some(&answer) = self.answers.get(&site.at.node) {
+            let _passed = self.answers.insert(body.last, answer);
+        }
+
+        self.plan(site, Plan::Block(body));
+
+        Ok(())
+    }
+
     /// Classify a function tail, `def f(x: A, …) -> B { … }`.
     ///
     /// # Specification
@@ -3551,16 +3667,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   opens on `(`.
     /// - ensures: each parameter binds in a frame extending the one before it,
     ///   left to right, with its type, when written, read as a value type under
-    ///   the frame before it and recorded on the binder; the result, when
-    ///   written, is read at the result position under the last parameter's
-    ///   frame, as the block is, and recorded as the answer of the block's last
-    ///   computation; the form is planned as the function's declared type and
-    ///   body.
+    ///   the frame before it and recorded on the binder; a recursive tail binds
+    ///   its own name in one more frame, between its last parameter and the
+    ///   ones before it, typed by the declaration form so no telescope counts
+    ///   it, and records the parameters before it as the ones every recursive
+    ///   call passes unchanged; the result, when written, is read at the result
+    ///   position under the last parameter's frame, as the block is, and
+    ///   recorded as the answer of the block's last computation; the form is
+    ///   planned as the function's declared type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
-    ///   or a type variable; a fault naming the function form for a parameter
-    ///   list, a type or a result out of shape; and the block's own refusal.
+    ///   or a type variable, and, as a recursive tail, for one with no
+    ///   parameter to descend on; a fault naming the function form for a
+    ///   parameter list, a type or a result out of shape; and the block's own
+    ///   refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -3577,6 +3698,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
     /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     #[spec(
         captures: parameters = self.parameters.len(),
         ensures: |ret| {
@@ -3614,10 +3736,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 },
             }
         }
-        let _name = cursor.tile(TileName::IDENTIFIER);
+        let recursive = cursor.tile(TileName::REC);
+        let named = cursor.tile(TileName::IDENTIFIER);
         closed(function, &mut cursor, TileName::PAREN_OPEN)?;
         let start = self.parameters.len();
         let mut frame = Frame::Outermost;
+        let mut recursion = Maybe::Absent(recursion::Absent::Plain);
         loop {
             let binder = match cursor.peek() {
                 | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
@@ -3649,6 +3773,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
+            let mut ahead = cursor.clone();
+            let _comma = ahead.tile(TileName::COMMA);
+            if let (Maybe::Present(_), Maybe::Present(own), Maybe::Present(_)) =
+                (recursive, named, ahead.at(TileName::PAREN_CLOSE))
+            {
+                let own = self.name_at(own);
+                let bound = self.scope.extend_typed(frame, own, site.at.node);
+                let _first = self.recursions.insert(bound, native::Recursion {
+                    uniform: Stretch {
+                        start,
+                        end: self.parameters.len(),
+                    },
+                    claimed: native::Claimed(false),
+                });
+                recursion = Maybe::Present(bound);
+                frame = Frame::Inner(bound);
+            }
             let bound = match declared {
                 | Maybe::Present(written) => self.scope.extend_typed(frame, name, written),
                 | Maybe::Absent(_) => self.scope.extend(frame, name),
@@ -3664,6 +3805,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             {
                 return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
             }
+        }
+        if let (Maybe::Present(_), Maybe::Absent(_)) = (recursive, recursion) {
+            let recursive = Site {
+                name: FormName::RECURSIVE,
+                ..site
+            };
+            return Err(recursive.out(FragmentBoundary::Unadmitted));
         }
         let parameters = Stretch {
             start,
@@ -3690,6 +3838,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 parameters,
                 result,
                 block,
+                recursion,
             }),
         );
 
@@ -4024,7 +4173,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   fields; any other call standing as a computation reads its head at the
     ///   head position and each argument as a value, all in its own frame, and
     ///   is planned as the head applied to the arguments left to right; a call
-    ///   of no arguments is its head.
+    ///   whose head is an instantiation, a recursive call, records every
+    ///   argument for the head's claim to check and reads and applies its last
+    ///   alone, the one its fixpoint takes; a call of no arguments is its head.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -4042,16 +4193,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| {
             ret.is_err()
                 || match self.plans.get(usize::from(site.at.node)) {
                     | Some(&Plan::Application(head, arguments)) => {
-                        arguments.start == start
-                            && arguments.end == self.operands.len()
+                        let end = self.operands.len();
+                        let descends = self.descents.get(&head).is_some_and(|descent| {
+                            descent.arguments == Stretch { start, end } && descent.call == site
+                        });
+                        (arguments.start == start
+                            || (descends && arguments.start == end.saturating_sub(1).max(start)))
+                            && arguments.end == end
                             && self.reading(head) == Reading::Head(site.reading.frame())
-                            && self.operands.iter().skip(start).all(|&argument| {
+                            && self.operands.iter().skip(arguments.start).all(|&argument| {
                                 self.reading(argument) == Reading::Value(site.reading.frame())
                             })
                     },
@@ -4089,14 +4246,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
             start,
             end: self.operands.len(),
         };
+        let descends = self.tree.node(head.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Instantiation,
+                    ..
+                })
+            )
+        });
+        let applied = if descends {
+            let _first = self.descents.insert(head.node, native::Descent {
+                call: site,
+                arguments: written,
+            });
+            Stretch {
+                start: written.end.saturating_sub(1).max(written.start),
+                end: written.end,
+            }
+        }
+        else {
+            written
+        };
         self.read(head.node, Reading::Head(frame));
-        for position in written.start .. written.end {
+        for position in applied.start .. applied.end {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
             }
         }
 
-        self.plan(site, Plan::Application(head.node, written));
+        self.plan(site, Plan::Application(head.node, applied));
 
         Ok(())
     }
@@ -5872,7 +6051,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) | Plan::Case(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -6039,6 +6218,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Plan::Constructor(constructed) => self.mint_constructor(constructed, sink, origin),
             | Plan::Case(case) => self.mint_case(case, sink, origin),
+            | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             | Plan::Arrow(..)
             | Plan::StaticPi(..)
             | Plan::Product(..)
@@ -6585,7 +6765,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Function(_)
             | Plan::Data(..)
             | Plan::Constructor(_)
-            | Plan::Case(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Case(_)
+            | Plan::Block(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
     }
 
@@ -6748,12 +6929,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: `(x1: A1, …, xn: An) -> C { b }` mints its body as `thunk (λ
     ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
-    ///   the thunk marked as inserted at the declaration form, and its declared
-    ///   type as `+U (A1 -> … -> An -> C)`, one arrow per parameter with the
-    ///   binder tile's origin and `+U` the declaration form's, an arrow
-    ///   dependent where a later type names its parameter; a tail missing a
-    ///   parameter or result type mints the body alone; nothing is minted when
-    ///   the block did not lower.
+    ///   the thunk marked as inserted at the declaration form; a recursive tail
+    ///   closes its last parameter's lambda by a fixpoint marked as inserted at
+    ///   the declaration form, `thunk (λ … λ. fix. λ. b)`, claiming structural
+    ///   descent when a call claims it and partial otherwise; its declared type
+    ///   is `+U (A1 -> … -> An -> C)`, one arrow per parameter with the binder
+    ///   tile's origin and `+U` the declaration form's, an arrow dependent
+    ///   where a later type names its parameter; a tail missing a parameter or
+    ///   result type mints the body alone; nothing is minted when the block did
+    ///   not lower.
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
@@ -6765,6 +6949,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_last_parameter`
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Absent(_) => true,
@@ -6797,6 +6982,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(block) => block,
             | Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
+        let mut fixpoint = match self.evidence(function) {
+            | Maybe::Present(evidence) => Some(evidence),
+            | Maybe::Absent(_) => None,
+        };
         for parameter in parameters.iter().rev() {
             let Maybe::Present(binder) = self.origin_at(parameter.binder)
             else {
@@ -6805,6 +6994,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let id = sink.arena.computation_lambda(body);
             sink.origins.record_computation(id, binder);
             body = id;
+            if let Some(evidence) = fixpoint.take() {
+                let closed = sink.arena.computation_fixpoint(body, evidence);
+                sink.origins
+                    .record_computation(closed, origin.inserted(Insertion::Fixpoint));
+                body = closed;
+            }
         }
         let thunk = sink.arena.value_thunk(body);
         sink.origins
@@ -8083,7 +8278,8 @@ impl Sink<'_>
                 | Insertion::Quote
                 | Insertion::Decode
                 | Insertion::Classifier
-                | Insertion::Match,
+                | Insertion::Match
+                | Insertion::Fixpoint,
             ) => Maybe::Absent(lowered::Absent::OtherSort),
             | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
@@ -8748,10 +8944,12 @@ fn parse_literal(
         | Former::Parenthesized
         | Former::Thunk
         | Former::Lambda
+        | Former::Block
         | Former::Return
         | Former::Force
         | Former::Call
         | Former::Case
+        | Former::Instantiation
         | Former::Projection
         | Former::TypeHead
         | Former::Universe
@@ -10304,6 +10502,43 @@ mod tests
     }
 
     #[test]
+    fn a_block_standing_as_a_computation_binds_its_statements()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { { run x <- ret 1 ; ret x } } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(first, last)) = arena.computation(suspended)
+        else {
+            panic!("the inner block's statement binds over its last computation");
+        };
+        assert!(
+            matches!(arena.computation(first), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Literal(integer(SourceFragment::from("1"))))),
+            "the statement runs first"
+        );
+        assert!(
+            matches!(arena.computation(last), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })),
+            "the last computation reads the statement's binder"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def b = thunk { ret { ret 1 } } ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(20_usize, 29_usize),
+                form: FormName::BLOCK,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a block is a computation, refused where a value is read"
+        );
+    }
+
+    #[test]
     fn a_call_applies_its_arguments_left_to_right()
     {
         let mut arena = CoreArena::new();
@@ -11118,10 +11353,10 @@ mod tests
                 ),
             ),
             (
-                "def rec f(x) { ret x }",
+                "def rec f() { ret 1 }",
                 unadmitted(
                     0_usize,
-                    22_usize,
+                    21_usize,
                     FormName::RECURSIVE,
                     FragmentSort::Declaration,
                 ),

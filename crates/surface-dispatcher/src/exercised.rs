@@ -646,7 +646,8 @@ fn lowering_row(
                 | FragmentBoundary::WrongSort
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed
-                | FragmentBoundary::Unannotated,
+                | FragmentBoundary::Unannotated
+                | FragmentBoundary::NonUniform,
             ..
         }
         | LoweringRefusal::GradedBridge { .. }
@@ -666,6 +667,7 @@ fn lowering_row(
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::NonExhaustiveMatch { .. }
+        | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},

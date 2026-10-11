@@ -87,7 +87,8 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
             | Self::LowercaseModuleName { .. }
-            | Self::NonExhaustiveMatch { .. } => {
+            | Self::NonExhaustiveMatch { .. }
+            | Self::UnmarkedSelfReference { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -113,7 +114,8 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
             | Self::LowercaseModuleName { .. }
-            | Self::NonExhaustiveMatch { .. } => FailureClass::MalformedSource,
+            | Self::NonExhaustiveMatch { .. }
+            | Self::UnmarkedSelfReference { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. } => FailureClass::Unrepresentable,
@@ -155,7 +157,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: the built-in attribute registry contains `owes`.
-    /// - ensures: the 22 current refusal variants have distinct
+    /// - ensures: the 23 current refusal variants have distinct
     ///   representatives; payloads are fixtures rather than evidence of a real
     ///   lowering failure.
     /// - provides: the domain of the finite classification checks.
@@ -178,7 +180,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 22_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 23_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -287,6 +289,10 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("natAdd"),
             },
+            LoweringRefusal::UnmarkedSelfReference {
+                span: empty,
+                name: SurfaceName::from("length"),
+            },
         ]
     }
 
@@ -315,6 +321,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 

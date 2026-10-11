@@ -130,9 +130,9 @@ impl fmt::Display for FragmentSort
 ///
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
-/// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed and
-///   unannotated reports remain distinct; an arity report carries the number of
-///   operands offered.
+/// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed,
+///   unannotated and non-uniform reports remain distinct; an arity report
+///   carries the number of operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -170,6 +170,10 @@ pub enum FragmentBoundary
     /// data with no answer type written or known from its function, or a
     /// constructor of a parameterized family with no classifier.
     Unannotated,
+    /// The form is a recursive call passing, where one of the definition's
+    /// unchanging parameters stands, something other than that parameter: only
+    /// the last parameter descends.
+    NonUniform,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -193,6 +197,10 @@ impl fmt::Display for FragmentBoundary
                 f.write_str("applies its family to an index, which the fragment does not read")
             },
             | Self::Unannotated => f.write_str("needs a type the source does not state"),
+            | Self::NonUniform => f.write_str(
+                "passes something other than the parameter itself where an earlier parameter \
+                 stands; only the last parameter descends",
+            ),
         }
     }
 }
@@ -559,6 +567,16 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A recursive definition's own name written without a claim of how it
+    /// recurses.
+    UnmarkedSelfReference
+    {
+        /// The bytes the name covers.
+        span: ByteSpan,
+        /// The definition's name.
+        name: SurfaceName<'source>,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -708,6 +726,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "the match at {span} leaves a value of its scrutinee that no arm matches"
             ),
+            | Self::UnmarkedSelfReference { span, name } => write!(
+                f,
+                "`{name}` at {span} names its own recursive definition without a claim; write \
+                 `{name}[<](…)` to recurse on a field of the last parameter"
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -784,6 +807,7 @@ impl LoweringRefusal<'_>
             | Self::UnreadAscription { span, .. }
             | Self::LowercaseModuleName { span, .. }
             | Self::NonExhaustiveMatch { span }
+            | Self::UnmarkedSelfReference { span, .. }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -821,7 +845,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the current 22-variant fixture has no repeated variant tag;
+    /// - ensures: the current 23-variant fixture has no repeated variant tag;
     ///   source-bearing variants carry separately observable rejected spans.
     /// - provides: a finite domain for the exact span projection witness.
     /// - fails: never.
@@ -842,7 +866,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 22_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 23_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -951,6 +975,10 @@ mod tests
                 span: s(38_usize, 39_usize),
                 name: SurfaceName::from("natAdd"),
             },
+            LoweringRefusal::UnmarkedSelfReference {
+                span: s(41_usize, 42_usize),
+                name: SurfaceName::from("length"),
+            },
         ]
     }
 
@@ -984,6 +1012,7 @@ mod tests
             s(34_usize, 35_usize),
             s(36_usize, 37_usize),
             s(38_usize, 39_usize),
+            s(41_usize, 42_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
