@@ -93,6 +93,17 @@
 //!                 Maybe::Absent(signature::Absent::Unsigned),
 //!                 Maybe::Present(body),
 //!             ),
+//!             | DeclarationOutcome::Data(index) => {
+//!                 let origin = OriginToken::from(usize::from(lowered.origin()));
+//!                 return match module.data(index) {
+//!                     | Maybe::Present(signature) => Some(Declaration::data(
+//!                         lowered.constant(),
+//!                         std::sync::Arc::clone(signature),
+//!                         origin,
+//!                     )),
+//!                     | Maybe::Absent(_) => None,
+//!                 };
+//!             },
 //!             | DeclarationOutcome::Refused(_) => return None,
 //!         };
 //!         let origin = OriginToken::from(usize::from(lowered.origin()));
