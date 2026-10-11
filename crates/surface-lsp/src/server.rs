@@ -1,5 +1,5 @@
 //! The server: a state machine over classified messages, and the loop that
-//! drives it over a pair of byte streams.
+//! drives it over a pair of byte streams and a log.
 //!
 //! The lifecycle is the protocol's. Before `initialize` is answered every
 //! request is refused as not initialized and every notification but `exit` is
@@ -11,6 +11,7 @@
 //! every other unknown one are ignored, as the protocol admits.
 
 use alloc::collections::BTreeMap;
+use core::fmt;
 use std::io::BufRead;
 use std::io::Write;
 
@@ -22,6 +23,7 @@ use serde_json::Value;
 
 use crate::position::Range;
 use crate::protocol::Answer;
+use crate::protocol::ContentChange;
 use crate::protocol::DidChangeParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
@@ -31,7 +33,10 @@ use crate::protocol::InitializeResult;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::SemanticTokens;
+use crate::recheck::DocumentSession;
+use crate::recheck::Timing;
 use crate::recheck::highlight;
+use crate::recheck::open;
 use crate::recheck::recheck;
 use crate::rpc::ErrorCode;
 use crate::rpc::Incoming;
@@ -71,14 +76,16 @@ enum Window
     Within(Range),
 }
 
-/// One open document, as the client last synchronised it.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// One open document, as the client last synchronised it, and the session
+/// its revisions are submitted to.
 struct Document
 {
     /// The version of its text.
     version: DocumentVersion,
     /// Its whole text.
     text: String,
+    /// The session holding its forms between synchronisations.
+    session: DocumentSession,
 }
 
 /// How a session ended.
@@ -101,13 +108,57 @@ pub enum Flow
     Exit(Served),
 }
 
-/// What handling one message produced: the messages to write, in order, and
-/// whether the session goes on.
+/// One synchronisation's line in the server log: the document, the version
+/// it reached, and what rechecking it cost.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Logged
+{
+    /// The document synchronised.
+    uri: DocumentUri,
+    /// The version it reached.
+    version: DocumentVersion,
+    /// What rechecking it cost.
+    timing: Timing,
+}
+
+impl fmt::Display for Logged
+{
+    /// Writes the document, its version and the recheck's timing, one line.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `<uri> at version <version>: <timing>`, no terminator.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither its written bytes nor
+    ///   its sink's failure state.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the transcript reads each logged line back, naming
+    ///   the document and the version it was synchronised to.
+    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{} at version {}: {}",
+            self.uri, self.version, self.timing
+        )
+    }
+}
+
+/// What handling one message produced: the messages to write, in order, the
+/// lines to log, and whether the session goes on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Outcome
 {
     /// The messages to write, in order.
     pub messages: Vec<Outgoing>,
+    /// The lines to log, in order.
+    pub log: Vec<Logged>,
     /// Whether the session goes on.
     pub flow: Flow,
 }
@@ -122,6 +173,7 @@ impl Outcome
     {
         Self {
             messages: Vec::new(),
+            log: Vec::new(),
             flow: Flow::Continue,
         }
     }
@@ -134,6 +186,7 @@ impl Outcome
     {
         Self {
             messages: vec![message],
+            log: Vec::new(),
             flow: Flow::Continue,
         }
     }
@@ -141,7 +194,6 @@ impl Outcome
 
 /// The server's state: where it stands in the lifecycle, and every open
 /// document.
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Server
 {
     /// Where the server stands in the lifecycle.
@@ -175,10 +227,11 @@ impl Server
     /// - ensures: a request is answered exactly once, under its own identifier,
     ///   as the lifecycle and the method decide; a notification is never
     ///   answered, and a document synchronisation publishes the document's
-    ///   diagnostics, recomputed whole — opening and changing it publish its
-    ///   diagnostics at its new version, closing it publishes none and forgets
-    ///   it. A body that is not a message is answered with the error the
-    ///   protocol owes it. `exit` ends the session.
+    ///   diagnostics off its session's submission of the whole text and logs
+    ///   one timing line — opening and changing it publish its diagnostics at
+    ///   its new version, closing it publishes none and forgets it. A body that
+    ///   is not a message is answered with the error the protocol owes it.
+    ///   `exit` ends the session.
     /// - provides: the whole of the server's behaviour; [`serve`] only moves
     ///   bytes.
     /// - fails: never; every refusal is a message to the client.
@@ -198,7 +251,7 @@ impl Server
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
     #[spec(
         captures: phase = self.phase,
-        ensures: |ret| ret.messages.len() <= 1
+        ensures: |ret| ret.messages.len() <= 1 && ret.log.len() <= ret.messages.len()
             && (self.phase == phase || matches!((phase, self.phase),
                 (Phase::Waiting, Phase::Running) | (Phase::Running, Phase::ShuttingDown)))
             && match ret.flow { Flow::Continue => true, Flow::Exit(ending) =>
@@ -352,11 +405,12 @@ impl Server
     /// - requires: nothing.
     /// - ensures: notifications preserve the lifecycle and never send
     ///   responses. Exit ends the session; running-state opens and changes
-    ///   publish the held document at its supplied version, with the last
-    ///   full-text change winning. An empty change list preserves text. Close
-    ///   forgets the named document and publishes a versionless empty
-    ///   diagnostic list, even for an unknown URI. Unknown, malformed and
-    ///   out-of-phase notifications leave documents alone.
+    ///   publish the held document at its supplied version and log one timing
+    ///   line. An open starts the document's session afresh; a change applies
+    ///   each content change in order, as [`apply`] states. An empty change
+    ///   list preserves text. Close forgets the named document and publishes a
+    ///   versionless empty diagnostic list, even for an unknown URI. Unknown,
+    ///   malformed and out-of-phase notifications leave documents alone.
     /// - provides: document synchronization and termination.
     /// - fails: unreadable parameters and changes to unknown documents are
     ///   ignored.
@@ -370,9 +424,12 @@ impl Server
     /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
+    /// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
     #[spec(
         captures: [phase = self.phase, count = self.documents.len()],
         ensures: |ret| self.phase == phase && ret.messages.len() <= 1
+            && ret.log.len() == usize::from(matches!(method.as_ref(), "textDocument/didOpen" | "textDocument/didChange")
+                && !ret.messages.is_empty())
             && ret.flow == if method.as_ref() == "exit" { Flow::Exit(self.closed()) } else { Flow::Continue }
             && if ret.messages.is_empty() { self.documents.len() == count } else {
                 phase == Phase::Running && ret.messages.iter().all(|message| match *message {
@@ -396,6 +453,7 @@ impl Server
         match (self.phase, method.as_ref()) {
             | (_, "exit") => Outcome {
                 messages: Vec::new(),
+                log: Vec::new(),
                 flow: Flow::Exit(self.closed()),
             },
             | (Phase::Running, "textDocument/didOpen") => {
@@ -403,18 +461,19 @@ impl Server
                 else {
                     return Outcome::quiet();
                 };
-                let document = Document {
+                let mut document = Document {
                     version: text_document.version,
                     text: text_document.text,
+                    session: open(&text_document.uri),
                 };
-                let message = published(&text_document.uri, &document);
+                let outcome = synchronised(&text_document.uri, &mut document);
                 let _prior = self.documents.insert(text_document.uri, document);
-                Outcome::say(message)
+                outcome
             },
             | (Phase::Running, "textDocument/didChange") => {
                 let Ok(DidChangeParams {
                     text_document,
-                    mut content_changes,
+                    content_changes,
                 }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
@@ -424,10 +483,10 @@ impl Server
                     return Outcome::quiet();
                 };
                 document.version = text_document.version;
-                if let Some(change) = content_changes.pop() {
-                    document.text = change.text;
+                for change in content_changes {
+                    apply(&mut document.text, change);
                 }
-                Outcome::say(published(&text_document.uri, document))
+                synchronised(&text_document.uri, document)
             },
             | (Phase::Running, "textDocument/didClose") => {
                 let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
@@ -497,12 +556,53 @@ impl Server
     }
 }
 
-/// The notification publishing the diagnostics of `document`, open at `uri`.
+/// `text` with `change` applied.
+///
+/// # Specification
+/// - requires: nothing; any range is admissible input.
+/// - ensures: a change naming no range replaces the whole text; a ranged one
+///   replaces the bytes between its two ends, each resolved through the line
+///   index of the text as it stands as [`crate::position::Position::byte`]
+///   states, an end before the start read as the start.
+/// - provides: incremental synchronisation, with full synchronisation as the
+///   change that names no range.
+/// - fails: never.
+/// - panics: none; a resolved end is always a character boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — successive ranged changes, one after a character beyond
+///   the basic plane, an inverted range, and a rangeless change, each asserted
+///   at the exact text it leaves.
+/// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
+#[spec(
+    captures: [length = text.len(), replaced = change.text.len(), whole = change.range.is_none()],
+    ensures: |_| if whole { text.len() == replaced }
+        else { replaced <= text.len() && text.len() <= length.saturating_add(replaced) },
+)]
+fn apply(
+    text: &mut String,
+    change: ContentChange,
+)
+{
+    let Some(range) = change.range
+    else {
+        *text = change.text;
+        return;
+    };
+    let index = LineIndex::new(text.as_str().into());
+    let start = usize::from(range.start.byte(&index));
+    let end = usize::from(range.end.byte(&index)).max(start);
+    text.replace_range(start .. end, &change.text);
+}
+
+/// Recheck `document`, open at `uri`: the notification publishing its
+/// diagnostics and the line logging what the recheck cost.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a diagnostic notification names the supplied URI and held
-///   version, with the diagnostics obtained by rechecking the whole text.
+/// - ensures: one diagnostic notification naming the supplied URI and held
+///   version, with the diagnostics the document's session reports for its whole
+///   text, and one log line naming the same URI and version.
 /// - provides: the publication shared by open and change notifications.
 /// - fails: never.
 /// - panics: none.
@@ -513,33 +613,51 @@ impl Server
 ///   text through exact publications and subsequent token streams.
 /// - witness: `server::tests::synchronisation_publishes_and_close_clears`
 /// - witness: `server::tests::ignored_messages_and_empty_changes_preserve_document_text`
-#[spec(ensures: |ret| matches!(ret,
-    Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
-        if params.uri == *uri && params.version == Some(document.version)))]
-fn published(
+/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+#[spec(ensures: |ret| ret.flow == Flow::Continue
+    && matches!(*ret.messages.as_slice(), [Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }]
+        if params.uri == *uri && params.version == Some(document.version))
+    && matches!(*ret.log.as_slice(), [ref logged] if logged.uri == *uri && logged.version == document.version))]
+fn synchronised(
     uri: &DocumentUri,
-    document: &Document,
-) -> Outgoing
+    document: &mut Document,
+) -> Outcome
 {
-    publish(PublishParams {
-        uri: uri.clone(),
-        version: Some(document.version),
-        diagnostics: recheck(uri, SourceText::from(document.text.as_str())),
-    })
+    let rechecked = recheck(
+        uri,
+        &mut document.session,
+        SourceText::from(document.text.as_str()),
+    );
+    Outcome {
+        messages: vec![publish(PublishParams {
+            uri: uri.clone(),
+            version: Some(document.version),
+            diagnostics: rechecked.diagnostics,
+        })],
+        log: vec![Logged {
+            uri: uri.clone(),
+            version: document.version,
+            timing: rechecked.timing,
+        }],
+        flow: Flow::Continue,
+    }
 }
 
-/// Serve the protocol over `input` and `output` until the session ends.
+/// Serve the protocol over `input` and `output` until the session ends,
+/// writing each synchronisation's timing line to `log`.
 ///
 /// # Specification
-/// - requires: nothing of the streams; `input` carries the client's frames and
-///   `output` takes the server's.
+/// - requires: nothing of the streams; `input` carries the client's frames,
+///   `output` takes the server's, and `log` takes the operator's lines.
 /// - ensures: each frame read is handled by one [`Server`], and every message
-///   it produces is written as one frame, in order, before the next frame is
-///   read; the session ends at `exit` or at a stream closed at a frame
-///   boundary, as [`Server::closed`] states.
-/// - provides: the language server over any pair of streams: the driver's
-///   standard input and output, or memory.
-/// - fails: the first [`TransportFault`] of either stream, and
+///   it produces is written as one frame, in order, and every line it logs is
+///   written to `log` with a line terminator, before the next frame is read;
+///   the session ends at `exit` or at a stream closed at a frame boundary, as
+///   [`Server::closed`] states. A line `log` refuses is dropped: the log is the
+///   operator's, and the protocol never depends on it.
+/// - provides: the language server over any pair of streams and a log: the
+///   driver's standard input, output and error, or memory.
+/// - fails: the first [`TransportFault`] of either protocol stream, and
 ///   [`TransportFault::Encode`] for a message that does not encode.
 /// - panics: none.
 /// - executable: none — generic streams expose neither their consumed nor
@@ -552,17 +670,21 @@ fn published(
 /// # Adequacy
 /// - hypothesis: L2 — a whole session over in-memory streams, from `initialize`
 ///   to `exit`, asserted frame by frame; L3 — a session closed without `exit`,
-///   and one whose stream breaks inside a frame.
+///   one whose stream breaks inside a frame, and an editor-shaped edit to a
+///   large document whose log carries one timing line per synchronisation.
 /// - witness: `session::session::a_session_round_trips_over_in_memory_streams`
 /// - witness: `session::session::a_stream_closed_without_exit_ends_abruptly`
+/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
 #[inline]
-pub fn serve<Input, Output>(
+pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
+    log: &mut Log,
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead,
     Output: Write,
+    Log: Write,
 {
     let mut server = Server::default();
     loop {
@@ -575,6 +697,9 @@ where
         for message in &outcome.messages {
             let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
             write_frame(output, &Body::from(encoded))?;
+        }
+        for line in &outcome.log {
+            let _unlogged = writeln!(log, "{line}");
         }
         if let Flow::Exit(served) = outcome.flow {
             return Ok(served);
@@ -772,7 +897,7 @@ mod tests
                 r#"[{"jsonrpc":"2.0","id":1,"result":{
                     "capabilities":{
                         "positionEncoding":"utf-16",
-                        "textDocumentSync":{"openClose":true,"change":1},
+                        "textDocumentSync":{"openClose":true,"change":2},
                         "semanticTokensProvider":{
                             "legend":{
                                 "tokenTypes":["keyword","operator","function","variable",
@@ -1074,6 +1199,61 @@ mod tests
             "a closed document has no tokens"
         );
     }
+
+    #[test]
+    fn ranged_changes_edit_the_held_text_in_order()
+    {
+        let mut server = server_over_the_known_document();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/example.gandr");
+        let held = |server: &Server| {
+            server
+                .documents
+                .get(&uri)
+                .map(|document| document.text.clone())
+                .expect("the document is open")
+        };
+        let changed = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
+                    "contentChanges":[
+                        {"range":{"start":{"line":0,"character":8},"end":{"line":0,"character":10}},"text":"7"},
+                        {"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":0}},"text":"def g = \"𝄞\" ;\n"},
+                        {"range":{"start":{"line":1,"character":11},"end":{"line":1,"character":12}},"text":"x\""},
+                        {"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":8}},"text":"!"}
+                    ]}}"#,
+            ),
+        );
+        assert_eq!(
+            changed.pointer("/0/params/version"),
+            Some(&serde_json::json!(2_i32))
+        );
+        assert_eq!(
+            held(&server),
+            "def f = 7 !;\ndef g = \"𝄞x\" ;\n",
+            "each change applies to the text the ones before it left, counted in UTF-16 units, \
+             an inverted range inserting at its start"
+        );
+        let restored = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                    "textDocument":{"uri":"file:///tmp/example.gandr","version":3},
+                    "contentChanges":[{"text":"def f = 42 ;\n"}]}}"#,
+            ),
+        );
+        assert_eq!(
+            held(&server),
+            "def f = 42 ;\n",
+            "a rangeless change replaces the whole text"
+        );
+        assert_eq!(
+            restored.pointer("/0/params/diagnostics"),
+            Some(&serde_json::json!([]))
+        );
+    }
+
     #[test]
     fn ignored_messages_and_empty_changes_preserve_document_text()
     {

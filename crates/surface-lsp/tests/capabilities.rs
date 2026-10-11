@@ -23,7 +23,7 @@ mod capabilities
             json!({
                 "capabilities": {
                     "positionEncoding": "utf-16",
-                    "textDocumentSync": {"openClose": true, "change": 1_i32},
+                    "textDocumentSync": {"openClose": true, "change": 2_i32},
                     "semanticTokensProvider": {
                         "legend": {"tokenTypes": TOKEN_TYPES, "tokenModifiers": TOKEN_MODIFIERS},
                         "full": true,

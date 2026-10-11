@@ -10,21 +10,24 @@ keywords = ["gandr", "language", "lsp"]
 categories = ["development-tools"]
 publish.workspace = true
 
-# The server reads the pipeline's own faces: the dispatcher's composition and
-# root classification, the settle comparison's verdict, the renderer's
-# reports, the grammar's highlighter over the parser's tree, and the renderer
-# seam's UTF-16 projection. The wire is JSON, decoded and encoded through
-# serde; a `file` URI's path is percent-decoded.
+# The server reads the pipeline's own faces: a session per open document,
+# over the incremental checker's memory checkpoint store and the record
+# plane's memory block store; the dispatcher's root classification and
+# check verb, the renderer's reports, the grammar's highlighter over the
+# parser's tree, and the renderer seam's UTF-16 projection. The wire is JSON,
+# decoded and encoded through serde; a `file` URI's path is percent-decoded.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
-gandr-surface-corpus.workspace = true
+gandr-core-incremental.workspace = true
+gandr-storage-records.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-render-remote.workspace = true
+gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
 percent-encoding.workspace = true
 quenchant-shape.workspace = true

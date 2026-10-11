@@ -1,30 +1,30 @@
-//! The whole-document recheck: every synchronisation composes the document
-//! from scratch through the dispatcher's composition, and every token request
-//! highlights it from scratch through the grammar's role table.
+//! The document recheck: every open document holds a session, each
+//! synchronisation submits the document's text to it, and every token request
+//! highlights the text from scratch through the grammar's role table.
 //!
-//! The grammar and its role table are built once per process and shared by
-//! every recheck. Nothing else is kept between requests: an incremental
-//! recheck is a later server's, and until then a document is exactly as
-//! current as its last synchronisation.
+//! The grammar and its role table are built once per process and shared. A
+//! document's session keeps its forms between synchronisations, so a change
+//! molds only the forms it touched; its report is the dispatcher's
+//! composition of the whole text, which is what `gandr check` prints for it.
 
+use core::fmt;
+use core::time::Duration;
 use std::path::Path;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use anodized::spec;
-use gandr_surface_corpus::Settlement;
+use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_core_incremental::ResumeCensus;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::Report;
 use gandr_surface_diagnostics::entries;
-use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
-use gandr_surface_dispatcher::LoweringCount;
-use gandr_surface_dispatcher::SourceRoot;
-use gandr_surface_dispatcher::Standing;
-use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
-use gandr_surface_dispatcher::compose;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
@@ -33,6 +33,8 @@ use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_session::FormCensus;
+use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -43,6 +45,11 @@ use crate::protocol::DocumentUri;
 use crate::protocol::Location;
 use crate::protocol::RelatedInformation;
 use crate::protocol::Severity;
+
+/// The session one open document's revisions are submitted to, or the fault
+/// that kept the grammar it parses under from building.
+pub type DocumentSession =
+    Result<Session<MemoryCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
 
 /// The built-in grammar and the role table read off it.
 #[derive(Debug)]
@@ -91,24 +98,153 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
         .as_ref()
 }
 
-/// The diagnostics of the document at `uri`, whose text is `text`.
+/// A fresh session for the document at `uri`, under the root its `file`
+/// URI's path classifies as.
 ///
 /// # Specification
-/// - requires: nothing; any text is admissible input.
-/// - ensures: the document is composed whole through the dispatcher's
-///   composition, under the root its `file` URI's path classifies as, and each
-///   entry `gandr check --goals` prints for it becomes one diagnostic, in the
-///   order printed: a report at the range its span projects to, with the
-///   refusal's vocabulary name as its code, its title as its message, each
-///   context locus as a related location carrying its label, and the severity
-///   of a goal as information and of every other report as an error; a report
-///   the renderer leaves unlocated, and a ledger line, at the document's
-///   origin. A fault that keeps the document from composing is one error at the
-///   origin naming it.
+/// - requires: nothing.
+/// - ensures: a session with nothing submitted, parsing under the process's
+///   grammar, under the classified root, over memory stores; the grammar's
+///   build fault when it did not build.
+/// - provides: the session a document opened in the editor keeps.
+/// - fails: the grammar's [`PbgError`], carried for the document's diagnostics.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L2 — over every corpus source, a document opened through it
+///   publishes the reports the walk renders under the same root.
+/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+/// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |session| session.root() == classify(&uri.path())))]
+pub fn open(uri: &DocumentUri) -> DocumentSession
+{
+    let toolkit = toolkit()?;
+    Ok(Session::new(
+        toolkit.grammar.clone(),
+        classify(&uri.path()),
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        BackendArtifact::from(b"gandr-surface-lsp".as_slice()),
+    ))
+}
+
+/// What one synchronisation cost: the forms its parse molded, the items the
+/// incremental checker judged, and the wall of the recheck.
+///
+/// # Specification
+/// - requires: constructed by [`recheck`].
+/// - ensures: names the census and the wall of one recheck.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the recheck
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an editor-shaped transcript over two thousand forms reads
+///   one timing line per synchronisation, the open molding every form and the
+///   edit a handful.
+/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Timing
+{
+    /// The forms the parse molded, of the revision's forms.
+    forms: FormCensus,
+    /// What the incremental checker judged, when the revision was not
+    /// refused whole.
+    judged: Maybe<ResumeCensus, judged::Absent>,
+    /// The recheck's wall.
+    wall: Duration,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a timing carries no judgement census.
+    pub mod judged {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The revision was refused as a whole, so nothing was judged.
+            RefusedWhole,
+            /// The document has no session: its grammar did not build, or the
+            /// session faulted.
+            Unchecked,
+        }
+    }
+}
+
+impl fmt::Display for Timing
+{
+    /// Writes the forms molded, the items judged and the wall, one line.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `<molded>/<forms> forms molded, <judged>/<items> items
+    ///   judged, <wall> ms`, the judgement replaced by why none was made.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither its written bytes nor
+    ///   its sink's failure state.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the transcript reads the molded count back out of the
+    ///   line it logged.
+    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{}/{} forms molded, ",
+            usize::from(self.forms.molded()),
+            usize::from(self.forms.forms())
+        )?;
+        match self.judged {
+            | Maybe::Present(census) => write!(
+                f,
+                "{}/{} items judged",
+                usize::from(census.judged),
+                usize::from(census.items)
+            )?,
+            | Maybe::Absent(judged::Absent::RefusedWhole) => f.write_str("refused whole")?,
+            | Maybe::Absent(judged::Absent::Unchecked) => f.write_str("unchecked")?,
+        }
+        write!(f, ", {:.1} ms", self.wall.as_secs_f64() * 1_000.0)
+    }
+}
+
+/// What one recheck produced: the diagnostics to publish, and its timing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Rechecked
+{
+    /// The diagnostics, in the order `gandr check --goals` prints them.
+    pub diagnostics: Vec<Diagnostic>,
+    /// What the recheck cost.
+    pub timing: Timing,
+}
+
+/// Submit `text`, the document at `uri`, to its `session`, and read its
+/// diagnostics off the submission.
+///
+/// # Specification
+/// - requires: `session` was opened for `uri`; any text is admissible input.
+/// - ensures: the text is submitted once, and each entry `gandr check --goals`
+///   prints for the submission's step becomes one diagnostic, in the order
+///   printed: a report at the range its span projects to, with the refusal's
+///   vocabulary name as its code, its title as its message, each context locus
+///   as a related location carrying its label, and the severity of a goal as
+///   information and of every other report as an error; a report the renderer
+///   leaves unlocated, and a ledger line, at the document's origin. A fault
+///   that keeps the document from composing, and a grammar that did not build,
+///   is one error at the origin naming it. The timing carries the submission's
+///   form census, the incremental checker's census, and the wall of the whole
+///   recheck.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
-/// - intension: one composition per call, and one projection per span end.
+/// - intension: one submission per call, and one projection per span end.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — over every corpus source, the diagnostics are the reports
@@ -117,50 +253,65 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 ///   are asserted at their related locations, and a pending source at its
 ///   ledger line.
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-#[spec(ensures: |ret| ret.iter().all(|diagnostic|
+#[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
         && matches!(diagnostic.severity, Severity::ERROR | Severity::INFORMATION)
         && diagnostic.related_information.iter().all(|related|
             related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
-#[inline]
 #[must_use]
 pub fn recheck(
     uri: &DocumentUri,
+    session: &mut DocumentSession,
     text: SourceText<'_>,
-) -> Vec<Diagnostic>
+) -> Rechecked
 {
-    let toolkit = match toolkit() {
-        | Ok(toolkit) => toolkit,
-        | Err(fault) => {
-            return vec![Diagnostic::at_origin(format!(
-                "the built-in grammar did not build: {fault}"
-            ))];
+    let started = Instant::now();
+    let unchecked = |diagnostic: Diagnostic| Rechecked {
+        diagnostics: vec![diagnostic],
+        timing: Timing {
+            forms: FormCensus::default(),
+            judged: Maybe::Absent(judged::Absent::Unchecked),
+            wall: started.elapsed(),
         },
     };
+    let session = match *session {
+        | Ok(ref mut session) => session,
+        | Err(fault) => {
+            return unchecked(Diagnostic::at_origin(format!(
+                "the built-in grammar did not build: {fault}"
+            )));
+        },
+    };
+    let submission = match session.submit(text) {
+        | Ok(submission) => submission,
+        | Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
+    };
+    let forms = submission.forms();
+    let judged = match submission.resumed() {
+        | Maybe::Present(resumed) => Maybe::Present(resumed.census()),
+        | Maybe::Absent(_) => Maybe::Absent(judged::Absent::RefusedWhole),
+    };
     let path = uri.path();
-    let root = classify(&path);
-    let mut lowerings = LoweringCount::default();
-    let composed = match compose(&toolkit.grammar, root.corpus_root(), text, &mut lowerings) {
-        | Ok(composed) => composed,
-        | Err(fault) => return vec![Diagnostic::at_origin(fault.to_string())],
-    };
     let index = LineIndex::new(text.as_ref().into());
-    let step = Step::Source {
-        path: Path::new(&path),
-        root,
-        text,
-        standing: standing(root, &composed),
-        composed,
-    };
-    entries(&step, Verb::Check(Goals::Reported))
+    let step = submission.into_step(Path::new(&path));
+    let diagnostics = entries(&step, Verb::Check(Goals::Reported))
         .map(|entry| match entry {
             | Entry::Report(report) => diagnostic(&report, &index, uri),
             | Entry::Line(line) => Diagnostic::at_origin(line.to_string()),
         })
-        .collect()
+        .collect();
+    Rechecked {
+        diagnostics,
+        timing: Timing {
+            forms,
+            judged,
+            wall: started.elapsed(),
+        },
+    }
 }
 
 /// The highlighter's spans over `text`.
@@ -208,60 +359,6 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
         .roles
         .highlight(&parsed.into_tree())
         .unwrap_or_default()
-}
-
-/// How `composed`, a source under `root`, stands against its root: the
-/// standing the dispatcher's walk gives the same source.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: under the pending root, a source refused as a whole, or one
-///   carrying a refusal no expectation can state, is pending, and any other
-///   lowered; under the strict and fixture roots, a source refused as a whole
-///   is refused, and any other settled or unsettled as its report's tally is.
-/// - provides: the standing the renderer reads to choose what to print, so a
-///   pending source publishes exactly what `gandr check` prints for it.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L2 — over every corpus source, pending sources included, the
-///   diagnostics published agree with the walk's own reports.
-/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-/// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-#[spec(ensures: |ret| match *composed {
-    Composed::Refused(_) => matches!((root, ret),
-        (SourceRoot::Pending, Standing::Pending) | (SourceRoot::Strict | SourceRoot::Fixture, Standing::Refused)),
-    Composed::Settled { ref unstatable, ref report, .. } => match root {
-        SourceRoot::Pending => (ret == Standing::Lowered && unstatable.is_empty())
-            || (ret == Standing::Pending && !unstatable.is_empty()),
-        SourceRoot::Strict | SourceRoot::Fixture => matches!((ret, report.tally().settlement()),
-            (Standing::Settled, Settlement::Settled) | (Standing::Unsettled, Settlement::Unsettled)),
-    },
-})]
-fn standing(
-    root: SourceRoot,
-    composed: &Composed<'_>,
-) -> Standing
-{
-    match (root, composed) {
-        | (SourceRoot::Pending, &Composed::Refused(_)) => Standing::Pending,
-        | (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
-            if unstatable.is_empty() {
-                Standing::Lowered
-            }
-            else {
-                Standing::Pending
-            }
-        },
-        | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Refused(_)) => Standing::Refused,
-        | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Settled { ref report, .. }) => {
-            match report.tally().settlement() {
-                | Settlement::Settled => Standing::Settled,
-                | Settlement::Unsettled => Standing::Unsettled,
-            }
-        },
-    }
 }
 
 /// The diagnostic `report` is published as.
@@ -338,17 +435,31 @@ mod tests
     use gandr_surface_syntax::SourceText;
 
     use super::highlight;
+    use super::open;
     use super::recheck;
     use super::toolkit;
     use crate::position::Character;
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
+    use crate::protocol::Diagnostic;
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
     use crate::protocol::Severity;
     use crate::tokens::TokenStream;
     use crate::tokens::encode;
+
+    /// The diagnostics a document opened at `uri` with `text` publishes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checked(
+        uri: &DocumentUri,
+        text: SourceText<'_>,
+    ) -> Vec<Diagnostic>
+    {
+        recheck(uri, &mut open(uri), text).diagnostics
+    }
 
     /// A range from one line and character to another.
     struct Span(u32, u32, u32, u32);
@@ -400,7 +511,7 @@ mod tests
     {
         let uri = DocumentUri::from("file:///strict/mismatch.gandr");
         let text = "def wrong : Integer ;\ndef wrong = \"text\" ;\n";
-        let diagnostics = recheck(&uri, SourceText::from(text));
+        let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
             panic!("one mismatch");
@@ -434,7 +545,7 @@ mod tests
     {
         let uri = DocumentUri::from("file:///strict/duplicate.gandr");
         let text = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
-        let diagnostics = recheck(&uri, SourceText::from(text));
+        let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
             panic!("one duplicate signature");
@@ -453,7 +564,7 @@ mod tests
     fn a_fault_is_published_at_the_origin()
     {
         let lowered = DocumentUri::from("file:///corpus/fixture/pending/lowered.gandr");
-        let diagnostics = recheck(&lowered, SourceText::from("def a = 1 ;\n"));
+        let diagnostics = checked(&lowered, SourceText::from("def a = 1 ;\n"));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
             panic!("one pending-root ledger line");
@@ -465,7 +576,7 @@ mod tests
         assert!(diagnostic.related_information.is_empty());
         let pending = DocumentUri::from("file:///corpus/fixture/pending/whole.gandr");
         assert_eq!(
-            recheck(&pending, SourceText::from("ret 3\n")),
+            checked(&pending, SourceText::from("ret 3\n")),
             Vec::new(),
             "a pending source refused as a whole stands as its root expects"
         );
