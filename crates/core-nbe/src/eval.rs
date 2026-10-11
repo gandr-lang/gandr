@@ -1127,12 +1127,11 @@ impl<'run> Machine<'run>
                 .chain(free.linear().counts().iter().map(|index| environment.lookup(Zone::Linear, *index)))))
                     }),
                 Ok(Recall::Remembered(remembered)) => unchanged
-                    && self.sharing.legs.get(&term).zip(self.envs.get(env.0)).is_some_and(|(free, environment)| {
-                        self.sharing.remembered.iter().any(|(configuration, head)| configuration.term == term
-                            && *head == remembered && configuration.entries.iter().copied().map(Some).eq(
+                    && self.sharing.legs.get(&term).zip(self.envs.get(env.0)).and_then(|(free, environment)|
             free.intuitionistic().counts().iter().map(|index| environment.lookup(Zone::Intuitionistic, *index))
-                .chain(free.linear().counts().iter().map(|index| environment.lookup(Zone::Linear, *index)))))
-                    }),
+                .chain(free.linear().counts().iter().map(|index| environment.lookup(Zone::Linear, *index)))
+                .collect::<Option<Vec<_>>>())
+                    .is_some_and(|entries| self.sharing.remembered.get(&Configuration { term, entries }) == Some(&remembered)),
             }
         },
     )]
@@ -1201,14 +1200,13 @@ impl<'run> Machine<'run>
         captures: [entry_pending = self.sharing.pending.len(), entry_remembered = self.sharing.remembered.len(),
             entry_values = self.values.len(), entry_comps = self.comps.len(),
             entry_value = self.values.last().copied(), entry_comp = self.comps.last().copied(),
-            entry_configuration = self.sharing.pending.get(pending.0).and_then(Option::as_ref)
-                .map(|configuration| (configuration.term, configuration.entries.len(), configuration.entries.first().copied(), configuration.entries.last().copied()))],
+            entry_configuration = self.sharing.pending.get(pending.0).and_then(Option::as_ref).cloned()],
         ensures: |ret| self.sharing.pending.len() == entry_pending
             && self.sharing.pending.get(pending.0).is_none_or(Option::is_none)
             && self.values.len() == entry_values && self.comps.len() == entry_comps
             && self.values.last().copied() == entry_value && self.comps.last().copied() == entry_comp
             && {
-                let produced = entry_configuration.and_then(|configuration| match configuration.0 {
+                let produced = entry_configuration.as_ref().and_then(|configuration| match configuration.term {
                     CoreTerm::Value(_) => entry_value.map(Glued::Value),
                     CoreTerm::Computation(_) => entry_comp.map(Glued::Computation),
                 });
@@ -1216,8 +1214,7 @@ impl<'run> Machine<'run>
                     None => ret == Err(EvalFault::MachineInvariant) && self.sharing.remembered.len() == entry_remembered,
                     Some(produced) => ret.is_ok()
                         && (self.sharing.remembered.len() == entry_remembered || self.sharing.remembered.len() == entry_remembered.saturating_add(1_usize))
-                        && self.sharing.remembered.iter().any(|(configuration, head)| *head == produced
-                            && Some((configuration.term, configuration.entries.len(), configuration.entries.first().copied(), configuration.entries.last().copied())) == entry_configuration),
+                        && entry_configuration.as_ref().and_then(|configuration| self.sharing.remembered.get(configuration)) == Some(&produced),
                 }
             },
     )]
