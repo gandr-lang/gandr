@@ -66,6 +66,8 @@ use crate::support::Supported;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Verdict
 {
+    /// A native nominal declaration whose complete signature formed.
+    Data,
     /// The body checked against the declared type.
     Checked
     {
@@ -152,10 +154,24 @@ pub struct ModuleReport
     /// The body each accepted declaration defines its constant as, elaborated
     /// to the universe it was declared at, by position.
     definitions: BTreeMap<ConstantIndex, ValueId>,
+    /// Native signatures retained for kernel readmission.
+    data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
 }
 
 impl ModuleReport
 {
+    /// The successfully formed nominal signatures.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn data_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>
+    {
+        &self.data_signatures
+    }
     /// One entry per declaration, in the order given.
     ///
     /// # Specification
@@ -237,19 +253,16 @@ impl ModuleReport
 #[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
-        | Verdict::Checked { declared, body, .. } => declaration.signature() == Maybe::Present(declared.id())
-            && declaration.body() == Maybe::Present(body)
+        | Verdict::Data => matches!(declaration.content(), crate::DeclarationContent::Data(signature)
+            if context.data_signatures().get(&declaration.constant()) == Some(signature)),
+        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value == body)
             && context.signature(declaration.constant()) == Maybe::Present(declared),
-        | Verdict::Synthesised { synthesised, body } => matches!(declaration.signature(), Maybe::Absent(_))
-            && declaration.body() == Maybe::Present(body)
+        | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value == body)
             && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
-        | Verdict::Owed(entry) => matches!(declaration.body(), Maybe::Absent(_))
-            && declaration.signature() == Maybe::Present(entry.absence().declared().id())
+        | Verdict::Owed(entry) => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Absent(_) } if *ty == entry.absence().declared().id())
             && entry.absence().constant() == declaration.constant()
             && entry.absence().origin() == declaration.origin()
             && context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()),
-        | Verdict::Refused(CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(constant) }) => constant == declaration.constant()
-            && matches!((declaration.signature(), declaration.body()), (Maybe::Absent(_), Maybe::Absent(_))),
         | Verdict::Refused(_) => true,
     },
 )]
@@ -264,14 +277,29 @@ pub fn check_declaration(
     if let Err(refusal) = context.admit(constant) {
         return Verdict::Refused(refusal);
     }
-    let direction = match declaration.signature() {
+    let (signature, body) = match *(declaration.content()) {
+        | crate::DeclarationContent::Data(ref signature) => {
+            return match crate::former::form_signature(context, signature) {
+                | Ok(()) => {
+                    context.record_data(constant, alloc::sync::Arc::clone(signature));
+                    Verdict::Data
+                },
+                | Err(refusal) => Verdict::Refused(refusal),
+            };
+        },
+        | crate::DeclarationContent::Value {
+            ref signature,
+            ref body,
+        } => (*signature, *body),
+    };
+    let direction = match signature {
         | Maybe::Present(declared) => match form_value_type(context, declared) {
             | Ok(formed) => Direction::Check(formed),
             | Err(refusal) => return Verdict::Refused(refusal),
         },
         | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
-    let verdict = match declaration.body() {
+    let verdict = match body {
         | Maybe::Present(body) => match direction {
             | Direction::Synthesise => match synthesise_value(context, body) {
                 | Ok(synthesised) => Verdict::Synthesised { body, synthesised },
@@ -295,12 +323,13 @@ pub fn check_declaration(
     };
     match (direction, verdict) {
         | (Direction::Check(declared), Verdict::Checked { body, .. }) => {
+            // Native declarations return before the value judgment.
             context.record(constant, declared);
             context.define(constant, declared, body);
         },
         | (
             Direction::Check(declared),
-            Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Refused(_),
+            Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => context.record(constant, declared),
         | (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
             context.record(constant, synthesised.produced());
@@ -308,7 +337,7 @@ pub fn check_declaration(
         },
         | (
             Direction::Synthesise,
-            Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
+            Verdict::Data | Verdict::Checked { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => {},
     }
     verdict
@@ -384,7 +413,7 @@ pub fn check_declaration_supported(
         judged.constant == declaration.constant() && judged.origin == declaration.origin())
     && ret.ledger.entries().iter().copied().eq(ret.judged.iter().filter_map(|judged| match judged.verdict {
         | Verdict::Owed(entry) => Some(entry),
-        | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_) => None,
+        | Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_) => None,
     }))
     && &ret.lifts == context.lifts()
     && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
@@ -414,6 +443,7 @@ pub fn check_module(
         ledger,
         lifts: context.lifts().clone(),
         definitions: context.definitions().definitions().collect(),
+        data_signatures: context.data_signatures().clone(),
     }
 }
 
@@ -509,7 +539,7 @@ mod tests
         requires: position.0.checked_add(100).is_some(),
         ensures: |ret| usize::from(ret.constant()) == position.0
             && Some(usize::from(ret.origin())) == position.0.checked_add(100)
-            && ret.signature() == declared && ret.body() == defined,
+            && matches!(ret.content(),&crate::DeclarationContent::Value {signature,body} if signature == declared && body == defined),
     )]
     fn declaration(
         position: At,

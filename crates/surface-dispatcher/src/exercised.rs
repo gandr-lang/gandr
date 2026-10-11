@@ -425,7 +425,7 @@ fn carried(
         | Produced::Judged(Verdict::Owed(_)) => rows.mark(Row::AddressableObligation),
         | Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
         | Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
-        | Produced::Guarded(_) => {},
+        | Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
     }
     rows
 }
@@ -511,6 +511,19 @@ fn checking_row(
                 rows.mark(Row::NonSynthesisableDefinition);
             }
         },
+        | CheckRefusal::NotADataType(_)
+        | CheckRefusal::DataKindNotUniverse(_)
+        | CheckRefusal::DataFieldLevel { .. }
+        | CheckRefusal::DataArgumentArity(_)
+        | CheckRefusal::UnknownConstructor { .. }
+        | CheckRefusal::ConstructorArity(_)
+        | CheckRefusal::NonExhaustiveDataCase(_)
+        | CheckRefusal::AbsentRecordField(_)
+        | CheckRefusal::MissingRecordField { .. }
+        | CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::Data | ExpectedShape::Record,
+            ..
+        }
         | CheckRefusal::ShapeMismatch {
             wanted:
                 ExpectedShape::PathUniverse
@@ -685,6 +698,12 @@ fn formers(
     while let Some(node) = worklist.pop() {
         match node {
             | Node::Value(id) => match arena.value(id) {
+                | Some(&Value::Constructor { ref fields, .. }) => {
+                    worklist.extend(fields.iter().copied().map(Node::Value));
+                },
+                | Some(&Value::Record(ref fields)) => {
+                    worklist.extend(fields.values().copied().map(Node::Value));
+                },
                 | Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
                 | Some(
                     &(Value::PathProduct(first, second)
@@ -719,6 +738,17 @@ fn formers(
                 | None => {},
             },
             | Node::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::DataCase {
+                    scrutinee,
+                    ref branches,
+                    ..
+                }) => {
+                    worklist.push(Node::Value(scrutinee));
+                    worklist.extend(branches.iter().copied().map(Node::Computation));
+                },
+                | Some(&Computation::RecordProjection(record, _)) => {
+                    worklist.push(Node::Value(record));
+                },
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     worklist.extend(arguments.iter().copied().map(Node::Value));
                 },

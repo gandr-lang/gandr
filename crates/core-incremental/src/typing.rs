@@ -123,6 +123,42 @@ pub enum Form
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal
 {
+    /// The nominal identity has no admitted signature.
+    NotADataType(Reference),
+    /// The declaration kind is not a value universe.
+    DataKindNotUniverse(Site),
+    /// A constructor field exceeds the declaration universe.
+    DataFieldLevel
+    {
+        /// The offending field classifier.
+        field: Site,
+        /// The declared universe.
+        kind: TypeContent,
+    },
+    /// A nominal application has the wrong parameter count.
+    DataArgumentArity(Site),
+    /// A constructor tag is absent from its declaration.
+    UnknownConstructor
+    {
+        /// The constructor value.
+        at: Site,
+        /// The unknown tag.
+        tag: gandr_core_term::ConstructorTag,
+    },
+    /// A constructor has the wrong field count.
+    ConstructorArity(Site),
+    /// A case has the wrong branch count.
+    NonExhaustiveDataCase(Site),
+    /// A projection names no field in its operand's type.
+    AbsentRecordField(Site),
+    /// A record omits a required field.
+    MissingRecordField
+    {
+        /// The record value.
+        at: Site,
+        /// The required record classifier.
+        expected: TypeContent,
+    },
     /// A native path endpoint is not a closed first-order code.
     PathCode(Site),
     /// A synthesised type did not convert to the expected one.
@@ -287,6 +323,8 @@ pub enum Refusal
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Typing
 {
+    /// A nominal declaration whose whole signature formed.
+    Data,
     /// The body checked against the signature.
     Checked
     {
@@ -358,6 +396,7 @@ impl Projection<'_, '_, '_>
     /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     #[spec(ensures: |ret| match *verdict {
+        Verdict::Data => matches!(ret,Typing::Data),
         | Verdict::Checked { evidence, .. } => {
             matches!(ret, Typing::Checked { conversions } if conversions == evidence.conversions())
         },
@@ -373,6 +412,7 @@ impl Projection<'_, '_, '_>
     ) -> Typing
     {
         match *verdict {
+            | Verdict::Data => Typing::Data,
             | Verdict::Checked { evidence, .. } => Typing::Checked {
                 conversions: evidence.conversions(),
             },
@@ -490,42 +530,30 @@ impl Projection<'_, '_, '_>
     ///   and machine-invariant cases are outside the witnessed domain.
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
-    #[spec(ensures: |ret| match (refusal, &ret) {
-        | (CheckRefusal::PathCode(at), &Refusal::PathCode(projected))
-        | (
-            CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }),
-            &Refusal::TypeMismatch { at: projected, .. },
-        )
-        | (CheckRefusal::SortMismatch { at, .. }, &Refusal::SortMismatch { at: projected, .. })
-        | (
-            CheckRefusal::LevelMismatch { at, .. },
-            &Refusal::LevelMismatch { at: projected, .. },
-        )
-        | (CheckRefusal::Undecided { at }, &Refusal::Undecided { at: projected })
-        | (
-            CheckRefusal::StaticLambdaArgument { at },
-            &Refusal::StaticLambdaArgument { at: projected },
-        ) => projected == self.site(ArenaNode::Value(at)),
-        | (
-            CheckRefusal::TypeMismatch(Mismatch::Computation { at, .. }),
-            &Refusal::TypeMismatch { at: projected, .. },
-        )
-        | (
-            CheckRefusal::DependentBind { at, .. },
-            &Refusal::DependentBind { at: projected, .. },
-        ) => projected == self.site(ArenaNode::Computation(at)),
-        | (
-            CheckRefusal::ShapeMismatch { at, wanted, .. },
-            &Refusal::ShapeMismatch {
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (refusal, &ret);
+if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal::NotADataType(ref projected) = *matched_right_value { *projected == self.layout.resolve(constant) }
+ else if let CheckRefusal::DataKindNotUniverse(at) = matched_left_value && let Refusal::DataKindNotUniverse(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let CheckRefusal::DataArgumentArity(at) = matched_left_value && let Refusal::DataArgumentArity(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let CheckRefusal::DataFieldLevel {field,kind} = matched_left_value && let Refusal::DataFieldLevel {field:projected,kind:ref stored} = *matched_right_value { projected == self.site(ArenaNode::ValueType(field)) && *stored == self.value_type(kind) }
+ else if let CheckRefusal::UnknownConstructor {at,tag} = matched_left_value && let Refusal::UnknownConstructor {at:projected,tag:stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == tag }
+ else if let CheckRefusal::ConstructorArity(at) = matched_left_value && let Refusal::ConstructorArity(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::AbsentRecordField(at) = matched_left_value && let Refusal::AbsentRecordField(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::MissingRecordField {at,expected} = matched_left_value && let Refusal::MissingRecordField {at:projected,expected:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
+ else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::Undecided { at } = matched_left_value && let Refusal::Undecided { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::StaticLambdaArgument { at } = matched_left_value && let Refusal::StaticLambdaArgument { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::TypeMismatch(Mismatch::Computation { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::DependentBind { at, .. } = matched_left_value && let Refusal::DependentBind { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::ShapeMismatch { at, wanted, .. } = matched_left_value && let Refusal::ShapeMismatch {
                 at: projected,
                 wanted: returned,
                 ..
-            },
-        ) => projected == self.term_site(at) && wanted == returned,
-        | (
-            CheckRefusal::NotSynthesisable { form },
-            &Refusal::NotSynthesisable { form: projected },
-        ) => match (form, projected) {
+            } = *matched_right_value { projected == self.term_site(at) && wanted == returned }
+ else if let CheckRefusal::NotSynthesisable { form } = matched_left_value && let Refusal::NotSynthesisable { form: projected } = *matched_right_value { match (form, projected) {
             | (CheckingForm::Injection(id), Form::Injection(at))
             | (CheckingForm::Thunk(id), Form::Thunk(at))
             | (CheckingForm::StaticLambda(id), Form::StaticLambda(at)) => {
@@ -538,14 +566,11 @@ impl Projection<'_, '_, '_>
             },
             | (CheckingForm::Hole(_), Form::Hole) => true,
             | _ => false,
-        },
-        | (
-            CheckRefusal::UnknownConstant { at, constant },
-            &Refusal::UnknownConstant {
+        } }
+ else if let CheckRefusal::UnknownConstant { at, constant } = matched_left_value && let Refusal::UnknownConstant {
                 at: projected,
                 constant: ref returned,
-            },
-        ) => {
+            } = *matched_right_value { {
             projected == self.site(ArenaNode::Value(at))
                 && self
                     .layout
@@ -557,78 +582,89 @@ impl Projection<'_, '_, '_>
                         || matches!(*returned, Reference::Unoccupied),
                         |expected| returned == expected,
                     )
-        },
-        | (
-            CheckRefusal::OutOfFragment { at, former },
-            &Refusal::OutOfFragment {
+        } }
+ else if let CheckRefusal::OutOfFragment { at, former } = matched_left_value && let Refusal::OutOfFragment {
                 at: projected,
                 former: returned,
-            },
-        ) => projected == self.core_site(at) && former == returned,
-        | (
-            CheckRefusal::UnboundIndex {
+            } = *matched_right_value { projected == self.core_site(at) && former == returned }
+ else if let CheckRefusal::UnboundIndex {
                 at,
                 zone,
                 index,
                 depth,
-            },
-            &Refusal::UnboundIndex {
+            } = matched_left_value && let Refusal::UnboundIndex {
                 at: projected,
                 zone: returned_zone,
                 index: returned_index,
                 depth: returned_depth,
-            },
-        ) => {
+            } = *matched_right_value { {
             projected == self.site(ArenaNode::Value(at))
                 && zone == returned_zone
                 && index == returned_index
                 && depth == returned_depth
-        },
-        | (
-            CheckRefusal::BudgetExceeded { budget },
-            &Refusal::BudgetExceeded { budget: returned },
-        ) => budget == returned,
-        | (CheckRefusal::DanglingNode { node }, &Refusal::DanglingNode { at }) => {
+        } }
+ else if let CheckRefusal::BudgetExceeded { budget } = matched_left_value && let Refusal::BudgetExceeded { budget: returned } = *matched_right_value { budget == returned }
+ else if let CheckRefusal::DanglingNode { node } = matched_left_value && let Refusal::DanglingNode { at } = *matched_right_value { {
             at == self.core_site(node)
-        },
-        | (CheckRefusal::AdmissionOrder { .. }, &Refusal::AdmissionOrder)
-        | (CheckRefusal::MachineInvariant, &Refusal::MachineInvariant) => true,
-        | (
-            CheckRefusal::FamilyArity {
+        } }
+ else if (matches!(matched_left_value, CheckRefusal::AdmissionOrder { .. }) && matches!(*matched_right_value, Refusal::AdmissionOrder)) || (matches!(matched_left_value, CheckRefusal::MachineInvariant) && matches!(*matched_right_value, Refusal::MachineInvariant)) { true }
+ else if let CheckRefusal::FamilyArity {
                 at,
                 expected,
                 actual,
-            },
-            &Refusal::FamilyArity {
+            } = matched_left_value && let Refusal::FamilyArity {
                 at: projected,
                 expected: returned_expected,
                 actual: returned_actual,
-            },
-        ) => {
+            } = *matched_right_value { {
             projected == self.site(ArenaNode::Value(at))
                 && expected == returned_expected
                 && actual == returned_actual
-        },
-        | (
-            CheckRefusal::FamilyArgumentClassifier { at, position, .. },
-            &Refusal::FamilyArgumentClassifier {
+        } }
+ else if let CheckRefusal::FamilyArgumentClassifier { at, position, .. } = matched_left_value && let Refusal::FamilyArgumentClassifier {
                 at: projected,
                 position: returned,
                 ..
-            },
-        ) => projected == self.site(ArenaNode::Value(at)) && position == returned,
-        | (
-            CheckRefusal::StaticClassifierExpected { at, .. },
-            &Refusal::StaticClassifierExpected { at: projected, .. },
-        ) => projected == self.site(ArenaNode::ValueType(at)),
-        | _ => false,
-    })]
+            } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && position == returned }
+ else if let CheckRefusal::StaticClassifierExpected { at, .. } = matched_left_value && let Refusal::StaticClassifierExpected { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else { false }
+})]
     fn refusal(
         &self,
         refusal: CheckRefusal,
     ) -> Refusal
     {
         match refusal {
+            | CheckRefusal::NotADataType(constant) => {
+                Refusal::NotADataType(self.layout.resolve(constant))
+            },
+            | CheckRefusal::DataKindNotUniverse(at) => {
+                Refusal::DataKindNotUniverse(self.site(ArenaNode::ValueType(at)))
+            },
+            | CheckRefusal::DataFieldLevel { field, kind } => Refusal::DataFieldLevel {
+                field: self.site(ArenaNode::ValueType(field)),
+                kind: self.value_type(kind),
+            },
+            | CheckRefusal::DataArgumentArity(at) => {
+                Refusal::DataArgumentArity(self.site(ArenaNode::ValueType(at)))
+            },
+            | CheckRefusal::UnknownConstructor { at, tag } => Refusal::UnknownConstructor {
+                at: self.site(ArenaNode::Value(at)),
+                tag,
+            },
+            | CheckRefusal::ConstructorArity(at) => {
+                Refusal::ConstructorArity(self.site(ArenaNode::Value(at)))
+            },
+            | CheckRefusal::NonExhaustiveDataCase(at) => {
+                Refusal::NonExhaustiveDataCase(self.site(ArenaNode::Computation(at)))
+            },
+            | CheckRefusal::AbsentRecordField(at) => {
+                Refusal::AbsentRecordField(self.site(ArenaNode::Computation(at)))
+            },
+            | CheckRefusal::MissingRecordField { at, expected } => Refusal::MissingRecordField {
+                at: self.site(ArenaNode::Value(at)),
+                expected: self.value_type(expected),
+            },
             | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
@@ -777,6 +813,7 @@ impl Projection<'_, '_, '_>
 #[spec(
     requires: usize::from(ordinal) < program.items().len(),
     ensures: |ret| match *verdict {
+        Verdict::Data => matches!(ret,Typing::Data),
         | Verdict::Checked { evidence, .. } => {
             matches!(ret, Typing::Checked { conversions } if conversions == evidence.conversions())
         },
@@ -871,6 +908,7 @@ mod tests
     /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
     #[spec(ensures: |ret| match ret.0 {
+        Verdict::Data => matches!(ret.1,Typing::Data),
         | Verdict::Checked { evidence, .. } => {
             matches!(ret.1, Typing::Checked { conversions } if conversions == evidence.conversions())
         },

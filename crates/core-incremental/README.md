@@ -3,7 +3,6 @@
 Incremental checking over the core judgement: reuse applicable earlier answers and match batch checking when recorded results are faithful.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -15,10 +14,10 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 - [Checkpoints and their stores](#checkpoints-and-their-stores)
 - [The synthesis stream](#the-synthesis-stream)
 - [Native universe-path content](#native-universe-path-content)
+- [Native declaration content and support](#native-declaration-content-and-support)
 - [Specification evidence](#specification-evidence)
 - [Consumer and open rows](#consumer-and-open-rows)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -114,9 +113,9 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
 
 ## The incremental specification
 
-**Support is an output of the judgement.** The checker reports, for each declaration it judges, every signature answer it consulted: the reference asked about and the answer given, the type's content or none. That list is the item's support, and a checkpoint stores it. Reuse is licensed by comparing it, entry by entry, against the answers the edited program's table gives at the same point of the pass. Nothing else licenses reuse: not a footprint, not a name, not an edit's location. A footprint over-approximates what an item could read; the support is what it did read, which is both tighter and exact.
+**Support is an output of the judgement.** Each consultation records its query kind, reference and answer. A value-signature answer is type content or absence; a data-signature answer is the kind, parameter telescope and constructor field types, or absence. A checkpoint retains both kinds. Reuse compares each recorded answer with the edited table at the same point of the pass. Neither a footprint, a name nor an edit's location licenses reuse: a footprint over-approximates what an item could read; support records what it did read.
 
-**The entry answers one item.** The checker's per-declaration entry judges one declaration against the table the preceding items built, so the pass interleaves judging and adopting in source order (`CheckingContext::adopt`). The supplied signature answer is assembled at adoption rather than stored separately: a signed item's signature forms in the edited context; an unsigned item's cached synthesised type is seated and forms there. Formation establishes that the type is usable in that context, not that an arbitrary cached type was correctly inferred for the body.
+**The entry answers one item.** The pass interleaves judging and adopting in source order through `CheckingContext::adopt` and `CheckingContext::adopt_data`. A signed value's signature forms in the edited context; an unsigned value's cached synthesised type is seated and forms there. A data item seats and forms its complete signature. Formation establishes that a classifier or schema is usable in that context, not that an arbitrary cached result truthfully records an earlier judgement.
 
 **Incremental equals batch for faithful records.** `check_program` is the pass at a memo that recalls nothing; `resume` is the same pass at a memo that recalls base checkpoints. Batch equivalence assumes that each recorded typing and complete support truthfully describes a prior judgement of that content under the recorded allowance. Raw constructors and mutation helpers admit arbitrary records: reuse checks establish applicability, not the truth of a cached judgement. The differential suite compares faithful resumes with the checker's module entry and deliberately forges typing and support to witness this boundary. Canonical bytes and integrity digests do not authenticate judgement provenance.
 
@@ -126,7 +125,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
 
 **References, not positions.** An admission position is an artefact of one revision. Every position an item mentions is read as the `Reference` it resolves to — the key of the item at that position and how many items of that key precede it — or `Unoccupied`. Two revisions agree on what an item reads exactly when they agree on references.
 
-**Content, not ids.** An item's content is its reference and every node reachable from its signature and its body, numbered in the order a breadth-first walk from the two roots discovers them. The walk visits each node once and needs no stack. Sharing is part of the content: two graphs with different sharing differ, which costs a reuse and never a wrong answer. An id its arena does not resolve is listed by sort, and the item is opaque: never recalled, never persisted, and a reader of everything once anything changed.
+**Content, not ids.** An item's content is its reference, declaration category and every node reachable from its `DeclarationRoots`. Value roots retain the signature and body; Data roots retain the kind, parameter telescope and constructor field types. A breadth-first walk numbers each reachable node once and needs no stack. Sharing is part of the content: different sharing costs a reuse, never a wrong answer. An unresolved arena id is listed by sort and makes the item opaque: never recalled, never persisted, and a reader of everything once anything changes.
 
 **Handles, not indices.** Each item holds a handle into an order-maintenance structure whose order is source order. A revision splices it: a longest run of surviving items whose base order the edit preserved keeps its handles (patience sorting, so a move costs the moved item's handle alone), every other item takes a fresh handle after its predecessor, and the rest are removed. Handles are identity for consumers — an editor's cursor, a stream reader's bookmark — and never evidence for the checker: reuse is decided by content.
 
@@ -140,9 +139,9 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-core-incremental
 A recalled checkpoint is adopted when four things hold, checked in this order; the first that fails names the reason (`recall::Absent`):
 
 1. The item is transparent.
-2. Every recorded answer equals the edited table's answer for the same reference at this point of the pass: the answer the item of that reference supplied when it precedes this one, none otherwise.
+2. Every recorded answer equals the edited table's answer for the same reference **and query kind** at this point of the pass: the answer the preceding item supplied, or absence otherwise.
 3. No reference in a type position of the item, nor in the type of any recorded answer, names a definition in the value-changed set. A type former's own reference is in a type position, including an abstract type under quotation.
-4. The adopted type seats: a signed item's signature forms in the edited context; an unsigned item's synthesised type is minted into the edited arena before the pass and forms.
+4. The adopted classifier or schema seats and forms in the edited context: a signed value's signature, an unsigned value's cached synthesised type, or a Data declaration's complete signature.
 
 **The value-changed set.** A definition inserted, deleted, or whose content differs between the revisions seeds the set; the set closes over the read relation of the edited footprints through reverse edges and a worklist, so every edge is crossed at most once. Once the set is non-empty every opaque item joins it. The closure guards answers that depend on a definition's _value_ while the support compares types: the checker unfolds a decode `El(c)` of a code constant to the body `c` was defined with, and logs the constant's signature answer, not its body, so a declaration whose type names `c` can change meaning while every recorded answer holds. The closure blocks exactly those reuses. When the checker records the bodies it unfolds in the support, the closure can retire.
 
@@ -179,9 +178,17 @@ A stream opens with the item count, carries one event per item in source order �
 
 The content table preserves universe sorts and levels, quotes, static operators and native universe paths. Native path tags occupy `0x40–0x44` in this cache codec; they are not kernel artifact tags. Candidate evidence is exact content, including ordered direction and dialogue boundaries, and never a cached admission receipt. Type-only signature content refuses term-bearing path classifiers just as it refuses quotes and decodes.
 
-Checkpoint sets use `GCKPT\0\0\x04`; programs use `GPROG\0\0\x02`. Their identities bind the current checker and refusal vocabulary, including admitted sums, checking-only injection and case, and invalid path-code refusals. Earlier identities are rejected rather than reusing answers from a different fragment. Static family and universe round-trip witnesses continue to exercise their distinct tags and payloads.
+Checkpoint sets use `GCKPT\0\0\x05`; programs use `GPROG\0\0\x03`. Their identities bind the checker, native declaration categories, support queries and refusal vocabulary. Earlier identities are rejected rather than reusing answers from a different fragment. Static family, universe and native-former round-trip witnesses exercise their distinct tags and payloads.
 
 **Choice.** Preserve native classifiers, maps and candidate evidence as content instead of caching a certificate verdict. Structural path conversion may erase evidence, but checkpoint identity must not. **Reversal.** Persisting `Flow_U`, element identity, the bridge mode, higher fields, funext or guarded List inhabitants requires its own versioned content vocabulary and validated dependency support; none is inferred from a native path entry.
+
+## Native declaration content and support
+
+A declaration's roots are `DeclarationRoots::Value` or `DeclarationRoots::Data`; the latter retains the kind, every parameter and every constructor field. Cache node tags `0x50–0x55` represent the six native data/record forms independently of kernel artifact tags. Field labels and arbitrary child counts survive persistence.
+
+Support keys distinguish a value-signature query from a data-signature query at the same reference. A data answer contains the complete nominal schema or its absence, not merely its universe. Adoption reforms a retained data declaration in the new context. Term-bearing nominal type content remains outside the type-only adoption reader and is conservatively rechecked; it is never promoted to an authority-bearing cache hit.
+
+**Choice.** Extend ordinary declaration content and query-specific support instead of treating data as a value signature. **Reversal.** A wider adoption reader must validate term-valued indices and their dependencies before reusing them. `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation` round-trips accepted and refused items, adopts an unchanged module, invalidates a constructor after a schema-only change, and compares incremental results with fresh checking.
 
 ## Specification evidence
 

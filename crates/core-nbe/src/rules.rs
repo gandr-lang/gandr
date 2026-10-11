@@ -173,6 +173,20 @@ pub enum Subgoal
     Values(DomainValueId, DomainValueId),
     /// Two closures, compared once both are opened under one fresh variable.
     Opened(CompClosureId, CompClosureId),
+    /// The complete nominal classifiers captured by two constructor values.
+    Classifiers(crate::arena::ValueClosureId, crate::arena::ValueClosureId),
+    /// Two case motives, quoted under the same fresh scrutinee variable.
+    CaseMotives(CompClosureId, CompClosureId),
+    /// Two ordinary branch functions at one constructor ordinal.
+    CaseBranch
+    {
+        /// The left case closure, retaining its lexical environment.
+        left: CompClosureId,
+        /// The right case closure under the same comparison scope.
+        right: CompClosureId,
+        /// The constructor ordinal selecting one branch from each case.
+        tag: gandr_core_term::ConstructorTag,
+    },
 }
 
 /// A forced rule with one premise.
@@ -265,8 +279,7 @@ impl Choice
     ///   the authoritative alternative or freezing the wrong side changes the
     ///   selected trace or makes replay refuse it.
     /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
-    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     #[spec(ensures: |ret| match self {
         Self::Same => ret.0 == Combination::Biased && ret.1.as_slice() == [Move::Shortcut,
@@ -324,6 +337,132 @@ pub enum Plan
     Choose(Choice),
     /// No rule applies at this rung: the goal declines.
     Decline(DeclineReason),
+}
+
+/// Metadata that must agree before two eliminations expose their premises.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EliminationShape<'core>
+{
+    /// An existing fixed-arity elimination kind.
+    Ordinary(core::mem::Discriminant<Elimination>),
+    /// A nominal case with this many ordinary branch functions.
+    DataCase(usize),
+    /// An exact record label.
+    Projection(&'core gandr_core_term::FieldLabel),
+}
+
+/// Resolve the motive and branch functions retained by a native case capture.
+///
+/// # Specification
+/// - requires: nothing; stale and ill-shaped captures are refused.
+/// - ensures: returns the source case's motive and complete ordered branch
+///   slice.
+/// - fails: a dangling closure or a body that is not a source data case.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — open cases preserve their motive scope and every branch
+///   function.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret,Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)))]
+pub fn case_source<'core>(
+    core: &'core CoreArena,
+    domain: &DomainArena,
+    closure: CompClosureId,
+) -> Result<
+    (
+        gandr_core_term::CompTypeId,
+        &'core [gandr_core_term::ComputationId],
+    ),
+    ConversionFault,
+>
+{
+    let closure = domain
+        .comp_closure(closure)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    let crate::closure::CompBody::Source(source) = closure.body()
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let Some(matched_native_node) = core.computation(source)
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let gandr_core_term::Computation::DataCase {
+        ref motive,
+        ref branches,
+        ..
+    } = *matched_native_node
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    Ok((*motive, branches))
+}
+
+/// Read the exact source label of a native projection.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: returns the projection's label, with no spelling normalization.
+/// - fails: a missing source or a non-projection body.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unlike labels remain unlike even on one neutral record.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
+#[spec(ensures:|ret| core.computation(source).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
+gandr_core_term::Computation::RecordProjection(_,ref label) => ret == Ok(label),
+_ => ret == Err(ConversionFault::MachineInvariant),
+}))]
+pub fn projection_label(
+    core: &CoreArena,
+    source: gandr_core_term::ComputationId,
+) -> Result<&gandr_core_term::FieldLabel, ConversionFault>
+{
+    let Some(matched_native_node) = core.computation(source)
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let gandr_core_term::Computation::RecordProjection(_, ref label) = *matched_native_node
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    Ok(label)
+}
+
+/// Read only metadata that controls a neutral elimination's premise shape.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: nominal arity and exact labels remain part of shape equality.
+/// - fails: malformed native captures, as the source readers report.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal-length spines can still differ by labels or case
+///   arity.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
+#[spec(ensures:|ret| match elimination {
+    Elimination::DataCase(closure) => ret == case_source(core,domain,closure).map(|(_,branches)| EliminationShape::DataCase(branches.len())),
+    Elimination::RecordProjection(source) => ret == projection_label(core,source).map(EliminationShape::Projection),
+    _ => ret == Ok(EliminationShape::Ordinary(core::mem::discriminant(&elimination))),
+})]
+fn elimination_shape<'core>(
+    core: &'core CoreArena,
+    domain: &DomainArena,
+    elimination: Elimination,
+) -> Result<EliminationShape<'core>, ConversionFault>
+{
+    match elimination {
+        | Elimination::DataCase(closure) => case_source(core, domain, closure)
+            .map(|(_, branches)| EliminationShape::DataCase(branches.len())),
+        | Elimination::RecordProjection(source) => {
+            projection_label(core, source).map(EliminationShape::Projection)
+        },
+        | _ => Ok(EliminationShape::Ordinary(core::mem::discriminant(
+            &elimination,
+        ))),
+    }
 }
 
 /// The other side.
@@ -419,32 +558,37 @@ pub enum Spines
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a mixed spine distinguishes application, static
-///   application, force, bind and both case branches, preserving operand and
-///   branch order even when heads differ; equal-length kind mismatches, unequal
-///   lengths and dangling ids give different outcomes.
-/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
+/// - hypothesis: L3 — native cases and projections retain their ordered
+///   operands in replayable traces; distinct family heads, indices and arities
+///   remain distinguishable. These are consumer paths, not an exhaustive table
+///   of private spine shapes or dangling ids.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
 /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-#[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
-    (Some(one), Some(other)) => {
-        let same_shape = one.spine().len() == other.spine().len()
-            && one.spine().iter().zip(other.spine()).all(|(first, second)|
-                core::mem::discriminant(first) == core::mem::discriminant(second));
-        match ret {
-            Ok(Spines::Agree(ref subgoals)) => same_shape && subgoals.len() == one.spine().iter()
-                .map(|elimination| match *elimination {
-                    Elimination::Force => 0,
-                    Elimination::Case { .. } => 2,
-                    _ => 1,
-                }).sum::<usize>(),
-            Ok(Spines::Disagree) => !same_shape,
-            Err(_) => false,
+#[spec(ensures: |ret| match (domain.neutral(left),domain.neutral(right)) {
+    (Some(one),Some(other)) if one.spine().len() != other.spine().len() => ret == Ok(Spines::Disagree),
+    (Some(one),Some(other)) => {
+        let expected = one.spine().iter().zip(other.spine()).try_fold((true,0_usize),|(same,count),(&a,&b)| -> Result<_,ConversionFault> {
+            if !same { return Ok((false,count)); }
+            let shape = elimination_shape(core,domain,a)?;
+            if shape != elimination_shape(core,domain,b)? { return Ok((false,count)); }
+            let added = match shape {
+                EliminationShape::DataCase(branches) => branches.saturating_add(1_usize),
+                EliminationShape::Projection(_) => 0_usize,
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::Case { .. } => 2_usize,_ => 1_usize },
+            };
+            Ok((true,count.saturating_add(added)))
+        });
+        match expected {
+            Err(fault) => ret == Err(fault),
+            Ok((false,_)) => ret == Ok(Spines::Disagree),
+            Ok((true,count)) => matches!(ret,Ok(Spines::Agree(ref subgoals)) if subgoals.len() == count),
         }
     },
     _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
 })]
 pub fn spine_subgoals(
+    core: &CoreArena,
     domain: &DomainArena,
     left: NeutralId,
     right: NeutralId,
@@ -459,7 +603,25 @@ pub fn spine_subgoals(
     }
     let mut subgoals = Vec::new();
     for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
+        let shape = elimination_shape(core, domain, left_elimination)?;
+        if shape != elimination_shape(core, domain, right_elimination)? {
+            return Ok(Spines::Disagree);
+        }
         match (left_elimination, right_elimination) {
+            | (Elimination::DataCase(left), Elimination::DataCase(right)) => {
+                let EliminationShape::DataCase(count) = shape
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                subgoals.push(Subgoal::CaseMotives(left, right));
+                subgoals.extend((0_usize .. count).map(|index| Subgoal::CaseBranch {
+                    left,
+                    right,
+                    tag: gandr_core_term::ConstructorTag::from(index),
+                }));
+            },
+            | (Elimination::RecordProjection(_), Elimination::RecordProjection(_))
+            | (Elimination::Force, Elimination::Force) => {},
             | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
             | (
                 Elimination::ProductTransport(left_argument),
@@ -472,7 +634,6 @@ pub fn spine_subgoals(
             ) => {
                 subgoals.push(Subgoal::Values(left_argument, right_argument));
             },
-            | (Elimination::Force, Elimination::Force) => {},
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
@@ -491,6 +652,8 @@ pub fn spine_subgoals(
             },
             | (
                 Elimination::Transport(_)
+                | Elimination::DataCase(_)
+                | Elimination::RecordProjection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Apply(_)
                 | Elimination::Force
@@ -518,10 +681,10 @@ pub fn spine_subgoals(
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — equal lengths agree even when elimination kinds differ,
-///   shortening a spine changes arity, and a dropped neutral refuses; comparing
-///   kinds instead of length or accepting a dangling id changes the answer.
-/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
+/// - hypothesis: L3 — catalogue and generated ladder comparisons retain their
+///   verdicts under independent replay. An incorrect arity choice changes the
+///   selected constant rule on those comparisons.
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 #[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
     (Some(one), Some(other)) => ret == Ok(if one.spine().len() == other.spine().len() {
         Arity::Same
@@ -580,16 +743,13 @@ enum Arity
 /// - [`ConversionFault::LiteralPayload`] — a literal names no core literal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the early steps, the constant
-///   arms and the structural arms; each is separated by a conversion the
-///   machine answers through that arm alone. Opposite polarities refuse in both
-///   orders; changing precedence, the selected side or the subgoal order
-///   changes a verdict or replay result.
+/// - hypothesis: L3 — the decision surfaces include the constant and structural
+///   arms, separated by conversions the machine answers through those arms
+///   alone. Opposite polarities refuse in both orders; changing precedence, the
+///   selected side or the subgoal order changes a verdict or replay result.
 /// - witness: `rules::tests::opposite_polarities_are_refused_in_both_orders`
-/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
-/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
-/// - witness: `machine::tests::thunks_meet_by_forcing`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `machine::tests::a_code_constant_unfolds_to_its_quote`
 /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
@@ -609,7 +769,7 @@ pub fn plan(
             plan_values(core, domain, definitions, frozen, one, other)
         },
         | (Glued::Computation(one), Glued::Computation(other)) => {
-            plan_comps(domain, frozen, one, other)
+            plan_comps(core, domain, frozen, one, other)
         },
         | (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_)) => {
             Err(ConversionFault::Polarity)
@@ -648,10 +808,8 @@ enum Constants
 ///   unfolding choices, a defined head meets a lambda through frozen eta, and a
 ///   defined head against a former must unfold; ignoring a defined side or
 ///   choosing the wrong side changes the winning trace.
-/// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
-/// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
-/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |planned|
     matches!(planned, Constants::NoneDefined) != matches!(heads,
         (Neutrality::Neutral(_, Head::Defined(_)), _) | (_, Neutrality::Neutral(_, Head::Defined(_))))))]
@@ -750,23 +908,22 @@ enum Lambda
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — identical rigid heads with compatible spines decompose
-///   into ordered premises, different heads refute despite the same spine
-///   shape, and a kind mismatch refutes; conflating head equality with spine
-///   compatibility changes the rule.
-/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
+/// - hypothesis: L3 — a differing argument refutes a rigid spine; native case
+///   and projection comparisons preserve their operands and labels in
+///   independently replayable traces.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
-#[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
-    (Some(one), Some(other)) => {
-        let same = one.head() == other.head() && one.spine().len() == other.spine().len()
-            && one.spine().iter().zip(other.spine()).all(|(first, second)|
-                core::mem::discriminant(first) == core::mem::discriminant(second));
-        if same { matches!(ret, Ok(Plan::Decompose(_))) }
-        else { ret == Ok(Plan::Leaf(Settled::NotConvertible)) }
+#[spec(ensures: |ret| match (domain.neutral(left),domain.neutral(right)) {
+    (Some(one),Some(other)) if one.head() != other.head() => ret == Ok(Plan::Leaf(Settled::NotConvertible)),
+    (Some(_),Some(_)) => match spine_subgoals(core,domain,left,right) {
+        Ok(Spines::Agree(subgoals)) => ret == Ok(Plan::Decompose(subgoals)),
+        Ok(Spines::Disagree) => ret == Ok(Plan::Leaf(Settled::NotConvertible)),
+        Err(fault) => ret == Err(fault),
     },
     _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
 })]
 fn plan_rigid(
+    core: &CoreArena,
     domain: &DomainArena,
     left: NeutralId,
     right: NeutralId,
@@ -779,7 +936,7 @@ fn plan_rigid(
     if one.head() != other.head() {
         return Ok(Plan::Leaf(Settled::NotConvertible));
     }
-    let spines = spine_subgoals(domain, left, right)?;
+    let spines = spine_subgoals(core, domain, left, right)?;
     Ok(match spines {
         | Spines::Agree(subgoals) => Plan::Decompose(subgoals),
         | Spines::Disagree => Plan::Leaf(Settled::NotConvertible),
@@ -805,7 +962,7 @@ fn plan_rigid(
 ///   lambda against a defined computation offers frozen eta and a rigid stuck
 ///   function offers ordinary eta; projecting a former as a neutral or dropping
 ///   its frozen side changes the rule and trace.
-/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
@@ -828,6 +985,8 @@ fn value_neutrality(
             Neutrality::Neutral(neutral, read)
         },
         | DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
@@ -858,7 +1017,7 @@ fn value_neutrality(
 ///   lambda against a defined computation offers frozen eta and a rigid stuck
 ///   function offers ordinary eta; projecting a former as a neutral or dropping
 ///   its frozen side changes the rule and trace.
-/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 #[spec(ensures: |ret| match comp {
@@ -926,13 +1085,11 @@ fn payload(
 /// As [`plan`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — shared identities close without a process, rigid spines
-///   identify the differing argument, and closures meet through forcing or eta
-///   rather than immediate refutation; overriding an early answer or selecting
-///   the wrong structural rule changes the verdict or its trace.
-/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+/// - hypothesis: L2 — rigid spines identify the differing argument, and
+///   closures meet through forcing or eta rather than immediate refutation;
+///   selecting the wrong structural rule changes the verdict or its trace.
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
-/// - witness: `machine::tests::thunks_meet_by_forcing`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
@@ -972,6 +1129,84 @@ fn plan_values(
         return Ok(planned);
     }
     let planned = match (one, other) {
+        | (
+            DomainValue::Constructor {
+                datatype: left_source,
+                tag: left_tag,
+                fields: left_fields,
+                ..
+            },
+            DomainValue::Constructor {
+                datatype: right_source,
+                tag: right_tag,
+                fields: right_fields,
+                ..
+            },
+        ) => {
+            let left_fields = domain
+                .fields(left_fields)
+                .map_err(ConversionFault::Domain)?;
+            let right_fields = domain
+                .fields(right_fields)
+                .map_err(ConversionFault::Domain)?;
+            if left_tag != right_tag || left_fields.len() != right_fields.len() {
+                return Ok(Plan::Leaf(Settled::NotConvertible));
+            }
+            let mut subgoals = Vec::with_capacity(left_fields.len().saturating_add(1_usize));
+            subgoals.push(Subgoal::Classifiers(left_source, right_source));
+            subgoals.extend(
+                left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .map(|(a, b)| Subgoal::Values(*a, *b)),
+            );
+            Plan::Decompose(subgoals)
+        },
+        | (
+            DomainValue::Record {
+                source: left_source,
+                fields: left_fields,
+                ..
+            },
+            DomainValue::Record {
+                source: right_source,
+                fields: right_fields,
+                ..
+            },
+        ) => {
+            let (Some(left_node), Some(right_node)) =
+                (core.value(left_source), core.value(right_source))
+            else {
+                return Err(ConversionFault::MachineInvariant);
+            };
+            let gandr_core_term::Value::Record(ref left_labels) = *left_node
+            else {
+                return Err(ConversionFault::MachineInvariant);
+            };
+            let gandr_core_term::Value::Record(ref right_labels) = *right_node
+            else {
+                return Err(ConversionFault::MachineInvariant);
+            };
+            let left_fields = domain
+                .fields(left_fields)
+                .map_err(ConversionFault::Domain)?;
+            let right_fields = domain
+                .fields(right_fields)
+                .map_err(ConversionFault::Domain)?;
+            if left_labels.len() != left_fields.len() || right_labels.len() != right_fields.len() {
+                return Err(ConversionFault::MachineInvariant);
+            }
+            if !left_labels.keys().eq(right_labels.keys()) {
+                return Ok(Plan::Leaf(Settled::NotConvertible));
+            }
+            Plan::Decompose(
+                left_fields
+                    .iter()
+                    .zip(right_fields)
+                    .map(|(a, b)| Subgoal::Values(*a, *b))
+                    .collect(),
+            )
+        },
         | (
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
             DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
@@ -1073,7 +1308,7 @@ fn plan_values(
                 neutral: right_neutral,
                 ..
             },
-        ) => return plan_rigid(domain, left_neutral, right_neutral),
+        ) => return plan_rigid(core, domain, left_neutral, right_neutral),
         // Two codes compare whole: α-equal closes them as shared, rigid and
         // α-distinct separates them as shared, and anything that could still
         // unfold inside a type is declined rather than answered.
@@ -1128,6 +1363,8 @@ fn plan_values(
         },
         | (
             DomainValue::PathCertificate { .. }
+            | DomainValue::Constructor { .. }
+            | DomainValue::Record { .. }
             | DomainValue::PathProduct { .. }
             | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
@@ -1157,13 +1394,11 @@ fn plan_values(
 /// As [`plan`].
 ///
 /// # Adequacy
-/// - hypothesis: L2 — shared identities close without a process, rigid spines
-///   identify the differing argument, and closures meet through forcing or eta
-///   rather than immediate refutation; overriding an early answer or selecting
-///   the wrong structural rule changes the verdict or its trace.
-/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+/// - hypothesis: L2 — rigid spines identify the differing argument, and
+///   closures meet through forcing or eta rather than immediate refutation;
+///   selecting the wrong structural rule changes the verdict or its trace.
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
-/// - witness: `machine::tests::thunks_meet_by_forcing`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 #[spec(ensures: |ret| match early_comps(domain, left, right) {
     Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
@@ -1172,6 +1407,7 @@ fn plan_values(
     Err(fault) => ret == Err(fault),
 })]
 fn plan_comps(
+    core: &CoreArena,
     domain: &DomainArena,
     frozen: &Frozen,
     left: DomainCompId,
@@ -1234,7 +1470,7 @@ fn plan_comps(
                 neutral: right_neutral,
                 ..
             },
-        ) => return plan_rigid(domain, left_neutral, right_neutral),
+        ) => return plan_rigid(core, domain, left_neutral, right_neutral),
         | (
             DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Neutral { .. },
             _,
@@ -1259,14 +1495,11 @@ mod tests
     use gandr_kernel_term::Sign;
 
     use super::DomainArena;
-    use super::Elimination;
     use super::Frozen;
     use super::Glued;
     use super::Head;
     use super::NeutralHead;
-    use super::Subgoal;
     use super::Unfolding;
-    use crate::Environment;
     use crate::TermFace;
 
     #[test]
@@ -1325,105 +1558,6 @@ mod tests
             Err(super::ConversionFault::Domain(super::DomainFault::Dangling)),
             super::head(&domain, &frozen, ConversionSide::Left, loaded)
         );
-    }
-
-    #[test]
-    fn spine_rules_preserve_branch_order_and_refuse_incompatible_shapes()
-    {
-        let mut core = CoreArena::new();
-        let unit = core.value_unit();
-        let body = core.computation_return(unit);
-        let mut domain = DomainArena::new();
-        let floor = domain.watermark();
-        let closures: [super::CompClosureId; 6] =
-            core::array::from_fn(|_| domain.comp_closure_node(body, Environment::new()));
-        let first = domain.value_unit(TermFace::Reduced);
-        let second = domain.value_pair(first, first, TermFace::Reduced);
-        let left_spine = Vec::from([
-            Elimination::Apply(first),
-            Elimination::StaticApply(second),
-            Elimination::Force,
-            Elimination::Bind(closures[0]),
-            Elimination::Case {
-                on_left: closures[2],
-                on_right: closures[4],
-            },
-        ]);
-        let right_spine = Vec::from([
-            Elimination::Apply(second),
-            Elimination::StaticApply(first),
-            Elimination::Force,
-            Elimination::Bind(closures[1]),
-            Elimination::Case {
-                on_left: closures[3],
-                on_right: closures[5],
-            },
-        ]);
-        let left_head = NeutralHead::Constant(ConstantIndex::from(0_usize));
-        let right_head = NeutralHead::Constant(ConstantIndex::from(1_usize));
-        let left = domain
-            .neutral_node(left_head, left_spine, Unfolding::Rigid)
-            .expect("rigid spine");
-        let right = domain
-            .neutral_node(right_head, right_spine.clone(), Unfolding::Rigid)
-            .expect("rigid spine");
-        let same_head = domain
-            .neutral_node(left_head, right_spine.clone(), Unfolding::Rigid)
-            .expect("rigid spine");
-        let expected = Vec::from([
-            Subgoal::Values(first, second),
-            Subgoal::Values(second, first),
-            Subgoal::Opened(closures[0], closures[1]),
-            Subgoal::Opened(closures[2], closures[3]),
-            Subgoal::Opened(closures[4], closures[5]),
-        ]);
-        assert_eq!(
-            Ok(super::Spines::Agree(expected.clone())),
-            super::spine_subgoals(&domain, left, right)
-        );
-        assert_eq!(
-            Ok(super::Plan::Leaf(super::Settled::NotConvertible)),
-            super::plan_rigid(&domain, left, right)
-        );
-        assert_eq!(
-            Ok(super::Plan::Decompose(expected)),
-            super::plan_rigid(&domain, left, same_head)
-        );
-        let mut changed_kind = right_spine;
-        *changed_kind
-            .first_mut()
-            .expect("the mixed spine starts with an application") = Elimination::Force;
-        let changed = domain
-            .neutral_node(left_head, changed_kind, Unfolding::Rigid)
-            .expect("rigid spine");
-        assert_eq!(
-            Ok(super::Arity::Same),
-            super::same_arity(&domain, left, changed)
-        );
-        assert_eq!(
-            Ok(super::Spines::Disagree),
-            super::spine_subgoals(&domain, left, changed)
-        );
-        assert_eq!(
-            Ok(super::Plan::Leaf(super::Settled::NotConvertible)),
-            super::plan_rigid(&domain, left, changed)
-        );
-        let shorter = domain
-            .neutral_node(left_head, Vec::from([Elimination::Force]), Unfolding::Rigid)
-            .expect("rigid spine");
-        assert_eq!(
-            Ok(super::Arity::Different),
-            super::same_arity(&domain, left, shorter)
-        );
-        assert_eq!(
-            Ok(super::Spines::Disagree),
-            super::spine_subgoals(&domain, left, shorter)
-        );
-        domain.truncate_to(floor);
-        let fault = super::ConversionFault::Domain(super::DomainFault::Dangling);
-        assert_eq!(Err(fault), super::same_arity(&domain, left, left));
-        assert_eq!(Err(fault), super::spine_subgoals(&domain, left, left));
-        assert_eq!(Err(fault), super::plan_rigid(&domain, left, left));
     }
 
     #[test]

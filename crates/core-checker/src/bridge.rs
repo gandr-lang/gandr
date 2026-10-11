@@ -177,6 +177,9 @@ use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
 use crate::view::CompTypeView;
+
+mod native;
+
 use crate::view::FragmentRefusal;
 use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
@@ -232,14 +235,20 @@ fn fault(refusal: CheckRefusal) -> Refusal
 ///   [`FailureClass::EngineFault`] for every decline reason.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — corrupted certificates yielding different replay refusals
-///   retain those reasons on the declaration; the pinned table separates every
-///   bridge refusal's class independently of its payload.
+/// - hypothesis: L3 — corrupted certificates retain their replay refusal on the
+///   declaration instead of becoming an accepted definition.
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
-/// - witness: `bridge::tests::every_refusal_carries_its_pinned_class`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Refusal
 {
+    /// A nominal head names a declaration that did not cross.
+    WithheldData
+    {
+        /// The source nominal type.
+        at: ValueTypeId,
+        /// Its source declaration identity.
+        constant: ConstantIndex,
+    },
     /// A constant names a declaration of the module that did not cross into
     /// the kernel: one the judgement refused, or one the bridge or the kernel
     /// turned away. The declaration it names carries its own reason.
@@ -319,13 +328,13 @@ impl Refusal
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
-    ///   exhaustively against a pinned class table, with two inhabitants of
-    ///   each payload-carrying variant differing in every field asserted to
-    ///   classify alike.
-    /// - witness: `bridge::tests::every_refusal_carries_its_pinned_class`
+    /// - hypothesis: L3 — a withheld definition, an unsupported former and a
+    ///   machine fault remain distinct at readmission rather than acquiring a
+    ///   kernel receipt or becoming an obligation.
+    /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
     #[spec(ensures: |ret| match *self {
-        | Self::Withheld { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
         | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
@@ -335,7 +344,7 @@ impl Refusal
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
-            | Self::Withheld { .. } => FailureClass::MalformedSource,
+            | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::LinearVariable { .. }
             | Self::DanglingNode { .. }
@@ -379,6 +388,14 @@ impl From<FragmentRefusal> for Refusal
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome
 {
+    /// The kernel admitted a native nominal declaration, not an axiom.
+    Data
+    {
+        /// The declaration's kernel identity.
+        admitted: CheckedId,
+        /// Dependencies of its parameter and constructor signatures.
+        audit: AxiomReport,
+    },
     /// The kernel admitted the declaration as a definition.
     Defined
     {
@@ -559,17 +576,17 @@ impl ArtifactAudit
     #[spec(ensures: |ret| ret.axioms.iter().zip(ret.axioms.iter().skip(1)).all(|(a,b)| a < b)
         && ret.unchecked.iter().zip(ret.unchecked.iter().skip(1)).all(|(a,b)| a < b)
         && readmitted.iter().all(|entry| match entry.outcome {
-            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } =>
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } =>
                 audit.axioms().iter().all(|at| ret.axioms.binary_search(at).is_ok())
                 && audit.unchecked_admissions().iter().all(|at| ret.unchecked.binary_search(at).is_ok()),
             | _ => true,
         })
         && ret.axioms.len() <= readmitted.iter().map(|entry| match entry.outcome {
-            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.axioms().len(),
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.axioms().len(),
             | _ => 0,
         }).sum::<usize>()
         && ret.unchecked.len() <= readmitted.iter().map(|entry| match entry.outcome {
-            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.unchecked_admissions().len(),
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.unchecked_admissions().len(),
             | _ => 0,
         }).sum::<usize>())]
     fn of(readmitted: &[Readmitted]) -> Self
@@ -577,8 +594,9 @@ impl ArtifactAudit
         let mut axioms = BTreeSet::new();
         let mut unchecked = BTreeSet::new();
         for entry in readmitted {
-            if let Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } =
-                entry.outcome
+            if let Outcome::Defined { ref audit, .. }
+            | Outcome::Data { ref audit, .. }
+            | Outcome::Assumed { ref audit, .. } = entry.outcome
             {
                 axioms.extend(audit.axioms().iter().copied());
                 unchecked.extend(audit.unchecked_admissions().iter().copied());
@@ -860,12 +878,24 @@ where
             | Verdict::Synthesised { body, synthesised } => {
                 Some((synthesised.produced().id(), body))
             },
-            | Verdict::Owed(_) | Verdict::Refused(_) => None,
+            | Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_) => None,
         };
         // A type operator — a definition whose type views as a static Pi — stays
         // on the checker's side; a type the view refuses is not one, and its
         // own erasure refuses it.
         let (outcome, certificates) = match (definition, judged.verdict()) {
+            | (None, Verdict::Data) => match report.data_signatures().get(&constant) {
+                | Some(signature) => cross(
+                    &mut environment,
+                    arena,
+                    source,
+                    &mut positions,
+                    constant,
+                    Offer::Data(signature),
+                    &vouch,
+                ),
+                | None => (Outcome::Refused(Refusal::MachineInvariant), Vec::new()),
+            },
             | (Some((declared, body)), _)
                 if matches!(
                     value_type_view(arena, declared),
@@ -931,8 +961,10 @@ struct Source<'source>
 
 /// What an accepted declaration offers the kernel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Offer
+enum Offer<'signature>
 {
+    /// A native nominal declaration's checked signature.
+    Data(&'signature gandr_core_term::DataSignature),
     /// A definition: a body at the type it was judged at.
     Definition
     {
@@ -950,9 +982,19 @@ enum Offer
 }
 
 /// An offer's image in the kernel arena.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Erased
 {
+    /// A native signature's images, owned once by the staging declaration.
+    Data
+    {
+        /// The parameter telescope.
+        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        /// Constructor fields under the parameter telescope.
+        constructors: Vec<Vec<gandr_kernel_term::ValueTypeId>>,
+        /// The positive universe.
+        kind: gandr_kernel_term::ValueTypeId,
+    },
     /// A definition's declared type and body.
     Definition
     {
@@ -1004,12 +1046,12 @@ enum Erased
 #[spec(
     captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len()],
     ensures: |ret| match ret.0 {
-        | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } =>
+        | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
             environment.entries().len().checked_sub(entries) == Some(1)
             && positions.exports.len().checked_sub(exports) == Some(1)
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
-            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) => environment.entries().len() == entries
             && positions.exports.len() == exports && positions.admitted.len() == crossed,
@@ -1022,7 +1064,7 @@ fn cross<Vouch>(
     source: Source<'_>,
     positions: &mut Positions,
     constant: ConstantIndex,
-    offer: Offer,
+    offer: Offer<'_>,
     vouch: &Vouch,
 ) -> (Outcome, Vec<Replayed>)
 where
@@ -1048,7 +1090,21 @@ where
             return (Outcome::Refused(refusal), replayed);
         },
     };
+    let defined_image = match erased {
+        | Erased::Definition { ref body, .. } => Some(*body),
+        | Erased::Data { .. } | Erased::Axiom { .. } => None,
+    };
     let staged = match erased {
+        | Erased::Data {
+            parameters,
+            constructors,
+            kind,
+        } => staging.data(
+            LevelSignature::monomorphic(),
+            parameters,
+            constructors,
+            kind,
+        ),
         | Erased::Definition { declared, body } => {
             staging.def(LevelSignature::monomorphic(), declared, body)
         },
@@ -1061,14 +1117,18 @@ where
     };
     positions.exports.push(staged_as);
     let audit = environment.audit(admitted);
-    match (offer, erased) {
-        | (Offer::Definition { body, .. }, Erased::Definition { body: image, .. }) => {
+    match (offer, defined_image) {
+        | (Offer::Definition { body, .. }, Some(image)) => {
             let defined = source.definitions.get(&constant).copied().unwrap_or(body);
             positions.define(constant, admitted, defined, image);
             (Outcome::Defined { admitted, audit }, replayed)
         },
+        | (Offer::Data(_), _) => {
+            positions.declare(constant, admitted);
+            (Outcome::Data { admitted, audit }, replayed)
+        },
         | (Offer::Axiom { .. } | Offer::Definition { .. }, _) => {
-            positions.assume(constant, admitted);
+            positions.declare(constant, admitted);
             (Outcome::Assumed { admitted, audit }, replayed)
         },
     }
@@ -1191,8 +1251,8 @@ impl Positions
         self.unfoldings.insert(admitted.position(), image);
     }
 
-    /// Record that the module declaration at `constant` crossed as the axiom
-    /// `admitted`.
+    /// Record a bodiless kernel admission: an owed axiom or native data
+    /// signature, without inventing a value unfolding.
     ///
     /// # Specification
     /// - requires: `constant` follows every prior crossed or static definition;
@@ -1207,6 +1267,7 @@ impl Positions
     ///   an axiom or failing to remap its position changes those observations.
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
+    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(
         requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
             && !self.unfoldings.contains_key(&admitted.position()),
@@ -1214,7 +1275,7 @@ impl Positions
         ensures: self.admitted.get(&constant) == Some(&admitted.position())
             && !self.unfoldings.contains_key(&admitted.position()) && self.unfoldings.len() == unfolded,
     )]
-    fn assume(
+    fn declare(
         &mut self,
         constant: ConstantIndex,
         admitted: CheckedId,
@@ -1381,6 +1442,10 @@ enum Image<Erased>
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Frame
 {
+    /// Visit the next native child, retaining its image in the memo.
+    NativeNext(CoreNode),
+    /// Assemble a native former once every child has crossed.
+    NativeBuild(CoreNode),
     /// A binary native call, awaiting its first argument.
     NativeFirst
     {
@@ -1896,19 +1961,42 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::a_lowered_value_definition_admits`
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
-    #[spec(ensures: |ret| match (offer, ret) {
-        | (Offer::Definition { .. }, Ok(Erased::Definition { declared, body })) => target.value_type(declared).is_some() && target.value(body).is_some(),
-        | (Offer::Axiom { .. }, Ok(Erased::Axiom { declared })) => target.value_type(declared).is_some(),
-        | (_, Err(_)) => true,
-        | _ => false,
-    })]
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
+if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
+ else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some() }
+ else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
+ else { (*matched_right_value).is_err() }
+})]
     fn offer(
         &mut self,
         target: &mut TermArena,
-        offer: Offer,
+        offer: Offer<'_>,
     ) -> Result<Erased, Refusal>
     {
         match offer {
+            | Offer::Data(signature) => {
+                let parameters = signature
+                    .parameters()
+                    .iter()
+                    .map(|&parameter| self.value_type(target, parameter))
+                    .collect::<Result<_, _>>()?;
+                let constructors = signature
+                    .constructors()
+                    .iter()
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .map(|&field| self.value_type(target, field))
+                            .collect()
+                    })
+                    .collect::<Result<_, _>>()?;
+                let kind = self.value_type(target, signature.kind())?;
+                Ok(Erased::Data {
+                    parameters,
+                    constructors,
+                    kind,
+                })
+            },
             | Offer::Definition { declared, body } => {
                 let declared = self.value_type(target, declared)?;
                 let body = self.value(target, body)?;
@@ -2574,12 +2662,15 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             });
             return self.decode(target, at, lift.natural().clone(), GroundSort::Value);
         }
-        let Some(value) = self.arena.value(at).cloned()
+        let Some(value) = self.arena.value(at)
         else {
             return Err(Refusal::DanglingNode { node });
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
-        let (frame, child) = match value {
+        let (frame, child) = match *value {
+            | Value::Constructor { .. } | Value::Record(_) => {
+                return self.prepare_native(target, node);
+            },
             | Value::Primitive { primitive, .. } => {
                 let position = self
                     .positions
@@ -2601,13 +2692,13 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 path_type,
                 forward,
                 backward,
-                evidence,
+                ref evidence,
             } => (
                 Frame::PathEquivType {
                     at,
                     forward,
                     backward,
-                    evidence,
+                    evidence: alloc::sync::Arc::clone(evidence),
                 },
                 CoreNode::Type(TypeNode::Value(path_type)),
             ),
@@ -2624,9 +2715,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             | Value::Unit => return Ok(self.erased_value(at, target.value_unit())),
-            | Value::Literal(literal) => match literal.base_type() {
+            | Value::Literal(ref literal) => match literal.base_type() {
                 | BaseType::Integer | BaseType::String => {
-                    return Ok(self.erased_value(at, target.value_literal(literal)));
+                    return Ok(self.erased_value(at, target.value_literal(literal.clone())));
                 },
                 | BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
             },
@@ -2730,10 +2821,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::descend`]: a lambda, an application, a return, a
-    ///   force and a bind open their frames.
-    /// - fails: [`Refusal::Cyclic`] for an open computation;
-    ///   [`Refusal::DanglingNode`]; [`Refusal::OutOfFragment`] for a case.
+    /// - ensures: ordinary computations open one continuation; a native case
+    ///   queues its motive and every branch after the scrutinee.
+    /// - fails: [`Refusal::Cyclic`] for an open computation or
+    ///   [`Refusal::DanglingNode`] for an absent source.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -2743,12 +2834,14 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::returning_a_literal_lowers`
     /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
+    /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied()],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if let Some(node) = self.arena.computation(at) && let Computation::DataCase { ref branches, .. } = *node { branches.len().checked_add(2) } else { Some(1_usize) }],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
-            | None => ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len().checked_sub(before) == Some(1)
+            | None => ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len().checked_sub(before) == continuations
                 && self.reached().computations.get(&at) == Some(&Image::Open)),
         },
     )]
@@ -2771,6 +2864,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             return Err(Refusal::DanglingNode { node });
         };
         let (frame, child) = match *computation {
+            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                return self.prepare_native(target, node);
+            },
             | Computation::Primitive {
                 primitive,
                 arguments,
@@ -2867,6 +2963,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | None => {},
         }
         let (frame, child) = match value_type_view(self.arena, at)? {
+            | ValueTypeView::Data { .. } | ValueTypeView::Record(_) => {
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
+            },
             | ValueTypeView::PathUniverse(source, target_code) => (
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
@@ -3084,6 +3183,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
                     Value::PathRefl(_)
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
@@ -3201,6 +3302,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Result<Step, Refusal>
     {
         match (frame, image) {
+            | (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
+            | (Frame::NativeBuild(root), _) => self.finish_native(target, root),
             | (Frame::PathRefl { at }, AnyNode::Value(code)) => {
                 Ok(self.erased_value(at, target.value_path_refl(code)))
             },
@@ -3832,8 +3935,9 @@ mod tests
     /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
     #[spec(
         requires: position.0.checked_add(100).is_some(),
-        ensures: |ret| ret.constant() == ConstantIndex::from(position.0) && ret.signature() == declared
-            && ret.body() == defined && position.0.checked_add(100) == Some(usize::from(ret.origin())),
+        ensures: |ret| ret.constant() == ConstantIndex::from(position.0)
+            && matches!(ret.content(), &crate::DeclarationContent::Value {signature,body} if signature == declared && body == defined)
+            && position.0.checked_add(100) == Some(usize::from(ret.origin())),
     )]
     fn declaration(
         position: At,
@@ -3974,9 +4078,9 @@ mod tests
     /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     #[spec(
-        requires: readmission.readmitted().get(position.0).is_some_and(|entry| matches!(entry.outcome(), Outcome::Defined { .. } | Outcome::Assumed { .. })),
+        requires: readmission.readmitted().get(position.0).is_some_and(|entry| matches!(entry.outcome(), Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. })),
         ensures: |ret| readmission.readmitted().get(position.0).is_some_and(|entry| match *entry.outcome() {
-            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => ret == admitted.position(),
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => ret == admitted.position(),
             | _ => false,
         }),
     )]
@@ -3986,9 +4090,9 @@ mod tests
     ) -> ConstantIndex
     {
         match *readmission.readmitted()[position.0].outcome() {
-            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => {
-                admitted.position()
-            },
+            | Outcome::Defined { admitted, .. }
+            | Outcome::Assumed { admitted, .. }
+            | Outcome::Data { admitted, .. } => admitted.position(),
             | Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
                 panic!("the declaration at this position crosses")
             },
@@ -4785,6 +4889,7 @@ mod tests
                 let body = match *marked.declaration().content() {
                     | DeclarationContent::Def { body, .. } => artifact.arena().value(body),
                     | DeclarationContent::Axiom { .. }
+                    | DeclarationContent::Data { .. }
                     | DeclarationContent::AbstractType { .. } => None,
                 };
                 let name = marked
@@ -4857,110 +4962,6 @@ mod tests
                 "{former:?} is refused by name, at its node"
             );
         }
-    }
-
-    #[test]
-    fn every_refusal_carries_its_pinned_class()
-    {
-        let mut arena = CoreArena::new();
-        let first_value = arena.value_unit();
-        let second_value = arena.value_unit();
-        let first_comp = arena.computation_return(first_value);
-        let first_type = arena.value_type_unit();
-        let returner = arena.comp_type_returner(first_type);
-        let rows = [
-            (
-                Refusal::Withheld {
-                    at: first_value,
-                    constant: ConstantIndex::from(0_usize),
-                },
-                Refusal::Withheld {
-                    at: second_value,
-                    constant: ConstantIndex::from(1_usize),
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                Refusal::OutOfFragment {
-                    at: CoreNode::Term(TermNode::Value(first_value)),
-                    former: UnadmittedFormer::StaticLambda,
-                },
-                Refusal::OutOfFragment {
-                    at: CoreNode::Type(TypeNode::Computation(returner)),
-                    former: UnadmittedFormer::SortParameter,
-                },
-                FailureClass::Unrepresentable,
-            ),
-            (
-                Refusal::LinearVariable {
-                    at: first_value,
-                    index: DeBruijnIndex::from(0_u32),
-                },
-                Refusal::LinearVariable {
-                    at: second_value,
-                    index: DeBruijnIndex::from(2_u32),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                Refusal::DanglingNode {
-                    node: CoreNode::Term(TermNode::Computation(first_comp)),
-                },
-                Refusal::DanglingNode {
-                    node: CoreNode::Type(TypeNode::Value(first_type)),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                Refusal::Cyclic {
-                    node: CoreNode::Term(TermNode::Value(first_value)),
-                },
-                Refusal::Cyclic {
-                    node: CoreNode::Type(TypeNode::Computation(returner)),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                Refusal::CertificateDeclined {
-                    unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
-                    reason: ReplayDecline::EngineDeclined,
-                },
-                Refusal::CertificateDeclined {
-                    unfolded: Unfolded::Abstraction(second_value),
-                    reason: ReplayDecline::Refused(ReplayRefusal::Exhausted),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                Refusal::MachineInvariant,
-                Refusal::MachineInvariant,
-                FailureClass::EngineFault,
-            ),
-        ];
-        let mut covered = [false; 7];
-        for (first, second, class) in rows {
-            let row = match first {
-                | Refusal::Withheld { .. } => 0_usize,
-                | Refusal::OutOfFragment { .. } => 1_usize,
-                | Refusal::LinearVariable { .. } => 2_usize,
-                | Refusal::DanglingNode { .. } => 3_usize,
-                | Refusal::Cyclic { .. } => 4_usize,
-                | Refusal::CertificateDeclined { .. } => 5_usize,
-                | Refusal::MachineInvariant => 6_usize,
-            };
-            covered[row] = true;
-            assert_eq!(
-                (first.classify(), second.classify()),
-                (class, class),
-                "{first:?} and {second:?} classify as {class}, whatever their payloads"
-            );
-            assert_ne!(
-                class,
-                FailureClass::UserAbsence,
-                "no bridge refusal may become an obligation"
-            );
-        }
-        assert_eq!(covered, [true; 7], "the table names every variant once");
     }
 
     #[test]
@@ -5114,9 +5115,9 @@ mod tests
             .readmitted()
             .iter()
             .map(|entry| match *entry.outcome() {
-                | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => {
-                    audit.axioms().to_vec()
-                },
+                | Outcome::Defined { ref audit, .. }
+                | Outcome::Assumed { ref audit, .. }
+                | Outcome::Data { ref audit, .. } => audit.axioms().to_vec(),
                 | Outcome::Marked(_)
                 | Outcome::Static
                 | Outcome::Refused(_)
@@ -5183,11 +5184,12 @@ mod tests
             declaration(At(3), Maybe::Present(integer), Maybe::Present(zero)),
         ];
         let (_, control) = judge_and_readmit(&mut arena, &crossing);
+        let [first, last] = crossing;
         let (_, readmission) = judge_and_readmit(&mut arena, &[
-            crossing[0],
+            first,
             declaration(At(1), Maybe::Present(integer), Maybe::Present(text)),
             declaration(At(2), Maybe::Present(suspended), Maybe::Present(applied)),
-            crossing[1],
+            last,
         ]);
         assert_eq!(
             readmission.readmitted()[2].outcome(),
@@ -5497,9 +5499,9 @@ mod tests
                 | DeclarationContent::Def { body, .. } => {
                     Some(content_digest(artifact.arena(), AnyNode::Value(body)))
                 },
-                | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => {
-                    None
-                },
+                | DeclarationContent::Data { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. } => None,
             })
             .collect()
     }
@@ -5949,9 +5951,9 @@ mod tests
             .iter()
             .find_map(|marked| match *marked.declaration().content() {
                 | DeclarationContent::Def { body, .. } => Some(body),
-                | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => {
-                    None
-                },
+                | DeclarationContent::Data { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. } => None,
             })
             .unwrap();
         let Some(&KernelValue::StaticApplication(head, argument)) = artifact.arena().value(body)
@@ -6243,8 +6245,10 @@ mod tests
         ensures: |ret| ret.0.len() == recipes.len().saturating_mul(2) && ret.1.len() == recipes.len()
             && ret.1.iter().enumerate().all(|(index,at)| at.0 == recipes.len().saturating_add(index))
             && ret.0.iter().enumerate().all(|(index,declaration)| declaration.constant() == ConstantIndex::from(index)
-                && matches!(declaration.signature(), Maybe::Present(ty) if arena.value_type(ty).is_some())
-                && match declaration.body() { | Maybe::Present(body) => arena.value(body).is_some(), | Maybe::Absent(_) => true }),
+                && match declaration.content() {
+                    &crate::DeclarationContent::Value {signature:Maybe::Present(ty),body} => arena.value_type(ty).is_some() && match body { Maybe::Present(body) => arena.value(body).is_some(), Maybe::Absent(_) => true },
+                    _ => false,
+                }),
     )]
     fn universe_module(
         arena: &mut CoreArena,

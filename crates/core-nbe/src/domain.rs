@@ -201,6 +201,10 @@ pub enum NeutralHead
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Elimination
 {
+    /// A nominal case, retaining its motive and field functions over a capture.
+    DataCase(CompClosureId),
+    /// A record projection, retaining its exact source label.
+    RecordProjection(gandr_core_term::ComputationId),
     /// Transport under a neutral path head.
     Transport(DomainValueId),
     /// Product transport waiting for a neutral pair operand.
@@ -415,6 +419,28 @@ pub enum ForceRefusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DomainValue
 {
+    /// A nominal constructor, with a closure retaining its classifier's scope.
+    Constructor
+    {
+        /// A native type quotation closed over the classifier's environment.
+        datatype: ValueClosureId,
+        /// Its declaration-local constructor ordinal.
+        tag: gandr_core_term::ConstructorTag,
+        /// Fields stored once in the arena's flat field table.
+        fields: crate::arena::FieldSpan,
+        /// The retained or reduced source face.
+        face: TermFace,
+    },
+    /// A structural record; labels remain in the source arena.
+    Record
+    {
+        /// The source record providing canonical labels.
+        source: ValueId,
+        /// Evaluated values in the source labels' order.
+        fields: crate::arena::FieldSpan,
+        /// The retained or reduced source face.
+        face: TermFace,
+    },
     /// A closed reflexivity or equivalence certificate, kept as raw syntax.
     /// Translator programs are not normalized by certificate conversion.
     PathCertificate
@@ -558,6 +584,8 @@ impl DomainValue
     #[must_use]
     #[spec(ensures: |ret| match *self {
         | Self::PathCertificate { face, .. }
+        | Self::Constructor { face, .. }
+        | Self::Record { face, .. }
         | Self::PathProduct { face, .. }
         | Self::Unit { face }
         | Self::Literal { face, .. }
@@ -573,6 +601,8 @@ impl DomainValue
     {
         match *self {
             | Self::PathCertificate { face, .. }
+            | Self::Constructor { face, .. }
+            | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
             | Self::Unit { face }
             | Self::Literal { face, .. }

@@ -164,7 +164,6 @@ use crate::census::ExpansionKind;
 use crate::conv::Convertibility;
 use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
-use crate::conv::convert_value_type;
 use crate::conv::convertible_comp_types;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
@@ -376,16 +375,28 @@ impl TypeLevelGoal
 /// exists to forbid. Instead formation records what it owes, the driver drains
 /// the record through the checking machine, and neither walk reaches the other.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct CodeObligation
+enum CodeObligation
 {
-    /// The code whose type is owed.
-    code: ValueId,
-    /// The family of the universe it must inhabit.
-    sort: GroundSort,
-    /// The level of the universe it must inhabit.
-    level: Level,
-    /// The typing context the code stands in, outermost first.
-    context: Vec<ValueTypeId>,
+    /// A universe code deferred by Element formation.
+    Universe
+    {
+        /// Value that must inhabit the universe.
+        code: ValueId,
+        /// Required universe family.
+        sort: GroundSort,
+        /// Required universe level.
+        level: Level,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+    },
+    /// Declaration-directed argument checks deferred by nominal formation.
+    Data
+    {
+        /// Nominal application whose arguments must check.
+        datatype: ValueTypeId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+    },
 }
 
 /// The ceiling on how many code obligations one declaration's check may drain.
@@ -546,6 +557,33 @@ where
                 | TypeLevelGoal::Value(id) => {
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
+                        | ValueType::Data {
+                            declaration,
+                            ref arguments,
+                        } => {
+                            let signature = former::signature(judgement.entries, declaration)?;
+                            if signature.parameters.len() != arguments.len() {
+                                return Err(KernelError::DataArgumentArity);
+                            }
+                            let level = former::level(arena, signature.kind)?;
+                            judgement.levels.check_level_scope(&level)?;
+                            if !arguments.is_empty() {
+                                owed.push(CodeObligation::Data {
+                                    datatype: id,
+                                    context: context.clone(),
+                                });
+                            }
+                            level
+                        },
+                        | ValueType::Record(ref fields) => {
+                            let mut fields = fields.values().copied();
+                            if let Some(first) = fields.next() {
+                                frames.extend(fields.rev().map(TypeLevelFrame::MaxSecondValue));
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
+                        },
                         | ValueType::Session {
                             ref graph,
                             payloads,
@@ -591,7 +629,7 @@ where
                         // obligation has been checked.
                         | ValueType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
-                            owed.push(CodeObligation {
+                            owed.push(CodeObligation::Universe {
                                 code,
                                 sort: GroundSort::Value,
                                 level: target.clone(),
@@ -662,7 +700,7 @@ where
                         // against the computation universe at that level.
                         | CompType::Element { code, ref target } => {
                             judgement.levels.check_level_scope(target)?;
-                            owed.push(CodeObligation {
+                            owed.push(CodeObligation::Universe {
                                 code,
                                 sort: GroundSort::Computation,
                                 level: target.clone(),
@@ -784,6 +822,8 @@ fn abstract_atom_level(
             sort: GroundSort::Computation,
             ..
         }
+        | ValueType::Data { .. }
+        | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
@@ -834,6 +874,8 @@ fn static_classifier(
         .ok_or(KernelError::ArenaFault)?
     {
         | ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
+        | ValueType::Data { .. }
+        | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
@@ -1036,6 +1078,23 @@ impl Goal
 #[derive(Debug)]
 enum Frame
 {
+    /// Discharge the remaining ordered goals, then yield their promised result.
+    Pending(Vec<Goal>, Produced),
+    /// Accumulate inferred record field types without recursive checking.
+    RecordField
+    {
+        /// Label for the current synthesized field.
+        label: gandr_kernel_term::FieldLabel,
+        /// Remaining label/value pairs, in reverse canonical order.
+        remaining: Vec<(gandr_kernel_term::FieldLabel, ValueId)>,
+        /// Classifiers inferred so far.
+        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+    },
+    /// Project a field once the record's classifier is known.
+    RecordProjection(gandr_kernel_term::FieldLabel),
+    /// Check a motive and constructor-specific branches after scrutinee
+    /// synthesis.
+    DataCase(ComputationId),
     /// Restore the outer context after checking closed payload paths.
     SessionPayload
     {
@@ -1538,6 +1597,47 @@ where
             | Some(outcome) => outcome,
             | None => match goal {
                 | Goal::SynthValue(id) => match *read_value(arena, id)? {
+                    | Value::Constructor { .. } => {
+                        let (datatype, mut goals) =
+                            former::constructor(arena, judgement.entries, session, id)?;
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(datatype),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        goals.reverse();
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
+                            goal = next;
+                            continue 'expand;
+                        }
+                        Produced::ValueType(datatype)
+                    },
+                    | Value::Record(ref values) => {
+                        let mut remaining = values
+                            .iter()
+                            .rev()
+                            .map(|(label, value)| (label.clone(), *value))
+                            .collect::<Vec<_>>();
+                        let fields = alloc::collections::BTreeMap::new();
+                        if let Some((label, value)) = remaining.pop() {
+                            frames.push(Frame::RecordField {
+                                label,
+                                remaining,
+                                fields,
+                            });
+                            goal = Goal::SynthValue(value);
+                            continue 'expand;
+                        }
+                        Produced::ValueType(arena.value_type_record(fields))
+                    },
                     | Value::SessionPath {
                         path_type,
                         ref evidence,
@@ -1714,6 +1814,45 @@ where
                     },
                 },
                 | Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
+                    | Value::Record(ref values) => {
+                        let Some(matched_native_node) = arena.value_type(expected)
+                        else {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Record,
+                                expected,
+                            ));
+                        };
+                        let ValueType::Record(ref fields) = *matched_native_node
+                        else {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::Record,
+                                expected,
+                            ));
+                        };
+                        for label in fields.keys() {
+                            if !values.contains_key(label) {
+                                return Err(KernelError::AbsentRecordField {
+                                    label: label.clone(),
+                                });
+                            }
+                        }
+                        let mut goals = values
+                            .iter()
+                            .rev()
+                            .map(|(label, value)| match fields.get(label) {
+                                | Some(ty) => Goal::CheckValue(*value, *ty),
+                                | None => Goal::SynthValue(*value),
+                            })
+                            .collect::<Vec<_>>();
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::Checked));
+                            goal = next;
+                            continue 'expand;
+                        }
+                        Produced::Checked
+                    },
                     | Value::Injection(side, body) => match arena.value_type(expected) {
                         | Some(&ValueType::Sum(left, right)) => {
                             let summand = match side {
@@ -1758,6 +1897,7 @@ where
                             ));
                         },
                     },
+                    | Value::Constructor { .. }
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
                     | Value::SessionPath { .. }
@@ -1776,6 +1916,16 @@ where
                     },
                 },
                 | Goal::SynthComp(id) => match *read_computation(arena, id)? {
+                    | Computation::DataCase { scrutinee, .. } => {
+                        frames.push(Frame::DataCase(id));
+                        goal = Goal::SynthValue(scrutinee);
+                        continue 'expand;
+                    },
+                    | Computation::RecordProjection(record, ref label) => {
+                        frames.push(Frame::RecordProjection(label.clone()));
+                        goal = Goal::SynthValue(record);
+                        continue 'expand;
+                    },
                     | Computation::Absurd(_) => {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::Absurd,
@@ -1885,6 +2035,8 @@ where
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..)
                     | Computation::Transport(..)
                     | Computation::Application(..)
                     | Computation::Force(_) => {
@@ -1901,6 +2053,90 @@ where
                 return Ok(produced);
             };
             match frame {
+                | Frame::Pending(mut goals, result) => {
+                    if let Some(next) = goals.pop() {
+                        frames.push(Frame::Pending(goals, result));
+                        goal = next;
+                        continue 'expand;
+                    }
+                    produced = result;
+                },
+                | Frame::RecordField {
+                    label,
+                    mut remaining,
+                    mut fields,
+                } => {
+                    fields.insert(label, produced.value_type()?);
+                    if let Some((label, value)) = remaining.pop() {
+                        frames.push(Frame::RecordField {
+                            label,
+                            remaining,
+                            fields,
+                        });
+                        goal = Goal::SynthValue(value);
+                        continue 'expand;
+                    }
+                    produced = Produced::ValueType(arena.value_type_record(fields));
+                },
+                | Frame::RecordProjection(label) => {
+                    let actual = produced.value_type()?;
+                    let Some(matched_native_node) = arena.value_type(actual)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            actual,
+                        ));
+                    };
+                    let ValueType::Record(ref fields) = *matched_native_node
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Record,
+                            actual,
+                        ));
+                    };
+                    let field = *fields
+                        .get(&label)
+                        .ok_or(KernelError::AbsentRecordField { label })?;
+                    produced = Produced::CompType(arena.comp_type_returner(field));
+                },
+                | Frame::DataCase(case) => {
+                    let datatype = produced.value_type()?;
+                    let Some(matched_native_node) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let Computation::DataCase { ref motive, .. } = *matched_native_node
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let motive = *motive;
+                    context.push(datatype);
+                    let formed = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Comp(motive),
+                        context.clone(),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    );
+                    let _bound = context.pop();
+                    let _level = formed?;
+                    let (result, mut goals) =
+                        former::case(arena, judgement.entries, session, case, datatype)?;
+                    goals.reverse();
+                    if let Some(next) = goals.pop() {
+                        frames.push(Frame::Pending(goals, Produced::CompType(result)));
+                        goal = next;
+                        continue 'expand;
+                    }
+                    produced = Produced::CompType(result);
+                },
                 | Frame::Memoize(support) => {
                     // A memo at its ceiling declines to record; see the same
                     // note in `type_level`.
@@ -2049,7 +2285,7 @@ where
                 },
                 | Frame::ConvertValue(expected) => {
                     let synthesized = produced.value_type()?;
-                    convert_value_type(arena, expected, synthesized)?;
+                    former::assignable(arena, expected, synthesized)?;
                     produced = Produced::Checked;
                 },
                 | Frame::SynthApply(argument) => {
@@ -2374,7 +2610,7 @@ fn check_sealing_provenance(
         && (ret.is_err() || (arena.value_type(declaration.declared_id()).is_some()
             && match *declaration.content() {
                 DeclarationContent::Def { body, .. } => arena.value(body).is_some(),
-                DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
+                DeclarationContent::Data { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => true,
             })))]
 #[inline]
 pub fn check_declaration(
@@ -2495,6 +2731,46 @@ where
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
     let verdict = match *declaration.content() {
+        | DeclarationContent::Data {
+            kind,
+            ref parameters,
+            ref constructors,
+        } => {
+            let level = former::level(arena, kind)?;
+            let upper = level.succ()?;
+            let mut context = Vec::new();
+            for parameter in parameters {
+                let _formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*parameter),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                context.push(*parameter);
+            }
+            for field in constructors.iter().flatten() {
+                let formed = type_level(
+                    arena,
+                    judgement,
+                    TypeLevelGoal::Value(*field),
+                    context.clone(),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
+                judgement.levels.check_universe_below(&formed, &upper)?;
+            }
+            Ok(())
+        },
         | DeclarationContent::Def { declared, body } => {
             let context: Vec<ValueTypeId> = Vec::new();
             let _checked = run(
@@ -2528,6 +2804,8 @@ where
                     sort: GroundSort::Computation,
                     ..
                 }
+                | ValueType::Data { .. }
+                | ValueType::Record(_)
                 | ValueType::PathUniverse(..)
                 | ValueType::Base(_)
                 | ValueType::Unit
@@ -2645,19 +2923,73 @@ where
             arith::Int::from(drained),
             arith::Int::from(1_usize),
         ));
-        let universe = arena.value_type_universe(obligation.sort, obligation.level);
-        let _checked = run(
-            arena,
-            judgement,
-            obligation.context,
-            Goal::CheckValue(obligation.code, universe),
-            Recording {
-                memo,
-                session,
-                census,
-                owed: &mut owed,
+        match obligation {
+            | CodeObligation::Universe {
+                code,
+                sort,
+                level,
+                context,
+            } => {
+                let universe = arena.value_type_universe(sort, level);
+                let _checked = run(
+                    arena,
+                    judgement,
+                    context,
+                    Goal::CheckValue(code, universe),
+                    Recording {
+                        memo,
+                        session,
+                        census,
+                        owed: &mut owed,
+                    },
+                )?;
             },
-        )?;
+            | CodeObligation::Data { datatype, context } => {
+                let Some(matched_native_node) = arena.value_type(datatype)
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let ValueType::Data {
+                    ref declaration,
+                    ref arguments,
+                } = *matched_native_node
+                else {
+                    return Err(KernelError::ArenaFault);
+                };
+                let signature = former::signature(judgement.entries, *declaration)?;
+                if signature.parameters.len() != arguments.len() {
+                    return Err(KernelError::DataArgumentArity);
+                }
+                for (index, &parameter) in signature.parameters.iter().enumerate() {
+                    let expected = former::instantiate(
+                        arena,
+                        session,
+                        parameter,
+                        datatype,
+                        former::ParameterPrefix(index),
+                    )?;
+                    let argument = match arena.value_type(datatype) {
+                        | Some(&ValueType::Data { ref arguments, .. }) => arguments
+                            .get(index)
+                            .copied()
+                            .ok_or(KernelError::DataArgumentArity)?,
+                        | _ => return Err(KernelError::ArenaFault),
+                    };
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        context.clone(),
+                        Goal::CheckValue(argument, expected),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                }
+            },
+        }
     }
     Ok(())
 }
@@ -4311,3 +4643,5 @@ mod tests
         );
     }
 }
+
+mod former;

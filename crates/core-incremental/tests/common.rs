@@ -221,17 +221,18 @@ pub fn integer(value: Natural) -> Literal
             && ret.items().iter().zip(statements).enumerate().all(
                 |(position, (item, statement))| {
                     let declaration = item.declaration();
+                    let gandr_core_checker::DeclarationContent::Value { ref signature, ref body } = *declaration.content() else { return false; };
                     item.key().as_ref() == statement.name.as_bytes()
                         && usize::from(declaration.constant()) == position
                         && usize::from(declaration.origin()) == position
-                        && match declaration.signature() {
+                        && match *signature {
                             | Maybe::Present(id) => {
                                 statement.ascription.is_some()
                                     && ret.arena().value_type(id).is_some()
                             },
                             | Maybe::Absent(_) => statement.ascription.is_none(),
                         }
-                        && match declaration.body() {
+                        && match *body {
                             | Maybe::Present(id) => {
                                 !matches!(&statement.body, Body::Hole)
                                     && ret.arena().value(id).is_some()

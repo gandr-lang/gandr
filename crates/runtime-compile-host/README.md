@@ -81,6 +81,8 @@ Dup and Drop remain representable image operations with separate static counts. 
 
 Native functions and saturated native operations are typed core terms but are outside this version-one image vocabulary. They return `OutsideSlice(Primitive)` after checking; they are not pre-evaluated, erased or encoded as an unrelated image instruction. `tests::typed::native_operations_are_typed_but_outside_version_one` exercises both boundaries. Execution of native arithmetic belongs to the sequent runtime.
 
+Native constructor and record values, data cases and record projections likewise receive named `OutsideSlice` refusals. They are checked native core forms, not version-one image instructions. Their pure evaluation and admission evidence is recorded in the [data/record floor](../core-checker/data-record-floor.md); this host does not claim their command-IL compilation.
+
 ## Typed admission
 
 The checker owns acceptance. The caller supplies a formed expected type; this boundary neither synthesizes a missing type nor invents an unknown type. A typed text value therefore reaches `NotLowered(OutsideSlice(String))`, while an ill-typed case reaches `NotChecked` first.

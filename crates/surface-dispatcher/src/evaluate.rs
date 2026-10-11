@@ -146,6 +146,8 @@ enum Slot
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Opacity
 {
+    /// A native datatype declares constructors, not an executable value.
+    Data,
     /// It is owed its body: running into it is blame.
     Owed,
     /// It was refused, by the lowering or the checker, or the checker accepted
@@ -222,6 +224,8 @@ pub enum Unfinished
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Unrunnable<'source>
 {
+    /// A datatype declaration has no executable body.
+    Data(SurfaceName<'source>),
     /// No declaration of the program sits at the position asked for.
     Undeclared(ConstantIndex),
     /// The declaration, or one it refers to, was refused.
@@ -312,6 +316,9 @@ impl fmt::Display for Evaluation<'_>
     ) -> fmt::Result
     {
         match *self {
+            | Self::Unrunnable(Unrunnable::Data(declaration)) => {
+                write!(f, "unrunnable: `{declaration}` is a datatype declaration")
+            },
             | Self::Value(ref value) => fmt::Display::fmt(value, f),
             | Self::Blamed(goal) => write!(f, "blame: `{goal}` is owed its body"),
             | Self::Stuck(ref stuck) => write!(f, "stuck: {stuck}"),
@@ -407,6 +414,7 @@ impl<'source> Program<'source>
                 .map(Judged::verdict);
             let body = verdicts.definitions().get(&constant).copied();
             let (definition, slot) = match (verdict, body) {
+                | (Some(Verdict::Data), _) => (Definition::Opaque, Slot::Opaque(Opacity::Data)),
                 | (Some(Verdict::Checked { .. } | Verdict::Synthesised { .. }), Some(body)) => {
                     match focus_value(core, body, &mut arena, &mut provenance) {
                         | Ok(producer) => (
@@ -528,7 +536,8 @@ impl<'source> Program<'source>
             .iter()
             .filter_map(|declared| match declared.slot {
                 | Slot::Opaque(Opacity::Unfocused(refusal)) => Some((declared.name, refusal)),
-                | Slot::Defined(_) | Slot::Opaque(Opacity::Owed | Opacity::Refused) => None,
+                | Slot::Defined(_)
+                | Slot::Opaque(Opacity::Data | Opacity::Owed | Opacity::Refused) => None,
             })
     }
 
@@ -578,6 +587,7 @@ impl<'source> Program<'source>
         captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
             watermark = self.arena.watermark(), blocked = match self.declarations.get(usize::from(constant)) {
                 None => Some(Unrunnable::Undeclared(constant)),
+                Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => Some(Unrunnable::Data(name)),
                 Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => Some(Unrunnable::Refused(name)),
                 Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
                     Some(Unrunnable::Unfocused { declaration: name, refusal }),
@@ -587,6 +597,7 @@ impl<'source> Program<'source>
             && blocked.is_none_or(|reason| matches!(*ret, Evaluation::Unrunnable(actual) if actual == reason)
                 && self.arena.watermark() == watermark)
             && match *ret {
+                Evaluation::Unrunnable(Unrunnable::Data(name)) => self.declarations.iter().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
                 Evaluation::Blamed(name) => self.declarations.iter().any(|declared|
                     declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Owed))),
                 Evaluation::Unrunnable(Unrunnable::Undeclared(index)) => usize::from(index) >= declarations,
@@ -682,6 +693,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| {
         let root = match self.declarations.get(usize::from(constant)) {
             None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
+            Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => ret == Maybe::Present(Unrunnable::Data(name)),
             Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => ret == Maybe::Present(Unrunnable::Refused(name)),
             Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) =>
                 ret == Maybe::Present(Unrunnable::Unfocused { declaration: name, refusal }),
@@ -689,6 +701,7 @@ impl<'source> Program<'source>
             Some(&Declared { slot: Slot::Defined(_), .. }) => true,
         };
         root && match ret {
+            Maybe::Present(Unrunnable::Data(name)) => self.declarations.iter().any(|declared| declared.name == name && matches!(declared.slot,Slot::Opaque(Opacity::Data))),
             Maybe::Present(Unrunnable::Undeclared(index)) => self.declarations.get(usize::from(index)).is_none(),
             Maybe::Present(Unrunnable::Refused(name)) => self.declarations.iter().any(|declared|
                 declared.name == name && matches!(declared.slot, Slot::Opaque(Opacity::Refused))),
@@ -715,6 +728,9 @@ impl<'source> Program<'source>
                 | Some(_) | None => continue,
             }
             match declared.slot {
+                | Slot::Opaque(Opacity::Data) => {
+                    return Maybe::Present(Unrunnable::Data(declared.name));
+                },
                 | Slot::Defined(ref referred) => pending.extend(referred.iter().copied()),
                 | Slot::Opaque(Opacity::Owed) => {},
                 | Slot::Opaque(Opacity::Refused) => {
@@ -905,6 +921,7 @@ impl<'source> Program<'source>
     ///   including the inconsistent defined and out-of-range boundaries.
     /// - witness: `evaluate::tests::terminal_classification_preserves_declaration_identity`
     #[spec(ensures: |ref ret| match self.declarations.get(usize::from(constant)) {
+        Some(&Declared {name,slot:Slot::Opaque(Opacity::Data)}) => matches!(*ret,Evaluation::Unrunnable(Unrunnable::Data(actual)) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Owed) }) => matches!(*ret, Evaluation::Blamed(actual) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Refused) }) => matches!(*ret, Evaluation::Unrunnable(Unrunnable::Refused(actual)) if actual == name),
         Some(&Declared { name, slot: Slot::Opaque(Opacity::Unfocused(refusal)) }) => matches!(*ret,
@@ -918,6 +935,10 @@ impl<'source> Program<'source>
     ) -> Evaluation<'source>
     {
         match self.declarations.get(usize::from(constant)) {
+            | Some(&Declared {
+                name,
+                slot: Slot::Opaque(Opacity::Data),
+            }) => Evaluation::Unrunnable(Unrunnable::Data(name)),
             | Some(&Declared {
                 name,
                 slot: Slot::Opaque(Opacity::Owed),
@@ -965,6 +986,8 @@ impl<'source> Program<'source>
     #[spec(ensures: |ref ret| match core.computation(read) {
         Some(&Computation::Lambda(_)) => ret.0 == "<fun>",
         Some(&Computation::Return(value)) => match core.value(value) {
+            Some(&Value::Constructor {..}) => ret.0.starts_with("ctor[") && ret.0.ends_with(')'),
+            Some(&Value::Record(_)) => ret.0.starts_with("#{") && ret.0.ends_with('}'),
             Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
             Some(&Value::Unit) => ret.0 == "()",
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
@@ -997,7 +1020,7 @@ impl<'source> Program<'source>
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
-Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) |
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1016,12 +1039,21 @@ None => ret.0 == "<computation>",
                 | Computation::Application(..)
                 | Computation::Bind(..)
                 | Computation::Force(_)
+                | Computation::DataCase { .. }
+                | Computation::RecordProjection(..)
                 | Computation::Case { .. }),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
         while let Some(piece) = pending.pop() {
             let value = match piece {
+                | Piece::Field(label) => {
+                    spelled.push('"');
+                    spelled.extend(label.as_ref().escape_debug());
+                    spelled.push('"');
+                    spelled.push_str(": ");
+                    continue;
+                },
                 | Piece::Text(text) => {
                     spelled.push_str(text);
                     continue;
@@ -1029,6 +1061,30 @@ None => ret.0 == "<computation>",
                 | Piece::Value(value) => value,
             };
             match core.value(value) {
+                | Some(&Value::Constructor {
+                    tag, ref fields, ..
+                }) => {
+                    let _written =
+                        core::fmt::write(&mut spelled, format_args!("ctor[{}](", usize::from(tag)));
+                    pending.push(Piece::Text(")"));
+                    for (index, &field) in fields.iter().enumerate().rev() {
+                        if index.saturating_add(1) < fields.len() {
+                            pending.push(Piece::Text(", "));
+                        }
+                        pending.push(Piece::Value(field));
+                    }
+                },
+                | Some(&Value::Record(ref fields)) => {
+                    spelled.push_str("#{");
+                    pending.push(Piece::Text("}"));
+                    for (index, (label, &field)) in fields.iter().enumerate().rev() {
+                        if index.saturating_add(1) < fields.len() {
+                            pending.push(Piece::Text(", "));
+                        }
+                        pending.push(Piece::Value(field));
+                        pending.push(Piece::Field(label));
+                    }
+                },
                 | Some(&Value::Primitive { primitive, .. }) => {
                     spelled.push_str(primitive.name().as_ref());
                 },
@@ -1114,8 +1170,10 @@ impl Runner for Program<'_>
 
 /// A piece of a spelling still to write.
 #[derive(Clone, Copy, Debug)]
-enum Piece
+enum Piece<'core>
 {
+    /// An exact record field label, escaped before its value.
+    Field(&'core gandr_core_term::FieldLabel),
     /// Fixed text.
     Text(&'static str),
     /// A value, spelled in turn.
@@ -1146,7 +1204,10 @@ enum Piece
 &(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..))) | None => ret.is_empty(),
-    Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_))) => true,
+    Some(&(Value::Constructor { .. } | Value::Record(_)) |
+&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } |
+Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } |
+Value::Thunk(_))) => true,
 })]
 fn references(
     core: &CoreArena,
@@ -1167,6 +1228,12 @@ fn references(
     while let Some(node) = pending.pop() {
         match node {
             | Node::Value(id) => match core.value(id) {
+                | Some(&Value::Constructor { ref fields, .. }) => {
+                    pending.extend(fields.iter().copied().map(Node::Value));
+                },
+                | Some(&Value::Record(ref fields)) => {
+                    pending.extend(fields.values().copied().map(Node::Value));
+                },
                 | Some(&Value::Constant(constant)) => referred.push(constant),
                 | Some(
                     &(Value::PathProduct(first, second)
@@ -1200,6 +1267,17 @@ fn references(
                 | None => {},
             },
             | Node::Computation(id) => match core.computation(id) {
+                | Some(&Computation::DataCase {
+                    scrutinee,
+                    ref branches,
+                    ..
+                }) => {
+                    pending.push(Node::Value(scrutinee));
+                    pending.extend(branches.iter().copied().map(Node::Computation));
+                },
+                | Some(&Computation::RecordProjection(record, _)) => {
+                    pending.push(Node::Value(record));
+                },
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(arguments.iter().copied().map(Node::Value));
                 },

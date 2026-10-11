@@ -41,6 +41,9 @@ pub mod primitive;
 mod rewrite;
 mod syntax;
 
+pub use gandr_kernel_term::ConstructorTag;
+pub use gandr_kernel_term::FieldLabel;
+
 pub use crate::arena::ArenaWatermark;
 pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
@@ -65,13 +68,17 @@ pub use crate::failure::FailureClass;
 pub use crate::rewrite::Binders;
 pub use crate::rewrite::instantiate_comp_type;
 pub use crate::rewrite::instantiate_value;
+pub use crate::rewrite::instantiate_value_type;
 pub use crate::rewrite::shift_comp_type;
+pub use crate::rewrite::shift_comp_type_under;
+pub use crate::rewrite::shift_value;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::strengthen_comp_type;
 pub use crate::rewrite::strengthening;
 pub use crate::syntax::CertificateEquality;
 pub use crate::syntax::CompType;
 pub use crate::syntax::Computation;
+pub use crate::syntax::DataSignature;
 pub use crate::syntax::Value;
 pub use crate::syntax::ValueType;
 pub use crate::syntax::Zone;

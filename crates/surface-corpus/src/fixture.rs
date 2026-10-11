@@ -190,21 +190,21 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                     }),
             )
             .all(|(declared, lowered)| {
+                let gandr_core_checker::DeclarationContent::Value { ref signature, body: ref held_body } = *declared.content() else { return false; };
                 declared.constant() == lowered.constant()
                     && usize::from(declared.origin()) == usize::from(lowered.origin())
                     && match lowered.outcome() {
                         DeclarationOutcome::Completed { declared_type, body: value } => {
-                            declared.signature() == Maybe::Present(declared_type)
-                                && declared.body() == Maybe::Present(value)
+                            *signature == Maybe::Present(declared_type)
+                                && *held_body == Maybe::Present(value)
                         }
                         DeclarationOutcome::Uncompleted { declared_type } => {
-                            declared.signature() == Maybe::Present(declared_type)
-                                && declared.body() == Maybe::Absent(body::Absent::Hole)
+                            *signature == Maybe::Present(declared_type)
+                                && *held_body == Maybe::Absent(body::Absent::Hole)
                         }
                         DeclarationOutcome::Bodied { body: value } => {
-                            declared.signature()
-                                == Maybe::Absent(signature::Absent::Unsigned)
-                                && declared.body() == Maybe::Present(value)
+                            *signature == Maybe::Absent(signature::Absent::Unsigned)
+                                && *held_body == Maybe::Present(value)
                         }
                         DeclarationOutcome::Refused(_) => false,
                     }

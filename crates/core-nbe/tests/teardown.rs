@@ -192,7 +192,10 @@ mod teardown
         let mut remaining = CHAIN_LINKS;
         while remaining > 0 {
             let comp_closure = arena.comp_closure_node(body, Environment::new());
-            let _value_closure = arena.value_closure_node(produced, Environment::new());
+            let _value_closure = arena.value_closure_node(
+                gandr_core_nbe::ValueBody::Source(produced),
+                Environment::new(),
+            );
             let spined = arena.neutral_node(
                 NeutralHead::Constant(ConstantIndex::from(remaining)),
                 Vec::from([Elimination::Apply(top), Elimination::Bind(comp_closure)]),

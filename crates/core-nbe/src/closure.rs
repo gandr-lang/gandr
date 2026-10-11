@@ -298,6 +298,21 @@ fn entry_offset(
     Some(EntryOffset(offset))
 }
 
+/// A source value or a native quotation of an already existing type root.
+///
+/// Native type obligations use the same captured environments as source quotes,
+/// without mutating the source arena merely to manufacture a quote node.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ValueBody
+{
+    /// An ordinary source value, including an explicit quote or static lambda.
+    Source(ValueId),
+    /// A value-type quotation created by native conversion.
+    ValueType(gandr_core_term::ValueTypeId),
+    /// A computation-type quotation created by native conversion.
+    CompType(gandr_core_term::CompTypeId),
+}
+
 /// A suspended **value** body with the environment its free variables stand in.
 ///
 /// Quotes and static lambdas suspend a value body in this environment.
@@ -306,7 +321,7 @@ fn entry_offset(
 pub struct ValueClosure
 {
     /// The core value body, unevaluated.
-    body: ValueId,
+    body: ValueBody,
     /// What the body's free variables stand for.
     environment: Environment,
 }
@@ -333,13 +348,13 @@ impl ValueClosure
     ///   environments are observed by the suspended body, captured lookup and
     ///   code comparisons; changing the body, dropping a binding or reading the
     ///   wrong index changes an observation.
-    /// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+    /// - witness: `eval::tests::normalizes_beta_redex`
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.body == body)]
     pub(crate) fn new(
-        body: ValueId,
+        body: ValueBody,
         environment: Environment,
     ) -> Self
     {
@@ -352,7 +367,7 @@ impl ValueClosure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn body(&self) -> ValueId
+    pub fn body(&self) -> ValueBody
     {
         self.body
     }

@@ -96,26 +96,10 @@ quenchant_shape::reason_enum! {
                         && declaration.constant() == lowered.constant()
                         && usize::from(declaration.origin())
                             == usize::from(lowered.origin())
-                        && match (
-                            lowered.outcome(),
-                            declaration.signature(),
-                            declaration.body(),
-                        ) {
-                            (
-                                DeclarationOutcome::Completed { declared_type, body },
-                                Maybe::Present(signature),
-                                Maybe::Present(value),
-                            ) => signature == declared_type && value == body,
-                            (
-                                DeclarationOutcome::Uncompleted { declared_type },
-                                Maybe::Present(signature),
-                                Maybe::Absent(_),
-                            ) => signature == declared_type,
-                            (
-                                DeclarationOutcome::Bodied { body },
-                                Maybe::Absent(_),
-                                Maybe::Present(value),
-                            ) => value == body,
+                        && match (lowered.outcome(),declaration.content()) {
+                            (DeclarationOutcome::Completed {declared_type,body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Present(value)}) => signature == declared_type && value == body,
+                            (DeclarationOutcome::Uncompleted {declared_type},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Absent(_)}) => signature == declared_type,
+                            (DeclarationOutcome::Bodied {body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(_),body:Maybe::Present(value)}) => value == body,
                             _ => false,
                         }
                 })

@@ -161,6 +161,40 @@ pub enum ArenaNode
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ContentNode
 {
+    /// A nominal datatype instance, preserving its declaration identity.
+    Data
+    {
+        /// The declaration's stable item reference.
+        declaration: Reference,
+        /// Value arguments in telescope order.
+        arguments: Vec<NodeIndex>,
+    },
+    /// A structural record classifier, ordered by field label.
+    RecordType(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
+    /// A constructor at its complete nominal classifier.
+    Constructor
+    {
+        /// The classifier of the constructed value.
+        datatype: NodeIndex,
+        /// The constructor's ordinal in its declaration.
+        tag: gandr_core_term::ConstructorTag,
+        /// Constructor fields in declaration order.
+        fields: Vec<NodeIndex>,
+    },
+    /// A record value, ordered by field label.
+    Record(BTreeMap<gandr_core_term::FieldLabel, NodeIndex>),
+    /// Nominal elimination with a one-scrutinee-binder motive.
+    DataCase
+    {
+        /// The eliminated value.
+        scrutinee: NodeIndex,
+        /// The result classifier under the scrutinee binder.
+        motive: NodeIndex,
+        /// Ambient-scope branch functions, in constructor order.
+        branches: Vec<NodeIndex>,
+    },
+    /// A projection returning the selected record field.
+    RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
     /// A closed table-typed native thunk.
     PrimitiveValue(gandr_core_term::primitive::Primitive),
     /// A saturated runtime-native operation.
@@ -332,12 +366,18 @@ pub enum ContentNode
 /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Children
+pub struct Children<'node>
 {
     /// The children in order; slots past `count` are unused.
     slots: [(NodeIndex, Sort); 3],
     /// How many slots hold a child.
     count: usize,
+    /// A variadic suffix, borrowed without per-node allocation.
+    suffix: &'node [NodeIndex],
+    /// Label-ordered fields, when this node is a record.
+    fields: Option<&'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>>,
+    /// The common sort of the suffix or fields.
+    tail_sort: Sort,
 }
 
 impl Default for Sort
@@ -353,12 +393,13 @@ impl Default for Sort
     }
 }
 
-impl Children
+impl<'node> Children<'node>
 {
     /// The children listed in `children`, in order.
     ///
     /// # Specification
-    /// - requires: at most three children, which every former satisfies.
+    /// - requires: at most three fixed-prefix children; variadic children are
+    ///   borrowed.
     /// - ensures: the first `children.len()` slots, in order.
     /// - panics: none.
     ///
@@ -382,7 +423,11 @@ impl Children
             *slot = child;
             count = count.saturating_add(1);
         }
-        Self { slots, count }
+        Self {
+            slots,
+            count,
+            ..Self::default()
+        }
     }
 
     /// The children, in order.
@@ -398,14 +443,66 @@ impl Children
     ///   bounded evidence does not instrument the opaque return.
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + '_
+    pub(crate) fn iter(self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + 'node
     {
-        self.slots.iter().copied().take(self.count)
+        let sort = self.tail_sort;
+        self.slots
+            .into_iter()
+            .take(self.count)
+            .chain(self.suffix.iter().map(move |&child| (child, sort)))
+            .chain(
+                self.fields
+                    .into_iter()
+                    .flat_map(|fields| fields.values())
+                    .map(move |&child| (child, sort)),
+            )
+    }
+    /// Append a borrowed variadic child suffix.
+    ///
+    /// # Specification
+    /// trivial.
+    fn followed_by(
+        mut self,
+        suffix: &'node [NodeIndex],
+        sort: Sort,
+    ) -> Self
+    {
+        self.suffix = suffix;
+        self.tail_sort = sort;
+        self
+    }
+
+    /// Borrow the children of a label-ordered record.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fields(
+        fields: &'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>,
+        sort: Sort,
+    ) -> Self
+    {
+        Self {
+            fields: Some(fields),
+            tail_sort: sort,
+            ..Self::default()
+        }
     }
 }
 
 impl ContentNode
 {
+    /// Direct children in canonical former order, with each child's required
+    /// sort.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn child_indices(&self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + '_
+    {
+        self.children().iter()
+    }
+
     /// The node's sort.
     ///
     /// # Specification
@@ -420,7 +517,7 @@ impl ContentNode
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| match *self {
-        | Self::PathRefl(_)
+        Self::Constructor { .. } | Self::Record(_) | Self::PathRefl(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::PathEquiv { .. }
@@ -435,16 +532,16 @@ impl ContentNode
         | Self::Quote(_)
         | Self::QuoteComputation(_)
         | Self::StaticLambda(_)
-        | Self::StaticApplication(..) => matches!(ret, Sort::Value),
-        | Self::Transport(..)
+        | Self::StaticApplication(..) => matches!(ret,Sort::Value),
+        Self::DataCase { .. } | Self::RecordProjection(..) | Self::Transport(..)
         | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
         | Self::Return(_)
         | Self::Bind(..)
         | Self::Force(_)
-        | Self::Case { .. } => matches!(ret, Sort::Computation),
-        | Self::PathUniverse(..)
+        | Self::Case { .. } => matches!(ret,Sort::Computation),
+        Self::Data { .. } | Self::RecordType(_) | Self::PathUniverse(..)
         | Self::Base(_)
         | Self::UnitType
         | Self::Product(..)
@@ -470,6 +567,8 @@ impl ContentNode
     pub(crate) const fn sort(&self) -> Sort
     {
         match *self {
+            | Self::Constructor { .. }
+            | Self::Record(_)
             | Self::PathRefl(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
@@ -486,6 +585,8 @@ impl ContentNode
             | Self::QuoteComputation(_)
             | Self::StaticLambda(_)
             | Self::StaticApplication(..) => Sort::Value,
+            | Self::DataCase { .. }
+            | Self::RecordProjection(..)
             | Self::Transport(..)
             | Self::Primitive(..)
             | Self::Lambda(_)
@@ -494,6 +595,8 @@ impl ContentNode
             | Self::Bind(..)
             | Self::Force(_)
             | Self::Case { .. } => Sort::Computation,
+            | Self::Data { .. }
+            | Self::RecordType(_)
             | Self::PathUniverse(..)
             | Self::Base(_)
             | Self::UnitType
@@ -535,6 +638,12 @@ impl ContentNode
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
         match *self {
+            Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
+            Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
+            Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
+            Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
+            Self::DataCase { scrutinee,motive,ref branches } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
+            Self::RecordProjection(record,_) => ret.iter().eq([(record,V)]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
@@ -585,13 +694,27 @@ impl ContentNode
             } => actual == Some(&[(a, A), (b, C)][..]),
         }
     })]
-    pub(crate) fn children(&self) -> Children
+    pub(crate) fn children(&self) -> Children<'_>
     {
         use Sort::CompType as C;
         use Sort::Computation as M;
         use Sort::Value as V;
         use Sort::ValueType as A;
         match *self {
+            | Self::Data { ref arguments, .. } => Children::default().followed_by(arguments, V),
+            | Self::RecordType(ref fields) => Children::fields(fields, A),
+            | Self::Constructor {
+                datatype,
+                ref fields,
+                ..
+            } => Children::of(&[(datatype, A)]).followed_by(fields, V),
+            | Self::Record(ref fields) => Children::fields(fields, V),
+            | Self::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+            } => Children::of(&[(scrutinee, V), (motive, C)]).followed_by(branches, M),
+            | Self::RecordProjection(record, _) => Children::of(&[(record, V)]),
             | Self::Primitive(_, arguments) => match arguments {
                 | gandr_core_term::primitive::Arguments::Unary(argument) => {
                     Children::of(&[(argument, V)])
@@ -654,12 +777,13 @@ impl ContentNode
         }
     }
 
-    /// The reference a constant or an abstract type names.
+    /// The reference a constant, abstract type or nominal datatype names.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the borrowed reference for Constant or Abstract, otherwise
-    ///   `NotAReference`; the predicate checks the presence classification.
+    /// - ensures: the borrowed reference for Constant, Abstract or Data,
+    ///   otherwise `NotAReference`; the predicate checks the presence
+    ///   classification.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -668,16 +792,24 @@ impl ContentNode
     ///   borrowed payload identity in a const expression.
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
-        Self::Constant(_) | Self::Abstract(_) => matches!(ret, Maybe::Present(_)),
+        Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
         _ => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
     {
         match *self {
-            | Self::Constant(ref reference) | Self::Abstract(ref reference) => {
-                Maybe::Present(reference)
-            },
+            | Self::Constant(ref reference)
+            | Self::Abstract(ref reference)
+            | Self::Data {
+                declaration: ref reference,
+                ..
+            } => Maybe::Present(reference),
             | Self::PathUniverse(..)
+            | Self::RecordType(_)
+            | Self::Constructor { .. }
+            | Self::Record(_)
+            | Self::DataCase { .. }
+            | Self::RecordProjection(..)
             | Self::PrimitiveValue(_)
             | Self::Primitive(..)
             | Self::PathRefl(_)
@@ -782,7 +914,176 @@ pub enum Opacity
     Opaque,
 }
 
-/// An item's canonical content: its reference and its two halves as one table.
+/// The roots of a nominal declaration in a discovery-numbered table.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataRoots
+{
+    /// Parameter classifiers in telescope order.
+    pub parameters: Vec<NodeIndex>,
+    /// Constructor field classifiers in constructor and field order.
+    pub constructors: Vec<Vec<NodeIndex>>,
+    /// The universe classifying the declared datatype.
+    pub kind: NodeIndex,
+}
+
+impl DataRoots
+{
+    /// All roots in their canonical discovery order.
+    ///
+    /// # Specification
+    /// - ensures: parameters, then constructor fields, then the kind.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native checkpoint round trips preserve each signature
+    ///   slot.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    pub(crate) fn iter(&self) -> impl Iterator<Item = NodeIndex> + Clone + '_
+    {
+        self.parameters
+            .iter()
+            .chain(self.constructors.iter().flatten())
+            .copied()
+            .chain(core::iter::once(self.kind))
+    }
+}
+
+/// The declaration's roots; nominal declarations are not value axioms.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum DeclarationRoots
+{
+    /// A value declaration's optional signature and body.
+    Value
+    {
+        /// The signature classifier, or why it is absent.
+        signature: Maybe<NodeIndex, signature::Absent>,
+        /// The body, or why it is absent.
+        body: Maybe<NodeIndex, body::Absent>,
+    },
+    /// A complete nominal signature.
+    Data(DataRoots),
+}
+
+impl DeclarationRoots
+{
+    /// Each root and its required family, in discovery order.
+    ///
+    /// # Specification
+    /// - ensures: value signature before body, or all nominal classifiers in
+    ///   order.
+    /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — persistence rejects ill-sorted and reordered native
+    ///   roots.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
+    {
+        let (values, data) = match *(self) {
+            | Self::Value {
+                ref signature,
+                ref body,
+            } => (
+                [
+                    match *signature {
+                        | Maybe::Present(root) => Some((root, Sort::ValueType)),
+                        | Maybe::Absent(_) => None,
+                    },
+                    match *body {
+                        | Maybe::Present(root) => Some((root, Sort::Value)),
+                        | Maybe::Absent(_) => None,
+                    },
+                ],
+                None,
+            ),
+            | Self::Data(ref roots) => ([None, None], Some(roots)),
+        };
+        values.into_iter().flatten().chain(
+            data.into_iter()
+                .flat_map(DataRoots::iter)
+                .map(|root| (root, Sort::ValueType)),
+        )
+    }
+}
+
+/// A complete nominal signature in arena-independent coordinates.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataContent
+{
+    /// The parameter, constructor and kind roots.
+    roots: DataRoots,
+    /// The complete shared table of reachable nodes.
+    nodes: Vec<ContentNode>,
+}
+
+impl DataContent
+{
+    /// Signature roots in this table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn roots(&self) -> &DataRoots
+    {
+        &self.roots
+    }
+
+    /// The discovery-numbered shared table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn nodes(&self) -> &[ContentNode]
+    {
+        &self.nodes
+    }
+
+    /// Reassemble raw parts; the wire reader validates their graph separately.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn from_parts(
+        roots: DataRoots,
+        nodes: Vec<ContentNode>,
+    ) -> Self
+    {
+        Self { roots, nodes }
+    }
+
+    /// Encode every constructor signature, not merely its universe kind.
+    ///
+    /// # Specification
+    /// - requires: nothing; unresolved nodes retain their sort.
+    /// - ensures: every signature root is represented in the canonical shared
+    ///   table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing a constructor while preserving its kind
+    ///   invalidates reuse.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    #[spec(ensures: |ret| ret.roots.parameters.len() == signature.parameters().len()
+        && ret.roots.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
+        && ret.roots.iter().all(|root| usize::from(root) < ret.nodes.len()))]
+    pub(crate) fn of(
+        arena: &CoreArena,
+        layout: &Layout,
+        signature: &gandr_core_term::DataSignature,
+    ) -> Self
+    {
+        let mut encoder = Encoder::new(arena, layout);
+        let roots = encoder.data_roots(signature);
+        encoder.drain();
+        Self {
+            roots,
+            nodes: encoder.nodes,
+        }
+    }
+}
+
+/// An item's canonical declaration roots and one shared node table.
 ///
 /// # Specification
 /// - executable: none — stored roots and entries do not retain an arena; raw
@@ -801,10 +1102,8 @@ pub struct ItemContent
 {
     /// The item's own reference: its key and occurrence.
     reference: Reference,
-    /// The signature's root, or why there is none.
-    signature: Maybe<NodeIndex, signature::Absent>,
-    /// The body's root, or why there is none.
-    body: Maybe<NodeIndex, body::Absent>,
+    /// The value or nominal declaration's roots.
+    declaration: DeclarationRoots,
     /// Every node reachable from the roots, numbered by discovery.
     nodes: Vec<ContentNode>,
 }
@@ -822,24 +1121,15 @@ impl ItemContent
         &self.reference
     }
 
-    /// The signature's root, or why there is none.
+    /// The declaration's roots, retaining its value or nominal category.
     ///
     /// # Specification
     /// trivial.
+    #[must_use]
     #[inline]
-    pub const fn signature(&self) -> Maybe<NodeIndex, signature::Absent>
+    pub const fn declaration(&self) -> &DeclarationRoots
     {
-        self.signature
-    }
-
-    /// The body's root, or why there is none.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub const fn body(&self) -> Maybe<NodeIndex, body::Absent>
-    {
-        self.body
+        &self.declaration
     }
 
     /// Every node reachable from the roots, numbered by discovery.
@@ -859,15 +1149,13 @@ impl ItemContent
     /// trivial.
     pub(crate) const fn from_parts(
         reference: Reference,
-        signature: Maybe<NodeIndex, signature::Absent>,
-        body: Maybe<NodeIndex, body::Absent>,
+        declaration: DeclarationRoots,
         nodes: Vec<ContentNode>,
     ) -> Self
     {
         Self {
             reference,
-            signature,
-            body,
+            declaration,
             nodes,
         }
     }
@@ -890,7 +1178,7 @@ impl ItemContent
     /// - ensures: the table of every node reachable from the signature root,
     ///   renumbered by discovery from that root alone, so it equals the table
     ///   [`TypeContent::of_value_type`] gives the signature in its arena.
-    /// - provides: `signature::Absent::Unsigned` for an unsigned item.
+    /// - provides: None for an unsigned value or a nominal declaration.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -898,23 +1186,26 @@ impl ItemContent
     ///   independently encoding its root. Raw malformed roots are not covered
     ///   by that witness.
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(ref content) => match self.signature {
-            Maybe::Present(root) => self.nodes.get(usize::from(root)).map_or_else(
-                || content.nodes == [ContentNode::Unresolved(Sort::Value)],
-                |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort()),
-            ),
-            Maybe::Absent(_) => false,
-        },
-        Maybe::Absent(reason) => self.signature == Maybe::Absent(reason),
-    })]
-    pub(crate) fn signature_type(&self) -> Maybe<TypeContent, signature::Absent>
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (&self.declaration,ret.as_ref());
+if let DeclarationRoots::Value { signature:Maybe::Present(ref root),.. } = *matched_left_value && let Some(content) = matched_right_value { self.nodes.get(usize::from(*root)).map_or_else(
+            || content.nodes == [ContentNode::Unresolved(Sort::Value)],
+            |node| content.nodes.first().is_some_and(|first| first.sort() == node.sort())) }
+ else { matches!(*matched_left_value, DeclarationRoots::Value { signature:Maybe::Absent(_),.. } | DeclarationRoots::Data(_)) && matched_right_value.is_none() }
+})]
+    pub(crate) fn signature_type(&self) -> Option<TypeContent>
     {
-        match self.signature {
-            | Maybe::Present(root) => Maybe::Present(TypeContent {
+        match self.declaration {
+            | DeclarationRoots::Value {
+                signature: Maybe::Present(root),
+                ..
+            } => Some(TypeContent {
                 nodes: renumber(&self.nodes, root),
             }),
-            | Maybe::Absent(reason) => Maybe::Absent(reason),
+            | DeclarationRoots::Value {
+                signature: Maybe::Absent(_),
+                ..
+            }
+            | DeclarationRoots::Data(_) => None,
         }
     }
 }
@@ -1038,29 +1329,6 @@ impl TypeContent
         }
     }
 
-    /// Every reference the type names, anywhere in it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: all stored Constant and Abstract references in table order,
-    ///   including duplicates.
-    /// - executable: none — anodized 0.7 emits an invalid closure return type
-    ///   for this opaque iterator, including for preconditions alone.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — with no footprint type reads, changing either an
-    ///   abstract reference or a code reference inside a recorded answer
-    ///   invalidates it; an unrelated change and an untyped answer do not.
-    ///   These are constructed guard inputs, not a claim of checker provenance.
-    /// - witness: `checkpoint::tests::recorded_answer_references_participate_in_value_invalidation`
-    pub(crate) fn references(&self) -> impl Iterator<Item = &Reference>
-    {
-        self.nodes.iter().filter_map(|node| match node.reference() {
-            | Maybe::Present(reference) => Some(reference),
-            | Maybe::Absent(_) => None,
-        })
-    }
-
     /// Mint the type into `arena`, constants placed through `layout`.
     ///
     /// # Specification
@@ -1070,8 +1338,8 @@ impl TypeContent
     /// - provides: the seat an adopted synthesised type is read from.
     /// - fails: `seating::Absent` naming why: an unresolved node, a cycle, a
     ///   reference the program does not hold, a table that is no value type, or
-    ///   a former holding a term, which a seat never needs while formed types
-    ///   hold none.
+    ///   a former holding a term. A term-bearing inferred type is rechecked
+    ///   rather than adopted when it cannot be seated.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1122,8 +1390,9 @@ pub struct Encoded
 /// # Specification
 /// - requires: nothing; an ordinal outside `layout` encodes an empty unsigned
 ///   hole under an unoccupied reference.
-/// - ensures: the item's reference, its two roots and the discovery-numbered
-///   table of every node reachable from them, the signature's root first.
+/// - ensures: the item's reference, complete declaration roots and shared
+///   discovery-numbered table; nominal roots follow parameter and constructor
+///   order.
 /// - provides: the item's identity, the sites its verdict is projected through,
 ///   and the table its footprint is read from — one walk for all three.
 /// - panics: none.
@@ -1142,16 +1411,17 @@ pub struct Encoded
     && ret.sites.0.values().all(|index| usize::from(*index) < ret.content.nodes.len())
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
-            && match (item.declaration().signature(), ret.content.signature) {
-                (Maybe::Present(_), Maybe::Present(root)) => usize::from(root) == 0,
-                (Maybe::Absent(reason), Maybe::Absent(returned)) => reason == returned,
-                _ => false,
-            }
-            && matches!((item.declaration().body(), ret.content.body),
-                (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_))),
+            && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+                    && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some) }
+ else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
+                    && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
+                    && signature.constructors().len() == roots.constructors.len()
+                    && signature.constructors().iter().zip(&roots.constructors).all(|(fields,roots)| fields.iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.iter().map(Some))) }
+ else { false }
+},
         None => ret.content.reference == Reference::Unoccupied
-            && ret.content.signature == Maybe::Absent(signature::Absent::Unsigned)
-            && ret.content.body == Maybe::Absent(body::Absent::Hole)
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole)})
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -1161,34 +1431,37 @@ pub fn encode_item(
 ) -> Encoded
 {
     let mut encoder = Encoder::new(arena, layout);
-    let (reference, signature, body) = match layout.items.get(usize::from(ordinal)) {
+    let (reference, declaration) = match layout.items.get(usize::from(ordinal)) {
         | Some(item) => {
-            let declaration = item.declaration();
-            let signature = declaration
-                .signature()
-                .map(|ty| encoder.discover(ArenaNode::ValueType(ty)));
-            let body = declaration
-                .body()
-                .map(|term| encoder.discover(ArenaNode::Value(term)));
+            let declaration = match *(item.declaration().content()) {
+                | gandr_core_checker::DeclarationContent::Value {
+                    ref signature,
+                    ref body,
+                } => DeclarationRoots::Value {
+                    signature: signature.map(|ty| encoder.discover(ArenaNode::ValueType(ty))),
+                    body: body.map(|term| encoder.discover(ArenaNode::Value(term))),
+                },
+                | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+                    DeclarationRoots::Data(encoder.data_roots(signature))
+                },
+            };
             let reference = layout
                 .references
                 .get(usize::from(ordinal))
                 .cloned()
                 .unwrap_or(Reference::Unoccupied);
-            (reference, signature, body)
+            (reference, declaration)
         },
-        | None => (
-            Reference::Unoccupied,
-            Maybe::Absent(signature::Absent::Unsigned),
-            Maybe::Absent(body::Absent::Hole),
-        ),
+        | None => (Reference::Unoccupied, DeclarationRoots::Value {
+            signature: Maybe::Absent(signature::Absent::Unsigned),
+            body: Maybe::Absent(body::Absent::Hole),
+        }),
     };
     encoder.drain();
     Encoded {
         content: ItemContent {
             reference,
-            signature,
-            body,
+            declaration,
             nodes: encoder.nodes,
         },
         sites: Sites(encoder.seen),
@@ -1302,6 +1575,49 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
         index
     }
 
+    /// Discover a whole nominal signature in its canonical root order.
+    ///
+    /// # Specification
+    /// - requires: nothing; unresolved source nodes are admissible.
+    /// - ensures: every parameter and constructor field is discovered once by
+    ///   identity.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shared fields and changed constructor signatures
+    ///   remain distinct.
+    /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+    #[spec(ensures: |ret| ret.parameters.len() == signature.parameters().len()
+        && ret.constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len))
+        && ret.iter().all(|root| usize::from(root) < self.seen.len()))]
+    fn data_roots(
+        &mut self,
+        signature: &gandr_core_term::DataSignature,
+    ) -> DataRoots
+    {
+        let parameters = signature
+            .parameters()
+            .iter()
+            .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+            .collect();
+        let constructors = signature
+            .constructors()
+            .iter()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|&ty| self.discover(ArenaNode::ValueType(ty)))
+                    .collect()
+            })
+            .collect();
+        let kind = self.discover(ArenaNode::ValueType(signature.kind()));
+        DataRoots {
+            parameters,
+            constructors,
+            kind,
+        }
+    }
+
     /// Write every queued node, discovering its children as it is written.
     ///
     /// # Specification
@@ -1393,6 +1709,24 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value {
+            | Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            } => ContentNode::Constructor {
+                datatype: self.discover(ArenaNode::ValueType(datatype)),
+                tag,
+                fields: fields
+                    .iter()
+                    .map(|&field| self.discover(ArenaNode::Value(field)))
+                    .collect(),
+            },
+            | Value::Record(ref fields) => ContentNode::Record(
+                fields
+                    .iter()
+                    .map(|(label, &field)| (label.clone(), self.discover(ArenaNode::Value(field))))
+                    .collect(),
+            ),
             | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
             | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
             | Value::PathProduct(first, second) => {
@@ -1464,6 +1798,22 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *computation {
+            | Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+            } => ContentNode::DataCase {
+                scrutinee: self.discover(ArenaNode::Value(scrutinee)),
+                motive: self.discover(ArenaNode::CompType(motive)),
+                branches: branches
+                    .iter()
+                    .map(|&branch| self.discover(ArenaNode::Computation(branch)))
+                    .collect(),
+            },
+            | Computation::RecordProjection(record, ref label) => ContentNode::RecordProjection(
+                self.discover(ArenaNode::Value(record)),
+                label.clone(),
+            ),
             | Computation::Primitive {
                 primitive,
                 arguments,
@@ -1539,6 +1889,24 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value_type {
+            | ValueType::Data {
+                declaration,
+                ref arguments,
+            } => ContentNode::Data {
+                declaration: self.layout.resolve(declaration),
+                arguments: arguments
+                    .iter()
+                    .map(|&argument| self.discover(ArenaNode::Value(argument)))
+                    .collect(),
+            },
+            | ValueType::Record(ref fields) => ContentNode::RecordType(
+                fields
+                    .iter()
+                    .map(|(label, &field)| {
+                        (label.clone(), self.discover(ArenaNode::ValueType(field)))
+                    })
+                    .collect(),
+            ),
             | ValueType::PathUniverse(source, target) => {
                 let source = self.discover(ArenaNode::Value(source));
                 ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
@@ -1713,6 +2081,46 @@ where
     Image: FnMut(NodeIndex) -> NodeIndex,
 {
     match *node {
+        | ContentNode::Data {
+            ref declaration,
+            ref arguments,
+        } => ContentNode::Data {
+            declaration: declaration.clone(),
+            arguments: arguments.iter().map(|&argument| image(argument)).collect(),
+        },
+        | ContentNode::RecordType(ref fields) => ContentNode::RecordType(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), image(field)))
+                .collect(),
+        ),
+        | ContentNode::Constructor {
+            datatype,
+            tag,
+            ref fields,
+        } => ContentNode::Constructor {
+            datatype: image(datatype),
+            tag,
+            fields: fields.iter().map(|&field| image(field)).collect(),
+        },
+        | ContentNode::Record(ref fields) => ContentNode::Record(
+            fields
+                .iter()
+                .map(|(label, &field)| (label.clone(), image(field)))
+                .collect(),
+        ),
+        | ContentNode::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+        } => ContentNode::DataCase {
+            scrutinee: image(scrutinee),
+            motive: image(motive),
+            branches: branches.iter().map(|&branch| image(branch)).collect(),
+        },
+        | ContentNode::RecordProjection(record, ref label) => {
+            ContentNode::RecordProjection(image(record), label.clone())
+        },
         | ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
         | ContentNode::Primitive(primitive, mut arguments) => {
             for argument in arguments.iter_mut() {
@@ -2067,10 +2475,11 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..)) {
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..))
+            || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
-            reason == seating::Absent::IllSorted || (matches!(*node, ContentNode::Abstract(_)) && reason == seating::Absent::Unplaced)
+            reason == seating::Absent::IllSorted || (matches!(*node, ContentNode::Abstract(_) | ContentNode::Data { .. }) && reason == seating::Absent::Unplaced)
         },
     },
 )]
@@ -2083,6 +2492,31 @@ fn mint_node(
 {
     let ill_sorted = Maybe::Absent(seating::Absent::IllSorted);
     match *node {
+        | ContentNode::RecordType(ref fields) => {
+            let mut minted = BTreeMap::new();
+            for (label, &field) in fields {
+                let Maybe::Present(field) = minted_value_type(states, field)
+                else {
+                    return ill_sorted;
+                };
+                let _previous = minted.insert(label.clone(), field);
+            }
+            Maybe::Present(Minted::ValueType(arena.value_type_record(minted)))
+        },
+        | ContentNode::Data {
+            ref declaration,
+            ref arguments,
+        } => {
+            if !arguments.is_empty() {
+                return Maybe::Absent(seating::Absent::Unseatable);
+            }
+            match place(layout, declaration) {
+                | Maybe::Present(position) => Maybe::Present(Minted::ValueType(
+                    arena.value_type_data(position, Vec::new()),
+                )),
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            }
+        },
         | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
         | ContentNode::UnitType => Maybe::Present(Minted::ValueType(arena.value_type_unit())),
         | ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
@@ -2169,6 +2603,10 @@ fn mint_node(
         },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::PathUniverse(..)
+        | ContentNode::Constructor { .. }
+        | ContentNode::Record(_)
+        | ContentNode::DataCase { .. }
+        | ContentNode::RecordProjection(..)
         | ContentNode::PrimitiveValue(_)
         | ContentNode::Primitive(..)
         | ContentNode::PathRefl(_)
@@ -2287,8 +2725,7 @@ mod tests
     /// - witness: `content::tests::a_shared_node_is_listed_once`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| ret.items().len() == 1
-        && ret.items().first().is_some_and(|item| item.declaration().signature() == signature
-            && item.declaration().body() == body
+        && ret.items().first().is_some_and(|item| matches!(item.declaration().content(), gandr_core_checker::DeclarationContent::Value { signature: held_signature, body: held_body } if *held_signature == signature && *held_body == body)
             && item.declaration().constant() == ConstantIndex::from(0_usize)))]
     fn single(
         arena: CoreArena,
@@ -2575,7 +3012,7 @@ mod tests
         );
         assert_eq!(
             content.signature_type(),
-            Maybe::Present(TypeContent::of_value_type(&program, ty)),
+            Some(TypeContent::of_value_type(&program, ty)),
             "the signature renumbered from its root is the type encoded alone"
         );
     }

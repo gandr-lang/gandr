@@ -496,6 +496,31 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (
+                        &ValueType::Data {
+                            declaration: one,
+                            arguments: ref a,
+                        },
+                        &ValueType::Data {
+                            declaration: other,
+                            arguments: ref b,
+                        },
+                    ) => {
+                        if one != other || a.len() != b.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(a.iter().zip(b).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
+                    | (&ValueType::Record(ref a), &ValueType::Record(ref b)) => {
+                        if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            a.values()
+                                .zip(b.values())
+                                .map(|(a, b)| ConversionGoal::ValueType(*a, *b)),
+                        );
+                    },
                     | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -602,7 +627,9 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_inner, other_inner));
                     },
                     | (
-                        &ValueType::PathUniverse(..)
+                        &ValueType::Data { .. }
+                        | &ValueType::Record(_)
+                        | &ValueType::PathUniverse(..)
                         | &ValueType::Base(_)
                         | &ValueType::Unit
                         | &ValueType::Empty
@@ -703,6 +730,15 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (&Value::Constructor { datatype: a, tag: one, fields: ref xs }, &Value::Constructor { datatype: b, tag: other, fields: ref ys }) => {
+                        if one != other || xs.len() != ys.len() { return Convertibility::Distinct; }
+                        stack.push(ConversionGoal::ValueType(a, b));
+                        stack.extend(xs.iter().zip(ys).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
+                    | (&Value::Record(ref a), &Value::Record(ref b)) => {
+                        if a.len() != b.len() || !a.keys().eq(b.keys()) { return Convertibility::Distinct; }
+                        stack.extend(a.values().zip(b.values()).map(|(a, b)| ConversionGoal::Value(*a, *b)));
+                    },
                     | (&Value::SessionPath { path_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionPath { path_type: other_type, payload_paths: other_paths, evidence: ref other }) => {
                         // Relation proof pairs are erased; payload translator assignment is not.
                         if one.payloads != other.payloads { return Convertibility::Distinct; }
@@ -798,7 +834,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::Unit
@@ -826,6 +862,38 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (
+                        &Computation::DataCase {
+                            scrutinee: a,
+                            motive: c,
+                            branches: ref xs,
+                        },
+                        &Computation::DataCase {
+                            scrutinee: b,
+                            motive: d,
+                            branches: ref ys,
+                        },
+                    ) => {
+                        if xs.len() != ys.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Value(a, b));
+                        stack.push(ConversionGoal::CompType(c, d));
+                        stack.extend(
+                            xs.iter()
+                                .zip(ys)
+                                .map(|(a, b)| ConversionGoal::Computation(*a, *b)),
+                        );
+                    },
+                    | (
+                        &Computation::RecordProjection(a, ref one),
+                        &Computation::RecordProjection(b, ref other),
+                    ) => {
+                        if one != other {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Value(a, b));
+                    },
                     | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -869,7 +937,9 @@ fn converge(
                         stack.push(ConversionGoal::Computation(one_right, other_right));
                     },
                     | (
-                        &Computation::Transport(..)
+                        &Computation::DataCase { .. }
+                        | &Computation::RecordProjection(..)
+                        | &Computation::Transport(..)
                         | &Computation::Lambda(_)
                         | &Computation::Application(..)
                         | &Computation::Return(_)

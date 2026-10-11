@@ -141,10 +141,14 @@ enum Pairing
 {
     /// Two value types.
     Values(ValueTypeId, ValueTypeId),
+    /// Directional structural record inclusion; other types remain invariant.
+    Assignable(ValueTypeId, ValueTypeId),
     /// Two computation types.
     Comps(CompTypeId, CompTypeId),
     /// Two codes, each read at its head.
     Codes(ValueId, ValueId),
+    /// Invariant term-valued indices, with the kernel's structural equality.
+    Terms(ValueId, ValueId),
 }
 
 /// The decision's verdict on a pair.
@@ -256,7 +260,7 @@ pub fn value_bridge(
             expected: wanted,
         });
     }
-    match convert(context, Pairing::Values(found, wanted))? {
+    match convert(context, Pairing::Assignable(found, wanted))? {
         | Agreement::Convertible => Ok(()),
         | Agreement::Apart => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at,
@@ -400,6 +404,8 @@ pub fn decode_bridge(
             }
         },
         | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
         | ValueTypeView::Integer
         | ValueTypeView::String
@@ -456,10 +462,10 @@ pub fn decode_bridge(
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
 #[spec(ensures: |ret| match root {
-    | Pairing::Values(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Values(left, right) | Pairing::Assignable(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) if left == right => ret == Ok(Agreement::Convertible),
-    | Pairing::Codes(left, right) if left == right => ret == Ok(Agreement::Convertible),
-    | Pairing::Values(..) | Pairing::Comps(..) | Pairing::Codes(..) => true,
+    | Pairing::Codes(left, right) | Pairing::Terms(left,right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Values(..) | Pairing::Assignable(..) | Pairing::Comps(..) | Pairing::Codes(..) | Pairing::Terms(..) => true,
 })]
 fn convert(
     context: &mut CheckingContext<'_>,
@@ -470,14 +476,38 @@ fn convert(
     let mut met = BTreeSet::new();
     while let Some(pairing) = pending.pop() {
         let reflexive = match pairing {
-            | Pairing::Values(left, right) => left == right,
+            | Pairing::Values(left, right) | Pairing::Assignable(left, right) => left == right,
             | Pairing::Comps(left, right) => left == right,
-            | Pairing::Codes(left, right) => left == right,
+            | Pairing::Codes(left, right) | Pairing::Terms(left, right) => left == right,
         };
         if reflexive || !met.insert(pairing) {
             continue;
         }
         let agrees = match pairing {
+            | Pairing::Terms(left, right) => {
+                gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                    == gandr_core_term::CertificateEquality::Equal
+            },
+            | Pairing::Assignable(left, right) => {
+                let left = context.whnf_value_type(left)?;
+                let right = context.whnf_value_type(right)?;
+                match (
+                    value_type_view(context.arena(), left)?,
+                    value_type_view(context.arena(), right)?,
+                ) {
+                    | (ValueTypeView::Record(found), ValueTypeView::Record(wanted)) => {
+                        for (label, &expected) in wanted {
+                            let Some(&synthesised) = found.get(label)
+                            else {
+                                return Ok(Agreement::Apart);
+                            };
+                            pending.push(Pairing::Assignable(synthesised, expected));
+                        }
+                    },
+                    | _ => pending.push(Pairing::Values(left, right)),
+                }
+                true
+            },
             | Pairing::Values(left, right) => {
                 let left = context.whnf_value_type(left)?;
                 let right = context.whnf_value_type(right)?;
@@ -485,6 +515,37 @@ fn convert(
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
                 ) {
+                    | (
+                        ValueTypeView::Data {
+                            declaration: a,
+                            arguments: aa,
+                        },
+                        ValueTypeView::Data {
+                            declaration: b,
+                            arguments: right_arguments,
+                        },
+                    ) => {
+                        if a != b || aa.len() != right_arguments.len() {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            aa.iter()
+                                .zip(right_arguments)
+                                .map(|(&a, &b)| Pairing::Terms(a, b)),
+                        );
+                        true
+                    },
+                    | (ValueTypeView::Record(a), ValueTypeView::Record(b)) => {
+                        if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                            return Ok(Agreement::Apart);
+                        }
+                        pending.extend(
+                            a.values()
+                                .zip(b.values())
+                                .map(|(&a, &b)| Pairing::Values(a, b)),
+                        );
+                        true
+                    },
                     | (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
                         pending.push(Pairing::Codes(a, c));
                         pending.push(Pairing::Codes(b, d));
@@ -557,6 +618,8 @@ fn convert(
                     },
                     | (
                         ValueTypeView::PathUniverse(..)
+                        | ValueTypeView::Data { .. }
+                        | ValueTypeView::Record(_)
                         | ValueTypeView::Sum(..)
                         | ValueTypeView::Integer
                         | ValueTypeView::String
@@ -636,67 +699,149 @@ fn convert(
                         context
                             .arena()
                             .value(code)
-                            .cloned()
                             .ok_or(CheckRefusal::DanglingNode {
                                 node: CoreNode::Term(TermNode::Value(code)),
                             })
                     };
-                    match (read(left)?, read(right)?) {
-                        | (
-                            Value::Variable {
-                                zone: left_zone,
-                                index: left_index,
-                            },
-                            Value::Variable {
-                                zone: right_zone,
-                                index: right_index,
-                            },
-                        ) => left_zone == right_zone && left_index == right_index,
-                        | (Value::Constant(left_constant), Value::Constant(right_constant)) => {
+                    {
+                        let (matched_left_value, matched_right_value) = (read(left)?, read(right)?);
+                        if (matches!(*matched_left_value, Value::Unit)
+                            && matches!(*matched_right_value, Value::Unit))
+                        {
+                            true
+                        }
+                        else if let Value::Literal(ref a) = *matched_left_value
+                            && let Value::Literal(ref b) = *matched_right_value
+                        {
+                            a == b
+                        }
+                        else if let Value::Pair(ref a, ref b) = *matched_left_value
+                            && let Value::Pair(ref c, ref d) = *matched_right_value
+                        {
+                            {
+                                pending.extend([Pairing::Codes(*a, *c), Pairing::Codes(*b, *d)]);
+                                true
+                            }
+                        }
+                        else if let Value::Injection(ref a, ref av) = *matched_left_value
+                            && let Value::Injection(ref b, ref bv) = *matched_right_value
+                        {
+                            {
+                                pending.push(Pairing::Codes(*av, *bv));
+                                a == b
+                            }
+                        }
+                        else if let Value::Constructor {
+                            datatype: ref a,
+                            tag: ref at,
+                            fields: ref af,
+                        } = *matched_left_value
+                            && let Value::Constructor {
+                                datatype: ref b,
+                                tag: ref bt,
+                                fields: ref bf,
+                            } = *matched_right_value
+                        {
+                            {
+                                if at != bt || af.len() != bf.len() {
+                                    return Ok(Agreement::Apart);
+                                }
+                                pending.push(Pairing::Values(*a, *b));
+                                pending
+                                    .extend(af.iter().zip(bf).map(|(&a, &b)| Pairing::Codes(a, b)));
+                                true
+                            }
+                        }
+                        else if let Value::Record(ref a) = *matched_left_value
+                            && let Value::Record(ref b) = *matched_right_value
+                        {
+                            {
+                                if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                                    return Ok(Agreement::Apart);
+                                }
+                                pending.extend(
+                                    a.values()
+                                        .zip(b.values())
+                                        .map(|(&a, &b)| Pairing::Codes(a, b)),
+                                );
+                                true
+                            }
+                        }
+                        else if let Value::Variable {
+                            zone: ref left_zone,
+                            index: ref left_index,
+                        } = *matched_left_value
+                            && let Value::Variable {
+                                zone: ref right_zone,
+                                index: ref right_index,
+                            } = *matched_right_value
+                        {
+                            left_zone == right_zone && left_index == right_index
+                        }
+                        else if let Value::Constant(ref left_constant) = *matched_left_value
+                            && let Value::Constant(ref right_constant) = *matched_right_value
+                        {
                             left_constant == right_constant
-                        },
-                        | (Value::Quote(left_quoted), Value::Quote(right_quoted)) => {
-                            pending.push(Pairing::Values(left_quoted, right_quoted));
-                            true
-                        },
-                        | (
-                            Value::QuoteComputation(left_quoted),
-                            Value::QuoteComputation(right_quoted),
-                        ) => {
-                            pending.push(Pairing::Comps(left_quoted, right_quoted));
-                            true
-                        },
-                        | (
-                            Value::StaticApplication(left_head, left_argument),
-                            Value::StaticApplication(right_head, right_argument),
-                        ) => {
-                            pending.push(Pairing::Codes(left_argument, right_argument));
-                            pending.push(Pairing::Codes(left_head, right_head));
-                            true
-                        },
-                        | (Value::StaticLambda(left_body), Value::StaticLambda(right_body)) => {
-                            pending.push(Pairing::Codes(left_body, right_body));
-                            true
-                        },
-                        | (
-                            Value::PathRefl(_)
-                            | Value::Primitive { .. }
-                            | Value::PathProduct(..)
-                            | Value::PathEquiv { .. }
-                            | Value::Variable { .. }
-                            | Value::Constant(_)
-                            | Value::Unit
-                            | Value::Literal(_)
-                            | Value::Pair(..)
-                            | Value::Injection(..)
-                            | Value::Thunk(_)
-                            | Value::Lift { .. }
-                            | Value::Quote(_)
-                            | Value::QuoteComputation(_)
-                            | Value::StaticApplication(..)
-                            | Value::StaticLambda(_),
-                            _,
-                        ) => false,
+                        }
+                        else if let Value::Quote(ref left_quoted) = *matched_left_value
+                            && let Value::Quote(ref right_quoted) = *matched_right_value
+                        {
+                            {
+                                pending.push(Pairing::Values(*left_quoted, *right_quoted));
+                                true
+                            }
+                        }
+                        else if let Value::QuoteComputation(ref left_quoted) = *matched_left_value
+                            && let Value::QuoteComputation(ref right_quoted) = *matched_right_value
+                        {
+                            {
+                                pending.push(Pairing::Comps(*left_quoted, *right_quoted));
+                                true
+                            }
+                        }
+                        else if let Value::StaticApplication(ref left_head, ref left_argument) =
+                            *matched_left_value
+                            && let Value::StaticApplication(ref right_head, ref right_argument) =
+                                *matched_right_value
+                        {
+                            {
+                                pending.push(Pairing::Codes(*left_argument, *right_argument));
+                                pending.push(Pairing::Codes(*left_head, *right_head));
+                                true
+                            }
+                        }
+                        else if let Value::StaticLambda(ref left_body) = *matched_left_value
+                            && let Value::StaticLambda(ref right_body) = *matched_right_value
+                        {
+                            {
+                                pending.push(Pairing::Codes(*left_body, *right_body));
+                                true
+                            }
+                        }
+                        else {
+                            {
+                                match *matched_left_value {
+                                    | Value::PathRefl(_)
+                                    | Value::Constructor { .. }
+                                    | Value::Record(_)
+                                    | Value::Primitive { .. }
+                                    | Value::PathProduct(..)
+                                    | Value::PathEquiv { .. }
+                                    | Value::Variable { .. }
+                                    | Value::Constant(_)
+                                    | Value::Unit
+                                    | Value::Literal(_)
+                                    | Value::Pair(..)
+                                    | Value::Injection(..)
+                                    | Value::Thunk(_)
+                                    | Value::Lift { .. }
+                                    | Value::Quote(_)
+                                    | Value::QuoteComputation(_)
+                                    | Value::StaticApplication(..)
+                                    | Value::StaticLambda(_) => false,
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -824,9 +969,11 @@ mod tests
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         for pairing in pairs {
             let swapped = match pairing {
+                | Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
                 | Pairing::Values(left, right) => Pairing::Values(right, left),
                 | Pairing::Comps(left, right) => Pairing::Comps(right, left),
                 | Pairing::Codes(left, right) => Pairing::Codes(right, left),
+                | Pairing::Terms(left, right) => Pairing::Terms(right, left),
             };
             assert_eq!(
                 convert(&mut context, pairing),

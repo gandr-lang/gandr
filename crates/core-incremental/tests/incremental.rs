@@ -77,14 +77,17 @@ use crate::generate::program_and_edits;
 fn string_type() -> TypeContent
 {
     let program = lower(&[ascribed(Name("s"), Ascription::Text, Body::Hole)]);
-    let Some(Maybe::Present(ty)) = program
+    let Some(&gandr_core_checker::DeclarationContent::Value {
+        signature: Maybe::Present(ref ty),
+        ..
+    }) = program
         .items()
         .first()
-        .map(|item| item.declaration().signature())
+        .map(|item| item.declaration().content())
     else {
         panic!("the fixture is ascribed");
     };
-    TypeContent::of_value_type(&program, ty)
+    TypeContent::of_value_type(&program, *ty)
 }
 
 /// The base checkpoints of `statements`, replacing every row named `at`.

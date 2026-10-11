@@ -699,7 +699,7 @@ impl<'text> Submission<'text>
                 matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted)),
                 |declaration| match declaration.produced() {
                     Produced::Judged(
-                        Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                        Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
                     ) => matches!(ret, Maybe::Present(_)),
                     Produced::Judged(Verdict::Owed(_)) => {
                         matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
@@ -768,7 +768,7 @@ impl<'text> Submission<'text>
 /// - witness: `tests::session::evaluation_declines_missing_and_refused_items`
 #[spec(
     ensures: |ret| match declaration.produced() {
-    Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+    Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
         matches!(ret, Maybe::Present(_))
     }
     Produced::Judged(Verdict::Owed(_)) => {
@@ -788,9 +788,9 @@ pub fn evaluate<'text>(
 ) -> Maybe<Evaluation<'text>, evaluation::Absent>
 {
     match declaration.produced() {
-        | Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
-            Maybe::Present(program.evaluate(declaration.constant()))
-        },
+        | Produced::Judged(
+            Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+        ) => Maybe::Present(program.evaluate(declaration.constant())),
         | Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
         | Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
             Maybe::Absent(evaluation::Absent::Unaccepted)

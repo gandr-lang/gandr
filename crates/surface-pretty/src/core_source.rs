@@ -137,10 +137,10 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        | (None, Former::Unreadable)
-        | (Some(&Value::Unit), Former::Unit)
-        | (Some(&Value::Thunk(_)), Former::Thunk)
-        | (Some(&Value::Lift { .. }), Former::ValueLift) => true,
+        (Some(&Value::Constructor { .. } | &Value::Record(_)) | None,
+Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
+(Some(&Value::Thunk(_)), Former::Thunk) |
+(Some(&Value::Lift { .. }), Former::ValueLift) => true,
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
         | (Some(&Value::Pair(first, second)), Former::Pair(actual_first, actual_second))
@@ -165,6 +165,8 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value {
+            // The source grammar has no native data or record reader.
+            | Value::Constructor { .. } | Value::Record(_) => Former::Unreadable,
             | Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
@@ -220,9 +222,9 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        | (None, Former::Unreadable)
-        | (Some(&ValueType::Unit), Former::UnitType)
-        | (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
+        (Some(&ValueType::Data { .. } | &ValueType::Record(_)) | None,
+Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
+(Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
         | (Some(&ValueType::Product(first, second)), Former::Product(actual_first, actual_second))
         | (Some(&ValueType::Sum(first, second)), Former::Sum(actual_first, actual_second)) =>
@@ -248,6 +250,8 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value_type {
+            // These classifiers have no spelling in the source grammar.
+            | ValueType::Data { .. } | ValueType::Record(_) => Former::Unreadable,
             | ValueType::PathUniverse(source, target) => {
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
@@ -378,6 +382,8 @@ impl Source for CoreSource<'_>
                 | Some(
                     &(Computation::Transport(..)
                     | Computation::Primitive { .. }
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..)
                     | Computation::Lambda(_)
                     | Computation::Application(..)
                     | Computation::Return(_)

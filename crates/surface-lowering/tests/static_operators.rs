@@ -308,7 +308,8 @@ mod static_operators
                         (declared, Some(digest(AnyNode::Value(body))))
                     },
                     | DeclarationContent::Axiom { declared } => (declared, None),
-                    | DeclarationContent::AbstractType { kind } => (kind, None),
+                    | DeclarationContent::AbstractType { kind }
+                    | DeclarationContent::Data { kind, .. } => (kind, None),
                 };
                 (segments, digest(AnyNode::ValueType(declared)), defined)
             })

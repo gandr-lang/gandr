@@ -199,6 +199,10 @@ pub enum FocusRefusal
 {
     /// Native universe transport has no command-IL destructor.
     UniverseTransport(ComputationId),
+    /// Native data and record values have no command-IL producer form.
+    NativeValue(ValueId),
+    /// Native data case and record projection have no command-IL destructor.
+    NativeElimination(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -231,6 +235,12 @@ impl fmt::Display for FocusRefusal
         match *self {
             | Self::UniverseTransport(_) => {
                 f.write_str("universe transport has no command-IL destructor")
+            },
+            | Self::NativeValue(_) => {
+                f.write_str("native data and records have no command-IL producer")
+            },
+            | Self::NativeElimination(_) => {
+                f.write_str("native data and record elimination has no command-IL destructor")
             },
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
@@ -799,6 +809,9 @@ impl<'run> Focusing<'run>
     {
         let node = self.core.value(id).ok_or(FocusRefusal::DanglingValue(id))?;
         let leaf = match *node {
+            | Value::Constructor { .. } | Value::Record(_) => {
+                return Err(FocusRefusal::NativeValue(id));
+            },
             | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
             | Value::Constant(constant) => ProducerNode::Constant(constant),
             | Value::Literal(ref literal) => ProducerNode::Literal(literal.clone()),
@@ -886,6 +899,9 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
+            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                return Err(FocusRefusal::NativeElimination(id));
+            },
             | Computation::Primitive {
                 primitive,
                 arguments,

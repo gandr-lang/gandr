@@ -85,16 +85,29 @@ impl From<OriginToken> for usize
     }
 }
 
+/// The two disjoint declaration judgments.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum DeclarationContent
+{
+    /// An optionally ascribed value or an explicit hole.
+    Value
+    {
+        /// The declared value type, if any.
+        signature: Maybe<ValueTypeId, signature::Absent>,
+        /// The defining value, or an explicit hole.
+        body: Maybe<ValueId, body::Absent>,
+    },
+    /// A native nominal signature; it is neither a value body nor a hole.
+    Data(alloc::sync::Arc<gandr_core_term::DataSignature>),
+}
 /// One declaration, as the judgement reads it.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Declaration
 {
     /// The admission position the declaration takes.
     constant: ConstantIndex,
-    /// The declared type, or why there is none.
-    signature: Maybe<ValueTypeId, signature::Absent>,
-    /// The body, or why there is none.
-    body: Maybe<ValueId, body::Absent>,
+    /// The value declaration or native nominal signature.
+    content: DeclarationContent,
     /// The producer's handle, echoed back.
     origin: OriginToken,
 }
@@ -119,16 +132,11 @@ impl Declaration
     ///   and admission order are obligations of judgement, not construction.
     /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
     /// - witness: `module::tests::an_admission_out_of_order_is_refused`
-    #[spec(ensures: |ret| ret.origin.0 == origin.0
-        && matches!((ret.signature, signature),
-            (Maybe::Present(_), Maybe::Present(_))
-                | (Maybe::Absent(signature::Absent::Unsigned), Maybe::Absent(signature::Absent::Unsigned)))
-        && matches!((ret.body, body),
-            (Maybe::Present(_), Maybe::Present(_))
-                | (Maybe::Absent(body::Absent::Hole), Maybe::Absent(body::Absent::Hole))))]
+    #[spec(ensures: |ret| ret.constant == constant && ret.origin == origin
+        && matches!(ret.content, DeclarationContent::Value { signature: declared, body: defined } if declared == signature && defined == body))]
     #[inline]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         constant: ConstantIndex,
         signature: Maybe<ValueTypeId, signature::Absent>,
         body: Maybe<ValueId, body::Absent>,
@@ -137,8 +145,7 @@ impl Declaration
     {
         Self {
             constant,
-            signature,
-            body,
+            content: DeclarationContent::Value { signature, body },
             origin,
         }
     }
@@ -154,24 +161,37 @@ impl Declaration
         self.constant
     }
 
-    /// The declared type, or why there is none.
+    /// The value declaration or native nominal signature.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn signature(&self) -> Maybe<ValueTypeId, signature::Absent>
+    #[must_use]
+    pub const fn content(&self) -> &DeclarationContent
     {
-        self.signature
+        &self.content
     }
 
-    /// The body, or why there is none.
+    /// A nominal declaration at its own admission position.
+    ///
+    /// The shared immutable signature is retained by the declaration, context
+    /// and report without copying its parameter and constructor telescopes.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn body(&self) -> Maybe<ValueId, body::Absent>
+    #[must_use]
+    pub fn data(
+        constant: ConstantIndex,
+        signature: gandr_core_term::DataSignature,
+        origin: OriginToken,
+    ) -> Self
     {
-        self.body
+        Self {
+            constant,
+            origin,
+            content: DeclarationContent::Data(alloc::sync::Arc::new(signature)),
+        }
     }
 
     /// The producer's handle.

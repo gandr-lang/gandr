@@ -3,7 +3,6 @@
 The interactive session: each revision of one source lowered, judged exactly as `gandr check` judges it, resumed through the incremental checker and checkpointed.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -18,6 +17,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The kernel checkpoint](#the-kernel-checkpoint)
 - [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
 - [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
+- [Native declaration snapshots](#native-declaration-snapshots)
 - [Native universe-path content](#native-universe-path-content)
 - [Localization descends extents](#localization-descends-extents)
 - [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
@@ -25,7 +25,6 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
 - [Contract evidence and its limits](#contract-evidence-and-its-limits)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -134,9 +133,17 @@ The session keeps the import rows and alias scope of the last revision the lower
 
 ## Edits are a diff of the lowered core
 
-Each accepted submission carries the `EditScript` from the latest accepted revision: the `diff` of their `Snapshot`s. A snapshot reads each item's signature and body out of the arena as a `Tree` of the incremental checker's `ContentNode`s, numbered breadth-first, each constant read as the `Reference` it resolves to, so two revisions lowered into two arenas compare node by node. Items align by reference — key and occurrence — keeping the largest set whose order both revisions share; each kept pair's bodies are walked together, a changed literal, variable or constant becoming one in-place action and any other change one `Replace` of the old subtree. `apply` of a diff to the old items reproduces the new ones exactly: soundness is total, localization is partial. A path names an item and the child slots from its body's root; an action anchored in the old revision carries the old ordinal, an insertion the new one.
+Each accepted submission carries the `EditScript` from the latest accepted revision: the `diff` of their `Snapshot`s. A snapshot retains each item's `DeclarationTree`: value signature and body roots, or a complete native data signature. Each root reads out of the arena as a `Tree` of the incremental checker's `ContentNode`s, numbered breadth-first, each constant read as the `Reference` it resolves to, so two revisions lowered into two arenas compare node by node. Items align by reference — key and occurrence — keeping the largest set whose order both revisions share; each kept pair's bodies are walked together, a changed literal, variable or constant becoming one in-place action and any other change one `Replace` of the old subtree. `apply` of a diff to the old items reproduces the new ones exactly: soundness is total, localization is partial. A path names an item and the child slots from its body's root; an action anchored in the old revision carries the old ordinal, an insertion the new one.
 
 The recorded design is this contract over the prior implementation's named surface core, with actions for grades, injection sides, binder names and annotations, and items aligned by a longest common subsequence of their names in an `n·m` table. The core here carries none of those payloads — binders are de Bruijn indices, so renaming one reconstructs to no action — and its actions are the core's own leaves. Because references are unique within a revision, the longest common subsequence is the longest increasing run of matched old ordinals, which patience sorting finds in `n log n`. The alternatives were a text diff, which names bytes rather than terms, and a diff of content-addressed tables, which numbers nodes and loses the path a face surfaces. The choice reverses when the lowering emits structured edits itself; the session would then forward them.
+
+## Native declaration snapshots
+
+`DeclarationTree::Value` and `DeclarationTree::Data` preserve distinct declaration categories. Data snapshots retain their kind, parameter telescope and every constructor field. A schema or category change replaces the item through delete/insert; native term children still receive localized edits. Record labels, constructor tags, nominal identities and all variadic children participate in agreement. The child reader is an unbounded borrowed iterator, not a fixed three-child buffer.
+
+`edit::native_snapshots_preserve_schema_and_fourth_children` checks literal edits beneath fourth nominal arguments, constructor fields, case branches and record fields, plus schema and category replacements; applying each diff reconstructs the exact new snapshot. Native declarations have no runtime body: evaluation returns `UnrunnableData`. No source notation or command-IL implementation is inferred from retaining this programmatic content.
+
+**Choice.** Extend the existing snapshot and diff contract rather than maintain a second nominal identity table. **Reversal.** A source reader or runtime consumer must add its own syntax and execution rules before these native items become runnable from the session.
 
 ## Native universe-path content
 
@@ -162,13 +169,13 @@ The prior implementation's goals were holes inside bodies, each with its expecte
 
 ## A hole-free item is evaluated
 
-`Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions.
+`Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions. A native data declaration is not a runtime value and returns `evaluation::Absent::DataUnrunnable`.
 
 The prior implementation evaluated a top-level expression and reported a definition with its type alone. The fragment has no top-level expression, so the item evaluated is a declaration, and the loop prints a value line under each checked one. The alternative was evaluating nothing until expressions exist, which leaves the loop unable to show a value. The choice reverses when the surface gains a top-level expression: that item is the one evaluated, and a definition returns to its type line alone.
 
 ## Contract evidence and its limits
 
-Nontrivial callable items carry executable `#[spec(...)]` predicates and bounded adequacy witnesses. The predicates observe existing state: ordered rows, preserved payloads, exact absence reasons, source bounds, canonical tree numbering, and session transitions. They do not repeat parsing, callback invocation, evaluation, or storage effects. The private child iterator exposes its existing concrete type so its predicate can inspect the borrowed prefix; the public API is unchanged.
+Nontrivial callable items carry executable `#[spec(...)]` predicates and bounded adequacy witnesses. The predicates observe existing state: ordered rows, preserved payloads, exact absence reasons, source bounds, canonical tree numbering, and session transitions. They do not repeat parsing, callback invocation, evaluation, or storage effects. The private child iterator exposes its borrowed position to its predicates; `DeclarationTree` makes native declaration categories explicit in the snapshot API.
 
 Declarations with no callable boundary, opaque strategy constructors, formatter sinks, best-effort cleanup, and the consumed-input differential helper state precise executable exemptions. Their observable obligations are exercised where the inputs and effects exist. Every exemption names that boundary rather than treating a non-const comparison as an exemption.
 

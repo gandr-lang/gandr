@@ -35,11 +35,16 @@
 //! equality: two structurally equal subterms need not share an id, so every use
 //! site either compares inline leaf payloads or resolves ids explicitly.
 
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
 use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 
@@ -143,6 +148,18 @@ pub enum Value
     /// eliminating a static Pi. Applied to a static lambda it is a static
     /// redex; applied to anything else it stands as a neutral spine.
     StaticApplication(ValueId, ValueId),
+    /// A constructor of a nominal application, with declaration-ordered fields.
+    Constructor
+    {
+        /// The complete nominal classifier, including its arguments.
+        datatype: ValueTypeId,
+        /// The constructor's ordinal in its declaration.
+        tag: ConstructorTag,
+        /// Ordinary field values in signature order.
+        fields: Vec<ValueId>,
+    },
+    /// A structural record, in exact UTF-8 label order.
+    Record(BTreeMap<FieldLabel, ValueId>),
 }
 
 /// A computation: the negative fragment of the core term vocabulary.
@@ -183,12 +200,34 @@ pub enum Computation
         /// The right branch, checked with the right summand bound.
         on_right: ComputationId,
     },
+    /// A nominal case with a motive under one scrutinee binder.
+    DataCase
+    {
+        /// The nominal value being eliminated.
+        scrutinee: ValueId,
+        /// Result type under one intuitionistic scrutinee binder.
+        motive: CompTypeId,
+        /// One ordinary function over the constructor's fields per tag.
+        branches: Vec<ComputationId>,
+    },
+    /// Select a named field, returning it in the computation fragment.
+    RecordProjection(ValueId, FieldLabel),
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
+    /// A generative nominal head applied to its declared parameter telescope.
+    Data
+    {
+        /// Admission position of the defining signature; never a carrier alias.
+        declaration: ConstantIndex,
+        /// Quoted type or ordinary value arguments, in telescope order.
+        arguments: Vec<ValueId>,
+    },
+    /// A structural record classifier, in exact UTF-8 label order.
+    Record(BTreeMap<FieldLabel, ValueTypeId>),
     /// Certified equivalences between two quoted closed first-order codes.
     PathUniverse(ValueId, ValueId),
     /// A rigid base-type atom.
@@ -368,63 +407,136 @@ pub fn equal_certificate_syntax(
                 else {
                     return CertificateEquality::Different;
                 };
-                match (a, b) {
-                    | (&Value::PathRefl(a), &Value::PathRefl(b))
-                    | (&Value::StaticLambda(a), &Value::StaticLambda(b)) => pending.push(V(a, b)),
-                    | (&Value::PathProduct(a, b), &Value::PathProduct(c, d))
-                    | (&Value::Pair(a, b), &Value::Pair(c, d))
-                    | (&Value::StaticApplication(a, b), &Value::StaticApplication(c, d)) => {
-                        pending.extend([V(a, c), V(b, d)]);
-                    },
-                    | (
-                        &Value::PathEquiv {
-                            path_type: left_type,
-                            forward: left_forward,
-                            backward: left_backward,
-                            ..
-                        },
-                        &Value::PathEquiv {
+                {
+                    let (matched_left_value, matched_right_value) = (a, b);
+                    if let Value::Constructor {
+                        datatype: a,
+                        tag: ta,
+                        fields: ref fa,
+                    } = *matched_left_value
+                        && let Value::Constructor {
+                            datatype: b,
+                            tag: tb,
+                            fields: ref fb,
+                        } = *matched_right_value
+                        && (ta == tb && fa.len() == fb.len())
+                    {
+                        {
+                            pending.push(VT(a, b));
+                            pending.extend(fa.iter().zip(fb).map(|(a, b)| V(*a, *b)));
+                        }
+                    }
+                    else if let Value::Record(ref a) = *matched_left_value
+                        && let Value::Record(ref b) = *matched_right_value
+                        && (a.len() == b.len() && a.keys().eq(b.keys()))
+                    {
+                        {
+                            pending.extend(a.values().zip(b.values()).map(|(a, b)| V(*a, *b)));
+                        }
+                    }
+                    else if let Value::PathRefl(a) = *matched_left_value
+                        && let Value::PathRefl(b) = *matched_right_value
+                    {
+                        pending.push(V(a, b));
+                    }
+                    else if let Value::StaticLambda(a) = *matched_left_value
+                        && let Value::StaticLambda(b) = *matched_right_value
+                    {
+                        pending.push(V(a, b));
+                    }
+                    else if let Value::PathProduct(a, b) = *matched_left_value
+                        && let Value::PathProduct(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.extend([V(a, c), V(b, d)]);
+                        }
+                    }
+                    else if let Value::Pair(a, b) = *matched_left_value
+                        && let Value::Pair(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.extend([V(a, c), V(b, d)]);
+                        }
+                    }
+                    else if let Value::StaticApplication(a, b) = *matched_left_value
+                        && let Value::StaticApplication(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.extend([V(a, c), V(b, d)]);
+                        }
+                    }
+                    else if let Value::PathEquiv {
+                        path_type: left_type,
+                        forward: left_forward,
+                        backward: left_backward,
+                        ..
+                    } = *matched_left_value
+                        && let Value::PathEquiv {
                             path_type: right_type,
                             forward: right_forward,
                             backward: right_backward,
                             ..
-                        },
-                    ) => pending.extend([
-                        VT(left_type, right_type),
-                        V(left_forward, right_forward),
-                        V(left_backward, right_backward),
-                    ]),
-                    | (&Value::Injection(s, a), &Value::Injection(t, b)) if s == t => {
-                        pending.push(V(a, b));
-                    },
-                    | (&Value::Thunk(a), &Value::Thunk(b)) => pending.push(C(a, b)),
-                    | (
-                        &Value::Primitive {
-                            primitive: left, ..
-                        },
-                        &Value::Primitive {
-                            primitive: right, ..
-                        },
-                    ) if left == right => {},
-                    | (
-                        &Value::Lift { ref target, body },
-                        &Value::Lift {
+                        } = *matched_right_value
+                    {
+                        pending.extend([
+                            VT(left_type, right_type),
+                            V(left_forward, right_forward),
+                            V(left_backward, right_backward),
+                        ]);
+                    }
+                    else if let Value::Injection(s, a) = *matched_left_value
+                        && let Value::Injection(t, b) = *matched_right_value
+                        && (s == t)
+                    {
+                        {
+                            pending.push(V(a, b));
+                        }
+                    }
+                    else if let Value::Thunk(a) = *matched_left_value
+                        && let Value::Thunk(b) = *matched_right_value
+                    {
+                        pending.push(C(a, b));
+                    }
+                    else if let Value::Primitive { primitive: a, .. } = *matched_left_value
+                        && let Value::Primitive { primitive: b, .. } = *matched_right_value
+                        && (a == b)
+                    {
+                        {}
+                    }
+                    else if let Value::Lift { ref target, body } = *matched_left_value
+                        && let Value::Lift {
                             target: ref other,
                             body: right,
-                        },
-                    ) if target == other => pending.push(V(body, right)),
-                    | (&Value::Quote(a), &Value::Quote(b)) => pending.push(VT(a, b)),
-                    | (&Value::QuoteComputation(a), &Value::QuoteComputation(b)) => {
-                        pending.push(CT(a, b));
-                    },
-                    | (
-                        &(Value::Variable { .. }
-                        | Value::Constant(_)
-                        | Value::Unit
-                        | Value::Literal(_)),
-                        _,
-                    ) if a == b => {},
-                    | _ => return CertificateEquality::Different,
+                        } = *matched_right_value
+                        && (target == other)
+                    {
+                        pending.push(V(body, right));
+                    }
+                    else if let Value::Quote(a) = *matched_left_value
+                        && let Value::Quote(b) = *matched_right_value
+                    {
+                        pending.push(VT(a, b));
+                    }
+                    else if let Value::QuoteComputation(a) = *matched_left_value
+                        && let Value::QuoteComputation(b) = *matched_right_value
+                    {
+                        {
+                            pending.push(CT(a, b));
+                        }
+                    }
+                    else if (matches!(
+                        *matched_left_value,
+                        Value::Variable { .. }
+                            | Value::Constant(_)
+                            | Value::Unit
+                            | Value::Literal(_)
+                    ) && (a == b))
+                    {
+                        {}
+                    }
+                    else {
+                        return CertificateEquality::Different;
+                    }
                 }
             },
             | C(a, b) => {
@@ -434,17 +546,38 @@ pub fn equal_certificate_syntax(
                 };
                 match (a, b) {
                     | (
-                        &Computation::Primitive {
-                            primitive: left,
-                            arguments: ref first,
+                        &Computation::DataCase {
+                            scrutinee: a,
+                            motive: am,
+                            branches: ref ab,
                         },
-                        &Computation::Primitive {
-                            primitive: right,
-                            arguments: ref second,
+                        &Computation::DataCase {
+                            scrutinee: b,
+                            motive: bm,
+                            branches: ref bb,
                         },
-                    ) if left == right && first.len() == second.len() => {
-                        pending.extend(first.iter().zip(second.iter()).map(|(a, b)| V(*a, *b)));
+                    ) if ab.len() == bb.len() => {
+                        pending.extend([V(a, b), CT(am, bm)]);
+                        pending.extend(ab.iter().zip(bb).map(|(a, b)| C(*a, *b)));
                     },
+                    | (
+                        &Computation::RecordProjection(a, ref al),
+                        &Computation::RecordProjection(b, ref bl),
+                    ) if al == bl => pending.push(V(a, b)),
+                    | (
+                        &Computation::Primitive {
+                            primitive: a,
+                            arguments: ref aa,
+                        },
+                        &Computation::Primitive {
+                            primitive: b,
+                            arguments: ref right_arguments,
+                        },
+                    ) if a == b && aa.len() == right_arguments.len() => pending.extend(
+                        aa.iter()
+                            .zip(right_arguments.iter())
+                            .map(|(a, b)| V(*a, *b)),
+                    ),
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
                     | (&Computation::Return(a), &Computation::Return(b))
                     | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
@@ -481,51 +614,100 @@ pub fn equal_certificate_syntax(
                 else {
                     return CertificateEquality::Different;
                 };
-                match (a, b) {
-                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
-                        pending.extend([V(a, c), V(b, d)]);
-                    },
-                    | (&ValueType::Product(a, b), &ValueType::Product(c, d))
-                    | (&ValueType::Sum(a, b), &ValueType::Sum(c, d))
-                    | (
-                        &ValueType::StaticPi {
-                            domain: a,
-                            codomain: b,
-                        },
-                        &ValueType::StaticPi {
+                {
+                    let (matched_left_value, matched_right_value) = (a, b);
+                    if let ValueType::Data {
+                        declaration: a,
+                        arguments: ref aa,
+                    } = *matched_left_value
+                        && let ValueType::Data {
+                            declaration: b,
+                            arguments: ref right_arguments,
+                        } = *matched_right_value
+                        && (a == b && aa.len() == right_arguments.len())
+                    {
+                        {
+                            pending.extend(aa.iter().zip(right_arguments).map(|(a, b)| V(*a, *b)));
+                        }
+                    }
+                    else if let ValueType::Record(ref a) = *matched_left_value
+                        && let ValueType::Record(ref b) = *matched_right_value
+                        && (a.len() == b.len() && a.keys().eq(b.keys()))
+                    {
+                        {
+                            pending.extend(a.values().zip(b.values()).map(|(a, b)| VT(*a, *b)));
+                        }
+                    }
+                    else if let ValueType::PathUniverse(a, b) = *matched_left_value
+                        && let ValueType::PathUniverse(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.extend([V(a, c), V(b, d)]);
+                        }
+                    }
+                    else if let ValueType::Product(a, b) = *matched_left_value
+                        && let ValueType::Product(c, d) = *matched_right_value
+                    {
+                        pending.extend([VT(a, c), VT(b, d)]);
+                    }
+                    else if let ValueType::Sum(a, b) = *matched_left_value
+                        && let ValueType::Sum(c, d) = *matched_right_value
+                    {
+                        pending.extend([VT(a, c), VT(b, d)]);
+                    }
+                    else if let ValueType::StaticPi {
+                        domain: a,
+                        codomain: b,
+                    } = *matched_left_value
+                        && let ValueType::StaticPi {
                             domain: c,
                             codomain: d,
-                        },
-                    ) => pending.extend([VT(a, c), VT(b, d)]),
-                    | (&ValueType::Thunk(a), &ValueType::Thunk(b)) => pending.push(CT(a, b)),
-                    | (
-                        &ValueType::Lift {
-                            inner: a,
-                            ref target,
-                        },
-                        &ValueType::Lift {
+                        } = *matched_right_value
+                    {
+                        pending.extend([VT(a, c), VT(b, d)]);
+                    }
+                    else if let ValueType::Thunk(a) = *matched_left_value
+                        && let ValueType::Thunk(b) = *matched_right_value
+                    {
+                        pending.push(CT(a, b));
+                    }
+                    else if let ValueType::Lift {
+                        inner: a,
+                        ref target,
+                    } = *matched_left_value
+                        && let ValueType::Lift {
                             inner: b,
                             target: ref other,
-                        },
-                    ) if target == other => pending.push(VT(a, b)),
-                    | (
-                        &ValueType::Element {
-                            code: a,
-                            ref target,
-                        },
-                        &ValueType::Element {
+                        } = *matched_right_value
+                        && (target == other)
+                    {
+                        pending.push(VT(a, b));
+                    }
+                    else if let ValueType::Element {
+                        code: a,
+                        ref target,
+                    } = *matched_left_value
+                        && let ValueType::Element {
                             code: b,
                             target: ref other,
-                        },
-                    ) if target == other => pending.push(V(a, b)),
-                    | (
-                        &(ValueType::Base(_)
-                        | ValueType::Unit
-                        | ValueType::Universe { .. }
-                        | ValueType::Abstract(_)),
-                        _,
-                    ) if a == b => {},
-                    | _ => return CertificateEquality::Different,
+                        } = *matched_right_value
+                        && (target == other)
+                    {
+                        pending.push(V(a, b));
+                    }
+                    else if (matches!(
+                        *matched_left_value,
+                        ValueType::Base(_)
+                            | ValueType::Unit
+                            | ValueType::Universe { .. }
+                            | ValueType::Abstract(_)
+                    ) && (a == b))
+                    {
+                        {}
+                    }
+                    else {
+                        return CertificateEquality::Different;
+                    }
                 }
             },
             | CT(a, b) => {
@@ -620,5 +802,76 @@ mod tests
             CertificateEquality::Equal,
             equal_certificate_syntax(&arena, one, two)
         );
+    }
+}
+
+/// A nominal declaration's parameter telescope, constructor table and universe.
+///
+/// Parameter classifiers are scoped under their predecessors. Constructor
+/// fields are scoped under all parameters and do not bind one another.
+/// Admission, not this container, verifies those scopes and the universe bound.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DataSignature
+{
+    /// Parameter classifiers in telescope order.
+    parameters: Vec<ValueTypeId>,
+    /// Constructor fields in tag order.
+    constructors: Vec<Vec<ValueTypeId>>,
+    /// The positive universe bounding every constructor field.
+    kind: ValueTypeId,
+}
+
+impl DataSignature
+{
+    /// Construct a signature whose formation remains the checker's obligation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        parameters: Vec<ValueTypeId>,
+        constructors: Vec<Vec<ValueTypeId>>,
+        kind: ValueTypeId,
+    ) -> Self
+    {
+        Self {
+            parameters,
+            constructors,
+            kind,
+        }
+    }
+
+    /// Parameter classifiers in telescope order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn parameters(&self) -> &[ValueTypeId]
+    {
+        &self.parameters
+    }
+
+    /// Constructor field classifiers in tag order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn constructors(&self) -> &[Vec<ValueTypeId>]
+    {
+        &self.constructors
+    }
+
+    /// The positive universe bounding constructor fields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn kind(&self) -> ValueTypeId
+    {
+        self.kind
     }
 }

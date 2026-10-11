@@ -413,6 +413,35 @@ pub struct Staging<'env>
 
 impl<'env> Staging<'env>
 {
+    /// Finalize a nominal data signature while retaining its staging claim.
+    ///
+    /// # Specification
+    /// - requires: this session owns the last outstanding staging mark.
+    /// - ensures: the mark remains outstanding and the signature is preserved.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — data admission rejects a malformed signature without
+    ///   retaining its nodes.
+    /// - witness: `native_formers::native_formers::data_signature_formation_checks_fields_and_parameters`
+    #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()), captures: start = self.builder.content_start(), ensures: |ret| ret.content_start == start && matches!(ret.declaration.content(), DeclarationContent::Data { kind: actual, .. } if *actual == kind))]
+    #[inline]
+    #[must_use]
+    pub fn data(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        constructors: Vec<Vec<ValueTypeId>>,
+        kind: ValueTypeId,
+    ) -> StagedDeclaration
+    {
+        let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
+        StagedDeclaration {
+            content_start,
+            declaration: self.builder.data(levels, parameters, constructors, kind),
+        }
+    }
     /// Begin staging into `arena`, registering the content-start mark.
     ///
     /// # Specification
@@ -1262,6 +1291,16 @@ impl Environment
     ) -> BTreeSet<ConstantIndex>
     {
         let mut direct = audited_type_constants(&self.arena, content.declared_id());
+        if let DeclarationContent::Data {
+            ref parameters,
+            ref constructors,
+            ..
+        } = *(content)
+        {
+            for root in parameters.iter().chain(constructors.iter().flatten()) {
+                direct.append(&mut audited_type_constants(&self.arena, *root));
+            }
+        }
         if let DeclarationContent::Def { body, .. } = *content {
             direct.append(&mut collect_reachable(
                 &self.arena,
@@ -1385,6 +1424,17 @@ fn collect_reachable(
         }
         match node {
             | AnyNode::Value(id) => match arena.value(id) {
+                | Some(&Value::Constructor {
+                    datatype,
+                    ref fields,
+                    ..
+                }) => pending.extend(
+                    core::iter::once(AnyNode::ValueType(datatype))
+                        .chain(fields.iter().copied().map(AnyNode::Value)),
+                ),
+                | Some(&Value::Record(ref fields)) => {
+                    pending.extend(fields.values().copied().map(AnyNode::Value));
+                },
                 | Some(&Value::Constant(index)) => {
                     let _fresh = found.insert(index);
                 },
@@ -1424,6 +1474,18 @@ fn collect_reachable(
                 | Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::DataCase {
+                    scrutinee,
+                    motive,
+                    ref branches,
+                }) => pending.extend(
+                    [AnyNode::Value(scrutinee), AnyNode::CompType(motive)]
+                        .into_iter()
+                        .chain(branches.iter().copied().map(AnyNode::Computation)),
+                ),
+                | Some(&Computation::RecordProjection(record, _)) => {
+                    pending.extend(core::iter::once(AnyNode::Value(record)));
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
@@ -1456,6 +1518,18 @@ fn collect_reachable(
                 | None => {},
             },
             | AnyNode::ValueType(id) => match arena.value_type(id) {
+                | Some(&ValueType::Data {
+                    declaration,
+                    ref arguments,
+                }) => {
+                    if follow {
+                        let _fresh = found.insert(declaration);
+                        pending.extend(arguments.iter().copied().map(AnyNode::Value));
+                    }
+                },
+                | Some(&ValueType::Record(ref fields)) => {
+                    pending.extend(fields.values().copied().map(AnyNode::ValueType));
+                },
                 | Some(&ValueType::Abstract(index)) => {
                     let _fresh = found.insert(index);
                 },
@@ -1562,7 +1636,7 @@ fn audited_type_constants(
 /// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
 #[spec(ensures: |ret| match arena.value_type(root) {
     Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
-    Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
+    Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
     _ => true,
 })]
 #[inline]

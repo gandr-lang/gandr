@@ -192,6 +192,8 @@ pub struct CheckingContext<'arena>
     binders: Context,
     /// The types declarations supplied, ascending by admission position.
     signatures: Vec<(ConstantIndex, FormedValueType)>,
+    /// Successfully formed nominal signatures, without a value unfolding.
+    data_signatures: BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>,
     /// The highest admission position admitted, or why there is none.
     admitted: Maybe<ConstantIndex, admission::Absent>,
     /// The atoms the leaf rules hand out.
@@ -251,6 +253,7 @@ impl<'arena> CheckingContext<'arena>
             arena,
             binders: Context::new(),
             signatures: Vec::new(),
+            data_signatures: BTreeMap::new(),
             admitted: Maybe::Absent(admission::Absent::Fresh),
             atoms,
             definitions: CodeDefinitions::new(),
@@ -258,6 +261,93 @@ impl<'arena> CheckingContext<'arena>
             budget,
             support: SupportLog::Off,
         }
+    }
+    /// Native signatures already admitted in this context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub const fn data_signatures(
+        &self
+    ) -> &BTreeMap<ConstantIndex, alloc::sync::Arc<gandr_core_term::DataSignature>>
+    {
+        &self.data_signatures
+    }
+
+    /// Retain a signature after its formation judgment has succeeded.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn record_data(
+        &mut self,
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
+    )
+    {
+        let _previous = self.data_signatures.insert(constant, signature);
+    }
+
+    /// Re-form and adopt a nominal signature without a value unfolding.
+    ///
+    /// # Specification
+    /// - requires: identifiers are read in this context; no cached formation
+    ///   claim is trusted across arenas.
+    /// - ensures: the fresh position has a nominal signature, not a value body.
+    /// - fails: signature formation or admission out of source order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns a formation refusal or the ordinary admission-order refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reusing a nominal signature must retain its full
+    ///   field table so constructor checks remain identical to a fresh
+    ///   judgment.
+    /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
+    #[spec(ensures: |ret| ret.is_err() || self.data_signatures.contains_key(&constant))]
+    #[inline]
+    pub fn adopt_data(
+        &mut self,
+        constant: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
+    ) -> Result<(), CheckRefusal>
+    {
+        crate::former::form_signature(self, &signature)?;
+        self.admit(constant)?;
+        self.record_data(constant, signature);
+        Ok(())
+    }
+
+    /// Read and log a complete nominal signature, including its absence.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the exact stored table is returned; a supported judgment logs
+    ///   its identity and table, rather than only its universe.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing only a constructor table, or supplying a
+    ///   formerly missing declaration, changes a dependent judgment's answer.
+    /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
+    #[spec(ensures: |ret| ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
+SupportLog::Off => true,
+SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.constant() == constant && entry.signature() == ret.as_deref()),
+})]
+    pub(crate) fn consult_data(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Option<alloc::sync::Arc<gandr_core_term::DataSignature>>
+    {
+        let answer = self
+            .data_signatures
+            .get(&constant)
+            .map(alloc::sync::Arc::clone);
+        if let SupportLog::Recording { ref mut data, .. } = self.support {
+            data.push(crate::support::DataConsulted::new(constant, answer.clone()));
+        }
+        answer
     }
 
     /// The allowance each judgement starts with.
@@ -388,11 +478,11 @@ impl<'arena> CheckingContext<'arena>
     ///   unsupported judgement before it whose reads stay out.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
     #[spec(
-        captures: before = match self.support { SupportLog::Off => None, SupportLog::Recording(ref log) => Some(log.len()) },
+        captures: before = match self.support { SupportLog::Off => None, SupportLog::Recording { ref values,.. } => Some(values.len()) },
         ensures: |ret| ret == self.signature(constant) && match (&self.support, before) {
             | (&SupportLog::Off, None) => true,
-            | (&SupportLog::Recording(ref log), Some(count)) => log.len().checked_sub(1) == Some(count)
-                && log.last() == Some(&Consulted::new(constant, ret)),
+            | (&SupportLog::Recording { ref values,.. }, Some(count)) => values.len().checked_sub(1) == Some(count)
+                && values.last() == Some(&Consulted::new(constant, ret)),
             | _ => false,
         },
     )]
@@ -402,8 +492,8 @@ impl<'arena> CheckingContext<'arena>
     ) -> Maybe<FormedValueType, signature_table::Absent>
     {
         let answer = self.signature(constant);
-        if let SupportLog::Recording(ref mut log) = self.support {
-            log.push(Consulted::new(constant, answer));
+        if let SupportLog::Recording { ref mut values, .. } = self.support {
+            values.push(Consulted::new(constant, answer));
         }
         answer
     }
@@ -420,10 +510,13 @@ impl<'arena> CheckingContext<'arena>
     ///   unsupported reads expose their own exact supports; stale entries or
     ///   failure to start logging change the observed consultation sets.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
-    #[spec(ensures: matches!(self.support, SupportLog::Recording(ref log) if log.is_empty()))]
+    #[spec(ensures: matches!(self.support, SupportLog::Recording { ref values,ref data } if values.is_empty() && data.is_empty()))]
     pub(crate) fn start_support(&mut self)
     {
-        self.support = SupportLog::Recording(Vec::new());
+        self.support = SupportLog::Recording {
+            values: Vec::new(),
+            data: Vec::new(),
+        };
     }
 
     /// Stop logging and return the support the log stands for.
@@ -442,14 +535,15 @@ impl<'arena> CheckingContext<'arena>
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
     /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
     #[spec(
-        captures: before = match self.support { SupportLog::Off => 0, SupportLog::Recording(ref log) => log.len() },
+        captures: before = match self.support { SupportLog::Off => (0,0), SupportLog::Recording { ref values,ref data } => (values.len(),data.len()) },
         ensures: |ret| matches!(self.support, SupportLog::Off)
-            && ret.consulted().len() <= before && ret.consulted().is_empty() == (before == 0),
+            && ret.consulted().len() <= before.0 && ret.consulted().is_empty() == (before.0 == 0)
+            && ret.data_consulted().len() <= before.1 && ret.data_consulted().is_empty() == (before.1 == 0),
     )]
     pub(crate) fn finish_support(&mut self) -> Support
     {
         match core::mem::replace(&mut self.support, SupportLog::Off) {
-            | SupportLog::Recording(log) => Support::from_log(log),
+            | SupportLog::Recording { values, data } => Support::from_log(values, data),
             | SupportLog::Off => Support::default(),
         }
     }
@@ -829,14 +923,14 @@ impl<'arena> CheckingContext<'arena>
             });
         };
         match *node {
-            | Value::Quote(quoted) => level_of(self.arena, TypeNode::Value(quoted)),
-            | Value::QuoteComputation(quoted) => {
-                level_of(self.arena, TypeNode::Computation(quoted))
-            },
+            | Value::Quote(quoted) => level_of(self, TypeNode::Value(quoted)),
+            | Value::QuoteComputation(quoted) => level_of(self, TypeNode::Computation(quoted)),
             | Value::Constant(constant) => match self.consult(constant) {
                 | Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
                     | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
                     | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Data { .. }
+                    | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
@@ -850,6 +944,8 @@ impl<'arena> CheckingContext<'arena>
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
             | Value::PathRefl(_)
+            | Value::Constructor { .. }
+            | Value::Record(_)
             | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
