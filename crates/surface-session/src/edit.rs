@@ -2262,6 +2262,7 @@ enum Agreement
 ///   edits retain their evidence even when every child is unchanged.
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
 /// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `edit::tests::effect_row_edits_preserve_names_and_rebuild_operation_types`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
@@ -2276,6 +2277,11 @@ enum Agreement
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
                 ContentNode::RecordProjection(_,ref label) => matches!(*new,ContentNode::RecordProjection(_,ref other) if label == other),
+                ContentNode::Reify(ref left) => matches!(*new, ContentNode::Reify(ref right) if left.iter().zip(right.iter()).all(|(left, right)| match (*left, *right) { (gandr_core_term::control::StackFrame::Apply(_), gandr_core_term::control::StackFrame::Apply(_)) | (gandr_core_term::control::StackFrame::Bind(_), gandr_core_term::control::StackFrame::Bind(_)) => true, (gandr_core_term::control::StackFrame::Project(left), gandr_core_term::control::StackFrame::Project(right)) => left == right, _ => false }) && left.len() == right.len()),
+                ContentNode::Project(left, _) => matches!(*new, ContentNode::Project(right, _) if left == right),
+                ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Handle { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Handle { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
+                ContentNode::Returner { effects: ref left, .. } => matches!(*new, ContentNode::Returner { effects: ref right, .. } if left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
                 ContentNode::PathEquiv { evidence: ref left, .. } => {
                     matches!(
                         * new, ContentNode::PathEquiv { evidence : ref right, .. } if
@@ -2320,6 +2326,90 @@ fn agreement(
 ) -> Agreement
 {
     let same = match (old, new) {
+        | (&ContentNode::Reify(ref left), &ContentNode::Reify(ref right)) => {
+            left.iter()
+                .zip(right.iter())
+                .all(|(left, right)| match (*left, *right) {
+                    | (
+                        gandr_core_term::control::StackFrame::Apply(_),
+                        gandr_core_term::control::StackFrame::Apply(_),
+                    )
+                    | (
+                        gandr_core_term::control::StackFrame::Bind(_),
+                        gandr_core_term::control::StackFrame::Bind(_),
+                    ) => true,
+                    | (
+                        gandr_core_term::control::StackFrame::Project(left),
+                        gandr_core_term::control::StackFrame::Project(right),
+                    ) => left == right,
+                    | _ => false,
+                })
+                && left.len() == right.len()
+        },
+        | (&ContentNode::Project(left, _), &ContentNode::Project(right, _))
+        | (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
+        | (
+            &ContentNode::Perform {
+                signature: ref left,
+                operation: ref first,
+                ..
+            },
+            &ContentNode::Perform {
+                signature: ref right,
+                operation: ref second,
+                ..
+            },
+        ) => {
+            first == second
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        | (
+            &ContentNode::Handle {
+                signature: ref left,
+                clauses: ref first,
+                ..
+            },
+            &ContentNode::Handle {
+                signature: ref right,
+                clauses: ref second,
+                ..
+            },
+        ) => {
+            first
+                .iter()
+                .map(|clause| &clause.operation)
+                .eq(second.iter().map(|clause| &clause.operation))
+                && left.name() == right.name()
+                && left
+                    .operations()
+                    .map(|op| &op.name)
+                    .eq(right.operations().map(|op| &op.name))
+        },
+        | (
+            &ContentNode::Returner {
+                effects: ref left, ..
+            },
+            &ContentNode::Returner {
+                effects: ref right, ..
+            },
+        ) => {
+            left.signatures().len() == right.signatures().len()
+                && left
+                    .signatures()
+                    .zip(right.signatures())
+                    .all(|(left, right)| {
+                        left.name() == right.name()
+                            && left.operations().len() == right.operations().len()
+                            && left
+                                .operations()
+                                .zip(right.operations())
+                                .all(|(left, right)| left.name == right.name)
+                    })
+        },
         | (
             &ContentNode::Data {
                 declaration: ref left,
@@ -2368,7 +2458,6 @@ fn agreement(
                 ..
             },
         ) => left == right,
-        | (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
         | (
             &ContentNode::ValueLift {
                 target: ref left, ..
@@ -2589,6 +2678,7 @@ fn read(
             |node| match *node {
                 Value::Constructor {tag,ref fields,..} => matches!(ret,ContentNode::Constructor {tag:found,fields:ref other,..} if tag == found && fields.len() == other.len()),
                 Value::Record(ref fields) => matches!(ret,ContentNode::Record(ref other) if fields.keys().eq(other.keys())),
+                Value::Reify(_) => matches!(ret, ContentNode::Reify(_)),
                 Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
                 Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
@@ -2614,6 +2704,8 @@ fn read(
                     )
                 }
                 Value::Unit => matches!(ret, ContentNode::Unit),
+                Value::ListNil => matches!(ret, ContentNode::ListNil),
+                Value::ListCons(..) => matches!(ret, ContentNode::ListCons(..)),
                 Value::Literal(ref expected) => {
                     matches!(ret, ContentNode::Literal(ref found) if found == expected)
                 }
@@ -2671,6 +2763,22 @@ where
                 .map(|(label, &field)| (label.clone(), child(Root::Value(field))))
                 .collect(),
         ),
+        | Some(&Value::Reify(ref frames)) => ContentNode::Reify(
+            frames
+                .iter()
+                .map(|frame| match *frame {
+                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(child(Root::Value(value)))
+                    },
+                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(child(Root::Computation(body)))
+                    },
+                    | gandr_core_term::control::StackFrame::Project(side) => {
+                        gandr_core_term::control::StackFrame::Project(side)
+                    },
+                })
+                .collect(),
+        ),
         | Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
         | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
         | Some(&Value::PathProduct(first, second)) => {
@@ -2691,6 +2799,10 @@ where
         | Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
         | Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
         | Some(&Value::Unit) => ContentNode::Unit,
+        | Some(&Value::ListNil) => ContentNode::ListNil,
+        | Some(&Value::ListCons(head, tail)) => {
+            ContentNode::ListCons(child(Root::Value(head)), child(Root::Value(tail)))
+        },
         | Some(&Value::Literal(ref literal)) => ContentNode::Literal(literal.clone()),
         | Some(&Value::Pair(first, second)) => {
             let first = child(Root::Value(first));
@@ -2753,6 +2865,13 @@ where
             |node| match *node {
                 Computation::DataCase {ref branches,..} => matches!(ret,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
                 Computation::RecordProjection(_,ref label) => matches!(ret,ContentNode::RecordProjection(_,ref other) if label == other),
+                Computation::Perform { ref operation, ref signature, .. } => matches!(ret, ContentNode::Perform { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
+                Computation::Handle { ref signature, .. } => matches!(ret, ContentNode::Handle { signature: ref mapped, .. } if signature.name() == mapped.name()),
+                Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
+                Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
+                Computation::Shift(_) => matches!(ret, ContentNode::Shift(_)),
+                Computation::With(..) => matches!(ret, ContentNode::With(..)),
+                Computation::Project(side, _) => matches!(ret, ContentNode::Project(actual, _) if actual == side),
                 Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
@@ -2770,6 +2889,7 @@ where
                 Computation::Fixpoint { evidence, .. } => {
                     matches!(ret, ContentNode::Fixpoint { evidence: found, .. } if found == evidence)
                 }
+                Computation::ListFold { .. } => matches!(ret, ContentNode::ListFold { .. }),
             },
         )
 },
@@ -2797,6 +2917,71 @@ where
         },
         | Some(&Computation::RecordProjection(record, ref label)) => {
             ContentNode::RecordProjection(child(Root::Value(record)), label.clone())
+        },
+        | Some(&Computation::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        }) => {
+            let payload = child(Root::Value(payload));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Perform {
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        | Some(&Computation::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        }) => {
+            let subject = child(Root::Computation(subject));
+            let on_return = child(Root::Computation(on_return));
+            let signature = signature
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            let clauses = clauses
+                .iter()
+                .map(|clause| gandr_core_term::control::EffectClause {
+                    operation: clause.operation.clone(),
+                    body: child(Root::Computation(clause.body)),
+                })
+                .collect();
+            ContentNode::Handle {
+                signature,
+                subject,
+                on_return,
+                clauses,
+            }
+        },
+        | Some(&Computation::Resume(stack, body)) => {
+            ContentNode::Resume(child(Root::Value(stack)), child(Root::Computation(body)))
+        },
+        | Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
+        | Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
+        | Some(&Computation::With(first, second)) => ContentNode::With(
+            child(Root::Computation(first)),
+            child(Root::Computation(second)),
+        ),
+        | Some(&Computation::Project(side, body)) => {
+            ContentNode::Project(side, child(Root::Computation(body)))
+        },
+        | Some(&Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        }) => ContentNode::ListFold {
+            element: child(Root::ValueType(element)),
+            result: child(Root::ValueType(result)),
+            list: child(Root::Value(list)),
+            on_nil: child(Root::Computation(on_nil)),
+            on_cons: child(Root::Computation(on_cons)),
         },
         | Some(&Computation::Primitive {
             primitive,
@@ -2883,6 +3068,7 @@ where
             |node| match *node {
                 ValueType::Data {declaration,ref arguments} => matches!(ret,ContentNode::Data {declaration:ref found,arguments:ref other} if *found == program.resolve(declaration) && arguments.len() == other.len()),
                 ValueType::Record(ref fields) => matches!(ret,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
+                ValueType::Stack { .. } => matches!(ret, ContentNode::Stack { .. }),
                 ValueType::PathUniverse(..) => {
                     matches!(ret, ContentNode::PathUniverse(..))
                 }
@@ -2892,6 +3078,7 @@ where
                 ValueType::Unit => matches!(ret, ContentNode::UnitType),
                 ValueType::Product(..) => matches!(ret, ContentNode::Product(..)),
                 ValueType::Sum(..) => matches!(ret, ContentNode::Sum(..)),
+                ValueType::List(_) => matches!(ret, ContentNode::List(_)),
                 ValueType::Thunk(_) => matches!(ret, ContentNode::ThunkType(_)),
                 ValueType::Universe { sort, ref level } => {
                     matches!(
@@ -2951,6 +3138,10 @@ where
                 .map(|(label, &field)| (label.clone(), child(Root::ValueType(field))))
                 .collect(),
         ),
+        | Some(&ValueType::Stack { input, output }) => ContentNode::Stack {
+            input: child(Root::CompType(input)),
+            output: child(Root::CompType(output)),
+        },
         | Some(&ValueType::PathUniverse(source, target)) => {
             let source = child(Root::Value(source));
             ContentNode::PathUniverse(source, child(Root::Value(target)))
@@ -2965,6 +3156,7 @@ where
             let first = child(Root::ValueType(first));
             ContentNode::Sum(first, child(Root::ValueType(second)))
         },
+        | Some(&ValueType::List(element)) => ContentNode::List(child(Root::ValueType(element))),
         | Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
         | Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
             sort,
@@ -3020,7 +3212,8 @@ where
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::CompType)),
             |node| match *node {
-                CompType::Returner(_) => matches!(ret, ContentNode::Returner(_)),
+                CompType::With(..) => matches!(ret, ContentNode::WithType(..)),
+                CompType::Returner { .. } => matches!(ret, ContentNode::Returner { .. }),
                 CompType::Arrow { .. } => matches!(ret, ContentNode::Arrow { .. }),
                 CompType::Pi { .. } => matches!(ret, ContentNode::Pi { .. }),
                 CompType::Element { ref target, .. } => {
@@ -3043,8 +3236,18 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().comp_type(id) {
-        | Some(&CompType::Returner(result)) => {
-            ContentNode::Returner(child(Root::ValueType(result)))
+        | Some(&CompType::With(first, second)) => {
+            ContentNode::WithType(child(Root::CompType(first)), child(Root::CompType(second)))
+        },
+        | Some(&CompType::Returner {
+            result,
+            ref effects,
+        }) => {
+            let result = child(Root::ValueType(result));
+            let effects = effects
+                .try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returner { result, effects }
         },
         | Some(&CompType::Arrow { domain, codomain }) => {
             let domain = child(Root::ValueType(domain));
@@ -3457,6 +3660,168 @@ def body = 1 ;
             super::map_children(&ContentNode::Unit, &mut |_| panic!("a leaf has no child")),
             ContentNode::Unit
         );
+    }
+
+    #[test]
+    fn effect_row_edits_preserve_names_and_rebuild_operation_types()
+    {
+        use gandr_core_incremental::ItemKey;
+        use gandr_core_incremental::Occurrence;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::Reference;
+        use gandr_core_term::CoreArena;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        use gandr_kernel_term::BaseType;
+        use gandr_surface_lowering::OriginTable;
+        let snapshot = |name: &str, reply| {
+            let mut arena = CoreArena::new();
+            let unit = arena.value_type_unit();
+            let reply = arena.value_type_base(reply);
+            let signature = EffectSig::new(EffectName::from(name), [EffectOp {
+                name: OperationName::from("get"),
+                payload: unit,
+                reply,
+            }])
+            .expect("one operation");
+            let returner =
+                arena.comp_type_returner_with_effects(unit, EffectRow::singleton(signature));
+            let code = arena.value_quote_computation(returner);
+            let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+            let (body, spans) =
+                super::read(&program, &OriginTable::default(), super::Root::Value(code));
+            Snapshot {
+                items: vec![ItemTree {
+                    reference: Reference::Item {
+                        key: ItemKey::from("row"),
+                        occurrence: Occurrence::from(0_usize),
+                    },
+                    declaration: super::DeclarationTree::Value {
+                        signature: Maybe::Absent(super::signature::Absent::Unsigned),
+                        body: Maybe::Present(body),
+                    },
+                }],
+                spans: vec![spans],
+                bodies: Vec::new(),
+            }
+        };
+        let old = snapshot("State", BaseType::Integer);
+        for (new, slots) in [
+            (snapshot("State", BaseType::String), vec![
+                ChildSlot::from(0_usize),
+                ChildSlot::from(2_usize),
+            ]),
+            (snapshot("Other", BaseType::Integer), vec![ChildSlot::from(
+                0_usize,
+            )]),
+        ] {
+            let expected = CorePath::new(ItemOrdinal::from(0_usize), slots);
+            let script = super::diff(&old, &new);
+            assert!(
+                matches!(script.actions(), [super::Action::Replace { path, .. }] if path == &expected)
+            );
+            assert_eq!(super::apply(old.items(), &script), new.items());
+        }
+    }
+
+    #[test]
+    fn control_edits_preserve_names_scopes_and_frame_order()
+    {
+        use gandr_core_incremental::ItemKey;
+        use gandr_core_incremental::Occurrence;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::Reference;
+        use gandr_core_term::CoreArena;
+        use gandr_core_term::Zone;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_kernel_term::BaseType;
+        use gandr_kernel_term::Side;
+        use gandr_surface_lowering::OriginTable;
+        let snapshot =
+            |interface: &str, operation: &str, reply, bound: u32, side, reverse: bool| {
+                let mut arena = CoreArena::new();
+                let unit = arena.value_unit();
+                let variable = arena.value_variable(Zone::Intuitionistic, bound.into());
+                let unit_type = arena.value_type_unit();
+                let reply = arena.value_type_base(reply);
+                let signature = EffectSig::new(interface.into(), [EffectOp {
+                    name: operation.into(),
+                    payload: unit_type,
+                    reply,
+                }])
+                .expect("one operation");
+                let returned = arena.computation_return(variable);
+                let mut frames = [
+                    StackFrame::Apply(unit),
+                    StackFrame::Bind(returned),
+                    StackFrame::Project(side),
+                ];
+                if reverse {
+                    frames.reverse();
+                }
+                let stack = arena.value_reify(alloc::sync::Arc::from(frames));
+                let performed =
+                    arena.computation_perform(signature.clone(), operation.into(), stack);
+                let resumed = arena.computation_resume(variable, performed);
+                let shifted = arena.computation_shift(resumed);
+                let reset = arena.computation_reset(shifted);
+                let pair = arena.computation_with(reset, returned);
+                let projected = arena.computation_project(side, pair);
+                let handled = arena.computation_handle(
+                    signature,
+                    projected,
+                    returned,
+                    alloc::sync::Arc::from([EffectClause {
+                        operation: operation.into(),
+                        body: returned,
+                    }]),
+                );
+                let value = arena.value_thunk(handled);
+                let program = Program::new(arena, Vec::new()).expect("empty declaration order");
+                let (body, spans) =
+                    super::read(&program, &OriginTable::default(), super::Root::Value(value));
+                Snapshot {
+                    items: vec![ItemTree {
+                        reference: Reference::Item {
+                            key: ItemKey::from("control"),
+                            occurrence: Occurrence::from(0_usize),
+                        },
+                        declaration: super::DeclarationTree::Value {
+                            signature: Maybe::Absent(super::signature::Absent::Unsigned),
+                            body: Maybe::Present(body),
+                        },
+                    }],
+                    spans: vec![spans],
+                    bodies: Vec::new(),
+                }
+            };
+        let old = snapshot("E", "op", BaseType::Integer, 0, Side::Left, false);
+        for new in [
+            snapshot("Other", "op", BaseType::Integer, 0, Side::Left, false),
+            snapshot("E", "other", BaseType::Integer, 0, Side::Left, false),
+            snapshot("E", "op", BaseType::String, 0, Side::Left, false),
+            snapshot("E", "op", BaseType::Integer, 1, Side::Left, false),
+            snapshot("E", "op", BaseType::Integer, 0, Side::Right, false),
+            snapshot("E", "op", BaseType::Integer, 0, Side::Left, true),
+        ] {
+            assert_ne!(
+                old.items(),
+                new.items(),
+                "each revision changes a semantic field"
+            );
+            let script = super::diff(&old, &new);
+            assert_eq!(
+                super::apply(old.items(), &script),
+                new.items(),
+                "annotations, names, frame order and branch-local indices survive reconstruction"
+            );
+        }
     }
 
     #[test]

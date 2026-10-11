@@ -195,6 +195,10 @@ pub enum Subgoal
     Fixpoints(CompClosureId, CompClosureId),
     /// The bodies of two fixpoints, opened under one fresh self variable.
     FixpointBodies(CompClosureId, CompClosureId),
+    /// Two branch bodies entered without adding a binder.
+    Entered(CompClosureId, CompClosureId),
+    /// Two List cell branches opened under head then folded-result binders.
+    OpenedTwice(CompClosureId, CompClosureId),
 }
 
 /// A forced rule with one premise.
@@ -620,7 +624,7 @@ pub enum Spines
             let added = match shape {
                 EliminationShape::DataCase(branches) => branches.saturating_add(1_usize),
                 EliminationShape::Projection(_) => 0_usize,
-                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::Case { .. } => 2_usize,_ => 1_usize },
+                EliminationShape::Ordinary(_) => match a { Elimination::Force => 0_usize,Elimination::ListFold { .. } | Elimination::Case { .. } => 2_usize,_ => 1_usize },
             };
             Ok((true,count.saturating_add(added)))
         });
@@ -686,6 +690,21 @@ pub fn spine_subgoals(
                 subgoals.push(Subgoal::Fixpoints(left_fixpoint, right_fixpoint));
             },
             | (
+                Elimination::ListFold {
+                    on_nil: ln,
+                    on_cons: lc,
+                    ..
+                },
+                Elimination::ListFold {
+                    on_nil: rn,
+                    on_cons: rc,
+                    ..
+                },
+            ) => {
+                subgoals.push(Subgoal::Entered(ln, rn));
+                subgoals.push(Subgoal::OpenedTwice(lc, rc));
+            },
+            | (
                 Elimination::Case {
                     on_left: left_on_left,
                     on_right: left_on_right,
@@ -707,6 +726,7 @@ pub fn spine_subgoals(
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }
+                | Elimination::ListFold { .. }
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint(_),
                 _,
@@ -1042,6 +1062,8 @@ fn value_neutrality(
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
@@ -1323,6 +1345,9 @@ fn plan_values(
             },
         ),
         | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Plan::Leaf(Settled::Convertible),
+        | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => {
+            Plan::Leaf(Settled::Convertible)
+        },
         | (
             DomainValue::Literal { literal: first, .. },
             DomainValue::Literal {
@@ -1341,6 +1366,18 @@ fn plan_values(
                 Settled::NotConvertible
             })
         },
+        | (
+            DomainValue::ListCons {
+                first: left_first,
+                second: left_second,
+                ..
+            },
+            DomainValue::ListCons {
+                first: right_first,
+                second: right_second,
+                ..
+            },
+        )
         | (
             DomainValue::Pair {
                 first: left_first,
@@ -1471,6 +1508,8 @@ fn plan_values(
             | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
+            | DomainValue::ListNil { .. }
+            | DomainValue::ListCons { .. }
             | DomainValue::Injection { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. }

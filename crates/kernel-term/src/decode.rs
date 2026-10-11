@@ -1929,6 +1929,27 @@ fn decode_entry(
             let id = table.arena.value_type_list(element);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
+        | tags::NODE_V_LIST_NIL => {
+            let id = table.arena.value_list_nil();
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_LIST_CONS => {
+            let head = read_value(reader, table, this, &mut children)?;
+            let tail = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_list_cons(head, tail);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_C_LIST_FOLD => {
+            let element = read_value_type(reader, table, this, &mut children)?;
+            let result = read_value_type(reader, table, this, &mut children)?;
+            let list = read_value(reader, table, this, &mut children)?;
+            let on_nil = read_computation(reader, table, this, &mut children)?;
+            let on_cons = read_computation(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .computation_list_fold(element, result, list, on_nil, on_cons);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_VT_SUM => {
             let first = read_value_type(reader, table, this, &mut children)?;
             let second = read_value_type(reader, table, this, &mut children)?;

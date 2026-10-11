@@ -76,6 +76,10 @@ pub enum ExpectedShape
     Data,
     /// A structural record classifier.
     Record,
+    /// A first-class stack from an input computation to an output computation.
+    Stack,
+    /// A lazy computation pair observed by projection.
+    With,
     /// A native universe-path classifier.
     PathUniverse,
     /// A sum classifier.
@@ -90,6 +94,8 @@ pub enum ExpectedShape
     Arrow,
     /// An eager product `A × B`: what a pair is checked against.
     Product,
+    /// A native List, required by nil and cons introductions.
+    List,
     /// A static Pi: what a static lambda is checked against.
     StaticPi,
 }
@@ -98,8 +104,20 @@ pub enum ExpectedShape
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckingForm
 {
+    /// A first-class stack literal needs its input and output types.
+    Reify(ValueId),
+    /// A deep handler needs its answer type.
+    Handle(ComputationId),
+    /// A reset establishes an answer type from its expected type.
+    Reset(ComputationId),
+    /// A shift needs the type of the captured continuation.
+    Shift(ComputationId),
+    /// A lazy pair needs the two expected computation types.
+    With(ComputationId),
     /// A sum injection needs its other summand from the expected type.
     Injection(ValueId),
+    /// A native List introduction needs its element classifier.
+    List(ValueId),
     /// A sum case is checked against a common result type.
     Case(ComputationId),
     /// A thunk value.
@@ -144,6 +162,27 @@ pub enum UnadmittedFormer
     /// a static application whose head no definition unfolds, which the
     /// kernel has no former for.
     StaticLambda,
+    /// A nonempty returner effect row, which cannot cross the pure kernel
+    /// boundary.
+    EffectRow,
+    /// A first-class stack literal, outside pure kernel syntax.
+    Reify,
+    /// A stack classifier, outside pure kernel types.
+    Stack,
+    /// An operation request.
+    Perform,
+    /// A deep handler.
+    Handle,
+    /// Application of a first-class stack.
+    Resume,
+    /// A delimited-control boundary.
+    Reset,
+    /// Capture of a delimited continuation.
+    Shift,
+    /// A lazy computation pair or its classifier.
+    With,
+    /// Observation of a lazy computation pair.
+    Project,
 }
 
 /// A count of static arguments: how many a static application passes, or how
@@ -277,11 +316,47 @@ pub enum CheckRefusal
         /// The required record type.
         expected: ValueTypeId,
     },
+    /// A perform names no operation in its supplied interface.
+    UnknownOperation
+    {
+        /// The operation request.
+        at: ComputationId,
+    },
+    /// Handler clauses do not cover the interface exactly once.
+    HandlerCoverage
+    {
+        /// The handler with a missing, repeated or unknown clause.
+        at: ComputationId,
+    },
+    /// A shift has no enclosing reset answer type.
+    ShiftWithoutReset
+    {
+        /// The shift.
+        at: ComputationId,
+    },
+    /// A stack bind's result type depends on the value it binds.
+    DependentStack
+    {
+        /// The stack literal.
+        at: ValueId,
+        /// The body type before its binder is removed.
+        synthesised: CompTypeId,
+    },
     /// A native path endpoint was not a quoted closed first-order code.
     PathCode(ValueId),
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
+    /// Two rows give incompatible operation types to the same effect name.
+    EffectSignatureConflict
+    {
+        /// The sequencing computation.
+        at: ComputationId,
+        /// The bound computation's type.
+        first: CompTypeId,
+        /// The continuation's type.
+        second: CompTypeId,
+    },
     /// A rule met a type of another former than the one it requires: a thunk,
     /// lambda or return checked against the wrong former, a forced value
     /// synthesising no thunk type, or an application head synthesising no
@@ -512,6 +587,9 @@ impl CheckRefusal
         | Self::PathCode(_)
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
+        | Self::EffectSignatureConflict { .. }
+        | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
+        | Self::ShiftWithoutReset { .. } | Self::DependentStack { .. }
         | Self::ShapeMismatch { .. }
         | Self::NotSynthesisable { .. }
         | Self::UnknownConstant { .. }
@@ -540,6 +618,11 @@ impl CheckRefusal
             | Self::AbsentRecordField(_)
             | Self::MissingRecordField { .. }
             | Self::TypeMismatch(_)
+            | Self::EffectSignatureConflict { .. }
+            | Self::UnknownOperation { .. }
+            | Self::HandlerCoverage { .. }
+            | Self::ShiftWithoutReset { .. }
+            | Self::DependentStack { .. }
             | Self::ShapeMismatch { .. }
             | Self::NotSynthesisable { .. }
             | Self::UnknownConstant { .. }

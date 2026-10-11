@@ -772,7 +772,7 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&Value::Unit, &Value::Unit) => {},
+                    | (&Value::Unit, &Value::Unit) | (&Value::ListNil, &Value::ListNil) => {},
                     // As at the universe arm: both sides are pinned to the
                     // literal former, which carries one field, so the node
                     // comparison delegated to here is the literal comparison.
@@ -785,6 +785,7 @@ fn converge(
                         &Value::Pair(one_first, one_second),
                         &Value::Pair(other_first, other_second),
                     )
+                    | (&Value::ListCons(one_first, one_second), &Value::ListCons(other_first, other_second))
                     // A static application is neutral — no static lambda can
                     // stand at its head — so two convert exactly when their
                     // heads and arguments do, and a family's instances at
@@ -838,6 +839,7 @@ fn converge(
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::Unit
+                        | &Value::ListNil | &Value::ListCons(..)
                         | &Value::Literal(_)
                         | &Value::Pair(..)
                         | &Value::Injection(..)
@@ -894,6 +896,30 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(a, b));
                     },
+                    | (
+                        &Computation::ListFold {
+                            element: left_element,
+                            result: left_result,
+                            list: left_list,
+                            on_nil: left_nil,
+                            on_cons: left_cons,
+                        },
+                        &Computation::ListFold {
+                            element: right_element,
+                            result: right_result,
+                            list: right_list,
+                            on_nil: right_nil,
+                            on_cons: right_cons,
+                        },
+                    ) => {
+                        stack.extend([
+                            ConversionGoal::ValueType(left_element, right_element),
+                            ConversionGoal::ValueType(left_result, right_result),
+                            ConversionGoal::Value(left_list, right_list),
+                            ConversionGoal::Computation(left_nil, right_nil),
+                            ConversionGoal::Computation(left_cons, right_cons),
+                        ]);
+                    },
                     | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
@@ -946,6 +972,7 @@ fn converge(
                         | &Computation::Transport(..)
                         | &Computation::Lambda(_)
                         | &Computation::Fixpoint { .. }
+                        | &Computation::ListFold { .. }
                         | &Computation::Application(..)
                         | &Computation::Return(_)
                         | &Computation::Absurd(_)

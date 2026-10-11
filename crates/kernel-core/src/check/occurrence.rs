@@ -420,6 +420,7 @@ fn worst(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Pair(first, second)
+                    | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), reach));
@@ -435,7 +436,10 @@ fn worst(
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), reach));
                 },
-                | Some(&(Value::Variable(_) | Value::Unit | Value::Literal(_))) | None => {},
+                | Some(
+                    &(Value::Variable(_) | Value::Unit | Value::Literal(_) | Value::ListNil),
+                )
+                | None => {},
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
                 | Some(&Computation::DataCase {
@@ -482,6 +486,19 @@ fn worst(
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.push((AnyNode::ValueType(element), reach));
+                    pending.push((AnyNode::ValueType(result), reach));
+                    pending.push((AnyNode::Value(list), reach));
+                    pending.push((AnyNode::Computation(on_nil), reach));
+                    pending.push((AnyNode::Computation(on_cons), reach));
                 },
                 | None => {},
             },

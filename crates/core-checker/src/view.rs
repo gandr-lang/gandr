@@ -115,10 +115,20 @@ pub enum ValueTypeView<'arena>
     },
     /// Structural record fields in exact label order.
     Record(&'arena alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>),
+    /// A stack consuming one computation type and delivering another.
+    Stack
+    {
+        /// The type accepted by the stack.
+        input: CompTypeId,
+        /// The type delivered to its caller.
+        output: CompTypeId,
+    },
     /// A native universe-path classifier over two codes.
     PathUniverse(ValueId, ValueId),
     /// A sum of two value types.
     Sum(ValueTypeId, ValueTypeId),
+    /// Finite lists over one element type.
+    List(ValueTypeId),
     /// The integer atom.
     Integer,
     /// The string atom.
@@ -170,8 +180,16 @@ pub enum ValueTypeView<'arena>
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CompTypeView<'arena>
 {
+    /// A lazy pair of computations, selected by projection.
+    With(CompTypeId, CompTypeId),
     /// The returner `F A` of the value type held.
-    Returner(ValueTypeId),
+    Returner
+    {
+        /// The value returned.
+        result: ValueTypeId,
+        /// The operations permitted while producing it.
+        effects: &'arena gandr_core_term::effect::EffectRow,
+    },
     /// The non-dependent arrow `A → C`: its codomain stands in the ambient
     /// context.
     Arrow
@@ -239,12 +257,14 @@ pub enum CompTypeView<'arena>
 #[spec(ensures: |ret| match ret {
     | Ok(ValueTypeView::Data { declaration, arguments }) => matches!(arena.value_type(value_type), Some(ValueType::Data { declaration: actual, arguments: args }) if *actual == declaration && args == arguments),
     | Ok(ValueTypeView::Record(fields)) => matches!(arena.value_type(value_type), Some(ValueType::Record(actual)) if actual == fields),
+    | Ok(ValueTypeView::Stack { input, output }) => matches!(arena.value_type(value_type), Some(ValueType::Stack { input: found_input, output: found_output }) if *found_input == input && *found_output == output),
     | Ok(ValueTypeView::Integer) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::Integer))),
     | Ok(ValueTypeView::String) => matches!(arena.value_type(value_type), Some(ValueType::Base(BaseType::String))),
     | Ok(ValueTypeView::Unit) => matches!(arena.value_type(value_type), Some(ValueType::Unit)),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Sum(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Sum(left, right)) if *left == first && *right == second),
+    | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
     | Ok(ValueTypeView::Product(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Product(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Universe { sort, level }) => matches!(arena.value_type(value_type), Some(ValueType::Universe { sort: Sort::Ground(found), level: found_level }) if *found == sort && found_level == level),
     | Ok(ValueTypeView::Lift { inner, target }) => matches!(arena.value_type(value_type), Some(ValueType::Lift { inner: found, target: found_target }) if *found == inner && found_target == target),
@@ -280,6 +300,7 @@ pub fn value_type_view(
             arguments,
         }),
         | ValueType::Record(ref fields) => Ok(ValueTypeView::Record(fields)),
+        | ValueType::Stack { input, output } => Ok(ValueTypeView::Stack { input, output }),
         | ValueType::PathUniverse(source, target) => {
             Ok(ValueTypeView::PathUniverse(source, target))
         },
@@ -290,6 +311,7 @@ pub fn value_type_view(
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         | ValueType::Product(first, second) => Ok(ValueTypeView::Product(first, second)),
         | ValueType::Sum(first, second) => Ok(ValueTypeView::Sum(first, second)),
+        | ValueType::List(element) => Ok(ValueTypeView::List(element)),
         | ValueType::Universe {
             sort: Sort::Ground(sort),
             ref level,
@@ -339,7 +361,8 @@ pub fn value_type_view(
 /// - witness: `view::tests::both_views_refuse_ids_missing_from_their_arena`
 /// - witness: `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`
 #[spec(ensures: |ret| match (arena.comp_type(comp_type), ret) {
-    | (Some(&CompType::Returner(inner)), Ok(CompTypeView::Returner(held))) => inner == held,
+    | (Some(&CompType::With(first, second)), Ok(CompTypeView::With(left, right))) => first == left && second == right,
+    | (Some(&CompType::Returner { result: inner, ref effects }), Ok(CompTypeView::Returner { result: held, effects: row })) => inner == held && effects == row,
     | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
     | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
     | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target
@@ -359,7 +382,11 @@ pub fn comp_type_view(
         return Err(FragmentRefusal::DanglingNode { node: at });
     };
     match *node {
-        | CompType::Returner(result) => Ok(CompTypeView::Returner(result)),
+        | CompType::With(first, second) => Ok(CompTypeView::With(first, second)),
+        | CompType::Returner {
+            result,
+            ref effects,
+        } => Ok(CompTypeView::Returner { result, effects }),
         | CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
         | CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
         | CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {

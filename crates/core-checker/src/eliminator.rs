@@ -218,11 +218,12 @@ fn shape(
         focus = codomain;
     }
     match arena.comp_type(focus) {
-        | Some(&CompType::Returner(result)) if focus != chain && names(result) => {
+        | Some(&CompType::Returner { result, .. }) if focus != chain && names(result) => {
             FieldShape::Function(chain)
         },
         | Some(
-            &(CompType::Returner(_)
+            &(CompType::Returner { .. }
+            | CompType::With(..)
             | CompType::Arrow { .. }
             | CompType::Pi { .. }
             | CompType::Element { .. }
@@ -274,8 +275,8 @@ fn function_hypothesis(
                 dependent = plus(dependent, Binders::ONE)?;
                 focus = codomain;
             },
-            | Some(&CompType::Returner(_)) => break,
-            | Some(&(CompType::Element { .. } | CompType::Unknown)) | None => {
+            | Some(&CompType::Returner { .. }) => break,
+            | Some(&(CompType::With(..) | CompType::Element { .. } | CompType::Unknown)) | None => {
                 return Err(DerivationRefusal::BinderCeiling);
             },
         }

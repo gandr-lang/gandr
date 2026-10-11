@@ -1188,6 +1188,10 @@ enum Frame
     /// A pair check: the first component checked; check the second against the
     /// held component type.
     CheckPairSecond(ValueId, ValueTypeId),
+    /// Check the nil branch after checking the fold's list.
+    FoldNil(ComputationId, CompTypeId),
+    /// Check the cons branch under its head and folded-result binders.
+    FoldCons(ValueTypeId, CompTypeId, ComputationId),
     /// A value mode switch: the value synthesized; convert against the held
     /// expected type.
     ConvertValue(ValueTypeId),
@@ -1812,6 +1816,11 @@ where
                             form: NonInferableForm::Injection,
                         });
                     },
+                    | Value::ListNil | Value::ListCons(..) => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::List,
+                        });
+                    },
                     // A code synthesizes the universe its quoted type forms
                     // in, and of the family the type belongs to. Formation is
                     // the one question asked, so the arm calls the formation
@@ -1900,6 +1909,30 @@ where
                         }
                         Produced::Checked
                     },
+                    | Value::ListNil => match arena.value_type(expected) {
+                        | Some(&ValueType::List(_)) => Produced::Checked,
+                        | _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::List,
+                                expected,
+                            ));
+                        },
+                    },
+                    | Value::ListCons(head, tail) => match arena.value_type(expected) {
+                        | Some(&ValueType::List(element)) => {
+                            frames.push(Frame::CheckPairSecond(tail, expected));
+                            goal = Goal::CheckValue(head, element);
+                            continue 'expand;
+                        },
+                        | _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::List,
+                                expected,
+                            ));
+                        },
+                    },
                     | Value::Injection(side, body) => match arena.value_type(expected) {
                         | Some(&ValueType::Sum(left, right)) => {
                             let summand = match side {
@@ -1971,6 +2004,35 @@ where
                     | Computation::RecordProjection(record, ref label) => {
                         frames.push(Frame::RecordProjection(label.clone()));
                         goal = Goal::SynthValue(record);
+                        continue 'expand;
+                    },
+                    | Computation::ListFold {
+                        element,
+                        result,
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => {
+                        for annotation in [element, result] {
+                            let _level = type_level(
+                                arena,
+                                judgement,
+                                TypeLevelGoal::Value(annotation),
+                                context.clone(),
+                                Recording {
+                                    memo,
+                                    session,
+                                    census,
+                                    owed,
+                                },
+                            )?;
+                        }
+                        let result = arena.comp_type_returner(result);
+                        frames.push(Frame::ProduceComp(result));
+                        frames.push(Frame::FoldCons(element, result, on_cons));
+                        frames.push(Frame::FoldNil(on_nil, result));
+                        let list_type = arena.value_type_list(element);
+                        goal = Goal::CheckValue(list, list_type);
                         continue 'expand;
                     },
                     | Computation::Absurd(_) => {
@@ -2110,6 +2172,7 @@ where
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
                     | Computation::Transport(..)
+                    | Computation::ListFold { .. }
                     | Computation::Application(..)
                     | Computation::Force(_) => {
                         frames.push(Frame::ConvertComp(expected));
@@ -2208,6 +2271,24 @@ where
                         continue 'expand;
                     }
                     produced = Produced::CompType(result);
+                },
+                | Frame::FoldNil(body, result) => {
+                    goal = Goal::CheckComp(body, result);
+                    continue 'expand;
+                },
+                | Frame::FoldCons(element, result, body) => {
+                    let under_head = weakened(arena, session, result);
+                    let Some(&CompType::Returner(folded)) = arena.comp_type(under_head)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let under_both = weakened(arena, session, under_head);
+                    context.push(element);
+                    context.push(folded);
+                    frames.push(Frame::ScopeExit);
+                    frames.push(Frame::ScopeExit);
+                    goal = Goal::CheckComp(body, under_both);
+                    continue 'expand;
                 },
                 | Frame::Memoize(support) => {
                     // A memo at its ceiling declines to record; see the same
@@ -3246,6 +3327,48 @@ mod tests
     use crate::error::ValueTypeHead;
     use crate::levels::LevelContext;
     use crate::support::SupportContext;
+
+    #[test]
+    fn native_list_introductions_and_fold_check()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let list_type = arena.value_type_list(unit_type);
+        let unit = arena.value_unit();
+        let nil = arena.value_list_nil();
+        let cons = arena.value_list_cons(unit, nil);
+        let malformed_tail = arena.value_list_cons(unit, unit);
+        let malformed_head = arena.value_list_cons(nil, nil);
+        let sum_encoding = arena.value_injection(Side::Left, unit);
+        for valid in [nil, cons] {
+            assert_eq!(
+                super::check_closed_value(&mut arena, valid, list_type),
+                Ok(())
+            );
+        }
+        for invalid in [malformed_tail, malformed_head, sum_encoding] {
+            assert!(super::check_closed_value(&mut arena, invalid, list_type).is_err());
+        }
+        let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let folded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cell = arena.value_list_cons(head, folded);
+        let on_cons = arena.computation_return(cell);
+        let on_nil = arena.computation_return(nil);
+        let fold = arena.computation_list_fold(unit_type, list_type, cons, on_nil, on_cons);
+        let result = arena.comp_type_returner(list_type);
+        let suspended = arena.value_type_thunk(result);
+        let body = arena.value_thunk(fold);
+        assert_eq!(
+            super::check_closed_value(&mut arena, body, suspended),
+            Ok(())
+        );
+        let wrong_cell = arena.value_list_cons(folded, head);
+        let wrong_branch = arena.computation_return(wrong_cell);
+        let wrong_fold =
+            arena.computation_list_fold(unit_type, list_type, cons, on_nil, wrong_branch);
+        let wrong = arena.value_thunk(wrong_fold);
+        assert!(super::check_closed_value(&mut arena, wrong, suspended).is_err());
+    }
 
     #[test]
     fn obligation_ceiling_can_separate_memoized_and_memoless_checks()

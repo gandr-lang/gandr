@@ -16,6 +16,7 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 - [Native universe-path content](#native-universe-path-content)
 - [Native declaration content and support](#native-declaration-content-and-support)
 - [Recursive data and fixpoints](#recursive-data-and-fixpoints)
+- [Effect and control content](#effect-and-control-content)
 - [Specification evidence](#specification-evidence)
 - [Consumer and open rows](#consumer-and-open-rows)
 - [License](#license)
@@ -41,6 +42,7 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 
 - **The item seam.** `Program`, `Item`, `ItemKey`, `Reference`, `ItemSource`: items keyed by the front end, admission positions checked once (`ProgramError`), and every position read as the `Reference` — key and occurrence — it resolves to.
 - **Content.** `ItemContent`, `TypeContent`, `ContentNode`, `Opacity`: an item's or a type's nodes as one table numbered by discovery, free of arena ids; `TypeContent::of_value_type` reads a type, and a table holding an id its arena does not resolve is opaque. Term holes, marks and the unknown types are content like any former, and round-trip through the checkpoint codec under tags of their own. Witness: `codec::tests::holes_marks_and_the_unknown_types_round_trip`.
+- **Effect-row content.** Returners retain canonical interface and operation names and every payload and reply type as graph edges. Pure returners retain content tag `0x30`; nonempty rows use `0x70`. Decoding refuses duplicate or out-of-order names and an empty row under the nonempty tag. Witnesses: `content::tests::effect_rows_round_trip_without_losing_operation_types`, `codec::tests::effect_rows_persist_operation_types_and_canonical_identity` and `codec::tests::effect_rows_reject_duplicate_and_noncanonical_names`.
 - **The conservative footprint.** `footprint_of` and `Footprint`: every reference an item mentions, those in type positions apart, its opacity and whether its body is a hole.
 - **Validated resume.** `check_program`, `resume`, `resume_from`, `Resume`, `Checkpoints`, `ItemCheckpoint`, `Answered`, `Answer`, `Adoption`, `ResumeCensus`, and `project`, which turns a verdict of the checker's own batch entry into the `Typing` this crate records, so a caller can compare the two. Filling a term hole is a body edit: the filled item is judged, and an item is rejudged only when an answer it consulted changed — a reader of a declared type is adopted, a reader of the unknown type an unsigned hole synthesised is not. Witness: `tests::incremental::filling_a_hole_rejudges_only_what_its_support_mentions`.
 - **Item identity.** `ItemHandle` and `Resume::compare`: a handle per item that survives edits elsewhere and compares in constant time.
@@ -179,7 +181,7 @@ A stream opens with the item count, carries one event per item in source order �
 
 The content table preserves universe sorts and levels, quotes, static operators and native universe paths. Native path tags occupy `0x40–0x44` in this cache codec; they are not kernel artifact tags. Candidate evidence is exact content, including ordered direction and dialogue boundaries, and never a cached admission receipt. Type-only signature content refuses term-bearing path classifiers just as it refuses quotes and decodes.
 
-Checkpoint sets use `GCKPT\0\0\x06`; programs use `GPROG\0\0\x04`. Their identities bind the checker, native declaration categories, support queries and refusal vocabulary. Earlier identities are rejected rather than reusing answers from a different fragment. Static family, universe and native-former round-trip witnesses exercise their distinct tags and payloads.
+Checkpoint sets use `GCKPT\0\0\x07`; programs use `GPROG\0\0\x05`. Their identities bind the checker, native declaration categories, effect and control content, support queries and refusal vocabulary. Earlier identities are rejected rather than reusing answers from a different fragment. Static family, universe and native-former round-trip witnesses exercise their distinct tags and payloads.
 
 **Choice.** Preserve native classifiers, maps and candidate evidence as content instead of caching a certificate verdict. Structural path conversion may erase evidence, but checkpoint identity must not. **Reversal.** Persisting `Flow_U`, element identity, the bridge mode, higher fields, funext or guarded List inhabitants requires its own versioned content vocabulary and validated dependency support; none is inferred from a native path entry.
 
@@ -196,6 +198,33 @@ Support keys distinguish a value-signature query from a data-signature query at 
 A fixpoint persists as cache node tag `0x19` with its evidence and its body; it is a term, never a seatable type. A data declaration's fields may name it: the self reference resolves to the item's own reference, and the checker reads the forming block without a support query, so a recursive declaration's footprint holds no query of itself. The occurrence refusals keep their parameter or field site, a reference past the block keeps the reference it names, and a descent refusal keeps its fixpoint's site and the rule of the walk that failed.
 
 **Choice.** Persist the evidence as content, so a partial and a structurally descending fixpoint never share an address. **Reversal.** A mutual block would add a block reference to the support vocabulary; until then one block is one item. `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume` round-trips a recursive family, a fixpoint and each new refusal and adopts the unchanged program.
+
+## Effect and control content
+
+Pure returners retain tag `0x30`; row-qualified returners use `0x70`. Inline interfaces store canonical operation names and ordered payload/reply type edges. The List former and its control content use the following cache tags, independent of kernel artifact tags.
+
+| Tag | Former |
+| --- | ------ |
+| `0x56` | List classifier |
+| `0x57` | Empty list |
+| `0x58` | Cons |
+| `0x59` | List fold |
+| `0x71` | Reify |
+| `0x72` | Stack classifier |
+| `0x73` | With classifier |
+| `0x74` | Perform |
+| `0x75` | Handle |
+| `0x76` | Resume |
+| `0x77` | Reset |
+| `0x78` | Shift |
+| `0x79` | With computation |
+| `0x7A` | Project |
+
+A handler retains source clause order and branch-local de Bruijn indices. Stack frames retain execution order and projection side. Fixed children precede interface type edges, which precede clause bodies; frames contribute their Apply and Bind children in order. Unknown-operation, coverage, undelimited-shift and dependent-stack refusals retain their sites and type payloads. Closed Stack/With type tables can be reminted into another arena; runtime term graphs are not invented by the type-only reminting path.
+
+**Choice.** Preserve typed interfaces and control syntax as content, not runtime heap addresses or captured delimiter stacks. Omitting annotations permits stale adoption; persisting a runtime continuation would require a separate heap and capability protocol. Revisit only when that protocol and its dependency validation are specified.
+
+Witnesses: `content::tests::control_graphs_preserve_scopes_and_signature_edges`, `codec::tests::control_nodes_persist_names_frames_and_branch_order` and `edit::tests::control_edits_preserve_names_scopes_and_frame_order` in `gandr-surface-session`.
 
 ## Specification evidence
 

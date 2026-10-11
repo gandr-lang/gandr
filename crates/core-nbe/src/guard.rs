@@ -123,6 +123,10 @@ pub enum GuardTag
     Literal,
     /// A pair.
     Pair,
+    /// The empty native list.
+    ListNil,
+    /// A native list cell.
+    ListCons,
     /// A sum injection.
     Injection,
     /// A universe lift.

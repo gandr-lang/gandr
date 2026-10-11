@@ -362,6 +362,13 @@ pub fn level_of(
                         tasks.push(Task::Enter(TypeNode::Value(field)));
                     }
                 },
+                | ValueTypeView::Stack { input, output } => {
+                    tasks.extend([
+                        Task::Join,
+                        Task::Enter(TypeNode::Computation(output)),
+                        Task::Enter(TypeNode::Computation(input)),
+                    ]);
+                },
                 | ValueTypeView::PathUniverse(source, target) => {
                     let _source = path_code(arena, source)?;
                     let _target = path_code(arena, target)?;
@@ -373,6 +380,7 @@ pub fn level_of(
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
+                | ValueTypeView::List(element) => tasks.push(Task::Enter(TypeNode::Value(element))),
                 | ValueTypeView::Thunk(body) => {
                     tasks.push(Task::Enter(TypeNode::Computation(body)));
                 },
@@ -401,7 +409,18 @@ pub fn level_of(
                 },
             },
             | Task::Enter(TypeNode::Computation(at)) => match comp_type_view(arena, at)? {
-                | CompTypeView::Returner(result) => {
+                | CompTypeView::With(first, second) => {
+                    tasks.extend([
+                        Task::Join,
+                        Task::Enter(TypeNode::Computation(second)),
+                        Task::Enter(TypeNode::Computation(first)),
+                    ]);
+                },
+                | CompTypeView::Returner { result, effects } => {
+                    for operation_type in effects.types() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(operation_type)));
+                    }
                     tasks.push(Task::Enter(TypeNode::Value(result)));
                 },
                 | CompTypeView::Arrow { domain, codomain }
@@ -755,6 +774,62 @@ mod tests
             classified_comp(&mut context, higher_domain),
             expected,
             "the join is symmetric in its premises"
+        );
+    }
+
+    #[test]
+    fn effect_operation_types_participate_in_formation_levels_and_scope()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut arena = CoreArena::new();
+        let unit = arena.value_type_unit();
+        let high = arena.value_type_universe(
+            Sort::Ground(GroundSort::Value),
+            level(LevelConstant::from(2_u64)),
+        );
+        let high_signature = EffectSig::new(EffectName::from("Codes"), [EffectOp {
+            name: OperationName::from("send"),
+            payload: high,
+            reply: unit,
+        }])
+        .expect("one operation");
+        let high_returner =
+            arena.comp_type_returner_with_effects(unit, EffectRow::singleton(high_signature));
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(code, Level::zero());
+        let scoped_signature = EffectSig::new(EffectName::from("State"), [EffectOp {
+            name: OperationName::from("get"),
+            payload: unit,
+            reply: decoded,
+        }])
+        .expect("one operation");
+        let scoped_returner =
+            arena.comp_type_returner_with_effects(unit, EffectRow::singleton(scoped_signature));
+        let pi = arena.comp_type_pi(small, scoped_returner);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            classified_comp(&mut context, high_returner),
+            Ok(comp_at(LevelConstant::from(3_u64))),
+            "an operation payload contributes its level even when the returned value is Unit"
+        );
+        assert_eq!(
+            classified_comp(&mut context, pi),
+            Ok(comp_at(LevelConstant::from(1_u64)))
+        );
+        assert_eq!(
+            form_comp_type(&mut context, scoped_returner),
+            Err(CheckRefusal::UnboundIndex {
+                at: code,
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+                depth: gandr_core_term::BinderDepth::from(0_usize)
+            }),
+            "forming the enclosing Pi does not discharge a row's free code variable outside that binder"
         );
     }
 

@@ -2199,7 +2199,7 @@ impl<'source> Lowerer<'_, 'source>
         let wrapped = sink.arena.comp_type_returner(ty);
         let carried = self.relocate(sink.arena, wrapped, frame, Binders::default());
         let result = match sink.arena.comp_type(carried) {
-            | Some(&CompType::Returner(inner)) => inner,
+            | Some(&CompType::Returner { result: inner, .. }) => inner,
             | _ => ty,
         };
         record_since(

@@ -1035,6 +1035,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
+                    | ValueTypeView::List(_)
+                    | ValueTypeView::Stack { .. }
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Unit
@@ -1050,11 +1052,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::PathRefl(_)
             | Value::Constructor { .. }
             | Value::Record(_)
+            | Value::Reify(_)
             | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }
             | Value::Unit
+            | Value::ListNil
+            | Value::ListCons(..)
             | Value::Literal(_)
             | Value::Pair(..)
             | Value::Injection(..)

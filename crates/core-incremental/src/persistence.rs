@@ -1731,6 +1731,13 @@ mod tests
             | Typing::Synthesised { .. } => "synthesised",
             | Typing::Owed => "owed",
             | Typing::Refused(Refusal::PathCode(_)) => "path-code",
+            | Typing::Refused(Refusal::EffectSignatureConflict { .. }) => {
+                "effect-signature-conflict"
+            },
+            | Typing::Refused(Refusal::UnknownOperation { .. }) => "unknown-operation",
+            | Typing::Refused(Refusal::HandlerCoverage { .. }) => "handler-coverage",
+            | Typing::Refused(Refusal::ShiftWithoutReset { .. }) => "shift-without-reset",
+            | Typing::Refused(Refusal::DependentStack { .. }) => "dependent-stack",
             | Typing::Refused(Refusal::TypeMismatch { .. }) => "type-mismatch",
             | Typing::Refused(Refusal::ShapeMismatch { .. }) => "shape-mismatch",
             | Typing::Refused(Refusal::NotSynthesisable { .. }) => "not-synthesisable",

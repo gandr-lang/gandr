@@ -527,7 +527,10 @@ fn checking_row(
         | CheckRefusal::ShapeMismatch {
             wanted:
                 ExpectedShape::PathUniverse
+                | ExpectedShape::Stack
+                | ExpectedShape::With
                 | ExpectedShape::Sum
+                | ExpectedShape::List
                 | ExpectedShape::Thunk
                 | ExpectedShape::Arrow
                 | ExpectedShape::Product
@@ -537,13 +540,24 @@ fn checking_row(
         | CheckRefusal::NotSynthesisable {
             form:
                 CheckingForm::Injection(_)
+                | CheckingForm::Reify(_)
+                | CheckingForm::Handle(_)
+                | CheckingForm::Reset(_)
+                | CheckingForm::Shift(_)
+                | CheckingForm::With(_)
                 | CheckingForm::Case(_)
+                | CheckingForm::List(_)
                 | CheckingForm::Return(_)
                 | CheckingForm::Hole(_)
                 | CheckingForm::StaticLambda(_)
                 | CheckingForm::Fixpoint(_),
         }
         | CheckRefusal::PathCode(_)
+        | CheckRefusal::EffectSignatureConflict { .. }
+        | CheckRefusal::UnknownOperation { .. }
+        | CheckRefusal::HandlerCoverage { .. }
+        | CheckRefusal::ShiftWithoutReset { .. }
+        | CheckRefusal::DependentStack { .. }
         | CheckRefusal::TypeMismatch(_)
         | CheckRefusal::UnknownConstant { .. }
         | CheckRefusal::OutOfFragment { .. }
@@ -719,6 +733,17 @@ fn formers(
                 | Some(&Value::Record(ref fields)) => {
                     worklist.extend(fields.values().copied().map(Node::Value));
                 },
+                | Some(&Value::Reify(ref frames)) => {
+                    worklist.extend(frames.iter().filter_map(|frame| match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            Some(Node::Value(value))
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            Some(Node::Computation(body))
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                    }));
+                },
                 | Some(&Value::Thunk(suspended)) => worklist.push(Node::Computation(suspended)),
                 | Some(
                     &(Value::PathProduct(first, second)
@@ -727,6 +752,7 @@ fn formers(
                         backward: second,
                         ..
                     }
+                    | Value::ListCons(first, second)
                     | Value::Pair(first, second)),
                 ) => {
                     worklist.push(Node::Value(first));
@@ -745,6 +771,7 @@ fn formers(
                     | &(Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
+                    | Value::ListNil
                     | Value::Literal(_)
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)
@@ -767,6 +794,40 @@ fn formers(
                 | Some(&Computation::RecordProjection(record, _)) => {
                     worklist.push(Node::Value(record));
                 },
+                | Some(&Computation::Perform { payload, .. }) => {
+                    worklist.push(Node::Value(payload));
+                },
+                | Some(&Computation::Handle {
+                    subject,
+                    on_return,
+                    ref clauses,
+                    ..
+                }) => {
+                    worklist.extend([Node::Computation(subject), Node::Computation(on_return)]);
+                    worklist.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
+                },
+                | Some(&Computation::Resume(value, body)) => {
+                    worklist.extend([Node::Value(value), Node::Computation(body)]);
+                },
+                | Some(
+                    &(Computation::Reset(body)
+                    | Computation::Shift(body)
+                    | Computation::Project(_, body)),
+                ) => worklist.push(Node::Computation(body)),
+                | Some(&Computation::With(first, second)) => {
+                    worklist.extend([Node::Computation(first), Node::Computation(second)]);
+                },
+
+                | Some(&Computation::ListFold {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => worklist.extend([
+                    Node::Value(list),
+                    Node::Computation(on_nil),
+                    Node::Computation(on_cons),
+                ]),
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     worklist.extend(arguments.iter().copied().map(Node::Value));
                 },

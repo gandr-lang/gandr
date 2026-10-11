@@ -746,7 +746,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. }) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Fixpoint(_) => true,
+            Elimination::ListFold { .. } | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Fixpoint(_) => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -789,6 +789,7 @@ impl DomainArena
                 | Elimination::RecordProjection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Bind(_)
+                | Elimination::ListFold { .. }
                 | Elimination::Case { .. }
                 | Elimination::Fixpoint(_) => return Guard::Flexible,
             };
@@ -1180,6 +1181,61 @@ impl DomainArena
         ]);
         self.alloc_value(
             DomainValue::Pair {
+                first,
+                second,
+                face,
+            },
+            guard,
+        )
+    }
+
+    /// Mint the empty native list with its source face.
+    ///
+    /// # Specification
+    /// - ensures: returns the native empty-list former with the supplied face.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — List fold readback separates native lists from sums.
+    /// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::ListNil { face }))]
+    #[inline]
+    pub fn value_list_nil(
+        &mut self,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::ListNil { face },
+            Guard::compose(GuardTag::ListNil, &(), &[]),
+        )
+    }
+
+    /// Mint a native cell over its evaluated head and list tail.
+    ///
+    /// # Specification
+    /// - requires: both children resolve in this arena.
+    /// - ensures: preserves head, tail and source face.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — List fold readback separates native lists from sums.
+    /// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+    #[spec(ensures: |ret| self.value(ret) == Some(&DomainValue::ListCons { first, second, face }))]
+    #[inline]
+    pub fn value_list_cons(
+        &mut self,
+        first: DomainValueId,
+        second: DomainValueId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        let guard = Guard::compose(GuardTag::ListCons, &(), &[
+            self.folded_value_guard(first),
+            self.folded_value_guard(second),
+        ]);
+        self.alloc_value(
+            DomainValue::ListCons {
                 first,
                 second,
                 face,

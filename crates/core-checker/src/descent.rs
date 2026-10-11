@@ -21,6 +21,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
 use gandr_kernel_term::DescentRefusal;
 use quenchant_shape::shape::Maybe;
 
@@ -328,10 +329,24 @@ fn walk(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Pair(first, second)
+                    | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), depth, results));
                     pending.push((AnyNode::Value(second), depth, results));
+                },
+                | Some(&Value::Reify(ref frames)) => {
+                    for frame in frames.iter() {
+                        match *frame {
+                            | StackFrame::Apply(value) => {
+                                pending.push((AnyNode::Value(value), depth, results));
+                            },
+                            | StackFrame::Bind(body) => {
+                                pending.push((AnyNode::Computation(body), deeper, results));
+                            },
+                            | StackFrame::Project(_) => {},
+                        }
+                    }
                 },
                 | Some(
                     &(Value::PathRefl(body)
@@ -357,6 +372,7 @@ fn walk(
                     &(Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::Unit
+                    | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_)),
                 )
@@ -417,11 +433,69 @@ fn walk(
                     pending.push((AnyNode::Computation(on_left), deeper, results));
                     pending.push((AnyNode::Computation(on_right), deeper, results));
                 },
-                | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => {
+                | Some(
+                    &(Computation::Lambda(body)
+                    | Computation::Fixpoint { body, .. }
+                    | Computation::Shift(body)),
+                ) => {
                     pending.push((AnyNode::Computation(body), deeper, results));
                 },
-                | Some(&Computation::Mark { body, .. }) => {
+                | Some(
+                    &(Computation::Mark { body, .. }
+                    | Computation::Reset(body)
+                    | Computation::Project(_, body)),
+                ) => {
                     pending.push((AnyNode::Computation(body), depth, results));
+                },
+                | Some(&Computation::With(first, second)) => {
+                    pending.push((AnyNode::Computation(first), depth, results));
+                    pending.push((AnyNode::Computation(second), depth, results));
+                },
+                | Some(&Computation::Resume(stack, body)) => {
+                    pending.push((AnyNode::Value(stack), depth, results));
+                    pending.push((AnyNode::Computation(body), depth, results));
+                },
+                | Some(&Computation::Perform {
+                    ref signature,
+                    payload,
+                    ..
+                }) => {
+                    pending.push((AnyNode::Value(payload), depth, results));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
+                },
+                | Some(&Computation::Handle {
+                    ref signature,
+                    subject,
+                    on_return,
+                    ref clauses,
+                }) => {
+                    pending.push((AnyNode::Computation(subject), depth, results));
+                    pending.push((AnyNode::Computation(on_return), deeper, results));
+                    pending.extend(clauses.iter().map(|clause| {
+                        (AnyNode::Computation(clause.body), deeper.deeper(), results)
+                    }));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.push((AnyNode::ValueType(element), depth, results));
+                    pending.push((AnyNode::ValueType(result), depth, results));
+                    pending.push((AnyNode::Value(list), depth, results));
+                    pending.push((AnyNode::Computation(on_nil), depth, results));
+                    pending.push((AnyNode::Computation(on_cons), deeper.deeper(), results));
                 },
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(
@@ -476,6 +550,13 @@ fn walk(
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), depth, results));
                 },
+                | Some(&ValueType::List(element)) => {
+                    pending.push((AnyNode::ValueType(element), depth, results));
+                },
+                | Some(&ValueType::Stack { input, output }) => {
+                    pending.push((AnyNode::CompType(input), depth, results));
+                    pending.push((AnyNode::CompType(output), depth, results));
+                },
                 | Some(&ValueType::Lift { inner, .. }) => {
                     pending.push((AnyNode::ValueType(inner), depth, results));
                 },
@@ -492,8 +573,20 @@ fn walk(
                 | None => {},
             },
             | AnyNode::CompType(id) => match arena.comp_type(id) {
-                | Some(&CompType::Returner(result)) => {
+                | Some(&CompType::Returner {
+                    result,
+                    ref effects,
+                }) => {
                     pending.push((AnyNode::ValueType(result), depth, results));
+                    pending.extend(
+                        effects
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), depth, results)),
+                    );
+                },
+                | Some(&CompType::With(first, second)) => {
+                    pending.push((AnyNode::CompType(first), depth, results));
+                    pending.push((AnyNode::CompType(second), depth, results));
                 },
                 | Some(&CompType::Arrow { domain, codomain }) => {
                     pending.push((AnyNode::ValueType(domain), depth, results));
@@ -552,7 +645,13 @@ pub fn replay(
     let refuse = |reason| CheckRefusal::DescentNotReplayed { at, reason };
     let domain = match context.arena().comp_type(expected) {
         | Some(&(CompType::Arrow { domain, .. } | CompType::Pi { domain, .. })) => domain,
-        | Some(&(CompType::Returner(_) | CompType::Element { .. } | CompType::Unknown)) | None => {
+        | Some(
+            &(CompType::Returner { .. }
+            | CompType::With(..)
+            | CompType::Element { .. }
+            | CompType::Unknown),
+        )
+        | None => {
             return Err(refuse(DescentRefusal::NotOverData));
         },
     };

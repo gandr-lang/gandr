@@ -652,18 +652,22 @@ impl<'arena> Engine<'arena>
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len(), children = match node {
         | Node::Value(id) => self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
+Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
+Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
+Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
+Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
+Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
 Computation::Hole(_) => 0_usize,
 }),
@@ -671,18 +675,19 @@ Computation::Hole(_) => 0_usize,
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
-ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
+ValueType::Stack { .. } | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
-            | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
-            | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
+            | Some(&CompType::Element { .. }) => 1,
+            Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
         },
     }],
         ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
             && self.tasks.get(pending..).is_some_and(|tasks| tasks.iter().all(|task|
-                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper())))),
+                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper())))),
     )]
     fn push_children(
         &mut self,
@@ -713,11 +718,25 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                         .rev()
                         .map(|&field| open(Node::Value(field), depth)),
                 ),
+                | Some(&Value::Reify(ref frames)) => {
+                    for frame in frames.iter().rev() {
+                        match *frame {
+                            | crate::control::StackFrame::Apply(value) => {
+                                self.tasks.push(open(Node::Value(value), depth));
+                            },
+                            | crate::control::StackFrame::Bind(body) => self
+                                .tasks
+                                .push(open(Node::Computation(body), depth.deeper())),
+                            | crate::control::StackFrame::Project(_) => {},
+                        }
+                    }
+                },
                 | Some(
                     &Value::Primitive { .. }
                     | &Value::Variable { .. }
                     | &Value::Constant(_)
                     | &Value::Unit
+                    | &Value::ListNil
                     | &Value::Literal(_)
                     | &Value::Hole(_),
                 )
@@ -739,7 +758,8 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     | &Value::Mark { body, .. },
                 ) => self.tasks.push(open(Node::Value(body), depth)),
                 | Some(
-                    &Value::PathProduct(first, second)
+                    &Value::ListCons(first, second)
+                    | &Value::PathProduct(first, second)
                     | &Value::Pair(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
@@ -760,6 +780,67 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                 },
             },
             | Node::Computation(id) => match self.arena.computation(id) {
+                | Some(&Computation::Perform {
+                    ref signature,
+                    payload,
+                    ..
+                }) => {
+                    self.tasks.push(open(Node::Value(payload), depth));
+                    self.tasks.extend(
+                        signature
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
+                },
+                | Some(&Computation::Handle {
+                    ref signature,
+                    subject,
+                    on_return,
+                    ref clauses,
+                }) => {
+                    self.tasks.extend(clauses.iter().rev().map(|clause| {
+                        open(Node::Computation(clause.body), depth.deeper().deeper())
+                    }));
+                    self.tasks
+                        .push(open(Node::Computation(on_return), depth.deeper()));
+                    self.tasks.push(open(Node::Computation(subject), depth));
+                    self.tasks.extend(
+                        signature
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
+                },
+                | Some(&Computation::Resume(stack, body)) => {
+                    self.tasks.push(open(Node::Computation(body), depth));
+                    self.tasks.push(open(Node::Value(stack), depth));
+                },
+                | Some(&Computation::With(first, second)) => {
+                    self.tasks.push(open(Node::Computation(second), depth));
+                    self.tasks.push(open(Node::Computation(first), depth));
+                },
+                | Some(
+                    &(Computation::Reset(body)
+                    | Computation::Project(_, body)
+                    | Computation::Mark { body, .. }),
+                ) => {
+                    self.tasks.push(open(Node::Computation(body), depth));
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    self.tasks
+                        .push(open(Node::Computation(on_cons), depth.deeper().deeper()));
+                    self.tasks.push(open(Node::Computation(on_nil), depth));
+                    self.tasks.push(open(Node::Value(list), depth));
+                    self.tasks.push(open(Node::ValueType(result), depth));
+                    self.tasks.push(open(Node::ValueType(element), depth));
+                },
                 | Some(&Computation::Primitive { ref arguments, .. }) => self.tasks.extend(
                     arguments
                         .iter()
@@ -785,14 +866,15 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     self.tasks.push(open(Node::Value(record), depth));
                 },
                 | None | Some(&Computation::Hole(_)) => {},
-                | Some(&Computation::Mark { body, .. }) => {
-                    self.tasks.push(open(Node::Computation(body), depth));
-                },
                 | Some(&Computation::Transport(path, value)) => {
                     self.tasks.push(open(Node::Value(value), depth));
                     self.tasks.push(open(Node::Value(path), depth));
                 },
-                | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => self
+                | Some(
+                    &(Computation::Lambda(body)
+                    | Computation::Fixpoint { body, .. }
+                    | Computation::Shift(body)),
+                ) => self
                     .tasks
                     .push(open(Node::Computation(body), depth.deeper())),
                 | Some(&Computation::Application(head, argument)) => {
@@ -821,6 +903,13 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
             },
             | Node::ValueType(id) => match self.arena.value_type(id) {
                 | Some(matched_native_node) => match *matched_native_node {
+                    | ValueType::Stack { input, output } => {
+                        self.tasks.push(open(Node::CompType(output), depth));
+                        self.tasks.push(open(Node::CompType(input), depth));
+                    },
+                    | ValueType::List(element) => {
+                        self.tasks.push(open(Node::ValueType(element), depth));
+                    },
                     | ValueType::Data { ref arguments, .. } => self.tasks.extend(
                         arguments
                             .iter()
@@ -864,8 +953,21 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                 | None => {},
             },
             | Node::CompType(id) => match self.arena.comp_type(id) {
+                | Some(&CompType::With(first, second)) => {
+                    self.tasks.push(open(Node::CompType(second), depth));
+                    self.tasks.push(open(Node::CompType(first), depth));
+                },
                 | None | Some(&CompType::Unknown) => {},
-                | Some(&CompType::Returner(result)) => {
+                | Some(&CompType::Returner {
+                    result,
+                    ref effects,
+                }) => {
+                    self.tasks.extend(
+                        effects
+                            .types()
+                            .rev()
+                            .map(|ty| open(Node::ValueType(ty), depth)),
+                    );
                     self.tasks.push(open(Node::ValueType(result), depth));
                 },
                 | Some(&CompType::Arrow { domain, codomain }) => {
@@ -1067,6 +1169,29 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
         }
     }
 
+    /// Pop a signature's rewritten type edges in reverse canonical order.
+    ///
+    /// # Specification
+    /// - ensures: preserves interface identity and operation coverage.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signatures beneath binders distinguish payload and
+    ///   reply scope.
+    /// - witness: `control::tests::stack_literals_preserve_binder_scope`
+    #[spec(ensures: |ret| ret.name() == original.name() && ret.operations().len() == original.operations().len())]
+    fn signature(
+        results: &mut Vec<Node>,
+        original: &crate::effect::EffectSig,
+    ) -> crate::effect::EffectSig
+    {
+        match original.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
+            Ok::<_, core::convert::Infallible>(Self::value_type(results, ty))
+        }) {
+            | Ok(signature) => signature,
+            | Err(never) => match never {},
+        }
+    }
+
     /// Combine a value node.
     ///
     /// # Specification
@@ -1084,10 +1209,11 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
+Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
-Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
+Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
 Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 })],
@@ -1148,6 +1274,36 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                     | None => id,
                 }
             },
+            | Value::Reify(ref frames) => {
+                let mut rewritten_frames = None;
+                for (index, original) in frames.iter().copied().enumerate().rev() {
+                    let rewritten = match original {
+                        | crate::control::StackFrame::Apply(value) => {
+                            crate::control::StackFrame::Apply(Self::value(&mut self.results, value))
+                        },
+                        | crate::control::StackFrame::Bind(body) => {
+                            crate::control::StackFrame::Bind(Self::computation(
+                                &mut self.results,
+                                body,
+                            ))
+                        },
+                        | crate::control::StackFrame::Project(side) => {
+                            crate::control::StackFrame::Project(side)
+                        },
+                    };
+                    if rewritten != original {
+                        let changed =
+                            rewritten_frames.get_or_insert_with(|| alloc::sync::Arc::clone(frames));
+                        if let Some(slot) = alloc::sync::Arc::make_mut(changed).get_mut(index) {
+                            *slot = rewritten;
+                        }
+                    }
+                }
+                match rewritten_frames {
+                    | Some(frames) => self.arena.value_reify(frames),
+                    | None => id,
+                }
+            },
             | Value::PathRefl(code) => {
                 let rewritten = Self::value(&mut self.results, code);
                 if rewritten == code {
@@ -1195,6 +1351,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Unit
+            | Value::ListNil
             | Value::Literal(_)
             | Value::Hole(_) => id,
             | Value::Mark { mark, body } => {
@@ -1214,6 +1371,16 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 }
                 else {
                     self.arena.value_pair(rewritten_first, rewritten_second)
+                }
+            },
+            | Value::ListCons(head, tail) => {
+                let new_tail = Self::value(&mut self.results, tail);
+                let new_head = Self::value(&mut self.results, head);
+                if (new_head, new_tail) == (head, tail) {
+                    id
+                }
+                else {
+                    self.arena.value_list_cons(new_head, new_tail)
                 }
             },
             | Value::Injection(side, body) => {
@@ -1301,10 +1468,13 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     #[spec(
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
+Computation::Perform { ref signature, .. } => 1_usize.saturating_add(signature.types().count()),
+Computation::Handle { ref signature, ref clauses, .. } => 2_usize.saturating_add(signature.types().count()).saturating_add(clauses.len()),
+Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
 Computation::Hole(_) => 0_usize,
 })],
@@ -1322,6 +1492,135 @@ Computation::Hole(_) => 0_usize,
             return id;
         };
         match *node {
+            | Computation::Perform {
+                ref signature,
+                ref operation,
+                payload,
+            } => {
+                let rewritten = Self::value(&mut self.results, payload);
+                let rewritten_signature = Self::signature(&mut self.results, signature);
+                if rewritten == payload && rewritten_signature == *signature {
+                    id
+                }
+                else {
+                    self.arena.computation_perform(
+                        rewritten_signature,
+                        operation.clone(),
+                        rewritten,
+                    )
+                }
+            },
+            | Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => {
+                let mut rewritten_clauses = None;
+                for (index, clause) in clauses.iter().enumerate().rev() {
+                    let rewritten = Self::computation(&mut self.results, clause.body);
+                    if rewritten != clause.body {
+                        let changed = rewritten_clauses
+                            .get_or_insert_with(|| alloc::sync::Arc::clone(clauses));
+                        if let Some(slot) = alloc::sync::Arc::make_mut(changed).get_mut(index) {
+                            slot.body = rewritten;
+                        }
+                    }
+                }
+                let rewritten_return = Self::computation(&mut self.results, on_return);
+                let rewritten_subject = Self::computation(&mut self.results, subject);
+                let rewritten_signature = Self::signature(&mut self.results, signature);
+                if rewritten_clauses.is_none()
+                    && (rewritten_return, rewritten_subject) == (on_return, subject)
+                    && rewritten_signature == *signature
+                {
+                    id
+                }
+                else {
+                    self.arena.computation_handle(
+                        rewritten_signature,
+                        rewritten_subject,
+                        rewritten_return,
+                        rewritten_clauses.unwrap_or_else(|| alloc::sync::Arc::clone(clauses)),
+                    )
+                }
+            },
+            | Computation::Resume(stack, body) => {
+                let rewritten_body = Self::computation(&mut self.results, body);
+                let rewritten_stack = Self::value(&mut self.results, stack);
+                if (rewritten_stack, rewritten_body) == (stack, body) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_resume(rewritten_stack, rewritten_body)
+                }
+            },
+            | Computation::With(first, second) => {
+                let rewritten_second = Self::computation(&mut self.results, second);
+                let rewritten_first = Self::computation(&mut self.results, first);
+                if (rewritten_first, rewritten_second) == (first, second) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_with(rewritten_first, rewritten_second)
+                }
+            },
+            | Computation::Reset(body) => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_reset(rewritten)
+                }
+            },
+            | Computation::Shift(body) => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_shift(rewritten)
+                }
+            },
+            | Computation::Project(side, body) => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_project(side, rewritten)
+                }
+            },
+            | Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let new_cons = Self::computation(&mut self.results, on_cons);
+                let new_nil = Self::computation(&mut self.results, on_nil);
+                let new_list = Self::value(&mut self.results, list);
+                let new_result = Self::value_type(&mut self.results, result);
+                let new_element = Self::value_type(&mut self.results, element);
+                if (new_element, new_result, new_list, new_nil, new_cons)
+                    == (element, result, list, on_nil, on_cons)
+                {
+                    id
+                }
+                else {
+                    self.arena.computation_list_fold(
+                        new_element,
+                        new_result,
+                        new_list,
+                        new_nil,
+                        new_cons,
+                    )
+                }
+            },
             | Computation::Primitive {
                 primitive,
                 mut arguments,
@@ -1501,8 +1800,8 @@ Computation::Hole(_) => 0_usize,
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
-ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
-ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
+ValueType::Stack { .. } | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
@@ -1551,6 +1850,26 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                 match changed {
                     | Some(fields) => self.arena.value_type_record(fields),
                     | None => id,
+                }
+            },
+            | ValueType::Stack { input, output } => {
+                let rewritten_output = Self::comp_type(&mut self.results, output);
+                let rewritten_input = Self::comp_type(&mut self.results, input);
+                if (rewritten_input, rewritten_output) == (input, output) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_stack(rewritten_input, rewritten_output)
+                }
+            },
+            | ValueType::List(element) => {
+                let rewritten = Self::value_type(&mut self.results, element);
+                if rewritten == element {
+                    id
+                }
+                else {
+                    self.arena.value_type_list(rewritten)
                 }
             },
             | ValueType::PathUniverse(source, target) => {
@@ -1649,8 +1968,9 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
     #[spec(
         captures: [ready = self.results.len(), children = match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
-            | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
-            | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            | Some(&CompType::Returner { ref effects, .. }) => 1_usize.saturating_add(effects.types().count()),
+            | Some(&CompType::Element { .. }) => 1,
+            Some(&CompType::With(..) | &CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
         }],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.comp_type(id).is_some_and(|original| self.arena.comp_type(ret).is_some_and(|rewritten|
@@ -1661,18 +1981,39 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
         id: CompTypeId,
     ) -> CompTypeId
     {
-        let Some(node) = self.arena.comp_type(id).cloned()
+        let Some(node) = self.arena.comp_type(id)
         else {
             return id;
         };
-        match node {
-            | CompType::Returner(result) => {
-                let rewritten = Self::value_type(&mut self.results, result);
-                if rewritten == result {
+        match *node {
+            | CompType::With(first, second) => {
+                let rewritten_second = Self::comp_type(&mut self.results, second);
+                let rewritten_first = Self::comp_type(&mut self.results, first);
+                if (rewritten_first, rewritten_second) == (first, second) {
                     id
                 }
                 else {
-                    self.arena.comp_type_returner(rewritten)
+                    self.arena.comp_type_with(rewritten_first, rewritten_second)
+                }
+            },
+            | CompType::Returner {
+                result,
+                ref effects,
+            } => {
+                let rewritten_effects =
+                    match effects.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
+                        Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
+                    }) {
+                        | Ok(row) => row,
+                        | Err(never) => match never {},
+                    };
+                let rewritten = Self::value_type(&mut self.results, result);
+                if rewritten == result && rewritten_effects == *effects {
+                    id
+                }
+                else {
+                    self.arena
+                        .comp_type_returner_with_effects(rewritten, rewritten_effects)
                 }
             },
             | CompType::Arrow { domain, codomain } => {
@@ -1697,13 +2038,13 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                         .comp_type_pi(rewritten_domain, rewritten_codomain)
                 }
             },
-            | CompType::Element { code, target } => {
+            | CompType::Element { code, ref target } => {
                 let rewritten = Self::value(&mut self.results, code);
                 if rewritten == code {
                     id
                 }
                 else {
-                    self.arena.comp_type_element(rewritten, target)
+                    self.arena.comp_type_element(rewritten, target.clone())
                 }
             },
             | CompType::Unknown => id,
@@ -1871,6 +2212,38 @@ pub fn instantiate_value(
     ) {
         | Node::Value(id) => id,
         | Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => body,
+    }
+}
+
+/// Instantiate an ambient variable beneath local binders in a value type.
+///
+/// # Specification
+/// - requires: `body` is scoped beneath `under` local binders and one captured
+///   binder; `argument` is scoped outside all those binders.
+/// - ensures: the captured binder is replaced without capturing local
+///   variables; further ambient indices decrease by one, and decoded quotes
+///   reduce.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type with both a local and a captured code
+///   distinguishes substitution at the requested depth from substitution at
+///   zero.
+/// - witness: `rewrite::tests::annotation_substitution_protects_local_binders`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret == body || arena.value_type(ret).is_some())]
+pub fn instantiate_value_type_under(
+    arena: &mut CoreArena,
+    body: ValueTypeId,
+    argument: ValueId,
+    under: Binders,
+) -> ValueTypeId
+{
+    match Engine::new(arena).run(Node::ValueType(body), under, Rewrite::Substitute(argument)) {
+        | Node::ValueType(id) => id,
+        | Node::Value(_) | Node::Computation(_) | Node::CompType(_) => body,
     }
 }
 
@@ -2154,6 +2527,23 @@ pub fn substitute_environment(
 mod tests
 {
     use alloc::collections::BTreeMap;
+    #[test]
+    fn annotation_substitution_protects_local_binders()
+    {
+        let mut arena = CoreArena::new();
+        let local = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let captured = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let local_type = arena.value_type_element(local, Level::zero());
+        let captured_type = arena.value_type_element(captured, Level::zero());
+        let pair = arena.value_type_product(local_type, captured_type);
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let closed = super::instantiate_value_type_under(&mut arena, pair, code, Binders::ONE);
+        assert_eq!(
+            arena.value_type(closed),
+            Some(&ValueType::Product(local_type, unit))
+        );
+    }
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -2198,7 +2588,9 @@ mod tests
         let motive = arena.comp_type_returner(datatype);
         let shifted =
             super::shift_comp_type_under(&mut arena, motive, Binders::ONE, Binders::from(2));
-        let Some(&CompType::Returner(shifted)) = arena.comp_type(shifted)
+        let Some(&CompType::Returner {
+            result: shifted, ..
+        }) = arena.comp_type(shifted)
         else {
             panic!("returner motive");
         };
@@ -2401,18 +2793,18 @@ mod tests
     /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
     #[spec(ensures: |ret| ret.first() == Some(&match root {
         | Visit::CompType(id) => match arena.comp_type(id) {
-            | Some(&CompType::Returner(_)) => Token::Returner,
+            | Some(&CompType::Returner { .. }) => Token::Returner,
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
             | Some(&CompType::Pi { .. }) => Token::Pi,
             | Some(&CompType::Element { .. }) => Token::CompElement,
-            | Some(&CompType::Unknown) | None => Token::Other,
+            | Some(&CompType::Unknown | &CompType::With(..)) | None => Token::Other,
         },
         | Visit::ValueType(id) => match arena.value_type(id) {
             | Some(&ValueType::Base(base)) => Token::Base(base),
             | Some(&ValueType::Element { .. }) => Token::Element,
             | Some(&ValueType::Thunk(_)) => Token::Thunk,
             | Some(&ValueType::Product(..)) => Token::Product,
-            Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unit |
+            Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unit |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
 .. } | &ValueType::Unknown) | None => Token::Other,
@@ -2425,7 +2817,7 @@ mod tests
             | Some(&Value::QuoteComputation(_)) => Token::QuoteComputation,
             | Some(&Value::StaticLambda(_)) => Token::StaticLambda,
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
-            Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
+            Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Unit | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
 | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
@@ -2441,7 +2833,7 @@ mod tests
         while let Some(visit) = pending.pop() {
             match visit {
                 | Visit::CompType(id) => match arena.comp_type(id) {
-                    | Some(&CompType::Returner(result)) => {
+                    | Some(&CompType::Returner { result, .. }) => {
                         tokens.push(Token::Returner);
                         pending.push(Visit::ValueType(result));
                     },
@@ -2459,7 +2851,9 @@ mod tests
                         tokens.push(Token::CompElement);
                         pending.push(Visit::Value(code));
                     },
-                    | Some(&CompType::Unknown) | None => tokens.push(Token::Other),
+                    | Some(&CompType::Unknown | &CompType::With(..)) | None => {
+                        tokens.push(Token::Other);
+                    },
                 },
                 | Visit::ValueType(id) => match arena.value_type(id) {
                     | Some(&ValueType::Base(base)) => tokens.push(Token::Base(base)),
@@ -2945,7 +3339,10 @@ mod tests
         let code = arena.value_quote(integer);
         let instantiated = instantiate_comp_type(&mut arena, codomain, code);
         assert_eq!(
-            Some(&CompType::Returner(integer)),
+            Some(&CompType::Returner {
+                result: integer,
+                effects: crate::effect::EffectRow::EMPTY
+            }),
             arena.comp_type(instantiated),
             "F (El x) at ⌜Integer⌝ is F Integer, with the decode read off the quote"
         );
@@ -3538,7 +3935,10 @@ mod tests
                 arena.comp_type_returner(t0),
                 vec![Node::ValueType(t0)],
                 vec![Node::ValueType(u0)],
-                CompType::Returner(u0),
+                CompType::Returner {
+                    result: u0,
+                    effects: crate::effect::EffectRow::EMPTY,
+                },
             ),
             (
                 arena.comp_type_arrow(t0, k0),

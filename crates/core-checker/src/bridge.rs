@@ -1485,6 +1485,78 @@ enum Frame
     NativeNext(CoreNode),
     /// Assemble a native former once every child has crossed.
     NativeBuild(CoreNode),
+    /// Await a native cell's head.
+    ListHead
+    {
+        /// Source cell.
+        at: ValueId,
+        /// Source tail.
+        tail: ValueId,
+    },
+    /// Await a native cell's tail.
+    ListTail
+    {
+        /// Source cell.
+        at: ValueId,
+        /// Lowered head.
+        head: gandr_kernel_term::ValueId,
+    },
+    /// Await a fold's element annotation.
+    ListElement
+    {
+        /// Source fold.
+        at: ComputationId,
+    },
+    /// Await a fold's result annotation.
+    ListResult
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+    },
+    /// Await a fold's list.
+    ListInput
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+    },
+    /// Await a fold's empty branch.
+    ListNil
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+    },
+    /// Await a fold's cell branch.
+    ListCons
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+        /// Lowered empty branch.
+        on_nil: gandr_kernel_term::ComputationId,
+    },
+    /// Await the element type of a finite list.
+    ListType
+    {
+        /// The source list type.
+        at: ValueTypeId,
+    },
     /// A binary native call, awaiting its first argument.
     NativeFirst
     {
@@ -2767,6 +2839,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Value::Constructor { .. } | Value::Record(_) => {
                 return self.prepare_native(target, node);
             },
+            | Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
+            | Value::ListNil => return Ok(self.erased_value(at, target.value_list_nil())),
+            | Value::ListCons(head, tail) => (
+                Frame::ListHead { at, tail },
+                CoreNode::Term(TermNode::Value(head)),
+            ),
             | Value::Primitive { primitive, .. } => {
                 let position = self
                     .positions
@@ -2964,9 +3042,22 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         else {
             return Err(Refusal::DanglingNode { node });
         };
+        let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match *computation {
             | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                 return self.prepare_native(target, node);
+            },
+            | Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
+            | Computation::Handle { .. } => return Err(unadmitted(UnadmittedFormer::Handle)),
+            | Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
+            | Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
+            | Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
+            | Computation::With(..) => return Err(unadmitted(UnadmittedFormer::With)),
+            | Computation::Project(..) => return Err(unadmitted(UnadmittedFormer::Project)),
+            | Computation::ListFold { element, .. } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::ListElement { at });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(element))));
             },
             | Computation::Primitive {
                 primitive,
@@ -3076,6 +3167,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::Data { .. } | ValueTypeView::Record(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
+            | ValueTypeView::Stack { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Stack,
+                });
+            },
+            | ValueTypeView::List(element) => (
+                Frame::ListType { at },
+                CoreNode::Type(TypeNode::Value(element)),
+            ),
             | ValueTypeView::PathUniverse(source, target_code) => (
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
@@ -3178,7 +3279,21 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | None => {},
         }
         let (frame, child) = match comp_type_view(self.arena, at)? {
-            | CompTypeView::Returner(result) => (Frame::Returner { at }, result),
+            | CompTypeView::With(..) => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Computation(at)),
+                    former: UnadmittedFormer::With,
+                });
+            },
+            | CompTypeView::Returner { result, effects } => {
+                if effects.purity() != gandr_core_term::effect::Purity::Pure {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Computation(at)),
+                        former: UnadmittedFormer::EffectRow,
+                    });
+                }
+                (Frame::Returner { at }, result)
+            },
             | CompTypeView::Arrow { domain, codomain } => {
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
@@ -3273,6 +3388,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 continue;
             }
             let image = match (node, sort) {
+                | (Value::Reify(_), _) => {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        former: UnadmittedFormer::Reify,
+                    });
+                },
                 | (Value::Quote(quoted), GroundSort::Value) => {
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(quoted))));
                 },
@@ -3324,6 +3445,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::Literal(_)
                     | Value::Thunk(_)
                     | Value::Pair(..)
+                    | Value::ListNil
+                    | Value::ListCons(..)
                     | Value::Injection(..)
                     | Value::Lift { .. }
                     | Value::StaticLambda(_),
@@ -3436,6 +3559,90 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         match (frame, image) {
             | (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
             | (Frame::NativeBuild(root), _) => self.finish_native(target, root),
+            | (Frame::ListHead { at, tail }, AnyNode::Value(head)) => {
+                self.frames.push(Frame::ListTail { at, head });
+                self.argument(tail)
+            },
+            | (Frame::ListTail { at, head }, AnyNode::Value(tail)) => {
+                Ok(self.erased_value(at, target.value_list_cons(head, tail)))
+            },
+            | (Frame::ListElement { at }, AnyNode::ValueType(element)) => {
+                let Some(&Computation::ListFold { result, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListResult { at, element });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(result))))
+            },
+            | (Frame::ListResult { at, element }, AnyNode::ValueType(result)) => {
+                let Some(&Computation::ListFold { list, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListInput {
+                    at,
+                    element,
+                    result,
+                });
+                self.argument(list)
+            },
+            | (
+                Frame::ListInput {
+                    at,
+                    element,
+                    result,
+                },
+                AnyNode::Value(list),
+            ) => {
+                let Some(&Computation::ListFold { on_nil, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListNil {
+                    at,
+                    element,
+                    result,
+                    list,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(on_nil))))
+            },
+            | (
+                Frame::ListNil {
+                    at,
+                    element,
+                    result,
+                    list,
+                },
+                AnyNode::Computation(on_nil),
+            ) => {
+                let Some(&Computation::ListFold { on_cons, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCons {
+                    at,
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_cons,
+                ))))
+            },
+            | (
+                Frame::ListCons {
+                    at,
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                },
+                AnyNode::Computation(on_cons),
+            ) => Ok(self.erased_computation(
+                at,
+                target.computation_list_fold(element, result, list, on_nil, on_cons),
+            )),
             | (Frame::PathRefl { at }, AnyNode::Value(code)) => {
                 Ok(self.erased_value(at, target.value_path_refl(code)))
             },
@@ -3675,6 +3882,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::ProductSecond { at, first }, AnyNode::ValueType(second)) => {
                 Ok(self.erased_value_type(at, target.value_type_product(first, second)))
             },
+            | (Frame::ListType { at }, AnyNode::ValueType(element)) => {
+                Ok(self.erased_value_type(at, target.value_type_list(element)))
+            },
             | (Frame::StaticPiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
                 self.frames.push(Frame::StaticPiCodomain { at, domain });
                 Ok(Step::Descend(CoreNode::Type(TypeNode::Value(codomain))))
@@ -3688,6 +3898,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (
                 Frame::CaseLeft { .. }
                 | Frame::CaseRight { .. }
+                | Frame::ListNil { .. }
+                | Frame::ListCons { .. }
                 | Frame::Thunk { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::Lambda { .. }
@@ -3719,6 +3931,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::TransportValue { .. }
                 | Frame::Injection { .. }
                 | Frame::CaseScrutinee { .. }
+                | Frame::ListHead { .. }
+                | Frame::ListTail { .. }
+                | Frame::ListInput { .. }
                 | Frame::Force { .. }
                 | Frame::ApplicationArgument { .. }
                 | Frame::NativeFirst { .. }
@@ -3736,6 +3951,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::PathEquivType { .. }
                 | Frame::SumFirst { .. }
                 | Frame::SumSecond { .. }
+                | Frame::ListType { .. }
+                | Frame::ListElement { .. }
+                | Frame::ListResult { .. }
                 | Frame::Quote { .. }
                 | Frame::LiftedCode { .. }
                 | Frame::TypeLift { .. }
@@ -4884,6 +5102,232 @@ mod tests
             ],
             "each crossing takes the next kernel position, and the reference crosses"
         );
+    }
+
+    #[test]
+    fn native_lists_check_and_round_trip()
+    {
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let list_type = arena.value_type_list(unit_type);
+        let unit = arena.value_unit();
+        let nil = arena.value_list_nil();
+        let cons = arena.value_list_cons(unit, nil);
+        let bad_tail = arena.value_list_cons(unit, unit);
+        let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let tail = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let cell = arena.value_list_cons(head, tail);
+        let on_nil = arena.computation_return(nil);
+        let on_cons = arena.computation_return(cell);
+        let folded = arena.computation_list_fold(unit_type, list_type, cons, on_nil, on_cons);
+        let folded = arena.value_thunk(folded);
+        let result = arena.comp_type_returner(list_type);
+        let fold_type = arena.value_type_thunk(result);
+        let swapped = arena.value_list_cons(tail, head);
+        let swapped = arena.computation_return(swapped);
+        let swapped = arena.computation_list_fold(unit_type, list_type, cons, on_nil, swapped);
+        let swapped = arena.value_thunk(swapped);
+        let sum_nil = arena.value_injection(Side::Left, unit);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(list_type), Maybe::Present(nil)),
+            declaration(At(1), Maybe::Present(list_type), Maybe::Present(cons)),
+            declaration(At(2), Maybe::Present(list_type), Maybe::Present(bad_tail)),
+            declaration(At(3), Maybe::Present(fold_type), Maybe::Present(folded)),
+            declaration(At(4), Maybe::Present(fold_type), Maybe::Present(swapped)),
+            declaration(At(5), Maybe::Present(list_type), Maybe::Present(sum_nil)),
+        ]);
+        for admitted in &readmission.readmitted()[.. 2] {
+            assert!(
+                matches!(admitted.outcome(), Outcome::Defined { .. }),
+                "{:?}",
+                admitted.outcome()
+            );
+        }
+        assert!(matches!(
+            readmission.readmitted()[2].outcome(),
+            Outcome::Marked(_)
+        ));
+        assert!(
+            matches!(
+                readmission.readmitted()[3].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "{:?}",
+            readmission.readmitted()[3].outcome()
+        );
+        assert!(matches!(
+            readmission.readmitted()[4].outcome(),
+            Outcome::Marked(_)
+        ));
+        assert!(matches!(
+            readmission.readmitted()[5].outcome(),
+            Outcome::Marked(_)
+        ));
+        let image = readmission.export(BTreeMap::new());
+        let imported = decode(image.as_image()).expect("lists decode");
+        assert_eq!(
+            gandr_kernel_term::encode(imported.arena(), imported.declarations()).as_image(),
+            image.as_image()
+        );
+    }
+
+    #[test]
+    fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let interface = EffectSig::new(EffectName::from("IO"), [EffectOp {
+            name: OperationName::from("emit"),
+            payload: unit_type,
+            reply: unit_type,
+        }])
+        .expect("one operation");
+        let effectful = arena
+            .comp_type_returner_with_effects(unit_type, EffectRow::singleton(interface.clone()));
+        let effectful_type = arena.value_type_thunk(effectful);
+        let pure = arena.comp_type_returner(unit_type);
+        let pure_type = arena.value_type_thunk(pure);
+        let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        let body = arena.value_thunk(returned);
+        let requested = arena.computation_perform(interface.clone(), "emit".into(), unit);
+        let requested_body = arena.value_thunk(requested);
+        let continuation = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let resumed = arena.computation_resume(continuation, returned);
+        let handled = arena.computation_handle(
+            interface,
+            requested,
+            returned,
+            [gandr_core_term::control::EffectClause {
+                operation: "emit".into(),
+                body: resumed,
+            }]
+            .into(),
+        );
+        let handled_body = arena.value_thunk(handled);
+        let shifted = arena.computation_shift(resumed);
+        let reset = arena.computation_reset(shifted);
+        let reset_body = arena.value_thunk(reset);
+        let stack_type = arena.value_type_stack(pure, pure);
+        let stack = arena.value_reify([].into());
+        let pair_type = arena.comp_type_with(pure, pure);
+        let suspended_pair = arena.value_type_thunk(pair_type);
+        let pair = arena.computation_with(returned, returned);
+        let pair_body = arena.value_thunk(pair);
+        let pair_constant = arena.value_constant(ConstantIndex::from(6_usize));
+        let forced = arena.computation_force(pair_constant);
+        let projected = arena.computation_project(Side::Right, forced);
+        let projected_body = arena.value_thunk(projected);
+        let stack_constant = arena.value_constant(ConstantIndex::from(5_usize));
+        let resumed = arena.computation_resume(stack_constant, returned);
+        let resumed_body = arena.value_thunk(resumed);
+        let quoted = arena.value_quote_computation(effectful);
+        let quote_type = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            crate::synthesise_value(&mut context, quoted)
+                .expect("a well-formed runtime computation code")
+                .produced()
+                .id()
+        };
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(effectful_type),
+                Maybe::Present(requested_body),
+            ),
+            declaration(At(1), Maybe::Present(effectful_type), HOLE),
+            declaration(At(2), Maybe::Present(pure_type), Maybe::Present(body)),
+            declaration(
+                At(3),
+                Maybe::Present(pure_type),
+                Maybe::Present(handled_body),
+            ),
+            declaration(At(4), Maybe::Present(pure_type), Maybe::Present(reset_body)),
+            declaration(At(5), Maybe::Present(stack_type), Maybe::Present(stack)),
+            declaration(
+                At(6),
+                Maybe::Present(suspended_pair),
+                Maybe::Present(pair_body),
+            ),
+            declaration(
+                At(7),
+                Maybe::Present(pure_type),
+                Maybe::Present(projected_body),
+            ),
+            declaration(
+                At(8),
+                Maybe::Present(pure_type),
+                Maybe::Present(resumed_body),
+            ),
+            declaration(At(9), Maybe::Present(quote_type), Maybe::Present(quoted)),
+        ]);
+        for (position, entry) in readmission.readmitted().iter().take(2).enumerate() {
+            assert_eq!(entry.constant(), ConstantIndex::from(position));
+            assert_eq!(
+                entry.outcome(),
+                &Outcome::Refused(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Computation(effectful)),
+                    former: UnadmittedFormer::EffectRow
+                })
+            );
+        }
+        assert!(matches!(
+            readmission.readmitted()[2].outcome(),
+            Outcome::Defined { .. }
+        ));
+        for (position, at, former) in [
+            (
+                3_usize,
+                CoreNode::Term(TermNode::Computation(handled)),
+                UnadmittedFormer::Handle,
+            ),
+            (
+                4,
+                CoreNode::Term(TermNode::Computation(reset)),
+                UnadmittedFormer::Reset,
+            ),
+            (
+                5,
+                CoreNode::Type(TypeNode::Value(stack_type)),
+                UnadmittedFormer::Stack,
+            ),
+            (
+                6,
+                CoreNode::Type(TypeNode::Computation(pair_type)),
+                UnadmittedFormer::With,
+            ),
+            (
+                7,
+                CoreNode::Term(TermNode::Computation(projected)),
+                UnadmittedFormer::Project,
+            ),
+            (
+                8,
+                CoreNode::Term(TermNode::Computation(resumed)),
+                UnadmittedFormer::Resume,
+            ),
+            (
+                9,
+                CoreNode::Type(TypeNode::Computation(effectful)),
+                UnadmittedFormer::EffectRow,
+            ),
+        ] {
+            let entry = &readmission.readmitted()[position];
+            assert_eq!(entry.constant(), ConstantIndex::from(position));
+            assert_eq!(
+                entry.outcome(),
+                &Outcome::Refused(Refusal::OutOfFragment { at, former })
+            );
+        }
+        assert!(readmission.audit().axioms().is_empty());
+        let artifact = readmission.export(BTreeMap::new());
+        let decoded = decode(artifact.as_image()).expect("the remaining pure definition exports");
+        assert_eq!(decoded.declarations().len(), 1);
     }
 
     #[test]

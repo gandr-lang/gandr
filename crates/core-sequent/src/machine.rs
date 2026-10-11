@@ -164,6 +164,18 @@ impl Definitions
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Stuck
 {
+    /// No reachable source handler or host accepted this operation.
+    PerformNoHandler(CommandId),
+    /// No reset is reachable across the structural continuation prefix.
+    ShiftNoReset(CommandId),
+    /// A resumption was supplied a value which is not a first-class stack.
+    ResumedNonStack
+    {
+        /// The resumption command.
+        at: CommandId,
+        /// The supplied value.
+        value: HeapValueId,
+    },
     /// A native operation refused its arguments, including zero division.
     Primitive(gandr_core_term::primitive::PrimitiveError),
     /// A native operand has no scalar interpretation, retaining its blame site.
@@ -221,6 +233,11 @@ impl fmt::Display for Stuck
     ) -> fmt::Result
     {
         match *self {
+            | Self::PerformNoHandler(at) => write!(f, "operation at command {at} has no handler"),
+            | Self::ShiftNoReset(at) => write!(f, "shift at command {at} has no reset"),
+            | Self::ResumedNonStack { at, value } => {
+                write!(f, "resume at command {at} received non-stack value {value}")
+            },
             | Self::Primitive(error) => write!(f, "native operation: {error}"),
             | Self::NonScalar(value) => write!(f, "native operand {value} is not a scalar"),
             | Self::UnboundVariable { index, .. } => {
@@ -254,6 +271,171 @@ pub enum Outcome
     Stuck(Stuck),
 }
 
+/// An operation not claimed by the nearest source delimiter.
+#[derive(Clone, Copy, Debug)]
+pub struct HostRequest<'request>
+{
+    /// The inline interface; its type handles belong to
+    /// `HostValues::annotations`.
+    pub signature: &'request gandr_core_term::effect::EffectSig,
+    /// The requested operation within that interface.
+    pub operation: &'request gandr_core_term::effect::OperationName,
+    /// The live payload, retaining thunk and continuation identity.
+    pub payload: HeapValueId,
+}
+
+/// A host decision about one operation offer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HostReply<Abort>
+{
+    /// Deliver an existing or newly allocated heap value to the live
+    /// continuation.
+    Resume(HeapValueId),
+    /// Stop without resuming, carrying the host's termination result.
+    Abort(Abort),
+    /// Leave the operation unhandled, retaining its Perform blame site.
+    Decline,
+}
+
+/// A source-machine outcome or an explicit non-resuming host termination.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HostOutcome<Abort>
+{
+    /// Ordinary machine completion or source-language stuckness.
+    Completed(Outcome),
+    /// An adapter chose to terminate instead of replying.
+    Aborted(Abort),
+}
+
+/// Interpret operation offers without access to continuation mutation.
+pub trait HostHandler
+{
+    /// The adapter's non-resuming termination result, such as a process exit
+    /// code.
+    type Abort;
+
+    /// Decide one unclaimed operation; source-claimed operations never call
+    /// this.
+    ///
+    /// # Specification
+    /// - requires: a resumed value belongs to the supplied heap and has the
+    ///   operation's reply type. The adapter owns external effects and policy.
+    /// - ensures: a reply continues the original stack, an abort stops it, and
+    ///   decline names this operation as unhandled. The machine never retries.
+    /// - executable: none — the trait states the adapter's obligation; each
+    ///   body is an implementor's, and the machine checks what it receives at
+    ///   the resumption.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scripted hosts that resume, abort and decline,
+    ///   offered operations claimed and unclaimed by source handlers, separate
+    ///   a retried, misrouted or silently dropped decision.
+    /// - witness: `machine::tests::host_seam_resumes_a_single_unhandled_perform`
+    /// - witness: `machine::tests::host_seam_decline_blames_perform_no_handler`
+    /// - witness: `machine::tests::host_seam_never_consulted_for_a_claimed_perform`
+    /// - witness: `machine::tests::host_abort_never_resumes_and_missing_replies_fault`
+    fn handle(
+        &mut self,
+        request: HostRequest<'_>,
+        values: &mut HostValues<'_>,
+    ) -> HostReply<Self::Abort>;
+}
+
+/// The host's value capability: inspect, allocate and read back, never alter
+/// frames.
+pub struct HostValues<'run>
+{
+    /// Immutable focused code and interface annotations.
+    arena: &'run CommandArena,
+    /// The current heap; continuation access stays private to the machine.
+    store: &'run mut Store,
+}
+
+impl HostValues<'_>
+{
+    /// The arena owning the offered interface's type handles.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn annotations(&self) -> &CoreArena
+    {
+        self.arena.annotations()
+    }
+
+    /// Inspect a live payload or previously allocated reply.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn value(
+        &self,
+        value: HeapValueId,
+    ) -> Option<&HeapValue>
+    {
+        self.store.value(value)
+    }
+
+    /// Allocate a reply node over already allocated children.
+    ///
+    /// # Errors
+    /// Heap address space exhaustion.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn allocate(
+        &mut self,
+        value: HeapValue,
+    ) -> Result<HeapValueId, StoreFault>
+    {
+        self.store.allocate(value)
+    }
+
+    /// Read a payload structurally, closing captured thunk and stack-frame
+    /// values.
+    ///
+    /// # Errors
+    /// The readback refusal names a dangling value, suspended capture or
+    /// runtime continuation outside flat literal-stack syntax. No
+    /// placeholder is emitted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn read_back_value(
+        &self,
+        value: HeapValueId,
+        core: &mut CoreArena,
+    ) -> Result<ValueId, crate::readback::ReadbackRefusal>
+    {
+        crate::readback::read_back_value(self.arena, self.store, value, core)
+    }
+}
+
+/// The pure entry point explicitly declines every unclaimed operation.
+struct NoHost;
+
+impl HostHandler for NoHost
+{
+    type Abort = core::convert::Infallible;
+
+    /// Do not interpret an external operation in a host-free run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn handle(
+        &mut self,
+        _request: HostRequest<'_>,
+        _values: &mut HostValues<'_>,
+    ) -> HostReply<Self::Abort>
+    {
+        HostReply::Decline
+    }
+}
 /// Why a run could not go on.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MachineFault
@@ -342,6 +524,8 @@ enum Control
     Run(CommandId, Environment),
     /// Hand a value to a consumer under an environment.
     Deliver(HeapValueId, ConsumerId, Environment),
+    /// Fold one native cell with the caller continuation already loaded.
+    ListFold(HeapValueId, ConsumerId, Environment),
     /// Return a value to the continuation at a mark.
     Return(HeapValueId, ContinuationMark),
     /// Hand a value to the top of the frame region.
@@ -352,6 +536,14 @@ enum Control
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Next
 {
+    /// An unclaimed operation offered below the complete live continuation.
+    Host
+    {
+        /// The Perform instruction carrying its interface and operation.
+        at: CommandId,
+        /// The fully evaluated, untruncated payload.
+        payload: HeapValueId,
+    },
     /// The next control state.
     Continue(Control),
     /// The run halted with a value.
@@ -379,6 +571,8 @@ struct FieldPosition(usize);
 #[derive(Clone, Copy, Debug)]
 enum Evaluation
 {
+    /// Assemble a stack after its eager application operands are evaluated.
+    Reify(ProducerId, Environment),
     /// Apply a table operation to the evaluated operands.
     Primitive(ProducerId),
     /// Evaluate a producer under an environment; leaves one value.
@@ -561,6 +755,52 @@ impl<'program> Machine<'program>
         budget: StepCount,
     ) -> Result<Outcome, MachineFault>
     {
+        match self.run_with_host(command, budget, &mut NoHost)? {
+            | HostOutcome::Completed(outcome) => Ok(outcome),
+            | HostOutcome::Aborted(never) => match never {},
+        }
+    }
+
+    /// Run with an explicit adapter for operations not claimed by source
+    /// handlers.
+    ///
+    /// # Specification
+    /// - ensures: callbacks see the complete live payload and are called once
+    ///   per unclaimed perform, in evaluation order. Replies continue the
+    ///   unchanged stack, including nonmatching handlers; a claimed perform
+    ///   never calls out. Abort does not resume, and decline returns
+    ///   `PerformNoHandler` at the offer.
+    /// - fails: the same budget and store faults as `Self::run`, including a
+    ///   dangling root address supplied as a host reply.
+    /// - panics: only if the host callback panics.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered offers, deep re-entry, payload capture and a
+    ///   later arithmetic computation distinguish replay, truncation and
+    ///   discarded replies.
+    /// - witness: `machine::tests::host_seam_offers_deep_re_entry_in_order`
+    /// - witness: `machine::tests::host_seam_offers_across_a_non_matching_handler`
+    /// - witness: `machine::tests::host_seam_never_consulted_for_a_claimed_perform`
+    /// - witness: `machine::tests::host_seam_reply_flows_into_subsequent_computation`
+    /// - witness: `machine::tests::host_seam_higher_order_payload_reads_back_exactly`
+    #[spec(ensures: |ref ret| match ret.as_ref() {
+        Ok(&HostOutcome::Completed(Outcome::Halted(value))) => usize::from(budget) > 0 && self.store.value(value).is_some() && self.store.mark() == ContinuationMark::BASE,
+        Ok(_) => usize::from(budget) > 0,
+        Err(_) => true,
+    })]
+    #[inline]
+    pub fn run_with_host<H>(
+        &mut self,
+        command: CommandId,
+        budget: StepCount,
+        host: &mut H,
+    ) -> Result<HostOutcome<H::Abort>, MachineFault>
+    where
+        H: HostHandler + ?Sized,
+    {
         self.store.shrink_to(ContinuationMark::BASE)?;
         let mut control = Control::Run(command, Environment::EMPTY);
         let mut remaining = usize::from(budget);
@@ -568,8 +808,55 @@ impl<'program> Machine<'program>
             remaining = remaining.checked_sub(1).ok_or(MachineFault::OutOfSteps)?;
             match self.step(control) {
                 | Ok(Next::Continue(next)) => control = next,
-                | Ok(Next::Halt(value)) => return Ok(Outcome::Halted(value)),
-                | Err(Stop::Stuck(stuck)) => return Ok(Outcome::Stuck(stuck)),
+                | Ok(Next::Halt(value)) => {
+                    return Ok(HostOutcome::Completed(Outcome::Halted(value)));
+                },
+                | Ok(Next::Host { at, payload }) => {
+                    let Some(request) = self.arena.command(at)
+                    else {
+                        return Ok(HostOutcome::Completed(Outcome::Stuck(
+                            Stuck::IllFormedCommand(at),
+                        )));
+                    };
+                    let CommandNode::Perform {
+                        ref signature,
+                        ref operation,
+                        ..
+                    } = *request
+                    else {
+                        return Ok(HostOutcome::Completed(Outcome::Stuck(
+                            Stuck::IllFormedCommand(at),
+                        )));
+                    };
+                    let reply = host.handle(
+                        HostRequest {
+                            signature,
+                            operation,
+                            payload,
+                        },
+                        &mut HostValues {
+                            arena: self.arena,
+                            store: &mut self.store,
+                        },
+                    );
+                    match reply {
+                        | HostReply::Resume(value) => {
+                            self.store
+                                .value(value)
+                                .ok_or(StoreFault::DanglingValue(value))?;
+                            control = Control::Pop(value);
+                        },
+                        | HostReply::Abort(abort) => return Ok(HostOutcome::Aborted(abort)),
+                        | HostReply::Decline => {
+                            return Ok(HostOutcome::Completed(Outcome::Stuck(
+                                Stuck::PerformNoHandler(at),
+                            )));
+                        },
+                    }
+                },
+                | Err(Stop::Stuck(stuck)) => {
+                    return Ok(HostOutcome::Completed(Outcome::Stuck(stuck)));
+                },
                 | Err(Stop::Fault(fault)) => return Err(fault),
             }
         }
@@ -608,6 +895,9 @@ impl<'program> Machine<'program>
     {
         match control {
             | Control::Run(command, environment) => self.cut(command, environment),
+            | Control::ListFold(value, consumer, environment) => {
+                self.list_fold(value, consumer, environment)
+            },
             | Control::Deliver(value, consumer, environment) => {
                 self.deliver(value, consumer, environment)
             },
@@ -644,7 +934,8 @@ impl<'program> Machine<'program>
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
     #[spec(ensures: |ref ret| match ret.as_ref().copied() {
         | Err(_) => self.arena.command(id).is_some() || *ret == Err(Stop::Stuck(Stuck::IllFormedCommand(id))),
-        | Ok(next) => self.arena.command(id).is_some_and(|&CommandNode::Cut { polarity, producer, consumer }| {
+        | Ok(next) => self.arena.command(id).is_some_and(|node| {
+            let &CommandNode::Cut { polarity, producer, consumer } = node else { return matches!(next, Next::Continue(Control::Run(..)) | Next::Host { .. }); };
             let strict_capture = self.arena.producer(producer).and_then(|node| match *node {
                 | ProducerNode::Mu { body } if polarity != Polarity::Negative
                     || !matches!(self.arena.consumer(consumer), Some(&ConsumerNode::MuTilde { .. })) => Some(body),
@@ -653,7 +944,7 @@ impl<'program> Machine<'program>
             match (strict_capture, next) {
                 | (Some(body), Next::Continue(Control::Run(found, inner))) => body == found
                     && inner.values() == environment.values()
-                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()),
+                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.return_continuation(self.store.mark())),
                 | (None, Next::Continue(Control::Deliver(value, found, inner))) => consumer == found
                     && inner == environment && self.store.value(value).is_some(),
                 | _ => false,
@@ -671,7 +962,10 @@ impl<'program> Machine<'program>
             polarity,
             producer,
             consumer,
-        } = arena.command(id).ok_or(Stuck::IllFormedCommand(id))?;
+        } = arena.command(id).ok_or(Stuck::IllFormedCommand(id))?
+        else {
+            return self.control_command(id, environment);
+        };
         if let Some(&ProducerNode::Mu { body }) = arena.producer(producer) {
             let by_name = polarity == Polarity::Negative
                 && matches!(
@@ -680,7 +974,9 @@ impl<'program> Machine<'program>
                 );
             if !by_name {
                 let mark = self.load(consumer, environment)?;
-                let inner = self.store.bind_covalue(environment, mark)?;
+                let inner = self
+                    .store
+                    .bind_covalue(environment, self.store.return_continuation(mark))?;
                 return Ok(Next::Continue(Control::Run(body, inner)));
             }
         }
@@ -690,6 +986,301 @@ impl<'program> Machine<'program>
             consumer,
             environment,
         )))
+    }
+
+    /// Enter an effect or delimited-control instruction.
+    ///
+    /// # Specification
+    /// - ensures: each body receives a fresh local return; reset and handler
+    ///   install their delimiter, resume reinstalls its reusable prefix, and
+    ///   perform or shift capture only through the nearest eligible delimiter.
+    /// - fails: malformed instructions, absent delimiters, non-stack
+    ///   resumptions, and the store's capacity or stale-mark faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — deep re-entry, repeated resumption and an ambient
+    ///   projection distinguish lost delimiters, destructive captures and
+    ///   duplicated tails.
+    /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next| match *next {
+        Next::Host { at, payload } => at == id && self.store.value(payload).is_some(),
+        Next::Continue(Control::Run(body, inner)) => self.arena.command(body).is_some()
+            && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(crate::store::Covalue::FallThrough),
+        _ => false,
+    }))]
+    fn control_command(
+        &mut self,
+        id: CommandId,
+        environment: Environment,
+    ) -> Result<Next, Stop>
+    {
+        let arena = self.arena;
+        let node = arena.command(id).ok_or(Stuck::IllFormedCommand(id))?;
+        match *node {
+            | CommandNode::Cut { .. } => Err(Stuck::IllFormedCommand(id).into()),
+            | CommandNode::Perform {
+                payload,
+                continuation,
+                ..
+            } => {
+                self.load(continuation, environment)?;
+                let payload = self.evaluate(payload, environment)?;
+                self.perform(id, payload)
+            },
+            | CommandNode::Handle {
+                subject,
+                continuation,
+                ..
+            } => {
+                self.load(continuation, environment)?;
+                self.store.push_frame(Frame::Handler {
+                    command: id,
+                    environment,
+                })?;
+                let inner = self
+                    .store
+                    .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
+                Ok(Next::Continue(Control::Run(subject, inner)))
+            },
+            | CommandNode::Reset { body, continuation } => {
+                self.load(continuation, environment)?;
+                self.store.push_frame(Frame::Reset)?;
+                let inner = self
+                    .store
+                    .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
+                Ok(Next::Continue(Control::Run(body, inner)))
+            },
+            | CommandNode::Shift { body, continuation } => {
+                self.load(continuation, environment)?;
+                self.shift(id, body, environment)
+            },
+            | CommandNode::Resume {
+                stack,
+                body,
+                continuation,
+            } => {
+                self.load(continuation, environment)?;
+                let stack = self.evaluate(stack, environment)?;
+                self.replay_stack(id, stack)?;
+                let inner = self
+                    .store
+                    .bind_covalue(environment, crate::store::Covalue::FallThrough)?;
+                Ok(Next::Continue(Control::Run(body, inner)))
+            },
+        }
+    }
+
+    /// Capture a claimed operation, or offer it with its live continuation
+    /// intact.
+    ///
+    /// # Specification
+    /// - ensures: the nearest delimiter decides source handling; a matching
+    ///   interface and operation capture that handler and its inner frames.
+    ///   Clauses bind payload then resumption and return to the ambient tail.
+    ///   Unclaimed operations retain every frame for the host reply.
+    /// - fails: malformed handler instructions and store faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching and nonmatching nested handlers, repeated
+    ///   resumes, and same-named operations from distinct interfaces separate
+    ///   dispatch.
+    /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next| match *next {
+        Next::Host { at: found, payload: found_payload } => found == at && found_payload == payload,
+        Next::Continue(Control::Run(_, inner)) => self.store.lookup_value(inner, DeBruijnIndex::from(1_u32)) == Some(payload)
+            && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)).is_some_and(|stack|
+                matches!(self.store.value(stack), Some(HeapValue::Stack { frames }) if matches!(frames.first(), Some(Frame::Handler { .. })))),
+        _ => false,
+    }))]
+    fn perform(
+        &mut self,
+        at: CommandId,
+        payload: HeapValueId,
+    ) -> Result<Next, Stop>
+    {
+        let arena = self.arena;
+        let request = arena.command(at).ok_or(Stuck::IllFormedCommand(at))?;
+        let CommandNode::Perform {
+            ref signature,
+            ref operation,
+            ..
+        } = *request
+        else {
+            return Err(Stuck::IllFormedCommand(at).into());
+        };
+        let mut selected = None;
+        for (index, frame) in self.store.frames().enumerate().rev() {
+            match *frame {
+                | Frame::Reset => break,
+                | Frame::Handler {
+                    command,
+                    environment,
+                } => {
+                    let handler = arena
+                        .command(command)
+                        .ok_or(Stuck::IllFormedCommand(command))?;
+                    let CommandNode::Handle {
+                        signature: ref handled,
+                        ref clauses,
+                        ..
+                    } = *handler
+                    else {
+                        return Err(Stuck::IllFormedCommand(command).into());
+                    };
+                    if handled.name() == signature.name()
+                        && let Some(clause) =
+                            clauses.iter().find(|clause| &clause.operation == operation)
+                    {
+                        selected =
+                            Some((crate::FrameHeight::from(index), environment, clause.body));
+                    }
+                    break;
+                },
+                | _ => {},
+            }
+        }
+        let Some((height, environment, body)) = selected
+        else {
+            self.store.cancel_updates(ContinuationMark::BASE)?;
+            return Ok(Next::Host { at, payload });
+        };
+        let base = self
+            .store
+            .mark_below(height)
+            .ok_or(Stuck::IllFormedCommand(at))?;
+        let stack = self.store.capture(base)?;
+        let inner = self.store.bind_value(environment, payload)?;
+        let inner = self.store.bind_value(inner, stack)?;
+        let inner = self
+            .store
+            .bind_covalue(inner, crate::store::Covalue::FallThrough)?;
+        Ok(Next::Continue(Control::Run(body, inner)))
+    }
+
+    /// Capture through the nearest reset; a handler is a structural barrier.
+    ///
+    /// # Specification
+    /// - ensures: the shift body receives a reusable stack including its reset,
+    ///   while the active continuation becomes exactly the tail below that
+    ///   reset.
+    /// - fails: a missing reachable reset and store faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested prompts, handler barriers and repeated
+    ///   resumption distinguish shallow capture and one-shot or missing reset
+    ///   behavior.
+    /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|next|
+        matches!(*next, Next::Continue(Control::Run(found, inner)) if found == body
+            && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)).is_some_and(|stack|
+                matches!(self.store.value(stack), Some(HeapValue::Stack { frames }) if frames.first() == Some(&Frame::Reset))))))]
+    fn shift(
+        &mut self,
+        at: CommandId,
+        body: CommandId,
+        environment: Environment,
+    ) -> Result<Next, Stop>
+    {
+        let mut selected = None;
+        for (index, frame) in self.store.frames().enumerate().rev() {
+            match *frame {
+                | Frame::Reset => {
+                    selected = Some(crate::FrameHeight::from(index));
+                    break;
+                },
+                | Frame::Handler { .. } => break,
+                | _ => {},
+            }
+        }
+        let height = selected.ok_or(Stuck::ShiftNoReset(at))?;
+        let base = self
+            .store
+            .mark_below(height)
+            .ok_or(Stuck::ShiftNoReset(at))?;
+        let stack = self.store.capture(base)?;
+        let inner = self.store.bind_value(environment, stack)?;
+        let inner = self
+            .store
+            .bind_covalue(inner, crate::store::Covalue::FallThrough)?;
+        Ok(Next::Continue(Control::Run(body, inner)))
+    }
+
+    /// Append a first-class continuation without consuming its reusable
+    /// capture.
+    ///
+    /// # Specification
+    /// - ensures: the saved frames appear above the caller in their original
+    ///   order.
+    /// - fails: a non-stack value or exhausted frame serials.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two resumes with different replies and an outer
+    ///   projection distinguish destructive consumption, reversed frames and
+    ///   lost tails.
+    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    #[spec(captures: height = usize::from(self.store.frame_height()), ensures: |ref ret| ret.is_err()
+        || matches!(self.store.value(stack), Some(HeapValue::Stack { frames }) if self.store.frames().skip(height).eq(frames.iter())))]
+    fn replay_stack(
+        &mut self,
+        at: CommandId,
+        stack: HeapValueId,
+    ) -> Result<(), Stop>
+    {
+        let value = self
+            .store
+            .value(stack)
+            .ok_or(Stuck::ResumedNonStack { at, value: stack })?;
+        let HeapValue::Stack { ref frames } = *value
+        else {
+            return Err(Stuck::ResumedNonStack { at, value: stack }.into());
+        };
+        let count = frames.len();
+        for index in 0 .. count {
+            let frame = match self.store.value(stack) {
+                | Some(&HeapValue::Stack { ref frames }) => frames.get(index).copied(),
+                | _ => None,
+            }
+            .ok_or(Stuck::ResumedNonStack { at, value: stack })?;
+            self.store.push_frame(frame)?;
+        }
+        Ok(())
+    }
+
+    /// Evaluate a native observation's bounded operand without allocating a
+    /// box.
+    ///
+    /// # Specification
+    /// - ensures: force and projection carry no operand; application carries
+    ///   its one evaluated argument, retaining the consumer's blame on a wrong
+    ///   arity.
+    /// - fails: malformed observation arity or producer evaluation failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — force, projection and application exercise each
+    ///   native arity.
+    /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|arguments|
+        arguments.as_slice().len() == usize::from(tag.producer_arity()) && arguments.as_slice().iter().all(|&value| self.store.value(value).is_some())))]
+    fn observation_arguments(
+        &mut self,
+        at: ConsumerId,
+        tag: DestructorTag,
+        producers: &[ProducerId],
+        environment: Environment,
+    ) -> Result<crate::store::ObservationArguments, Stop>
+    {
+        match (tag, producers) {
+            | (DestructorTag::Force | DestructorTag::Project(_), &[]) => {
+                Ok(crate::store::ObservationArguments::Nullary)
+            },
+            | (DestructorTag::Apply, &[argument]) => Ok(crate::store::ObservationArguments::Unary(
+                self.evaluate(argument, environment)?,
+            )),
+            | _ => Err(Stuck::IllFormedConsumer(at).into()),
+        }
     }
 
     /// Hand a value to a consumer.
@@ -721,16 +1312,20 @@ impl<'program> Machine<'program>
                 && !matches!(node, &ConsumerNode::MuTilde { .. }) {
                 return matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
                     && inner.values() == captured.values()
-                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()));
+                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.return_continuation(self.store.mark())));
             }
             match *node {
                 | ConsumerNode::Top => next == Next::Continue(Control::Return(value, ContinuationMark::BASE)),
-                | ConsumerNode::Covariable(index) => matches!(next, Next::Continue(Control::Return(found, mark))
-                    if found == value && self.store.lookup_covalue(environment, index) == Some(mark)),
+                | ConsumerNode::Covariable(index) => match self.store.lookup_covalue(environment, index) {
+                    Some(crate::store::Covalue::Pinned(mark)) => next == Next::Continue(Control::Return(value, mark)),
+                    Some(crate::store::Covalue::FallThrough) => next == Next::Continue(Control::Pop(value)),
+                    None => false,
+                },
                 | ConsumerNode::MuTilde { body } => matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
                     && inner.covalues() == environment.covalues()
                     && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)),
                 | ConsumerNode::Case { .. } => matches!(next, Next::Continue(Control::Run(..))),
+                | ConsumerNode::ListFold { .. } => matches!(next, Next::Continue(Control::ListFold(..))),
                 | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { .. } => matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
             }
         })))]
@@ -749,7 +1344,9 @@ impl<'program> Machine<'program>
             && !matches!(*node, ConsumerNode::MuTilde { .. })
         {
             let mark = self.load(consumer, environment)?;
-            let inner = self.store.bind_covalue(captured, mark)?;
+            let inner = self
+                .store
+                .bind_covalue(captured, self.store.return_continuation(mark))?;
             return Ok(Next::Continue(Control::Run(body, inner)));
         }
         match *node {
@@ -758,7 +1355,10 @@ impl<'program> Machine<'program>
                     .store
                     .lookup_covalue(environment, index)
                     .ok_or(Stuck::UnboundCovariable(index))?;
-                Ok(Next::Continue(Control::Return(value, mark)))
+                Ok(Next::Continue(match mark {
+                    | crate::store::Covalue::Pinned(mark) => Control::Return(value, mark),
+                    | crate::store::Covalue::FallThrough => Control::Pop(value),
+                }))
             },
             | ConsumerNode::Top => Ok(Next::Continue(Control::Return(
                 value,
@@ -771,6 +1371,14 @@ impl<'program> Machine<'program>
             | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
                 self.select(value, consumer, environment)
             },
+            | ConsumerNode::ListFold { continuation, .. } => {
+                let _mark = self.load(continuation, environment)?;
+                Ok(Next::Continue(Control::ListFold(
+                    value,
+                    consumer,
+                    environment,
+                )))
+            },
             | ConsumerNode::Destructor {
                 tag,
                 ref producers,
@@ -780,10 +1388,72 @@ impl<'program> Machine<'program>
                 else {
                     return Err(Stuck::IllFormedConsumer(consumer).into());
                 };
-                let arguments = self.evaluate_all(producers, environment)?;
+                let arguments =
+                    self.observation_arguments(consumer, tag, producers, environment)?;
                 let mark = self.load(then, environment)?;
-                self.observe(value, tag, &arguments, mark)
+                self.observe(value, tag, arguments.as_slice(), mark)
             },
+        }
+    }
+
+    /// Fold one native cell without using the Rust call stack.
+    ///
+    /// # Specification
+    /// - requires: the fold's caller continuation is the current frame region.
+    /// - ensures: nil enters the empty branch; a cell folds its tail before
+    ///   entering the cell branch with head at index one and result at zero.
+    /// - fails: a non-list value or malformed fold consumer is named.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — asymmetric list elements and an outer binder
+    ///   distinguish reversed traversal, reversed branch binders and capture.
+    /// - witness: `machine::tests::native_list_fold_preserves_order_and_outer_scope`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Next::Continue(Control::Run(..) | Control::ListFold(..)))))]
+    fn list_fold(
+        &mut self,
+        value: HeapValueId,
+        fold: ConsumerId,
+        environment: Environment,
+    ) -> Result<Next, Stop>
+    {
+        let Some(&ConsumerNode::ListFold {
+            on_nil, on_cons, ..
+        }) = self.arena.consumer(fold)
+        else {
+            return Err(Stuck::IllFormedConsumer(fold).into());
+        };
+        let node = self
+            .store
+            .value(value)
+            .ok_or(Stuck::Unmatched { value, arms: fold })?;
+        let HeapValue::Constructed {
+            ref tag,
+            ref fields,
+        } = *node
+        else {
+            return Err(Stuck::Unmatched { value, arms: fold }.into());
+        };
+        match (tag, fields.as_ref()) {
+            | (&crate::il::ConstructorTag::ListNil, &[]) => {
+                let inner = self.store.bind_covalue(
+                    environment,
+                    self.store.return_continuation(self.store.mark()),
+                )?;
+                Ok(Next::Continue(Control::Run(on_nil, inner)))
+            },
+            | (&crate::il::ConstructorTag::ListCons, &[head, tail]) => {
+                let inner = self.store.bind_value(environment, head)?;
+                let inner = self
+                    .store
+                    .bind_covalue(inner, self.store.return_continuation(self.store.mark()))?;
+                self.store.push_frame(Frame::Bind {
+                    body: on_cons,
+                    environment: inner,
+                })?;
+                Ok(Next::Continue(Control::ListFold(tail, fold, environment)))
+            },
+            | _ => Err(Stuck::Unmatched { value, arms: fold }.into()),
         }
     }
 
@@ -868,15 +1538,31 @@ impl<'program> Machine<'program>
             return Ok(Next::Halt(value));
         };
         match frame {
+            | Frame::Reset | Frame::DeclinedUpdate => Ok(Next::Continue(Control::Pop(value))),
+            | Frame::Handler {
+                command,
+                environment,
+            } => {
+                let Some(&CommandNode::Handle { on_return, .. }) = self.arena.command(command)
+                else {
+                    return Err(Stuck::IllFormedCommand(command).into());
+                };
+                let inner = self.store.bind_value(environment, value)?;
+                let inner = self
+                    .store
+                    .bind_covalue(inner, crate::store::Covalue::FallThrough)?;
+                Ok(Next::Continue(Control::Run(on_return, inner)))
+            },
             | Frame::Destructor { tag, arguments } => {
                 let mark = self.store.mark();
-                self.observe(value, tag, &arguments, mark)
+                self.observe(value, tag, arguments.as_slice(), mark)
             },
             | Frame::Bind { body, environment } => {
                 let inner = self.store.bind_value(environment, value)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
             | Frame::Case { arms, environment } => self.select(value, arms, environment),
+            | Frame::ListFold { fold, environment } => self.list_fold(value, fold, environment),
             | Frame::Update { cell } => {
                 self.store.write_back(cell, value)?;
                 Ok(Next::Continue(Control::Pop(value)))
@@ -932,7 +1618,7 @@ impl<'program> Machine<'program>
                             && if recursive {
                                 self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)
                             } else { inner.values() == captured.values() }
-                            && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()))
+                            && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.return_continuation(self.store.mark())))
                         && self.store.cell(cell) == Some(crate::store::MemoState::InProgress)
                         && if state == Some(crate::store::MemoState::Unforced) {
                             usize::from(mark.height()).checked_add(1) == Some(usize::from(self.store.frame_height()))
@@ -944,7 +1630,7 @@ impl<'program> Machine<'program>
                     | HeapValue::Closure { producer, .. } => self.arena.producer(producer).is_some_and(|node|
                         matches!(*node, ProducerNode::Cocase { ref arms } if arms.iter().find(|arm| arm.destructor == head)
                             .is_some_and(|arm| matches!(next, Next::Continue(Control::Run(body, inner)) if body == arm.body
-                                && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(mark)
+                                && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.return_continuation(mark))
                                 && arguments.iter().rev().enumerate().all(|(position, argument)|
                                     u32::try_from(position).is_ok_and(|index|
                                         self.store.lookup_value(inner, DeBruijnIndex::from(index)) == Some(*argument))))))),
@@ -991,10 +1677,10 @@ impl<'program> Machine<'program>
                         };
                         let returning = if entry == ForceEntry::Opened {
                             self.store.push_frame(Frame::Update { cell })?;
-                            self.store.mark()
+                            self.store.return_continuation(self.store.mark())
                         }
                         else {
-                            mark
+                            self.store.return_continuation(mark)
                         };
                         let inner = self.store.bind_covalue(captured, returning)?;
                         Ok(Next::Continue(Control::Run(body, inner)))
@@ -1022,7 +1708,9 @@ impl<'program> Machine<'program>
                 for &argument in arguments {
                     inner = self.store.bind_value(inner, argument)?;
                 }
-                inner = self.store.bind_covalue(inner, mark)?;
+                inner = self
+                    .store
+                    .bind_covalue(inner, self.store.return_continuation(mark))?;
                 Ok(Next::Continue(Control::Run(arm.body, inner)))
             },
             | _ => Err(unobservable.into()),
@@ -1091,6 +1779,7 @@ impl<'program> Machine<'program>
             | ConsumerNode::Covariable(_)
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Destructor { .. }
+            | ConsumerNode::ListFold { .. }
             | ConsumerNode::Top => return Err(Stuck::IllFormedConsumer(arms).into()),
         };
         let unmatched = Stuck::Unmatched { value, arms };
@@ -1177,7 +1866,7 @@ impl<'program> Machine<'program>
         for &field in fields.iter().rev() {
             self.store.push_frame(Frame::Destructor {
                 tag: DestructorTag::Apply,
-                arguments: Box::from([field]),
+                arguments: crate::store::ObservationArguments::Unary(field),
             })?;
         }
         let top = self.store.mark();
@@ -1232,10 +1921,10 @@ impl<'program> Machine<'program>
         ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&mark| self.store.mark() == mark
             && self.arena.consumer(consumer).is_some_and(|node| match *node {
                 | ConsumerNode::Top => mark == ContinuationMark::BASE,
-                | ConsumerNode::Covariable(index) => self.store.lookup_covalue(environment, index) == Some(mark),
+                | ConsumerNode::Covariable(index) => self.store.lookup_covalue(environment, index) == Some(crate::store::Covalue::Pinned(mark)) || (height == mark.height() && self.store.lookup_covalue(environment, index) == Some(crate::store::Covalue::FallThrough)),
                 | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => usize::from(height).checked_add(1) == Some(usize::from(mark.height())),
-                | ConsumerNode::Destructor { .. } => true,
-            })),
+                | ConsumerNode::Destructor { .. } | ConsumerNode::ListFold { .. } => true,
+                })),
     )]
     fn load(
         &mut self,
@@ -1256,9 +1945,19 @@ impl<'program> Machine<'program>
                         .store
                         .lookup_covalue(environment, index)
                         .ok_or(Stuck::UnboundCovariable(index))?;
-                    break Some(mark);
+                    break match mark {
+                        | crate::store::Covalue::Pinned(mark) => Some(mark),
+                        | crate::store::Covalue::FallThrough => None,
+                    };
                 },
                 | ConsumerNode::Top => break Some(ContinuationMark::BASE),
+                | ConsumerNode::ListFold { continuation, .. } => {
+                    pending.push(Frame::ListFold {
+                        fold: cursor,
+                        environment,
+                    });
+                    cursor = continuation;
+                },
                 | ConsumerNode::MuTilde { body } => {
                     pending.push(Frame::Bind { body, environment });
                     break None;
@@ -1279,7 +1978,8 @@ impl<'program> Machine<'program>
                     else {
                         return Err(Stuck::IllFormedConsumer(cursor).into());
                     };
-                    let arguments = self.evaluate_all(producers, environment)?;
+                    let arguments =
+                        self.observation_arguments(cursor, tag, producers, environment)?;
                     pending.push(Frame::Destructor { tag, arguments });
                     cursor = then;
                 },
@@ -1292,40 +1992,6 @@ impl<'program> Machine<'program>
             self.store.push_frame(frame)?;
         }
         Ok(self.store.mark())
-    }
-
-    /// Evaluate producers left to right.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one value per producer, in order.
-    /// - provides: a frame's or constructor's arguments.
-    /// - fails: as [`Self::evaluate`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — two unequal literal producers are evaluated as an
-    ///   argument list and observed in order; the same payloads pass through a
-    ///   two-field match. L2 — application spines compare with the normaliser.
-    ///   These distinguish reordering, omission and duplicated results.
-    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
-    /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
-    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|values|
-        values.len() == producers.len() && values.iter().all(|value| self.store.value(*value).is_some())))]
-    fn evaluate_all(
-        &mut self,
-        producers: &[ProducerId],
-        environment: Environment,
-    ) -> Result<Box<[HeapValueId]>, Stop>
-    {
-        let mut values = Vec::with_capacity(producers.len());
-        for &producer in producers {
-            values.push(self.evaluate(producer, environment)?);
-        }
-        Ok(values.into_boxed_slice())
     }
 
     /// Evaluate a producer to a heap value.
@@ -1363,6 +2029,7 @@ impl<'program> Machine<'program>
         ensures: |ref ret| !self.unfoldings.contains(&Unfolding::Running)
             && (ret.is_err() || ret.as_ref().is_ok_and(|&value|
                 self.arena.producer(root).zip(self.store.value(value)).is_some_and(|(node, held)| match *node {
+                    | ProducerNode::Reify(ref source) => matches!(held, HeapValue::Stack { frames } if frames.len() == source.len()),
                     | ProducerNode::Primitive { .. } => self.scalar(value).is_ok(),
                     | ProducerNode::Variable { zone, index } => zone == Zone::Intuitionistic
                         && self.store.lookup_value(environment, index) == Some(value),
@@ -1438,6 +2105,15 @@ impl<'program> Machine<'program>
                 | Evaluation::Producer(id, environment) => {
                     let node = arena.producer(id).ok_or(Stuck::IllFormedProducer(id))?;
                     let value = match *node {
+                        | ProducerNode::Reify(ref frames) => {
+                            tasks.push(Evaluation::Reify(id, environment));
+                            for frame in frames.iter().rev() {
+                                if let gandr_core_term::control::StackFrame::Apply(value) = *frame {
+                                    tasks.push(Evaluation::Producer(value, environment));
+                                }
+                            }
+                            continue;
+                        },
                         | ProducerNode::Primitive { arguments, .. } => {
                             tasks.push(Evaluation::Primitive(id));
                             for argument in arguments.iter().rev() {
@@ -1515,6 +2191,52 @@ impl<'program> Machine<'program>
                             })?
                         },
                     };
+                    results.push(value);
+                },
+                | Evaluation::Reify(id, environment) => {
+                    let node = arena.producer(id).ok_or(Stuck::IllFormedProducer(id))?;
+                    let ProducerNode::Reify(ref source) = *node
+                    else {
+                        return Err(Stuck::IllFormedProducer(id).into());
+                    };
+                    let mut frames = Vec::with_capacity(source.len());
+                    let mut bind_environment = None;
+                    for frame in source.iter().rev() {
+                        frames.push(match *frame {
+                            | gandr_core_term::control::StackFrame::Apply(_) => Frame::Destructor {
+                                tag: DestructorTag::Apply,
+                                arguments: crate::store::ObservationArguments::Unary(
+                                    results.pop().ok_or(Stuck::IllFormedProducer(id))?,
+                                ),
+                            },
+                            | gandr_core_term::control::StackFrame::Project(side) => {
+                                Frame::Destructor {
+                                    tag: DestructorTag::Project(side),
+                                    arguments: crate::store::ObservationArguments::Nullary,
+                                }
+                            },
+                            | gandr_core_term::control::StackFrame::Bind(body) => {
+                                let inner = match bind_environment {
+                                    | Some(inner) => inner,
+                                    | None => {
+                                        let inner = self.store.bind_covalue(
+                                            environment,
+                                            crate::store::Covalue::FallThrough,
+                                        )?;
+                                        bind_environment = Some(inner);
+                                        inner
+                                    },
+                                };
+                                Frame::Bind {
+                                    body,
+                                    environment: inner,
+                                }
+                            },
+                        });
+                    }
+                    let value = self.store.allocate(HeapValue::Stack {
+                        frames: frames.into_boxed_slice(),
+                    })?;
                     results.push(value);
                 },
                 | Evaluation::Construct(id) => {
@@ -1989,6 +2711,1162 @@ mod tests
             .read_back(value, core)
             .expect("the terminal reads back");
         shown(core, back)
+    }
+
+    /// An independently specified observable control result.
+    enum ControlExpectation
+    {
+        /// A returned value, compared structurally after readback.
+        Value(ValueId),
+        /// An unhandled request, retaining both parts of its qualified name.
+        Perform(&'static str, &'static str),
+        /// A shift with no reachable reset.
+        Shift,
+    }
+
+    /// Run the real focusing, scope check, machine and readback path.
+    ///
+    /// # Specification
+    /// - requires: a closed fixture whose expected observation is supplied.
+    /// - ensures: the observed value or named source refusal equals that
+    ///   expectation.
+    /// - panics: on a different value, refusal, free set or machine fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independently built expected values separate control
+    ///   transfer from copying source syntax; refusals also inspect the blamed
+    ///   instruction.
+    /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    #[spec(ensures: core.computation(program).is_some())]
+    fn assert_control(
+        core: &mut CoreArena,
+        program: ComputationId,
+        expected: ControlExpectation,
+    )
+    {
+        let mut arena = CommandArena::new();
+        let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
+            .expect("control focuses");
+        assert_eq!(
+            Ok(crate::FreeSet::default()),
+            crate::check_command(&arena, root)
+        );
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let outcome = machine.run(root, budget()).expect("bounded control run");
+        match (outcome, expected) {
+            | (Outcome::Halted(value), ControlExpectation::Value(expected)) => {
+                let actual = machine
+                    .read_back_value(value, core)
+                    .expect("literal result reads back");
+                assert_eq!(
+                    gandr_core_term::CertificateEquality::Equal,
+                    gandr_core_term::equal_certificate_syntax(core, actual, expected)
+                );
+            },
+            | (
+                Outcome::Stuck(Stuck::PerformNoHandler(at)),
+                ControlExpectation::Perform(name, operation),
+            ) => {
+                let CommandNode::Perform {
+                    ref signature,
+                    operation: ref found,
+                    ..
+                } = *arena.command(at).expect("perform instruction")
+                else {
+                    panic!("blame must name the Perform instruction");
+                };
+                assert_eq!(
+                    (name, operation),
+                    (signature.name().as_ref(), found.as_ref())
+                );
+            },
+            | (Outcome::Stuck(Stuck::ShiftNoReset(at)), ControlExpectation::Shift) => {
+                assert!(matches!(arena.command(at), Some(CommandNode::Shift { .. })));
+            },
+            | (outcome, _) => panic!("unexpected control outcome: {outcome:?}"),
+        }
+    }
+
+    /// One integer operation for control fixtures.
+    ///
+    /// # Specification
+    /// trivial.
+    fn effect(
+        core: &mut CoreArena,
+        name: gandr_core_term::effect::EffectName,
+        operation: gandr_core_term::effect::OperationName,
+    ) -> gandr_core_term::effect::EffectSig
+    {
+        let integer = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        gandr_core_term::effect::EffectSig::new(name, [gandr_core_term::effect::EffectOp {
+            name: operation,
+            payload: integer,
+            reply: integer,
+        }])
+        .expect("one operation")
+    }
+
+    /// A one-operation handler, retaining the signature's operation name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handler(
+        core: &mut CoreArena,
+        signature: gandr_core_term::effect::EffectSig,
+        subject: ComputationId,
+        on_return: ComputationId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        let operation = signature
+            .operations()
+            .next()
+            .expect("one-operation fixture")
+            .name
+            .clone();
+        core.computation_handle(
+            signature,
+            subject,
+            on_return,
+            alloc::sync::Arc::from([gandr_core_term::control::EffectClause { operation, body }]),
+        )
+    }
+
+    #[test]
+    fn handler_resumption_under_projection_uses_the_ambient_continuation_once()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let seven = integer(&mut core, Digits("7"));
+        let five_ret = core.computation_return(five);
+        let seven_ret = core.computation_return(seven);
+        let continuation = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let performed = core.computation_perform(signature.clone(), "op".into(), five);
+        let on_return = core.computation_with(five_ret, seven_ret);
+        let clause = core.computation_resume(continuation, five_ret);
+        let handled = handler(&mut core, signature, performed, on_return, clause);
+        let projected = core.computation_project(Side::Right, handled);
+        assert_control(&mut core, projected, ControlExpectation::Value(seven));
+    }
+
+    #[test]
+    fn hand_built_effect_cases_agree()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let seven = integer(&mut core, Digits("7"));
+        let nine = integer(&mut core, Digits("9"));
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let identity = core.computation_return(zero);
+        let payload = core.computation_return(outer);
+        let ret_seven = core.computation_return(seven);
+        let ret_nine = core.computation_return(nine);
+        let ret_one = core.computation_return(one);
+        let ret_two = core.computation_return(two);
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let perform = core.computation_perform(signature.clone(), "op".into(), five);
+        assert_control(&mut core, perform, ControlExpectation::Perform("E", "op"));
+        let buried = core.computation_bind(perform, identity);
+        assert_control(&mut core, buried, ControlExpectation::Perform("E", "op"));
+        let doubled = core.value_pair(zero, zero);
+        let double_return = core.computation_return(doubled);
+        let discard = handler(
+            &mut core,
+            signature.clone(),
+            perform,
+            double_return,
+            ret_nine,
+        );
+        assert_control(&mut core, discard, ControlExpectation::Value(nine));
+        let resume_seven = core.computation_resume(zero, ret_seven);
+        let resumed = handler(
+            &mut core,
+            signature.clone(),
+            perform,
+            identity,
+            resume_seven,
+        );
+        assert_control(&mut core, resumed, ControlExpectation::Value(seven));
+        let resume_payload = core.computation_resume(zero, payload);
+        let payload_flow = handler(
+            &mut core,
+            signature.clone(),
+            perform,
+            identity,
+            resume_payload,
+        );
+        assert_control(&mut core, payload_flow, ControlExpectation::Value(five));
+        let doubled_seven = core.value_pair(seven, seven);
+        let returned = handler(
+            &mut core,
+            signature.clone(),
+            ret_seven,
+            double_return,
+            ret_nine,
+        );
+        assert_control(
+            &mut core,
+            returned,
+            ControlExpectation::Value(doubled_seven),
+        );
+        let buried_handled = handler(&mut core, signature.clone(), buried, identity, resume_seven);
+        assert_control(&mut core, buried_handled, ControlExpectation::Value(seven));
+        let pair = core.value_pair(outer, zero);
+        let pair_return = core.computation_return(pair);
+        let second = core.computation_bind(perform, pair_return);
+        let first = core.computation_bind(perform, second);
+        let resume_one = core.computation_resume(zero, ret_one);
+        let deep = handler(&mut core, signature.clone(), first, identity, resume_one);
+        let both_one = core.value_pair(one, one);
+        assert_control(&mut core, deep, ControlExpectation::Value(both_one));
+        let other = effect(&mut core, "Other".into(), "other".into());
+        let other_perform = core.computation_perform(other.clone(), "other".into(), five);
+        let inner = handler(
+            &mut core,
+            other.clone(),
+            other_perform,
+            identity,
+            resume_seven,
+        );
+        let nested = handler(&mut core, signature.clone(), inner, identity, resume_one);
+        assert_control(&mut core, nested, ControlExpectation::Value(seven));
+        let barrier = handler(&mut core, other, perform, identity, ret_nine);
+        let blocked = handler(&mut core, signature.clone(), barrier, identity, resume_one);
+        assert_control(&mut core, blocked, ControlExpectation::Perform("E", "op"));
+        let reset = core.computation_reset(ret_seven);
+        assert_control(&mut core, reset, ControlExpectation::Value(seven));
+        let reset_perform = core.computation_reset(perform);
+        let blocked = handler(
+            &mut core,
+            signature.clone(),
+            reset_perform,
+            identity,
+            resume_one,
+        );
+        assert_control(&mut core, blocked, ControlExpectation::Perform("E", "op"));
+        let thunk = core.value_thunk(perform);
+        let force = core.computation_force(thunk);
+        let forced = handler(&mut core, signature.clone(), force, identity, resume_seven);
+        assert_control(&mut core, forced, ControlExpectation::Value(seven));
+        let resume_two = core.computation_resume(outer, ret_two);
+        let twice = core.computation_bind(resume_one, resume_two);
+        let multishot_force = handler(&mut core, signature, force, identity, twice);
+        assert_control(&mut core, multishot_force, ControlExpectation::Value(two));
+        let same_operation = effect(&mut core, "Different".into(), "op".into());
+        let wrong_interface = handler(&mut core, same_operation, perform, identity, ret_nine);
+        assert_control(
+            &mut core,
+            wrong_interface,
+            ControlExpectation::Perform("E", "op"),
+        );
+    }
+
+    #[test]
+    fn hand_built_shift_cases_agree()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let three = integer(&mut core, Digits("3"));
+        let four = integer(&mut core, Digits("4"));
+        let seven = integer(&mut core, Digits("7"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let ret_one = core.computation_return(one);
+        let ret_two = core.computation_return(two);
+        let ret_three = core.computation_return(three);
+        let identity = core.computation_return(zero);
+        let pair = core.value_pair(zero, zero);
+        let pair_return = core.computation_return(pair);
+        let discard = core.computation_shift(ret_one);
+        let simple = core.computation_reset(discard);
+        assert_control(&mut core, simple, ControlExpectation::Value(one));
+        let discard_bound = core.computation_bind(discard, pair_return);
+        let reset = core.computation_reset(discard_bound);
+        assert_control(&mut core, reset, ControlExpectation::Value(one));
+        let resumed = core.computation_resume(zero, ret_three);
+        let shifted = core.computation_shift(resumed);
+        let bound = core.computation_bind(shifted, pair_return);
+        let reset = core.computation_reset(bound);
+        let pair_three = core.value_pair(three, three);
+        assert_control(&mut core, reset, ControlExpectation::Value(pair_three));
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("native add");
+        let added = core.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([zero, four]),
+        );
+        let work = core.computation_bind(shifted, added);
+        let reset = core.computation_reset(work);
+        assert_control(&mut core, reset, ControlExpectation::Value(seven));
+        let first = core.computation_resume(zero, ret_one);
+        let second = core.computation_resume(outer, ret_two);
+        let twice = core.computation_bind(first, second);
+        let shifted_twice = core.computation_shift(twice);
+        let bound = core.computation_bind(shifted_twice, identity);
+        let reset = core.computation_reset(bound);
+        assert_control(&mut core, reset, ControlExpectation::Value(two));
+        let nested = core.computation_reset(reset);
+        assert_control(&mut core, nested, ControlExpectation::Value(two));
+        assert_control(&mut core, discard, ControlExpectation::Shift);
+        assert_control(&mut core, discard_bound, ControlExpectation::Shift);
+        let signature = effect(&mut core, "Barrier".into(), "op".into());
+        let handled = handler(&mut core, signature, discard, identity, ret_one);
+        let blocked = core.computation_reset(handled);
+        assert_control(&mut core, blocked, ControlExpectation::Shift);
+    }
+
+    /// One independently expected host observation and its decision.
+    struct Offer
+    {
+        /// Qualified interface name.
+        signature: &'static str,
+        /// Operation within the interface.
+        operation: &'static str,
+        /// Closed source reading of the offered payload.
+        payload: ValueId,
+        /// Reply policy for this occurrence only.
+        answer: Answer,
+    }
+
+    /// The finite reply policy of a host fixture.
+    enum Answer
+    {
+        /// A newly allocated integer.
+        Integer(Digits),
+        /// A newly allocated unit.
+        Unit,
+        /// Preserve the offered heap identity, including thunk cells.
+        Payload,
+        /// Refuse this offer.
+        Decline,
+    }
+
+    /// An ordered oracle over actual runtime offers, not over source traversal.
+    struct ScriptedHost<'core>
+    {
+        /// Source arena also receives structural payload readbacks.
+        core: &'core mut CoreArena,
+        /// Every expected offer must occur once, in order.
+        offers: alloc::collections::VecDeque<Offer>,
+    }
+
+    impl HostHandler for ScriptedHost<'_>
+    {
+        type Abort = core::convert::Infallible;
+
+        /// Check the observed payload before deciding its actual continuation.
+        ///
+        /// # Specification
+        /// - requires: the next offer and its payload equal the fixture's
+        ///   oracle.
+        /// - ensures: the prescribed reply is allocated in the running heap, or
+        ///   declined.
+        /// - panics: on missing, reordered or changed offers, or failed
+        ///   readback.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — payloads produced by earlier replies distinguish
+        ///   live execution from source inspection; captured thunks distinguish
+        ///   readback from copying.
+        /// - witness: `machine::tests::host_seam_offers_deep_re_entry_in_order`
+        /// - witness: `machine::tests::host_seam_higher_order_payload_reads_back_exactly`
+        #[spec(ensures: |ret| match ret { HostReply::Resume(value) => values.value(value).is_some(), HostReply::Decline => true, HostReply::Abort(never) => match never {} })]
+        fn handle(
+            &mut self,
+            request: HostRequest<'_>,
+            values: &mut HostValues<'_>,
+        ) -> HostReply<Self::Abort>
+        {
+            let expected = self.offers.pop_front().expect("no unsolicited host offer");
+            assert_eq!(
+                (expected.signature, expected.operation),
+                (
+                    request.signature.name().as_ref(),
+                    request.operation.as_ref()
+                )
+            );
+            let actual = values
+                .read_back_value(request.payload, self.core)
+                .expect("closed payload reads back");
+            assert_eq!(
+                gandr_core_term::CertificateEquality::Equal,
+                gandr_core_term::equal_certificate_syntax(self.core, expected.payload, actual)
+            );
+            match expected.answer {
+                | Answer::Integer(digits) => HostReply::Resume(
+                    values
+                        .allocate(HeapValue::Literal(Literal::Integer(IntegerLiteral::new(
+                            Sign::NonNegative,
+                            Magnitude::from_decimal_text(String::from(digits.0))
+                                .expect("decimal reply"),
+                        ))))
+                        .expect("reply fits"),
+                ),
+                | Answer::Unit => HostReply::Resume(
+                    values
+                        .allocate(HeapValue::Constructed {
+                            tag: ConstructorTag::Unit,
+                            fields: Box::new([]),
+                        })
+                        .expect("reply fits"),
+                ),
+                | Answer::Payload => HostReply::Resume(request.payload),
+                | Answer::Decline => HostReply::Decline,
+            }
+        }
+    }
+
+    #[test]
+    fn host_abort_never_resumes_and_missing_replies_fault()
+    {
+        /// The process exit status a host abort carries.
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        struct ExitCode(u8);
+        struct ExitPolicy
+        {
+            reply: Option<HeapValueId>,
+            calls: usize,
+        }
+        impl HostHandler for ExitPolicy
+        {
+            type Abort = ExitCode;
+            /// Stop at Proc.exit, or deliberately supply an invalid reply.
+            ///
+            /// # Specification
+            /// trivial.
+            fn handle(
+                &mut self,
+                request: HostRequest<'_>,
+                values: &mut HostValues<'_>,
+            ) -> HostReply<Self::Abort>
+            {
+                self.calls += 1;
+                assert_eq!(
+                    self.calls, 1,
+                    "the continuation must not run after abort or fault"
+                );
+                assert_eq!(
+                    (
+                        request.signature.name().as_ref(),
+                        request.operation.as_ref()
+                    ),
+                    ("Proc", "exit")
+                );
+                match self.reply {
+                    | Some(value) => {
+                        assert!(values.value(value).is_none());
+                        HostReply::Resume(value)
+                    },
+                    | None => HostReply::Abort(ExitCode(7)),
+                }
+            }
+        }
+        let mut core = CoreArena::new();
+        let host =
+            gandr_core_term::effect::host::HostSignatures::new(&mut core).expect("host interfaces");
+        let seven = integer(&mut core, Digits("7"));
+        let exit = core.computation_perform(host.proc, "exit".into(), seven);
+        let unit = core.value_unit();
+        let unreachable = core.computation_perform(host.env, "path".into(), unit);
+        let program = core.computation_bind(exit, unreachable);
+        let mut arena = CommandArena::new();
+        let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+            .expect("exit sequence");
+        let definitions = Definitions::new();
+        let mut abort = ExitPolicy {
+            reply: None,
+            calls: 0,
+        };
+        let mut machine = Machine::new(&arena, &definitions);
+        assert_eq!(
+            Ok(HostOutcome::Aborted(ExitCode(7))),
+            machine.run_with_host(root, budget(), &mut abort)
+        );
+        assert_eq!(abort.calls, 1);
+        let mut foreign = Store::new();
+        let mut missing = foreign
+            .allocate(HeapValue::Constructed {
+                tag: ConstructorTag::Unit,
+                fields: Box::new([]),
+            })
+            .expect("foreign value");
+        for _ in 0_u32 .. 32_u32 {
+            missing = foreign
+                .allocate(HeapValue::Constructed {
+                    tag: ConstructorTag::Unit,
+                    fields: Box::new([]),
+                })
+                .expect("foreign value");
+        }
+        let mut invalid = ExitPolicy {
+            reply: Some(missing),
+            calls: 0,
+        };
+        let mut machine = Machine::new(&arena, &definitions);
+        assert_eq!(
+            Err(MachineFault::Store(StoreFault::DanglingValue(missing))),
+            machine.run_with_host(root, budget(), &mut invalid)
+        );
+        assert_eq!(invalid.calls, 1);
+    }
+
+    /// Observe the real host boundary and terminal reading together.
+    ///
+    /// # Specification
+    /// - requires: a closed program and an ordered host oracle.
+    /// - ensures: every expected request occurs exactly once and the terminal
+    ///   reading or blamed unhandled instruction equals the supplied
+    ///   expectation.
+    /// - panics: on a scope, machine, readback or observation mismatch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a claimed source operation must bypass the host;
+    ///   replies affect arithmetic and subsequent operation payloads.
+    /// - witness: `machine::tests::host_seam_never_consulted_for_a_claimed_perform`
+    /// - witness: `machine::tests::host_seam_reply_flows_into_subsequent_computation`
+    #[spec(ensures: core.computation(program).is_some())]
+    fn assert_host(
+        core: &mut CoreArena,
+        program: ComputationId,
+        offers: impl IntoIterator<Item = Offer>,
+        expected: ControlExpectation,
+    )
+    {
+        let mut arena = CommandArena::new();
+        let root = focus_computation(core, program, &mut arena, &mut Provenance::new())
+            .expect("host program focuses");
+        assert_eq!(
+            Ok(crate::FreeSet::default()),
+            crate::check_command(&arena, root)
+        );
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let outcome = {
+            let mut host = ScriptedHost {
+                core,
+                offers: offers.into_iter().collect(),
+            };
+            let result = machine
+                .run_with_host(root, budget(), &mut host)
+                .expect("bounded host run");
+            assert!(host.offers.is_empty(), "every prescribed offer occurs");
+            result
+        };
+        match (outcome, expected) {
+            | (
+                HostOutcome::Completed(Outcome::Halted(value)),
+                ControlExpectation::Value(expected),
+            ) => {
+                let actual = machine
+                    .read_back_value(value, core)
+                    .expect("host result reads back");
+                assert_eq!(
+                    gandr_core_term::CertificateEquality::Equal,
+                    gandr_core_term::equal_certificate_syntax(core, actual, expected)
+                );
+            },
+            | (
+                HostOutcome::Completed(Outcome::Stuck(Stuck::PerformNoHandler(at))),
+                ControlExpectation::Perform(name, operation),
+            ) => {
+                let CommandNode::Perform {
+                    ref signature,
+                    operation: ref found,
+                    ..
+                } = *arena.command(at).expect("perform instruction")
+                else {
+                    panic!("host decline blames Perform");
+                };
+                assert_eq!(
+                    (name, operation),
+                    (signature.name().as_ref(), found.as_ref())
+                );
+            },
+            | (outcome, _) => panic!("unexpected host outcome: {outcome:?}"),
+        }
+    }
+
+    #[test]
+    fn host_seam_resumes_a_single_unhandled_perform()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let answer = integer(&mut core, Digits("42"));
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let program = core.computation_perform(signature, "op".into(), five);
+        assert_host(
+            &mut core,
+            program,
+            [Offer {
+                signature: "E",
+                operation: "op",
+                payload: five,
+                answer: Answer::Integer(Digits("42")),
+            }],
+            ControlExpectation::Value(answer),
+        );
+    }
+
+    #[test]
+    fn host_seam_decline_blames_perform_no_handler()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let identity = core.computation_return(zero);
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let perform = core.computation_perform(signature, "op".into(), five);
+        let program = core.computation_bind(perform, identity);
+        assert_host(
+            &mut core,
+            program,
+            [Offer {
+                signature: "E",
+                operation: "op",
+                payload: five,
+                answer: Answer::Decline,
+            }],
+            ControlExpectation::Perform("E", "op"),
+        );
+    }
+
+    #[test]
+    fn host_seam_offers_deep_re_entry_in_order()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let ten = integer(&mut core, Digits("10"));
+        let ninety_nine = integer(&mut core, Digits("99"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let first = core.computation_perform(signature.clone(), "op".into(), one);
+        let second = core.computation_perform(signature, "op".into(), zero);
+        let program = core.computation_bind(first, second);
+        assert_host(
+            &mut core,
+            program,
+            [
+                Offer {
+                    signature: "E",
+                    operation: "op",
+                    payload: one,
+                    answer: Answer::Integer(Digits("10")),
+                },
+                Offer {
+                    signature: "E",
+                    operation: "op",
+                    payload: ten,
+                    answer: Answer::Integer(Digits("99")),
+                },
+            ],
+            ControlExpectation::Value(ninety_nine),
+        );
+    }
+
+    #[test]
+    fn host_seam_offers_across_a_non_matching_handler()
+    {
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let eight = integer(&mut core, Digits("8"));
+        let answer = integer(&mut core, Digits("555"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let identity = core.computation_return(zero);
+        let keep = effect(&mut core, "E".into(), "keep".into());
+        let escape = effect(&mut core, "E".into(), "escape".into());
+        let first = core.computation_perform(escape, "escape".into(), seven);
+        let second = core.computation_perform(keep.clone(), "keep".into(), eight);
+        let subject = core.computation_bind(first, second);
+        let clause = core.computation_return(answer);
+        let program = handler(&mut core, keep, subject, identity, clause);
+        assert_host(
+            &mut core,
+            program,
+            [Offer {
+                signature: "E",
+                operation: "escape",
+                payload: seven,
+                answer: Answer::Integer(Digits("20")),
+            }],
+            ControlExpectation::Value(answer),
+        );
+    }
+
+    #[test]
+    fn host_seam_never_consulted_for_a_claimed_perform()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let answer = integer(&mut core, Digits("77"));
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let perform = core.computation_perform(signature.clone(), "op".into(), five);
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let identity = core.computation_return(zero);
+        let clause = core.computation_return(answer);
+        let program = handler(&mut core, signature, perform, identity, clause);
+        assert_host(&mut core, program, [], ControlExpectation::Value(answer));
+    }
+
+    #[test]
+    fn host_seam_reply_flows_into_subsequent_computation()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let ten = integer(&mut core, Digits("10"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let signature = effect(&mut core, "E".into(), "op".into());
+        let perform = core.computation_perform(signature, "op".into(), one);
+        let add = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "add")
+            .expect("native add");
+        let body = core.computation_primitive(
+            add,
+            gandr_core_term::primitive::Arguments::Binary([zero, one]),
+        );
+        let program = core.computation_bind(perform, body);
+        assert_host(
+            &mut core,
+            program,
+            [Offer {
+                signature: "E",
+                operation: "op",
+                payload: one,
+                answer: Answer::Integer(Digits("9")),
+            }],
+            ControlExpectation::Value(ten),
+        );
+    }
+
+    #[test]
+    fn host_seam_first_order_payloads_read_back_identically()
+    {
+        let mut core = CoreArena::new();
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let three = integer(&mut core, Digits("3"));
+        let unit = core.value_unit();
+        let pair = core.value_pair(one, two);
+        let nil = core.value_list_nil();
+        let tail = core.value_list_cons(three, nil);
+        let tail = core.value_list_cons(two, tail);
+        let list = core.value_list_cons(one, tail);
+        let unit_type = core.value_type_unit();
+        let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let pair_type = core.value_type_product(integer_type, integer_type);
+        let list_type = core.value_type_list(integer_type);
+        for (payload, payload_type) in [(pair, pair_type), (list, list_type)] {
+            let signature = gandr_core_term::effect::EffectSig::new("Inspect".into(), [
+                gandr_core_term::effect::EffectOp {
+                    name: "see".into(),
+                    payload: payload_type,
+                    reply: unit_type,
+                },
+            ])
+            .expect("one operation");
+            let program = core.computation_perform(signature, "see".into(), payload);
+            assert_host(
+                &mut core,
+                program,
+                [Offer {
+                    signature: "Inspect",
+                    operation: "see",
+                    payload,
+                    answer: Answer::Unit,
+                }],
+                ControlExpectation::Value(unit),
+            );
+        }
+    }
+
+    #[test]
+    fn host_seam_higher_order_payload_reads_back_exactly()
+    {
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let open_body = core.computation_return(zero);
+        let open_thunk = core.value_thunk(open_body);
+        let closed_body = core.computation_return(seven);
+        let closed_thunk = core.value_thunk(closed_body);
+        let integer_type = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let returner = core.comp_type_returner(integer_type);
+        let thunk_type = core.value_type_thunk(returner);
+        let signature = gandr_core_term::effect::EffectSig::new("Inspect".into(), [
+            gandr_core_term::effect::EffectOp {
+                name: "see".into(),
+                payload: thunk_type,
+                reply: thunk_type,
+            },
+        ])
+        .expect("one operation");
+        let perform = core.computation_perform(signature, "see".into(), open_thunk);
+        let force = core.computation_force(zero);
+        let force_reply = core.computation_bind(perform, force);
+        let lambda = core.computation_lambda(force_reply);
+        let program = core.computation_application(lambda, seven);
+        assert_host(
+            &mut core,
+            program,
+            [Offer {
+                signature: "Inspect",
+                operation: "see",
+                payload: closed_thunk,
+                answer: Answer::Payload,
+            }],
+            ControlExpectation::Value(seven),
+        );
+    }
+
+    /// Fold an integer list with a comparison and a Boolean combiner.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fold_predicate(
+        core: &mut CoreArena,
+        list: ValueId,
+        threshold: ValueId,
+        combine: gandr_core_term::primitive::Primitive,
+        base: ValueId,
+    ) -> ComputationId
+    {
+        let element = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let unit = core.value_type_unit();
+        let result = core.value_type_sum(unit, unit);
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let one = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let greater = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "gt")
+            .expect("native comparison");
+        let predicate = core.computation_primitive(
+            greater,
+            gandr_core_term::primitive::Arguments::Binary([one, threshold]),
+        );
+        let combine = core.computation_primitive(
+            combine,
+            gandr_core_term::primitive::Arguments::Binary([zero, one]),
+        );
+        let on_cons = core.computation_bind(predicate, combine);
+        let on_nil = core.computation_return(base);
+        core.computation_list_fold(element, result, list, on_nil, on_cons)
+    }
+
+    /// Handle successful assertions deeply and stop at the first failure.
+    ///
+    /// # Specification
+    /// trivial.
+    fn assertions(
+        core: &mut CoreArena,
+        signature: gandr_core_term::effect::EffectSig,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        let unit = core.value_unit();
+        let yes = core.value_injection(Side::Left, unit);
+        let no = core.value_injection(Side::Right, unit);
+        let on_return = core.computation_return(yes);
+        let failed = core.computation_return(no);
+        let reply = core.computation_return(unit);
+        let payload = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let shifted_continuation = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let passed = core.computation_resume(shifted_continuation, reply);
+        let clause = core.computation_case(payload, passed, failed);
+        handler(core, signature, body, on_return, clause)
+    }
+
+    #[test]
+    fn the_assert_handler_runs_combinator_assertions()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let yes = core.value_injection(Side::Left, unit);
+        let no = core.value_injection(Side::Right, unit);
+        let one = integer(&mut core, Digits("1"));
+        let two = integer(&mut core, Digits("2"));
+        let three = integer(&mut core, Digits("3"));
+        let zero = integer(&mut core, Digits("0"));
+        let nil = core.value_list_nil();
+        let tail = core.value_list_cons(three, nil);
+        let tail = core.value_list_cons(two, tail);
+        let list = core.value_list_cons(one, tail);
+        let unit_type = core.value_type_unit();
+        let boolean = core.value_type_sum(unit_type, unit_type);
+        let signature = gandr_core_term::effect::EffectSig::new("Assert".into(), [
+            gandr_core_term::effect::EffectOp {
+                name: "assert".into(),
+                payload: boolean,
+                reply: unit_type,
+            },
+        ])
+        .expect("assert interface");
+        let and = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "and")
+            .expect("native conjunction");
+        let or = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "or")
+            .expect("native disjunction");
+        let all = fold_predicate(&mut core, list, zero, and, yes);
+        let any = fold_predicate(&mut core, list, two, or, no);
+        let result = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let assert = core.computation_perform(signature.clone(), "assert".into(), result);
+        let first = core.computation_bind(all, assert);
+        let second = core.computation_bind(any, assert);
+        let both = core.computation_bind(first, second);
+        let program = assertions(&mut core, signature, both);
+        assert_host(&mut core, program, [], ControlExpectation::Value(yes));
+    }
+
+    #[test]
+    fn the_assert_handler_reports_a_failure()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let yes = core.value_injection(Side::Left, unit);
+        let no = core.value_injection(Side::Right, unit);
+        let one = integer(&mut core, Digits("1"));
+        let five = integer(&mut core, Digits("5"));
+        let nil = core.value_list_nil();
+        let list = core.value_list_cons(one, nil);
+        let unit_type = core.value_type_unit();
+        let boolean = core.value_type_sum(unit_type, unit_type);
+        let signature = gandr_core_term::effect::EffectSig::new("Assert".into(), [
+            gandr_core_term::effect::EffectOp {
+                name: "assert".into(),
+                payload: boolean,
+                reply: unit_type,
+            },
+        ])
+        .expect("assert interface");
+        let and = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "and")
+            .expect("native conjunction");
+        let all = fold_predicate(&mut core, list, five, and, yes);
+        let result = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let assert = core.computation_perform(signature.clone(), "assert".into(), result);
+        let checked = core.computation_bind(all, assert);
+        let unreachable_signature = effect(&mut core, "Unreachable".into(), "op".into());
+        let unreachable = core.computation_perform(unreachable_signature, "op".into(), one);
+        let body = core.computation_bind(checked, unreachable);
+        let program = assertions(&mut core, signature, body);
+        assert_host(&mut core, program, [], ControlExpectation::Value(no));
+    }
+
+    #[test]
+    fn a_mock_exec_handler_replaces_a_real_command()
+    {
+        let mut core = CoreArena::new();
+        let host =
+            gandr_core_term::effect::host::HostSignatures::new(&mut core).expect("host interfaces");
+        let program_name = core.value_literal(Literal::Text(
+            gandr_kernel_term::StringLiteral::new("ls".into()),
+        ));
+        let mode = core.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+            "capture".into(),
+        )));
+        let arguments = core.value_list_nil();
+        let args_mode = core.value_pair(arguments, mode);
+        let payload = core.value_pair(program_name, args_mode);
+        let stdout = core.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+            "mocked-output".into(),
+        )));
+        let stderr = core.value_literal(Literal::Text(gandr_kernel_term::StringLiteral::new(
+            String::new(),
+        )));
+        let status = integer(&mut core, Digits("0"));
+        let error_status = core.value_pair(stderr, status);
+        let output = core.value_pair(stdout, error_status);
+        let reply = core.computation_return(output);
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let on_return = core.computation_return(zero);
+        let clause = core.computation_resume(zero, reply);
+        let perform = core.computation_perform(host.exec.clone(), "exec".into(), payload);
+        let program = handler(&mut core, host.exec, perform, on_return, clause);
+        assert_host(&mut core, program, [], ControlExpectation::Value(output));
+    }
+
+    #[test]
+    fn literal_stacks_close_flat_frame_scopes_and_resume_in_order()
+    {
+        use gandr_core_term::control::StackFrame;
+        let mut core = CoreArena::new();
+        let seven = integer(&mut core, Digits("7"));
+        let eleven = integer(&mut core, Digits("11"));
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let one = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let pair = core.value_pair(zero, one);
+        let pair_return = core.computation_return(pair);
+        let lambda = core.computation_lambda(pair_return);
+        let ignored = core.computation_return(seven);
+        let bind_body = core.computation_with(ignored, lambda);
+        let frames = [
+            StackFrame::Apply(seven),
+            StackFrame::Bind(bind_body),
+            StackFrame::Project(Side::Right),
+            StackFrame::Apply(zero),
+        ];
+        let stack = core.value_reify(alloc::sync::Arc::from(frames));
+        let stack_return = core.computation_return(stack);
+        let close = core.computation_lambda(stack_return);
+        let closed = core.computation_application(close, eleven);
+        let expected_stack = core.value_reify(alloc::sync::Arc::from([
+            StackFrame::Apply(seven),
+            StackFrame::Bind(bind_body),
+            StackFrame::Project(Side::Right),
+            StackFrame::Apply(eleven),
+        ]));
+        assert_control(&mut core, closed, ControlExpectation::Value(expected_stack));
+        let identity = core.computation_return(zero);
+        let fed = core.computation_lambda(identity);
+        let resumed = core.computation_resume(stack, fed);
+        let close = core.computation_lambda(resumed);
+        let program = core.computation_application(close, eleven);
+        let expected = core.value_pair(eleven, seven);
+        assert_control(&mut core, program, ControlExpectation::Value(expected));
+    }
+
+    #[test]
+    fn captured_stacks_have_a_named_nonliteral_readback_refusal()
+    {
+        let mut core = CoreArena::new();
+        let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+        let returned = core.computation_return(zero);
+        let shifted = core.computation_shift(returned);
+        let program = core.computation_reset(shifted);
+        let mut arena = CommandArena::new();
+        let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+            .expect("control focuses");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Outcome::Halted(stack) = machine.run(root, budget()).expect("bounded capture")
+        else {
+            panic!("captured stack returns");
+        };
+        assert!(matches!(
+            machine.store().value(stack),
+            Some(HeapValue::Stack { .. })
+        ));
+        assert_eq!(
+            Err(ReadbackRefusal::NonLiteralStack(stack)),
+            machine.read_back_value(stack, &mut core)
+        );
+    }
+
+    #[test]
+    fn native_list_fold_preserves_order_and_outer_scope()
+    {
+        use gandr_core_term::Computation;
+        use gandr_core_term::Value;
+        use gandr_core_term::ValueType;
+        let mut source = CoreArena::new();
+        let integer_type = source.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let pair_type = source.value_type_product(integer_type, integer_type);
+        let result_type = source.value_type_list(pair_type);
+        let nil = source.value_list_nil();
+        let two = integer(&mut source, Digits("2"));
+        let seven = integer(&mut source, Digits("7"));
+        let eleven = integer(&mut source, Digits("11"));
+        let tail = source.value_list_cons(seven, nil);
+        let list = source.value_list_cons(two, tail);
+        let head = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let result = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let outer = source.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let paired = source.value_pair(head, outer);
+        let cell = source.value_list_cons(paired, result);
+        let on_nil = source.computation_return(nil);
+        let on_cons = source.computation_return(cell);
+        let fold = source.computation_list_fold(integer_type, result_type, list, on_nil, on_cons);
+        let lambda = source.computation_lambda(fold);
+        let program = source.computation_application(lambda, eleven);
+        let mut focused = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let root = focus_computation(&source, program, &mut focused, &mut provenance)
+            .expect("fold focuses");
+        let mut target = CoreArena::new();
+        let _unrelated = target.value_type_unit();
+        let decoded = crate::unfocus::unfocus_command(&focused, root, &mut target)
+            .expect("fold annotations travel with the IL");
+        let &Computation::Application(lambda, _) =
+            target.computation(decoded).expect("application")
+        else {
+            panic!("application");
+        };
+        let &Computation::Lambda(fold) = target.computation(lambda).expect("lambda")
+        else {
+            panic!("lambda");
+        };
+        let &Computation::ListFold {
+            element, result, ..
+        } = target.computation(fold).expect("fold")
+        else {
+            panic!("native fold");
+        };
+        assert_eq!(
+            target.value_type(element),
+            Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer))
+        );
+        let &ValueType::List(pair) = target.value_type(result).expect("result type")
+        else {
+            panic!("native List result");
+        };
+        assert_eq!(
+            target.value_type(pair),
+            Some(&ValueType::Product(element, element))
+        );
+        for (mut core, program) in [(source, program), (target, decoded)] {
+            let mut arena = CommandArena::new();
+            let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+                .expect("closed fold");
+            let definitions = Definitions::new();
+            let mut machine = Machine::new(&arena, &definitions);
+            let outcome = machine.run(root, budget()).expect("bounded fold run");
+            let Outcome::Halted(value) = outcome
+            else {
+                panic!("fold halts: {outcome:?}");
+            };
+            let back = machine
+                .read_back(value, &mut core)
+                .expect("native list readback");
+            let &Computation::Return(mut cursor) = core.computation(back).expect("returned list")
+            else {
+                panic!("return");
+            };
+            for expected in ["2", "7"] {
+                let &Value::ListCons(pair, tail) = core.value(cursor).expect("cell")
+                else {
+                    panic!("native cell");
+                };
+                let &Value::Pair(head, outer) = core.value(pair).expect("pair")
+                else {
+                    panic!("paired head");
+                };
+                let wanted_head = integer(&mut core, Digits(expected));
+                let wanted_outer = integer(&mut core, Digits("11"));
+                assert_eq!(core.value(head), core.value(wanted_head));
+                assert_eq!(core.value(outer), core.value(wanted_outer));
+                cursor = tail;
+            }
+            assert_eq!(core.value(cursor), Some(&Value::ListNil));
+        }
     }
 
     /// `return 1` halts with `1`.
@@ -2763,24 +4641,6 @@ mod tests
             .expect("children resolve");
         let definitions = Definitions::new();
         let mut machine = Machine::new(&arena, &definitions);
-        let arguments = machine
-            .evaluate_all(&[first, last], Environment::EMPTY)
-            .expect("literal arguments");
-        let &[first_argument, last_argument] = arguments.as_ref()
-        else {
-            panic!("one result per producer");
-        };
-        for (source, argument) in [(first_source, first_argument), (last_source, last_argument)] {
-            let gandr_core_term::Value::Literal(ref expected) =
-                *core.value(source).expect("source resolves")
-            else {
-                panic!("literal source");
-            };
-            assert_eq!(
-                Some(&HeapValue::Literal(expected.clone())),
-                machine.store.value(argument)
-            );
-        }
         let Ok(Outcome::Halted(value)) = machine.run(root, budget())
         else {
             panic!("pair pattern returns");
@@ -2835,7 +4695,7 @@ mod tests
             .expect("first force opens");
         let update = machine.store.mark();
         assert!(
-            matches!(first, Next::Continue(Control::Run(found, inner)) if found == body && machine.store.lookup_covalue(inner, 0_u32.into()) == Some(update))
+            matches!(first, Next::Continue(Control::Run(found, inner)) if found == body && machine.store.lookup_covalue(inner, 0_u32.into()) == Some(crate::store::Covalue::Pinned(update)))
         );
         assert_eq!(Some(MemoState::InProgress), machine.store.cell(cell));
         assert_eq!(1_usize, usize::from(machine.store.frame_height()));
@@ -2849,6 +4709,7 @@ mod tests
         let mut halted = None;
         for _ in 0_usize .. 16 {
             match next {
+                | Next::Host { .. } => panic!("pure force offered an operation"),
                 | Next::Halt(value) => {
                     halted = Some(value);
                     break;

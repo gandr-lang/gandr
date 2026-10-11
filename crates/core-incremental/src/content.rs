@@ -198,6 +198,50 @@ pub enum ContentNode
     },
     /// A projection returning the selected record field.
     RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
+    /// A flat literal continuation, in execution order.
+    Reify(alloc::sync::Arc<[gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>]>),
+    /// A stack classifier with ordered input and output computation types.
+    Stack
+    {
+        /// Computation fed to the stack.
+        input: NodeIndex,
+        /// Computation produced after all frames.
+        output: NodeIndex,
+    },
+    /// A lazy pair classifier.
+    WithType(NodeIndex, NodeIndex),
+    /// An operation request with its inline interface.
+    Perform
+    {
+        /// Arena-independent interface type edges.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Qualified operation's local name.
+        operation: gandr_core_term::effect::OperationName,
+        /// Request payload.
+        payload: NodeIndex,
+    },
+    /// A deep handler retaining branch scopes and operation names.
+    Handle
+    {
+        /// The discharged interface.
+        signature: gandr_core_term::effect::EffectSig<NodeIndex>,
+        /// Handled computation, no additional value binder.
+        subject: NodeIndex,
+        /// Return branch, beneath one value binder.
+        on_return: NodeIndex,
+        /// Each operation branch binds payload then resumption.
+        clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<NodeIndex>]>,
+    },
+    /// Feed a computation to a first-class stack.
+    Resume(NodeIndex, NodeIndex),
+    /// A delimited answer boundary.
+    Reset(NodeIndex),
+    /// Capture a stack, bound in the body.
+    Shift(NodeIndex),
+    /// Two suspended computations.
+    With(NodeIndex, NodeIndex),
+    /// Select a lazy-pair component.
+    Project(Side, NodeIndex),
     /// A closed table-typed native thunk.
     PrimitiveValue(gandr_core_term::primitive::Primitive),
     /// A saturated runtime-native operation.
@@ -241,6 +285,10 @@ pub enum ContentNode
     Literal(Literal),
     /// A pair of values.
     Pair(NodeIndex, NodeIndex),
+    /// The empty native list.
+    ListNil,
+    /// A native list cell.
+    ListCons(NodeIndex, NodeIndex),
     /// A sum injection.
     Injection(Side, NodeIndex),
     /// A thunk of a computation.
@@ -309,6 +357,20 @@ pub enum ContentNode
         /// The termination evidence it carries.
         evidence: FixpointEvidence,
     },
+    /// A pure native List fold, with annotations and ordered branches.
+    ListFold
+    {
+        /// Ambient element type.
+        element: NodeIndex,
+        /// Ambient result type.
+        result: NodeIndex,
+        /// The list value.
+        list: NodeIndex,
+        /// The empty branch.
+        on_nil: NodeIndex,
+        /// The cell branch beneath two binders.
+        on_cons: NodeIndex,
+    },
     /// A base-type atom.
     Base(BaseType),
     /// The unit type.
@@ -317,6 +379,8 @@ pub enum ContentNode
     Product(NodeIndex, NodeIndex),
     /// A sum type.
     Sum(NodeIndex, NodeIndex),
+    /// A finite-list type.
+    List(NodeIndex),
     /// A thunk type.
     ThunkType(NodeIndex),
     /// A universe of one sort.
@@ -356,7 +420,13 @@ pub enum ContentNode
     /// The unknown value type.
     UnknownType,
     /// A returner type.
-    Returner(NodeIndex),
+    Returner
+    {
+        /// The returned value type.
+        result: NodeIndex,
+        /// Interfaces whose type edges use this content table's indices.
+        effects: gandr_core_term::effect::EffectRow<NodeIndex>,
+    },
     /// A non-dependent arrow.
     Arrow
     {
@@ -404,7 +474,7 @@ pub enum ContentNode
 pub struct Children<'node>
 {
     /// The children in order; slots past `count` are unused.
-    slots: [(NodeIndex, Sort); 3],
+    slots: [(NodeIndex, Sort); 5],
     /// How many slots hold a child.
     count: usize,
     /// A variadic suffix, borrowed without per-node allocation.
@@ -413,6 +483,14 @@ pub struct Children<'node>
     fields: Option<&'node BTreeMap<gandr_core_term::FieldLabel, NodeIndex>>,
     /// The common sort of the suffix or fields.
     tail_sort: Sort,
+    /// Additional operation-type edges borrowed from a returner's row.
+    effects: Option<&'node gandr_core_term::effect::EffectRow<NodeIndex>>,
+    /// Inline operation types, after fixed children.
+    signature: Option<&'node gandr_core_term::effect::EffectSig<NodeIndex>>,
+    /// Named branch bodies, after interface types.
+    clauses: &'node [gandr_core_term::control::EffectClause<NodeIndex>],
+    /// Literal stack edges, retaining frame order and omitting projections.
+    frames: &'node [gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>],
 }
 
 impl Default for Sort
@@ -433,8 +511,8 @@ impl<'node> Children<'node>
     /// The children listed in `children`, in order.
     ///
     /// # Specification
-    /// - requires: at most three fixed-prefix children; variadic children are
-    ///   borrowed.
+    /// - requires: at most five fixed-prefix children; variadic children and a
+    ///   row's extra edges are borrowed.
     /// - ensures: the first `children.len()` slots, in order.
     /// - panics: none.
     ///
@@ -446,13 +524,13 @@ impl<'node> Children<'node>
     /// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     #[spec(
-        requires: children.len() <= 3,
+        requires: children.len() <= 5,
         ensures: |ret| ret.count == children.len()
-            && ret.slots.get(..ret.count) == Some(children),
+            && ret.slots.get(..ret.count) == Some(children) && ret.effects.is_none(),
     )]
     fn of(children: &[(NodeIndex, Sort)]) -> Self
     {
-        let mut slots = [(NodeIndex::default(), Sort::Value); 3];
+        let mut slots = [(NodeIndex::default(), Sort::Value); 5];
         let mut count = 0_usize;
         for (slot, &child) in slots.iter_mut().zip(children) {
             *slot = child;
@@ -491,6 +569,28 @@ impl<'node> Children<'node>
                     .flat_map(|fields| fields.values())
                     .map(move |&child| (child, sort)),
             )
+            .chain(
+                self.effects
+                    .into_iter()
+                    .flat_map(|row| row.types().map(|ty| (ty, Sort::ValueType))),
+            )
+            .chain(
+                self.signature
+                    .into_iter()
+                    .flat_map(|signature| signature.types().map(|ty| (ty, Sort::ValueType))),
+            )
+            .chain(
+                self.clauses
+                    .iter()
+                    .map(|clause| (clause.body, Sort::Computation)),
+            )
+            .chain(self.frames.iter().filter_map(|frame| match *frame {
+                | gandr_core_term::control::StackFrame::Apply(value) => Some((value, Sort::Value)),
+                | gandr_core_term::control::StackFrame::Bind(body) => {
+                    Some((body, Sort::Computation))
+                },
+                | gandr_core_term::control::StackFrame::Project(_) => None,
+            }))
     }
     /// Append a borrowed variadic child suffix.
     ///
@@ -552,13 +652,18 @@ impl ContentNode
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| match *self {
-        Self::Constructor { .. } | Self::Record(_) | Self::PathRefl(_)
+        | Self::Constructor { .. }
+        | Self::Record(_)
+        | Self::Reify(_)
+        | Self::PathRefl(_)
         | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
         | Self::Unit
+        | Self::ListNil
+        | Self::ListCons(..)
         | Self::Literal(_)
         | Self::Pair(..)
         | Self::Injection(..)
@@ -569,23 +674,37 @@ impl ContentNode
         | Self::StaticLambda(_)
         | Self::StaticApplication(..)
         | Self::Hole(_)
-        | Self::ValueMark { .. } => matches!(ret,Sort::Value),
-        Self::DataCase { .. } | Self::RecordProjection(..) | Self::Transport(..)
+        | Self::ValueMark { .. } => matches!(ret, Sort::Value),
+        | Self::DataCase { .. }
+        | Self::RecordProjection(..)
+        | Self::Perform { .. }
+        | Self::Handle { .. }
+        | Self::Resume(..)
+        | Self::Reset(_)
+        | Self::Shift(_)
+        | Self::With(..)
+        | Self::Project(..)
+        | Self::Transport(..)
         | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
         | Self::Return(_)
         | Self::Bind(..)
         | Self::Force(_)
+        | Self::ListFold { .. }
         | Self::Case { .. }
         | Self::ComputationHole(_)
         | Self::ComputationMark { .. }
-        | Self::Fixpoint { .. } => matches!(ret,Sort::Computation),
-        Self::Data { .. } | Self::RecordType(_) | Self::PathUniverse(..)
+        | Self::Fixpoint { .. } => matches!(ret, Sort::Computation),
+        | Self::Data { .. }
+        | Self::RecordType(_)
+        | Self::Stack { .. }
+        | Self::PathUniverse(..)
         | Self::Base(_)
         | Self::UnitType
         | Self::Product(..)
         | Self::Sum(..)
+        | Self::List(_)
         | Self::ThunkType(_)
         | Self::Universe { .. }
         | Self::TypeLift { .. }
@@ -593,7 +712,8 @@ impl ContentNode
         | Self::Abstract(_)
         | Self::StaticPi { .. }
         | Self::UnknownType => matches!(ret, Sort::ValueType),
-        | Self::Returner(_)
+        | Self::WithType(..)
+        | Self::Returner { .. }
         | Self::Arrow { .. }
         | Self::Pi { .. }
         | Self::ComputationElement { .. }
@@ -611,6 +731,7 @@ impl ContentNode
         match *self {
             | Self::Constructor { .. }
             | Self::Record(_)
+            | Self::Reify(_)
             | Self::PathRefl(_)
             | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
@@ -618,6 +739,8 @@ impl ContentNode
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
+            | Self::ListNil
+            | Self::ListCons(..)
             | Self::Literal(_)
             | Self::Pair(..)
             | Self::Injection(..)
@@ -631,6 +754,13 @@ impl ContentNode
             | Self::ValueMark { .. } => Sort::Value,
             | Self::DataCase { .. }
             | Self::RecordProjection(..)
+            | Self::Perform { .. }
+            | Self::Handle { .. }
+            | Self::Resume(..)
+            | Self::Reset(_)
+            | Self::Shift(_)
+            | Self::With(..)
+            | Self::Project(..)
             | Self::Transport(..)
             | Self::Primitive(..)
             | Self::Lambda(_)
@@ -638,17 +768,20 @@ impl ContentNode
             | Self::Return(_)
             | Self::Bind(..)
             | Self::Force(_)
+            | Self::ListFold { .. }
             | Self::Case { .. }
             | Self::ComputationHole(_)
             | Self::ComputationMark { .. }
             | Self::Fixpoint { .. } => Sort::Computation,
             | Self::Data { .. }
             | Self::RecordType(_)
+            | Self::Stack { .. }
             | Self::PathUniverse(..)
             | Self::Base(_)
             | Self::UnitType
             | Self::Product(..)
             | Self::Sum(..)
+            | Self::List(_)
             | Self::ThunkType(_)
             | Self::Universe { .. }
             | Self::TypeLift { .. }
@@ -656,7 +789,8 @@ impl ContentNode
             | Self::Abstract(_)
             | Self::StaticPi { .. }
             | Self::UnknownType => Sort::ValueType,
-            | Self::Returner(_)
+            | Self::WithType(..)
+            | Self::Returner { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
             | Self::ComputationElement { .. }
@@ -686,17 +820,30 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
-        match *self {
+        (matches!(*self, Self::Returner { .. }) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
             Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
             Self::DataCase { scrutinee,motive,ref branches } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
             Self::RecordProjection(record,_) => ret.iter().eq([(record,V)]),
+            | Self::Reify(ref frames) => ret.iter().eq(frames.iter().filter_map(|frame| match *frame {
+                gandr_core_term::control::StackFrame::Apply(value) => Some((value, V)),
+                gandr_core_term::control::StackFrame::Bind(body) => Some((body, M)),
+                gandr_core_term::control::StackFrame::Project(_) => None,
+            })),
+            | Self::Stack { input, output } => actual == Some(&[(input, C), (output, C)][..]),
+            | Self::WithType(first, second) => actual == Some(&[(first, C), (second, C)][..]),
+            | Self::Perform { payload, ref signature, .. } => ret.iter().eq(core::iter::once((payload, V)).chain(signature.types().map(|ty| (ty, A)))),
+            | Self::Handle { subject, on_return, ref signature, ref clauses } => ret.iter().eq([(subject, M), (on_return, M)].into_iter().chain(signature.types().map(|ty| (ty, A))).chain(clauses.iter().map(|clause| (clause.body, M)))),
+            | Self::Resume(stack, body) => actual == Some(&[(stack, V), (body, M)][..]),
+            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => actual == Some(&[(body, M)][..]),
+            | Self::With(first, second) => actual == Some(&[(first, M), (second, M)][..]),
             | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
             | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
+            | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
             | Self::UnitType
@@ -707,7 +854,8 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::UnknownComputationType => ret.count == 0,
-            | Self::Pair(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
+            | Self::ListFold { element, result, list, on_nil, on_cons } => actual == Some(&[(element, A), (result, A), (list, V), (on_nil, M), (on_cons, M)][..]),
+            | Self::ListCons(a, b) | Self::Pair(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
             | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
@@ -737,7 +885,8 @@ impl ContentNode
                 codomain: b,
             } => actual == Some(&[(a, A), (b, A)][..]),
             | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
-            | Self::TypeLift { inner: a, .. } | Self::Returner(a) | Self::Quote(a) => {
+            | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
+            | Self::List(a) | Self::TypeLift { inner: a, .. } | Self::Quote(a) => {
                 actual == Some(&[(a, A)][..])
             },
             | Self::Arrow {
@@ -771,6 +920,35 @@ impl ContentNode
                 ref branches,
             } => Children::of(&[(scrutinee, V), (motive, C)]).followed_by(branches, M),
             | Self::RecordProjection(record, _) => Children::of(&[(record, V)]),
+            | Self::Reify(ref frames) => Children {
+                frames,
+                ..Children::default()
+            },
+            | Self::Stack { input, output } => Children::of(&[(input, C), (output, C)]),
+            | Self::WithType(first, second) => Children::of(&[(first, C), (second, C)]),
+            | Self::Perform {
+                payload,
+                ref signature,
+                ..
+            } => Children {
+                signature: Some(signature),
+                ..Children::of(&[(payload, V)])
+            },
+            | Self::Handle {
+                subject,
+                on_return,
+                ref signature,
+                ref clauses,
+            } => Children {
+                signature: Some(signature),
+                clauses,
+                ..Children::of(&[(subject, M), (on_return, M)])
+            },
+            | Self::Resume(stack, body) => Children::of(&[(stack, V), (body, M)]),
+            | Self::Reset(body) | Self::Shift(body) | Self::Project(_, body) => {
+                Children::of(&[(body, M)])
+            },
+            | Self::With(first, second) => Children::of(&[(first, M), (second, M)]),
             | Self::Primitive(_, arguments) => match arguments {
                 | gandr_core_term::primitive::Arguments::Unary(argument) => {
                     Children::of(&[(argument, V)])
@@ -789,6 +967,7 @@ impl ContentNode
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
+            | Self::ListNil
             | Self::Literal(_)
             | Self::Base(_)
             | Self::UnitType
@@ -803,6 +982,7 @@ impl ContentNode
             | Self::PathProduct(first, second)
             | Self::Transport(first, second)
             | Self::Pair(first, second)
+            | Self::ListCons(first, second)
             | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
             | Self::PathRefl(body)
             | Self::StaticLambda(body)
@@ -817,6 +997,19 @@ impl ContentNode
             | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
             | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
             | Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
+            | Self::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => Children::of(&[
+                (element, A),
+                (result, A),
+                (list, V),
+                (on_nil, M),
+                (on_cons, M),
+            ]),
             | Self::Case {
                 scrutinee,
                 on_left,
@@ -829,7 +1022,16 @@ impl ContentNode
                 codomain: second,
             } => Children::of(&[(first, A), (second, A)]),
             | Self::ThunkType(body) => Children::of(&[(body, C)]),
-            | Self::TypeLift { inner, .. } | Self::Returner(inner) => Children::of(&[(inner, A)]),
+            | Self::List(element) => Children::of(&[(element, A)]),
+            | Self::Returner {
+                result,
+                ref effects,
+            } => {
+                let mut children = Children::of(&[(result, A)]);
+                children.effects = Some(effects);
+                children
+            },
+            | Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
             | Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
                 Children::of(&[(code, V)])
             },
@@ -874,6 +1076,16 @@ impl ContentNode
             | Self::Record(_)
             | Self::DataCase { .. }
             | Self::RecordProjection(..)
+            | Self::Reify(_)
+            | Self::Stack { .. }
+            | Self::WithType(..)
+            | Self::Perform { .. }
+            | Self::Handle { .. }
+            | Self::Resume(..)
+            | Self::Reset(_)
+            | Self::Shift(_)
+            | Self::With(..)
+            | Self::Project(..)
             | Self::PrimitiveValue(_)
             | Self::Primitive(..)
             | Self::PathRefl(_)
@@ -882,6 +1094,9 @@ impl ContentNode
             | Self::Transport(..)
             | Self::Variable { .. }
             | Self::Unit
+            | Self::ListNil
+            | Self::ListCons(..)
+            | Self::ListFold { .. }
             | Self::Literal(_)
             | Self::Pair(..)
             | Self::Injection(..)
@@ -897,11 +1112,12 @@ impl ContentNode
             | Self::UnitType
             | Self::Product(..)
             | Self::Sum(..)
+            | Self::List(_)
             | Self::ThunkType(_)
             | Self::Universe { .. }
             | Self::TypeLift { .. }
             | Self::Element { .. }
-            | Self::Returner(_)
+            | Self::Returner { .. }
             | Self::Arrow { .. }
             | Self::Pi { .. }
             | Self::Quote(_)
@@ -1798,6 +2014,26 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     .map(|(label, &field)| (label.clone(), self.discover(ArenaNode::Value(field))))
                     .collect(),
             ),
+            | Value::Reify(ref frames) => ContentNode::Reify(
+                frames
+                    .iter()
+                    .map(|frame| match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            gandr_core_term::control::StackFrame::Apply(
+                                self.discover(ArenaNode::Value(value)),
+                            )
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            gandr_core_term::control::StackFrame::Bind(
+                                self.discover(ArenaNode::Computation(body)),
+                            )
+                        },
+                        | gandr_core_term::control::StackFrame::Project(side) => {
+                            gandr_core_term::control::StackFrame::Project(side)
+                        },
+                    })
+                    .collect(),
+            ),
             | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
             | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
             | Value::PathProduct(first, second) => {
@@ -1818,6 +2054,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Value::Variable { zone, index } => ContentNode::Variable { zone, index },
             | Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
             | Value::Unit => ContentNode::Unit,
+            | Value::ListNil => ContentNode::ListNil,
+            | Value::ListCons(head, tail) => {
+                let head = self.discover(ArenaNode::Value(head));
+                ContentNode::ListCons(head, self.discover(ArenaNode::Value(tail)))
+            },
             | Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
             | Value::Pair(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
@@ -1890,6 +2131,81 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 self.discover(ArenaNode::Value(record)),
                 label.clone(),
             ),
+            | Computation::Perform {
+                ref signature,
+                ref operation,
+                payload,
+            } => {
+                let payload = self.discover(ArenaNode::Value(payload));
+                let signature = signature
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {});
+                ContentNode::Perform {
+                    signature,
+                    operation: operation.clone(),
+                    payload,
+                }
+            },
+            | Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            } => {
+                let subject = self.discover(ArenaNode::Computation(subject));
+                let on_return = self.discover(ArenaNode::Computation(on_return));
+                let signature = signature
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {});
+                let clauses = clauses
+                    .iter()
+                    .map(|clause| gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body: self.discover(ArenaNode::Computation(clause.body)),
+                    })
+                    .collect();
+                ContentNode::Handle {
+                    signature,
+                    subject,
+                    on_return,
+                    clauses,
+                }
+            },
+            | Computation::Resume(stack, body) => ContentNode::Resume(
+                self.discover(ArenaNode::Value(stack)),
+                self.discover(ArenaNode::Computation(body)),
+            ),
+            | Computation::Reset(body) => {
+                ContentNode::Reset(self.discover(ArenaNode::Computation(body)))
+            },
+            | Computation::Shift(body) => {
+                ContentNode::Shift(self.discover(ArenaNode::Computation(body)))
+            },
+            | Computation::With(first, second) => ContentNode::With(
+                self.discover(ArenaNode::Computation(first)),
+                self.discover(ArenaNode::Computation(second)),
+            ),
+            | Computation::Project(side, body) => {
+                ContentNode::Project(side, self.discover(ArenaNode::Computation(body)))
+            },
+
+            | Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => ContentNode::ListFold {
+                element: self.discover(ArenaNode::ValueType(element)),
+                result: self.discover(ArenaNode::ValueType(result)),
+                list: self.discover(ArenaNode::Value(list)),
+                on_nil: self.discover(ArenaNode::Computation(on_nil)),
+                on_cons: self.discover(ArenaNode::Computation(on_cons)),
+            },
             | Computation::Primitive {
                 primitive,
                 arguments,
@@ -1992,12 +2308,19 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     })
                     .collect(),
             ),
+            | ValueType::Stack { input, output } => ContentNode::Stack {
+                input: self.discover(ArenaNode::CompType(input)),
+                output: self.discover(ArenaNode::CompType(output)),
+            },
             | ValueType::PathUniverse(source, target) => {
                 let source = self.discover(ArenaNode::Value(source));
                 ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
             },
             | ValueType::Base(base) => ContentNode::Base(base),
             | ValueType::Unit => ContentNode::UnitType,
+            | ValueType::List(element) => {
+                ContentNode::List(self.discover(ArenaNode::ValueType(element)))
+            },
             | ValueType::Product(first, second) => {
                 let first = self.discover(ArenaNode::ValueType(first));
                 ContentNode::Product(first, self.discover(ArenaNode::ValueType(second)))
@@ -2055,8 +2378,21 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *comp_type {
-            | CompType::Returner(result) => {
-                ContentNode::Returner(self.discover(ArenaNode::ValueType(result)))
+            | CompType::With(first, second) => ContentNode::WithType(
+                self.discover(ArenaNode::CompType(first)),
+                self.discover(ArenaNode::CompType(second)),
+            ),
+            | CompType::Returner {
+                result,
+                ref effects,
+            } => {
+                let result = self.discover(ArenaNode::ValueType(result));
+                let effects = effects
+                    .try_relocate(|ty| {
+                        Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                    })
+                    .unwrap_or_else(|never| match never {});
+                ContentNode::Returner { result, effects }
             },
             | CompType::Arrow { domain, codomain } => {
                 let domain = self.discover(ArenaNode::ValueType(domain));
@@ -2208,6 +2544,86 @@ where
         | ContentNode::RecordProjection(record, ref label) => {
             ContentNode::RecordProjection(image(record), label.clone())
         },
+        | ContentNode::Reify(ref frames) => {
+            let mut mapped = alloc::sync::Arc::clone(frames);
+            for (index, frame) in frames.iter().enumerate() {
+                let new = match *frame {
+                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                        gandr_core_term::control::StackFrame::Apply(image(value))
+                    },
+                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                        gandr_core_term::control::StackFrame::Bind(image(body))
+                    },
+                    | gandr_core_term::control::StackFrame::Project(side) => {
+                        gandr_core_term::control::StackFrame::Project(side)
+                    },
+                };
+                if new != *frame
+                    && let Some(slot) = alloc::sync::Arc::make_mut(&mut mapped).get_mut(index)
+                {
+                    *slot = new;
+                }
+            }
+            ContentNode::Reify(mapped)
+        },
+        | ContentNode::Stack { input, output } => ContentNode::Stack {
+            input: image(input),
+            output: image(output),
+        },
+        | ContentNode::WithType(first, second) => {
+            ContentNode::WithType(image(first), image(second))
+        },
+        | ContentNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            let payload = image(payload);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Perform {
+                signature,
+                operation: operation.clone(),
+                payload,
+            }
+        },
+        | ContentNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            let subject = image(subject);
+            let on_return = image(on_return);
+            let signature = signature
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            let mut mapped = alloc::sync::Arc::clone(clauses);
+            for (index, clause) in clauses.iter().enumerate() {
+                let body = image(clause.body);
+                if body != clause.body
+                    && let Some(slot) = alloc::sync::Arc::make_mut(&mut mapped).get_mut(index)
+                {
+                    slot.body = body;
+                }
+            }
+            ContentNode::Handle {
+                signature,
+                subject,
+                on_return,
+                clauses: mapped,
+            }
+        },
+        | ContentNode::Resume(stack, body) => ContentNode::Resume(image(stack), image(body)),
+        | ContentNode::Reset(body) => ContentNode::Reset(image(body)),
+        | ContentNode::Shift(body) => ContentNode::Shift(image(body)),
+        | ContentNode::With(first, second) => ContentNode::With(image(first), image(second)),
+        | ContentNode::Project(side, body) => ContentNode::Project(side, image(body)),
         | ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
         | ContentNode::Primitive(primitive, mut arguments) => {
             for argument in arguments.iter_mut() {
@@ -2242,6 +2658,7 @@ where
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
+        | ContentNode::ListNil
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
         | ContentNode::UnitType
@@ -2252,6 +2669,20 @@ where
         | ContentNode::ComputationHole(_)
         | ContentNode::UnknownType
         | ContentNode::UnknownComputationType => node.clone(),
+        | ContentNode::ListCons(head, tail) => ContentNode::ListCons(image(head), image(tail)),
+        | ContentNode::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => ContentNode::ListFold {
+            element: image(element),
+            result: image(result),
+            list: image(list),
+            on_nil: image(on_nil),
+            on_cons: image(on_cons),
+        },
         | ContentNode::Pair(first, second) => {
             let first = image(first);
             ContentNode::Pair(first, image(second))
@@ -2294,6 +2725,7 @@ where
             let first = image(first);
             ContentNode::Sum(first, image(second))
         },
+        | ContentNode::List(element) => ContentNode::List(image(element)),
         | ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
         | ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
             inner: image(inner),
@@ -2303,7 +2735,18 @@ where
             code: image(code),
             target: target.clone(),
         },
-        | ContentNode::Returner(result) => ContentNode::Returner(image(result)),
+        | ContentNode::Returner {
+            result,
+            ref effects,
+        } => {
+            let result = image(result);
+            let effects = effects
+                .try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                    Ok::<_, core::convert::Infallible>(image(ty))
+                })
+                .unwrap_or_else(|never| match never {});
+            ContentNode::Returner { result, effects }
+        },
         | ContentNode::Arrow { domain, codomain } => {
             let domain = image(domain);
             ContentNode::Arrow {
@@ -2620,6 +3063,24 @@ fn mint_node(
                 | Maybe::Absent(reason) => Maybe::Absent(reason),
             }
         },
+        | ContentNode::Stack { input, output } => match (
+            minted_comp_type(states, input),
+            minted_comp_type(states, output),
+        ) {
+            | (Maybe::Present(input), Maybe::Present(output)) => {
+                Maybe::Present(Minted::ValueType(arena.value_type_stack(input, output)))
+            },
+            | _ => ill_sorted,
+        },
+        | ContentNode::WithType(first, second) => match (
+            minted_comp_type(states, first),
+            minted_comp_type(states, second),
+        ) {
+            | (Maybe::Present(first), Maybe::Present(second)) => {
+                Maybe::Present(Minted::CompType(arena.comp_type_with(first, second)))
+            },
+            | _ => ill_sorted,
+        },
         | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
         | ContentNode::UnitType => Maybe::Present(Minted::ValueType(arena.value_type_unit())),
         | ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
@@ -2653,6 +3114,12 @@ fn mint_node(
                 | _ => ill_sorted,
             }
         },
+        | ContentNode::List(element) => match minted_value_type(states, element) {
+            | Maybe::Present(element) => {
+                Maybe::Present(Minted::ValueType(arena.value_type_list(element)))
+            },
+            | Maybe::Absent(_) => ill_sorted,
+        },
         | ContentNode::StaticPi { domain, codomain } => {
             match (
                 minted_value_type(states, domain),
@@ -2676,11 +3143,24 @@ fn mint_node(
             )),
             | Maybe::Absent(_) => ill_sorted,
         },
-        | ContentNode::Returner(result) => match minted_value_type(states, result) {
-            | Maybe::Present(result) => {
-                Maybe::Present(Minted::CompType(arena.comp_type_returner(result)))
-            },
-            | Maybe::Absent(_) => ill_sorted,
+        | ContentNode::Returner {
+            result,
+            ref effects,
+        } => {
+            let Maybe::Present(result) = minted_value_type(states, result)
+            else {
+                return ill_sorted;
+            };
+            let effects = effects.try_relocate(|ty| match minted_value_type(states, ty) {
+                | Maybe::Present(ty) => Ok(ty),
+                | Maybe::Absent(reason) => Err(reason),
+            });
+            match effects {
+                | Ok(effects) => Maybe::Present(Minted::CompType(
+                    arena.comp_type_returner_with_effects(result, effects),
+                )),
+                | Err(reason) => Maybe::Absent(reason),
+            }
         },
         | ContentNode::Arrow { domain, codomain } => {
             match (
@@ -2714,6 +3194,14 @@ fn mint_node(
         | ContentNode::Record(_)
         | ContentNode::DataCase { .. }
         | ContentNode::RecordProjection(..)
+        | ContentNode::Reify(_)
+        | ContentNode::Perform { .. }
+        | ContentNode::Handle { .. }
+        | ContentNode::Resume(..)
+        | ContentNode::Reset(_)
+        | ContentNode::Shift(_)
+        | ContentNode::With(..)
+        | ContentNode::Project(..)
         | ContentNode::PrimitiveValue(_)
         | ContentNode::Primitive(..)
         | ContentNode::PathRefl(_)
@@ -2725,6 +3213,9 @@ fn mint_node(
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
+        | ContentNode::ListNil
+        | ContentNode::ListCons(..)
+        | ContentNode::ListFold { .. }
         | ContentNode::Literal(_)
         | ContentNode::Pair(..)
         | ContentNode::Injection(..)
@@ -2857,6 +3348,116 @@ mod tests
         .expect("one item ascends")
     }
 
+    #[test]
+    fn control_graphs_preserve_scopes_and_signature_edges()
+    {
+        use gandr_core_term::Zone;
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_kernel_term::Side;
+        let build = |noise: usize, reply, bound: u32, operation: &str| {
+            let mut arena = CoreArena::new();
+            for _ in 0 .. noise {
+                let _ = arena.value_unit();
+                let _ = arena.value_type_unit();
+            }
+            let unit = arena.value_unit();
+            let variable = arena.value_variable(Zone::Intuitionistic, bound.into());
+            let unit_type = arena.value_type_unit();
+            let reply_type = arena.value_type_base(reply);
+            let signature = EffectSig::new("State".into(), [EffectOp {
+                name: operation.into(),
+                payload: unit_type,
+                reply: reply_type,
+            }])
+            .expect("one operation");
+            let input = arena.comp_type_returner_with_effects(
+                unit_type,
+                EffectRow::singleton(signature.clone()),
+            );
+            let output = arena.comp_type_returner(reply_type);
+            let output = arena.comp_type_with(input, output);
+            let ty = arena.value_type_stack(input, output);
+            let returned = arena.computation_return(variable);
+            let performed = arena.computation_perform(signature.clone(), operation.into(), unit);
+            let resumed = arena.computation_resume(variable, performed);
+            let shifted = arena.computation_shift(resumed);
+            let reset = arena.computation_reset(shifted);
+            let pair = arena.computation_with(reset, returned);
+            let projected = arena.computation_project(Side::Right, pair);
+            let handled = arena.computation_handle(
+                signature,
+                projected,
+                returned,
+                alloc::sync::Arc::from([EffectClause {
+                    operation: operation.into(),
+                    body: returned,
+                }]),
+            );
+            let literal = arena.value_reify(alloc::sync::Arc::from([
+                StackFrame::Apply(unit),
+                StackFrame::Bind(handled),
+                StackFrame::Project(Side::Left),
+            ]));
+            (
+                single(arena, Maybe::Present(ty), Maybe::Present(literal)),
+                ty,
+            )
+        };
+        let (source, ty) = build(0, BaseType::Integer, 0, "get");
+        let original =
+            encode_item(source.arena(), source.layout(), ItemOrdinal::from(0_usize)).content;
+        let (renumbered, _) = build(7, BaseType::Integer, 0, "get");
+        assert_eq!(
+            original,
+            encode_item(
+                renumbered.arena(),
+                renumbered.layout(),
+                ItemOrdinal::from(0_usize)
+            )
+            .content
+        );
+        for (changed, _) in [
+            build(0, BaseType::String, 0, "get"),
+            build(0, BaseType::Integer, 1, "get"),
+            build(0, BaseType::Integer, 0, "put"),
+        ] {
+            assert_ne!(
+                original,
+                encode_item(
+                    changed.arena(),
+                    changed.layout(),
+                    ItemOrdinal::from(0_usize)
+                )
+                .content,
+                "operation types, binder indices, and names contribute to identity"
+            );
+        }
+        assert!(
+            !original
+                .nodes()
+                .iter()
+                .any(|node| matches!(node, ContentNode::Unresolved(_)))
+        );
+        let content = TypeContent::of_value_type(&source, ty);
+        let mut target = CoreArena::new();
+        let _ = target.value_type_base(BaseType::String);
+        let mut target = single(
+            target,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Absent(body::Absent::Hole),
+        );
+        let (arena, layout) = target.parts_mut();
+        let Maybe::Present(minted) = content.mint(arena, layout)
+        else {
+            panic!("closed Stack/With codes seat");
+        };
+        assert_eq!(TypeContent::of_value_type(&target, minted), content);
+    }
+
     /// The integer literal zero.
     ///
     /// # Specification
@@ -2885,7 +3486,7 @@ mod tests
                     arena.value_type(domain)
                         == Some(&gandr_core_term::ValueType::Base(BaseType::Integer))
                         && arena.comp_type(codomain)
-                            == Some(&gandr_core_term::CompType::Returner(domain))
+                            == Some(&gandr_core_term::CompType::Returner { result: domain, effects: gandr_core_term::effect::EffectRow::EMPTY })
                 },
                 | _ => false,
             },
@@ -2940,6 +3541,96 @@ mod tests
     }
 
     #[test]
+    fn effect_rows_round_trip_without_losing_operation_types()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut arena = CoreArena::new();
+        let unit = arena.value_type_unit();
+        let string = arena.value_type_base(BaseType::String);
+        let list = arena.value_type_list(string);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let io = EffectSig::new(EffectName::from("IO"), [EffectOp {
+            name: OperationName::from("emit"),
+            payload: string,
+            reply: unit,
+        }])
+        .expect("distinct operations");
+        let state = EffectSig::new(EffectName::from("State"), [
+            EffectOp {
+                name: OperationName::from("put"),
+                payload: list,
+                reply: integer,
+            },
+            EffectOp {
+                name: OperationName::from("get"),
+                payload: unit,
+                reply: list,
+            },
+        ])
+        .expect("distinct operations");
+        let effects = EffectRow::from_signatures([state, io]).expect("distinct interfaces");
+        let returner = arena.comp_type_returner_with_effects(unit, effects);
+        let root = arena.value_type_thunk(returner);
+        let source = Program::new(arena, Vec::new()).expect("empty declaration order");
+        let content = TypeContent::of_value_type(&source, root);
+        let Some(&ContentNode::Returner {
+            result,
+            ref effects,
+        }) = content.nodes().get(1)
+        else {
+            panic!("thunk's returner");
+        };
+        assert_eq!(result, NodeIndex::from(2_usize));
+        assert_eq!(
+            effects
+                .signatures()
+                .map(|signature| signature.name().as_ref())
+                .collect::<Vec<_>>(),
+            ["IO", "State"]
+        );
+        assert_eq!(
+            effects
+                .signatures()
+                .flat_map(|signature| signature
+                    .operations()
+                    .map(|operation| operation.name.as_ref()))
+                .collect::<Vec<_>>(),
+            ["emit", "get", "put"]
+        );
+        assert_eq!(effects.types().map(usize::from).collect::<Vec<_>>(), [
+            3, 2, 2, 4, 4, 5
+        ]);
+        assert_eq!(
+            content.nodes().get(2 ..),
+            Some(
+                [
+                    ContentNode::UnitType,
+                    ContentNode::Base(BaseType::String),
+                    ContentNode::List(NodeIndex::from(3_usize)),
+                    ContentNode::Base(BaseType::Integer)
+                ]
+                .as_slice()
+            )
+        );
+        let mut target = CoreArena::new();
+        for _ in 0_u32 .. 7_u32 {
+            let _noise = target.value_type_unit();
+        }
+        let mut target = Program::new(target, Vec::new()).expect("empty declaration order");
+        let (arena, layout) = target.parts_mut();
+        let Maybe::Present(minted) = content.mint(arena, layout)
+        else {
+            panic!("portable row types seat");
+        };
+        assert_ne!(minted, root);
+        assert_eq!(TypeContent::of_value_type(&target, minted), content);
+    }
+
+    #[test]
     fn an_unmintable_table_is_refused_by_name()
     {
         let level = Level::zero();
@@ -2971,7 +3662,10 @@ mod tests
             ),
             (
                 vec![
-                    ContentNode::Returner(NodeIndex::from(1_usize)),
+                    ContentNode::Returner {
+                        result: NodeIndex::from(1_usize),
+                        effects: gandr_core_term::effect::EffectRow::EMPTY,
+                    },
                     ContentNode::Base(BaseType::Integer),
                 ],
                 seating::Absent::IllSorted,
@@ -3138,12 +3832,18 @@ mod tests
             ContentNode::Product(index(3_usize), index(3_usize)),
             ContentNode::Abstract(Reference::Unoccupied),
             ContentNode::ThunkType(index(4_usize)),
-            ContentNode::Returner(index(1_usize)),
+            ContentNode::Returner {
+                result: index(1_usize),
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            },
         ];
         assert_eq!(super::renumber(&nodes, index(1_usize)), [
             ContentNode::Product(index(1_usize), index(1_usize)),
             ContentNode::ThunkType(index(2_usize)),
-            ContentNode::Returner(index(0_usize)),
+            ContentNode::Returner {
+                result: index(0_usize),
+                effects: gandr_core_term::effect::EffectRow::EMPTY
+            },
         ]);
         assert_eq!(super::renumber(&nodes, index(2_usize)), [
             ContentNode::Abstract(Reference::Unoccupied),
@@ -3178,7 +3878,10 @@ mod tests
             ],
             vec![
                 ContentNode::Product(index(1_usize), index(2_usize)),
-                ContentNode::Returner(index(2_usize)),
+                ContentNode::Returner {
+                    result: index(2_usize),
+                    effects: gandr_core_term::effect::EffectRow::EMPTY,
+                },
                 ContentNode::UnitType,
             ],
             vec![

@@ -116,13 +116,13 @@ pub fn same_value(
 #[spec(ensures: |ret| match start {
     | Pending::Values(left, right) => match (left_arena.value(left), right_arena.value(right)) {
         | (Some(left), Some(right)) => match *left {
-            | Value::Unit | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),
+            | Value::ListNil | Value::Unit | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Agreement::Same) == (left == right),
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
-            | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
+            | Value::ListCons(..) | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
             | Value::Constructor { tag, ref fields, .. } => ret != Agreement::Same
                 || matches!(*right, Value::Constructor { tag: other_tag, fields: ref other_fields, .. } if tag == other_tag && fields.len() == other_fields.len()),
-            Value::Record(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
+            Value::Record(_) | Value::Reify(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },
@@ -154,11 +154,15 @@ fn walk(
                         },
                     ) => zone == other_zone && index == other_index,
                     | (&Value::Constant(constant), &Value::Constant(other)) => constant == other,
-                    | (&Value::Unit, &Value::Unit) => true,
+                    | (&Value::Unit, &Value::Unit) | (&Value::ListNil, &Value::ListNil) => true,
                     | (&Value::Literal(ref literal), &Value::Literal(ref other)) => {
                         literal == other
                     },
-                    | (&Value::Pair(first, second), &Value::Pair(other_first, other_second)) => {
+                    | (&Value::Pair(first, second), &Value::Pair(other_first, other_second))
+                    | (
+                        &Value::ListCons(first, second),
+                        &Value::ListCons(other_first, other_second),
+                    ) => {
                         pending.push(Pending::Values(first, other_first));
                         pending.push(Pending::Values(second, other_second));
                         true

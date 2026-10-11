@@ -749,6 +749,8 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::Literal(_)) => tags::NODE_V_LITERAL,
             Some(&Value::Pair(..)) => tags::NODE_V_PAIR,
             Some(&Value::Injection(..)) => tags::NODE_V_INJECTION,
+            Some(&Value::ListNil) => tags::NODE_V_LIST_NIL,
+            Some(&Value::ListCons(..)) => tags::NODE_V_LIST_CONS,
             Some(&Value::Thunk(_)) => tags::NODE_V_THUNK,
             Some(&Value::Lift { .. }) => tags::NODE_V_LIFT,
             Some(&Value::Quote(_)) => tags::NODE_V_QUOTE,
@@ -767,6 +769,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
             Some(&Computation::Case { .. }) => tags::NODE_C_CASE,
             Some(&Computation::Absurd(_)) => tags::NODE_C_ABSURD,
+            Some(&Computation::ListFold { .. }) => tags::NODE_C_LIST_FOLD,
         },
     })))]
 fn encode_entry(
@@ -891,6 +894,8 @@ fn encode_entry(
                     encode_literal(&mut out, literal);
                 },
                 | Value::Pair(..) => out.put_tag(tags::NODE_V_PAIR),
+                | Value::ListNil => out.put_tag(tags::NODE_V_LIST_NIL),
+                | Value::ListCons(..) => out.put_tag(tags::NODE_V_LIST_CONS),
                 | Value::Injection(side, _) => {
                     out.put_tag(tags::NODE_V_INJECTION);
                     out.put_tag(side_tag(side));
@@ -926,6 +931,7 @@ fn encode_entry(
             | Some(&Computation::Force(_)) => out.put_tag(tags::NODE_C_FORCE),
             | Some(&Computation::Case { .. }) => out.put_tag(tags::NODE_C_CASE),
             | Some(&Computation::Absurd(_)) => out.put_tag(tags::NODE_C_ABSURD),
+            | Some(&Computation::ListFold { .. }) => out.put_tag(tags::NODE_C_LIST_FOLD),
         },
     }
     for &child in child_globals {

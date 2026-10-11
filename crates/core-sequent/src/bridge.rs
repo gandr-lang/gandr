@@ -109,7 +109,7 @@ pub enum ReifyRefusal
         /// The arity the pattern gives it.
         found: ProducerArity,
     },
-    /// An operation frame: the opaque boundary no IL node stands for.
+    /// A cell operation frame without the typed interface an IL request needs.
     OperationFrame(Sym),
     /// The arena refused a node.
     Mint(MintRefusal),
@@ -242,8 +242,8 @@ pub fn reify_command(
 /// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
 /// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
 #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&command|
-    arena.command(command).is_some_and(|&crate::il::CommandNode::Cut { polarity, producer, consumer }|
-        polarity == pattern.polarity() && arena.producer(producer).is_some() && arena.consumer(consumer).is_some())))]
+    matches!(arena.command(command), Some(&crate::il::CommandNode::Cut { polarity, producer, consumer })
+        if polarity == pattern.polarity() && arena.producer(producer).is_some() && arena.consumer(consumer).is_some())))]
 fn reify(
     arena: &mut CommandArena,
     pattern: &CmdPat,
@@ -413,14 +413,15 @@ fn reify_producer(
     | ConsView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
     | ConsView::Op { op, .. } => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::OperationFrame(ref found) if found == op)),
     | ConsView::Top => ret.is_err() || ret.as_ref().is_ok_and(|&id| matches!(arena.consumer(id), Some(&ConsumerNode::Top))),
-    | ConsView::Frame { ctor, .. } => ret.is_err() || ret.as_ref().is_ok_and(|&id|
-        arena.consumer(id).is_some_and(|node| matches!(*node, ConsumerNode::MuTilde { body }
-            if arena.command(body).is_some_and(|&crate::il::CommandNode::Cut { polarity, producer, .. }|
-                polarity == Polarity::Positive && arena.producer(producer).is_some_and(|wrapped|
-                    matches!(*wrapped, ProducerNode::Constructor { ref tag, ref producers, ref consumers }
-                        if resolver.get(ctor) == Some(tag) && producers.len() == 1 && consumers.is_empty()
-                            && producers.first().is_some_and(|&bound|
-                                matches!(arena.producer(bound), Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32))))))))),
+    | ConsView::Frame { ctor, .. } => ret.is_err() || ret.as_ref().is_ok_and(|&id| {
+        let Some(&ConsumerNode::MuTilde { body }) = arena.consumer(id) else { return false; };
+        let Some(&crate::il::CommandNode::Cut { polarity, producer, .. }) = arena.command(body) else { return false; };
+        let Some(node) = arena.producer(producer) else { return false; };
+        let ProducerNode::Constructor { ref tag, ref producers, ref consumers } = *node else { return false; };
+        polarity == Polarity::Positive && resolver.get(ctor) == Some(tag) && producers.len() == 1 && consumers.is_empty()
+            && producers.first().is_some_and(|&bound| matches!(arena.producer(bound),
+                Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32)))
+    }),
 })]
 fn reify_consumer(
     arena: &mut CommandArena,
@@ -585,7 +586,8 @@ mod tests
         );
     }
 
-    /// An operation frame has no IL node: it is refused by name.
+    /// An untyped cell operation frame is refused rather than made an IL
+    /// request.
     #[test]
     fn an_operation_frame_is_the_opaque_boundary()
     {

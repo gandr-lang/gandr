@@ -9160,7 +9160,9 @@ mod tests
         else {
             panic!("thunk classifier");
         };
-        let Some(&CompType::Returner(boolean)) = arena.comp_type(computation)
+        let Some(&CompType::Returner {
+            result: boolean, ..
+        }) = arena.comp_type(computation)
         else {
             panic!("result classifier");
         };
@@ -9725,7 +9727,9 @@ mod tests
         else {
             panic!("`+U` lowers to the thunk type");
         };
-        let Some(&CompType::Returner(returned)) = arena.comp_type(suspended)
+        let Some(&CompType::Returner {
+            result: returned, ..
+        }) = arena.comp_type(suspended)
         else {
             panic!("`-F` lowers to the returner type");
         };
@@ -9807,7 +9811,7 @@ mod tests
             "the domain is a value type"
         );
         assert!(
-            matches!(arena.comp_type(codomain), Some(&CompType::Returner(_))),
+            matches!(arena.comp_type(codomain), Some(&CompType::Returner { .. })),
             "the codomain is a computation type"
         );
     }
@@ -9921,7 +9925,9 @@ mod tests
         else {
             panic!("`x`, which no type names, binds a plain arrow");
         };
-        let Some(&CompType::Returner(returned)) = arena.comp_type(result)
+        let Some(&CompType::Returner {
+            result: returned, ..
+        }) = arena.comp_type(result)
         else {
             panic!("the result is a returner");
         };
@@ -10071,7 +10077,7 @@ mod tests
             "a type atom where a value is read is its code"
         );
         assert!(
-            matches!(quoted(1_usize), (None, Some(CompType::Returner(_)), _)),
+            matches!(quoted(1_usize), (None, Some(CompType::Returner { .. }), _)),
             "a computation type is quoted at its own sort"
         );
         assert_eq!(
@@ -10103,7 +10109,9 @@ mod tests
                 else {
                     panic!("the bridge lowers to the thunk type");
                 };
-                let Some(&CompType::Returner(returned)) = arena.comp_type(suspended)
+                let Some(&CompType::Returner {
+                    result: returned, ..
+                }) = arena.comp_type(suspended)
                 else {
                     panic!("the bridged computation is the returner");
                 };
@@ -10350,7 +10358,9 @@ mod tests
         else {
             panic!("the second parameter is the inner arrow");
         };
-        let Some(&CompType::Returner(returned)) = arena.comp_type(result)
+        let Some(&CompType::Returner {
+            result: returned, ..
+        }) = arena.comp_type(result)
         else {
             panic!("the result is the written returner");
         };
@@ -10435,7 +10445,7 @@ mod tests
         };
 
         assert!(
-            matches!(arena.comp_type(suspended), Some(&CompType::Returner(_))),
+            matches!(arena.comp_type(suspended), Some(&CompType::Returner { .. })),
             "no arrow stands between `+U` and the result"
         );
         assert!(
@@ -10703,7 +10713,9 @@ mod tests
             else {
                 panic!("the parameter is an arrow");
             };
-            let Some(&CompType::Returner(returned)) = arena.comp_type(codomain)
+            let Some(&CompType::Returner {
+                result: returned, ..
+            }) = arena.comp_type(codomain)
             else {
                 panic!("the result is a returner");
             };
@@ -10906,7 +10918,7 @@ mod tests
                     | other => tokens.push(format!("{other:?}")),
                 },
                 | TypeNode::Computation(at) => match arena.comp_type(at) {
-                    | Some(&CompType::Returner(inner)) => {
+                    | Some(&CompType::Returner { result: inner, .. }) => {
                         tokens.push(String::from("F"));
                         pending.push(TypeNode::Value(inner));
                     },

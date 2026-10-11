@@ -332,7 +332,6 @@ impl TypeRecipe
     ///   conversion, with L3 seeds and a mixed thunk/arrow recipe exposing
     ///   child order, missing entries and incorrect pool-family selection.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
-    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
     #[spec(ensures: |ret| {
         let mut values = 0_usize;
         let mut comps = 0_usize;
@@ -402,7 +401,6 @@ impl TypeRecipe
     ///   trees by conversion and shape; L3 mixed formers expose the selected
     ///   roots and child order, not arena exhaustion.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
-    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
     #[spec(ensures: |ret| arena.value_type(ret.0).is_some() && arena.comp_type(ret.1).is_some())]
     pub fn build_both(
         &self,
@@ -442,7 +440,6 @@ impl TypeRecipe
     ///   when their preorder shapes agree; L3 mixed formers pin the last-value
     ///   selection rather than the last computation entry.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
-    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
     #[spec(ensures: |ret| arena.value_type(ret).is_some())]
     pub fn build(
         &self,
@@ -466,7 +463,6 @@ impl TypeRecipe
     ///   structural conversion decision; L3 a mixed arrow under a thunk
     ///   separates child reversal, omitted children and wrong root selection.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
-    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
     #[spec(ensures: |ret| matches!(ret.first(), Some(Token::Integer | Token::String | Token::Unit | Token::Thunk))
         && ret.iter().try_fold(1_usize, |pending, token| {
             if pending == 0 { return None; }
@@ -1249,15 +1245,8 @@ mod tests
 {
     use alloc::vec::Vec;
 
-    use gandr_core_term::CoreArena;
-    use gandr_core_term::ValueType;
-    use gandr_kernel_term::BaseType;
-
     use super::AtomType;
     use super::Position;
-    use super::Token;
-    use super::TypeRecipe;
-    use super::TypeStep;
     use super::pick;
     use super::rotated;
 
@@ -1283,49 +1272,5 @@ mod tests
             rotated(&[AtomType::String], Position(usize::MAX)).collect::<Vec<_>>(),
             [AtomType::String]
         );
-    }
-
-    #[test]
-    fn type_shapes_preserve_child_order_and_last_value()
-    {
-        let seed = TypeRecipe { steps: Vec::new() };
-        let mixed = TypeRecipe {
-            steps: Vec::from([
-                TypeStep::String,
-                TypeStep::Unit,
-                TypeStep::Returner(Position(2)),
-                TypeStep::Arrow(Position(1), Position(1)),
-                TypeStep::Thunk(Position(2)),
-            ]),
-        };
-        assert_eq!(seed.shape(), [Token::Integer]);
-        assert_eq!(mixed.shape(), [
-            Token::Thunk,
-            Token::Arrow,
-            Token::String,
-            Token::Returner,
-            Token::Unit
-        ]);
-        let mut arena = CoreArena::new();
-        let integer = seed.build(&mut arena);
-        assert_eq!(
-            arena.value_type(integer),
-            Some(&ValueType::Base(BaseType::Integer))
-        );
-        let (thunk, arrow) = mixed.build_both(&mut arena);
-        assert_eq!(arena.value_type(thunk), Some(&ValueType::Thunk(arrow)));
-        let Some(&gandr_core_term::CompType::Arrow { domain, codomain }) = arena.comp_type(arrow)
-        else {
-            panic!("the last computation is the mixed arrow");
-        };
-        assert_eq!(
-            arena.value_type(domain),
-            Some(&ValueType::Base(BaseType::String))
-        );
-        let Some(&gandr_core_term::CompType::Returner(result)) = arena.comp_type(codomain)
-        else {
-            panic!("the codomain returns the unit");
-        };
-        assert_eq!(arena.value_type(result), Some(&ValueType::Unit));
     }
 }

@@ -132,6 +132,10 @@ pub fn same_tree(
                     )
                     | (&Value::Pair(first, second), &Value::Pair(other_first, other_second))
                     | (
+                        &Value::ListCons(first, second),
+                        &Value::ListCons(other_first, other_second),
+                    )
+                    | (
                         &Value::StaticApplication(first, second),
                         &Value::StaticApplication(other_first, other_second),
                     ) => {
@@ -170,6 +174,7 @@ pub fn same_tree(
                         &(Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
+                        | Value::ListNil
                         | Value::Literal(_)),
                         _,
                     ) if left == right => {},
@@ -183,6 +188,28 @@ pub fn same_tree(
                     return Trees::Different;
                 };
                 match (left, right) {
+                    | (
+                        &Computation::ListFold {
+                            element,
+                            result,
+                            list,
+                            on_nil,
+                            on_cons,
+                        },
+                        &Computation::ListFold {
+                            element: other_element,
+                            result: other_result,
+                            list: other_list,
+                            on_nil: other_nil,
+                            on_cons: other_cons,
+                        },
+                    ) => pending.extend([
+                        (Term::ValueType(element), Term::ValueType(other_element)),
+                        (Term::ValueType(result), Term::ValueType(other_result)),
+                        (Term::Value(list), Term::Value(other_list)),
+                        (Term::Computation(on_nil), Term::Computation(other_nil)),
+                        (Term::Computation(on_cons), Term::Computation(other_cons)),
+                    ]),
                     | (
                         &Computation::Transport(path, value),
                         &Computation::Transport(other_path, other_value),
@@ -237,6 +264,9 @@ pub fn same_tree(
                     return Trees::Different;
                 };
                 match (left, right) {
+                    | (&ValueType::List(element), &ValueType::List(other_element)) => {
+                        pending.push((Term::ValueType(element), Term::ValueType(other_element)));
+                    },
                     | (
                         &ValueType::PathUniverse(source, target),
                         &ValueType::PathUniverse(other_source, other_target),
@@ -303,7 +333,38 @@ pub fn same_tree(
                     return Trees::Different;
                 };
                 match (left, right) {
-                    | (&CompType::Returner(value), &CompType::Returner(other_value)) => {
+                    | (
+                        &CompType::Returner {
+                            result: value,
+                            effects: ref left,
+                        },
+                        &CompType::Returner {
+                            result: other_value,
+                            effects: ref right,
+                        },
+                    ) => {
+                        if left.signatures().len() != right.signatures().len() {
+                            return Trees::Different;
+                        }
+                        for (left, right) in left.signatures().zip(right.signatures()) {
+                            if left.name() != right.name()
+                                || left.operations().len() != right.operations().len()
+                            {
+                                return Trees::Different;
+                            }
+                            for (left, right) in left.operations().zip(right.operations()) {
+                                if left.name != right.name {
+                                    return Trees::Different;
+                                }
+                                pending.extend([
+                                    (
+                                        Term::ValueType(left.payload),
+                                        Term::ValueType(right.payload),
+                                    ),
+                                    (Term::ValueType(left.reply), Term::ValueType(right.reply)),
+                                ]);
+                            }
+                        }
                         pending.push((Term::ValueType(value), Term::ValueType(other_value)));
                     },
                     | (

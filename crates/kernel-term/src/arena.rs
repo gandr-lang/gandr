@@ -803,14 +803,14 @@ impl TermArena
         requires: match value {
             Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
-            Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            Value::ListCons(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
             Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) => self.computation(body).is_some(),
             Value::Quote(quoted) => self.value_type(quoted).is_some(),
             Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
-            Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
+            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
         }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
         ensures: |ret| self.values.len() == entry.0.values.saturating_add(1)
                 && self.computations.len() == entry.0.computations
@@ -860,6 +860,7 @@ impl TermArena
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
             Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
             Computation::Case { scrutinee, on_left, on_right } => self.value(scrutinee).is_some() && self.computation(on_left).is_some() && self.computation(on_right).is_some(),
+            Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
         }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations.saturating_add(1)
@@ -2451,12 +2452,12 @@ impl TermArena
         AnyNode::Value(id) => self.value(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => ret.iter().copied().eq(core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))),
 Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::Value)),
-Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
 Value::PathRefl(code) => ret.as_slice() == [AnyNode::Value(code)],
-Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) =>
+Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -2468,6 +2469,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             Some(&Computation::DataCase { scrutinee, motive, ref branches }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
             Some(&Computation::RecordProjection(record, _)) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
+            Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
@@ -2523,7 +2525,11 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend(fields.values().copied().map(AnyNode::Value));
                 },
                 | Some(
-                    &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
+                    &Value::ListNil
+                    | &Value::Variable(_)
+                    | &Value::Constant(_)
+                    | &Value::Unit
+                    | &Value::Literal(_),
                 )
                 | None => {},
                 | Some(&Value::PathEquiv {
@@ -2548,6 +2554,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::Pair(first, second)
+                    | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
                     children.push(AnyNode::Value(first));
@@ -2575,6 +2582,21 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(record));
                 },
                 | None => {},
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    children.extend([
+                        AnyNode::ValueType(element),
+                        AnyNode::ValueType(result),
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     children.push(AnyNode::Value(path));
                     children.push(AnyNode::Value(value));
@@ -2661,6 +2683,80 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
             },
         }
         children
+    }
+
+    /// Mint the empty native list.
+    ///
+    /// # Specification
+    /// - ensures: returns a native empty-list node, not a sum injection.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the native tag and decoder distinguish nil from other
+    ///   leaves.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::ListNil))]
+    #[inline]
+    pub fn value_list_nil(&mut self) -> ValueId
+    {
+        self.alloc_value(Value::ListNil)
+    }
+
+    /// Mint a native cell over its existing head and tail.
+    ///
+    /// # Specification
+    /// - requires: the head and tail resolve in this arena.
+    /// - ensures: preserves both children in head-then-tail order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List round trips preserve child order and
+    ///   family.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value(head).is_some() && self.value(tail).is_some(),
+        ensures: |ret| self.value(ret) == Some(&Value::ListCons(head, tail)))]
+    #[inline]
+    pub fn value_list_cons(
+        &mut self,
+        head: ValueId,
+        tail: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ListCons(head, tail))
+    }
+
+    /// Mint a pure right fold; the cell branch binds head then folded tail.
+    ///
+    /// # Specification
+    /// - requires: both annotations, the list and the branches resolve in this
+    ///   arena.
+    /// - ensures: preserves annotations and branches without changing their
+    ///   scope.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native List wire arity distinguishes the five ordered
+    ///   children.
+    /// - witness: `tags::tests::the_tag_table_matches_the_wire_arities`
+    #[spec(requires: self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
+        ensures: |ret| self.computation(ret) == Some(&Computation::ListFold { element, result, list, on_nil, on_cons }))]
+    #[inline]
+    pub fn computation_list_fold(
+        &mut self,
+        element: ValueTypeId,
+        result: ValueTypeId,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        })
     }
 }
 

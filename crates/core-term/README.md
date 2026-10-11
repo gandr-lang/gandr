@@ -9,6 +9,8 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
+  - [Effect rows](#effect-rows)
+  - [Control syntax](#control-syntax)
 - [Typed holes, marks and the unknown type](#typed-holes-marks-and-the-unknown-type)
 - [Patterns with holes](#patterns-with-holes)
 - [Native prelude](#native-prelude)
@@ -56,12 +58,15 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`). Witness: `arena::tests::allocation_suffixes_keep_their_family`.
+- Native `List` types, `ListNil` and `ListCons` values, and an annotated, pure `ListFold`; the cell branch binds the head followed by the folded result. These are the [kernel's List former](../kernel-core/README.md#native-list-former), not a sum encoding or a nominal declaration.
+- Closed effect rows on returners carry named interfaces with typed payloads and replies. `EffectRow::EMPTY` is the pure returner; unions and inclusions reject conflicting interfaces rather than replacing an operation type. The `effect::host` table supplies `Exec`, `Fs`, `Proc` and `Env` signatures, using native Lists and ordered products for record-shaped payloads.
+- `TypeImporter` copies the graph reachable from type roots into another arena, preserving shared children across imports. The source and destination use the same binder context; `instantiate_value_type_under` closes ambient variables while preserving a chosen number of local binders. Witnesses: `import::tests::dependent_annotations_preserve_sharing_across_arenas`, `rewrite::tests::annotation_substitution_protects_local_binders`.
 - `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
 - `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
 - `FailureClass`: `UserAbsence`, `Unrepresentable`, `MalformedSource` and `EngineFault`, the classes a lowering refusal and a checking refusal are each classified into by their own crate's classifier.
 - `Value::Hole`, `Value::Mark`, `Computation::Hole`, `Computation::Mark`, `ValueType::Unknown` and `CompType::Unknown`, with `hole::HoleId`, `hole::MarkIndex` and `hole::TermId`: the elaborator's hole surface. Witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`.
-- `hole::matched_thunk`, `matched_product`, `matched_sum`, `matched_static_pi`, `matched_returner` and `matched_function`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown. Witnesses: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`, `hole::tests::a_known_type_matches_only_its_own_former`, `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`.
+- `hole::matched_thunk`, `matched_product`, `matched_sum`, `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown. Witnesses: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`, `hole::tests::a_known_type_matches_only_its_own_former`, `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`.
 - `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment. Witnesses: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`, `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`, `rewrite::tests::an_environment_substitution_replaces_every_free_index`.
 - `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers. Witnesses: `pattern::tests::a_pattern_names_its_parts_in_order`, `pattern::tests::a_conjunction_refutes_first_and_doubts_second`.
 
@@ -135,6 +140,24 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ## Kernel alphabet and core grammar
 
 Levels, base types, literals, sum sides, de Bruijn indices, admission positions and subterm-table entry indices come from `gandr-kernel-strata` and `gandr-kernel-term`. The two languages therefore agree on what a literal or a level is, and erasing a core term to a kernel term remaps ids without translating payloads; the erasure itself is not in this crate. The node enums, the arena and the context are this crate's own, so an elaboration-only former enters the core grammar without widening the closed vocabulary the kernel represents.
+
+### Effect rows
+
+Returner rows are covariant; a shared interface must agree on every operation name and on its invariant payload and reply types. Operation types belong to the returner's binder scope: formation, substitution, import and readback traverse them just as they traverse the result type. A bind accumulates the bound computation's row, including in checking mode. Nonempty rows do not cross into a kernel artifact: readmission reports `UnadmittedFormer::EffectRow`.
+
+**Choice.** Canonically ordered, shared interface maps keep pure rows allocation-free and make interface conflicts explicit. An operation carries types, not merely a name, so no ambient registry can change its meaning after checking. Open row variables would support row-polymorphic abstractions but require a solver; revisit when such an abstraction is part of the language contract.
+
+Witnesses: `effect::tests::operation_types_survive_substitution_and_import`, `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`, `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`, `formation::tests::effect_operation_types_participate_in_formation_levels_and_scope`, `judgement::tests::check_mode_bind_subsumes_the_accumulated_row` and `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`. The row laws `empty_is_the_bottom`, `subset_is_a_preorder_with_union_as_join`, `union_is_a_canonical_set_and_without_subtracts` and `signature_resolves_operations_by_name` run in `effect::tests`.
+
+### Control syntax
+
+`Stack(C, D)` classifies a first-class continuation from computation `C` to `D`; `Reify` records its flat frames in execution order. Apply frames carry values, Bind frames carry independent one-binder computation bodies, and Project frames select a lazy pair. `With(C, D)` classifies a lazy computation pair, distinct from an eager value product.
+
+`Perform` and `Handle` carry inline interfaces. A handler return branch binds the returned value; each operation clause binds payload then resumption (`#0` is the resumption). `Shift` binds its captured stack. Interface annotations remain in the ambient scope. Import, substitution and portable content preserve these boundaries. Execution belongs to [the sequent machine](../core-sequent/README.md#effects-and-delimited-control), not to type conversion or kernel replay.
+
+**Choice.** Flat frames preserve independent scopes and make multi-shot resumption explicit. A nested encoding would put later frame operands under earlier binders; host closures would hide frame structure from capture and readback. Revisit only if the language deliberately changes stack scoping or continuation multiplicity.
+
+Witnesses: `control::tests::stack_literals_preserve_binder_scope`, `control::tests::stack_types_rebuild_both_computation_children`, `control::tests::effect_interfaces_and_clauses_rewrite_in_their_own_scopes`, `control::tests::lazy_pairs_keep_their_components_and_projection_side`, `tests::focus_properties::hand_built_control_cases_cover_every_former` and `check::tests::control_scopes_are_local_to_each_body`.
 
 ## Typed holes, marks and the unknown type
 

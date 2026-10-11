@@ -168,6 +168,8 @@ struct EnvId(usize);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvalFault
 {
+    /// A named runtime control former is outside the certificate normalizer.
+    RuntimeControl(gandr_core_term::control::ControlFormer),
     /// Runtime-native arithmetic is outside the certificate normalizer.
     NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
@@ -197,6 +199,8 @@ pub enum EvalFault
     BoundNonReturner,
     /// A case met a scrutinee that was neither an injection nor stuck.
     CasedNonInjection,
+    /// A fold met neither a native list nor a neutral list.
+    FoldedNonList,
     /// A static application met an operator that was neither a static lambda
     /// nor stuck.
     AppliedNonOperator,
@@ -606,6 +610,20 @@ enum Task
         /// The source node, which supplies both the children to compare faces
         /// against and the face to keep when they match.
         term: ValueId,
+    },
+    /// Assemble a native list cell from its evaluated head and tail.
+    ListCons(ValueId),
+    /// Fold the list on the value stack using captured pure branches.
+    ListFold
+    {
+        /// Ambient element annotation.
+        element: gandr_core_term::ValueTypeId,
+        /// Ambient result annotation.
+        result: gandr_core_term::ValueTypeId,
+        /// Empty branch in its ambient environment.
+        on_nil: CompClosureId,
+        /// Cell branch binding head then folded result.
+        on_cons: CompClosureId,
     },
     /// Assemble a sum injection.
     Inject
@@ -2027,7 +2045,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -2047,6 +2065,10 @@ impl<'run> Evaluation<'run>
                     },
                     Elimination::Force => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::Force)) },
                     Elimination::Bind(body) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::BindClosure(held)) if *held == body) },
+                    Elimination::ListFold { element, result, on_nil, on_cons } => {
+                        answer = Answer::Computation;
+                        matches!(tasks.next(), Some(Task::ListFold { element: e, result: r, on_nil: n, on_cons: c }) if (*e,*r,*n,*c) == (element,result,on_nil,on_cons))
+                    },
                     Elimination::Case { on_left, on_right } => {
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::CaseClosures { on_left: left, on_right: right }) if *left == on_left && *right == on_right)
@@ -2073,6 +2095,20 @@ impl<'run> Evaluation<'run>
                 | Elimination::RecordProjection(term) => {
                     answer = Answer::Computation;
                     machine.tasks.push(Task::RecordProjection(term));
+                },
+                | Elimination::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                } => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::ListFold {
+                        element,
+                        result,
+                        on_nil,
+                        on_cons,
+                    });
                 },
                 | Elimination::Transport(value) => {
                     answer = Answer::Computation;
@@ -2151,6 +2187,11 @@ impl<'run> Evaluation<'run>
                             == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(1_usize)
                             && environment.depth(Zone::Linear) == held.environment().depth(Zone::Linear)
                             && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(variable),
+                        Bound::Variables(first, second) => usize::from(environment.depth(Zone::Intuitionistic))
+                            == usize::from(held.environment().depth(Zone::Intuitionistic)).saturating_add(2_usize)
+                            && environment.depth(Zone::Linear) == held.environment().depth(Zone::Linear)
+                            && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == Some(second)
+                            && environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(1_u32)) == Some(first),
                     }),
                     _ => false,
                 }),
@@ -2167,8 +2208,13 @@ impl<'run> Evaluation<'run>
             .comp_closure(closure)
             .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
         let mut environment = held.environment().clone();
-        if let Bound::Variable(variable) = bound {
-            environment.extend(Zone::Intuitionistic, variable);
+        match bound {
+            | Bound::Nothing => {},
+            | Bound::Variable(variable) => environment.extend(Zone::Intuitionistic, variable),
+            | Bound::Variables(first, second) => {
+                environment.extend(Zone::Intuitionistic, first);
+                environment.extend(Zone::Intuitionistic, second);
+            },
         }
         let term = held.body();
         let mut machine = Machine::new(definitions, Fuel(0_u32));
@@ -2249,6 +2295,8 @@ pub enum Bound
     Nothing,
     /// A variable bound innermost, as opening a binder reads it.
     Variable(DomainValueId),
+    /// Two fresh variables, outermost first, for a native List cell branch.
+    Variables(DomainValueId, DomainValueId),
 }
 
 /// Drive the machine until its task stack empties or its slice runs out.
@@ -2397,7 +2445,7 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::RecordProjection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) => machine.tasks.len() >= entry_tasks,
+            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -2417,6 +2465,10 @@ fn run(
                 && entry_values.checked_sub(1) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|&id| domain.value(id)), Some(&DomainValue::PathProduct { first, second, .. })
                     if Some(first) == entry_first && Some(second) == entry_value),
+            Task::ListCons(_) => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
+                && entry_values.checked_sub(1_usize) == Some(machine.values.len())
+                && matches!(machine.values.last().and_then(|value| domain.value(*value)),
+                    Some(DomainValue::ListCons { first, second, .. }) if Some(*first) == entry_first && Some(*second) == entry_value),
             Task::Pair { .. } => machine.tasks.len() == entry_tasks && machine.comps.len() == entry_comps
                 && entry_values.checked_sub(1_usize) == Some(machine.values.len())
                 && matches!(machine.values.last().and_then(|value| domain.value(*value)),
@@ -2537,6 +2589,76 @@ fn step(
             let value = machine.pop_value()?;
             machine.values.extend([path, value]);
             step_transport(core, domain, machine)
+        },
+        | Task::ListCons(term) => {
+            let second = machine.pop_value()?;
+            let first = machine.pop_value()?;
+            let Some(&Value::ListCons(left, right)) = core.value(term)
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let face = composite_face(
+                denotes(domain, first, left).and(denotes(domain, second, right)),
+                term,
+            );
+            machine
+                .values
+                .push(domain.value_list_cons(first, second, face));
+            Ok(())
+        },
+        | Task::ListFold {
+            element,
+            result,
+            on_nil,
+            on_cons,
+        } => {
+            let list = machine.pop_value()?;
+            let node = *domain
+                .value(list)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            match node {
+                | DomainValue::ListNil { .. } => {
+                    let closure = domain
+                        .comp_closure(on_nil)
+                        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                    let body = closure.body();
+                    let env = machine.hold_env(closure.environment().clone());
+                    machine.tasks.push(Task::Body { body, env });
+                },
+                | DomainValue::ListCons { first, second, .. } => {
+                    let closure = domain
+                        .comp_closure(on_cons)
+                        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+                    let crate::closure::CompBody::Source(body) = closure.body()
+                    else {
+                        return Err(EvalFault::MachineInvariant);
+                    };
+                    let mut captured = closure.environment().clone();
+                    captured.extend(Zone::Intuitionistic, first);
+                    let continuation = domain.comp_closure_node(body, captured);
+                    machine.tasks.push(Task::BindClosure(continuation));
+                    machine.tasks.push(Task::ListFold {
+                        element,
+                        result,
+                        on_nil,
+                        on_cons,
+                    });
+                    machine.values.push(second);
+                },
+                | DomainValue::Neutral { neutral, .. } => {
+                    let grown = extend_spine(domain, neutral, Elimination::ListFold {
+                        element,
+                        result,
+                        on_nil,
+                        on_cons,
+                    })?;
+                    machine
+                        .comps
+                        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+                },
+                | _ => return Err(EvalFault::FoldedNonList),
+            }
+            Ok(())
         },
         | Task::Pair { term } => {
             let second = machine.pop_value()?;
@@ -2681,6 +2803,21 @@ fn step_value(
                     .rev()
                     .map(|field| Task::Value { term: *field, env }),
             );
+            Ok(())
+        },
+        | Value::Reify(_) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Reify,
+        )),
+        | Value::ListNil => {
+            machine
+                .values
+                .push(domain.value_list_nil(TermFace::Source(term)));
+            Ok(())
+        },
+        | Value::ListCons(first, second) => {
+            machine.tasks.push(Task::ListCons(term));
+            machine.tasks.push(Task::Value { term: second, env });
+            machine.tasks.push(Task::Value { term: first, env });
             Ok(())
         },
         | Value::PathRefl(_) | Value::PathEquiv { .. } => {
@@ -2913,6 +3050,46 @@ fn step_comp(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
+        | Computation::Perform { .. } => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Perform,
+        )),
+        | Computation::Handle { .. } => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Handle,
+        )),
+        | Computation::Resume(..) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Resume,
+        )),
+        | Computation::Reset(_) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Reset,
+        )),
+        | Computation::Shift(_) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Shift,
+        )),
+        | Computation::With(..) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::With,
+        )),
+        | Computation::Project(..) => Err(EvalFault::RuntimeControl(
+            gandr_core_term::control::ControlFormer::Project,
+        )),
+        | Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let captured = machine.capture(env)?;
+            let on_nil = domain.comp_closure_node(on_nil, captured.clone());
+            let on_cons = domain.comp_closure_node(on_cons, captured);
+            machine.tasks.push(Task::ListFold {
+                element,
+                result,
+                on_nil,
+                on_cons,
+            });
+            machine.tasks.push(Task::Value { term: list, env });
+            Ok(())
+        },
         | Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
         | Computation::DataCase { scrutinee, .. } => {
             machine.tasks.push(Task::DataCase { term, env });
@@ -3145,6 +3322,8 @@ fn step_force(
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
@@ -3272,7 +3451,9 @@ fn step_apply(
                 | DomainValue::Thunk { .. }
                 | DomainValue::Lift { .. }
                 | DomainValue::Code { .. }
-                | DomainValue::StaticLambda { .. } => {
+                | DomainValue::StaticLambda { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. } => {
                     machine.values.push(argument);
                     machine.tasks.push(Task::Apply);
                     unfold(core, domain, machine, recursive)
@@ -3429,6 +3610,8 @@ fn step_static_apply(
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
         | DomainValue::Injection { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
@@ -3595,6 +3778,8 @@ fn step_case(
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
@@ -3749,6 +3934,8 @@ fn step_case_closures(
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
+        | DomainValue::ListNil { .. }
+        | DomainValue::ListCons { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
@@ -5317,6 +5504,62 @@ mod tests
     }
 
     #[test]
+    fn runtime_control_is_refused_by_former()
+    {
+        use gandr_core_term::control::ControlFormer;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let unit_type = core.value_type_unit();
+        let returned = core.computation_return(unit);
+        let stack = core.value_reify(alloc::sync::Arc::from([]));
+        let signature = EffectSig::new(EffectName::from("State"), [EffectOp {
+            name: OperationName::from("get"),
+            payload: unit_type,
+            reply: unit_type,
+        }])
+        .unwrap();
+        let performed =
+            core.computation_perform(signature.clone(), OperationName::from("get"), unit);
+        let handled =
+            core.computation_handle(signature, performed, returned, alloc::sync::Arc::from([]));
+        let cases = [
+            (performed, ControlFormer::Perform),
+            (handled, ControlFormer::Handle),
+            (
+                core.computation_resume(stack, returned),
+                ControlFormer::Resume,
+            ),
+            (core.computation_reset(returned), ControlFormer::Reset),
+            (core.computation_shift(returned), ControlFormer::Shift),
+            (
+                core.computation_with(returned, returned),
+                ControlFormer::With,
+            ),
+            (
+                core.computation_project(gandr_kernel_term::Side::Left, returned),
+                ControlFormer::Project,
+            ),
+        ];
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        for (term, former) in cases {
+            assert_eq!(
+                eval_computation(&core, &mut domain, definitions, ample(), term),
+                Err(EvalFault::RuntimeControl(former))
+            );
+        }
+        assert_eq!(
+            eval_value(&core, &mut domain, definitions, ample(), stack),
+            Err(EvalFault::RuntimeControl(ControlFormer::Reify))
+        );
+    }
+
+    #[test]
     fn a_loop_declines_on_fuel_rather_than_diverging()
     {
         let mut core = CoreArena::new();
@@ -6271,7 +6514,9 @@ mod tests
         else {
             panic!("motive returns a value");
         };
-        let gandr_core_term::CompType::Returner(ref motive) = *matched_native_node
+        let gandr_core_term::CompType::Returner {
+            result: ref motive, ..
+        } = *matched_native_node
         else {
             panic!("motive returns a value");
         };

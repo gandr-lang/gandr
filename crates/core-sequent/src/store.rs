@@ -74,6 +74,12 @@ address_wrapper! {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum HeapValue
 {
+    /// An immutable stack spine, bottom first, reusable by every resumption.
+    Stack
+    {
+        /// Frames refer to heap values and persistent environments by address.
+        frames: Box<[Frame]>,
+    },
     /// A base-type literal.
     Literal(Literal),
     /// A constructor applied to evaluated fields.
@@ -227,7 +233,7 @@ struct ValueBinding
 struct CovalueBinding
 {
     /// The bound continuation.
-    mark: ContinuationMark,
+    continuation: Covalue,
     /// The chain this binding extends.
     outer: CovalueScope,
 }
@@ -264,17 +270,66 @@ impl ContinuationMark
     }
 }
 
+/// A return target: a guarded linear mark, or a delimited stack's live tail.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Covalue
+{
+    /// Preserve the existing one-shot continuation identity.
+    Pinned(ContinuationMark),
+    /// Continue through the active stack after a captured prefix is reinstated.
+    FallThrough,
+}
+
+/// The eager payload of a native observation; every head is nullary or unary.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ObservationArguments
+{
+    /// Force and projection carry no producer argument.
+    Nullary,
+    /// Application carries exactly one already evaluated value.
+    Unary(HeapValueId),
+}
+
+impl ObservationArguments
+{
+    /// Borrow the argument without allocating a one-element container.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn as_slice(&self) -> &[HeapValueId]
+    {
+        match *self {
+            | Self::Nullary => &[],
+            | Self::Unary(ref value) => core::slice::from_ref(value),
+        }
+    }
+}
+
 /// A continuation frame.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Frame
 {
+    /// A reset delimiter, reinstalled by a captured resumption.
+    Reset,
+    /// A deep handler whose clauses close over the installation environment.
+    Handler
+    {
+        /// The Handle command carrying the inline interface and clauses.
+        command: CommandId,
+        /// The handler's ambient value and covalue bindings.
+        environment: Environment,
+    },
+    /// An update cancelled by control capture or an operation request.
+    DeclinedUpdate,
     /// A pending observation with its evaluated producer arguments.
     Destructor
     {
         /// The head.
         tag: DestructorTag,
         /// The evaluated producer arguments, left to right.
-        arguments: Box<[HeapValueId]>,
+        arguments: ObservationArguments,
     },
     /// A pending value binder `μ̃x. s`.
     Bind
@@ -293,12 +348,46 @@ pub enum Frame
         /// The environment the chosen arm runs under.
         environment: Environment,
     },
+    /// A pending native fold after a captured list has returned.
+    ListFold
+    {
+        /// The fold consumer carrying its branches.
+        fold: ConsumerId,
+        /// The branches' ambient environment.
+        environment: Environment,
+    },
     /// The write-back of a forcing: the value arriving here is the cell's.
     Update
     {
         /// The cell in progress.
         cell: CellId,
     },
+}
+
+/// How many reset and handler delimiters a frame contributes to its region.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Delimiters(usize);
+
+impl Frame
+{
+    /// How many delimiters this frame is: one for a frame that changes the
+    /// interpretation of local returns, none otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn delimiters(self) -> Delimiters
+    {
+        Delimiters(match self {
+            | Self::Reset | Self::Handler { .. } => 1,
+            | Self::DeclinedUpdate
+            | Self::Destructor { .. }
+            | Self::Bind { .. }
+            | Self::Case { .. }
+            | Self::ListFold { .. }
+            | Self::Update { .. } => 0,
+        })
+    }
 }
 
 /// One frame and the serial it was pushed under.
@@ -404,6 +493,8 @@ pub struct Store
     frames: Vec<FrameEntry>,
     /// The serial of the most recently pushed frame, or the base serial.
     last_serial: FrameSerial,
+    /// The number of reset and handler delimiters in the active frame region.
+    delimiters: usize,
 }
 
 impl Store
@@ -793,7 +884,7 @@ impl Store
     /// # Specification
     /// - requires: the chain was allocated by this store.
     /// - ensures: on success an environment whose covariable index `0` reads
-    ///   `mark` and whose index `i + 1` reads what index `i` read in
+    ///   `continuation` and whose index `i + 1` reads what index `i` read in
     ///   `environment`; the producer chain is unchanged.
     /// - provides: the one way a covariable is bound.
     /// - fails: [`StoreFault::RegionFull`], the store unchanged.
@@ -818,7 +909,7 @@ impl Store
                     | CovalueScope::Empty => false,
                     | CovalueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
                         && id.read_in(&self.covalue_bindings).is_some_and(|binding|
-                            binding.mark == mark && binding.outer == environment.covalues),
+                            binding.continuation == continuation && binding.outer == environment.covalues),
                 },
             | Err(error) => error == StoreFault::RegionFull(HeapFamily::CovalueBindings)
                 && self.covalue_bindings.len() == entry,
@@ -827,13 +918,13 @@ impl Store
     pub fn bind_covalue(
         &mut self,
         environment: Environment,
-        mark: ContinuationMark,
+        continuation: Covalue,
     ) -> Result<Environment, StoreFault>
     {
         let id = CovalueBindingId::next_in(&self.covalue_bindings)
             .ok_or(StoreFault::RegionFull(HeapFamily::CovalueBindings))?;
         self.covalue_bindings.push(CovalueBinding {
-            mark,
+            continuation,
             outer: environment.covalues,
         });
         Ok(Environment {
@@ -916,13 +1007,13 @@ impl Store
                 | CovalueScope::Empty => None,
                 | CovalueScope::Innermost(id) => id.read_in(&self.covalue_bindings),
             },
-        ).nth(offset).map(|binding| binding.mark))
+        ).nth(offset).map(|binding| binding.continuation))
     )]
     pub fn lookup_covalue(
         &self,
         environment: Environment,
         index: CovariableIndex,
-    ) -> Option<ContinuationMark>
+    ) -> Option<Covalue>
     {
         let mut scope = environment.covalues;
         let mut remaining = u32::from(index);
@@ -934,7 +1025,7 @@ impl Store
             let binding = id.read_in(&self.covalue_bindings)?;
             let Some(next) = remaining.checked_sub(1)
             else {
-                return Some(binding.mark);
+                return Some(binding.continuation);
             };
             remaining = next;
             scope = binding.outer;
@@ -1019,6 +1110,7 @@ impl Store
             .map(FrameSerial::from)
             .ok_or(StoreFault::SerialsExhausted)?;
         self.frames.push(FrameEntry { frame, serial });
+        self.delimiters = self.delimiters.saturating_add(frame.delimiters().0);
         self.last_serial = serial;
         Ok(())
     }
@@ -1047,7 +1139,9 @@ impl Store
     )]
     pub fn pop_frame(&mut self) -> Option<Frame>
     {
-        self.frames.pop().map(|entry| entry.frame)
+        let entry = self.frames.pop()?;
+        self.delimiters = self.delimiters.saturating_sub(entry.frame.delimiters().0);
+        Some(entry.frame)
     }
 
     /// The continuation the region currently is.
@@ -1097,7 +1191,8 @@ impl Store
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn frames(&self) -> impl Iterator<Item = &Frame>
+    #[must_use]
+    pub fn frames(&self) -> impl DoubleEndedIterator<Item = &Frame> + ExactSizeIterator
     {
         self.frames.iter().map(|entry| &entry.frame)
     }
@@ -1158,11 +1253,145 @@ impl Store
             else {
                 break;
             };
+            self.delimiters = self.delimiters.saturating_sub(entry.frame.delimiters().0);
             if let Frame::Update { cell } = entry.frame {
                 self.decline(cell)?;
             }
         }
         Ok(())
+    }
+
+    /// Choose a local return target without capturing the ambient continuation
+    /// twice.
+    ///
+    /// # Specification
+    /// - ensures: returns are relocatable exactly while a delimiter is active.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — resuming under a projection distinguishes an ambient
+    ///   tail from a stale absolute mark or a duplicated continuation.
+    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    #[spec(ensures: |ret| ret == if self.delimiters == 0 { Covalue::Pinned(mark) } else { Covalue::FallThrough })]
+    #[must_use]
+    #[inline]
+    pub fn return_continuation(
+        &self,
+        mark: ContinuationMark,
+    ) -> Covalue
+    {
+        if self.delimiters == 0 {
+            Covalue::Pinned(mark)
+        }
+        else {
+            Covalue::FallThrough
+        }
+    }
+
+    /// The live mark immediately below the frame at `height`.
+    ///
+    /// # Specification
+    /// - ensures: a present mark has the requested height and its live serial.
+    /// - fails: absence only when the height is beyond the active region.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty prefix and a nested delimiter separate the
+    ///   bounds.
+    /// - witness: `machine::tests::hand_built_shift_cases_agree`
+    #[spec(ensures: |ret| ret.is_some() == (usize::from(height) <= self.frames.len()) && ret.is_none_or(|mark| mark.height == height))]
+    #[must_use]
+    #[inline]
+    pub fn mark_below(
+        &self,
+        height: FrameHeight,
+    ) -> Option<ContinuationMark>
+    {
+        match usize::from(height).checked_sub(1) {
+            | None => Some(ContinuationMark::BASE),
+            | Some(index) => self.frames.get(index).map(|entry| ContinuationMark {
+                height,
+                serial: entry.serial,
+            }),
+        }
+    }
+
+    /// Cancel memo writes crossed by an operation or a captured continuation.
+    ///
+    /// # Specification
+    /// - ensures: no update above `base` remains armed after success; frame
+    ///   identities and order are retained, so existing marks remain valid.
+    /// - fails: a stale prefix or an invalid update cell.
+    ///
+    /// # Errors
+    /// Returns the stale-mark or invalid-cell fault without discarding frames.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated forces after a host operation must execute
+    ///   again, and both resumptions of a captured force must deliver their own
+    ///   values.
+    /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    #[spec(captures: height = self.frame_height(), ensures: |ret| self.frame_height() == height && (ret.is_err() || self.frames.iter().skip(usize::from(base.height)).all(|entry| !matches!(entry.frame, Frame::Update { .. }))))]
+    #[inline]
+    pub fn cancel_updates(
+        &mut self,
+        base: ContinuationMark,
+    ) -> Result<(), StoreFault>
+    {
+        if self.mark_below(base.height) != Some(base) {
+            return Err(StoreFault::StaleMark(base));
+        }
+        for index in usize::from(base.height) .. self.frames.len() {
+            let Some(entry) = self.frames.get(index)
+            else {
+                return Err(StoreFault::StaleMark(base));
+            };
+            if let Frame::Update { cell } = entry.frame {
+                self.decline(cell)?;
+                let Some(entry) = self.frames.get_mut(index)
+                else {
+                    return Err(StoreFault::StaleMark(base));
+                };
+                entry.frame = Frame::DeclinedUpdate;
+            }
+        }
+        Ok(())
+    }
+
+    /// Freeze and remove the delimited prefix above a live mark.
+    ///
+    /// # Specification
+    /// - ensures: the returned stack retains every frame in bottom-first order;
+    ///   the active region ends at `base` and no captured memo write remains
+    ///   armed.
+    /// - fails: a stale mark, exhausted heap, or an invalid update cell.
+    ///
+    /// # Errors
+    /// Returns a stale-mark, heap-capacity or invalid-cell fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — multi-shot resumption under a pending observation
+    ///   exposes destructive reuse and loss of the delimiter or ambient
+    ///   continuation.
+    /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    #[spec(captures: height = usize::from(self.frame_height()), ensures: |ret| ret.is_err() || (self.frame_height() == base.height && ret.as_ref().is_ok_and(|&stack| matches!(self.value(stack), Some(HeapValue::Stack { frames }) if frames.len() == height.saturating_sub(usize::from(base.height)) && frames.iter().all(|frame| !matches!(frame, Frame::Update { .. }))))))]
+    #[inline]
+    pub fn capture(
+        &mut self,
+        base: ContinuationMark,
+    ) -> Result<HeapValueId, StoreFault>
+    {
+        let _next =
+            HeapValueId::next_in(&self.values).ok_or(StoreFault::RegionFull(HeapFamily::Values))?;
+        self.cancel_updates(base)?;
+        let frames = self
+            .frames
+            .get(usize::from(base.height) ..)
+            .ok_or(StoreFault::StaleMark(base))?
+            .iter()
+            .map(|entry| entry.frame)
+            .collect();
+        let captured = self.allocate(HeapValue::Stack { frames })?;
+        self.shrink_to(base)?;
+        Ok(captured)
     }
 
     /// The mutable state of a cell.
@@ -1322,7 +1551,7 @@ mod tests
         store
             .push_frame(Frame::Destructor {
                 tag: DestructorTag::Force,
-                arguments: Box::from([]),
+                arguments: crate::store::ObservationArguments::Nullary,
             })
             .expect("room");
         let mark = store.mark();
@@ -1335,7 +1564,7 @@ mod tests
         store
             .push_frame(Frame::Destructor {
                 tag: DestructorTag::Force,
-                arguments: Box::from([]),
+                arguments: crate::store::ObservationArguments::Nullary,
             })
             .expect("room");
         assert_eq!(
@@ -1361,7 +1590,7 @@ mod tests
         store
             .push_frame(Frame::Destructor {
                 tag: DestructorTag::Force,
-                arguments: Box::from([]),
+                arguments: crate::store::ObservationArguments::Nullary,
             })
             .expect("room");
         assert_eq!(
@@ -1413,10 +1642,10 @@ mod tests
         );
 
         let marked = store
-            .bind_covalue(inner, ContinuationMark::BASE)
+            .bind_covalue(inner, crate::store::Covalue::Pinned(ContinuationMark::BASE))
             .expect("room");
         assert_eq!(
-            Some(ContinuationMark::BASE),
+            Some(crate::store::Covalue::Pinned(ContinuationMark::BASE)),
             store.lookup_covalue(marked, CovariableIndex::from(0_u32)),
             "the covalue chain reads its binding"
         );
@@ -1529,20 +1758,33 @@ mod tests
         assert_eq!(None, store.bound_values(empty).next());
         let initial = store.bind_value(empty, first).expect("room");
         let initial = store
-            .bind_covalue(initial, ContinuationMark::BASE)
+            .bind_covalue(
+                initial,
+                crate::store::Covalue::Pinned(ContinuationMark::BASE),
+            )
             .expect("room");
         store
             .push_frame(Frame::Destructor {
                 tag: DestructorTag::Force,
-                arguments: Box::from([]),
+                arguments: crate::store::ObservationArguments::Nullary,
             })
             .expect("room");
         let mark = store.mark();
-        let extended = store.bind_covalue(initial, mark).expect("room");
+        let extended = store
+            .bind_covalue(initial, crate::store::Covalue::Pinned(mark))
+            .expect("room");
         let extended = store.bind_value(extended, second).expect("room");
         for (index, value, covalue) in [
-            (0_u32, Some(second), Some(mark)),
-            (1, Some(first), Some(ContinuationMark::BASE)),
+            (
+                0_u32,
+                Some(second),
+                Some(crate::store::Covalue::Pinned(mark)),
+            ),
+            (
+                1,
+                Some(first),
+                Some(crate::store::Covalue::Pinned(ContinuationMark::BASE)),
+            ),
             (2, None, None),
         ] {
             assert_eq!(
@@ -1559,7 +1801,7 @@ mod tests
             store.lookup_value(initial, DeBruijnIndex::from(0_u32))
         );
         assert_eq!(
-            Some(ContinuationMark::BASE),
+            Some(crate::store::Covalue::Pinned(ContinuationMark::BASE)),
             store.lookup_covalue(initial, CovariableIndex::from(0_u32))
         );
         assert_eq!(
@@ -1588,29 +1830,24 @@ mod tests
         let mut store = Store::new();
         let force = Frame::Destructor {
             tag: DestructorTag::Force,
-            arguments: Box::from([]),
+            arguments: crate::store::ObservationArguments::Nullary,
         };
         let apply = Frame::Destructor {
             tag: DestructorTag::Apply,
-            arguments: Box::from([]),
+            arguments: crate::store::ObservationArguments::Nullary,
         };
-        store.push_frame(force.clone()).expect("room");
+        store.push_frame(force).expect("room");
         let first = store.mark();
         store.last_serial = FrameSerial::from(usize::MAX.saturating_sub(1));
-        store
-            .push_frame(apply.clone())
-            .expect("last representable serial");
+        store.push_frame(apply).expect("last representable serial");
         let last = store.mark();
         assert_eq!(FrameSerial::from(usize::MAX), last.serial);
         assert_eq!(FrameHeight::from(2_usize), last.height);
-        assert_eq!(
-            Err(StoreFault::SerialsExhausted),
-            store.push_frame(force.clone())
-        );
+        assert_eq!(Err(StoreFault::SerialsExhausted), store.push_frame(force));
         assert_eq!(last, store.mark());
         assert_eq!(Some(apply), store.pop_frame());
         assert_eq!(first, store.mark());
-        assert_eq!(Some(force.clone()), store.pop_frame());
+        assert_eq!(Some(force), store.pop_frame());
         assert_eq!(None, store.pop_frame());
         assert_eq!(ContinuationMark::BASE, store.mark());
         assert_eq!(Err(StoreFault::SerialsExhausted), store.push_frame(force));
@@ -1625,11 +1862,11 @@ mod tests
         let mut store = Store::new();
         let force = Frame::Destructor {
             tag: DestructorTag::Force,
-            arguments: Box::from([]),
+            arguments: crate::store::ObservationArguments::Nullary,
         };
-        store.push_frame(force.clone()).expect("room");
+        store.push_frame(force).expect("room");
         let old = store.mark();
-        assert_eq!(Some(force.clone()), store.pop_frame());
+        assert_eq!(Some(force), store.pop_frame());
         assert_eq!(Err(StoreFault::StaleMark(old)), store.shrink_to(old));
         assert_eq!(ContinuationMark::BASE, store.mark());
         store.push_frame(force).expect("room");

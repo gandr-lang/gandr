@@ -849,8 +849,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::SessionPath { path_type, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
             Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
-            Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
-            Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
+            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
+            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
                             && self.placed.contains_key(&AnyNode::Value(second)),
             Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
             Value::Thunk(body) => self.placed.contains_key(&AnyNode::Computation(body)),
@@ -868,6 +868,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
             Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
             Value::Unit => gandr_kernel_term::NODE_V_UNIT,
+            Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
+            Value::ListCons(..) => gandr_kernel_term::NODE_V_LIST_CONS,
             Value::Literal(..) => gandr_kernel_term::NODE_V_LITERAL,
             Value::Pair(..) => gandr_kernel_term::NODE_V_PAIR,
             Value::Injection(..) => gandr_kernel_term::NODE_V_INJECTION,
@@ -905,6 +907,12 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_text(EncodedText(label.as_ref()));
                     record.put_content(self.content_of(AnyNode::Value(*value)));
                 }
+            },
+            | Value::ListNil => record.put_tag(gandr_kernel_term::NODE_V_LIST_NIL),
+            | Value::ListCons(head, tail) => {
+                record.put_tag(gandr_kernel_term::NODE_V_LIST_CONS);
+                record.put_content(self.content_of(AnyNode::Value(head)));
+                record.put_content(self.content_of(AnyNode::Value(tail)));
             },
             | Value::SessionPath {
                 path_type,
@@ -1008,6 +1016,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         requires: match *computation {
             Computation::DataCase { scrutinee, motive, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
             Computation::RecordProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
+            Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
@@ -1024,6 +1033,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::DataCase { .. } => gandr_kernel_term::NODE_C_DATA_CASE,
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
+            Computation::ListFold { .. } => gandr_kernel_term::NODE_C_LIST_FOLD,
             Computation::Absurd(_) => gandr_kernel_term::NODE_C_ABSURD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
             Computation::Fixpoint { .. } => gandr_kernel_term::NODE_C_FIXPOINT,
@@ -1058,6 +1068,24 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_C_RECORD_PROJECTION);
                 record.put_text(EncodedText(label.as_ref()));
                 record.put_content(self.content_of(AnyNode::Value(value)));
+            },
+            | Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_LIST_FOLD);
+                for child in [
+                    AnyNode::ValueType(element),
+                    AnyNode::ValueType(result),
+                    AnyNode::Value(list),
+                    AnyNode::Computation(on_nil),
+                    AnyNode::Computation(on_cons),
+                ] {
+                    record.put_content(self.content_of(child));
+                }
             },
             | Computation::Absurd(value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_ABSURD);
@@ -1363,10 +1391,10 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         AnyNode::Value(id) => match arena.value(id) { Some(matched_native_node) => match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
-Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
 Value::SessionPath { path_type, payload_paths, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
-Value::PathProduct(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 Value::PathRefl(body) | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
 Value::Thunk(body) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
 Value::Quote(quoted) => opened.eq((core::iter::once(AnyNode::ValueType(quoted))).map(Some)),
@@ -1375,6 +1403,7 @@ Value::QuoteComputation(quoted) => opened.eq((core::iter::once(AnyNode::CompType
 None => opened.eq((core::iter::empty()).map(Some)),
 },
         AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => opened.eq([AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
             Some(&Computation::DataCase {scrutinee,motive,ref branches}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
             Some(&Computation::RecordProjection(record,_)) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
@@ -1427,7 +1456,11 @@ fn push_children(
             },
             | None
             | Some(
-                &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
+                &Value::ListNil
+                | &Value::Variable(_)
+                | &Value::Constant(_)
+                | &Value::Unit
+                | &Value::Literal(_),
             ) => {},
             | Some(&Value::PathEquiv {
                 path_type,
@@ -1451,6 +1484,7 @@ fn push_children(
             | Some(
                 &Value::PathProduct(first, second)
                 | &Value::Pair(first, second)
+                | &Value::ListCons(first, second)
                 | &Value::StaticApplication(first, second),
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(first)));
@@ -1482,6 +1516,23 @@ fn push_children(
                 tasks.extend((core::iter::once(AnyNode::Value(record))).map(EncodeTask::Open));
             },
             | None => {},
+            | Some(&Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                for child in [
+                    AnyNode::ValueType(element),
+                    AnyNode::ValueType(result),
+                    AnyNode::Value(list),
+                    AnyNode::Computation(on_nil),
+                    AnyNode::Computation(on_cons),
+                ] {
+                    tasks.push(EncodeTask::Open(child));
+                }
+            },
             | Some(&Computation::Transport(path, value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));

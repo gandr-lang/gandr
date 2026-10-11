@@ -89,6 +89,10 @@ pub enum ConstructorTag
     Unit,
     /// The pair `(p₁, p₂)`.
     Pair,
+    /// The empty native list.
+    ListNil,
+    /// A native list cell with head and tail fields.
+    ListCons,
     /// A sum injection on the given side, of one field.
     Injection(Side),
     /// An explicit lift to the target level, of one field.
@@ -126,16 +130,16 @@ impl ConstructorTag
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
-        | Self::Unit => matches!(ret, ProducerArity::ZERO),
-        | Self::Pair => matches!(ret, ProducerArity::TWO),
+        | Self::Unit | Self::ListNil => matches!(ret, ProducerArity::ZERO),
+        | Self::Pair | Self::ListCons => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
         | Self::Data { arity, .. } => ret == arity,
     })]
     pub fn producer_arity(&self) -> ProducerArity
     {
         match *self {
-            | Self::Unit => ProducerArity::ZERO,
-            | Self::Pair => ProducerArity::TWO,
+            | Self::Unit | Self::ListNil => ProducerArity::ZERO,
+            | Self::Pair | Self::ListCons => ProducerArity::TWO,
             | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
             | Self::Data { arity, .. } => arity,
         }
@@ -163,9 +167,13 @@ impl ConstructorTag
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
-            | Self::Unit | Self::Pair | Self::Injection(_) | Self::Lift(_) | Self::Data { .. } => {
-                ConsumerArity::ZERO
-            },
+            | Self::Unit
+            | Self::Pair
+            | Self::ListNil
+            | Self::ListCons
+            | Self::Injection(_)
+            | Self::Lift(_)
+            | Self::Data { .. } => ConsumerArity::ZERO,
         }
     }
 }
@@ -175,13 +183,60 @@ impl ConstructorTag
 /// `Apply` observes a function, of the negative type `A → C`; `Force` observes
 /// a thunk, of the positive type `U C`, and is answered by a thunk producer
 /// rather than a copattern object.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DestructorTag
 {
     /// Application to one argument, returning to one continuation.
     Apply,
     /// Forcing a thunk, returning to one continuation.
     Force,
+    /// Observe one component of a lazy computation pair.
+    Project(gandr_kernel_term::Side),
+}
+
+impl Ord for DestructorTag
+{
+    /// Order observation labels without imposing an ordering on source sums.
+    ///
+    /// # Specification
+    /// - ensures: distinct observations compare unequal; application precedes
+    ///   force, followed by the left and right projections.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — accepting both projections and rejecting a duplicate
+    ///   arm distinguishes observation-label collisions.
+    /// - witness: `check::tests::control_scopes_are_local_to_each_body`
+    #[inline]
+    #[spec(ensures: |ret| (ret == core::cmp::Ordering::Equal) == (self == other))]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> core::cmp::Ordering
+    {
+        let rank = |tag: &Self| match *tag {
+            | Self::Apply => 0_u8,
+            | Self::Force => 1,
+            | Self::Project(gandr_kernel_term::Side::Left) => 2,
+            | Self::Project(gandr_kernel_term::Side::Right) => 3,
+        };
+        rank(self).cmp(&rank(other))
+    }
+}
+
+impl PartialOrd for DestructorTag
+{
+    /// Delegate partial comparison to the observation-label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<core::cmp::Ordering>
+    {
+        Some(self.cmp(other))
+    }
 }
 
 impl DestructorTag
@@ -204,13 +259,13 @@ impl DestructorTag
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| matches!((self, ret),
-        (Self::Apply, ProducerArity::ONE) | (Self::Force, ProducerArity::ZERO)
+        (Self::Apply, ProducerArity::ONE) | (Self::Force | Self::Project(_), ProducerArity::ZERO)
     ))]
     pub const fn producer_arity(self) -> ProducerArity
     {
         match self {
             | Self::Apply => ProducerArity::ONE,
-            | Self::Force => ProducerArity::ZERO,
+            | Self::Force | Self::Project(_) => ProducerArity::ZERO,
         }
     }
 
@@ -236,7 +291,7 @@ impl DestructorTag
     pub const fn consumer_arity(self) -> ConsumerArity
     {
         match self {
-            | Self::Apply | Self::Force => ConsumerArity::ONE,
+            | Self::Apply | Self::Force | Self::Project(_) => ConsumerArity::ONE,
         }
     }
 
@@ -258,12 +313,12 @@ impl DestructorTag
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| matches!((self, ret),
-        (Self::Apply, Polarity::Negative) | (Self::Force, Polarity::Positive)
+        (Self::Apply | Self::Project(_), Polarity::Negative) | (Self::Force, Polarity::Positive)
     ))]
     pub const fn polarity(self) -> Polarity
     {
         match self {
-            | Self::Apply => Polarity::Negative,
+            | Self::Apply | Self::Project(_) => Polarity::Negative,
             | Self::Force => Polarity::Positive,
         }
     }
@@ -297,6 +352,10 @@ pub struct CopatternArm
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProducerNode
 {
+    /// A first-class stack in innermost-to-outermost observation order.
+    /// Bind bodies introduce one value binder and one return covariable;
+    /// neither binder scopes over a later frame.
+    Reify(alloc::sync::Arc<[gandr_core_term::control::StackFrame<ProducerId, CommandId>]>),
     /// A saturated operation whose arguments are evaluated in source order.
     Primitive
     {
@@ -399,14 +458,80 @@ pub enum ConsumerNode
         /// The continuation each branch returns to.
         then: ConsumerId,
     },
+    /// A pure native fold, retaining annotations for inverse focusing.
+    ListFold
+    {
+        /// Element type in this arena's annotation arena.
+        element: gandr_core_term::ValueTypeId,
+        /// Fold result type in the ambient context.
+        result: gandr_core_term::ValueTypeId,
+        /// Empty branch, binding only its return covariable.
+        on_nil: CommandId,
+        /// Cell branch, binding head, folded result and return covariable.
+        on_cons: CommandId,
+        /// Where the complete fold returns.
+        continuation: ConsumerId,
+    },
     /// The terminal consumer `★`: the run's answer is what reaches it.
     Top,
 }
 
 /// A command node.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CommandNode
 {
+    /// Request an operation against the live continuation.
+    Perform
+    {
+        /// Inline interface types belong to this arena's annotation arena.
+        signature: gandr_core_term::effect::EffectSig,
+        /// The operation within that interface.
+        operation: gandr_core_term::effect::OperationName,
+        /// Its eager payload.
+        payload: ProducerId,
+        /// The continuation installed before propagation.
+        continuation: ConsumerId,
+    },
+    /// Install a deep interface handler around a subject.
+    Handle
+    {
+        /// The interface this delimiter handles.
+        signature: gandr_core_term::effect::EffectSig,
+        /// The subject, binding one return covariable.
+        subject: CommandId,
+        /// Return clause: one value binder and one return covariable.
+        on_return: CommandId,
+        /// Operation clauses: payload, resumption, then return covariable.
+        clauses: alloc::sync::Arc<[gandr_core_term::control::EffectClause<CommandId>]>,
+        /// The continuation outside the delimiter.
+        continuation: ConsumerId,
+    },
+    /// Run a computation through a first-class stack.
+    Resume
+    {
+        /// The stack value.
+        stack: ProducerId,
+        /// The fed computation, binding one return covariable.
+        body: CommandId,
+        /// Where the resumed stack delivers its answer.
+        continuation: ConsumerId,
+    },
+    /// Install an answer delimiter.
+    Reset
+    {
+        /// The body, binding one return covariable.
+        body: CommandId,
+        /// The continuation outside the delimiter.
+        continuation: ConsumerId,
+    },
+    /// Capture to the nearest reachable reset.
+    Shift
+    {
+        /// The body, binding the captured stack and one return covariable.
+        body: CommandId,
+        /// The local continuation captured before the body runs.
+        continuation: ConsumerId,
+    },
     /// A cut `⟨p |ε c⟩`.
     Cut
     {
@@ -441,6 +566,8 @@ pub enum MintRefusal
     DanglingConsumer(ConsumerId),
     /// A command child names no command the arena holds.
     DanglingCommand(CommandId),
+    /// A type annotation does not resolve in the annotation arena.
+    DanglingAnnotation(gandr_core_term::ValueTypeId),
     /// The family has reached its address ceiling.
     FamilyFull(NodeFamily),
 }
@@ -461,6 +588,7 @@ impl fmt::Display for MintRefusal
             | Self::DanglingProducer(id) => write!(f, "producer {id} is not in the arena"),
             | Self::DanglingConsumer(id) => write!(f, "consumer {id} is not in the arena"),
             | Self::DanglingCommand(id) => write!(f, "command {id} is not in the arena"),
+            | Self::DanglingAnnotation(_) => f.write_str("a List-fold annotation does not resolve"),
             | Self::FamilyFull(family) => {
                 let name = match family {
                     | NodeFamily::Producer => "producer",
@@ -490,6 +618,8 @@ pub struct SequentWatermark
     consumers: NodeCount,
     /// The command family length.
     commands: NodeCount,
+    /// The attached annotation graph's family lengths.
+    annotations: gandr_core_term::ArenaWatermark,
 }
 
 /// The append-only arena owning every IL node of one translation or run.
@@ -506,10 +636,35 @@ pub struct CommandArena
     consumers: Vec<ConsumerNode>,
     /// The command nodes, in minting order.
     commands: Vec<CommandNode>,
+    /// Portable type annotations; runtime transitions do not inspect them.
+    annotations: gandr_core_term::CoreArena,
 }
 
 impl CommandArena
 {
+    /// Borrow the arena owning retained fold annotations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn annotations(&self) -> &gandr_core_term::CoreArena
+    {
+        &self.annotations
+    }
+
+    /// Append annotations before minting a consumer which references them.
+    ///
+    /// Existing referenced annotations must not be truncated independently.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn annotations_mut(&mut self) -> &mut gandr_core_term::CoreArena
+    {
+        &mut self.annotations
+    }
+
     /// An empty arena.
     ///
     /// # Specification
@@ -533,6 +688,7 @@ impl CommandArena
             producers: NodeCount::from(self.producers.len()),
             consumers: NodeCount::from(self.consumers.len()),
             commands: NodeCount::from(self.commands.len()),
+            annotations: self.annotations.watermark(),
         }
     }
 
@@ -573,6 +729,7 @@ impl CommandArena
         self.producers.truncate(usize::from(watermark.producers));
         self.consumers.truncate(usize::from(watermark.consumers));
         self.commands.truncate(usize::from(watermark.commands));
+        self.annotations.truncate_to(watermark.annotations);
     }
 
     /// Resolve a producer address, or `None` when it dangles.
@@ -838,11 +995,53 @@ impl CommandArena
         node: CommandNode,
     ) -> Result<CommandId, MintRefusal>
     {
-        let CommandNode::Cut {
-            producer, consumer, ..
-        } = node;
-        self.producer_resolves(producer)?;
-        self.consumer_resolves(consumer)?;
+        match node {
+            | CommandNode::Cut {
+                producer, consumer, ..
+            } => {
+                self.producer_resolves(producer)?;
+                self.consumer_resolves(consumer)?;
+            },
+            | CommandNode::Perform {
+                ref signature,
+                payload,
+                continuation,
+                ..
+            } => {
+                self.signature_resolves(signature)?;
+                self.producer_resolves(payload)?;
+                self.consumer_resolves(continuation)?;
+            },
+            | CommandNode::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+                continuation,
+            } => {
+                self.signature_resolves(signature)?;
+                self.command_resolves(subject)?;
+                self.command_resolves(on_return)?;
+                for clause in clauses.iter() {
+                    self.command_resolves(clause.body)?;
+                }
+                self.consumer_resolves(continuation)?;
+            },
+            | CommandNode::Resume {
+                stack,
+                body,
+                continuation,
+            } => {
+                self.producer_resolves(stack)?;
+                self.command_resolves(body)?;
+                self.consumer_resolves(continuation)?;
+            },
+            | CommandNode::Reset { body, continuation }
+            | CommandNode::Shift { body, continuation } => {
+                self.command_resolves(body)?;
+                self.consumer_resolves(continuation)?;
+            },
+        }
         let id = CommandId::next_in(&self.commands)
             .ok_or(MintRefusal::FamilyFull(NodeFamily::Command))?;
         self.commands.push(node);
@@ -1004,6 +1203,7 @@ impl CommandArena
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
     #[spec(ensures: |ref ret| ret.is_ok() == match *node {
+        | ProducerNode::Reify(ref frames) => frames.iter().all(|frame| match *frame { gandr_core_term::control::StackFrame::Apply(value) => self.producer(value).is_some(), gandr_core_term::control::StackFrame::Bind(body) => self.command(body).is_some(), gandr_core_term::control::StackFrame::Project(_) => true }),
         | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|id| self.producer(*id).is_some()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => true,
         | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
@@ -1018,6 +1218,20 @@ impl CommandArena
     ) -> Result<(), MintRefusal>
     {
         match *node {
+            | ProducerNode::Reify(ref frames) => {
+                for frame in frames.iter() {
+                    match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            self.producer_resolves(value)?;
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            self.command_resolves(body)?;
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                    }
+                }
+                Ok(())
+            },
             | ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
@@ -1037,6 +1251,30 @@ impl CommandArena
                 Ok(())
             },
         }
+    }
+
+    /// Check the interface's annotation edges before accepting a command.
+    ///
+    /// # Specification
+    /// - ensures: success exactly when every payload and reply type resolves.
+    /// - fails: the first dangling annotation in canonical operation order.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — imported host interfaces retain distinct payload and
+    ///   reply types.
+    /// - witness: `machine::tests::hand_built_effect_cases_agree`
+    #[spec(ensures: |ret| ret.is_ok() == signature.types().all(|ty| self.annotations.value_type(ty).is_some()))]
+    fn signature_resolves(
+        &self,
+        signature: &gandr_core_term::effect::EffectSig,
+    ) -> Result<(), MintRefusal>
+    {
+        for ty in signature.types() {
+            if self.annotations.value_type(ty).is_none() {
+                return Err(MintRefusal::DanglingAnnotation(ty));
+            }
+        }
+        Ok(())
     }
 
     /// Refuse a consumer node naming a child the arena does not hold.
@@ -1066,6 +1304,7 @@ impl CommandArena
         | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
         | ConsumerNode::DataCase { ref branches, then } =>
             branches.iter().all(|id| self.producer(*id).is_some()) && self.consumer(then).is_some(),
+        | ConsumerNode::ListFold { element, result, on_nil, on_cons, continuation } => self.annotations.value_type(element).is_some() && self.annotations.value_type(result).is_some() && self.command(on_nil).is_some() && self.command(on_cons).is_some() && self.consumer(continuation).is_some(),
     })]
     fn consumer_children_resolve(
         &self,
@@ -1074,6 +1313,22 @@ impl CommandArena
     {
         match *node {
             | ConsumerNode::Covariable(_) | ConsumerNode::Top => Ok(()),
+            | ConsumerNode::ListFold {
+                element,
+                result,
+                on_nil,
+                on_cons,
+                continuation,
+            } => {
+                for annotation in [element, result] {
+                    if self.annotations.value_type(annotation).is_none() {
+                        return Err(MintRefusal::DanglingAnnotation(annotation));
+                    }
+                }
+                self.command_resolves(on_nil)?;
+                self.command_resolves(on_cons)?;
+                self.consumer_resolves(continuation)
+            },
             | ConsumerNode::MuTilde { body } => self.command_resolves(body),
             | ConsumerNode::Destructor {
                 ref producers,
@@ -1410,8 +1665,10 @@ mod tests
             producer: last,
             consumer: back,
         };
-        let before = arena.mint_command(first_cut).expect("live children");
-        let after = arena.mint_command(last_cut).expect("live children");
+        let before = arena
+            .mint_command(first_cut.clone())
+            .expect("live children");
+        let after = arena.mint_command(last_cut.clone()).expect("live children");
         assert_eq!(
             Some(&ProducerNode::Constant(0_usize.into())),
             arena.producer(first)

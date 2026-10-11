@@ -215,16 +215,18 @@ impl FreeSet
 #[inline]
 #[spec(ensures: |ref ret| match ret.as_ref() {
     | Err(error) => arena.command(command).is_some() || *error == CheckRefusal::DanglingCommand(command),
-    | Ok(free) => arena.command(command).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
-        match arena.producer(producer) {
+    | Ok(free) => arena.command(command).is_some_and(|node| {
+        let &CommandNode::Cut { producer, consumer, .. } = node else { return true; };
+        (match arena.producer(producer) {
             | Some(&ProducerNode::Variable { zone, index }) => free.producers.contains(&(zone, index)),
             | Some(_) => true,
             | None => false,
-        } && match arena.consumer(consumer) {
+        }) && match arena.consumer(consumer) {
             | Some(&ConsumerNode::Covariable(index)) => free.covariables.contains(&index),
             | Some(_) => true,
             | None => false,
-        }),
+        }
+    }),
 })]
 pub fn check_command(
     arena: &CommandArena,
@@ -341,10 +343,12 @@ impl Walk<'_>
     /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
     #[spec(
         captures: [work = self.stack.len()],
-        ensures: |ref ret| ret.is_err() || (work.checked_add(2) == Some(self.stack.len())
-            && self.arena.command(id).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
-                matches!(self.stack.get(work), Some(&Visit::Consumer(found, under)) if found == consumer && under == depth)
-                    && matches!(self.stack.last(), Some(&Visit::Producer(found, under)) if found == producer && under == depth))),
+        ensures: |ref ret| ret.is_err() || self.arena.command(id).is_some_and(|node| match *node {
+            CommandNode::Cut { producer, consumer, .. } => work.checked_add(2) == Some(self.stack.len())
+                && matches!(self.stack.get(work), Some(&Visit::Consumer(found, under)) if found == consumer && under == depth)
+                && matches!(self.stack.last(), Some(&Visit::Producer(found, under)) if found == producer && under == depth),
+            _ => self.stack.len() > work,
+        }),
     )]
     fn command(
         &mut self,
@@ -359,7 +363,10 @@ impl Walk<'_>
         } = self
             .arena
             .command(id)
-            .ok_or(CheckRefusal::DanglingCommand(id))?;
+            .ok_or(CheckRefusal::DanglingCommand(id))?
+        else {
+            return self.control_command(id, depth);
+        };
         let sent = self
             .arena
             .producer(producer)
@@ -382,6 +389,92 @@ impl Walk<'_>
         }
         self.stack.push(Visit::Consumer(consumer, depth));
         self.stack.push(Visit::Producer(producer, depth));
+        Ok(())
+    }
+
+    /// Schedule control children under their declared value and return binders.
+    ///
+    /// # Specification
+    /// - ensures: signatures erase no runtime binding; subjects, resumes and
+    ///   resets bind one return, shift binds a stack, and handler clauses bind
+    ///   payload then stack independently from the return clause's one value.
+    /// - fails: a missing or non-control command.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact free sets outside each local binder distinguish
+    ///   captured ambient variables and covariables from clause-local indices.
+    /// - witness: `check::tests::control_scopes_are_local_to_each_body`
+    #[spec(captures: work = self.stack.len(), ensures: |ret| ret.is_err() || self.stack.len() > work)]
+    fn control_command(
+        &mut self,
+        id: CommandId,
+        depth: Depth,
+    ) -> Result<(), CheckRefusal>
+    {
+        let node = self
+            .arena
+            .command(id)
+            .ok_or(CheckRefusal::DanglingCommand(id))?;
+        match *node {
+            | CommandNode::Cut { .. } => self.stack.push(Visit::Command(id, depth)),
+            | CommandNode::Perform {
+                payload,
+                continuation,
+                ..
+            } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                self.stack.push(Visit::Producer(payload, depth));
+            },
+            | CommandNode::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                continuation,
+                ..
+            } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                for clause in clauses.iter().rev() {
+                    self.stack.push(Visit::Command(
+                        clause.body,
+                        depth.under(ProducerArity::TWO, ConsumerArity::ONE),
+                    ));
+                }
+                self.stack.push(Visit::Command(
+                    on_return,
+                    depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                ));
+                self.stack.push(Visit::Command(
+                    subject,
+                    depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                ));
+            },
+            | CommandNode::Resume {
+                stack,
+                body,
+                continuation,
+            } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                self.stack.push(Visit::Command(
+                    body,
+                    depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                ));
+                self.stack.push(Visit::Producer(stack, depth));
+            },
+            | CommandNode::Reset { body, continuation } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                self.stack.push(Visit::Command(
+                    body,
+                    depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                ));
+            },
+            | CommandNode::Shift { body, continuation } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                self.stack.push(Visit::Command(
+                    body,
+                    depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                ));
+            },
+        }
         Ok(())
     }
 
@@ -433,6 +526,22 @@ impl Walk<'_>
             .producer(id)
             .ok_or(CheckRefusal::DanglingProducer(id))?;
         match *node {
+            | ProducerNode::Reify(ref frames) => {
+                for frame in frames.iter().rev() {
+                    match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            self.stack.push(Visit::Producer(value, depth));
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            self.stack.push(Visit::Command(
+                                body,
+                                depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                            ));
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                    }
+                }
+            },
             | ProducerNode::Primitive { arguments, .. } => {
                 for argument in arguments.iter().rev() {
                     self.stack.push(Visit::Producer(*argument, depth));
@@ -546,6 +655,22 @@ impl Walk<'_>
                 }
             },
             | ConsumerNode::Top => {},
+            | ConsumerNode::ListFold {
+                on_nil,
+                on_cons,
+                continuation,
+                ..
+            } => {
+                self.stack.push(Visit::Consumer(continuation, depth));
+                self.stack.push(Visit::Command(
+                    on_nil,
+                    depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                ));
+                self.stack.push(Visit::Command(
+                    on_cons,
+                    depth.under(ProducerArity::TWO, ConsumerArity::ONE),
+                ));
+            },
             | ConsumerNode::MuTilde { body } => {
                 self.stack.push(Visit::Command(
                     body,
@@ -695,13 +820,14 @@ impl Walk<'_>
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
+    | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
 })]
 fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 {
     match *node {
+        | ProducerNode::Reify(_)
         | ProducerNode::Primitive { .. }
         | ProducerNode::Literal(_)
         | ProducerNode::Constructor { .. }
@@ -726,14 +852,16 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 ///   observations and incorrectly fixed tails are distinguished.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
-    | ConsumerNode::Destructor { tag: DestructorTag::Apply, .. } => Some(Polarity::Negative),
+    | ConsumerNode::ListFold { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
+    | ConsumerNode::Destructor { tag: DestructorTag::Apply | DestructorTag::Project(_), .. } => Some(Polarity::Negative),
     | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
 })]
 fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
     match *node {
-        | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => Some(Polarity::Positive),
+        | ConsumerNode::ListFold { .. }
+        | ConsumerNode::Case { .. }
+        | ConsumerNode::DataCase { .. } => Some(Polarity::Positive),
         | ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
         | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
     }
@@ -801,6 +929,7 @@ mod tests
                 && arena.producer(producer).is_some_and(|node| matches!(*node,
                     ProducerNode::Constructor { tag: ConstructorTag::Unit, ref producers, ref consumers }
                     if producers.is_empty() && consumers.is_empty())),
+            | _ => false,
         }),
     )]
     fn cut_against_unit(
@@ -838,6 +967,7 @@ mod tests
             | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
                 && arena.producer(producer).is_some_and(|node| core::mem::discriminant(node) == kind)
                 && matches!(arena.consumer(consumer), Some(&ConsumerNode::Top)),
+            | _ => false,
         }),
     )]
     fn cut_against_top(
@@ -850,6 +980,123 @@ mod tests
         arena
             .mint_cut(Polarity::Positive, producer, consumer)
             .expect("children resolve")
+    }
+
+    #[test]
+    fn control_scopes_are_local_to_each_body()
+    {
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        let mut arena = CommandArena::new();
+        let producers: [ProducerId; 5] = core::array::from_fn(|index| {
+            arena
+                .mint_producer(ProducerNode::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: u32::try_from(index).expect("small index").into(),
+                })
+                .expect("variable")
+        });
+        let consumers: [ConsumerId; 4] = core::array::from_fn(|index| {
+            arena
+                .mint_consumer(ConsumerNode::Covariable(
+                    u32::try_from(index).expect("small index").into(),
+                ))
+                .expect("covariable")
+        });
+        let subject = arena
+            .mint_cut(Polarity::Positive, producers[0], consumers[1])
+            .expect("subject");
+        let on_return = arena
+            .mint_cut(Polarity::Positive, producers[2], consumers[1])
+            .expect("return branch");
+        let clause = arena
+            .mint_cut(Polarity::Positive, producers[4], consumers[2])
+            .expect("operation branch");
+        let ty = arena.annotations_mut().value_type_unit();
+        let signature = EffectSig::new("E".into(), [EffectOp {
+            name: "op".into(),
+            payload: ty,
+            reply: ty,
+        }])
+        .expect("one operation");
+        let handled = arena
+            .mint_command(CommandNode::Handle {
+                signature: signature.clone(),
+                subject,
+                on_return,
+                clauses: alloc::sync::Arc::from([EffectClause {
+                    operation: "op".into(),
+                    body: clause,
+                }]),
+                continuation: consumers[3],
+            })
+            .expect("handler");
+        let performed = arena
+            .mint_command(CommandNode::Perform {
+                signature,
+                operation: "op".into(),
+                payload: producers[0],
+                continuation: consumers[3],
+            })
+            .expect("request");
+        let terminal = top(&mut arena);
+        let reset = arena
+            .mint_command(CommandNode::Reset {
+                body: on_return,
+                continuation: terminal,
+            })
+            .expect("reset");
+        let shifted = arena
+            .mint_command(CommandNode::Shift {
+                body: on_return,
+                continuation: terminal,
+            })
+            .expect("shift");
+        let resumed = arena
+            .mint_command(CommandNode::Resume {
+                stack: producers[0],
+                body: on_return,
+                continuation: terminal,
+            })
+            .expect("resume");
+        let bind_body = arena
+            .mint_cut(Polarity::Positive, producers[2], consumers[2])
+            .expect("frame body");
+        let literal = cut_against_top(
+            &mut arena,
+            ProducerNode::Reify(alloc::sync::Arc::from([
+                StackFrame::Apply(producers[0]),
+                StackFrame::Bind(bind_body),
+                StackFrame::Project(Side::Left),
+                StackFrame::Apply(producers[3]),
+            ])),
+        );
+        for (root, values, covalues) in [
+            (handled, &[0, 1, 2][..], &[0, 1, 3][..]),
+            (performed, &[0][..], &[3][..]),
+            (reset, &[2][..], &[0][..]),
+            (shifted, &[1][..], &[0][..]),
+            (resumed, &[0, 2][..], &[0][..]),
+            (literal, &[0, 1, 3][..], &[1][..]),
+        ] {
+            assert_eq!(
+                Ok(FreeSet {
+                    producers: values
+                        .iter()
+                        .copied()
+                        .map(|index: u32| (Zone::Intuitionistic, index.into()))
+                        .collect(),
+                    covariables: covalues
+                        .iter()
+                        .copied()
+                        .map(CovariableIndex::from)
+                        .collect(),
+                }),
+                check_command(&arena, root)
+            );
+        }
     }
 
     /// `⟨() |+ ★⟩` is well formed and closed.

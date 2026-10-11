@@ -265,6 +265,20 @@ pub enum Elimination
         /// The right branch, closed over its environment.
         on_right: CompClosureId,
     },
+    /// A native List fold whose list was neutral.
+    ListFold
+    {
+        /// Ambient element annotation, interpreted in the nil closure
+        /// environment.
+        element: gandr_core_term::ValueTypeId,
+        /// Ambient result annotation, interpreted in the nil closure
+        /// environment.
+        result: gandr_core_term::ValueTypeId,
+        /// Empty branch with no binders.
+        on_nil: CompClosureId,
+        /// Cell branch with head then folded result bound.
+        on_cons: CompClosureId,
+    },
     /// `f a`: a static application whose operator was stuck, applied to a
     /// domain value argument.
     StaticApply(DomainValueId),
@@ -536,6 +550,22 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// The empty native list.
+    ListNil
+    {
+        /// The term face.
+        face: TermFace,
+    },
+    /// A native list cell.
+    ListCons
+    {
+        /// The head value.
+        first: DomainValueId,
+        /// The list tail.
+        second: DomainValueId,
+        /// The term face.
+        face: TermFace,
+    },
     /// A sum injection.
     Injection
     {
@@ -636,6 +666,7 @@ impl DomainValue
         | Self::Unit { face }
         | Self::Literal { face, .. }
         | Self::Pair { face, .. }
+        | Self::ListNil { face } | Self::ListCons { face, .. }
         | Self::Injection { face, .. }
         | Self::Thunk { face, .. }
         | Self::Lift { face, .. }
@@ -653,6 +684,8 @@ impl DomainValue
             | Self::Unit { face }
             | Self::Literal { face, .. }
             | Self::Pair { face, .. }
+            | Self::ListNil { face }
+            | Self::ListCons { face, .. }
             | Self::Injection { face, .. }
             | Self::Thunk { face, .. }
             | Self::Lift { face, .. }

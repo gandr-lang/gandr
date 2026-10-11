@@ -199,7 +199,9 @@ fn children(
                 panic!("no nominal or record eliminator in this fixture")
             },
             | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-            | Computation::Absurd(_) => panic!("no Empty eliminator in fixtures"),
+            | Computation::ListFold { .. } | Computation::Absurd(_) => {
+                panic!("eliminator outside fixture fragment")
+            },
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
     }
@@ -285,7 +287,9 @@ fn translate(
                         panic!("no nominal or record eliminator in this fixture")
                     },
                     | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-                    | Computation::Absurd(_) => panic!("unsupported computation"),
+                    | Computation::ListFold { .. } | Computation::Absurd(_) => {
+                        panic!("unsupported computation")
+                    },
                 };
                 computations.insert(id, computation);
             },

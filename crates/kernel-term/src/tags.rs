@@ -41,7 +41,7 @@
 //! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
 //! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
-//! | recursive block | `0x50–0x51` | List code and a reserved, unassigned value tag |
+//! | finite Lists | `0x50–0x51`, `0x5B–0x5C` | List type, nil, cons and pure fold |
 //! | session codes | `0x52–0x5A` | native session code, seven inline graph opcodes, native session Path evidence |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
@@ -355,8 +355,12 @@ pub const NODE_C_DATA_CASE: WireTag = WireTag(0x61);
 pub const NODE_C_RECORD_PROJECTION: WireTag = WireTag(0x62);
 /// Node tag: a guarded fixpoint, over one computation under its self binder.
 pub const NODE_C_FIXPOINT: WireTag = WireTag(0x63);
-/// Reserved tag for persisted recursive inhabitants; currently refused.
-pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
+/// Node tag: the empty native list.
+pub const NODE_V_LIST_NIL: WireTag = WireTag(0x51);
+/// Node tag: a native cell, over its head and list tail.
+pub const NODE_V_LIST_CONS: WireTag = WireTag(0x5B);
+/// Node tag: pure fold, over element, result, list, nil and cons branches.
+pub const NODE_C_LIST_FOLD: WireTag = WireTag(0x5C);
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
 ///
@@ -538,7 +542,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -590,8 +594,8 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
-            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+            && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
             && ret.token_contribution.0 == 1
@@ -638,7 +642,7 @@ const fn unbounded(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT | NODE_VT_EMPTY => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
+    requires: match tag { NODE_VT_UNIT | NODE_V_UNIT | NODE_VT_EMPTY | NODE_V_LIST_NIL => bound.0 >= 1, NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT => bound.0 >= 2, _ => false },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!(ret.child_arity, ChildArity::Fixed(0))
             && ret.token_contribution.0 == 1
@@ -690,7 +694,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 52] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -737,8 +741,11 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
     unbounded(NODE_V_PATH_PRODUCT, ChildArity::Fixed(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity::Fixed(2)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
+    bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
     unbounded(NODE_V_SESSION_PATH, ChildArity::Fixed(2)),
+    unbounded(NODE_V_LIST_CONS, ChildArity::Fixed(2)),
+    unbounded(NODE_C_LIST_FOLD, ChildArity::Fixed(5)),
     unbounded(NODE_VT_DATA, ChildArity::Counted(0)),
     unbounded(NODE_VT_RECORD, ChildArity::Counted(0)),
     unbounded(NODE_V_CONSTRUCTOR, ChildArity::Counted(1)),
@@ -812,6 +819,8 @@ mod tests
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
+                        Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
+                        Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
                         None => false,
                     },
                     AnyNode::Computation(id) => match ret.0.computation(id) {
@@ -826,6 +835,7 @@ mod tests
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
                         Some(&crate::Computation::Absurd(_)) => row.tag == super::NODE_C_ABSURD,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
+                        Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         None => false,
                     },
                     AnyNode::ValueType(id) => match ret.0.value_type(id) {
@@ -926,6 +936,9 @@ mod tests
         let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);
         let projection = arena.computation_record_projection(record, label);
         let fixpoint = arena.computation_fixpoint(lambda, crate::FixpointEvidence::Partial);
+        let nil = arena.value_list_nil();
+        let cons = arena.value_list_cons(unit, nil);
+        let fold = arena.computation_list_fold(unit_type, unit_type, cons, ret, ret);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -967,8 +980,11 @@ mod tests
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
+            AnyNode::Value(nil),
             AnyNode::ValueType(session),
             AnyNode::Value(session_path),
+            AnyNode::Value(cons),
+            AnyNode::Computation(fold),
             AnyNode::ValueType(datatype),
             AnyNode::ValueType(record_type),
             AnyNode::Value(constructor),
@@ -1081,12 +1097,11 @@ mod tests
         assert_eq!(super::SHARING_BLOCK_LAST, WireTag::from(0x27));
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .chain(0x28 ..= 0x2e)
-            .chain([0x50, 0x52, 0x5a])
+            .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x63)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
-        assert!(!actual.contains(&0x51));
         let empty = NODE_TAG_TABLE
             .iter()
             .find(|row| row.tag == super::NODE_VT_EMPTY)

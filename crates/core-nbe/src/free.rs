@@ -661,15 +661,23 @@ impl DoubleEndedIterator for ExtraChildren<'_>
 #[derive(Clone, Debug)]
 struct Children<'arena>
 {
-    /// Up to three children, the absent ones last.
-    listed: [Option<(Reached, Lowering)>; 3],
+    /// Up to five children, the absent ones last.
+    listed: [Option<(Reached, Lowering)>; 5],
+    /// Signature type edges beyond the fixed-arity syntax children.
+    effects: Option<&'arena gandr_core_term::effect::EffectRow>,
+    /// An inline operation or handler interface.
+    signature: Option<&'arena gandr_core_term::effect::EffectSig>,
+    /// Literal stack frames, each with its own local scope.
+    frames: &'arena [gandr_core_term::control::StackFrame],
+    /// Handler clauses beneath payload and resumption binders.
+    clauses: &'arena [gandr_core_term::control::EffectClause],
     /// Borrowed variable-arity children following the fixed prefix.
     extra: ExtraChildren<'arena>,
 }
 
 impl<'arena> Children<'arena>
 {
-    /// Visit fixed and variable children without allocating a child vector.
+    /// Visit all syntax and signature children without allocating an edge list.
     ///
     /// # Specification
     /// trivial.
@@ -680,6 +688,30 @@ impl<'arena> Children<'arena>
             .copied()
             .flatten()
             .chain(self.extra.clone())
+            .chain(self.effects.into_iter().flat_map(|row| {
+                row.types()
+                    .map(|ty| (Reached::ValueType(ty), Lowering::NONE))
+            }))
+            .chain(self.signature.into_iter().flat_map(|signature| {
+                signature
+                    .types()
+                    .map(|ty| (Reached::ValueType(ty), Lowering::NONE))
+            }))
+            .chain(self.frames.iter().filter_map(|frame| match *frame {
+                | gandr_core_term::control::StackFrame::Apply(value) => {
+                    Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE))
+                },
+                | gandr_core_term::control::StackFrame::Bind(body) => {
+                    Some((Reached::Term(CoreTerm::Computation(body)), Lowering::ONE))
+                },
+                | gandr_core_term::control::StackFrame::Project(_) => None,
+            }))
+            .chain(self.clauses.iter().map(|clause| {
+                (
+                    Reached::Term(CoreTerm::Computation(clause.body)),
+                    Lowering(2_u32),
+                )
+            }))
     }
 
     /// The children of `node`.
@@ -688,10 +720,10 @@ impl<'arena> Children<'arena>
     /// - requires: nothing.
     /// - ensures: each child the core former names, left to right: a lambda's
     ///   body, a static lambda's body, a bind's continuation, a case's branches
-    ///   and a dependent arrow's codomain under one binder, every other child
-    ///   under none, and a leaf none. A quote's child is its type and a
-    ///   decode's its code, so the indices a type reads through a code are the
-    ///   quote's own.
+    ///   and a dependent arrow's codomain under one binder, a List fold's cell
+    ///   branch under two, every other child under none, and a leaf none. A
+    ///   quote's child is its type and a decode's its code, so the indices a
+    ///   type reads through a code are the quote's own.
     /// - provides: the one reading of the core formers' arity and binding the
     ///   walk and the assembly share.
     /// - fails: [`FreeFault::Dangling`] when `node` does not resolve.
@@ -718,12 +750,12 @@ impl<'arena> Children<'arena>
     } && ret.as_ref().err().is_none_or(|fault| *fault == FreeFault::Dangling)) && (match ret {
 Ok(ref children) => children.listed.iter().skip_while(|item| item.is_some()).all(Option::is_none) && match node {
             Reached::Term(CoreTerm::Value(id)) => match core.value(id) {
-                Some(&Value::PathRefl(code)) => children.listed == [Some((Reached::Term(CoreTerm::Value(code)), Lowering::NONE)), None, None],
-                Some(&Value::PathProduct(a, b)) => children.listed == [Some((Reached::Term(CoreTerm::Value(a)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(b)), Lowering::NONE)), None],
-                Some(&Value::PathEquiv { path_type, forward, backward, .. }) => children.listed == [Some((Reached::ValueType(path_type), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(forward)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(backward)), Lowering::NONE))],
+                Some(&Value::PathRefl(code)) => children.listed == [Some((Reached::Term(CoreTerm::Value(code)), Lowering::NONE)), None, None, None, None],
+                Some(&Value::PathProduct(a, b)) => children.listed == [Some((Reached::Term(CoreTerm::Value(a)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(b)), Lowering::NONE)), None, None, None],
+                Some(&Value::PathEquiv { path_type, forward, backward, .. }) => children.listed == [Some((Reached::ValueType(path_type), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(forward)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(backward)), Lowering::NONE)), None, None],
                 _ => true,
             },
-            Reached::Term(CoreTerm::Computation(id)) => match core.computation(id) { Some(&Computation::Transport(path, value)) => children.listed == [Some((Reached::Term(CoreTerm::Value(path)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE)), None], _ => true },
+            Reached::Term(CoreTerm::Computation(id)) => match core.computation(id) { Some(&Computation::Transport(path, value)) => children.listed == [Some((Reached::Term(CoreTerm::Value(path)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE)), None, None, None], _ => true },
             _ => true,
         },
 Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
@@ -734,13 +766,24 @@ Err(_) => false,
         node: Reached,
     ) -> Result<Self, FreeFault>
     {
-        let one = |child: Reached, binders: Lowering| [Some((child, binders)), None, None];
+        let one =
+            |child: Reached, binders: Lowering| [Some((child, binders)), None, None, None, None];
         let two = |first: Reached, second: Reached, binders: Lowering| {
-            [Some((first, Lowering::NONE)), Some((second, binders)), None]
+            [
+                Some((first, Lowering::NONE)),
+                Some((second, binders)),
+                None,
+                None,
+                None,
+            ]
         };
         let value = |id: ValueId| Reached::Term(CoreTerm::Value(id));
         let computation = |id: ComputationId| Reached::Term(CoreTerm::Computation(id));
         let mut extra = ExtraChildren::Empty;
+        let mut effects = None;
+        let mut signature = None;
+        let mut frames = &[][..];
+        let mut clauses = &[][..];
         let listed = match node {
             | Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
@@ -755,14 +798,19 @@ Err(_) => false,
                     },
                     | Value::Record(ref fields) => {
                         extra = ExtraChildren::RecordValues(fields.values());
-                        [None, None, None]
+                        [None, None, None, None, None]
+                    },
+                    | Value::Reify(ref held) => {
+                        frames = held;
+                        [None, None, None, None, None]
                     },
                     | Value::Variable { .. }
                     | Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::Unit
+                    | Value::ListNil
                     | Value::Literal(_)
-                    | Value::Hole(_) => [None, None, None],
+                    | Value::Hole(_) => [None, None, None, None, None],
                     | Value::Mark { body, .. } => one(value(body), Lowering::NONE),
                     | Value::PathEquiv {
                         path_type,
@@ -773,10 +821,13 @@ Err(_) => false,
                         Some((Reached::ValueType(path_type), Lowering::NONE)),
                         Some((value(forward), Lowering::NONE)),
                         Some((value(backward), Lowering::NONE)),
+                        None,
+                        None,
                     ],
                     | Value::PathRefl(code) => one(value(code), Lowering::NONE),
                     | Value::PathProduct(first, second)
                     | Value::Pair(first, second)
+                    | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
                     },
@@ -794,6 +845,49 @@ Err(_) => false,
             | Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | Computation::Perform {
+                        signature: ref held,
+                        payload,
+                        ..
+                    } => {
+                        signature = Some(held);
+                        one(value(payload), Lowering::NONE)
+                    },
+                    | Computation::Handle {
+                        signature: ref held,
+                        subject,
+                        on_return,
+                        clauses: ref operations,
+                    } => {
+                        signature = Some(held);
+                        clauses = operations;
+                        two(computation(subject), computation(on_return), Lowering::ONE)
+                    },
+                    | Computation::Resume(stack, body) => {
+                        two(value(stack), computation(body), Lowering::NONE)
+                    },
+                    | Computation::With(first, second) => {
+                        two(computation(first), computation(second), Lowering::NONE)
+                    },
+                    | Computation::Reset(body) | Computation::Project(_, body) => {
+                        one(computation(body), Lowering::NONE)
+                    },
+                    | Computation::Shift(body) | Computation::Lambda(body) => {
+                        one(computation(body), Lowering::ONE)
+                    },
+                    | Computation::ListFold {
+                        element,
+                        result,
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => [
+                        Some((Reached::ValueType(element), Lowering::NONE)),
+                        Some((Reached::ValueType(result), Lowering::NONE)),
+                        Some((value(list), Lowering::NONE)),
+                        Some((computation(on_nil), Lowering::NONE)),
+                        Some((computation(on_cons), Lowering(2_u32))),
+                    ],
                     | Computation::Primitive { arguments, .. } => match arguments {
                         | gandr_core_term::primitive::Arguments::Unary(argument) => {
                             one(value(argument), Lowering::NONE)
@@ -816,9 +910,7 @@ Err(_) => false,
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },
-                    | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
-                        one(computation(body), Lowering::ONE)
-                    },
+                    | Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
                     | Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
                     },
@@ -836,8 +928,10 @@ Err(_) => false,
                         Some((value(scrutinee), Lowering::NONE)),
                         Some((computation(on_left), Lowering::ONE)),
                         Some((computation(on_right), Lowering::ONE)),
+                        None,
+                        None,
                     ],
-                    | Computation::Hole(_) => [None, None, None],
+                    | Computation::Hole(_) => [None, None, None, None, None],
                     | Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
                 }
             },
@@ -846,12 +940,18 @@ Err(_) => false,
                 match *held {
                     | ValueType::Data { ref arguments, .. } => {
                         extra = ExtraChildren::Values(arguments.iter());
-                        [None, None, None]
+                        [None, None, None, None, None]
                     },
                     | ValueType::Record(ref fields) => {
                         extra = ExtraChildren::RecordTypes(fields.values());
-                        [None, None, None]
+                        [None, None, None, None, None]
                     },
+                    | ValueType::Stack { input, output } => two(
+                        Reached::CompType(input),
+                        Reached::CompType(output),
+                        Lowering::NONE,
+                    ),
+                    | ValueType::List(element) => one(Reached::ValueType(element), Lowering::NONE),
                     | ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },
@@ -859,7 +959,7 @@ Err(_) => false,
                     | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::Unknown => [None, None, None],
+                    | ValueType::Unknown => [None, None, None, None, None],
                     | ValueType::Product(first, second)
                     | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
@@ -880,7 +980,18 @@ Err(_) => false,
             | Reached::CompType(id) => {
                 let held = core.comp_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | CompType::Returner(result) => one(Reached::ValueType(result), Lowering::NONE),
+                    | CompType::With(first, second) => two(
+                        Reached::CompType(first),
+                        Reached::CompType(second),
+                        Lowering::NONE,
+                    ),
+                    | CompType::Returner {
+                        result,
+                        effects: ref row,
+                    } => {
+                        effects = Some(row);
+                        one(Reached::ValueType(result), Lowering::NONE)
+                    },
                     | CompType::Arrow { domain, codomain } => two(
                         Reached::ValueType(domain),
                         Reached::CompType(codomain),
@@ -892,11 +1003,18 @@ Err(_) => false,
                         Lowering::ONE,
                     ),
                     | CompType::Element { code, .. } => one(value(code), Lowering::NONE),
-                    | CompType::Unknown => [None, None, None],
+                    | CompType::Unknown => [None, None, None, None, None],
                 }
             },
         };
-        Ok(Self { listed, extra })
+        Ok(Self {
+            listed,
+            effects,
+            signature,
+            frames,
+            clauses,
+            extra,
+        })
     }
 }
 
@@ -1058,5 +1176,73 @@ mod tests
             missing.of(&empty, CoreTerm::Value(child))
         );
         assert_eq!(Err(FreeFault::Dangling), missing.assemble(&empty, reached));
+    }
+
+    #[test]
+    fn control_scopes_keep_only_ambient_indices()
+    {
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut core = CoreArena::new();
+        let zero = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let one = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let two = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let three = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let four = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(4_u32));
+        let unit = core.value_type_unit();
+        let decoded = core.value_type_element(four, Level::zero());
+        let operation = OperationName::from("get");
+        let signature = EffectSig::new(EffectName::from("State"), [EffectOp {
+            name: operation.clone(),
+            payload: unit,
+            reply: decoded,
+        }])
+        .unwrap();
+        let performed = core.computation_perform(signature.clone(), operation.clone(), two);
+        let on_return = core.computation_return(one);
+        let pair = core.value_pair(one, three);
+        let clause = core.computation_return(pair);
+        let handled = core.computation_handle(
+            signature,
+            performed,
+            on_return,
+            alloc::sync::Arc::from([EffectClause {
+                operation,
+                body: clause,
+            }]),
+        );
+        let pair = core.value_pair(zero, four);
+        let body = core.computation_return(pair);
+        let stack = core.value_reify(alloc::sync::Arc::from([
+            StackFrame::Apply(two),
+            StackFrame::Bind(body),
+            StackFrame::Project(gandr_kernel_term::Side::Left),
+        ]));
+        let body = core.computation_return(four);
+        let resumed = core.computation_resume(zero, body);
+        let shifted = core.computation_shift(resumed);
+        let reset = core.computation_reset(shifted);
+        let mut analysis = FreeIndices::default();
+        for (term, expected) in [
+            (CoreTerm::Computation(handled), &[0_u32, 1, 2, 4][..]),
+            (CoreTerm::Value(stack), &[2_u32, 3][..]),
+            (CoreTerm::Computation(reset), &[3_u32][..]),
+        ] {
+            let free = analysis.of(&core, term).unwrap();
+            assert_eq!(
+                free.intuitionistic
+                    .counts()
+                    .iter()
+                    .copied()
+                    .map(u32::from)
+                    .collect::<alloc::vec::Vec<_>>(),
+                expected
+            );
+            assert!(free.linear.counts().is_empty());
+        }
     }
 }

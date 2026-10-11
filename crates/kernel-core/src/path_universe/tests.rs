@@ -122,7 +122,7 @@ fn children(
                 .chain(fields.iter().copied().map(V))
                 .collect(),
             | Value::Record(ref fields) => fields.values().copied().map(V).collect(),
-            | Value::SessionPath { .. } => {
+            | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
             | Value::PathEquiv {
@@ -154,7 +154,7 @@ fn children(
                 .chain(branches.iter().copied().map(M))
                 .collect(),
             | Computation::RecordProjection(record, _) => vec![V(record)],
-            | Computation::Absurd(_) => {
+            | Computation::ListFold { .. } | Computation::Absurd(_) => {
                 panic!("empty elimination is outside the path fixture fragment")
             },
             | Computation::Fixpoint { .. } => {
@@ -427,7 +427,7 @@ fn translate(
                             .map(|(label, field)| (label.clone(), values[field]))
                             .collect(),
                     ),
-                    | Value::SessionPath { .. } => {
+                    | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
                     | Value::PathRefl(code) => core.value_path_refl(values[&code]),
@@ -481,7 +481,7 @@ fn translate(
                     | Computation::RecordProjection(record, ref label) => {
                         core.computation_record_projection(values[&record], label.clone())
                     },
-                    | Computation::Absurd(_) => {
+                    | Computation::ListFold { .. } | Computation::Absurd(_) => {
                         panic!("empty elimination is outside the path fixture fragment")
                     },
                     | Computation::Fixpoint { .. } => {

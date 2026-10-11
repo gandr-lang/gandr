@@ -595,7 +595,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::ValueType(subject)).value_type_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
 }
 
 /// The shifted form of a value node; see [`shift_value_type`].
@@ -634,7 +642,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::Value(subject)).value_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
 }
 
 /// The shifted form of a computation node; see [`shift_value_type`].
@@ -672,7 +688,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::Computation(subject)).computation_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
 }
 
 /// The shifted form of a computation-type node; see [`shift_value_type`].
@@ -714,7 +738,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::CompType(subject)).comp_type_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
 }
 
 /// The computation type `subject` with its innermost binder instantiated at
@@ -761,7 +793,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::CompType(subject)).comp_type_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::CompType(subject),
+        BinderDepth::NONE,
+    )
+    .comp_type_or(subject)
 }
 
 /// The value type `subject` with its innermost binder instantiated at
@@ -794,7 +834,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::ValueType(subject)).value_type_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::ValueType(subject),
+        BinderDepth::NONE,
+    )
+    .value_type_or(subject)
 }
 
 /// The value `subject` with its innermost binder instantiated at `replacement`;
@@ -829,7 +877,15 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::Value(subject)).value_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Value(subject),
+        BinderDepth::NONE,
+    )
+    .value_or(subject)
 }
 
 /// The computation `subject` with its innermost binder instantiated at
@@ -866,7 +922,53 @@ where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
-    run_rewrite(arena, table, memo, rewrite, AnyNode::Computation(subject)).computation_or(subject)
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        rewrite,
+        AnyNode::Computation(subject),
+        BinderDepth::NONE,
+    )
+    .computation_or(subject)
+}
+
+/// Instantiate the head binder of a fold's cell branch, preserving its result
+/// binder.
+///
+/// # Specification
+/// - requires: the branch is scoped under head then folded result; the
+///   replacement is scoped in the ambient context, and memo entries belong to
+///   this arena.
+/// - ensures: result index zero stays bound, head index one becomes the shifted
+///   replacement, and outer indices decrease by one without variable capture.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — open-head fold reduction distinguishes capture from
+///   substitution.
+/// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
+pub(crate) fn substitute_fold_head<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ComputationId,
+    replacement: ValueId,
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    run_rewrite(
+        arena,
+        table,
+        memo,
+        Rewrite::Substitute { replacement },
+        AnyNode::Computation(subject),
+        BinderDepth::from(1_u32),
+    )
+    .computation_or(subject)
 }
 
 /// Drive one rewrite to completion over an explicit task stack and an explicit
@@ -929,6 +1031,7 @@ fn run_rewrite<M>(
     memo: &mut M,
     rewrite: Rewrite,
     root: AnyNode,
+    initial_depth: BinderDepth,
 ) -> RewriteOutcome
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
@@ -947,7 +1050,7 @@ where
     }
     let mut tasks: Vec<RewriteTask> = Vec::new();
     let mut results: Vec<RewriteOutcome> = Vec::new();
-    tasks.push(RewriteTask::Open(root, BinderDepth::NONE, rewrite));
+    tasks.push(RewriteTask::Open(root, initial_depth, rewrite));
     while let Some(task) = tasks.pop() {
         match task {
             | RewriteTask::Open(node, depth, step) => {
@@ -1108,6 +1211,8 @@ fn carried_occurrence(
         | Value::Unit
         | Value::Literal(_)
         | Value::Pair(..)
+        | Value::ListNil
+        | Value::ListCons(..)
         | Value::Injection(..)
         | Value::Thunk(_)
         | Value::Lift { .. }
@@ -1170,13 +1275,13 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::SessionPath { .. } | Value::PathProduct(..) | Value::Pair(..) | Value::StaticApplication(..) => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::Pair(..) | Value::StaticApplication(..) => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
     AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::PathUniverse(..) | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
-            if step == rewrite && (child_depth == depth || child_depth == depth.deeper())))))]
+            if step == rewrite && (child_depth == depth || child_depth == depth.deeper() || child_depth == depth.deeper().deeper())))))]
 fn push_rewrite_children(
     arena: &TermArena,
     node: AnyNode,
@@ -1211,7 +1316,11 @@ fn push_rewrite_children(
                     .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
             ),
             | Some(
-                &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
+                &Value::ListNil
+                | &Value::Variable(_)
+                | &Value::Constant(_)
+                | &Value::Unit
+                | &Value::Literal(_),
             )
             | None => {},
             | Some(&Value::PathEquiv {
@@ -1250,6 +1359,7 @@ fn push_rewrite_children(
             | Some(
                 &Value::PathProduct(first, second)
                 | &Value::Pair(first, second)
+                | &Value::ListCons(first, second)
                 | &Value::StaticApplication(first, second),
             ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
@@ -1301,6 +1411,35 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::Value(record), depth, rewrite));
             },
             | None => {},
+            | Some(&Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_cons),
+                    depth.deeper().deeper(),
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Computation(on_nil),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(AnyNode::Value(list), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(result),
+                    depth,
+                    rewrite,
+                ));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(element),
+                    depth,
+                    rewrite,
+                ));
+            },
             | Some(&Computation::Transport(path, value)) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
@@ -1569,7 +1708,7 @@ fn popped(
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::PathEquiv { .. } => 3,
-Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
+Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1,
 _ => 0,
 })],
@@ -1697,7 +1836,7 @@ fn close_value(
             }
         },
         | Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
-        | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
+        | Value::ListNil | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
         | Value::Pair(first, second) => {
             // Results are popped in reverse wire order: children were scheduled
             // so that they close left to right, so the last one to close is the
@@ -1709,6 +1848,16 @@ fn close_value(
             }
             else {
                 arena.value_pair(rewritten_first, rewritten_second)
+            }
+        },
+        | Value::ListCons(head, tail) => {
+            let new_tail = popped(results, AnyNode::Value(tail)).value_or(tail);
+            let new_head = popped(results, AnyNode::Value(head)).value_or(head);
+            if new_head == head && new_tail == tail {
+                id
+            }
+            else {
+                arena.value_list_cons(new_head, new_tail)
             }
         },
         | Value::StaticApplication(head, argument) => {
@@ -1890,6 +2039,7 @@ fn rewrite_variable(
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 #[spec(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
+Computation::ListFold { .. } => 5,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Case { .. } => 3,
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
@@ -1945,6 +2095,30 @@ fn close_computation(
             }
             else {
                 arena.computation_record_projection(value, label.clone())
+            }
+        },
+        | Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            let new_cons = popped(results, AnyNode::Computation(on_cons)).computation_or(on_cons);
+            let new_nil = popped(results, AnyNode::Computation(on_nil)).computation_or(on_nil);
+            let new_list = popped(results, AnyNode::Value(list)).value_or(list);
+            let new_result = popped(results, AnyNode::ValueType(result)).value_type_or(result);
+            let new_element = popped(results, AnyNode::ValueType(element)).value_type_or(element);
+            if new_cons == on_cons
+                && new_nil == on_nil
+                && new_list == list
+                && new_result == result
+                && new_element == element
+            {
+                id
+            }
+            else {
+                arena.computation_list_fold(new_element, new_result, new_list, new_nil, new_cons)
             }
         },
         | Computation::Transport(path, value) => {
@@ -3116,7 +3290,14 @@ mod tests
                 super::Rewrite::Substitute { replacement },
             ] {
                 assert_eq!(
-                    super::run_rewrite(&mut arena, &mut table, &mut memo, rewrite, root),
+                    super::run_rewrite(
+                        &mut arena,
+                        &mut table,
+                        &mut memo,
+                        rewrite,
+                        root,
+                        super::BinderDepth::NONE
+                    ),
                     super::outcome_of(root)
                 );
                 assert_eq!(arena.watermark(), floor);

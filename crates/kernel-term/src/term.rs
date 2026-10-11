@@ -232,6 +232,10 @@ pub enum Value
     Pair(ValueId, ValueId),
     /// A sum injection, introducing `A + B` on the given side.
     Injection(Side, ValueId),
+    /// The empty native list; its element type comes from checking.
+    ListNil,
+    /// A native list cell, with its head and list tail.
+    ListCons(ValueId, ValueId),
     /// A thunk, suspending a computation into the value type `U C`.
     Thunk(ComputationId),
     /// An explicit universe lift: given `body : A` with `A`'s level strictly
@@ -323,6 +327,21 @@ pub enum Computation
         on_left: ComputationId,
         /// The right branch, checked with the right summand bound.
         on_right: ComputationId,
+    },
+    /// Pure right fold of a native list. The cons branch binds the head,
+    /// then the folded tail result (index zero).
+    ListFold
+    {
+        /// List element type.
+        element: ValueTypeId,
+        /// Fold result type.
+        result: ValueTypeId,
+        /// Native list to eliminate.
+        list: ValueId,
+        /// Empty-list branch, in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch, under the head and recursive result.
+        on_cons: ComputationId,
     },
     /// Transport a value along a universe path.
     Transport(ValueId, ValueId),
