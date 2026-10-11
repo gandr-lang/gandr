@@ -1,3 +1,4 @@
+@[ checks ]
 data NatAdd : Type {
   Zero : NatAdd;
   Succ : (n : NatAdd) --> NatAdd;

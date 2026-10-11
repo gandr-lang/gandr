@@ -13,6 +13,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [Repairs are refused where they stand](#repairs-are-refused-where-they-stand)
 - [Names resolve through tables with no fallthrough](#names-resolve-through-tables-with-no-fallthrough)
 - [A module is collected by name and resolved by position](#a-module-is-collected-by-name-and-resolved-by-position)
+- [Descriptions and native data](#descriptions-and-native-data)
 - [A module declaration flattens to named members](#a-module-declaration-flattens-to-named-members)
 - [The namespace engine](#the-namespace-engine)
 - [Native prelude recognition](#native-prelude-recognition)
@@ -40,7 +41,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the content identity of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by declaration content identity, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports are kept and their aliases bound by the `namespace` engine, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the content identity of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, a shared native `DataSignature`, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by declaration content identity, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports are kept and their aliases bound by the `namespace` engine, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
@@ -141,6 +142,10 @@ Binder predicates check backward parent links, fresh frame positions, exact succ
 ## A module is collected by name and resolved by position
 
 A signature pairs with its definition wherever the two sit in the module, so the signature-then-definition form stays spellable; a second signature or definition for one name is refused naming the first, except that a written signature beside a function tail, which derives one of its own, keeps the written one and checks the derived one as a [witness](#a-module-declaration-flattens-to-named-members). References resolve by admission position — the position of the declaration that introduced the name — so a declaration's own body and every later declaration are out of its scope, and self-reference and mutual reference are refused as unresolved names. A module whose own shape is wrong — a root that is not a module, a root child that is neither a declaration, a module declaration nor an import, a declaration with no name, an import out of shape, two imports of one alias, an attribute block decorating nothing — refuses the whole run, because nothing can be filed without the name.
+
+## Descriptions and native data
+
+`data`, `codata` and `sign` declarations are also read into checked descriptions, and their operation and rule members into cells. A `data` form keeps one producer of its signature, the [native reading](#native-data-and-the-match); the description route owns its members and decodes every other described family. Its own page, [docs/descriptions.md](docs/descriptions.md), states [the declarations it reads](docs/descriptions.md#declarations-read-into-descriptions), [the one-producer choice](docs/descriptions.md#one-producer-for-a-data-form) with its alternatives and reversal, [signature blocks](docs/descriptions.md#signature-blocks), and [cells and circuit wiring](docs/descriptions.md#cells-and-circuit-wiring).
 
 ## A module declaration flattens to named members
 

@@ -6,9 +6,11 @@
 //! generator's result is checked here and dropped: the family applied to its
 //! own parameters, in order, is the only result a nominal family without
 //! indices has, so a result that applies it to anything else is an indexed
-//! family and is declined by name. The other members a data block parses —
-//! the declined constructor-block spelling, `op` and `rule` — are declined by
-//! their own names.
+//! family and is declined by name. The declined constructor-block spelling is
+//! declined by its own name. The operation and rule members a data block
+//! parses — `oper`, `rule` and the retired `op` — are passed over: the
+//! description route reads them into cells and holds each member's refusal at
+//! its own span, so the family's generators stay native.
 
 use alloc::vec::Vec;
 
@@ -320,7 +322,7 @@ impl<'source> Collector<'_, 'source>
         captures: before = attributes.len(),
         ensures: |ret| ret.is_err() || attributes.iter().skip(before).all(|entry| entry.decorates == declaration),
     )]
-    fn decoration(
+    pub(super) fn decoration(
         &self,
         block: Placed,
         declaration: NodeIndex,
@@ -417,9 +419,8 @@ impl<'source> Collector<'_, 'source>
     ///   `declaration`.
     /// - ensures: the parameters in order, the universe when one is written,
     ///   and every generator, the cursor exhausted.
-    /// - fails: a tile out of place or an operand missing or extra; a member
-    ///   the fragment does not read, by its own name; a generator whose result
-    ///   is not the family over its parameters.
+    /// - fails: a tile out of place or an operand missing or extra; a generator
+    ///   whose result is not the family over its parameters.
     /// - panics: none.
     ///
     /// # Errors
@@ -428,10 +429,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses below read each member shape the
-    ///   pending corpus writes, and decline the others by name.
+    ///   pending corpus writes, pass over the description route's members and
+    ///   decline an indexed generator.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
-    /// - witness: `lower::native::tests::members_outside_the_fragment_are_declined_by_name`
+    /// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |form| form.declaration == declaration && form.slot == slot))]
     fn data_form(
         &self,
@@ -484,13 +486,13 @@ impl<'source> Collector<'_, 'source>
                 | Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
                     generators.push(self.generator(at, cursor, &parameters)?);
                 },
-                | Maybe::Present(Piece::Tile { label, at })
-                    if label == TileName::OP || label == TileName::OPER =>
+                | Maybe::Present(Piece::Tile { label, .. })
+                    if label == TileName::OP
+                        || label == TileName::OPER
+                        || label == TileName::RULE =>
                 {
-                    return Err(declined(at, FormName::OP_MEMBER));
-                },
-                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::RULE => {
-                    return Err(declined(at, FormName::RULE_MEMBER));
+                    pass_over_member(cursor);
+                    continue;
                 },
                 | Maybe::Present(Piece::Tile { at, .. }) => {
                     return Err(misplaced_in(FormName::DATA, at.span));
@@ -538,7 +540,6 @@ impl<'source> Collector<'_, 'source>
     ///   result each refuse.
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_generator_is_declined`
-    /// - witness: `lower::native::tests::members_outside_the_fragment_are_declined_by_name`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |generator| generator.named == named))]
     fn generator(
         &self,
@@ -661,6 +662,38 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+}
+
+/// Pass over the rest of a member the description route reads: every piece up
+/// to and including its `;`, stopping before the block's `}`.
+///
+/// # Specification
+/// - requires: `cursor` stands just past the member's leading tile.
+/// - ensures: the cursor stands past the member's `;`, or at the block's `}` or
+///   its end when the member has no `;`.
+/// - panics: none.
+/// - executable: none — the cursor exposes no position to compare before and
+///   after.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family with an operation and a rule member between its
+///   generators keeps both generators.
+/// - witness: `lower::native::tests::operation_and_rule_members_are_left_to_the_description_route`
+fn pass_over_member(cursor: &mut Cursor<'_>)
+{
+    loop {
+        match cursor.peek() {
+            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => return,
+            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::SEMICOLON => {
+                let _end = cursor.tile(label);
+                return;
+            },
+            | Maybe::Present(_) => {
+                let _skipped = cursor.read();
+            },
+            | Maybe::Absent(_) => return,
+        }
     }
 }
 

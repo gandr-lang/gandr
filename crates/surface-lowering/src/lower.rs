@@ -188,6 +188,7 @@ use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
 
+mod description;
 mod native;
 
 quenchant_shape::reason_enum! {
@@ -1675,6 +1676,9 @@ struct Lowerer<'run, 'source>
     /// The position each lowered data declaration's signature takes, by its
     /// position in the collection's data list.
     signatures: BTreeMap<usize, DataIndex>,
+    /// The position each described family's decoded signature takes, by its
+    /// slot: a family the native data reading does not own.
+    described: BTreeMap<SlotIndex, DataIndex>,
     /// The data declarations' signatures, by [`DataIndex`].
     data: Vec<Arc<DataSignature>>,
     /// Each recursive function's own name, by the frame that binds it.
@@ -1934,6 +1938,7 @@ pub fn lower_module<'source>(
     };
     lowerer.mint(&mut sink)?;
     lowerer.mint_data(&mut sink);
+    lowerer.mint_descriptions(&mut sink)?;
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let declarations = lowerer.assemble(&mut origins);
@@ -1953,6 +1958,13 @@ pub fn lower_module<'source>(
         origins,
         collected.imports,
         recognition,
+    )
+    .with_descriptions(
+        crate::description::DescriptionReport {
+            declarations: collected.descriptions.into_values().collect(),
+            diagnostics: collected.description_diagnostics,
+        },
+        collected.cells,
     ))
 }
 
@@ -2064,6 +2076,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             answers: BTreeMap::new(),
             cases: Vec::new(),
             signatures: BTreeMap::new(),
+            described: BTreeMap::new(),
             data: Vec::new(),
             recursions: BTreeMap::new(),
             descents: BTreeMap::new(),
@@ -2412,6 +2425,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.seed_data(&mut seeds);
+        self.seed_descriptions(&mut seeds)?;
         for (position, reading) in seeds {
             self.read(position, reading);
         }
@@ -7830,9 +7844,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
-    /// - ensures: a stored refusal takes precedence; a data declaration is the
-    ///   index of its minted signature; otherwise the available signature and
-    ///   body select Completed, Uncompleted or Bodied.
+    /// - ensures: a stored refusal takes precedence; a data declaration, or a
+    ///   described family the decoder admitted, is the index of its minted
+    ///   signature; otherwise the available signature and body select
+    ///   Completed, Uncompleted or Bodied.
     /// - provides: the declaration outcome without manufacturing absent halves.
     /// - fails: a refused member witness is Unminted; if neither half exists,
     ///   the signature’s absence is preserved.
@@ -7856,6 +7871,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             else if let Maybe::Present(Half { operand: Operand::Data(form), .. }) = slot.definition {
                 ret == self.signatures.get(&form).map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| Maybe::Present(DeclarationOutcome::Data(index)))
+            }
+            else if let Some(&index) = self.described.get(&position) {
+                ret == Maybe::Present(DeclarationOutcome::Data(index))
             }
             else if matches!(slot.definition, Maybe::Present(Half { operand: Operand::Member(target), .. }) if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_))))
             {
@@ -7925,6 +7943,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .map_or(Maybe::Absent(lowered::Absent::Unminted), |&index| {
                     Maybe::Present(DeclarationOutcome::Data(index))
                 });
+        }
+        if let Some(&index) = self.described.get(&position) {
+            return Maybe::Present(DeclarationOutcome::Data(index));
         }
         if let Maybe::Present(Half {
             operand: Operand::Member(target),

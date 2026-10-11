@@ -1,8 +1,10 @@
+@[ refuses("OutOfFragment") ]
 codata Point : Type {
   x : Integer;
   depth : Integer;
 }
 
+@[ refuses("OutOfFragment") ]
 def rec incomplete() -> Point {
   .x => 0
 }

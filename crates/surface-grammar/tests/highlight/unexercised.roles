@@ -371,8 +371,6 @@
 565 Other rec_block ) L[<type>] R[<expression>]
 566 Other rec_block ; L[<expression>] R[<expression> }]
 567 Other rec_block ; L[<expression>] R[<expression> }]
-572 Other attribute_block ( L[identifier] R[<expression>]
-573 Other attribute_block ) L[<expression>] R[, ]]
 574 Other attribute_block , L[) identifier] R[identifier]
 575 Other attribute_block identifier L[,] R[( ]]
 576 Other attribute_block ( L[identifier] R[<expression>]

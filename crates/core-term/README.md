@@ -14,6 +14,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Native prelude](#native-prelude)
 - [Native runtime assumptions](#native-runtime-assumptions)
 - [Nominal data and structural records](#nominal-data-and-structural-records)
+- [Description decoding](#description-decoding)
 - [Native universe paths](#native-universe-paths)
 - [Universe families](#universe-families)
 - [Quotes and decode-on-mint](#quotes-and-decode-on-mint)
@@ -183,6 +184,16 @@ Record types and values use ordered field maps. Labels identify fields, not offs
 **Choice.** Dedicated native forms rather than abstract atoms or a structural sum/product encoding. Typed code parameters and value indices share term-valued slots; the checker keeps every slot invariant. **Reversal.** Certified definitional index conversion requires its own evidence reader. The current checker/kernel boundary and the named [parity floor](../core-checker/README.md#data-and-record-floor) are recorded together.
 
 A field may name its own declaration's family: the syntax is an ordinary `ValueType::Data` at the declaration's own position, and whether that occurrence is admissible is the checker's question, not the arena's. `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands under one intuitionistic binder, the self thunk, so binder rewrites, shifts and substitutions treat it as they treat a lambda. `FixpointEvidence` is the kernel's own, `Partial` or `StructuralDescent`; the arena records the claim and grants nothing, and syntax equality distinguishes the two claims.
+
+## Description decoding
+
+`description::decode` interprets first-order description codes in a `DecodeContext`. Unit, products, coproducts, parameters and a selected recursive sort have core readings. `decode_desc` selects a positive, inhabited, single-sorted description; negative descriptions, empty coproducts, foreign recursive sorts and unsupported leaves return typed `DecodeError` values instead of substitute types. Grades and descriptive attributes do not change the decoded type.
+
+`decode_signature` instead retains a family as a native `DataSignature`: constructor order fixes tags, parameter classifiers retain their telescope and field products become ordered field lists. An empty constructor list remains an empty native family. `TypeBinding::Nominal` retains the declaration identity. Type-valued arguments are quoted; `TypeBinding::Value` and `TypeBinding::Parameter` arguments retain their values, so a value index in a type slot is not changed into a quoted type. Local bindings shadow the ambient type table without copying it.
+
+**Choice.** Keep structural description interpretation and native nominal family formation distinct; a coproduct encoding must not erase a declared family's identity or turn its value indices into types. **Reversal.** Widen the decoding boundary only when the corresponding core former supplies its formation and checking rules. Recursive constructors remain outside native signature checking: strict positivity and recursive constructors are the former's next generation (`recursive-data`).
+
+Witnesses: `description::tests`, including `native_indices_remain_values_under_telescope_scope`; the source-to-checker boundary is exercised by `gandr-surface-lowering`'s `description::tests::native_data_keeps_telescope_and_nominal_heads`.
 
 ## Native universe paths
 

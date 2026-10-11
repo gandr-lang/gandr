@@ -523,6 +523,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "gandr-theory-levitation",
  "num-bigint",
  "quenchant-anodized",
  "quenchant-arith",
@@ -739,6 +740,11 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "gandr-theory-cell-complexes",
+ "gandr-theory-circuit-algebras",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-computads",
+ "gandr-theory-levitation",
  "quenchant-anodized",
  "quenchant-shape",
 ]

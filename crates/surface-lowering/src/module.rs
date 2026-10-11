@@ -878,6 +878,13 @@ pub struct SlotRefused(pub bool);
 #[derive(Clone, Debug)]
 pub struct Collected<'source>
 {
+    /// Descriptions keyed by their written declaration, sharing the normal
+    /// slots.
+    pub descriptions: BTreeMap<NodeIndex, crate::description::DescribedDeclaration>,
+    /// Member-local diagnostics retained independently of native admission.
+    pub description_diagnostics: Vec<crate::description::DescriptionDiagnostic>,
+    /// Cell stores and their independently retained member refusals.
+    pub cells: crate::desc_cells::CellReport,
     /// The slots, in admission order.
     pub slots: Vec<DeclarationSlot<'source>>,
     /// Each arena position's owning slot, where it has one.
@@ -1364,6 +1371,8 @@ pub fn collect<'source>(
     fuel: &mut Fuel,
 ) -> Result<Collected<'source>, LoweringRefusal<'source>>
 {
+    let described = crate::description::elaborate_descriptions(pbg, tree)?;
+    let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations);
     let mut owner = Vec::new();
     owner.resize(
         usize::from(tree.node_count()),
@@ -1374,6 +1383,13 @@ pub fn collect<'source>(
         tree,
         fuel,
         collected: Collected {
+            descriptions: described
+                .declarations
+                .into_iter()
+                .map(|entry| (entry.at.node, entry))
+                .collect(),
+            description_diagnostics: described.diagnostics,
+            cells,
             slots: Vec::new(),
             owner,
             by_name: BTreeMap::new(),
@@ -1406,6 +1422,18 @@ pub fn collect<'source>(
         }
         if former == Former::Data {
             collector.data(child, &decorations)?;
+            collector.hold_described_refusals(child);
+            decorations.clear();
+            continue;
+        }
+        if collector
+            .collected
+            .descriptions
+            .get(&child.node)
+            .is_some_and(|entry| matches!(entry.classifier, Maybe::Present(_)))
+        {
+            collector.admit_described(child, &decorations);
+            collector.hold_described_refusals(child);
             decorations.clear();
             continue;
         }
@@ -1460,6 +1488,11 @@ impl<'source> Collector<'_, 'source>
         child: Placed,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if self.collected.descriptions.contains_key(&child.node) {
+            self.admit_described(child, &[]);
+            self.hold_described_refusals(child);
+            return Ok(());
+        }
         let Some(node) = self.tree.node(child.node)
         else {
             return Ok(());
@@ -1485,6 +1518,134 @@ impl<'source> Collector<'_, 'source>
                 boundary: FragmentBoundary::WrongSort,
             }),
             | Shape::Root | Shape::Repair(_) | Shape::Layout => Ok(()),
+        }
+    }
+
+    /// Admit the described family at `child`, which the native data reading
+    /// does not own, under its classifier, decorated by the attribute blocks
+    /// `decorations` written before it.
+    ///
+    /// # Specification
+    /// - requires: `child` is a root child the description route described;
+    ///   `decorations` are attribute blocks standing on their own before it.
+    /// - ensures: a family with a classifier takes a slot owning `child` and
+    ///   its decorations, whose signature half is the classifier and whose
+    ///   attributes decorate `child`; a second family of one name refuses the
+    ///   slot as a duplicate; an unreadable decoration refuses the family; a
+    ///   family with no classifier takes no slot.
+    /// - panics: none.
+    /// - executable: none — the slot it takes is chosen by the name table,
+    ///   which the call reads and writes in one step.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata family is admitted under its classifier and
+    ///   reaches the decoder, which refuses it at its own span, and an
+    ///   attribute written before a codata family is filed under it rather than
+    ///   refusing the module as a stray block.
+    /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    /// - witness: `description::tests::an_attribute_block_decorates_the_codata_declaration_after_it`
+    fn admit_described(
+        &mut self,
+        child: Placed,
+        decorations: &[Placed],
+    )
+    {
+        let Some(entry) = self.collected.descriptions.get(&child.node)
+        else {
+            return;
+        };
+        let named = entry.named;
+        let Maybe::Present(classifier) = entry.classifier
+        else {
+            return;
+        };
+        let name = self.name_of(named);
+        let position = self.admit(Container::TopLevel, name, child, named);
+        self.collected.own(child.node, position);
+        let mut attributes = Vec::new();
+        let mut attributed = Ok(());
+        for &block in decorations {
+            self.collected.own(block.node, position);
+            if attributed.is_ok() {
+                attributed = self.decoration(block, child.node, &mut attributes);
+            }
+        }
+        if let Some(slot) = self.collected.slots.get_mut(usize::from(position)) {
+            if slot.introduced_by.node == child.node {
+                slot.signature = Maybe::Present(Half {
+                    declaration: child,
+                    operand: Operand::Written(classifier),
+                });
+                slot.attributes.extend(attributes);
+                if let Err(refusal) = attributed {
+                    slot.refuse(child.node, refusal);
+                }
+            }
+            else {
+                slot.refuse(child.node, LoweringRefusal::DuplicateDefinition {
+                    span: child.span,
+                    name,
+                    first: slot.introduced_by.span,
+                });
+            }
+        }
+    }
+
+    /// Hold every description and cell refusal raised inside the described
+    /// declaration at `child`, each at its member's own span.
+    ///
+    /// # Specification
+    /// - requires: `child` is a root child.
+    /// - ensures: one held slot under the family's name per description or cell
+    ///   diagnostic whose span lies inside `child`'s, in report order; nothing
+    ///   for a child the description route did not describe.
+    /// - provides: member-local refusal beside native admission: a declined
+    ///   member leaves its family and its siblings standing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a retired rule arrow inside a data family is held at
+    ///   the arrow while the family keeps both generators and the declaration
+    ///   after it lowers.
+    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() >= before,
+    )]
+    fn hold_described_refusals(
+        &mut self,
+        child: Placed,
+    )
+    {
+        let Some(entry) = self.collected.descriptions.get(&child.node)
+        else {
+            return;
+        };
+        let named = entry.named;
+        let name = self.name_of(named);
+        let inside =
+            |span: ByteSpan| span.start() >= child.span.start() && span.end() <= child.span.end();
+        let refusals: Vec<_> = self
+            .collected
+            .description_diagnostics
+            .iter()
+            .filter(|diagnostic| inside(diagnostic.span))
+            .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal()))
+            .chain(
+                self.collected
+                    .cells
+                    .diagnostics
+                    .iter()
+                    .filter(|diagnostic| inside(diagnostic.span))
+                    .map(|diagnostic| (diagnostic.span, diagnostic.lowering_refusal())),
+            )
+            .collect();
+        for (span, refusal) in refusals {
+            let introduced = Placed {
+                node: child.node,
+                span,
+            };
+            let _held = self.refuse_held(Container::TopLevel, name, introduced, named, refusal);
         }
     }
 
@@ -5227,6 +5388,11 @@ impl<'source> LoweredStructure<'source>
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredModule<'source>
 {
+    /// Description-level structure and member refusals before native
+    /// interpretation.
+    descriptions: crate::description::DescriptionReport,
+    /// Checked cells and every cell-layer member refusal.
+    cells: crate::desc_cells::CellReport,
     /// The declarations, in admission order.
     declarations: Vec<LoweredDeclaration<'source>>,
     /// The data declarations' signatures, by [`DataIndex`].
@@ -5245,13 +5411,14 @@ pub struct LoweredModule<'source>
 
 impl<'source> LoweredModule<'source>
 {
-    /// The module holding these parts, for the pass that assembles one.
+    /// The module holding these parts, for the pass that assembles one, with
+    /// an empty description report and no cell stores.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(
+    pub fn new(
         declarations: Vec<LoweredDeclaration<'source>>,
         data: Vec<Arc<DataSignature>>,
         structures: Vec<LoweredStructure<'source>>,
@@ -5262,6 +5429,8 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         Self {
+            descriptions: crate::description::DescriptionReport::default(),
+            cells: crate::desc_cells::CellReport::default(),
             declarations,
             data,
             structures,
@@ -5270,6 +5439,23 @@ impl<'source> LoweredModule<'source>
             imports,
             recognition,
         }
+    }
+
+    /// This module, carrying the description route's report and cell stores.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_descriptions(
+        mut self,
+        descriptions: crate::description::DescriptionReport,
+        cells: crate::desc_cells::CellReport,
+    ) -> Self
+    {
+        self.descriptions = descriptions;
+        self.cells = cells;
+        self
     }
 
     /// The signature of the data declaration whose outcome holds `index`.
@@ -5300,6 +5486,28 @@ impl<'source> LoweredModule<'source>
             Maybe::Absent(data_signature::Absent::Unlisted),
             Maybe::Present,
         )
+    }
+
+    /// The descriptions consumed by native type and higher-cell interpretation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn descriptions(&self) -> &crate::description::DescriptionReport
+    {
+        &self.descriptions
+    }
+
+    /// The cell stores reached through the production description route.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn cells(&self) -> &crate::desc_cells::CellReport
+    {
+        &self.cells
     }
 
     /// The modules, in pre-order: a module before every module nested in it.
