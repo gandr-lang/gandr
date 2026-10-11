@@ -86,6 +86,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionChain;
 use gandr_core_term::DefinitionEntry;
+use gandr_core_term::DefinitionError;
 use gandr_core_term::DefinitionHeight;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ScopeId;
@@ -307,6 +308,60 @@ impl LoweredChain
             }
         }
         Ok(Self { chain, bodies })
+    }
+
+    /// Append one definition to the chain in place, its body already lowered
+    /// to `lowered`.
+    ///
+    /// # Specification
+    /// - requires: `lowered` is a closed core value in the arena the run
+    ///   evaluates against, spelling the body `body` names.
+    /// - ensures: on success the chain is [`DefinitionChain::define`] of the
+    ///   chain before, and `body` reads as lowered: as `lowered` when no entry
+    ///   before named it, as the earlier lowering otherwise. The result equals
+    ///   [`lower`](Self::lower) of the extended chain under a lowering that
+    ///   answers the earlier bodies as before and `lowered` for `body`. On a
+    ///   refusal the chain and its bodies are unchanged.
+    /// - provides: one definition's growth at the cost of one chain append and
+    ///   one map insertion, where lowering the extended chain again costs a
+    ///   pass over every entry.
+    /// - fails: the chain's [`DefinitionError`], unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Whatever [`DefinitionChain::define`] refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three definitions appended in place equal the same
+    ///   chain lowered whole, entry for entry and body for body; a repeated
+    ///   position is refused without a half-recorded body. An append that
+    ///   dropped the body, overwrote an earlier lowering or recorded a refused
+    ///   entry changes the comparison.
+    /// - witness: `eval::tests::an_in_place_definition_equals_lowering_the_extended_chain`
+    #[inline]
+    #[spec(
+        captures: [entry_count = self.chain.entries().len(), body_count = self.bodies.len()],
+        ensures: |ret| match ret {
+            Ok(_) => self.chain.entries().len() == entry_count.saturating_add(1)
+                && self.chain.entries().last().is_some_and(|entry| entry.constant() == constant && entry.body() == body)
+                && self.bodies.contains_key(&body),
+            Err(_) => self.chain.entries().len() == entry_count && self.bodies.len() == body_count,
+        },
+    )]
+    pub fn define(
+        &mut self,
+        constant: ConstantIndex,
+        body: GlobalIndex,
+        declared: Transparency,
+        mentions: &[ConstantIndex],
+        lowered: ValueId,
+    ) -> Result<DefinitionHeight, DefinitionError>
+    {
+        let height = self.chain.define(constant, body, declared, mentions)?;
+        if let Entry::Vacant(vacant) = self.bodies.entry(body) {
+            vacant.insert(lowered);
+        }
+        Ok(height)
     }
 
     /// The definitions, in admission order.
@@ -4066,6 +4121,7 @@ mod tests
     use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionChain;
+    use gandr_core_term::DefinitionError;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::ScopeId;
     use gandr_core_term::Transparency;
@@ -5357,6 +5413,60 @@ mod tests
             refused,
             "the first refusal is the answer, unchanged, and no partly lowered chain \
              escapes"
+        );
+    }
+
+    #[test]
+    fn an_in_place_definition_equals_lowering_the_extended_chain()
+    {
+        let mut core = CoreArena::new();
+        let shared = GlobalIndex::from(5_u32);
+        let own = GlobalIndex::from(6_u32);
+        let first = core.value_unit();
+        let second = core.value_unit();
+        let third = core.value_unit();
+        let rows = [
+            (ConstantIndex::from(0_usize), shared, first),
+            (ConstantIndex::from(1_usize), own, second),
+            (ConstantIndex::from(3_usize), shared, third),
+        ];
+        let mut grown = LoweredChain::new();
+        let mut chain = DefinitionChain::new();
+        for (constant, body, lowered) in rows {
+            assert_eq!(
+                chain.define(constant, body, Transparency::Manifest, &[]),
+                grown.define(constant, body, Transparency::Manifest, &[], lowered),
+                "the in-place append answers the chain's own height"
+            );
+        }
+        let Ok(whole) = LoweredChain::lower(chain, |entry| {
+            Ok::<_, Infallible>(
+                rows.iter()
+                    .find(|row| row.0 == entry.constant())
+                    .map_or(first, |row| row.2),
+            )
+        });
+        assert_eq!(
+            whole, grown,
+            "three appends equal the extended chain lowered whole, the shared index keeping \
+             its first lowering"
+        );
+        assert_eq!(
+            Err(DefinitionError::AlreadyDefined {
+                constant: ConstantIndex::from(1_usize)
+            }),
+            grown.define(
+                ConstantIndex::from(1_usize),
+                GlobalIndex::from(9_u32),
+                Transparency::Manifest,
+                &[],
+                third,
+            ),
+            "a repeated position is refused"
+        );
+        assert_eq!(
+            whole, grown,
+            "and the refusal records neither an entry nor a body"
         );
     }
 
