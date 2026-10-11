@@ -45,7 +45,12 @@ env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
 env.CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
 env.CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "dylint-link"
 env.CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "dylint-link"
-env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{% set flags = env.CARGO_ENCODED_RUSTFLAGS %}{% else %}{% set flags = env.RUSTFLAGS | default(value='') | trim | regex_replace(pattern='\\\\s+', rep='\u001f') %}{% endif %}{{ flags }}{% if flags %}\u001f{% endif %}--cfg=quenchant_compiler_policy"
+# The plugin builds separately, without this workspace's facade feature.
+# Dylint reads source, so enforcement mode is irrelevant to its lints; the
+# plugin's own specifications are checked by quenchant's gates. Keep this
+# task plain, including when Cargo's encoded flags take precedence.
+env.RUSTFLAGS = "{{ env.RUSTFLAGS | default(value='') | regex_replace(pattern='(^|\\\\s)--cfg(?:=|\\\\s+)anodized_(panic|print)\\\\b', rep='') | trim }}"
+env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{% set flags = env.CARGO_ENCODED_RUSTFLAGS %}{% else %}{% set flags = env.RUSTFLAGS | default(value='') | trim | regex_replace(pattern='\\\\s+', rep='\u001f') %}{% endif %}{% set flags = flags | regex_replace(pattern='(^|\u001f)--cfg(?:=|\u001f)anodized_(panic|print)\\\\b', rep='') | trim_start(pat='\u001f') %}{{ flags }}{% if flags %}\u001f{% endif %}--cfg=quenchant_compiler_policy"
 # The executable-specification lints are `allow` by default in the library and
 # denied here for the whole workspace: an unqualified attribute on every
 # nontrivial item, an adequacy section with witnesses, `Maybe` for absence,
