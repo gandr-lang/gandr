@@ -1092,6 +1092,8 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::BodyFront;
     use super::BodyWriter;
     use super::Closing;
@@ -1134,7 +1136,7 @@ mod tests
         /// - hypothesis: L3 on all token kinds and tag bytes observes exact
         ///   refusal, distinguishing acceptance of a formatted write.
         /// - witness: `tokens::tests::token_renderings_preserve_kind_and_tag_information`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _s: &str,

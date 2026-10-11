@@ -1074,6 +1074,8 @@ mod tests
     use core::fmt;
     use core::fmt::Write as _;
 
+    use anodized::spec;
+
     use super::KeyBound;
     use super::KeyRange;
     use super::OwnedKeyBound;
@@ -1335,7 +1337,7 @@ mod tests
         /// - hypothesis: L3 on decimal quantity writes observes the exact
         ///   error, distinguishing a sink that silently accepts a write.
         /// - witness: `record::tests::record_quantities_preserve_formatting_and_refusal`
-        #[anodized::spec(ensures: |ret| ret == Err(fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

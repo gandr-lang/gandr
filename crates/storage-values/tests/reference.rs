@@ -5,6 +5,7 @@
 
 use alloc::collections::BTreeSet;
 
+use anodized::spec;
 use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_values::ChunkDigest;
 use gandr_storage_values::ChunkStore;
@@ -57,7 +58,7 @@ pub enum Kind
 ///   binary bytes and a multibyte child offset; forged kind, length and pointer
 ///   claims fail independently of the production parser.
 /// - witness: `tests::reference::records_preserve_fields_and_borrowed_extents`
-#[anodized::spec(maintains: {
+#[spec(maintains: {
     let bytes: &[u8] = self.bytes.into();
     match self.kind {
         Kind::Open => bytes.len() == 2_usize && bytes.first() == Some(&0x01_u8),
@@ -109,7 +110,7 @@ enum Front<'body>
 /// - hypothesis: L3 literal records cover all wire kinds and exhaustion; exact
 ///   pointer equality checks both returned views, not just copied bytes.
 /// - witness: `tests::reference::records_preserve_fields_and_borrowed_extents`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Front::Empty => body.as_ref().is_empty(),
     Front::Record(record, rest) => anodized::types::Spec::predicate(&record)
         && body.as_ref().split_at_checked(record.bytes.as_ref().len())
@@ -175,7 +176,7 @@ fn front(body: TokenBody<'_>) -> Front<'_>
 /// - hypothesis: L3 one literal body has every kind and asymmetric field
 ///   values; each record's exact slice address and extent are checked.
 /// - witness: `tests::reference::records_preserve_fields_and_borrowed_extents`
-#[anodized::spec(ensures: |ret| ret.iter().try_fold(<&[u8]>::from(body),
+#[spec(ensures: |ret| ret.iter().try_fold(<&[u8]>::from(body),
     |remaining, record| {
         let (prefix, suffix) = remaining.split_at_checked(record.bytes.as_ref().len())?;
         (anodized::types::Spec::predicate(record)
@@ -209,7 +210,7 @@ pub fn records(body: TokenBody<'_>) -> Vec<Record<'_>>
 ///   and a changed domain; L2 generated cuts compare the whole model.
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
 /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
-#[anodized::spec(maintains: self.preimage.starts_with(RESIDUE_DOMAIN)
+#[spec(maintains: self.preimage.starts_with(RESIDUE_DOMAIN)
     && self.preimage.get(RESIDUE_DOMAIN.len() ..).is_some_and(|record|
         record.len() >= 2_usize && record.first() == Some(&0x01_u8)))]
 #[derive(Clone, Debug)]
@@ -246,7 +247,7 @@ struct Frame
 ///   value, separating byte coordinates and root cuts.
 /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let every = u64::from(params.kappa()) == 1_u64 || u64::from(params.cap()) == 1_u64;
     let mut cuts = ret.iter().peekable();
     let mut rest = flat;
@@ -344,7 +345,7 @@ pub fn reference_cuts(
 ///   generated L2 comparisons cover the full reconstruction relation.
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
 /// - witness: `tests::laws::chunking_is_invisible_to_the_flat_form`
-#[anodized::spec(maintains: self.flat.len() >= 3_usize
+#[spec(maintains: self.flat.len() >= 3_usize
     && self.flat.first() == Some(&0x01_u8) && self.flat.last() == Some(&0x05_u8)
     && self.chunk_starts.iter().all(|start| start.0 > 0_usize && start.0 < self.flat.len())
     && self.chunk_starts.windows(2).all(|pair| pair.first() < pair.get(1)))]
@@ -372,7 +373,7 @@ pub struct Spliced
 /// - hypothesis: L3 two distinct literal leaf chunks are loaded through a
 ///   committed root; splicing must restore their exact words and positions.
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
-#[anodized::spec(requires: pointer.offset() == TokenOffset::ZERO,
+#[spec(requires: pointer.offset() == TokenOffset::ZERO,
     ensures: |ret| !ret.as_ref().is_empty())]
 fn body_of(
     store: &dyn ChunkStore,
@@ -407,7 +408,7 @@ fn body_of(
 ///   and four, independently of the two child records in its stored body.
 /// - witness: `tests::laws::chunking_is_invisible_to_the_flat_form`
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
-#[anodized::spec(requires: root.offset() == TokenOffset::ZERO,
+#[spec(requires: root.offset() == TokenOffset::ZERO,
     ensures: |ret| anodized::types::Spec::predicate(&ret))]
 pub fn splice(
     store: &dyn ChunkStore,
@@ -456,7 +457,7 @@ pub fn splice(
 ///   add zero through six prior values before comparing the exact set union.
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
 /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
-#[anodized::spec(maintains: self.held.len() == usize::from(self.store.chunk_count())
+#[spec(maintains: self.held.len() == usize::from(self.store.chunk_count())
     && self.held.iter().all(|digest| self.store.load(*digest).is_ok()))]
 #[derive(Clone, Debug, Default)]
 pub struct Ledger
@@ -499,7 +500,7 @@ impl ChunkStore for Ledger
     ///   bounded generated histories additionally vary retained prior values.
     /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
     /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
-    #[anodized::spec(captures: [listed = self.held.contains(&chunk.digest()), count = self.held.len()],
+    #[spec(captures: [listed = self.held.contains(&chunk.digest()), count = self.held.len()],
         ensures: |ret| if ret.is_ok() {
             self.held.contains(&chunk.digest())
                 && self.held.len() == count.saturating_add(usize::from(!listed))

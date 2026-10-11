@@ -302,6 +302,8 @@ mod tests
 {
     use alloc::string::ToString as _;
 
+    use anodized::spec;
+
     use super::ChunkDigest;
     use super::TokenOffset;
     use crate::ValueError;
@@ -333,7 +335,7 @@ mod tests
         ///   accepting an overrun or charging a refused write. This does not
         ///   prescribe the formatter's write segmentation.
         /// - witness: `ptr::tests::a_digest_renders_lowercase_hexadecimal`
-        #[anodized::spec(
+        #[spec(
             captures: before = self.0,
             ensures: |ret| match before.checked_sub(s.len()) {
                 Some(remaining) => ret == Ok(()) && self.0 == remaining,

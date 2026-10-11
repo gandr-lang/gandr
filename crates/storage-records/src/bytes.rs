@@ -11,6 +11,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 /// Byte width of a node identity, fixed by the hash family.
 pub(crate) const NODE_HASH_LEN: usize = 32_usize;
 
@@ -161,7 +163,7 @@ impl From<RecordKey<'_>> for Box<[u8]>
     ///   borrowed-to-owned boundary. Allocation counts are outside this
     ///   observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordKey<'_>) -> Self
     {
@@ -188,7 +190,7 @@ impl From<Vec<u8>> for OwnedRecordKey
     ///   records. Interior replacement before encoding and allocation counts
     ///   are outside this observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(
+    #[spec(
         captures: before = (bytes.len(), bytes.first().copied(), bytes.last().copied()),
         ensures: |ret| ret.as_ref().len() == before.0
             && ret.as_ref().first().copied() == before.1
@@ -218,7 +220,7 @@ impl From<&[u8]> for OwnedRecordKey
     ///   corpus; comparison with the offered record references distinguishes
     ///   lost or substituted payload bytes. Allocation counts are not observed.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes)]
+    #[spec(ensures: |ret| ret.as_ref() == bytes)]
     #[inline]
     fn from(bytes: &[u8]) -> Self
     {
@@ -243,7 +245,7 @@ impl<const LEN: usize> From<&[u8; LEN]> for OwnedRecordKey
     ///   references distinguish omitted or collapsed separators without
     ///   claiming allocation-cost evidence.
     /// - witness: `node::tests::internal_nodes_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
+    #[spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
     #[inline]
     fn from(bytes: &[u8; LEN]) -> Self
     {
@@ -270,7 +272,7 @@ impl From<RecordKey<'_>> for OwnedRecordKey
     ///   reordered or substituted bytes. Allocation counts are outside this
     ///   observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordKey<'_>) -> Self
     {
@@ -310,7 +312,7 @@ impl From<RecordValue<'_>> for Box<[u8]>
     ///   borrowed-to-owned boundary. Allocation counts are outside this
     ///   observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordValue<'_>) -> Self
     {
@@ -337,7 +339,7 @@ impl From<Vec<u8>> for OwnedRecordValue
     ///   records. Interior replacement before encoding and allocation counts
     ///   are outside this observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(
+    #[spec(
         captures: before = (bytes.len(), bytes.first().copied(), bytes.last().copied()),
         ensures: |ret| ret.as_ref().len() == before.0
             && ret.as_ref().first().copied() == before.1
@@ -367,7 +369,7 @@ impl From<&[u8]> for OwnedRecordValue
     ///   corpus; comparison with the offered record references distinguishes
     ///   lost or substituted payload bytes. Allocation counts are not observed.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes)]
+    #[spec(ensures: |ret| ret.as_ref() == bytes)]
     #[inline]
     fn from(bytes: &[u8]) -> Self
     {
@@ -392,7 +394,7 @@ impl<const LEN: usize> From<&[u8; LEN]> for OwnedRecordValue
     ///   complete wire image and pinned identity distinguish a dropped or
     ///   changed value. Allocation counts are not observed.
     /// - witness: `node::tests::the_node_identity_is_pinned`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
+    #[spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
     #[inline]
     fn from(bytes: &[u8; LEN]) -> Self
     {
@@ -419,7 +421,7 @@ impl From<RecordValue<'_>> for OwnedRecordValue
     ///   reordered or substituted bytes. Allocation counts are outside this
     ///   observer.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordValue<'_>) -> Self
     {
@@ -458,7 +460,7 @@ impl From<RecordEncoding<'_>> for Box<[u8]>
     ///   bytes and an independent boundary residue distinguish changed widths,
     ///   framing and payload bytes. Allocation counts are not observed.
     /// - witness: `boundary::tests::record_encoding_pins_field_framing`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordEncoding<'_>) -> Self
     {
@@ -484,7 +486,7 @@ impl From<Vec<u8>> for OwnedRecordEncoding
     ///   images and independent boundary residues distinguish changed widths,
     ///   framing and payload bytes. Allocation counts are not observed.
     /// - witness: `boundary::tests::record_encoding_pins_field_framing`
-    #[anodized::spec(
+    #[spec(
         captures: before = (bytes.len(), bytes.first().copied(), bytes.last().copied()),
         ensures: |ret| ret.as_ref().len() == before.0
             && ret.as_ref().first().copied() == before.1
@@ -515,7 +517,7 @@ impl From<&[u8]> for OwnedRecordEncoding
     ///   lost zero bytes and changed high bytes. Allocation counts are not
     ///   observed.
     /// - witness: `boundary::tests::record_encoding_pins_field_framing`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes)]
+    #[spec(ensures: |ret| ret.as_ref() == bytes)]
     #[inline]
     fn from(bytes: &[u8]) -> Self
     {
@@ -540,7 +542,7 @@ impl<const LEN: usize> From<&[u8; LEN]> for OwnedRecordEncoding
     ///   and independent boundary residue distinguish changed widths, domains
     ///   and length fields. Allocation counts are not observed.
     /// - witness: `boundary::tests::record_encoding_pins_field_framing`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
+    #[spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
     #[inline]
     fn from(bytes: &[u8; LEN]) -> Self
     {
@@ -566,7 +568,7 @@ impl From<RecordEncoding<'_>> for OwnedRecordEncoding
     ///   bytes and an independent boundary residue distinguish changed widths,
     ///   framing and payload bytes. Allocation counts are not observed.
     /// - witness: `boundary::tests::record_encoding_pins_field_framing`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: RecordEncoding<'_>) -> Self
     {
@@ -605,7 +607,7 @@ impl From<EncodedNode<'_>> for Box<[u8]>
     ///   separators, identities and record counts distinguish dropped,
     ///   reordered or substituted bytes. Allocation counts are not observed.
     /// - witness: `node::tests::internal_nodes_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: EncodedNode<'_>) -> Self
     {
@@ -633,7 +635,7 @@ impl From<Vec<u8>> for OwnedEncodedNode
     ///   observed.
     /// - witness: `node::tests::leaves_round_trip`
     /// - witness: `node::tests::the_node_identity_is_pinned`
-    #[anodized::spec(
+    #[spec(
         captures: before = (bytes.len(), bytes.first().copied(), bytes.last().copied()),
         ensures: |ret| ret.as_ref().len() == before.0
             && ret.as_ref().first().copied() == before.1
@@ -663,7 +665,7 @@ impl From<&[u8]> for OwnedEncodedNode
     ///   corpus; comparison with the offered record references distinguishes
     ///   lost or substituted payload bytes. Allocation counts are not observed.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes)]
+    #[spec(ensures: |ret| ret.as_ref() == bytes)]
     #[inline]
     fn from(bytes: &[u8]) -> Self
     {
@@ -688,7 +690,7 @@ impl<const LEN: usize> From<&[u8; LEN]> for OwnedEncodedNode
     ///   canonical encoding and its pinned identity distinguish changed widths,
     ///   framing and payload bytes. Allocation counts are not observed.
     /// - witness: `node::tests::the_node_identity_is_pinned`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
+    #[spec(ensures: |ret| ret.as_ref() == bytes.as_slice())]
     #[inline]
     fn from(bytes: &[u8; LEN]) -> Self
     {
@@ -714,7 +716,7 @@ impl From<EncodedNode<'_>> for OwnedEncodedNode
     ///   separators, identities and record counts distinguish dropped,
     ///   reordered or substituted bytes. Allocation counts are not observed.
     /// - witness: `node::tests::internal_nodes_round_trip`
-    #[anodized::spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
+    #[spec(ensures: |ret| ret.as_ref() == carrier.as_ref())]
     #[inline]
     fn from(carrier: EncodedNode<'_>) -> Self
     {
@@ -876,6 +878,8 @@ mod tests
 {
     use alloc::format;
 
+    use anodized::spec;
+
     use super::NodeHash;
     use super::RecordKey;
 
@@ -930,7 +934,7 @@ mod tests
         ///   count distinguish accepted writes and missing accounting. Counter
         ///   saturation is not exercised by these single-write fixtures.
         /// - witness: `bytes::tests::node_hash_formatting_stops_at_the_first_refusal`
-        #[anodized::spec(
+        #[spec(
             captures: before = self.attempts.0,
             ensures: |ret| ret == Err(core::fmt::Error) && self.attempts.0 == before.saturating_add(1),
         )]

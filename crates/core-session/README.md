@@ -42,7 +42,7 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 
 Consumers supply payload-type identities, payload digests, and endpoint-local moves. Identity assignment and payload-body validation belong to the consumer. Certified transport additionally requires native payload-code assignments. The crate uses `core` and `alloc` and depends on `gandr-kernel-term` and `gandr-kernel-core` with default features disabled.
 
-The workspace-pinned `anodized` facade supplies executable specifications with default features disabled. `--cfg anodized_panic` across the build graph enables runtime checks; ordinary builds retain construction validation and replay refusals without specification instrumentation. No optional crate feature is required.
+The workspace-pinned `quenchant-anodized` facade, named `anodized`, supplies executable specifications with default features disabled and its backend feature enabled. `--cfg anodized_panic` across the build graph enables runtime checks; ordinary builds type-check predicates without evaluating them, while pre-state captures retain their evaluation semantics. Construction validation and replay refusals remain active in either mode. No per-crate feature is required.
 
 ## Examples
 

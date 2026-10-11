@@ -50,9 +50,8 @@ members = [
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-# The floor the git `anodized` dependency declares; the workspace checks clean
-# under it (`cargo +1.95.0 check --workspace --all-targets --locked`).
-rust-version = "1.95.0"
+# The floor declared by the pinned quenchant facade and support libraries.
+rust-version = "1.97"
 repository = "https://github.com/gandr-lang/gandr"
 license = "Apache-2.0 WITH LLVM-exception"
 publish = false
@@ -81,10 +80,10 @@ default-features = false
 version = "0.12.16"
 default-features = false
 
-# Executable specifications, including const functions, with a core-only facade.
-# Logic/BigInt is optional, so no_std consumers build with defaults off.
-# Runtime enforcement is selected for the whole build graph with
-# `--cfg anodized_panic`, never inferred from the optimization profile.
+# Executable specifications through the core-only quenchant facade.
+# features:
+# - anodized: compile the development backend; `--cfg anodized_panic` selects
+#   enforcement for the whole build graph, independently of build profile.
 # consumers:
 # - core-checker
 # - core-incremental
@@ -131,9 +130,11 @@ default-features = false
 # - theory-sites
 # - theory-virtual-doctrines
 [workspace.dependencies.anodized]
-git = "https://github.com/gandr-lang/anodized"
-rev = "372f70b50ef7af68f4e8a750132d90d54e780426"
+package = "quenchant-anodized"
+git = "https://github.com/gandr-lang/quenchant"
+rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
+features = ["anodized"]
 
 # BLAKE3 hashing for content and node identities.
 # consumers:
@@ -663,7 +664,7 @@ features = ["std"]
 # - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
 
 # Named non-failure absence, sealed at each decision site.
@@ -699,7 +700,7 @@ default-features = false
 # - theory-virtual-doctrines
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 default-features = false
 
 # The terminal face's renderer: layout, styled text and widgets, the headless
@@ -973,7 +974,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "e6c8502dd46f5111a3f2e76e1356c8ac42940193"
+rev = "8b8d0702d69409549e855606a85492c777e05fc9"
 pattern = "crates/quenchant-dylints"
 
 # The everyday optimized build. Size-optimized and nothing else, so each crate
