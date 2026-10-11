@@ -492,6 +492,8 @@ jobs:
       - *restore-policy-state
       - name: lint every workspace target
         id: policy-library
+        # The task strips enforcement cfgs: the separately built plugin runs
+        # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state, the enforcing
