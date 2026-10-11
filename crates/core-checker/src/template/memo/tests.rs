@@ -13,6 +13,7 @@ use super::*;
 
 /// A clock that never advances: every draft is free, so the controller drafts
 /// every family that has a template.
+#[derive(Clone, Copy)]
 pub(in crate::template) struct Stopped;
 
 impl Clock for Stopped
@@ -69,6 +70,12 @@ fn cancellations(
 fn the_controller_drafts_while_drafting_pays_and_probes_when_it_stops()
 {
     let micros = Duration::from_micros;
+    let record = |controls: &mut Controls, switch: &mut Switch, accepted, spent| {
+        switch.absorb(Samples {
+            arm: Tracked::Unsampled,
+            draft: controls.observe(accepted, spent),
+        });
+    };
     let mut switch = Memo::default().switch;
     let mut controls = Controls::fresh();
     assert_eq!(
@@ -79,8 +86,8 @@ fn the_controller_drafts_while_drafting_pays_and_probes_when_it_stops()
     // A 100 µs producer against 10 µs drafts either way: the break-even is
     // 10 / (100 - 10 + 10) = 0.1, for the key and across the memo alike.
     controls.producing = Estimate::Measured(micros(100));
-    controls.record(&mut switch, Acceptance::Accepted, micros(10));
-    controls.record(&mut switch, Acceptance::Refused, micros(10));
+    record(&mut controls, &mut switch, Acceptance::Accepted, micros(10));
+    record(&mut controls, &mut switch, Acceptance::Refused, micros(10));
     assert!(matches!(
         break_even(Share(0.1), Share(0.1)),
         Maybe::Present(bound) if (bound.0 - 0.1_f64).abs() < 1e-12_f64
@@ -90,7 +97,7 @@ fn the_controller_drafts_while_drafting_pays_and_probes_when_it_stops()
     // they fall to 0.1 after 27 more.
     let mut refusals = 0_usize;
     while controls.verdict() == Decision::Draft {
-        controls.record(&mut switch, Acceptance::Refused, micros(10));
+        record(&mut controls, &mut switch, Acceptance::Refused, micros(10));
         refusals = refusals.checked_add(1).unwrap();
     }
     assert_eq!(refusals, 27);
@@ -129,16 +136,16 @@ fn the_controller_drafts_while_drafting_pays_and_probes_when_it_stops()
     );
     assert_eq!(decisions.last(), Some(&Decision::Draft));
     // One accepted draft lifts the key back above its break-even.
-    controls.record(&mut on, Acceptance::Accepted, micros(10));
+    record(&mut controls, &mut on, Acceptance::Accepted, micros(10));
     assert_eq!(controls.verdict(), Decision::Draft);
     // A draft no faster than the producer never pays, whatever its acceptance.
-    controls.record(&mut on, Acceptance::Accepted, micros(100));
+    record(&mut controls, &mut on, Acceptance::Accepted, micros(100));
     assert_eq!(controls.verdict(), Decision::Decline(Decline::NeverPays));
     // A clock that never advances makes every draft free.
     let mut stopped = Controls::fresh();
     stopped.producing = Estimate::Measured(Duration::ZERO);
-    stopped.record(&mut on, Acceptance::Accepted, Duration::ZERO);
-    stopped.record(&mut on, Acceptance::Refused, Duration::ZERO);
+    record(&mut stopped, &mut on, Acceptance::Accepted, Duration::ZERO);
+    record(&mut stopped, &mut on, Acceptance::Refused, Duration::ZERO);
     assert_eq!(stopped.verdict(), Decision::Draft);
 }
 
@@ -186,27 +193,35 @@ fn the_fresh_arm_cap_withdraws_a_widening_that_costs_the_producers_time()
     let mut cap = Cap {
         producing: Estimate::Measured(Duration::from_micros(1)),
         arm: Tracked::Sampled(Share(1.0)),
+        measured: Tracked::Unsampled,
     };
     assert!(matches!(
         attempt(&mut cap),
         Attempt::Withdrawn(Drafting::Capped(ArmCount(2)))
     ));
     assert_eq!(
-        cap.arm,
-        Tracked::Sampled(Share(1.0)),
+        cap.measured,
+        Tracked::Unsampled,
         "a withdrawn widening measures nothing"
     );
-    // An unmeasured arm never caps; the finished widening samples its import,
-    // which a stopped clock reads as free.
+    // An unmeasured arm never caps; the finished widening measures its
+    // import, which a stopped clock reads as free.
     let mut cap = Cap {
         producing: Estimate::Measured(Duration::from_micros(1)),
         arm: Tracked::Unsampled,
+        measured: Tracked::Unsampled,
     };
     assert!(matches!(
         attempt(&mut cap),
         Attempt::Ready(_, DraftKind::Widened(ArmCount(2)))
     ));
-    assert_eq!(cap.arm, Tracked::Sampled(Share(0.0)));
+    assert_eq!(cap.measured, Tracked::Sampled(Share(0.0)));
+    assert_eq!(
+        cap.arm,
+        Tracked::Unsampled,
+        "the memo folds the measurement"
+    );
+    cap.arm = cap.measured;
     // At that cost the same widening goes ahead.
     assert!(matches!(
         attempt(&mut cap),

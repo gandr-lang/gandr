@@ -94,7 +94,10 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances. Witnesses: `bridge::tests::every_readmission_certificate_replays`, `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`.
 - `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names. Witnesses: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
 - `bridge::Refusal` and its classification retain why an accepted declaration did not cross. Witnesses: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`, `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`, `bridge::tests::a_declining_certificate_faults_the_declaration`.
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 - The [hole surface](docs/holes.md): term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`. Witnesses are listed on that page.
+- `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference. Witnesses: `fork::tests::serial_runs_each_item_in_order_from_one_state`, `staging::tests::every_width_checks_the_serial_program`.
+- `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork. Witnesses: `staging::tests::every_width_checks_the_serial_program`, `staging::tests::the_merged_arena_is_one_arena_normalization`, `staging::tests::exhausted_allowances_refuse_alike_at_every_width`, `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`, `template::tests::forked_families_equal_one_by_one_admission_across_the_edit_traces`.
 
 ## Expected features
 
@@ -354,6 +357,8 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 `template` implements [guarded equation families](docs/staging.md).
 
 The [adapter](src/template/admission.rs) exposes families to guarded admission; its [observer](docs/staging.md#guarded-admission-observer) is measurement scaffolding.
+
+`staging::check` checks a whole staged program — normalization, merge, harvest, readmission and family admission — on a fork the caller supplies; [a staged program checks on every core](docs/staging.md#a-staged-program-checks-on-every-core) records how each stage forks and why.
 
 ## License
 

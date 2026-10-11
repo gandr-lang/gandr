@@ -237,6 +237,8 @@ Each family interns through an open-addressed, linearly probed table kept at mos
 
 `Arena::find` answers the same exact lookup without interning: `Maybe::Present(id)` exactly when `alloc` would return the existing `id`, otherwise `interned::Absent::Uninterned`. A reader that must not extend an arena compares against it this way, as a [guarded-admission](../kernel-core/docs/admission.md) row does over a shared binding. The absence type is quenchant-shape's, the workspace's absence vocabulary; it adds no allocation and no `std` dependency to this `no_std` crate.
 
+`Arena::extent` reads the arena's prefix as an `Extent`: its term and classifier counts. `Arena::terms_above` and `Arena::types_above` borrow what was allocated past an extent, in allocation order, and `Arena::truncate_to` drops it with its lookup entries. A removed entry's probe gap closes by shifting later entries of its run backward, so a truncated arena answers every lookup and mints every coordinate as it did when the extent was read. A worker normalizing several sources of one program therefore clones the program arena once, reads each source's segment above the extent it started at, truncates back to the program's extent only when a source arrives out of order and back to where a source started when it fails, rather than cloning the arena per source ([the program entry](../core-checker/docs/staging.md#a-staged-program-checks-on-every-core)).
+
 ## License
 
 Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

@@ -18,6 +18,8 @@ The producer uses a postorder worklist and capture-avoiding substitution. It red
 
 `stage::power` builds `λn. λx. iter n <1> (λp.<~x * ~p>)`, of type `Nat_outer → Lift Nat_inner → Lift Nat_inner`. It threads quoted input at the meta level and carries quoted naturals through iteration. Specialization `<λx. ~(pow n <x>)>` yields `λx. x * (x * (… * 1))` without creating object redexes. Witnesses compare exponents zero through eight at inputs zero through five with checked integer exponentiation and independently execute the ordinarily admitted CBPV body. The function-valued-accumulator encoding `λn. iter n <λx.1> (λp.<λx. x * (~p) x>)` witnesses the complementary case: its object applications survive.
 
+`stage::double` builds `λn. λx. iter n <1> (λp.<~x * ~p * ~x>)`, of the same type: each step multiplies the quoted input in on both sides of the accumulator, so specializing a numeral `n` at a quoted inner numeral leaves `2n` multiplications, and each step's certificate splices the input twice where the power's splices it once. It is the second staging observer program, the one the driver's `stage` verb spells `double:LO..HI`. Its witness checks the program's type, specializes exponents zero through six at inputs two and three, replays each certificate through the kernel, and compares each residual's multiplications and value with checked integer exponentiation, so neither the power nor a precomputed answer passes it.
+
 The equation census for those exponents uses fresh arenas and includes every replayed equation, including congruence:
 
 | Exponent `n` | Replayed equations | Distinct shapes | Largest family |
