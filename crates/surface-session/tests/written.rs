@@ -48,6 +48,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::GRAMMAR;
+use crate::common::Text;
 
 /// A three-constructor enumeration: Red, Green and Blue are tags 0, 1 and 2.
 pub const COLOR: &str = "data Color : Type { Red : Color; Green : Color; Blue : Color; }\n";
@@ -59,23 +60,32 @@ pub const NESTED: &str = "data Inner : Type { No : Inner; Yes : (n : Integer) --
 /// The live evaluator's allowance for one fixture run.
 const FUEL: u32 = 10_000;
 
+/// How many of a match's rows, in source order, an analysis keeps.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RowCount(pub usize);
+
 /// The lowering's refusal of the declaration `function` of `source`, if any.
 ///
 /// # Specification
 /// - requires: `source` lowers as a module and declares `function`.
 /// - ensures: the refusal exactly when that declaration's outcome is one.
 /// - panics: if the source does not lower or `function` is undeclared.
+/// - executable: none — the outcome is read once from a module the call lowers
+///   and drops; no state outside the call witnesses it.
 ///
 /// # Adequacy
-/// - hypothesis: a form the lowering cannot compile and a match missing an arm
-///   are refused by name, and an author's hole is not.
+/// - hypothesis: L3 — a form the lowering cannot compile and a match missing an
+///   arm are refused by name, and an author's hole is not.
 /// - witness: `tests::pattern_holes::an_uncompiled_arm_is_declined_and_a_hole_is_not`
 /// - witness: `tests::pattern_holes::a_stuck_arm_and_a_missing_arm_carry_different_notes`
-pub fn refusal<'source>(
-    source: &'source str,
-    function: &str,
+pub fn refusal<'source, 'function>(
+    source: impl Into<Text<'source>>,
+    function: impl Into<Text<'function>>,
 ) -> Option<LoweringRefusal<'source>>
 {
+    let Text(source) = source.into();
+    let Text(function) = function.into();
     let mut lowerings = LoweringCount::default();
     let lowering = lower_source(&GRAMMAR, SourceText::from(source), &mut lowerings)
         .expect("the source parses");
@@ -132,15 +142,17 @@ impl Written
     ///   body is no match.
     ///
     /// # Adequacy
-    /// - hypothesis: the rows the checkpoint analyzes are the ones the author
-    ///   wrote, holes and nested constructors included.
+    /// - hypothesis: L3 — the rows the checkpoint analyzes are the ones the
+    ///   author wrote, holes and nested constructors included.
     /// - witness: `tests::live_match::translation_covers_the_landed_pattern_grammar`
     #[spec(ensures: |ret| ret.case.arms.iter().all(|row| ret.case.patterns.pattern(row.pattern).is_some()))]
-    pub fn new(
-        source: &str,
-        function: &str,
+    pub fn new<'source, 'function>(
+        source: impl Into<Text<'source>>,
+        function: impl Into<Text<'function>>,
     ) -> Self
     {
+        let Text(source) = source.into();
+        let Text(function) = function.into();
         let mut lowerings = LoweringCount::default();
         let lowering = lower_source(&GRAMMAR, SourceText::from(source), &mut lowerings)
             .expect("the source parses");
@@ -221,9 +233,10 @@ impl Written
     /// trivial.
     fn constant(
         &self,
-        name: &str,
+        name: Text<'_>,
     ) -> ConstantIndex
     {
+        let Text(name) = name;
         self.families
             .iter()
             .find(|family| family.0 == name)
@@ -237,12 +250,12 @@ impl Written
     ///
     /// # Specification
     /// trivial.
-    pub fn family(
+    pub fn family<'name>(
         &mut self,
-        name: &str,
+        name: impl Into<Text<'name>>,
     ) -> ValueTypeId
     {
-        let constant = self.constant(name);
+        let constant = self.constant(name.into());
         self.core.value_type_data(constant, Vec::new())
     }
 
@@ -250,27 +263,27 @@ impl Written
     ///
     /// # Specification
     /// trivial.
-    pub fn construct(
+    pub fn construct<'family>(
         &mut self,
-        family: &str,
-        tag: usize,
+        family: impl Into<Text<'family>>,
+        tag: impl Into<ConstructorTag>,
         fields: Vec<ValueId>,
     ) -> ValueId
     {
         let datatype = self.family(family);
-        self.core
-            .value_constructor(datatype, ConstructorTag::from(tag), fields)
+        self.core.value_constructor(datatype, tag.into(), fields)
     }
 
     /// The nonnegative integer literal spelled `digits`.
     ///
     /// # Specification
     /// trivial.
-    pub fn integer(
+    pub fn integer<'digits>(
         &mut self,
-        digits: &str,
+        digits: impl Into<Text<'digits>>,
     ) -> ValueId
     {
+        let Text(digits) = digits.into();
         let magnitude =
             Magnitude::from_decimal_text(String::from(digits)).expect("canonical decimal digits");
         self.core
@@ -292,17 +305,17 @@ impl Written
         self.core.value_hole(hole)
     }
 
-    /// The boolean `value`: the unit injected left for true, right for false.
+    /// The boolean at `side`: the unit injected left for true, right for
+    /// false.
     ///
     /// # Specification
     /// trivial.
     pub fn boolean(
         &mut self,
-        value: bool,
+        side: Side,
     ) -> ValueId
     {
         let unit = self.core.value_unit();
-        let side = if value { Side::Left } else { Side::Right };
         self.core.value_injection(side, unit)
     }
 
@@ -311,13 +324,13 @@ impl Written
     ///
     /// # Specification
     /// trivial.
-    pub fn analyze(
+    pub fn analyze<'family>(
         &mut self,
-        family: &str,
+        family: impl Into<Text<'family>>,
         scrutinee: ValueId,
     ) -> MatchAnalysis
     {
-        let written = self.case.arms.len();
+        let written = RowCount(self.case.arms.len());
         self.analyze_prefix(family, scrutinee, written)
     }
 
@@ -331,15 +344,16 @@ impl Written
     /// - panics: if the checkpoint cannot evaluate or the rows cannot be read.
     ///
     /// # Adequacy
-    /// - hypothesis: the lowering's rows reach the core matcher and the checker
-    ///   unchanged, and a constructor no kept row names is a proved residue.
+    /// - hypothesis: L3 — the lowering's rows reach the core matcher and the
+    ///   checker unchanged, and a constructor no kept row names is a proved
+    ///   residue.
     /// - witness: `tests::live_match::a_missing_constructor_is_reported_by_name`
-    #[spec(ensures: |ret| ret.branches().len() == written)]
-    pub fn analyze_prefix(
+    #[spec(ensures: |ret| ret.branches().len() == written.0)]
+    pub fn analyze_prefix<'family>(
         &mut self,
-        family: &str,
+        family: impl Into<Text<'family>>,
         scrutinee: ValueId,
-        written: usize,
+        written: RowCount,
     ) -> MatchAnalysis
     {
         let datatype = self.family(family);
@@ -347,7 +361,7 @@ impl Written
         let rows: Vec<PatternId> = self
             .case
             .arms
-            .get(.. written)
+            .get(.. written.0)
             .expect("a prefix of the written rows")
             .iter()
             .map(|row| row.pattern)
@@ -373,8 +387,8 @@ impl Written
     /// - panics: if the run faults or ends in anything else.
     ///
     /// # Adequacy
-    /// - hypothesis: the tree the lowering compiled stops at a pattern hole for
-    ///   exactly the constructors the hole shadows.
+    /// - hypothesis: L3 — the tree the lowering compiled stops at a pattern
+    ///   hole for exactly the constructors the hole shadows.
     /// - witness: `tests::pattern_holes::a_hole_in_a_payload_stops_only_its_own_constructor`
     #[spec(ensures: |ret| !matches!(ret, Ran::Returned(ref digits) if digits.is_empty()))]
     pub fn run(

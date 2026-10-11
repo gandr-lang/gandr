@@ -44,8 +44,8 @@ use gandr_core_term::pattern::Patterns;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: filling a root hole refines only the constructor tests that
-///   depended on it, without changing the arm order.
+/// - hypothesis: L3 — filling a root hole refines only the constructor tests
+///   that depended on it, without changing the arm order.
 /// - witness: `tests::live_match::filling_a_hole_refines_a_possible_verdict`
 #[derive(Debug)]
 pub struct MatchCheckpoint
@@ -147,7 +147,7 @@ impl MatchCheckpoint
     /// [`EvalFault`] if the scrutinee cannot be evaluated under the allowance.
     ///
     /// # Adequacy
-    /// - hypothesis: concrete constructor heads survive a hole in a field,
+    /// - hypothesis: L3 — concrete constructor heads survive a hole in a field,
     ///   whereas a hole at the root decides no constructor test.
     /// - witness: `tests::live_match::a_hole_scrutinee_leaves_every_branch_possible`
     /// - witness: `tests::live_match::a_constructor_scrutinee_refutes_the_head_and_suspends_the_payload`
@@ -190,8 +190,9 @@ impl MatchCheckpoint
     /// [`MatchFault`] preserves the core matcher's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: a hole before a matching arm suspends selection without
-    ///   hiding that later arm's satisfied verdict or asserting redundancy.
+    /// - hypothesis: L3 — a hole before a matching arm suspends selection
+    ///   without hiding that later arm's satisfied verdict or asserting
+    ///   redundancy.
     /// - witness: `tests::live_match::a_hole_in_the_prefix_leaves_redundancy_unproved`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |analysis|
         analysis.branches.len() == arms.len()))]
@@ -251,7 +252,7 @@ impl MatchCheckpoint
     /// [`LiveFault`] when the fill cannot read or resume the retained value.
     ///
     /// # Adequacy
-    /// - hypothesis: a filling of the root hole changes possible injection
+    /// - hypothesis: L3 — a filling of the root hole changes possible injection
     ///   tests into the correct satisfied and refuted pair.
     /// - witness: `tests::live_match::filling_a_hole_refines_a_possible_verdict`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |remaining|
@@ -301,7 +302,7 @@ impl MatchCheckpoint
     /// Returns the missing arm or the core evaluation fault.
     ///
     /// # Adequacy
-    /// - hypothesis: a pattern hole holds both its own and later bodies,
+    /// - hypothesis: L3 — a pattern hole holds both its own and later bodies,
     ///   whereas an earlier settled arm still executes.
     /// - witness: `tests::pattern_holes::an_unfilled_hole_never_runs_its_own_arm`
     /// - witness: `tests::pattern_holes::an_arm_before_the_hole_still_wins`

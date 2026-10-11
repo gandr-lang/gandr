@@ -29,14 +29,17 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::Side;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_session::MatchAnalysis;
 use gandr_surface_session::MatchCheckpoint;
 use gandr_surface_session::MatchRun;
 
+use crate::common::Text;
 use crate::written::COLOR;
 use crate::written::NESTED;
 use crate::written::Ran;
+use crate::written::RowCount;
 use crate::written::Written;
 use crate::written::refusal;
 
@@ -48,8 +51,9 @@ const MAYBE: &str = "data Maybe : Type { Nothing : Maybe; Just : (x : Integer) -
 ///
 /// # Specification
 /// trivial.
-fn color_pick(arms: &str) -> Written
+fn color_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
+    let Text(arms) = arms.into();
     Written::new(
         &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"),
         "pick",
@@ -60,8 +64,9 @@ fn color_pick(arms: &str) -> Written
 ///
 /// # Specification
 /// trivial.
-fn outer_pick(arms: &str) -> Written
+fn outer_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
+    let Text(arms) = arms.into();
     Written::new(
         &alloc::format!("{NESTED}def pick(m : Outer) -> -F Integer {{ case m {{ {arms} }} }}\n"),
         "pick",
@@ -72,9 +77,9 @@ fn outer_pick(arms: &str) -> Written
 ///
 /// # Specification
 /// trivial.
-fn some_yes(
+fn some_yes<'digits>(
     written: &mut Written,
-    digits: &str,
+    digits: impl Into<Text<'digits>>,
 ) -> ValueId
 {
     let payload = written.integer(digits);
@@ -86,10 +91,10 @@ fn some_yes(
 ///
 /// # Specification
 /// trivial.
-fn nullary(
+fn nullary<'family>(
     written: &mut Written,
-    family: &str,
-    tag: usize,
+    family: impl Into<Text<'family>>,
+    tag: impl Into<ConstructorTag>,
 ) -> ValueId
 {
     written.construct(family, tag, Vec::new())
@@ -99,8 +104,9 @@ fn nullary(
 ///
 /// # Specification
 /// trivial.
-fn returned(digits: &str) -> Ran
+fn returned<'digits>(digits: impl Into<Text<'digits>>) -> Ran
 {
+    let Text(digits) = digits.into();
     Ran::Returned(alloc::string::String::from(digits))
 }
 
@@ -154,7 +160,8 @@ impl Fixture
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: the written first arm is settled and the last is held.
+    /// - hypothesis: L3 — the written first arm is settled and the last is
+    ///   held.
     /// - witness: `tests::pattern_holes::an_arm_before_the_hole_still_wins`
     #[spec(ensures: |ret| matches!(ret.patterns.pattern(ret.arms[1]), Some(Pattern::Hole(_))))]
     fn new() -> Self
@@ -207,7 +214,8 @@ impl Fixture
     /// - panics: if the fixture's nominal type or patterns are invalid.
     ///
     /// # Adequacy
-    /// - hypothesis: a hole holds the two later constructors, not the first.
+    /// - hypothesis: L3 — a hole holds the two later constructors, not the
+    ///   first.
     /// - witness: `tests::pattern_holes::an_arm_before_the_hole_still_wins`
     #[spec(ensures: |ret| ret.branches().len() == self.arms.len())]
     fn analyze(
@@ -234,8 +242,8 @@ impl Fixture
     ///   another color.
     ///
     /// # Adequacy
-    /// - hypothesis: constructor tests before a hole still select, while the
-    ///   hole holds its own and later bodies.
+    /// - hypothesis: L3 — constructor tests before a hole still select, while
+    ///   the hole holds its own and later bodies.
     /// - witness: `tests::pattern_holes::an_arm_before_the_hole_still_wins`
     #[spec(ensures: |ret| !matches!(ret, MatchRun::Evaluated { arm, .. } if usize::from(arm) > 2))]
     fn run(
@@ -364,7 +372,9 @@ fn filling_the_hole_moves_a_stuck_branch_to_uncovered_not_to_taken()
     );
     let blue = nullary(&mut filled, "Color", 2);
     assert_eq!(
-        filled.analyze_prefix("Color", blue, 2).selection(),
+        filled
+            .analyze_prefix("Color", blue, RowCount(2))
+            .selection(),
         &Selection::Exhausted,
         "while `Blue`, which the filled pattern does not name, is uncovered rather than taken"
     );
@@ -487,13 +497,13 @@ fn the_sum_eliminator_stops_at_an_indeterminate_arm()
         "def pick(b : Bool) -> -F Integer { case b { true => ret 1, ? => ret 0 } }\n",
         "pick",
     );
-    let yes = written.boolean(true);
+    let yes = written.boolean(Side::Left);
     assert_eq!(
         written.run(yes),
         returned("1"),
         "the settled injection takes its own arm"
     );
-    let no = written.boolean(false);
+    let no = written.boolean(Side::Right);
     assert!(
         matches!(written.run(no), Ran::Hole(_)),
         "the other injection reaches the unfinished arm and stops"
@@ -555,7 +565,7 @@ fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
     );
     let mut complete = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
     let green = nullary(&mut complete, "Color", 1);
-    let uncovered = complete.analyze_prefix("Color", green, 1);
+    let uncovered = complete.analyze_prefix("Color", green, RowCount(1));
     assert_eq!(
         uncovered.coverage().as_ref().unwrap().exhaustiveness(),
         Exhaustiveness::Inexhaustive,

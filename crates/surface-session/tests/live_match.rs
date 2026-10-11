@@ -1,5 +1,7 @@
 //! Live answers and coverage over retained semantic scrutinees.
 
+use core::fmt::Write as _;
+
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
@@ -27,12 +29,14 @@ use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_session::MatchCheckpoint;
 
+use crate::common::Text;
 use crate::common::resumed;
 use crate::common::session;
 use crate::common::submit;
 use crate::written::COLOR;
 use crate::written::NESTED;
 use crate::written::Ran;
+use crate::written::RowCount;
 use crate::written::Written;
 use crate::written::refusal;
 
@@ -40,24 +44,36 @@ use crate::written::refusal;
 ///
 /// # Specification
 /// trivial.
-fn color_pick(arms: &str) -> Written
+fn color_pick<'arms>(arms: impl Into<Text<'arms>>) -> Written
 {
+    let Text(arms) = arms.into();
     Written::new(
         &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"),
         "pick",
     )
 }
 
+/// One step of spelling a pattern: a part still to spell, or text to emit.
+#[derive(Clone, Copy, Debug)]
+enum Spelling
+{
+    /// The pattern part at this id.
+    Part(PatternId),
+    /// Punctuation between or after parts.
+    Text(&'static str),
+}
+
 /// The pattern `id` of `patterns`, spelled as a source author would.
 ///
 /// # Specification
-/// - requires: `id` and every part beneath it resolve in `patterns`.
+/// - requires: `id` and every part beneath it resolve in `patterns`, and every
+///   literal beneath it is an integer.
 /// - ensures: constructors as `#tag(fields)`, holes as `?`, binders as `x`,
 ///   wildcards as `_`, integers by their digits, injections as `inl`/`inr`.
-/// - panics: if a part does not resolve.
+/// - panics: if a part does not resolve or is a text or numeric literal.
 ///
 /// # Adequacy
-/// - hypothesis: two patterns of different shape never share a spelling.
+/// - hypothesis: L3 — two patterns of different shape never share a spelling.
 /// - witness: `tests::live_match::translation_covers_the_landed_pattern_grammar`
 #[spec(ensures: |ret| !ret.is_empty())]
 fn spelled(
@@ -65,39 +81,58 @@ fn spelled(
     id: PatternId,
 ) -> alloc::string::String
 {
-    let Some(pattern) = patterns.pattern(id)
-    else {
-        panic!("pattern {id:?} resolves");
-    };
-    match *pattern {
-        | Pattern::Wildcard => alloc::string::String::from("_"),
-        | Pattern::Binder => alloc::string::String::from("x"),
-        | Pattern::Unit => alloc::string::String::from("()"),
-        | Pattern::Hole(_) => alloc::string::String::from("?"),
-        | Pattern::Literal(Literal::Integer(ref integer)) => {
-            alloc::string::String::from(integer.magnitude().as_ref())
-        },
-        | Pattern::Literal(ref other) => alloc::format!("{other:?}"),
-        | Pattern::Pair(first, second) => alloc::format!(
-            "({}, {})",
-            spelled(patterns, first),
-            spelled(patterns, second)
-        ),
-        | Pattern::Injection(side, body) => {
-            let former = match side {
-                | Side::Left => "inl",
-                | Side::Right => "inr",
-            };
-            alloc::format!("{former}({})", spelled(patterns, body))
-        },
-        | Pattern::Constructor { tag, ref fields } => {
-            let fields: Vec<_> = fields
-                .iter()
-                .map(|&field| spelled(patterns, field))
-                .collect();
-            alloc::format!("#{}({})", usize::from(tag), fields.join(", "))
-        },
+    let mut spelling = alloc::string::String::new();
+    let mut pending = Vec::from([Spelling::Part(id)]);
+    while let Some(step) = pending.pop() {
+        let id = match step {
+            | Spelling::Text(text) => {
+                spelling.push_str(text);
+                continue;
+            },
+            | Spelling::Part(id) => id,
+        };
+        let Some(pattern) = patterns.pattern(id)
+        else {
+            panic!("pattern {id:?} resolves");
+        };
+        match *pattern {
+            | Pattern::Wildcard => spelling.push('_'),
+            | Pattern::Binder => spelling.push('x'),
+            | Pattern::Unit => spelling.push_str("()"),
+            | Pattern::Hole(_) => spelling.push('?'),
+            | Pattern::Literal(Literal::Integer(ref integer)) => {
+                spelling.push_str(integer.magnitude().as_ref());
+            },
+            | Pattern::Literal(_) => panic!("the fixtures match integer literals only"),
+            | Pattern::Pair(first, second) => {
+                spelling.push('(');
+                pending.extend([
+                    Spelling::Text(")"),
+                    Spelling::Part(second),
+                    Spelling::Text(", "),
+                    Spelling::Part(first),
+                ]);
+            },
+            | Pattern::Injection(side, body) => {
+                spelling.push_str(match side {
+                    | Side::Left => "inl(",
+                    | Side::Right => "inr(",
+                });
+                pending.extend([Spelling::Text(")"), Spelling::Part(body)]);
+            },
+            | Pattern::Constructor { tag, ref fields } => {
+                write!(spelling, "#{}(", usize::from(tag)).expect("a string accepts text");
+                pending.push(Spelling::Text(")"));
+                for (position, &field) in fields.iter().enumerate().rev() {
+                    pending.push(Spelling::Part(field));
+                    if position > 0 {
+                        pending.push(Spelling::Text(", "));
+                    }
+                }
+            },
+        }
     }
+    spelling
 }
 
 /// Evaluate a closed fixture without global definitions.
@@ -106,9 +141,12 @@ fn spelled(
 /// - requires: `value` is closed in `core`.
 /// - ensures: the retained checkpoint holds its semantic result.
 /// - panics: if the fixture cannot evaluate.
+/// - executable: none — the checkpoint is opaque; callers observe what it holds
+///   only through the analyses they run on it.
 ///
 /// # Adequacy
-/// - hypothesis: the callers distinguish constructor heads from holed payloads.
+/// - hypothesis: L3 — the callers distinguish constructor heads from holed
+///   payloads.
 /// - witness: `tests::live_match::a_constructor_scrutinee_refutes_the_head_and_suspends_the_payload`
 pub fn checkpoint(
     core: &CoreArena,
@@ -477,14 +515,14 @@ fn a_missing_constructor_is_reported_by_name()
     let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
     for tag in 0 .. 2_usize {
         let covered = written.construct("Color", tag, Vec::new());
-        let analysis = written.analyze_prefix("Color", covered, 2);
+        let analysis = written.analyze_prefix("Color", covered, RowCount(2));
         assert!(
             matches!(analysis.selection(), &Selection::Taken { arm, .. } if usize::from(arm) == tag),
             "the constructor at tag {tag} has its own row"
         );
     }
     let blue = written.construct("Color", 2, Vec::new());
-    let analysis = written.analyze_prefix("Color", blue, 2);
+    let analysis = written.analyze_prefix("Color", blue, RowCount(2));
     assert_eq!(
         analysis.coverage().as_ref().unwrap().exhaustiveness(),
         Exhaustiveness::Inexhaustive,
