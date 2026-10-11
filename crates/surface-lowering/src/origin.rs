@@ -978,7 +978,7 @@ mod tests
 
     #[cfg(anodized_panic)]
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "postcondition failed")]
     fn census_rejects_a_disordered_family()
     {
         let mut arena = CoreArena::new();

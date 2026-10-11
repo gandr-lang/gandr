@@ -1,13 +1,17 @@
 //! Producer transport into the additive kernel judgment; no admission
 //! authority.
 //!
-//! `Candidate::admission_candidate` exports only the compacted skeleton,
-//! distinct arms and source-derived rows. The kernel checks inheritance and
-//! transparency itself. Its instance judgment uses exact content identities
-//! without re-deriving the local equation. The release observer's `COMPRESSED`
-//! rows price serial and scoped-thread admission, charging materialized
-//! consumer-side work separately. Complete-certificate readmission retains
-//! ordinary replay; this adapter grants no endpoint-typing authority.
+//! `Candidate::admission_candidate` exports only the skeleton, distinct arms
+//! and source-derived rows, as the canonical proposal: arms in guard order,
+//! which is first occurrence in member order, and nodes and classifiers in the
+//! canonical order `Graph::admission_proposal` states. `Template::proposal`
+//! emits the same proposal from a produced or drafted template. The kernel
+//! checks inheritance and transparency itself. Its instance judgment uses
+//! exact content identities without re-deriving the local equation. The
+//! release observer's `COMPRESSED` rows price serial and scoped-thread
+//! admission, charging materialized consumer-side work separately.
+//! Complete-certificate readmission retains ordinary replay; this adapter
+//! grants no endpoint-typing authority.
 
 use anodized::spec;
 use gandr_kernel_core::admission::Choice;
@@ -16,9 +20,10 @@ use gandr_kernel_core::admission::Point;
 use gandr_kernel_core::admission::Proposal;
 
 use super::Candidate;
+use super::Entry;
+use super::Id;
 use super::StageError;
-use super::Step;
-use super::TermId;
+use super::Template;
 use super::Vec;
 
 /// A kernel proposal and independent point-ordered rows for harvested members.
@@ -30,13 +35,83 @@ pub struct AdmissionCandidate
     pub rows: Vec<Vec<Choice>>,
 }
 
+impl Entry
+{
+    /// List this point's arms in guard order.
+    ///
+    /// # Specification
+    /// - ensures: position `g` holds the arm guarded by `g`; every arm appears
+    ///   once.
+    /// - fails: Unbalanced when the guards are not exactly `0 .. arms`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `StageError::Unbalanced`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every harvested row's guard is checked by the kernel
+    ///   against the arm at that position, so a misplaced arm refuses a member.
+    /// - witness: `template::tests::compressed_admission_matches_plain_families`
+    #[spec(ensures: |output| output.as_ref().ok().is_none_or(|arms| arms.len() == self.arms.len()
+        && self.arms.iter().all(|(id, guard)| arms.get(usize::from(*guard)) == Some(id))))]
+    pub(super) fn ordered(&self) -> Result<Vec<Id>, StageError>
+    {
+        let mut arms = alloc::vec![None; self.arms.len()];
+        for (id, guard) in &self.arms {
+            let slot = arms
+                .get_mut(usize::from(*guard))
+                .ok_or(StageError::Unbalanced)?;
+            if slot.replace(*id).is_some() {
+                return Err(StageError::Unbalanced);
+            }
+        }
+        arms.into_iter()
+            .map(|arm| arm.ok_or(StageError::Unbalanced))
+            .collect()
+    }
+}
+
+impl Template
+{
+    /// Emit this template's canonical kernel proposal.
+    ///
+    /// # Specification
+    /// - ensures: the sides, decision and arms of this template in guard order,
+    ///   numbered canonically; equal to the analyzed candidate's proposal for
+    ///   the same members.
+    /// - fails: a malformed graph or guard partition.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `StageError::Unbalanced`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every drafted family of the edit-pair corpus compares
+    ///   this proposal with a fresh run's byte for byte.
+    /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|proposal|
+        proposal.equation.rule == self.rule
+        && proposal.arms.iter().zip(&self.entries).all(|(arms, entry)| arms.len() == entry.arms.len())))]
+    pub fn proposal(&self) -> Result<Proposal, StageError>
+    {
+        let arms = self
+            .entries
+            .iter()
+            .map(Entry::ordered)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.graph.admission_proposal(self.sides, self.rule, &arms)
+    }
+}
+
 impl Candidate
 {
     /// Translate the analyzed skeleton and source columns into kernel input.
     ///
     /// # Specification
     /// - ensures: every row selects the corresponding source arm in point
-    ///   order; retains no producer cache as evidence.
+    ///   order; arms are in guard order and the proposal is canonical; retains
+    ///   no producer cache as evidence.
     /// - fails: a malformed graph or column.
     /// - panics: none.
     ///
@@ -58,47 +133,22 @@ impl Candidate
                 choice.point == Point(usize::from(entry.point)) && choice.guard.0 < arms.len()))))]
     pub fn admission_candidate(&self) -> Result<AdmissionCandidate, StageError>
     {
-        let mut retained = Vec::from(self.sides);
-        retained.extend(
-            self.entries
-                .iter()
-                .flat_map(|entry| entry.arms.keys().copied()),
-        );
-        let (graph, map) = self.graph.compact(&retained)?;
         let mut rows =
             alloc::vec![Vec::with_capacity(self.entries.len()); usize::from(self.cost.members)];
         let mut arms = Vec::with_capacity(self.entries.len());
         for (entry, column) in self.entries.iter().zip(&self.arms) {
-            let dictionary: Vec<_> = entry.arms.keys().copied().collect();
             for (row, arm) in rows.iter_mut().zip(column) {
-                let guard = dictionary
-                    .binary_search(arm)
-                    .map_err(|_insertion| StageError::Unbalanced)?;
+                let guard = entry.arms.get(arm).ok_or(StageError::Unbalanced)?;
                 row.push(Choice {
                     point: Point(usize::from(entry.point)),
-                    guard: Guard(guard),
+                    guard: Guard(usize::from(*guard)),
                 });
             }
-            arms.push(
-                dictionary
-                    .into_iter()
-                    .map(|id| {
-                        map.get(&id)
-                            .map(|id| TermId(id.0))
-                            .ok_or(StageError::Unbalanced)
-                    })
-                    .collect::<Result<_, _>>()?,
-            );
+            arms.push(entry.ordered()?);
         }
-        let [source, target] = self.sides;
-        let source = *map.get(&source).ok_or(StageError::Unbalanced)?;
-        let target = *map.get(&target).ok_or(StageError::Unbalanced)?;
-        let equation = Step {
-            source: TermId(source.0),
-            target: TermId(target.0),
-            rule: self.rule,
-        };
-        let proposal = graph.admission_proposal(equation, arms)?;
+        let proposal = self
+            .graph
+            .admission_proposal(self.sides, self.rule, &arms)?;
         Ok(AdmissionCandidate { proposal, rows })
     }
 }

@@ -1,9 +1,16 @@
 //! Gate clauses over staging equations and complete producer certificates.
 
+use gandr_kernel_core::admission::Proposal;
+use gandr_kernel_core::admission::Refusal;
 use gandr_kernel_term::stage::Index;
 use gandr_kernel_term::stage::Model;
 use gandr_kernel_term::stage::Type;
 
+use super::draft::Drafter;
+use super::draft::Finished;
+use super::draft::Rebasing;
+use super::draft::Walk;
+use super::draft::Widening;
 use super::*;
 
 /// Fixture family cardinality.
@@ -31,19 +38,11 @@ fn cancellations(
     arms: Arms,
 ) -> (Arena, Vec<Step>)
 {
-    let mut arena = Arena::default();
-    let mut family = Vec::with_capacity(members.0);
-    for member in 0 .. members.0 {
-        let value = member.checked_rem(arms.0).unwrap();
-        let body = arena
-            .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(value)))
-            .unwrap();
-        let quote = arena.alloc(Term::Quote(body)).unwrap();
-        let source = arena.alloc(Term::Splice(quote)).unwrap();
-        let certificate =
-            gandr_core_nbe::stage::normalize(&mut arena, source, &mut Budget(100_000)).unwrap();
-        family.extend(certificate.steps);
-    }
+    let (arena, certificates) = normalized(Edition::Generated { members, arms });
+    let family = certificates
+        .into_iter()
+        .flat_map(|certificate| certificate.steps)
+        .collect();
     (arena, family)
 }
 
@@ -81,7 +80,6 @@ fn a_template_is_emitted_only_below_its_expansion_factor()
             let mut cache = InheritanceCache::new();
             let produced = produce(
                 &arena,
-                ProgramId(0),
                 &family,
                 PriceGate::Unmemoized,
                 &mut cache,
@@ -131,7 +129,6 @@ fn every_member_admits_as_its_plain_replay()
     let (mut arena, family) = cancellations(Members(64), Arms(2));
     let Production::Go(template) = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
@@ -191,7 +188,6 @@ fn every_member_admits_as_its_plain_replay()
             productions.push(
                 produce(
                     &arena,
-                    family.program,
                     &family.members,
                     PriceGate::Unmemoized,
                     &mut cache,
@@ -246,7 +242,7 @@ fn a_skeleton_divergent_family_yields_no_template()
     family.last_mut().unwrap().rule = Rule::QuoteSplice;
     let mut cache = InheritanceCache::new();
     assert!(
-        matches!(produce(&arena, ProgramId(0), &family, PriceGate::Unmemoized, &mut cache, &mut Budget(1_000_000)).unwrap(), Production::Plain { reason: TemplateRefusal::SkeletonDivergence { member }, .. } if usize::from(member) == 63)
+        matches!(produce(&arena, &family, PriceGate::Unmemoized, &mut cache, &mut Budget(1_000_000)).unwrap(), Production::Plain { reason: TemplateRefusal::SkeletonDivergence { member }, .. } if usize::from(member) == 63)
     );
     assert_eq!(usize::from(cache.checked()), 0);
 }
@@ -264,7 +260,6 @@ fn an_entry_a_decision_discriminates_on_yields_no_template()
     assert!(matches!(
         produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Unmemoized,
             &mut cache,
@@ -286,7 +281,6 @@ fn a_family_with_no_shared_content_yields_no_template()
     assert!(matches!(
         produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Unmemoized,
             &mut cache,
@@ -308,7 +302,6 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
     let mut cache = InheritanceCache::new();
     let first = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut cache,
@@ -320,7 +313,6 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
     assert_eq!(usize::from(first.cost().cache_hits), 62);
     let second = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut cache,
@@ -330,16 +322,20 @@ fn the_inheritance_check_runs_once_per_distinct_triple()
     assert_eq!(usize::from(second.cost().triples_checked), 0);
     assert_eq!(usize::from(second.cost().cache_hits), 64);
     assert_eq!(usize::from(cache.distinct_triples()), 2);
+    // The same content harvested in another program's arena reuses every
+    // verdict: the region is content, not producer identity.
+    let (other_arena, other_family) = cancellations(Members(64), Arms(2));
     let other = produce(
-        &arena,
-        ProgramId(1),
-        &family,
+        &other_arena,
+        &other_family,
         PriceGate::Unmemoized,
         &mut cache,
-        &mut Budget(1_000_000),
+        &mut Budget(0),
     )
     .unwrap();
-    assert_eq!(usize::from(other.cost().triples_checked), 2);
+    assert!(matches!(other, Production::Go(_)));
+    assert_eq!(usize::from(other.cost().triples_checked), 0);
+    assert_eq!(usize::from(other.cost().cache_hits), 64);
 }
 
 #[test]
@@ -369,7 +365,6 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
     let template = loop {
         match produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Unmemoized,
             &mut cache,
@@ -409,7 +404,6 @@ fn peak_choices_are_correlated()
     let (mut arena, family) = cancellations(Members(64), Arms(2));
     let Production::Go(template) = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
@@ -448,7 +442,6 @@ fn peak_choices_are_correlated()
     }
     let Production::Go(template) = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut InheritanceCache::new(),
@@ -519,7 +512,6 @@ fn cache_keys_include_classifier_content()
         let family = alloc::vec![Step { source, target: argument, rule: Rule::Beta }; 64];
         let production = produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Unmemoized,
             &mut cache,
@@ -608,7 +600,6 @@ fn independent_points_are_checked_with_other_points_rigid()
     let mut cache = InheritanceCache::new();
     let production = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut cache,
@@ -691,7 +682,7 @@ fn outer_predecessors_share_one_peak_point_and_replay()
 {
     let pairs: Vec<_> = (1 ..= 8).map(|n| (Natural(n), Natural(n - 1))).collect();
     let (mut arena, family) = numeral_successors(Stage::Outer, &pairs, Members(36));
-    let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    let Analysis::Candidate(candidate) = analyze(&arena, &family).unwrap()
     else {
         panic!("uniform family");
     };
@@ -757,7 +748,6 @@ fn predecessor_discovery_refuses_zero_inner_and_other_offsets()
         let mut cache = InheritanceCache::new();
         let produced = produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Memoized,
             &mut cache,
@@ -784,7 +774,7 @@ fn memoized_checks_respect_the_priced_allowance()
         .unwrap();
     let source = arena.alloc(Term::Apply(identity, argument)).unwrap();
     let family = alloc::vec![Step { source, target: argument, rule: Rule::Beta }; 64];
-    let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    let Analysis::Candidate(candidate) = analyze(&arena, &family).unwrap()
     else {
         panic!("uniform ground family");
     };
@@ -802,7 +792,6 @@ fn memoized_checks_respect_the_priced_allowance()
     assert_eq!(
         produce(
             &arena,
-            ProgramId(0),
             &family,
             PriceGate::Memoized,
             &mut cache,
@@ -813,7 +802,6 @@ fn memoized_checks_respect_the_priced_allowance()
     );
     let original = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Unmemoized,
         &mut cache,
@@ -823,7 +811,6 @@ fn memoized_checks_respect_the_priced_allowance()
     assert!(matches!(original, Production::Go(_)));
     let cached = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Memoized,
         &mut cache,
@@ -1026,7 +1013,7 @@ fn serialized_images_reconstruct_the_original_equations()
     }
     fixtures.push(((arena, family), Model(7)));
     for ((mut original, family), model) in fixtures {
-        let Analysis::Candidate(candidate) = analyze(&original, ProgramId(0), &family).unwrap()
+        let Analysis::Candidate(candidate) = analyze(&original, &family).unwrap()
         else {
             panic!("uniform image family");
         };
@@ -1104,7 +1091,7 @@ fn compressed_admission_matches_plain_families()
         numeral_successors(Stage::Outer, &pairs, Members(72)),
     ];
     for (mut arena, family) in fixtures {
-        let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+        let Analysis::Candidate(candidate) = analyze(&arena, &family).unwrap()
         else {
             panic!("candidate");
         };
@@ -1134,7 +1121,7 @@ fn empty_and_malformed_families_preserve_refusals()
     let arena = Arena::default();
     for gate in [PriceGate::Unmemoized, PriceGate::Memoized] {
         let mut cache = InheritanceCache::new();
-        let result = produce(&arena, ProgramId(0), &[], gate, &mut cache, &mut Budget(0)).unwrap();
+        let result = produce(&arena, &[], gate, &mut cache, &mut Budget(0)).unwrap();
         assert!(
             matches!(result, Production::Plain { reason: TemplateRefusal::EmptyFamily, cost }
             if cost == FamilyCostReport::default())
@@ -1147,9 +1134,7 @@ fn empty_and_malformed_families_preserve_refusals()
         target: missing,
         rule: Rule::SpliceQuote,
     };
-    assert!(
-        matches!(analyze(&arena, ProgramId(0), &[step]), Err(StageError::UnknownTerm(id)) if id == missing)
-    );
+    assert!(matches!(analyze(&arena, &[step]), Err(StageError::UnknownTerm(id)) if id == missing));
     assert!(
         matches!(plain_image(&arena, &step), Err(StageError::UnknownTerm(id)) if id == missing)
     );
@@ -1168,7 +1153,7 @@ fn empty_and_malformed_families_preserve_refusals()
     ];
     let (arena, mut family) = numeral_successors(Stage::Outer, &refusing, Members(3));
     assert!(matches!(
-        analyze(&arena, ProgramId(0), &[family[0], family[2]]),
+        analyze(&arena, &[family[0], family[2]]),
         Ok(Analysis::Refused {
             reason: TemplateRefusal::EntryOutsidePeak { .. },
             ..
@@ -1176,9 +1161,7 @@ fn empty_and_malformed_families_preserve_refusals()
     ));
     let absent = TermId(usize::MAX);
     family[1].source = absent;
-    assert!(
-        matches!(analyze(&arena, ProgramId(0), &family), Err(StageError::UnknownTerm(id)) if id == absent)
-    );
+    assert!(matches!(analyze(&arena, &family), Err(StageError::UnknownTerm(id)) if id == absent));
 }
 
 #[test]
@@ -1253,7 +1236,6 @@ fn member_selection_and_complete_replay_reject_near_misses()
     let (mut arena, family) = cancellations(Members(64), Arms(2));
     let Production::Go(template) = produce(
         &arena,
-        ProgramId(0),
         &family,
         PriceGate::Memoized,
         &mut InheritanceCache::new(),
@@ -1309,7 +1291,7 @@ fn member_selection_and_complete_replay_reject_near_misses()
 fn image_substitutions_refuse_missing_members_and_guards()
 {
     let (arena, family) = cancellations(Members(8), Arms(2));
-    let Analysis::Candidate(mut candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    let Analysis::Candidate(mut candidate) = analyze(&arena, &family).unwrap()
     else {
         panic!("uniform family")
     };
@@ -1320,7 +1302,7 @@ fn image_substitutions_refuse_missing_members_and_guards()
         serde_json::error::Category::Data
     );
     drop(row);
-    let Analysis::Candidate(mut candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+    let Analysis::Candidate(mut candidate) = analyze(&arena, &family).unwrap()
     else {
         panic!("uniform family")
     };
@@ -1411,7 +1393,6 @@ fn fresh_analysis(
 {
     conclude(
         generalize_all(arena, family).unwrap(),
-        ProgramId(0),
         family[0].rule,
         members_only(family),
     )
@@ -1540,14 +1521,14 @@ fn outside_peak_refusals_follow_from_the_first_and_last_members()
     for (pairs, refused_by_the_two) in families {
         let (arena, family) = numeral_successors(Stage::Outer, &pairs, Members(pairs.len()));
         let ends = [family[0], *family.last().unwrap()];
-        let analysis = analyze(&arena, ProgramId(0), &family).unwrap();
+        let analysis = analyze(&arena, &family).unwrap();
         let whole = generalize_all(&arena, &family).unwrap();
         match probe(&arena, &family).unwrap() {
             | Probe::Outside(entry) => {
                 assert!(refused_by_the_two);
                 assert!(matches!(whole.rooting, PeakRoots::Missing(_)));
                 assert!(matches!(
-                    analyze(&arena, ProgramId(0), &ends).unwrap(),
+                    analyze(&arena, &ends).unwrap(),
                     Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { entry: own }, .. }
                         if own == entry
                 ));
@@ -1583,86 +1564,213 @@ fn outside_peak_refusals_follow_from_the_first_and_last_members()
     assert_eq!(refused_by_the_rest, 1);
 }
 
-/// A staging observer program the probe witnesses normalize.
+/// A staging observer program body.
 #[derive(Clone, Copy)]
-enum Staged
+enum Body
 {
-    /// `pow`: `x^n` by repeated multiplication, one arm per exponent.
+    /// `pow`: `x^n` by repeated multiplication, its input left free.
     Power,
-    /// `double`: step `p -> <~x * ~p * ~x>`, inputs two and three per
-    /// exponent.
-    DoubleProduct,
+    /// `double`: step `p -> <~x * ~p * ~x>` over an inner input.
+    Double,
+    /// `triple`: step `p -> <~x * ~p * ~x * ~x>`, the double's body edited.
+    Triple,
 }
 
-/// Normalize a staging observer program at exponents zero through eight.
+/// Exponents `low ..= high`.
+#[derive(Clone, Copy)]
+struct Exponents
+{
+    /// The first exponent.
+    low: Natural,
+    /// The last exponent.
+    high: Natural,
+}
+
+/// One program of an edit trace.
+#[derive(Clone, Copy)]
+enum Edition
+{
+    /// A staging observer body normalized at each exponent and input.
+    Staged
+    {
+        /// The program body.
+        body: Body,
+        /// The exponents, ascending.
+        exponents: Exponents,
+        /// The inner inputs per exponent; the power program reads one free
+        /// input and ignores these.
+        inputs: &'static [Natural],
+    },
+    /// Quote/splice cancellations of inner numerals cycling over `arms`
+    /// bodies, one certificate per member.
+    Generated
+    {
+        /// The certificate count.
+        members: Members,
+        /// The distinct bodies.
+        arms: Arms,
+    },
+}
+
+/// The double's inputs.
+const TWO_THREE: &[Natural] = &[Natural(2), Natural(3)];
+
+/// `pow:0..8`: nine certificates.
+const POWER_TO_EIGHT: Edition = Edition::Staged {
+    body: Body::Power,
+    exponents: Exponents {
+        low: Natural(0),
+        high: Natural(8),
+    },
+    inputs: &[Natural(0)],
+};
+
+/// `double:0..8` over inputs two and three: eighteen certificates.
+const DOUBLE_TO_EIGHT: Edition = Edition::Staged {
+    body: Body::Double,
+    exponents: Exponents {
+        low: Natural(0),
+        high: Natural(8),
+    },
+    inputs: TWO_THREE,
+};
+
+/// The edition of `body` at `low ..= high` over `inputs`.
 ///
 /// # Specification
-/// - ensures: one certificate per exponent and input arm, in that order: nine
-///   for the power program, eighteen for the double product.
+/// trivial.
+const fn staged(
+    body: Body,
+    low: Natural,
+    high: Natural,
+    inputs: &'static [Natural],
+) -> Edition
+{
+    Edition::Staged {
+        body,
+        exponents: Exponents { low, high },
+        inputs,
+    }
+}
+
+/// The product program, `p -> <~x * ~p * ~x>`, or with `Body::Triple` the
+/// input multiplied once more.
+///
+/// # Specification
+/// - ensures: a closed outer-exponent, lifted-input program term.
+/// - panics: fixture allocation failure.
+///
+/// # Adequacy
+/// - hypothesis: L2 — normalization and ordinary replay check every certificate
+///   built from it.
+/// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+#[spec(ensures: |output| arena.term(output).is_ok())]
+fn product_program(
+    arena: &mut Arena,
+    body: Body,
+) -> TermId
+{
+    let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0)))).unwrap();
+    let lifted = arena.alloc_type(Type::Lift(inner)).unwrap();
+    let one = arena
+        .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(1)))
+        .unwrap();
+    let initial = arena.alloc(Term::Quote(one)).unwrap();
+    let input = arena.alloc(Term::Variable(Index(1))).unwrap();
+    let input = arena.alloc(Term::Splice(input)).unwrap();
+    let previous = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let previous = arena.alloc(Term::Splice(previous)).unwrap();
+    let product = arena.alloc(Term::Multiply(input, previous)).unwrap();
+    let mut product = arena.alloc(Term::Multiply(product, input)).unwrap();
+    if matches!(body, Body::Triple) {
+        product = arena.alloc(Term::Multiply(product, input)).unwrap();
+    }
+    let body = arena.alloc(Term::Quote(product)).unwrap();
+    let step = arena.alloc(Term::Lambda(lifted, body)).unwrap();
+    let exponent = arena.alloc(Term::Variable(Index(1))).unwrap();
+    let body = arena.alloc(Term::Iterate(exponent, initial, step)).unwrap();
+    let body = arena.alloc(Term::Lambda(lifted, body)).unwrap();
+    arena.alloc(Term::Lambda(outer, body)).unwrap()
+}
+
+/// Normalize one edition in a fresh arena.
+///
+/// # Specification
+/// - ensures: one certificate per exponent and input, exponents outermost, or
+///   one per generated member.
 /// - panics: fixture allocation or normalization failure.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the staged families' verdicts are compared against a
-///   fresh full analysis, which does not depend on how they were built.
+/// - hypothesis: L2 — the families harvested from it are compared against fresh
+///   full analyses and kernel admission, which do not depend on how they were
+///   built.
 /// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
-#[spec(ensures: |output| output.1.len() == match program {
-    Staged::Power => 9,
-    Staged::DoubleProduct => 18,
+/// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+#[spec(ensures: |output| output.1.len() == match edition {
+    Edition::Staged { body: Body::Power, exponents, .. } =>
+        exponents.high.0.saturating_sub(exponents.low.0).saturating_add(1),
+    Edition::Staged { exponents, inputs, .. } =>
+        exponents.high.0.saturating_sub(exponents.low.0).saturating_add(1)
+            .saturating_mul(inputs.len()),
+    Edition::Generated { members, .. } => members.0,
 })]
-fn staged_program(program: Staged) -> (Arena, Vec<Certificate>)
+fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
 {
-    let power = matches!(program, Staged::Power);
     let mut arena = Arena::default();
+    let mut certificates = Vec::new();
+    let (body, exponents, inputs) = match edition {
+        | Edition::Generated { members, arms } => {
+            for member in 0 .. members.0 {
+                let value = member.checked_rem(arms.0).unwrap();
+                let body = arena
+                    .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(value)))
+                    .unwrap();
+                let quote = arena.alloc(Term::Quote(body)).unwrap();
+                let source = arena.alloc(Term::Splice(quote)).unwrap();
+                certificates.push(
+                    gandr_core_nbe::stage::normalize(&mut arena, source, &mut Budget(100_000))
+                        .unwrap(),
+                );
+            }
+            return (arena, certificates);
+        },
+        | Edition::Staged {
+            body,
+            exponents,
+            inputs,
+        } => (body, exponents, inputs),
+    };
     arena.alloc_type(Type::In(Model(0))).unwrap();
     let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0)))).unwrap();
-    let program = if power {
-        gandr_core_nbe::stage::power(&mut arena, Model(0)).unwrap()
-    }
-    else {
-        let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
-        let lifted = arena.alloc_type(Type::Lift(inner)).unwrap();
-        let one = arena
-            .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(1)))
-            .unwrap();
-        let initial = arena.alloc(Term::Quote(one)).unwrap();
-        let input = arena.alloc(Term::Variable(Index(1))).unwrap();
-        let input = arena.alloc(Term::Splice(input)).unwrap();
-        let previous = arena.alloc(Term::Variable(Index(0))).unwrap();
-        let previous = arena.alloc(Term::Splice(previous)).unwrap();
-        let product = arena.alloc(Term::Multiply(input, previous)).unwrap();
-        let product = arena.alloc(Term::Multiply(product, input)).unwrap();
-        let body = arena.alloc(Term::Quote(product)).unwrap();
-        let step = arena.alloc(Term::Lambda(lifted, body)).unwrap();
-        let exponent = arena.alloc(Term::Variable(Index(1))).unwrap();
-        let body = arena.alloc(Term::Iterate(exponent, initial, step)).unwrap();
-        let body = arena.alloc(Term::Lambda(lifted, body)).unwrap();
-        arena.alloc(Term::Lambda(outer, body)).unwrap()
+    let (program, inputs) = match body {
+        | Body::Power => (
+            gandr_core_nbe::stage::power(&mut arena, Model(0)).unwrap(),
+            &[Natural(0)][..],
+        ),
+        | Body::Double | Body::Triple => (product_program(&mut arena, body), inputs),
     };
-    let arms: &[usize] = if power { &[0] } else { &[2, 3] };
-    let mut certificates = Vec::new();
-    for exponent in 0 ..= 8 {
-        for arm in arms {
+    for exponent in exponents.low.0 ..= exponents.high.0 {
+        for input in inputs {
             let number = arena
                 .alloc(Term::Natural(Stage::Outer, Natural(exponent)))
                 .unwrap();
             let source = arena.alloc(Term::Apply(program, number)).unwrap();
-            let input = if power {
-                arena.alloc(Term::Variable(Index(0))).unwrap()
-            }
-            else {
-                arena
-                    .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(*arm)))
-                    .unwrap()
+            let input = match body {
+                | Body::Power => arena.alloc(Term::Variable(Index(0))).unwrap(),
+                | Body::Double | Body::Triple => arena
+                    .alloc(Term::Natural(Stage::Inner(Model(0)), *input))
+                    .unwrap(),
             };
             let input = arena.alloc(Term::Quote(input)).unwrap();
             let source = arena.alloc(Term::Apply(source, input)).unwrap();
-            let source = if power {
-                let source = arena.alloc(Term::Splice(source)).unwrap();
-                let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
-                arena.alloc(Term::Quote(source)).unwrap()
-            }
-            else {
-                source
+            let source = match body {
+                | Body::Power => {
+                    let source = arena.alloc(Term::Splice(source)).unwrap();
+                    let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
+                    arena.alloc(Term::Quote(source)).unwrap()
+                },
+                | Body::Double | Body::Triple => source,
             };
             certificates.push(
                 gandr_core_nbe::stage::normalize(&mut arena, source, &mut Budget(10_000_000))
@@ -1672,16 +1780,15 @@ fn staged_program(program: Staged) -> (Arena, Vec<Certificate>)
     }
     (arena, certificates)
 }
-
 #[test]
 fn staged_families_keep_their_verdicts_under_the_probe()
 {
     let mut decided_by_the_two = 0_usize;
-    for program in [Staged::Power, Staged::DoubleProduct] {
-        let (arena, certificates) = staged_program(program);
+    for edition in [POWER_TO_EIGHT, DOUBLE_TO_EIGHT] {
+        let (arena, certificates) = normalized(edition);
         for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
             let members = &family.members;
-            let analysis = analyze(&arena, ProgramId(0), members).unwrap();
+            let analysis = analyze(&arena, members).unwrap();
             let expected = fresh_analysis(&arena, members);
             if members.len() > 2
                 && let Probe::Outside(_) = probe(&arena, members).unwrap()
@@ -1701,7 +1808,7 @@ fn staged_families_keep_their_verdicts_under_the_probe()
             assert_same_analysis(&analysis, &expected);
             for gate in [PriceGate::Unmemoized, PriceGate::Memoized] {
                 let (Analysis::Candidate(actual), Analysis::Candidate(expected)) = (
-                    analyze(&arena, ProgramId(0), members).unwrap(),
+                    analyze(&arena, members).unwrap(),
                     fresh_analysis(&arena, members),
                 )
                 else {
@@ -1718,6 +1825,538 @@ fn staged_families_keep_their_verdicts_under_the_probe()
         }
     }
     assert!(decided_by_the_two > 0);
+}
+
+/// What a product step's target is, relative to its source `a * b`.
+#[derive(Clone, Copy)]
+enum Target
+{
+    /// `b * a`.
+    Swapped,
+    /// `a - 1`.
+    LeftPredecessor,
+}
+
+/// Unreplayed steps over products of outer numerals, cycling over `pairs`.
+///
+/// # Specification
+/// - ensures: `members` steps under one rule, member `i` from pair `i` modulo
+///   the pair count; no rule is replayed.
+/// - panics: fixture allocation failure, an empty pair set or a zero left
+///   numeral under `Target::LeftPredecessor`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the drafter's walk and departure checks read only the
+///   syntax these build, and the producer's own analysis of the same steps is
+///   the reference they are compared with.
+/// - witness: `template::tests::drafts_refuse_what_a_fresh_run_would_generalize_differently`
+#[spec(requires: !pairs.is_empty(), ensures: |output| output.1.len() == members.0)]
+fn products(
+    pairs: &[(Natural, Natural)],
+    target: Target,
+    members: Members,
+) -> (Arena, Vec<Step>)
+{
+    let mut arena = Arena::default();
+    let mut family = Vec::with_capacity(members.0);
+    for &(left, right) in pairs.iter().cycle().take(members.0) {
+        let a = arena.alloc(Term::Natural(Stage::Outer, left)).unwrap();
+        let b = arena.alloc(Term::Natural(Stage::Outer, right)).unwrap();
+        let source = arena.alloc(Term::Multiply(a, b)).unwrap();
+        let target = match target {
+            | Target::Swapped => arena.alloc(Term::Multiply(b, a)).unwrap(),
+            | Target::LeftPredecessor => {
+                let below = Natural(left.0.checked_sub(1).unwrap());
+                arena.alloc(Term::Natural(Stage::Outer, below)).unwrap()
+            },
+        };
+        family.push(Step {
+            source,
+            target,
+            rule: Rule::Congruence,
+        });
+    }
+    (arena, family)
+}
+
+/// A candidate's generalization as a template, unpriced and unreplayed.
+///
+/// # Specification
+/// trivial.
+fn unchecked(candidate: Candidate) -> Template
+{
+    let Candidate {
+        graph,
+        entries,
+        sides,
+        rule,
+        cost,
+        ..
+    } = candidate;
+    Template {
+        graph,
+        sides,
+        rule,
+        entries,
+        cost,
+    }
+}
+
+/// Generalize product steps into an unchecked template.
+///
+/// # Specification
+/// - ensures: the producer's own generalization of 64 members cycling over
+///   `pairs`.
+/// - panics: a family the producer does not generalize.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the templates the departure checks draft from are the
+///   producer's, not hand-built.
+/// - witness: `template::tests::drafts_refuse_what_a_fresh_run_would_generalize_differently`
+#[spec(ensures: |output| !output.entries.is_empty())]
+fn product_template(
+    pairs: &[(Natural, Natural)],
+    target: Target,
+) -> Template
+{
+    let (arena, family) = products(pairs, target, Members(64));
+    let Analysis::Candidate(candidate) = analyze(&arena, &family).unwrap()
+    else {
+        panic!("the producer generalizes the products");
+    };
+    unchecked(candidate)
+}
+
+/// Draft product steps from a template, widening without rebase, and finish
+/// under the unmemoized price.
+///
+/// # Specification
+/// - ensures: the finished draft, and the producer's own proposal for the same
+///   members when it generalizes them.
+/// - panics: a member the walk misses, or a malformed fixture.
+///
+/// # Adequacy
+/// - hypothesis: L2 — each departure is built to be the only difference from
+///   the template, and the ready drafts are compared with the producer's
+///   proposal.
+/// - witness: `template::tests::drafts_refuse_what_a_fresh_run_would_generalize_differently`
+#[spec(ensures: |output| matches!(output.0, Finished::Ready(_) | Finished::Unfit(_)))]
+fn product_draft(
+    template: &Template,
+    pairs: &[(Natural, Natural)],
+    target: Target,
+    members: Members,
+) -> (Finished, Maybe<Proposal, TemplateRefusal>)
+{
+    let (arena, family) = products(pairs, target, members);
+    let mut drafter = Drafter::default();
+    let walk = template
+        .walk(
+            &arena,
+            &family,
+            Widening::Widened,
+            Rebasing::Never,
+            &mut drafter,
+        )
+        .unwrap();
+    let Walk::Matched { template, .. } = walk
+    else {
+        panic!("every product member matches");
+    };
+    let finished = template
+        .finish(
+            &arena,
+            &family,
+            draft::Coverage::Whole,
+            &mut drafter,
+            PriceGate::Unmemoized,
+            &mut memo::tests::Stopped,
+        )
+        .unwrap();
+    let fresh = match analyze(&arena, &family).unwrap() {
+        | Analysis::Candidate(candidate) => {
+            Maybe::Present(candidate.admission_candidate().unwrap().proposal)
+        },
+        | Analysis::Refused { reason, .. } => Maybe::Absent(reason),
+    };
+    (finished, fresh)
+}
+
+#[test]
+fn drafts_refuse_what_a_fresh_run_would_generalize_differently()
+{
+    let n = Natural;
+    let swapped = product_template(&[(n(1), n(2)), (n(3), n(4))], Target::Swapped);
+    // Positive controls: the template's own members draft exactly, and new
+    // bodies widen it; both are the producer's own proposal.
+    for pairs in [[(n(1), n(2)), (n(3), n(4))], [(n(5), n(6)), (n(7), n(8))]] {
+        let (finished, fresh) = product_draft(&swapped, &pairs, Target::Swapped, Members(64));
+        let (Finished::Ready(draft), Maybe::Present(fresh)) = (finished, fresh)
+        else {
+            panic!("a fit draft and a fresh candidate");
+        };
+        assert_eq!(draft.proposal, fresh);
+    }
+    // One body at the first point: a fresh run keeps it rigid.
+    let (finished, _) = product_draft(
+        &swapped,
+        &[(n(1), n(2)), (n(1), n(4))],
+        Target::Swapped,
+        Members(64),
+    );
+    assert!(
+        matches!(finished, Finished::Unfit(Unfit::Collapsed(point)) if usize::from(point) == 0)
+    );
+    // Equal bodies at both points on every member: a fresh run makes one.
+    let (finished, _) = product_draft(
+        &swapped,
+        &[(n(5), n(5)), (n(6), n(6))],
+        Target::Swapped,
+        Members(64),
+    );
+    assert!(matches!(
+        finished,
+        Finished::Unfit(Unfit::Merged(first, second))
+            if usize::from(first) == 0 && usize::from(second) == 1
+    ));
+    // Too few members to pay: the producer's price refuses the draft too.
+    let (finished, fresh) = product_draft(
+        &swapped,
+        &[(n(1), n(2)), (n(3), n(4))],
+        Target::Swapped,
+        Members(4),
+    );
+    assert!(matches!(finished, Finished::Unfit(Unfit::DoesNotPay(_))));
+    assert!(matches!(fresh, Maybe::Present(_)));
+    // The target read as the left point's predecessor.
+    let below = product_template(&[(n(5), n(9)), (n(7), n(2))], Target::LeftPredecessor);
+    let (finished, fresh) = product_draft(
+        &below,
+        &[(n(5), n(9)), (n(7), n(2))],
+        Target::LeftPredecessor,
+        Members(64),
+    );
+    let (Finished::Ready(draft), Maybe::Present(fresh)) = (finished, fresh)
+    else {
+        panic!("a fit draft and a fresh candidate");
+    };
+    assert_eq!(draft.proposal, fresh);
+    // The right point's body equals that predecessor on every member: a fresh
+    // run reads the right point there instead.
+    let (finished, _) = product_draft(
+        &below,
+        &[(n(5), n(4)), (n(7), n(6))],
+        Target::LeftPredecessor,
+        Members(64),
+    );
+    assert!(matches!(
+        finished,
+        Finished::Unfit(Unfit::Shadowed(point, other))
+            if usize::from(point) == 0 && usize::from(other) == 1
+    ));
+    // The walk's misses.
+    let mut drafter = Drafter::default();
+    let mut walk = |template: &Template, pairs: &[(Natural, Natural)], widening, rule| {
+        let (arena, mut family) = products(pairs, Target::Swapped, Members(2));
+        for step in &mut family {
+            step.rule = rule;
+        }
+        match template
+            .walk(&arena, &family, widening, Rebasing::Allowed, &mut drafter)
+            .unwrap()
+        {
+            | Walk::Missed(miss) => Maybe::Absent(miss),
+            | Walk::Matched { kind, .. } => Maybe::Present(kind),
+        }
+    };
+    let pairs = [(n(1), n(2)), (n(3), n(4))];
+    assert_eq!(
+        walk(&swapped, &pairs, Widening::Widened, Rule::QuoteSplice),
+        Maybe::Absent(Miss::Rule)
+    );
+    assert_eq!(
+        walk(&swapped, &[(n(5), n(6))], Widening::Exact, Rule::Congruence),
+        Maybe::Absent(Miss::Arm)
+    );
+    assert_eq!(
+        walk(
+            &swapped,
+            &[(n(5), n(6))],
+            Widening::Widened,
+            Rule::Congruence
+        ),
+        Maybe::Present(DraftKind::Widened(ArmCount(2)))
+    );
+    let square = product_template(&[(n(1), n(1)), (n(2), n(2))], Target::Swapped);
+    assert_eq!(
+        walk(&square, &pairs, Widening::Widened, Rule::Congruence),
+        Maybe::Absent(Miss::Correlation)
+    );
+    let (mut arena, mut family) = products(&pairs, Target::Swapped, Members(2));
+    let numeral = arena.alloc(Term::Natural(Stage::Outer, n(9))).unwrap();
+    for step in &mut family {
+        step.source = numeral;
+    }
+    assert!(matches!(
+        swapped
+            .walk(
+                &arena,
+                &family,
+                Widening::Widened,
+                Rebasing::Allowed,
+                &mut Drafter::default()
+            )
+            .unwrap(),
+        Walk::Missed(Miss::Skeleton)
+    ));
+}
+
+/// An edit trace: programs normalized in order, one memo carried through.
+type Trace = Vec<Edition>;
+
+#[test]
+fn drafts_equal_fresh_runs_across_the_edit_traces()
+{
+    let n = Natural;
+    let generated = |members, arms| Edition::Generated {
+        members: Members(members),
+        arms: Arms(arms),
+    };
+    let traces: Vec<Trace> = Vec::from([
+        (1 ..= 4)
+            .map(|k| staged(Body::Power, n(k), n(k), &[]))
+            .collect(),
+        (1 ..= 4)
+            .map(|k| staged(Body::Double, n(k), n(k), TWO_THREE))
+            .collect(),
+        (2 ..= 5)
+            .map(|top| staged(Body::Power, n(0), n(top), &[]))
+            .collect(),
+        (2 ..= 5)
+            .map(|top| staged(Body::Double, n(0), n(top), TWO_THREE))
+            .collect(),
+        Vec::from([
+            staged(Body::Double, n(6), n(6), TWO_THREE),
+            staged(Body::Double, n(6), n(6), &[
+                Natural(2),
+                Natural(3),
+                Natural(5),
+            ]),
+            staged(Body::Double, n(6), n(6), &[
+                Natural(2),
+                Natural(3),
+                Natural(5),
+                Natural(7),
+            ]),
+        ]),
+        Vec::from([
+            DOUBLE_TO_EIGHT,
+            staged(Body::Double, n(0), n(8), &[
+                Natural(2),
+                Natural(3),
+                Natural(5),
+            ]),
+        ]),
+        Vec::from([
+            staged(Body::Double, n(6), n(6), TWO_THREE),
+            staged(Body::Triple, n(6), n(6), TWO_THREE),
+        ]),
+        Vec::from([DOUBLE_TO_EIGHT, staged(Body::Triple, n(0), n(8), TWO_THREE)]),
+        Vec::from([
+            generated(8, 2),
+            generated(64, 2),
+            generated(64, 4),
+            generated(64, 8),
+        ]),
+        Vec::from([POWER_TO_EIGHT, DOUBLE_TO_EIGHT, POWER_TO_EIGHT]),
+    ]);
+    let mut exact = 0_usize;
+    let mut widened = 0_usize;
+    let mut rebased = 0_usize;
+    let mut refused = 0_usize;
+    for trace in &traces {
+        let mut memo = Memo::default();
+        let mut cache = InheritanceCache::new();
+        for edition in trace {
+            let (arena, certificates) = normalized(*edition);
+            for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
+                let report = memo
+                    .admit_family(
+                        &arena,
+                        &family,
+                        PriceGate::Memoized,
+                        &mut cache,
+                        &mut Budget(100_000_000),
+                        &mut memo::tests::Stopped,
+                    )
+                    .unwrap();
+                assert!(
+                    !matches!(report.drafting, Drafting::Declined(_)),
+                    "a stopped clock drafts every family with a template"
+                );
+                if let Drafting::Refused(_) = report.drafting {
+                    refused = refused.checked_add(1).unwrap();
+                }
+                let FamilyAdmission::Admitted { origin, .. } = report.admission
+                else {
+                    continue;
+                };
+                let Maybe::Present(held) = memo.template(&family)
+                else {
+                    panic!("an admitted family's template is held");
+                };
+                let Analysis::Candidate(fresh) = analyze(&arena, &family.members).unwrap()
+                else {
+                    panic!("an admitted family is a candidate");
+                };
+                assert_eq!(
+                    held.proposal().unwrap(),
+                    fresh.admission_candidate().unwrap().proposal
+                );
+                let Origin::Drafted(kind) = origin
+                else {
+                    continue;
+                };
+                let cost = fresh.cost();
+                assert_eq!(
+                    (
+                        held.cost.members,
+                        held.cost.plain_size,
+                        held.cost.template_size
+                    ),
+                    (cost.members, cost.plain_size, cost.template_size)
+                );
+                assert!(matches!(
+                    fresh
+                        .produce(
+                            PriceGate::Memoized,
+                            &mut InheritanceCache::new(),
+                            &mut Budget(100_000_000)
+                        )
+                        .unwrap(),
+                    Production::Go(_)
+                ));
+                let count = match kind {
+                    | DraftKind::Exact => &mut exact,
+                    | DraftKind::Widened(_) => &mut widened,
+                    | DraftKind::Rebased(..) => &mut rebased,
+                };
+                *count = count.checked_add(1).unwrap();
+            }
+        }
+    }
+    assert_eq!(refused, 0, "the kernel refuses no draft of the corpus");
+    assert!(
+        exact > 0 && widened > 0 && rebased > 0,
+        "{exact} {widened} {rebased}"
+    );
+}
+
+#[test]
+fn a_kernel_refused_draft_falls_back_to_the_producer()
+{
+    let edition = Edition::Generated {
+        members: Members(64),
+        arms: Arms(2),
+    };
+    let mut memo = Memo::default();
+    let mut cache = InheritanceCache::new();
+    let mut admit = |memo: &mut Memo| {
+        let (arena, certificates) = normalized(edition);
+        let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
+        let [ref family] = *families.as_slice()
+        else {
+            panic!("one cancellation family");
+        };
+        let report = memo
+            .admit_family(
+                &arena,
+                family,
+                PriceGate::Unmemoized,
+                &mut cache,
+                &mut Budget(1_000_000),
+                &mut memo::tests::Stopped,
+            )
+            .unwrap();
+        let Analysis::Candidate(fresh) = analyze(&arena, &family.members).unwrap()
+        else {
+            panic!("two arms over 64 members generalize");
+        };
+        (
+            family.clone(),
+            report,
+            fresh.admission_candidate().unwrap().proposal,
+        )
+    };
+    let (family, first, _) = admit(&mut memo);
+    assert!(matches!(first.admission, FamilyAdmission::Admitted {
+        origin: Origin::Produced,
+        ..
+    }));
+    // A held template whose join is its peak: every member's target differs
+    // from the drafted one.
+    let Maybe::Present(held) = memo.template(&family)
+    else {
+        panic!("the produced template is held");
+    };
+    let mut corrupted = held.clone();
+    let [peak, _] = corrupted.sides;
+    corrupted.sides = [peak, peak];
+    memo.hold(&family, corrupted);
+    let (family, second, fresh) = admit(&mut memo);
+    assert!(matches!(second.drafting, Drafting::Refused(_)));
+    assert!(matches!(second.admission, FamilyAdmission::Admitted {
+        origin: Origin::Produced,
+        ..
+    }));
+    let Maybe::Present(held) = memo.template(&family)
+    else {
+        panic!("the producer's template replaces the refused one");
+    };
+    assert_eq!(held.proposal().unwrap(), fresh);
+}
+
+#[test]
+fn a_work_bound_family_admits_its_template_subfamily()
+{
+    let mut memo = Memo::default();
+    let mut cache = InheritanceCache::new();
+    let mut partial = 0_usize;
+    // `double:0..11` is the first edition whose `beta` family the kernel
+    // refuses for its work bound; `double:0..10`'s template is the one held.
+    for top in [10, 11] {
+        let (arena, certificates) =
+            normalized(staged(Body::Double, Natural(0), Natural(top), TWO_THREE));
+        for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
+            let held = match memo.template(&family) {
+                | Maybe::Present(template) => Maybe::Present(template.proposal().unwrap()),
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            };
+            let report = memo
+                .admit_family(
+                    &arena,
+                    &family,
+                    PriceGate::Memoized,
+                    &mut cache,
+                    &mut Budget(100_000_000),
+                    &mut memo::tests::Stopped,
+                )
+                .unwrap();
+            if let FamilyAdmission::Partial { ref members, .. } = report.admission {
+                assert!(!members.is_empty() && members.len() < family.members.len());
+                // The widened draft hit the same bound as the producer's own
+                // proposal, and the smaller template is kept.
+                assert_eq!(report.drafting, Drafting::Refused(Refusal::SchemaWorkBound));
+                let Maybe::Present(kept) = memo.template(&family)
+                else {
+                    panic!("the template is kept");
+                };
+                assert_eq!(Maybe::Present(kept.proposal().unwrap()), held);
+                partial = partial.checked_add(1).unwrap();
+            }
+        }
+    }
+    assert_eq!(partial, 1);
 }
 
 /// Analyze a family with every member generalized, none read from a row: the
@@ -1764,7 +2403,7 @@ fn every_member_analysis(
         },
         | _ => generalize_all(arena, family).unwrap(),
     };
-    conclude(generalization, ProgramId(0), family[0].rule, cost).unwrap()
+    conclude(generalization, family[0].rule, cost).unwrap()
 }
 
 /// Compare two candidates field by field: every graph coordinate, every point
@@ -1773,7 +2412,7 @@ fn every_member_analysis(
 /// # Specification
 /// - ensures: returns only when both candidates hold the same graph, node for
 ///   node, the same classifier vocabulary, entries, arm columns, sides, rule,
-///   program, cost and triples.
+///   cost and triples.
 /// - panics: on any difference.
 /// - executable: none — the assertions are the comparison; a predicate would
 ///   repeat them.
@@ -1805,7 +2444,6 @@ fn assert_same_candidate(
     assert_eq!(actual.arms, expected.arms);
     assert_eq!(actual.sides, expected.sides);
     assert_eq!(actual.rule, expected.rule);
-    assert_eq!(actual.program, expected.program);
     assert_eq!(actual.cost, expected.cost);
     assert_eq!(actual.triples, expected.triples);
 }
@@ -1824,8 +2462,8 @@ fn distinct_members_generalize_as_every_member()
     for count in 3 ..= 7 {
         families.push(numeral_successors(Stage::Outer, &pairs, Members(count)));
     }
-    for program in [Staged::Power, Staged::DoubleProduct] {
-        let (arena, certificates) = staged_program(program);
+    for edition in [POWER_TO_EIGHT, DOUBLE_TO_EIGHT] {
+        let (arena, certificates) = normalized(edition);
         let harvested = harvest(&arena, ProgramId(0), &certificates).unwrap();
         for family in harvested {
             families.push((arena.clone(), family.members));
@@ -1834,7 +2472,7 @@ fn distinct_members_generalize_as_every_member()
     let mut repeated = 0_usize;
     for workload in &families {
         let (arena, family) = (&workload.0, &workload.1);
-        let actual = analyze(arena, ProgramId(0), family).unwrap();
+        let actual = analyze(arena, family).unwrap();
         let expected = every_member_analysis(arena, family);
         match (&actual, &expected) {
             | (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
