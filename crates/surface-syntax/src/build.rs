@@ -465,6 +465,157 @@ impl<'source> TreeBuilder<'source>
     {
         let fragment = self.source.fragment(span)?;
         let mut digests: Vec<NodeDigest> = Vec::with_capacity(children.len());
+        self.attach(children, |staged| {
+            if bool::from(staged.label.significance()) {
+                digests.push(staged.digest);
+            }
+        })?;
+        let digest = digest_of(label, fragment, &digests);
+
+        Ok(self.stage(label, span, children, digest))
+    }
+
+    /// Stage a node as [`node`](Self::node) does, under the digest a caller
+    /// already folded for it.
+    ///
+    /// A digest depends on a node's label, its own text and its significant
+    /// children's digests, never on where the node sits, so a parser that
+    /// kept a subtree's digests from an earlier fold stages that subtree again
+    /// at any offset without hashing it.
+    ///
+    /// # Specification
+    /// - requires: `digest` is the digest [`node`](Self::node) would fold for
+    ///   `label` over `span` and `children`; everything else
+    ///   [`node`](Self::node) requires, which is checked as it checks it.
+    /// - ensures: on success the staged node is the node [`node`](Self::node)
+    ///   would stage, and the children are attached as it attaches them.
+    /// - provides: a subtree's identity carried across builds; every node of a
+    ///   finished tree still has a validated span and a digest over the one
+    ///   preimage, which the enforcing build recomputes.
+    /// - fails: as [`node`](Self::node) fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`SyntaxError::SpanOutsideSource`] and
+    /// [`SyntaxError::SpanSplitsCharacter`] from validating `span`;
+    /// [`SyntaxError::UnknownStagedNode`] and
+    /// [`SyntaxError::ChildAlreadyAttached`] from attaching `children`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture tree staged under digests folded apart
+    ///   from the builder equals the tree [`node`](Self::node) stages, node by
+    ///   node; a node staged with a span past the source or a child attached
+    ///   twice is refused with the exact variant [`node`](Self::node) returns.
+    ///   A digest other than the fold breaks the precondition, which the
+    ///   enforcing build checks on every call.
+    /// - witness: `build::tests::a_supplied_digest_stages_the_folded_node`
+    /// - witness: `build::tests::a_supplied_digest_is_refused_as_node_refuses`
+    #[inline]
+    #[spec(
+        requires: self.folded(label, span, children).map_or(true, |folded| folded == digest),
+        captures: [next_position = self.staged.len(), next_edge = self.edges.len()],
+        ensures: |ret| ret.as_ref().map_or_else(
+            |_| self.staged.len() == next_position && self.edges.len() == next_edge,
+            |minted| minted.builder == self.identity && minted.position == next_position
+                && self.staged.get(minted.position).is_some_and(|staged| {
+                    staged.label == label && staged.span == span && staged.digest == digest
+                        && !staged.attached.0 && staged.first_edge == next_edge
+                        && self.edges.get(next_edge ..) == Some(children)
+                }),
+        ),
+    )]
+    pub fn node_with_digest(
+        &mut self,
+        label: NodeLabel,
+        span: ByteSpan,
+        children: &[StagedId],
+        digest: NodeDigest,
+    ) -> Result<StagedId, SyntaxError>
+    {
+        let _fragment = self.source.fragment(span)?;
+        self.attach(children, |_staged| {})?;
+
+        Ok(self.stage(label, span, children, digest))
+    }
+
+    /// The digest [`node`](Self::node) folds for `label` over `span` and
+    /// `children`, attaching nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the fold of `label`, `span`'s fragment and the significant
+    ///   children's digests in order; the builder is unchanged.
+    /// - fails: the span or child refusals [`node`](Self::node) reports, except
+    ///   that an attached child is read rather than refused.
+    /// - panics: none.
+    /// - executable: none — the fold is the body; repeating it as a
+    ///   postcondition observes nothing independent.
+    ///
+    /// # Errors
+    /// [`SyntaxError::SpanOutsideSource`],
+    /// [`SyntaxError::SpanSplitsCharacter`] or
+    /// [`SyntaxError::UnknownStagedNode`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the precondition of
+    ///   [`node_with_digest`](Self::node_with_digest) agrees with every digest
+    ///   the fixture folds apart from the builder.
+    /// - witness: `build::tests::a_supplied_digest_stages_the_folded_node`
+    fn folded(
+        &self,
+        label: NodeLabel,
+        span: ByteSpan,
+        children: &[StagedId],
+    ) -> Result<NodeDigest, SyntaxError>
+    {
+        let fragment = self.source.fragment(span)?;
+        let mut digests: Vec<NodeDigest> = Vec::with_capacity(children.len());
+        for &child in children {
+            let position = self.resolve(child)?;
+            let Some(staged) = self.staged.get(position.0)
+            else {
+                return Err(SyntaxError::UnknownStagedNode { node: child });
+            };
+            if bool::from(staged.label.significance()) {
+                digests.push(staged.digest);
+            }
+        }
+
+        Ok(digest_of(label, fragment, &digests))
+    }
+
+    /// Attach `children`, in order, to the node about to be staged, handing
+    /// each to `accepted` as it is attached.
+    ///
+    /// # Specification
+    /// - requires: nothing — a foreign, unknown or attached identity is
+    ///   admissible input.
+    /// - ensures: on success every child is attached; a refusal leaves the
+    ///   children before the refused one attached.
+    /// - fails: [`SyntaxError::UnknownStagedNode`] for a child naming no node
+    ///   here; [`SyntaxError::ChildAlreadyAttached`] for a child that already
+    ///   has a parent, including one listed twice.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`SyntaxError::UnknownStagedNode`] or
+    /// [`SyntaxError::ChildAlreadyAttached`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the staging refusals [`node`](Self::node) and
+    ///   [`node_with_digest`](Self::node_with_digest) assert, a child offered
+    ///   twice within one call among them, separate the lookup from the
+    ///   attachment test.
+    /// - witness: `build::tests::a_child_listed_twice_in_one_call_is_refused`
+    /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
+    /// - witness: `build::tests::a_supplied_digest_is_refused_as_node_refuses`
+    #[spec(ensures: |ret| ret.is_err() || children.iter().all(|child| self.staged.get(child.position).is_some_and(|staged| staged.attached.0)))]
+    fn attach(
+        &mut self,
+        children: &[StagedId],
+        mut accepted: impl FnMut(&StagedNode),
+    ) -> Result<(), SyntaxError>
+    {
         for &child in children {
             let position = self.resolve(child)?;
             let Some(staged) = self.staged.get_mut(position.0)
@@ -475,14 +626,28 @@ impl<'source> TreeBuilder<'source>
                 return Err(SyntaxError::ChildAlreadyAttached { node: child });
             }
             staged.attached = Attached(true);
-            if bool::from(staged.label.significance()) {
-                digests.push(staged.digest);
-            }
+            accepted(staged);
         }
+
+        Ok(())
+    }
+
+    /// Stage a node over `children`, already attached, under `digest`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stage(
+        &mut self,
+        label: NodeLabel,
+        span: ByteSpan,
+        children: &[StagedId],
+        digest: NodeDigest,
+    ) -> StagedId
+    {
         let staged = StagedNode {
             label,
             span,
-            digest: digest_of(label, fragment, &digests),
+            digest,
             first_edge: self.edges.len(),
             child_count: children.len(),
             attached: Attached(false),
@@ -494,7 +659,7 @@ impl<'source> TreeBuilder<'source>
         self.edges.extend_from_slice(children);
         self.staged.push(staged);
 
-        Ok(minted)
+        minted
     }
 
     /// Lay the subtree rooted at `root` out in level order.
@@ -597,6 +762,7 @@ mod tests
     use anodized::spec;
 
     use super::TreeBuilder;
+    use crate::digest::digest_of;
     use crate::error::SyntaxError;
     use crate::label::NodeLabel;
     use crate::mold::GrammarFingerprint;
@@ -1271,6 +1437,84 @@ mod tests
             Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
             "the attachment is recorded as each child is accepted, so a repeat \
              inside one call is caught as well"
+        );
+    }
+
+    #[test]
+    fn a_supplied_digest_stages_the_folded_node()
+    {
+        let source = SourceText::from(LAMBDA_SOURCE);
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let text = |start: usize, end: usize| source.fragment(at(start, end)).unwrap();
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        let mut leaf = |start: usize, end: usize| {
+            let digest = digest_of(word(), text(start, end), &[]);
+            let staged = builder
+                .node_with_digest(word(), at(start, end), &[], digest)
+                .unwrap();
+            (staged, digest)
+        };
+        let (name, name_digest) = leaf(4, 5);
+        let (binder, binder_digest) = leaf(9, 10);
+        let (body, body_digest) = leaf(19, 20);
+        let returned_digest = digest_of(returner(), text(12, 20), &[body_digest]);
+        let returned = builder
+            .node_with_digest(returner(), at(12, 20), &[body], returned_digest)
+            .unwrap();
+        let abstraction_digest =
+            digest_of(lambda(), text(8, 20), &[binder_digest, returned_digest]);
+        let abstraction = builder
+            .node_with_digest(lambda(), at(8, 20), &[binder, returned], abstraction_digest)
+            .unwrap();
+        let declaration_digest = digest_of(definition(), text(0, 22), &[
+            name_digest,
+            abstraction_digest,
+        ]);
+        let declaration = builder
+            .node_with_digest(
+                definition(),
+                at(0, 22),
+                &[name, abstraction],
+                declaration_digest,
+            )
+            .unwrap();
+        let root_digest = digest_of(NodeLabel::Wald, text(0, 22), &[declaration_digest]);
+        let root = builder
+            .node_with_digest(NodeLabel::Wald, at(0, 22), &[declaration], root_digest)
+            .unwrap();
+
+        assert_eq!(
+            builder.finish(root).unwrap(),
+            lambda_tree(source, ByteOffset::from(0_usize)),
+            "digests folded apart from the builder stage the tree the builder folds"
+        );
+    }
+
+    #[test]
+    fn a_supplied_digest_is_refused_as_node_refuses()
+    {
+        let source = SourceText::from(REFUSAL_SOURCE);
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
+        let first = source.fragment(first_byte()).unwrap();
+        let leaf_digest = digest_of(word(), first, &[]);
+
+        assert_eq!(
+            builder.node_with_digest(word(), past_fixture_end(), &[], leaf_digest),
+            Err(SyntaxError::SpanOutsideSource {
+                span: past_fixture_end(),
+                source_end: ByteOffset::from(2_usize),
+            }),
+            "the span is validated though no fragment is hashed"
+        );
+        let leaf = builder
+            .node_with_digest(word(), first_byte(), &[], leaf_digest)
+            .unwrap();
+        let whole = source.fragment(whole_fixture()).unwrap();
+        let twice = digest_of(NodeLabel::Wald, whole, &[leaf_digest, leaf_digest]);
+        assert_eq!(
+            builder.node_with_digest(NodeLabel::Wald, whole_fixture(), &[leaf, leaf], twice),
+            Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
+            "a child listed twice is refused as node refuses it"
         );
     }
 

@@ -41,12 +41,14 @@ use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::GroutShape;
 use gandr_surface_syntax::GroutSort;
 use gandr_surface_syntax::MoldId;
+use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::StagedId;
 use gandr_surface_syntax::SyntaxError;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_surface_syntax::TreeBuilder;
+use gandr_surface_syntax::digest_of;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Dir;
@@ -932,6 +934,22 @@ enum EmitOp
     },
 }
 
+/// What the commit knows of one emission's digest before it builds the tree.
+///
+/// A digest folds a node's label, its own text and its significant children's
+/// digests, never its offset, so an emission folded where its form unit was
+/// molded keeps that digest wherever the unit is joined, and the commit
+/// stages it without hashing it again
+/// ([`TreeBuilder::node_with_digest`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EmitDigest
+{
+    /// Folded where the emission's unit was molded.
+    Folded(NodeDigest),
+    /// Left for the commit's builder to fold.
+    Unfolded,
+}
+
 /// The operator shape of a shifted tile, derived from its precedence bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpShape
@@ -1255,6 +1273,10 @@ pub struct MeldState<'pbg>
     /// boundary operand sits at position zero, so this is what says whether
     /// the unit's fold ever reached past its own forms.
     low_water: usize,
+    /// The digests folded for a prefix of the emission log, index for index;
+    /// an emission past the prefix, or unfolded in it, is folded by the
+    /// commit. Never longer than the log.
+    digests: Vec<EmitDigest>,
 }
 
 impl<'pbg> MeldState<'pbg>
@@ -1277,7 +1299,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.pbg.fingerprint() == pbg.fingerprint())]
+    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.digests.is_empty() && ret.pbg.fingerprint() == pbg.fingerprint())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         Self {
@@ -1294,6 +1316,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
+            digests: Vec::new(),
         }
     }
 
@@ -4474,7 +4497,8 @@ impl<'pbg> MeldState<'pbg>
     /// - requires: `source` is the assembled text, which
     ///   [`commit`](Self::commit) checks first.
     /// - ensures: the tree's root is `root`'s node, and every log entry
-    ///   reachable from it is a node of the tree.
+    ///   reachable from it is a node of the tree; an entry with a folded digest
+    ///   is staged under it, every other is folded by the builder.
     /// - fails: the builder refuses a node, or the log names an id outside
     ///   itself.
     /// - panics: none.
@@ -4500,12 +4524,17 @@ impl<'pbg> MeldState<'pbg>
         let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
         let mut mapping: Vec<StagedId> = Vec::with_capacity(self.emit.len());
         let mut child_nodes: Vec<StagedId> = Vec::new();
-        for op in &self.emit {
+        for (position, op) in self.emit.iter().enumerate() {
+            let folded = self
+                .digests
+                .get(position)
+                .copied()
+                .unwrap_or(EmitDigest::Unfolded);
             let node = match *op {
                 | EmitOp::Token { label, start, end } => {
                     let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
                         .byte_span()?;
-                    builder.node(label, span, &[])?
+                    Self::stage(&mut builder, folded, label, span, &[])?
                 },
                 | EmitOp::Interior {
                     label,
@@ -4522,7 +4551,7 @@ impl<'pbg> MeldState<'pbg>
                     }
                     let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
                         .byte_span()?;
-                    builder.node(label, span, &child_nodes)?
+                    Self::stage(&mut builder, folded, label, span, &child_nodes)?
                 },
             };
             mapping.push(node);
@@ -4531,6 +4560,134 @@ impl<'pbg> MeldState<'pbg>
         let root_node = mapping.get(root_index).copied().ok_or(MeldError::Corrupt)?;
         let tree = builder.finish(root_node)?;
         Ok(tree)
+    }
+
+    /// Stage one emission on `builder`, under its digest when it was folded.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stage(
+        builder: &mut TreeBuilder<'_>,
+        folded: EmitDigest,
+        label: NodeLabel,
+        span: ByteSpan,
+        children: &[StagedId],
+    ) -> Result<StagedId, SyntaxError>
+    {
+        match folded {
+            | EmitDigest::Folded(digest) => builder.node_with_digest(label, span, children, digest),
+            | EmitDigest::Unfolded => builder.node(label, span, children),
+        }
+    }
+
+    /// Fold every emission's digest as the commit's builder folds it, so a
+    /// join that appends these emissions stages them without hashing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one digest per emission, in log order. An emission is folded
+    ///   when it is not the stand-in of a [`UnitBase::FormBoundary`] unit, its
+    ///   span names a fragment of this state's source and each of its children
+    ///   is an earlier folded emission; its digest is then [`digest_of`] its
+    ///   label, that fragment and its significant children's digests in order.
+    ///   Every other emission is unfolded, and so is any emission over it.
+    /// - panics: none.
+    /// - executable: none — the fold is the body; the enforcing build folds
+    ///   each digest again where the commit stages it
+    ///   ([`TreeBuilder::node_with_digest`]).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources, split at
+    ///   every predicted boundary, molded with folded digests and joined,
+    ///   commit the whole parse's tree digest for digest; a fold over the
+    ///   stand-in, a skipped layout child or a digest shifted by one emission
+    ///   changes a joined digest, and a unit whose fold reached its stand-in
+    ///   leaves every emission over it unfolded.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    fn fold_digests(
+        &mut self,
+        base: UnitBase,
+    )
+    {
+        let source = SourceText::from(self.source.as_str());
+        let mut digests: Vec<EmitDigest> = Vec::with_capacity(self.emit.len());
+        let mut significant: Vec<NodeDigest> = Vec::new();
+        for (index, op) in self.emit.iter().enumerate() {
+            let digest = if index == 0 && base == UnitBase::FormBoundary {
+                EmitDigest::Unfolded
+            }
+            else {
+                self.fold_emission(source, op, &digests, &mut significant)
+            };
+            digests.push(digest);
+        }
+        self.digests = digests;
+    }
+
+    /// Fold `op`'s digest over the digests `folded` holds for the emissions
+    /// before it, with `significant` as scratch.
+    ///
+    /// # Specification
+    /// - requires: `folded` holds one entry per emission before `op`.
+    /// - ensures: [`EmitDigest::Folded`] with [`digest_of`] `op`'s label, its
+    ///   fragment of `source` and its significant children's digests when the
+    ///   span names a fragment and every child is folded;
+    ///   [`EmitDigest::Unfolded`] otherwise.
+    /// - panics: none.
+    /// - executable: none — as [`fold_digests`](Self::fold_digests).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`fold_digests`](Self::fold_digests).
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
+    fn fold_emission(
+        &self,
+        source: SourceText<'_>,
+        op: &EmitOp,
+        folded: &[EmitDigest],
+        significant: &mut Vec<NodeDigest>,
+    ) -> EmitDigest
+    {
+        let (label, start, end, children) = match *op {
+            | EmitOp::Token { label, start, end } => (label, start, end, &[][..]),
+            | EmitOp::Interior {
+                label,
+                start,
+                end,
+                ref children,
+            } => (label, start, end, children.as_slice()),
+        };
+        let Ok(span) =
+            SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end)).byte_span()
+        else {
+            return EmitDigest::Unfolded;
+        };
+        let Ok(fragment) = source.fragment(span)
+        else {
+            return EmitDigest::Unfolded;
+        };
+        significant.clear();
+        for child in children {
+            let Ok(index) = usize::try_from(child.0)
+            else {
+                return EmitDigest::Unfolded;
+            };
+            let (Some(&EmitDigest::Folded(digest)), Some(child)) =
+                (folded.get(index), self.emit.get(index))
+            else {
+                return EmitDigest::Unfolded;
+            };
+            let child_label = match *child {
+                | EmitOp::Token { label, .. } | EmitOp::Interior { label, .. } => label,
+            };
+            if bool::from(child_label.significance()) {
+                significant.push(digest);
+            }
+        }
+
+        EmitDigest::Folded(digest_of(label, fragment, significant))
     }
 
     /// Capture a serializable snapshot of the current state.
@@ -4625,6 +4782,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
+            digests: Vec::new(),
         };
         state.rebuild_head_caches();
         state
@@ -4729,8 +4887,14 @@ impl<'pbg> MeldState<'pbg>
             stack,
             obligations,
             spaces,
+            digests,
             ..
         } = unit;
+        let landed = self.emit.len();
+        if self.digests.len() < landed {
+            self.digests.resize(landed, EmitDigest::Unfolded);
+        }
+        self.digests.extend(digests.into_iter().skip(1));
         let byte_offset = self.source.len();
         let offset = u32::try_from(byte_offset).unwrap_or(u32::MAX);
         let base = u32::try_from(self.emit.len()).unwrap_or(u32::MAX);
@@ -4907,6 +5071,7 @@ impl<'pbg> MeldState<'pbg>
     {
         self.source.truncate(mark.source_len);
         self.emit.truncate(mark.emit_len);
+        self.digests.truncate(mark.emit_len);
         self.obligations.truncate(mark.oblig_len);
         self.spaces.truncate(mark.spaces_len);
         // Undo the slope edits made since the mark, newest first; the lowest
@@ -5233,6 +5398,26 @@ impl<'pbg> FormUnit<'pbg>
         &mut self.state
     }
 
+    /// Fold the digests of the unit's emissions, so a join stages them
+    /// without hashing; the molder calls this once the unit's run is molded.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the melder holds one digest per emission, folded from the
+    ///   unit's base ([`MeldState::fold_digests`]).
+    /// - panics: none.
+    /// - executable: none — the fold carries the clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source's units, folded, join to the
+    ///   whole parse digest for digest.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    #[inline]
+    pub(crate) fn fold(&mut self)
+    {
+        self.state.fold_digests(self.base);
+    }
+
     /// Set the unit aside, borrowing no grammar, so a later revision whose
     /// run has the same identity takes it up instead of molding the run
     /// again.
@@ -5240,7 +5425,7 @@ impl<'pbg> FormUnit<'pbg>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the parked unit holds the unit's base, the checkpoint of its
-    ///   melder, and whether its fold touched its stand-in.
+    ///   melder, its folded digests, and whether its fold touched its stand-in.
     /// - provides: the store side of reusing a form's molding across revisions.
     /// - panics: none.
     ///
@@ -5255,6 +5440,7 @@ impl<'pbg> FormUnit<'pbg>
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.base == self.base && ret.checkpoint == self.state.checkpoint()
+        && ret.digests == self.state.digests
         && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0))]
     pub fn park(&self) -> ParkedUnit
     {
@@ -5267,6 +5453,7 @@ impl<'pbg> FormUnit<'pbg>
                 StandInReach::Untouched
             },
             checkpoint: self.state.checkpoint(),
+            digests: self.state.digests.clone(),
         }
     }
 
@@ -5278,8 +5465,9 @@ impl<'pbg> FormUnit<'pbg>
     ///   from a unit whose run had the identity
     ///   ([`FormSplit::identity`](crate::FormSplit::identity)) `run` has.
     /// - ensures: a unit for `run` on the parked base whose melder resumes the
-    ///   parked checkpoint and has touched its stand-in exactly when the parked
-    ///   unit had; joining it is joining the unit that was parked.
+    ///   parked checkpoint with the parked digests, and has touched its
+    ///   stand-in exactly when the parked unit had; joining it is joining the
+    ///   unit that was parked.
     /// - provides: the reuse side of a form's molding across revisions.
     /// - panics: none.
     ///
@@ -5296,6 +5484,7 @@ impl<'pbg> FormUnit<'pbg>
     #[must_use]
     #[spec(requires: parked.checkpoint.fingerprint == pbg.fingerprint(),
         ensures: |ret| ret.run == run && ret.base == parked.base && ret.state.checkpoint() == parked.checkpoint
+            && ret.state.digests == parked.digests
             && (ret.state.low_water == 0) == (parked.reach == StandInReach::Reached))]
     pub fn resume(
         pbg: &'pbg Pbg,
@@ -5307,6 +5496,7 @@ impl<'pbg> FormUnit<'pbg>
         if parked.reach == StandInReach::Reached {
             state.low_water = 0;
         }
+        state.digests.clone_from(&parked.digests);
         Self {
             base: parked.base,
             run,
@@ -5326,7 +5516,7 @@ enum StandInReach
 }
 
 /// A [`FormUnit`] set aside between revisions: its base, its melder's
-/// checkpoint, and whether its fold touched its stand-in.
+/// checkpoint, its folded digests, and whether its fold touched its stand-in.
 ///
 /// A parked unit borrows no grammar and names no token position, so it
 /// outlives the revision it was molded in. [`FormUnit::resume`] takes it up
@@ -5354,6 +5544,8 @@ pub struct ParkedUnit
     reach: StandInReach,
     /// The unit's melder.
     checkpoint: Checkpoint,
+    /// The digests folded for the unit's emissions.
+    digests: Vec<EmitDigest>,
 }
 
 impl ParkedUnit

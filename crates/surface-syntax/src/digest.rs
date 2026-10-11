@@ -227,8 +227,11 @@ impl core::fmt::Debug for NodeDigest
 ///   folded text is `text` exactly when the label carries text and is absent
 ///   otherwise; the digest is independent of where in a source the node sits,
 ///   and of the arena the node will be laid out into.
-/// - provides: the crate's only hashing entry point, so no node identity is
-///   computed outside the domain or with a differently shaped preimage.
+/// - provides: the only hashing entry point, for the builder and for a parser
+///   that folds a subtree apart from it
+///   ([`TreeBuilder::node_with_digest`](crate::TreeBuilder::node_with_digest)),
+///   so no node identity is computed outside the domain or with a differently
+///   shaped preimage.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — source provenance is not carried by these arguments,
