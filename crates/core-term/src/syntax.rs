@@ -47,6 +47,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 
@@ -183,7 +184,8 @@ pub enum Value
 /// A computation: the negative fragment of the core term vocabulary.
 ///
 /// The eliminators — application, force, bind, case — synthesize; the
-/// introductions — lambda, return — check against an expected computation type.
+/// introductions — lambda, return, fixpoint — check against an expected
+/// computation type.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {
@@ -200,6 +202,17 @@ pub enum Computation
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
     /// `A → C`.
     Lambda(ComputationId),
+    /// A fixpoint `fix x. M`, binding its own thunk `x : U C` as one
+    /// intuitionistic value variable over `M : C`; it checks at any
+    /// computation type and carries the termination claim it is offered
+    /// with.
+    Fixpoint
+    {
+        /// The body, under the self binder.
+        body: ComputationId,
+        /// The termination claim.
+        evidence: FixpointEvidence,
+    },
     /// An application `M v` of a computation to a value argument.
     Application(ComputationId, ValueId),
     /// A returner `return v`, introducing `F A`.
@@ -629,6 +642,16 @@ pub fn equal_certificate_syntax(
                             .map(|(a, b)| V(*a, *b)),
                     ),
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
+                    | (
+                        &Computation::Fixpoint {
+                            body: a,
+                            evidence: left_evidence,
+                        },
+                        &Computation::Fixpoint {
+                            body: b,
+                            evidence: right_evidence,
+                        },
+                    ) if left_evidence == right_evidence => pending.push(C(a, b)),
                     | (&Computation::Return(a), &Computation::Return(b))
                     | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
                     | (&Computation::Application(a, b), &Computation::Application(c, d)) => {

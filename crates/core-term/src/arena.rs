@@ -858,6 +858,34 @@ impl CoreArena
         self.alloc_computation(Computation::Lambda(body))
     }
 
+    /// Mint a fixpoint over an already-allocated body, carrying its
+    /// termination claim.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena, scoped under the self binder.
+    /// - ensures: appends the fixpoint and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
+    ///   injection sides distinguish swapped or dropped children and confused
+    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Fixpoint { body, evidence }))]
+    #[inline]
+    pub fn computation_fixpoint(
+        &mut self,
+        body: ComputationId,
+        evidence: gandr_kernel_term::FixpointEvidence,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Fixpoint { body, evidence })
+    }
+
     /// Mint an application over an already-allocated head and argument.
     ///
     /// # Specification
@@ -1988,6 +2016,23 @@ mod tests
             (
                 arena.computation_lambda(right),
                 crate::Computation::Lambda(right),
+            ),
+            (
+                arena.computation_fixpoint(left, gandr_kernel_term::FixpointEvidence::Partial),
+                crate::Computation::Fixpoint {
+                    body: left,
+                    evidence: gandr_kernel_term::FixpointEvidence::Partial,
+                },
+            ),
+            (
+                arena.computation_fixpoint(
+                    right,
+                    gandr_kernel_term::FixpointEvidence::StructuralDescent,
+                ),
+                crate::Computation::Fixpoint {
+                    body: right,
+                    evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
+                },
             ),
             (
                 arena.computation_application(left, second),

@@ -3,7 +3,6 @@
 The sequent tier of the core: the command IL a call-by-push-value program is focused into, and the two-region store its abstract machine works over.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -14,6 +13,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Focusing names only what is not a tail](#focusing-names-only-what-is-not-a-tail)
 - [A code has no producer](#a-code-has-no-producer)
 - [Native universe paths](#native-universe-paths)
+- [Fixpoints](#fixpoints)
 - [Unfocusing is the left inverse](#unfocusing-is-the-left-inverse)
 - [The typed-IL check](#the-typed-il-check)
 - [The machine runs over marks, not copies](#the-machine-runs-over-marks-not-copies)
@@ -25,7 +25,6 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [The store owns the cell protocol](#the-store-owns-the-cell-protocol)
 - [Deferred rows](#deferred-rows)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -173,6 +172,10 @@ A quote `⌜A⌝` or `⌜C⌝` is a value of a universe, and the IL carries no t
 Native path values and `Transport` have no image in the command IL. Focusing answers `FocusRefusal::UniverseTransport` and restores the command arena and provenance to their entry marks. `Path_U` transport is computed by `core-nbe` and checked by kernel replay; accepting a native certificate does not authorize this machine to erase its evidence or invent a producer.
 
 **Choice.** An explicit refusal, rather than lowering a path to a pair of functions without the obligations that certify it. **Reversal.** A command-level image must specify its types, eliminations and certified readback before focusing admits it. The in-memory bridge mode, higher fields, funext, `Flow_U` and guarded List observations likewise remain outside this IL.
+
+## Fixpoints
+
+A core fixpoint `fix x. M` has no image in the command IL: the IL binds no recursive covariable, so focusing refuses it by name with `FocusRefusal::Fixpoint` and restores both marks. **Choice.** A refusal, rather than unrolling the fixpoint a bounded number of times, which would hand the machine a term that diverges from the core at the bound. **Reversal.** A recursive binder in the IL, with a readback the differential can compare against `core-nbe`'s gated unfolding.
 
 ## Unfocusing is the left inverse
 

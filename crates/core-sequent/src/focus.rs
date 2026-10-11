@@ -203,6 +203,9 @@ pub enum FocusRefusal
     NativeValue(ValueId),
     /// Native data case and record projection have no command-IL destructor.
     NativeElimination(ComputationId),
+    /// A fixpoint has no command-IL former: the IL binds no recursive
+    /// covariable.
+    Fixpoint(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -247,6 +250,7 @@ impl fmt::Display for FocusRefusal
             | Self::NativeElimination(_) => {
                 f.write_str("native data and record elimination has no command-IL destructor")
             },
+            | Self::Fixpoint(_) => f.write_str("a fixpoint has no command-IL former"),
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
@@ -882,8 +886,8 @@ impl<'run> Focusing<'run>
     ///   continuation that is not a tail is placed under no binder.
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
-    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark, or a
-    ///   refused mint.
+    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
+    ///   [`FocusRefusal::Fixpoint`] for a fixpoint, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -904,6 +908,7 @@ impl<'run> Focusing<'run>
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(&Computation::Fixpoint { .. }) => ret == Err(FocusRefusal::Fixpoint(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -938,6 +943,7 @@ impl<'run> Focusing<'run>
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
+            | Computation::Fixpoint { .. } => return Err(FocusRefusal::Fixpoint(id)),
             | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,

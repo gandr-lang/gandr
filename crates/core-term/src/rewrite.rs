@@ -662,7 +662,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
 Computation::Hole(_) => 0_usize,
@@ -792,7 +792,7 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     self.tasks.push(open(Node::Value(value), depth));
                     self.tasks.push(open(Node::Value(path), depth));
                 },
-                | Some(&Computation::Lambda(body)) => self
+                | Some(&(Computation::Lambda(body) | Computation::Fixpoint { body, .. })) => self
                     .tasks
                     .push(open(Node::Computation(body), depth.deeper())),
                 | Some(&Computation::Application(head, argument)) => {
@@ -1303,7 +1303,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
 Computation::Hole(_) => 0_usize,
@@ -1397,6 +1397,15 @@ Computation::Hole(_) => 0_usize,
                 }
                 else {
                     self.arena.computation_lambda(rewritten)
+                }
+            },
+            | Computation::Fixpoint { body, evidence } => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_fixpoint(rewritten, evidence)
                 }
             },
             | Computation::Application(head, argument) => {
