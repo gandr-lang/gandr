@@ -9,14 +9,17 @@
 //! not turn every later reference into an unknown constant. A body with no
 //! signature supplies a type only when it synthesised one.
 //!
-//! # A hole read in both directions
+//! # A declaration hole read in both directions
 //!
-//! A hole in checking position absorbs the type handed in and owes it: the
+//! A declaration with no body is a hole at the declaration's grain. In
+//! checking position it absorbs the type handed in and owes it: the
 //! declaration's verdict is [`Verdict::Owed`] and its [`ObligationEntry`]
-//! enters the run's ledger. A hole in synthesis position has nothing to absorb
-//! and is refused as a checking-only form. The hole carries no unknown type
-//! that would let the run continue past a mismatch; the run continues because
-//! every declaration is judged on its own.
+//! enters the run's ledger. In synthesis position it has nothing to absorb and
+//! is refused as a checking-only form: given the unknown type, it would enter
+//! the signature table as a type every reader is consistent with. A hole
+//! written as a body is a term hole, read by the judgement without contents;
+//! it synthesises the unknown type and owes nothing to the ledger. The run
+//! continues past a refusal because every declaration is judged on its own.
 //!
 //! # Every declaration gets a verdict
 //!

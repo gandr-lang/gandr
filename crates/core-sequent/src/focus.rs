@@ -213,6 +213,11 @@ pub enum FocusRefusal
     /// a quoted type, a type operator or a static application has no
     /// producer to become.
     Code(ValueId),
+    /// A hole or a mark in value position: an unfinished or ill-typed program
+    /// has no command-IL image, as it has no kernel one.
+    IncompleteValue(ValueId),
+    /// A hole or a mark in computation position.
+    IncompleteComputation(ComputationId),
     /// An internal invariant broke: a finishing task found no result where
     /// its own children should have left one. Unreachable while the
     /// translation's own pushes are the only source of tasks; reported rather
@@ -247,6 +252,9 @@ impl fmt::Display for FocusRefusal
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
             | Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
             | Self::Code(_) => f.write_str("a code has no producer in the command IL"),
+            | Self::IncompleteValue(_) | Self::IncompleteComputation(_) => {
+                f.write_str("a hole or a mark has no image in the command IL")
+            },
         }
     }
 }
@@ -777,8 +785,9 @@ impl<'run> Focusing<'run>
     ///   its children's tasks are scheduled, children left to right.
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
-    ///   quote of either sort, a static lambda or a static application, or a
-    ///   refused mint.
+    ///   quote of either sort, a static lambda or a static application,
+    ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark, or a refused
+    ///   mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -794,11 +803,13 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::a_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     #[spec(
         captures: [work = self.tasks.len(), results = self.producers.len()],
         ensures: |ret| match self.core.value(id) {
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
+            | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -852,6 +863,9 @@ impl<'run> Focusing<'run>
             | Value::QuoteComputation(_)
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
+            | Value::Hole(_) | Value::Mark { .. } => {
+                return Err(FocusRefusal::IncompleteValue(id));
+            },
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);
@@ -867,7 +881,9 @@ impl<'run> Focusing<'run>
     /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
     ///   continuation that is not a tail is placed under no binder.
     /// - provides: the `𝓕` rows.
-    /// - fails: [`FocusRefusal::DanglingComputation`] or a refused mint.
+    /// - fails: [`FocusRefusal::DanglingComputation`],
+    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark, or a
+    ///   refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -882,11 +898,14 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+    /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     #[spec(
         captures: [work = self.tasks.len()],
-        ensures: |ret| if self.core.computation(id).is_none() {
-            ret == Err(FocusRefusal::DanglingComputation(id))
-        } else { ret.is_err() || self.tasks.len() > work },
+        ensures: |ret| match self.core.computation(id) {
+            | None => ret == Err(FocusRefusal::DanglingComputation(id)),
+            | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(_) => ret.is_err() || self.tasks.len() > work,
+        },
     )]
     fn computation(
         &mut self,
@@ -916,6 +935,9 @@ impl<'run> Focusing<'run>
                 }
             },
             | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
+            | Computation::Hole(_) | Computation::Mark { .. } => {
+                return Err(FocusRefusal::IncompleteComputation(id));
+            },
             | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
                     origin: FocusOrigin::Return,
@@ -1378,6 +1400,41 @@ mod tests
                 "the quote is refused by name"
             );
             assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+        }
+    }
+
+    #[test]
+    fn a_hole_or_a_mark_is_refused_by_name()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let hole = core.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+        let marked = core.value_mark(gandr_core_term::hole::MarkIndex::from(0_u32), unit);
+        for incomplete in [hole, marked] {
+            let term = core.computation_return(incomplete);
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            let mark = arena.watermark();
+            assert_eq!(
+                focus_computation(&core, term, &mut arena, &mut provenance),
+                Err(FocusRefusal::IncompleteValue(incomplete)),
+                "the value is refused by name"
+            );
+            assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+        }
+        let returned = core.computation_return(unit);
+        let computation_hole = core.computation_hole(gandr_core_term::hole::HoleId::from(1_u32));
+        let computation_mark =
+            core.computation_mark(gandr_core_term::hole::MarkIndex::from(1_u32), returned);
+        for incomplete in [computation_hole, computation_mark] {
+            let term = core.computation_bind(incomplete, returned);
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            assert_eq!(
+                focus_computation(&core, term, &mut arena, &mut provenance),
+                Err(FocusRefusal::IncompleteComputation(incomplete)),
+                "the computation is refused by name"
+            );
         }
     }
 

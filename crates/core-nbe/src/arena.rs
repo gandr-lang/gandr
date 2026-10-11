@@ -717,14 +717,14 @@ impl DomainArena
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Guard::Flexible`] when the unfolding face is loaded, or
-    ///   when the spine stacks a bind, a case, a transport, or an argument
-    ///   whose word is flexible; otherwise the fold of the head and each
-    ///   elimination in spine order.
+    /// - ensures: [`Guard::Flexible`] when the unfolding face is loaded, when
+    ///   the head is a hole or a mark, or when the spine stacks a bind, a case,
+    ///   a transport, or an argument whose word is flexible; otherwise the fold
+    ///   of the head and each elimination in spine order.
     /// - provides: the rigidity rule for a stuck node: a head with a body to
-    ///   unfold, or an elimination holding a closure, can change the answer.
-    ///   Its cost is the spine's length, which the spine copy every extension
-    ///   makes already pays.
+    ///   unfold, a head a fill can still decide, or an elimination holding a
+    ///   closure, can change the answer. Its cost is the spine's length, which
+    ///   the spine copy every extension makes already pays.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -735,12 +735,15 @@ impl DomainArena
     ///   unforced body, and a spine stacking a bind; a static family's word is
     ///   separated by head index, by arity and by argument. A flexible argument
     ///   or a case before a later rigid elimination must not become rigid
-    ///   again; losing its flexibility changes the final word.
+    ///   again; losing its flexibility changes the final word. A hole head and
+    ///   a mark head over an empty spine separate an indeterminate head from a
+    ///   rigid one.
     /// - witness: `arena::tests::guard_flexibility_survives_the_entire_spine`
     /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
     /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
+    /// - witness: `arena::tests::a_hole_or_mark_head_is_never_rigid`
     #[spec(ensures: |ret| matches!(ret, Guard::Flexible) ==
-        (!matches!(unfolding, Unfolding::Rigid) || spine.iter().any(|elimination| match *elimination {
+        (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. }) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
             Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) => true,
@@ -754,7 +757,10 @@ impl DomainArena
     ) -> Guard
     {
         let mut word = match (head, unfolding) {
-            | (_, Unfolding::Unforced(_) | Unfolding::Forced(_)) => return Guard::Flexible,
+            | (_, Unfolding::Unforced(_) | Unfolding::Forced(_))
+            | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, Unfolding::Rigid) => {
+                return Guard::Flexible;
+            },
             | (NeutralHead::Variable { zone, level }, Unfolding::Rigid) => {
                 Guard::compose(GuardTag::Variable, &(zone, level), &[])
             },
@@ -954,7 +960,10 @@ impl DomainArena
     {
         let unfoldable = match head {
             | NeutralHead::Constant(_) => true,
-            | NeutralHead::Variable { .. } | NeutralHead::Module(_) => false,
+            | NeutralHead::Variable { .. }
+            | NeutralHead::Module(_)
+            | NeutralHead::Hole { .. }
+            | NeutralHead::Mark { .. } => false,
         };
         let loaded = match unfolding {
             | Unfolding::Rigid => false,
@@ -2121,5 +2130,51 @@ mod tests
         assert_eq!(arena.fields(kept), Ok([first, second].as_slice()));
         arena.truncate_to(mark);
         assert_eq!(arena.fields(replacement), Err(DomainFault::Dangling));
+    }
+
+    #[test]
+    fn a_hole_or_mark_head_is_never_rigid()
+    {
+        let mut core = CoreArena::new();
+        let hole = core.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+        let mut arena = DomainArena::new();
+        let closure =
+            arena.value_closure_node(crate::closure::ValueBody::Source(hole), Environment::new());
+        let suspended = crate::domain::Suspended::Value(closure);
+        for head in [
+            NeutralHead::Hole {
+                hole: gandr_core_term::hole::HoleId::from(0_u32),
+                closure: suspended,
+            },
+            NeutralHead::Mark {
+                mark: gandr_core_term::hole::MarkIndex::from(0_u32),
+                closure: suspended,
+            },
+        ] {
+            let neutral = arena
+                .neutral_node(head, Vec::new(), Unfolding::Rigid)
+                .expect("a hole or a mark mints rigid-faced");
+            assert_eq!(Ok(Guard::Flexible), arena.neutral_guard(neutral));
+            assert_eq!(
+                Err(DomainFault::RigidHeadCarriesBody),
+                arena.neutral_node(
+                    head,
+                    Vec::new(),
+                    Unfolding::Unforced(GlobalIndex::from(0_u32))
+                ),
+                "and no definition stands behind it"
+            );
+        }
+        let variable = arena
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(0_u32),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a variable mints rigid");
+        assert!(matches!(arena.neutral_guard(variable), Ok(Guard::Rigid(_))));
     }
 }

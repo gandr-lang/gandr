@@ -163,6 +163,9 @@ pub enum Head
     Frozen(ConstantIndex),
     /// A defined constant the goal may unfold.
     Defined(ConstantIndex),
+    /// A hole or a mark: what it stands for is not decided, so nothing the
+    /// goal finds is a verdict.
+    Indeterminate,
 }
 
 /// One subgoal of a decomposition, as the rule names it.
@@ -481,9 +484,10 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Head::Rigid`] for a variable, a module form, or a constant with
-///   a rigid unfolding face; otherwise [`Head::Frozen`] when the goal froze the
-///   constant on `side` and [`Head::Defined`] when it did not.
+/// - ensures: [`Head::Indeterminate`] for a hole or a mark; [`Head::Rigid`] for
+///   a variable, a module form, or a constant with a rigid unfolding face;
+///   otherwise [`Head::Frozen`] when the goal froze the constant on `side` and
+///   [`Head::Defined`] when it did not.
 /// - provides: the one reading of "may this goal unfold this head".
 /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
 /// - panics: none.
@@ -495,8 +499,10 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 /// - hypothesis: L2 — a loaded constant is defined on one side and frozen on
 ///   the other; an opaque occurrence of the same constant remains rigid, and
 ///   truncation refuses the head. Confusing side-local freezing with the
-///   unfolding face changes classification.
+///   unfolding face changes classification. A hole head reads as indeterminate,
+///   never rigid.
 /// - witness: `rules::tests::freezing_is_idempotent_and_local_to_one_side`
+/// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
 #[spec(ensures: |ret| domain.neutral(neutral).map_or_else(
     || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
     |node| match (node.head(), node.unfolding()) {
@@ -504,6 +510,7 @@ pub const fn other(side: ConversionSide) -> ConversionSide
             ret == Ok(if frozen.holds(side, constant) == Membership::Held {
                 Head::Frozen(constant)
             } else { Head::Defined(constant) }),
+        (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => ret == Ok(Head::Indeterminate),
         _ => ret == Ok(Head::Rigid),
     },
 ))]
@@ -526,6 +533,7 @@ pub fn head(
         },
         | (NeutralHead::Constant(_), Unfolding::Rigid)
         | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Rigid,
+        | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
     })
 }
 
@@ -863,8 +871,10 @@ fn plan_constants(
             | Lambda::Right | Lambda::Neither => Plan::Step(Step::Unfold(ConversionSide::Right)),
         },
         | (
-            Neutrality::Former | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_)),
-            Neutrality::Former | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_)),
+            Neutrality::Former
+            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Indeterminate),
+            Neutrality::Former
+            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Indeterminate),
         ) => return Ok(Constants::NoneDefined),
     };
     Ok(Constants::Planned(planned))
@@ -1041,6 +1051,51 @@ fn comp_neutrality(
     })
 }
 
+/// Whether a comparison may answer: neither side stands on a hole or a mark.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Determinacy
+{
+    /// Neither side is indeterminate; the table decides.
+    Determinate,
+    /// A side stands on a hole or a mark: no verdict is the table's to give.
+    Indeterminate,
+}
+
+/// Whether either side of a goal stands on a hole or a mark.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Determinacy::Indeterminate`] exactly when either side is a
+///   neutral whose head reads [`Head::Indeterminate`].
+/// - provides: the rule a goal over a hole takes before any other: a fill may
+///   still make the two sides agree or differ, so the goal declines.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole against a literal, a hole against itself and a
+///   pair holding a hole against a pair differing elsewhere separate the
+///   decline from a verdict reached past it.
+/// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
+#[spec(ensures: |ret| matches!(ret, Determinacy::Indeterminate)
+    == (matches!(left, Neutrality::Neutral(_, Head::Indeterminate)) || matches!(right, Neutrality::Neutral(_, Head::Indeterminate))))]
+const fn determinacy(
+    left: Neutrality,
+    right: Neutrality,
+) -> Determinacy
+{
+    match (left, right) {
+        | (Neutrality::Neutral(_, Head::Indeterminate), _)
+        | (_, Neutrality::Neutral(_, Head::Indeterminate)) => Determinacy::Indeterminate,
+        | (
+            Neutrality::Former
+            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Defined(_)),
+            Neutrality::Former
+            | Neutrality::Neutral(_, Head::Rigid | Head::Frozen(_) | Head::Defined(_)),
+        ) => Determinacy::Determinate,
+    }
+}
+
 /// The literal a domain literal's core id names.
 ///
 /// # Specification
@@ -1124,6 +1179,9 @@ fn plan_values(
     };
     let left_head = value_neutrality(domain, frozen, ConversionSide::Left, one)?;
     let right_head = value_neutrality(domain, frozen, ConversionSide::Right, other)?;
+    if determinacy(left_head, right_head) == Determinacy::Indeterminate {
+        return Ok(Plan::Decline(DeclineReason::Indeterminate));
+    }
     let constants = plan_constants(domain, (left_head, right_head), Lambda::Neither)?;
     if let Constants::Planned(planned) = constants {
         return Ok(planned);
@@ -1434,6 +1492,9 @@ fn plan_comps(
             _,
         ) => Lambda::Neither,
     };
+    if determinacy(left_head, right_head) == Determinacy::Indeterminate {
+        return Ok(Plan::Decline(DeclineReason::Indeterminate));
+    }
     let constants = plan_constants(domain, (left_head, right_head), lambda)?;
     if let Constants::Planned(planned) = constants {
         return Ok(planned);

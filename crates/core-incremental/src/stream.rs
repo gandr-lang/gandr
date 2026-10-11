@@ -19,6 +19,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::pattern::BranchStatus;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemCount;
@@ -42,39 +43,6 @@ quenchant_shape::reason_enum! {
             Fresh,
         }
     }
-}
-
-/// How one branch of a match stands against its scrutinee.
-///
-/// A scrutinee holding a hole leaves some branches undecided; calling such a
-/// branch refuted hides a match the finished program will take, and calling
-/// it satisfied claims one it may not. `Possibly` is the third answer that
-/// keeps checking from blocking on an unfinished program.
-///
-/// # Specification
-/// - requires: the producer classifies a branch against its scrutinee and the
-///   possible fillings of holes.
-/// - ensures: the three labels remain distinct when stored and published;
-///   transport does not turn uncertainty into satisfaction or refutation.
-/// - executable: none — the declaration has no call boundary and carries
-///   neither the branch nor its scrutinee; classification is the producer's
-///   obligation, not a property the stream can reconstruct.
-///
-/// # Adequacy
-/// - hypothesis: L3 — supplied satisfied, possible and refuted labels survive
-///   the liveness map and event stream in their recorded order. These witnesses
-///   establish transport only, not the truth of a producer's classification.
-/// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
-/// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum BranchStatus
-{
-    /// The branch matches, whatever any hole is filled with.
-    Satisfied,
-    /// Some hole decides whether the branch matches.
-    Possibly,
-    /// The branch cannot match, whatever any hole is filled with.
-    Refuted,
 }
 
 /// Where one analysed match came from, in its producer's own coordinates.

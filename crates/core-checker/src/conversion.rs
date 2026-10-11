@@ -22,6 +22,20 @@
 //! not compared again, so shared subtrees cost their distinct pairs, not their
 //! expansion.
 //!
+//! # The unknown type is consistent with every type
+//!
+//! Where either side is the unknown type — a hole's, a mark's, or the decode
+//! of a code that is a hole or a mark — the walk accepts the pair and goes no
+//! deeper: the relation is consistency in the sense of Hazelnut (Omar et al.,
+//! POPL 2017, doi:10.1145/3009837.3009900), which is conversion with the
+//! unknown as a wildcard, and it coincides with conversion on types that hold
+//! no unknown. Codes read the same way: a hole or a mark at a code's head
+//! agrees with any code, and a data index whose root is a hole or a mark
+//! agrees with any index. A hole nested beneath an index's root is compared
+//! as syntax with the rest of the index, so such an index can be refused
+//! where a finer walk would accept it; the kernel admits no index that holds
+//! a hole either way.
+//!
 //! # Smallness lives at the value bridge alone
 //!
 //! A code that synthesised the value universe at level `k` checks at the
@@ -52,6 +66,7 @@ use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::hole::Knowledge;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;
 
@@ -329,8 +344,9 @@ pub fn comp_bridge(
 /// # Specification
 /// - requires: `synthesised` is formed, in the context's arena.
 /// - ensures: success exactly when `synthesised` is, at its weak head, the
-///   universe of `sort` at exactly `target`; `tally` advances once on every
-///   outcome, saturating at its ceiling.
+///   universe of `sort` at exactly `target`, or the unknown type, which is
+///   consistent with every universe; `tally` advances once on every outcome,
+///   saturating at its ceiling.
 /// - provides: formation's one comparison: a decode is formed at its own level,
 ///   with no smallness, so a classifier is read off its type.
 /// - fails: [`CheckRefusal::SortMismatch`] for a universe of the other sort;
@@ -403,6 +419,7 @@ pub fn decode_bridge(
                 Ok(())
             }
         },
+        | ValueTypeView::Unknown => Ok(()),
         | ValueTypeView::PathUniverse(..)
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
@@ -429,13 +446,15 @@ pub fn decode_bridge(
 /// - requires: nothing — the bridges pass formed types, and anything else is
 ///   refused where the walk meets it.
 /// - ensures: [`Agreement::Convertible`] exactly when, reading each side at its
-///   weak head at every position the walk reaches, both sides have the same
-///   former, universes and lifts the same sort and level, and rigid decodes the
-///   same level and the same code: two codes agree when, each reduced at its
-///   head, they are the same variable or constant, quotes of agreeing types,
-///   static applications of agreeing heads to agreeing arguments, or static
-///   lambdas over agreeing bodies; [`Agreement::Apart`] at the first position
-///   they differ.
+///   weak head at every position the walk reaches, either side is the unknown
+///   type, or both sides have the same former, universes and lifts the same
+///   sort and level, and rigid decodes the same level and the same code: two
+///   codes agree when, each reduced at its head, either is a hole or a mark, or
+///   they are the same variable or constant, quotes of agreeing types, static
+///   applications of agreeing heads to agreeing arguments, or static lambdas
+///   over agreeing bodies; two data indices agree when either root is a hole or
+///   a mark or they are equal as syntax; [`Agreement::Apart`] at the first
+///   position they differ.
 /// - fails: the refusal a view gives for a node outside the fragment or a
 ///   dangling id, and the unfolding's refusal when a decode or a code does not
 ///   reduce.
@@ -461,6 +480,7 @@ pub fn decode_bridge(
 /// - witness: `conversion::tests::static_codes_compare_by_head_argument_and_body`
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -485,8 +505,10 @@ fn convert(
         }
         let agrees = match pairing {
             | Pairing::Terms(left, right) => {
-                gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
-                    == gandr_core_term::CertificateEquality::Equal
+                root_knowledge(context, left)? == Knowledge::Unknown
+                    || root_knowledge(context, right)? == Knowledge::Unknown
+                    || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                        == gandr_core_term::CertificateEquality::Equal
             },
             | Pairing::Assignable(left, right) => {
                 let left = context.whnf_value_type(left)?;
@@ -551,6 +573,8 @@ fn convert(
                         pending.push(Pairing::Codes(b, d));
                         true
                     },
+                    | (ValueTypeView::Unknown, _)
+                    | (_, ValueTypeView::Unknown)
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
@@ -641,6 +665,7 @@ fn convert(
                     comp_type_view(context.arena(), left)?,
                     comp_type_view(context.arena(), right)?,
                 ) {
+                    | (CompTypeView::Unknown, _) | (_, CompTypeView::Unknown) => true,
                     | (CompTypeView::Returner(left), CompTypeView::Returner(right)) => {
                         pending.push(Pairing::Values(left, right));
                         true
@@ -694,156 +719,166 @@ fn convert(
             | Pairing::Codes(left, right) => {
                 let left = context.whnf_code(left)?;
                 let right = context.whnf_code(right)?;
-                left == right || {
-                    let read = |code: ValueId| {
-                        context
-                            .arena()
-                            .value(code)
-                            .ok_or(CheckRefusal::DanglingNode {
-                                node: CoreNode::Term(TermNode::Value(code)),
-                            })
-                    };
-                    {
-                        let (matched_left_value, matched_right_value) = (read(left)?, read(right)?);
-                        if (matches!(*matched_left_value, Value::Unit)
-                            && matches!(*matched_right_value, Value::Unit))
+                left == right
+                    || root_knowledge(context, left)? == Knowledge::Unknown
+                    || root_knowledge(context, right)? == Knowledge::Unknown
+                    || {
+                        let read = |code: ValueId| {
+                            context
+                                .arena()
+                                .value(code)
+                                .ok_or(CheckRefusal::DanglingNode {
+                                    node: CoreNode::Term(TermNode::Value(code)),
+                                })
+                        };
                         {
-                            true
-                        }
-                        else if let Value::Literal(ref a) = *matched_left_value
-                            && let Value::Literal(ref b) = *matched_right_value
-                        {
-                            a == b
-                        }
-                        else if let Value::Pair(ref a, ref b) = *matched_left_value
-                            && let Value::Pair(ref c, ref d) = *matched_right_value
-                        {
+                            let (matched_left_value, matched_right_value) =
+                                (read(left)?, read(right)?);
+                            if (matches!(*matched_left_value, Value::Unit)
+                                && matches!(*matched_right_value, Value::Unit))
                             {
-                                pending.extend([Pairing::Codes(*a, *c), Pairing::Codes(*b, *d)]);
                                 true
                             }
-                        }
-                        else if let Value::Injection(ref a, ref av) = *matched_left_value
-                            && let Value::Injection(ref b, ref bv) = *matched_right_value
-                        {
+                            else if let Value::Literal(ref a) = *matched_left_value
+                                && let Value::Literal(ref b) = *matched_right_value
                             {
-                                pending.push(Pairing::Codes(*av, *bv));
                                 a == b
                             }
-                        }
-                        else if let Value::Constructor {
-                            datatype: ref a,
-                            tag: ref at,
-                            fields: ref af,
-                        } = *matched_left_value
-                            && let Value::Constructor {
-                                datatype: ref b,
-                                tag: ref bt,
-                                fields: ref bf,
-                            } = *matched_right_value
-                        {
+                            else if let Value::Pair(ref a, ref b) = *matched_left_value
+                                && let Value::Pair(ref c, ref d) = *matched_right_value
                             {
-                                if at != bt || af.len() != bf.len() {
-                                    return Ok(Agreement::Apart);
+                                {
+                                    pending
+                                        .extend([Pairing::Codes(*a, *c), Pairing::Codes(*b, *d)]);
+                                    true
                                 }
-                                pending.push(Pairing::Values(*a, *b));
-                                pending
-                                    .extend(af.iter().zip(bf).map(|(&a, &b)| Pairing::Codes(a, b)));
-                                true
                             }
-                        }
-                        else if let Value::Record(ref a) = *matched_left_value
-                            && let Value::Record(ref b) = *matched_right_value
-                        {
+                            else if let Value::Injection(ref a, ref av) = *matched_left_value
+                                && let Value::Injection(ref b, ref bv) = *matched_right_value
                             {
-                                if a.len() != b.len() || !a.keys().eq(b.keys()) {
-                                    return Ok(Agreement::Apart);
+                                {
+                                    pending.push(Pairing::Codes(*av, *bv));
+                                    a == b
                                 }
-                                pending.extend(
-                                    a.values()
-                                        .zip(b.values())
-                                        .map(|(&a, &b)| Pairing::Codes(a, b)),
-                                );
-                                true
                             }
-                        }
-                        else if let Value::Variable {
-                            zone: ref left_zone,
-                            index: ref left_index,
-                        } = *matched_left_value
-                            && let Value::Variable {
-                                zone: ref right_zone,
-                                index: ref right_index,
-                            } = *matched_right_value
-                        {
-                            left_zone == right_zone && left_index == right_index
-                        }
-                        else if let Value::Constant(ref left_constant) = *matched_left_value
-                            && let Value::Constant(ref right_constant) = *matched_right_value
-                        {
-                            left_constant == right_constant
-                        }
-                        else if let Value::Quote(ref left_quoted) = *matched_left_value
-                            && let Value::Quote(ref right_quoted) = *matched_right_value
-                        {
+                            else if let Value::Constructor {
+                                datatype: ref a,
+                                tag: ref at,
+                                fields: ref af,
+                            } = *matched_left_value
+                                && let Value::Constructor {
+                                    datatype: ref b,
+                                    tag: ref bt,
+                                    fields: ref bf,
+                                } = *matched_right_value
                             {
-                                pending.push(Pairing::Values(*left_quoted, *right_quoted));
-                                true
+                                {
+                                    if at != bt || af.len() != bf.len() {
+                                        return Ok(Agreement::Apart);
+                                    }
+                                    pending.push(Pairing::Values(*a, *b));
+                                    pending.extend(
+                                        af.iter().zip(bf).map(|(&a, &b)| Pairing::Codes(a, b)),
+                                    );
+                                    true
+                                }
                             }
-                        }
-                        else if let Value::QuoteComputation(ref left_quoted) = *matched_left_value
-                            && let Value::QuoteComputation(ref right_quoted) = *matched_right_value
-                        {
+                            else if let Value::Record(ref a) = *matched_left_value
+                                && let Value::Record(ref b) = *matched_right_value
                             {
-                                pending.push(Pairing::Comps(*left_quoted, *right_quoted));
-                                true
+                                {
+                                    if a.len() != b.len() || !a.keys().eq(b.keys()) {
+                                        return Ok(Agreement::Apart);
+                                    }
+                                    pending.extend(
+                                        a.values()
+                                            .zip(b.values())
+                                            .map(|(&a, &b)| Pairing::Codes(a, b)),
+                                    );
+                                    true
+                                }
                             }
-                        }
-                        else if let Value::StaticApplication(ref left_head, ref left_argument) =
-                            *matched_left_value
-                            && let Value::StaticApplication(ref right_head, ref right_argument) =
-                                *matched_right_value
-                        {
+                            else if let Value::Variable {
+                                zone: ref left_zone,
+                                index: ref left_index,
+                            } = *matched_left_value
+                                && let Value::Variable {
+                                    zone: ref right_zone,
+                                    index: ref right_index,
+                                } = *matched_right_value
                             {
-                                pending.push(Pairing::Codes(*left_argument, *right_argument));
-                                pending.push(Pairing::Codes(*left_head, *right_head));
-                                true
+                                left_zone == right_zone && left_index == right_index
                             }
-                        }
-                        else if let Value::StaticLambda(ref left_body) = *matched_left_value
-                            && let Value::StaticLambda(ref right_body) = *matched_right_value
-                        {
+                            else if let Value::Constant(ref left_constant) = *matched_left_value
+                                && let Value::Constant(ref right_constant) = *matched_right_value
                             {
-                                pending.push(Pairing::Codes(*left_body, *right_body));
-                                true
+                                left_constant == right_constant
                             }
-                        }
-                        else {
+                            else if let Value::Quote(ref left_quoted) = *matched_left_value
+                                && let Value::Quote(ref right_quoted) = *matched_right_value
                             {
-                                match *matched_left_value {
-                                    | Value::PathRefl(_)
-                                    | Value::Constructor { .. }
-                                    | Value::Record(_)
-                                    | Value::Primitive { .. }
-                                    | Value::PathProduct(..)
-                                    | Value::PathEquiv { .. }
-                                    | Value::Variable { .. }
-                                    | Value::Constant(_)
-                                    | Value::Unit
-                                    | Value::Literal(_)
-                                    | Value::Pair(..)
-                                    | Value::Injection(..)
-                                    | Value::Thunk(_)
-                                    | Value::Lift { .. }
-                                    | Value::Quote(_)
-                                    | Value::QuoteComputation(_)
-                                    | Value::StaticApplication(..)
-                                    | Value::StaticLambda(_) => false,
+                                {
+                                    pending.push(Pairing::Values(*left_quoted, *right_quoted));
+                                    true
+                                }
+                            }
+                            else if let Value::QuoteComputation(ref left_quoted) =
+                                *matched_left_value
+                                && let Value::QuoteComputation(ref right_quoted) =
+                                    *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Comps(*left_quoted, *right_quoted));
+                                    true
+                                }
+                            }
+                            else if let Value::StaticApplication(ref left_head, ref left_argument) =
+                                *matched_left_value
+                                && let Value::StaticApplication(ref right_head, ref right_argument) =
+                                    *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Codes(*left_argument, *right_argument));
+                                    pending.push(Pairing::Codes(*left_head, *right_head));
+                                    true
+                                }
+                            }
+                            else if let Value::StaticLambda(ref left_body) = *matched_left_value
+                                && let Value::StaticLambda(ref right_body) = *matched_right_value
+                            {
+                                {
+                                    pending.push(Pairing::Codes(*left_body, *right_body));
+                                    true
+                                }
+                            }
+                            else {
+                                {
+                                    match *matched_left_value {
+                                        | Value::PathRefl(_)
+                                        | Value::Constructor { .. }
+                                        | Value::Record(_)
+                                        | Value::Primitive { .. }
+                                        | Value::PathProduct(..)
+                                        | Value::PathEquiv { .. }
+                                        | Value::Variable { .. }
+                                        | Value::Constant(_)
+                                        | Value::Unit
+                                        | Value::Literal(_)
+                                        | Value::Pair(..)
+                                        | Value::Injection(..)
+                                        | Value::Thunk(_)
+                                        | Value::Lift { .. }
+                                        | Value::Quote(_)
+                                        | Value::QuoteComputation(_)
+                                        | Value::StaticApplication(..)
+                                        | Value::StaticLambda(_)
+                                        | Value::Hole(_)
+                                        | Value::Mark { .. } => false,
+                                    }
                                 }
                             }
                         }
                     }
-                }
             },
         };
         if !agrees {
@@ -851,6 +886,45 @@ fn convert(
         }
     }
     Ok(Agreement::Convertible)
+}
+
+/// What the code or index `node` reads as at its root: unknown when it is a
+/// hole or a mark.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Knowledge::Unknown`] exactly when `node` is a hole or a mark,
+///   [`Knowledge::Known`] for every other node.
+/// - fails: [`CheckRefusal::DanglingNode`] for an id the arena does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separated by a hole, a mark and a variable as a code.
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+#[spec(ensures: |ret| match ret {
+    | Ok(found) => (found == Knowledge::Unknown) == matches!(context.arena().value(node), Some(Value::Hole(_) | Value::Mark { .. })),
+    | Err(_) => context.arena().value(node).is_none(),
+})]
+fn root_knowledge(
+    context: &CheckingContext<'_>,
+    node: ValueId,
+) -> Result<Knowledge, CheckRefusal>
+{
+    let held = context
+        .arena()
+        .value(node)
+        .ok_or(CheckRefusal::DanglingNode {
+            node: CoreNode::Term(TermNode::Value(node)),
+        })?;
+    if matches!(*held, Value::Hole(_) | Value::Mark { .. }) {
+        Ok(Knowledge::Unknown)
+    }
+    else {
+        Ok(Knowledge::Known)
+    }
 }
 
 #[cfg(test)]
@@ -986,6 +1060,69 @@ mod tests
                 "{swapped:?} differ in the other order too"
             );
         }
+    }
+
+    #[test]
+    fn the_unknown_type_is_consistent_beside_a_differing_former()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unknown = arena.value_type_unknown();
+        let unknown_computation = arena.comp_type_unknown();
+        let returns_integer = arena.comp_type_returner(integer);
+        let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let marked = arena.value_mark(gandr_core_term::hole::MarkIndex::from(0_u32), variable);
+        let decode_hole = arena.value_type_element(hole, Level::zero());
+        let decode_variable = arena.value_type_element(variable, Level::zero());
+        let decode_marked = arena.value_type_element(marked, Level::zero());
+        let known_left = arena.value_type_product(integer, integer);
+        let unknown_left = arena.value_type_product(unknown, integer);
+        let unknown_left_string = arena.value_type_product(unknown, string);
+        let unit_code = arena.value_unit();
+        let consistent = [
+            Pairing::Values(unknown, integer),
+            Pairing::Values(decode_hole, integer),
+            Pairing::Values(decode_marked, decode_variable),
+            Pairing::Values(known_left, unknown_left),
+            Pairing::Comps(unknown_computation, returns_integer),
+            Pairing::Codes(hole, variable),
+            Pairing::Terms(hole, variable),
+        ];
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        for pairing in consistent {
+            let swapped = match pairing {
+                | Pairing::Assignable(left, right) => Pairing::Assignable(right, left),
+                | Pairing::Values(left, right) => Pairing::Values(right, left),
+                | Pairing::Comps(left, right) => Pairing::Comps(right, left),
+                | Pairing::Codes(left, right) => Pairing::Codes(right, left),
+                | Pairing::Terms(left, right) => Pairing::Terms(right, left),
+            };
+            assert_eq!(
+                convert(&mut context, pairing),
+                Ok(Agreement::Convertible),
+                "{pairing:?}"
+            );
+            assert_eq!(
+                convert(&mut context, swapped),
+                Ok(Agreement::Convertible),
+                "{swapped:?}"
+            );
+        }
+        assert_eq!(
+            convert(
+                &mut context,
+                Pairing::Values(known_left, unknown_left_string)
+            ),
+            Ok(Agreement::Apart),
+            "the unknown factor agrees, the differing one does not"
+        );
+        assert_eq!(
+            convert(&mut context, Pairing::Terms(variable, unit_code)),
+            Ok(Agreement::Apart),
+            "an index without a hole is compared as syntax"
+        );
     }
 
     /// `def Num : Type = Integer`: a decode of `Num` is the integer atom

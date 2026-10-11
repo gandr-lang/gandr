@@ -173,6 +173,47 @@ fn body_edit_adopts_the_type_stable_dependent()
 }
 
 #[test]
+fn filling_a_hole_rejudges_only_what_its_support_mentions()
+{
+    let step = gate(
+        &[
+            ascribed(Name("a"), Ascription::Integer, Body::TermHole),
+            def(Name("b"), read(Name("a"))),
+            def(Name("c"), Body::Int(3)),
+        ],
+        &[
+            ascribed(Name("a"), Ascription::Integer, Body::Int(1)),
+            def(Name("b"), read(Name("a"))),
+            def(Name("c"), Body::Int(3)),
+        ],
+    );
+    assert_eq!(
+        step.resumed.adoptions(),
+        [Judged, Adopted, Adopted],
+        "the filled declaration is judged; its reader consulted only its declared type and the \
+         unrelated declaration nothing of it, so both are adopted"
+    );
+    let step = gate(
+        &[
+            def(Name("a"), Body::TermHole),
+            def(Name("b"), read(Name("a"))),
+            def(Name("c"), Body::Int(3)),
+        ],
+        &[
+            def(Name("a"), Body::Int(1)),
+            def(Name("b"), read(Name("a"))),
+            def(Name("c"), Body::Int(3)),
+        ],
+    );
+    assert_eq!(
+        step.resumed.adoptions(),
+        [Judged, Judged, Adopted],
+        "an unsigned hole synthesised the unknown type its reader consulted, so the fill rejudges \
+         the reader and adopts the unrelated declaration"
+    );
+}
+
+#[test]
 fn insertion_adopts_untouched_neighbours()
 {
     let step = gate(

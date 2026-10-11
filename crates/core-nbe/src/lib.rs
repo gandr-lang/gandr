@@ -42,6 +42,11 @@
 //!   sink every conversion decided under it records into, the one route by
 //!   which the spinal stance reaches evaluation; its evaluator shares each
 //!   rib's evaluation across the occurrences that read it in one configuration.
+//! - A hole evaluates to a neutral headed by [`NeutralHead::Hole`], suspended
+//!   in its environment, and a mark to one headed by [`NeutralHead::Mark`];
+//!   [`fill_and_resume`] writes a hole of a result and runs what the fill
+//!   unblocked, and [`match_pattern`] and [`select_arm`] classify a match's
+//!   arms in three values against a scrutinee that may hold a hole.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -61,6 +66,7 @@ mod duplicate;
 mod eval;
 mod free;
 mod guard;
+mod live;
 mod machine;
 mod measure;
 mod overlay;
@@ -105,6 +111,7 @@ pub use crate::domain::LevelEntry;
 pub use crate::domain::LiftTarget;
 pub use crate::domain::Neutral;
 pub use crate::domain::NeutralHead;
+pub use crate::domain::Suspended;
 pub use crate::domain::TermFace;
 pub use crate::domain::Unfolding;
 pub use crate::duplicate::DuplicationFault;
@@ -120,6 +127,14 @@ pub use crate::eval::eval_value_within;
 pub use crate::guard::ContentHash;
 pub use crate::guard::Guard;
 pub use crate::guard::GuardAnswer;
+pub use crate::live::ArmIndex;
+pub use crate::live::LiveFault;
+pub use crate::live::MatchFault;
+pub use crate::live::Matched;
+pub use crate::live::Selection;
+pub use crate::live::fill_and_resume;
+pub use crate::live::match_pattern;
+pub use crate::live::select_arm;
 pub use crate::machine::DeclineReason;
 pub use crate::machine::MachineReport;
 pub use crate::machine::MachineSettings;
