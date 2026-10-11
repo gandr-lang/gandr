@@ -1,11 +1,21 @@
-//! The walk: a verb's paths, read and composed one source at a time.
+//! The walk: a verb's paths, read and composed in order.
 //!
-//! # A walk streams
+//! # A serial walk streams
 //!
-//! The walk holds one source's text at a time, and the step it yields borrows
-//! it: a run over a large tree keeps one source in memory, not the tree. The
-//! report accumulates as the walk goes, so it is complete once the walk is
-//! exhausted, whatever the driver did with each step.
+//! The serial walk holds one source's text at a time, and the step it yields
+//! borrows it: a run over a large tree keeps one source in memory, not the
+//! tree. The report accumulates as the walk goes, so it is complete once the
+//! walk is exhausted, whatever the driver did with each step.
+//!
+//! # A wider walk forks by source
+//!
+//! [`Walk::visit`] at a width above one first reaches every path, then reads,
+//! parses and lowers the sources on a pool, each thread taking the largest
+//! source no thread has taken yet, and then judges, settles, counts and
+//! hands each source to its visitor in walk order on the calling thread. A
+//! source's state stays private to the thread lowering it until the calling
+//! thread takes it whole; the grammar is the one value the threads share, and
+//! only read. Every step, count and verdict is the serial walk's.
 //!
 //! # Every path answers
 //!
@@ -14,9 +24,15 @@
 //! as a settled run over nothing. The walk continues past a fault, so one run
 //! reports every path that faults.
 
+use alloc::collections::BTreeMap;
+use core::cmp::Reverse;
+use core::ops::ControlFlow;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_surface_corpus::Settlement;
@@ -28,10 +44,15 @@ use quenchant_shape::shape::Maybe;
 
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
+use crate::compose::Lowering;
+use crate::compose::LoweringCount;
 use crate::compose::compose;
+use crate::compose::judge_lowering;
+use crate::compose::lower_source;
 use crate::report::RunReport;
 use crate::root::SourceRoot;
 use crate::root::classify;
+use crate::width::Width;
 
 quenchant_shape::reason_enum! {
     /// Why a walk yields no further step.
@@ -212,12 +233,24 @@ pub enum Step<'walk>
     },
 }
 
-/// A walk over the paths a verb was given, yielding one source at a time.
+/// A walk over the paths a verb was given, yielding its sources in order.
 #[derive(Debug)]
 pub struct Walk
 {
     /// The grammar every source is parsed under, built once per walk.
     grammar: Result<Pbg, PbgError>,
+    /// Where the walk is among the paths it was given.
+    traversal: Traversal,
+    /// The text of the source the serial walk read last.
+    text: String,
+    /// What the walk has counted so far.
+    report: RunReport,
+}
+
+/// Where a walk is among the paths it was given.
+#[derive(Debug)]
+struct Traversal
+{
     /// The paths not yet started, the next on top.
     arguments: Vec<PathBuf>,
     /// The path being walked.
@@ -228,10 +261,6 @@ pub struct Walk
     entries: Vec<Entry>,
     /// The source or directory last reached.
     path: PathBuf,
-    /// The text of the source last read.
-    text: String,
-    /// What the walk has counted so far.
-    report: RunReport,
 }
 
 /// An entry of the path being walked, still to visit.
@@ -255,6 +284,43 @@ enum Answered
     Not,
     /// It has; no further answer is owed.
     Yes,
+}
+
+/// What the traversal reached next, at the walk's current path.
+#[derive(Debug)]
+enum Reached
+{
+    /// A source to classify, read and compose.
+    Source,
+    /// A path that could not be listed, or whose kind could not be read.
+    Unreadable(std::io::Error),
+    /// The path given yielded no source and no fault.
+    NoSource,
+}
+
+/// What a pool thread made of one source of a wider walk.
+#[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per source, moved once into its step; boxing the lowering would allocate once \
+              per source to shrink the rare unreadable one"
+)]
+enum Forked<'text>
+{
+    /// The source could not be classified or read.
+    Unreadable(std::io::Error),
+    /// The source was read and carried through [`lower_source`].
+    Lowered
+    {
+        /// The root its canonical path sits under.
+        root: SourceRoot,
+        /// Its text, which every span of `lowering` is measured against.
+        text: SourceText<'text>,
+        /// What parsing and lowering it came to.
+        lowering: Result<Lowering<'text>, ComposeFault<'text>>,
+        /// The lowerings performed: one, unless the parse failed.
+        lowerings: LoweringCount,
+    },
 }
 
 impl Walk
@@ -281,7 +347,7 @@ impl Walk
     #[must_use]
     #[spec(
         captures: [offered = paths.len()],
-        ensures: |ref ret| ret.arguments.len() == offered
+        ensures: |ref ret| ret.traversal.arguments.len() == offered
             && usize::from(ret.report.sources().read()) == 0
             && usize::from(ret.report.sources().faulted()) == 0
             && usize::from(ret.report.lowerings()) == 0,
@@ -292,11 +358,13 @@ impl Walk
         arguments.reverse();
         Self {
             grammar: built_in(),
-            arguments,
-            argument: PathBuf::new(),
-            answered: Answered::Yes,
-            entries: Vec::new(),
-            path: PathBuf::new(),
+            traversal: Traversal {
+                arguments,
+                argument: PathBuf::new(),
+                answered: Answered::Yes,
+                entries: Vec::new(),
+                path: PathBuf::new(),
+            },
             text: String::new(),
             report: RunReport::default(),
         }
@@ -351,7 +419,10 @@ impl Walk
     /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
     #[inline]
     #[spec(
-        captures: [pending_arguments = self.arguments.len(), was_answered = self.answered == Answered::Yes],
+        captures: [
+            pending_arguments = self.traversal.arguments.len(),
+            was_answered = self.traversal.answered == Answered::Yes,
+        ],
         ensures: |ref ret| match *ret {
             Maybe::Absent(walk_step::Absent::Exhausted) => pending_arguments == 0,
             Maybe::Present(Step::Source { root, ref composed, standing, .. }) =>
@@ -363,16 +434,261 @@ impl Walk
     )]
     pub fn step(&mut self) -> Maybe<Step<'_>, walk_step::Absent>
     {
+        match self.traversal.reach() {
+            | Maybe::Absent(absent) => Maybe::Absent(absent),
+            | Maybe::Present(Reached::Source) => Maybe::Present(self.source()),
+            | Maybe::Present(Reached::Unreadable(error)) => Maybe::Present(self.unreadable(error)),
+            | Maybe::Present(Reached::NoSource) => {
+                self.report.faulted();
+                Maybe::Present(Step::Fault {
+                    path: &self.traversal.path,
+                    fault: SourceFault::NoSource,
+                })
+            },
+        }
+    }
+
+    /// Hand every step of the walk to `visitor`, in walk order, lowering the
+    /// sources on `width` threads, and answer the walk's report.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `visitor` receives exactly the steps [`Walk::step`] yields
+    ///   from this walk, in its order, each counted into the report before it
+    ///   is handed over. The answer is `Continue` with the exhausted walk's
+    ///   report, or the first `Break` `visitor` returns, after which no step is
+    ///   handed over or counted and no thread starts another source.
+    ///   [`Width::SERIAL`], or a grammar that did not build, runs the serial
+    ///   walk itself. Any other width first reaches every path; then as many
+    ///   threads as the width answers, never more than the sources, the calling
+    ///   thread among them, classify, read, parse and lower the sources, each
+    ///   taking the largest source by bytes that no thread has taken. The
+    ///   calling thread meanwhile judges, settles, counts and hands over each
+    ///   source in walk order as its lowering arrives, and lowers a source
+    ///   itself whenever the next one in walk order has not arrived. A single
+    ///   source is lowered on the calling thread alone, and the host is asked
+    ///   its width only when there are two sources or more. A thread the host
+    ///   refuses to start leaves its sources to the others; with none started,
+    ///   the calling thread lowers each source in walk order.
+    /// - provides: the pass `check` and `test` run, at the width the driver
+    ///   chose.
+    /// - fails: never; every fault is a step, and the walk continues past it.
+    /// - panics: only by propagating a panic of `visitor` or of a pool thread,
+    ///   once every thread has stopped.
+    /// - intension: the serial walk holds one source's text at a time; a wider
+    ///   walk lists every directory before it reads a source, holds every
+    ///   source's text until the visit ends, and each lowering until its source
+    ///   is handed over.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — trees mixing nested sources, unreadable paths, empty
+    ///   directories and every root yield the same rows and reports at widths
+    ///   one and three; the corpus yields equal compositions, step by step, at
+    ///   every width tried. A single source and a stopped visit are observed
+    ///   exactly. Thread interleavings beyond those runs, and filesystem
+    ///   changes during a visit, are outside these witnesses.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `walk::tests::every_path_answers_in_order`
+    /// - witness: `walk::tests::each_root_stands_its_sources`
+    /// - witness: `walk::tests::a_stopped_visit_hands_over_nothing_more`
+    /// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+    #[inline]
+    #[spec(ensures: |ref ret| match *ret {
+        ControlFlow::Continue(ref report) => usize::from(report.lowerings())
+            <= usize::from(report.sources().read()).saturating_add(usize::from(report.sources().faulted())),
+        ControlFlow::Break(_) => true,
+    })]
+    pub fn visit<Stop, Visitor>(
+        mut self,
+        width: Width,
+        mut visitor: Visitor,
+    ) -> ControlFlow<Stop, RunReport>
+    where
+        Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
+    {
+        let grammar = match self.grammar {
+            | Ok(ref grammar) if width != Width::SERIAL => grammar,
+            | Ok(_) | Err(_) => {
+                while let Maybe::Present(step) = self.step() {
+                    visitor(step)?;
+                }
+                return ControlFlow::Continue(self.report);
+            },
+        };
+        let mut paths = Vec::new();
+        let mut found = Vec::new();
+        while let Maybe::Present(reached) = self.traversal.reach() {
+            paths.push(core::mem::take(&mut self.traversal.path));
+            found.push(reached);
+        }
+        // One text slot per path reached, filled by whichever thread lowers
+        // that source; a fault's slot stays empty.
+        let texts: Vec<OnceLock<String>> = paths.iter().map(|_| OnceLock::new()).collect();
+        let mut order: Vec<(Reverse<u64>, usize)> = paths
+            .iter()
+            .zip(&found)
+            .enumerate()
+            .filter(|&(_, (_, reached))| matches!(*reached, Reached::Source))
+            .map(|(position, (path, _))| {
+                let bytes = std::fs::metadata(path).map_or(0, |metadata| metadata.len());
+                (Reverse(bytes), position)
+            })
+            .collect();
+        order.sort_unstable();
+        let threads = match order.len() {
+            | 0 | 1 => 1,
+            | sources => usize::from(core::num::NonZeroUsize::from(width.threads())).min(sources),
+        };
+        let cursor = AtomicUsize::new(0);
+        // The largest source no thread has taken, lowered.
+        let take = || {
+            let &(_, position) = order.get(cursor.fetch_add(1, Ordering::Relaxed))?;
+            let (path, text) = (paths.get(position)?, texts.get(position)?);
+            Some((position, fork(grammar, path, text)))
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let mut pool = 0_usize;
+            for _ in 1 .. threads {
+                let sender = sender.clone();
+                let started = std::thread::Builder::new().spawn_scoped(scope, move || {
+                    while let Some(lowered) = take() {
+                        if sender.send(lowered).is_err() {
+                            break;
+                        }
+                    }
+                });
+                if started.is_ok() {
+                    pool = pool.saturating_add(1);
+                }
+            }
+            drop(sender);
+            // Lowerings that arrived ahead of their turn in walk order.
+            let mut early = BTreeMap::new();
+            let walked = paths.iter().zip(found).zip(&texts).enumerate();
+            for (position, ((path, reached), text)) in walked {
+                let step = match reached {
+                    | Reached::NoSource => {
+                        self.report.faulted();
+                        Step::Fault {
+                            path,
+                            fault: SourceFault::NoSource,
+                        }
+                    },
+                    | Reached::Unreadable(error) => {
+                        self.report.faulted();
+                        Step::Fault {
+                            path,
+                            fault: SourceFault::Unreadable(error),
+                        }
+                    },
+                    | Reached::Source => {
+                        let forked = loop {
+                            if pool == 0 {
+                                break fork(grammar, path, text);
+                            }
+                            if let Some(forked) = early.remove(&position) {
+                                break forked;
+                            }
+                            if let Ok((arrived, forked)) = receiver.try_recv() {
+                                early.insert(arrived, forked);
+                                continue;
+                            }
+                            if let Some((taken, forked)) = take() {
+                                if taken == position {
+                                    break forked;
+                                }
+                                early.insert(taken, forked);
+                                continue;
+                            }
+                            match receiver.recv() {
+                                | Ok((arrived, forked)) => {
+                                    early.insert(arrived, forked);
+                                },
+                                // Every pool thread has stopped without it:
+                                // one panicked, and the scope will say so.
+                                | Err(_) => break fork(grammar, path, text),
+                            }
+                        };
+                        match forked {
+                            | Forked::Unreadable(error) => {
+                                self.report.faulted();
+                                Step::Fault {
+                                    path,
+                                    fault: SourceFault::Unreadable(error),
+                                }
+                            },
+                            | Forked::Lowered {
+                                root,
+                                text,
+                                lowering,
+                                lowerings,
+                            } => {
+                                self.report.lowerings_mut().absorb(lowerings);
+                                let composed = lowering.and_then(|lowering| {
+                                    judge_lowering(root.corpus_root(), lowering)
+                                });
+                                settled(&mut self.report, path, root, text, composed)
+                            },
+                        }
+                    },
+                };
+                if let ControlFlow::Break(stop) = visitor(step) {
+                    cursor.store(order.len(), Ordering::Relaxed);
+                    return ControlFlow::Break(stop);
+                }
+            }
+            ControlFlow::Continue(())
+        })?;
+        ControlFlow::Continue(self.report)
+    }
+}
+
+impl Traversal
+{
+    /// Advance the traversal to the next source or fault, leaving its path in
+    /// `self.path`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each path given is reached in order. A directory is walked
+    ///   depth-first in byte order, reaching its directories and non-symlink
+    ///   `.gandr` entries without following links found in the listing. An
+    ///   explicit path may be a link; a non-directory argument is one source,
+    ///   whatever its name. A path that cannot be listed, or whose kind cannot
+    ///   be read, is [`Reached::Unreadable`]; a path that reached no source and
+    ///   no fault is [`Reached::NoSource`] after its last entry, at that path.
+    ///   Anything reached marks the path given answered. Nothing is read and
+    ///   nothing is counted. Exhaustion is stable.
+    /// - fails: never; a fault is reached like a source.
+    /// - panics: none.
+    /// - intension: lists each directory once; recursion-free, the pending
+    ///   entries an explicit stack.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the walk's ordered rows observe every outcome reached
+    ///   here; the late-change witness observes a listing fault reached after
+    ///   discovery without losing its queued sibling.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `walk::tests::every_path_answers_in_order`
+    /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
+    #[spec(
+        captures: [pending_arguments = self.arguments.len(), was_answered = self.answered == Answered::Yes],
+        ensures: |ref ret| match *ret {
+            Maybe::Absent(walk_step::Absent::Exhausted) => pending_arguments == 0 && self.entries.is_empty(),
+            Maybe::Present(Reached::NoSource) => !was_answered || pending_arguments != 0,
+            Maybe::Present(Reached::Source | Reached::Unreadable(_)) => self.answered == Answered::Yes,
+        },
+    )]
+    fn reach(&mut self) -> Maybe<Reached, walk_step::Absent>
+    {
         loop {
             let Some(entry) = self.entries.pop()
             else {
                 if self.answered == Answered::Not {
                     self.answered = Answered::Yes;
-                    self.report.faulted();
-                    return Maybe::Present(Step::Fault {
-                        path: &self.argument,
-                        fault: SourceFault::NoSource,
-                    });
+                    self.path.clone_from(&self.argument);
+                    return Maybe::Present(Reached::NoSource);
                 }
                 let Some(argument) = self.arguments.pop()
                 else {
@@ -384,31 +700,36 @@ impl Walk
                 continue;
             };
             match entry {
-                | Entry::Argument => match std::fs::metadata(&self.argument) {
-                    | Ok(metadata) if metadata.is_dir() => {
-                        self.path.clone_from(&self.argument);
-                        if let Err(error) = self.list() {
-                            return Maybe::Present(self.unreadable(error));
-                        }
-                    },
-                    | Ok(_) => {
-                        self.path.clone_from(&self.argument);
-                        return Maybe::Present(self.source());
-                    },
-                    | Err(error) => {
-                        self.path.clone_from(&self.argument);
-                        return Maybe::Present(self.unreadable(error));
-                    },
+                | Entry::Argument => {
+                    self.path.clone_from(&self.argument);
+                    match std::fs::metadata(&self.path) {
+                        | Ok(metadata) if metadata.is_dir() => {
+                            if let Err(error) = self.list() {
+                                self.answered = Answered::Yes;
+                                return Maybe::Present(Reached::Unreadable(error));
+                            }
+                        },
+                        | Ok(_) => {
+                            self.answered = Answered::Yes;
+                            return Maybe::Present(Reached::Source);
+                        },
+                        | Err(error) => {
+                            self.answered = Answered::Yes;
+                            return Maybe::Present(Reached::Unreadable(error));
+                        },
+                    }
                 },
                 | Entry::Directory(directory) => {
                     self.path = directory;
                     if let Err(error) = self.list() {
-                        return Maybe::Present(self.unreadable(error));
+                        self.answered = Answered::Yes;
+                        return Maybe::Present(Reached::Unreadable(error));
                     }
                 },
                 | Entry::Source(source) => {
                     self.path = source;
-                    return Maybe::Present(self.source());
+                    self.answered = Answered::Yes;
+                    return Maybe::Present(Reached::Source);
                 },
             }
         }
@@ -471,14 +792,16 @@ impl Walk
         self.entries.append(&mut found);
         Ok(())
     }
+}
 
-    /// A fault for `self.path`, counted.
+impl Walk
+{
+    /// A fault for the path last reached, counted.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: returns the unreadable fault at the current path with the
-    ///   supplied error, marks the argument answered and counts one fault,
-    ///   saturating.
+    ///   supplied error and counts one fault, saturating.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -491,13 +814,12 @@ impl Walk
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
     #[spec(
         captures: [
-            expected_path = self.path.as_path(),
+            expected_path = self.traversal.path.as_path(),
             before_faulted = usize::from(self.report.sources().faulted()),
             expected_kind = error.kind(),
             expected_os_error = error.raw_os_error(),
         ],
-        ensures: |ref ret| self.answered == Answered::Yes
-            && usize::from(self.report.sources().faulted()) == before_faulted.saturating_add(1)
+        ensures: |ref ret| usize::from(self.report.sources().faulted()) == before_faulted.saturating_add(1)
             && match *ret {
                 Step::Fault { path, fault: SourceFault::Unreadable(ref error) } =>
                     path == expected_path && error.kind() == expected_kind
@@ -510,22 +832,20 @@ impl Walk
         error: std::io::Error,
     ) -> Step<'_>
     {
-        self.answered = Answered::Yes;
         self.report.faulted();
         Step::Fault {
-            path: &self.path,
+            path: &self.traversal.path,
             fault: SourceFault::Unreadable(error),
         }
     }
 
-    /// Classify, read and compose the source at `self.path`, counted.
+    /// Classify, read and compose the source last reached, counted.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: marks the argument answered and returns either the complete
-    ///   source with its canonical root and corresponding standing, or its
-    ///   read, grammar or composition fault. The original path is retained and
-    ///   the source or fault is counted once.
+    /// - ensures: returns either the complete source with its canonical root
+    ///   and corresponding standing, or its read, grammar or composition fault.
+    ///   The original path is retained and the source or fault is counted once.
     /// - fails: never; errors are returned as fault steps.
     /// - panics: none.
     ///
@@ -540,7 +860,7 @@ impl Walk
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
     /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
     #[spec(
-        captures: [path_bytes = self.path.as_os_str().len()],
+        captures: [path_bytes = self.traversal.path.as_os_str().len()],
         ensures: |ref ret| match *ret {
             Step::Source { path, root, ref composed, standing, .. } =>
                 path.as_os_str().len() == path_bytes && standing == Standing::of(root, composed),
@@ -550,8 +870,7 @@ impl Walk
     )]
     fn source(&mut self) -> Step<'_>
     {
-        self.answered = Answered::Yes;
-        let root = match read_source(&self.path, &mut self.text) {
+        let root = match read_source(&self.traversal.path, &mut self.text) {
             | Ok(root) => root,
             | Err(error) => return self.unreadable(error),
         };
@@ -560,36 +879,128 @@ impl Walk
             | Err(ref error) => {
                 self.report.faulted();
                 return Step::Fault {
-                    path: &self.path,
+                    path: &self.traversal.path,
                     fault: SourceFault::Grammar(error),
                 };
             },
         };
-        match compose(
+        let text = SourceText::from(self.text.as_str());
+        let composed = compose(
             grammar,
             root.corpus_root(),
-            SourceText::from(self.text.as_str()),
+            text,
             self.report.lowerings_mut(),
-        ) {
-            | Ok(composed) => {
-                let standing = Standing::of(root, &composed);
-                self.report.read(root, &composed, standing);
-                Step::Source {
-                    path: &self.path,
-                    root,
-                    text: SourceText::from(self.text.as_str()),
-                    composed,
-                    standing,
-                }
-            },
-            | Err(fault) => {
-                self.report.faulted();
-                Step::Fault {
-                    path: &self.path,
-                    fault: SourceFault::Compose(fault),
-                }
-            },
-        }
+        );
+        settled(&mut self.report, &self.traversal.path, root, text, composed)
+    }
+}
+
+/// The step a source composed under `root` makes, counted into `report`.
+///
+/// # Specification
+/// - requires: `composed` is what the source at `path`, read as `text` under
+///   `root`, became.
+/// - ensures: a composition is a [`Step::Source`] with its standing, counted as
+///   read; a fault is a [`Step::Fault`] of [`SourceFault::Compose`], counted as
+///   faulted.
+/// - provides: the one counting both the serial and the wider walk perform, so
+///   the two cannot count a source differently.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — settled, unsettled, refused and pending sources are
+///   counted under their roots by the walk witnesses at both widths.
+/// - witness: `walk::tests::each_root_stands_its_sources`
+/// - witness: `walk::tests::a_tree_is_walked_in_order`
+#[spec(
+    captures: [
+        read_before = usize::from(report.sources().read()),
+        faulted_before = usize::from(report.sources().faulted()),
+    ],
+    ensures: |ref ret| match *ret {
+        Step::Source { root, ref composed, standing, .. } => standing == Standing::of(root, composed)
+            && usize::from(report.sources().read()) == read_before.saturating_add(1)
+            && usize::from(report.sources().faulted()) == faulted_before,
+        Step::Fault { ref fault, .. } => matches!(*fault, SourceFault::Compose(_))
+            && usize::from(report.sources().read()) == read_before
+            && usize::from(report.sources().faulted()) == faulted_before.saturating_add(1),
+    },
+)]
+fn settled<'step>(
+    report: &mut RunReport,
+    path: &'step Path,
+    root: SourceRoot,
+    text: SourceText<'step>,
+    composed: Result<Composed<'step>, ComposeFault<'step>>,
+) -> Step<'step>
+{
+    match composed {
+        | Ok(composed) => {
+            let standing = Standing::of(root, &composed);
+            report.read(root, &composed, standing);
+            Step::Source {
+                path,
+                root,
+                text,
+                composed,
+                standing,
+            }
+        },
+        | Err(fault) => {
+            report.faulted();
+            Step::Fault {
+                path,
+                fault: SourceFault::Compose(fault),
+            }
+        },
+    }
+}
+
+/// Classify, read, parse and lower the source at `path`, its text kept in
+/// `text`: one pool thread's share of a wider walk.
+///
+/// # Specification
+/// - requires: `text` is the empty slot for this source alone.
+/// - ensures: a source that cannot be classified or read is
+///   [`Forked::Unreadable`]; otherwise its text fills `text` and it is
+///   [`Forked::Lowered`] with its root, what [`lower_source`] made of it and
+///   the lowerings that took, exactly as the serial walk's composition would
+///   lower it.
+/// - fails: never; a fault is carried in the answer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus at several widths composes equal to the serial
+///   walk source by source, and the fault trees read their unreadable sources
+///   alike at both widths.
+/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+/// - witness: `walk::tests::every_path_answers_in_order`
+#[spec(ensures: |ref ret| match *ret {
+    Forked::Lowered { text: lowered, lowerings, .. } => text.get().is_some_and(|held| lowered == SourceText::from(held.as_str()))
+        && usize::from(lowerings) <= 1,
+    Forked::Unreadable(_) => true,
+})]
+fn fork<'text>(
+    grammar: &Pbg,
+    path: &Path,
+    text: &'text OnceLock<String>,
+) -> Forked<'text>
+{
+    let mut read = String::new();
+    match read_source(path, &mut read) {
+        | Err(error) => Forked::Unreadable(error),
+        | Ok(root) => {
+            let text = SourceText::from(text.get_or_init(|| read).as_str());
+            let mut lowerings = LoweringCount::default();
+            let lowering = lower_source(grammar, text, &mut lowerings);
+            Forked::Lowered {
+                root,
+                text,
+                lowering,
+                lowerings,
+            }
+        },
     }
 }
 
@@ -662,6 +1073,9 @@ fn entry_path(entry: &Entry) -> &Path
 #[cfg(test)]
 mod tests
 {
+    use core::convert::Infallible;
+    use core::num::NonZeroUsize;
+    use core::ops::ControlFlow;
     use std::io;
     use std::path::Path;
     use std::path::PathBuf;
@@ -674,9 +1088,12 @@ mod tests
     use super::Standing;
     use super::Step;
     use super::Walk;
+    use crate::report::RunReport;
     use crate::report::SourceCount;
     use crate::root::SourceRoot;
     use crate::root::classify;
+    use crate::width::Threads;
+    use crate::width::Width;
 
     /// A fresh scratch directory, removed when dropped.
     #[repr(transparent)]
@@ -852,8 +1269,8 @@ mod tests
     /// - witness: `walk::tests::each_root_stands_its_sources`
     #[spec(ensures: |ref ret| {
         let sources = ret.0.iter().filter(|row| matches!(row.1, Seen::Source(_))).count();
-        ret.1.arguments.is_empty() && ret.1.entries.is_empty()
-            && ret.1.answered == super::Answered::Yes
+        ret.1.traversal.arguments.is_empty() && ret.1.traversal.entries.is_empty()
+            && ret.1.traversal.answered == super::Answered::Yes
             && sources == usize::from(ret.1.report().sources().read())
             && ret.0.len().checked_sub(sources) == Some(usize::from(ret.1.report().sources().faulted()))
     })]
@@ -872,6 +1289,60 @@ mod tests
             seen.push((path.strip_prefix(base).unwrap_or(path).to_path_buf(), kind));
         }
         (seen, walk)
+    }
+
+    /// The serial walk and three threads: the widths a visit is compared at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn widths() -> [Width; 2]
+    {
+        [
+            Width::SERIAL,
+            Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(2))),
+        ]
+    }
+
+    /// Every step a visit over `paths` at `width` hands over, as
+    /// `(path relative to base, seen)`, and the visit's report.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: records each step in the order handed over, strips `base`
+    ///   only when it is a prefix, and returns the report the visit answers,
+    ///   whose source and fault counts agree with the recorded rows.
+    /// - fails: never; source faults are recorded as rows.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the rows and report are compared whole against the
+    ///   serial walk's over nested, empty, missing and rooted inputs, which
+    ///   detects a lost, doubled, reordered or differently counted step.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `walk::tests::every_path_answers_in_order`
+    /// - witness: `walk::tests::each_root_stands_its_sources`
+    #[spec(ensures: |ref ret| {
+        let sources = ret.0.iter().filter(|row| matches!(row.1, Seen::Source(_))).count();
+        sources == usize::from(ret.1.sources().read())
+            && ret.0.len().checked_sub(sources) == Some(usize::from(ret.1.sources().faulted()))
+    })]
+    fn visited(
+        base: &Path,
+        paths: Vec<PathBuf>,
+        width: Width,
+    ) -> (Vec<(PathBuf, Seen)>, RunReport)
+    {
+        let mut seen = Vec::new();
+        let ControlFlow::Continue(report) =
+            Walk::new(paths).visit(width, |step| -> ControlFlow<Infallible> {
+                let kind = Seen::from(&step);
+                let path = match step {
+                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                };
+                seen.push((path.strip_prefix(base).unwrap_or(path).to_path_buf(), kind));
+                ControlFlow::Continue(())
+            });
+        (seen, report)
     }
 
     /// `(path, seen)` rows with owned paths.
@@ -914,10 +1385,8 @@ mod tests
         )
         .expect("the link is made");
 
-        let (seen, walk) = steps(&scratch.0, vec![
-            scratch.0.join("tree"),
-            scratch.0.join("named.source"),
-        ]);
+        let paths = vec![scratch.0.join("tree"), scratch.0.join("named.source")];
+        let (seen, walk) = steps(&scratch.0, paths.clone());
         assert_eq!(
             seen,
             rows(&[
@@ -953,6 +1422,13 @@ mod tests
             1_usize,
             "the undefined name is the one unsettled declaration"
         );
+        for width in widths() {
+            assert_eq!(
+                visited(&scratch.0, paths.clone(), width),
+                (seen.clone(), report),
+                "a visit at {width:?} hands over the serial walk's steps and counts"
+            );
+        }
     }
 
     #[test]
@@ -964,12 +1440,13 @@ mod tests
             SourceText::from("not a source"),
         );
         scratch.file(Path::new("one.gandr"), SourceText::from("def one = 1 ;"));
-        let (seen, walk) = steps(&scratch.0, vec![
+        let paths = vec![
             scratch.0.join("absent.gandr"),
             scratch.0.join("empty"),
             scratch.0.join("one.gandr"),
             scratch.0.join("absent"),
-        ]);
+        ];
+        let (seen, walk) = steps(&scratch.0, paths.clone());
         assert_eq!(
             seen,
             rows(&[
@@ -990,6 +1467,13 @@ mod tests
             SourceCount::from(1_usize),
             "one source read"
         );
+        for width in widths() {
+            assert_eq!(
+                visited(&scratch.0, paths.clone(), width),
+                (seen.clone(), walk.report()),
+                "a visit at {width:?} answers every path in the serial walk's order"
+            );
+        }
     }
 
     #[test]
@@ -1077,6 +1561,47 @@ mod tests
             SourceRoot::Pending,
             "the pending set is classified by location"
         );
+        for width in widths() {
+            assert_eq!(
+                visited(&scratch.0, vec![scratch.0.join("corpus")], width),
+                (seen.clone(), report),
+                "a visit at {width:?} stands each source under its root"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stopped_visit_hands_over_nothing_more()
+    {
+        let scratch = Scratch::new(Path::new("stopped"));
+        scratch.file(Path::new("a.gandr"), SourceText::from("def a = 1 ;"));
+        scratch.file(Path::new("b.gandr"), SourceText::from("def b = 2 ;"));
+        scratch.file(Path::new("c.gandr"), SourceText::from("def c = 3 ;"));
+        for width in widths() {
+            let mut handed = Vec::new();
+            let stopped = Walk::new(vec![scratch.0.clone()]).visit(width, |step| {
+                let path = match step {
+                    | Step::Source { path, .. } | Step::Fault { path, .. } => path,
+                };
+                handed.push(path.strip_prefix(&scratch.0).unwrap_or(path).to_path_buf());
+                if handed.len() == 2 {
+                    ControlFlow::Break(path.to_path_buf())
+                }
+                else {
+                    ControlFlow::Continue(())
+                }
+            });
+            assert_eq!(
+                stopped,
+                ControlFlow::Break(scratch.0.join("b.gandr")),
+                "the visit answers the visitor's stop at {width:?}"
+            );
+            assert_eq!(
+                handed,
+                vec![PathBuf::from("a.gandr"), PathBuf::from("b.gandr")],
+                "no step follows the stop at {width:?}"
+            );
+        }
     }
 
     #[test]

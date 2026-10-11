@@ -96,6 +96,34 @@ impl fmt::Display for LoweringCount
     }
 }
 
+impl LoweringCount
+{
+    /// Count `other`'s lowerings into these, saturating.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum of both counts, saturated at the maximum count.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a wider walk absorbs each source's count into the
+    ///   run's, and its report equals the serial walk's lowering count over
+    ///   trees and the corpus; a lost or doubled absorption changes that count.
+    ///   Saturation is not reached by these witnesses.
+    /// - witness: `walk::tests::a_tree_is_walked_in_order`
+    /// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+    #[inline]
+    #[spec(captures: [before = self.0], ensures: |_| self.0 == before.saturating_add(other.0))]
+    pub(crate) fn absorb(
+        &mut self,
+        other: Self,
+    )
+    {
+        self.0 = self.0.saturating_add(other.0);
+    }
+}
+
 /// What one source became.
 #[expect(
     clippy::large_enum_variant,
@@ -539,6 +567,45 @@ pub fn compose<'source>(
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
     let lowering = lower_source(grammar, source, lowerings)?;
+    judge_lowering(root, lowering)
+}
+
+/// Judge what the lowering made of one source, its obligations given up.
+///
+/// # Specification
+/// - requires: `root` is the corpus root the source sits under.
+/// - ensures: a module the lowering read is judged by [`judge_module`]; a
+///   whole-source refusal is [`Composed::Refused`].
+/// - provides: the half of [`compose()`] that stays in walk order when a wider
+///   walk lowers its sources on several threads.
+/// - fails: as [`judge_module`].
+/// - panics: none.
+///
+/// # Errors
+/// - [`ComposeFault::Readmission`]: the kernel disagreed with the checker.
+/// - [`ComposeFault::Settle`]: the verdicts are not the module's own.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the composition witnesses route modules and whole
+///   refusals through here, and the corpus at several widths composes equal to
+///   the serial walk.
+/// - witness: `compose::tests::a_module_settles_every_declaration_once`
+/// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
+/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+#[inline]
+#[spec(
+    captures: [refused = matches!(lowering.lowered, Lowered::Refused(_))],
+    ensures: |ref ret| match *ret {
+        Ok(Composed::Refused(_)) => refused,
+        Ok(Composed::Settled { .. }) | Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => !refused,
+        Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
+    },
+)]
+pub fn judge_lowering(
+    root: CorpusRoot,
+    lowering: Lowering<'_>,
+) -> Result<Composed<'_>, ComposeFault<'_>>
+{
     match lowering.into_lowered() {
         | Lowered::Module { module, arena } => judge_module(root, module, arena),
         | Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),

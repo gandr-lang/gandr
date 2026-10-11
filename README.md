@@ -12,6 +12,7 @@ A programming language built on a small certified kernel. A call-by-push-value c
 cargo run -p gandr-lang -- check crates/surface-corpus/strict    # every declaration checks, owing nothing
 cargo run -p gandr-lang -- check --goals my-sources/              # owed signatures printed as goals
 cargo run -p gandr-lang -- test crates/surface-corpus/fixture     # every fixture and pending source printed
+cargo run -p gandr-lang -- check --jobs 1 crates/surface-corpus/strict   # one source at a time; the default uses every performance core
 ```
 
 `gandr check` exits `0` when every declaration settles, `1` when one does not, and `2` on an engine fault, an unreadable path or a malformed invocation. The [driver](crates/surface-driver/README.md) states the verbs and the exit codes; the [corpus](crates/surface-corpus/README.md#the-corpus) states what the two roots hold.
