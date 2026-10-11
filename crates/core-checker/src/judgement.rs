@@ -136,6 +136,8 @@ use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
 
+mod native;
+
 /// The direction a judgement runs in.
 ///
 /// # Judgement
@@ -541,6 +543,35 @@ enum Codomain
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Frame
 {
+    /// Continue a native premise after the previous premise succeeded.
+    NativeNext(Goal),
+    /// Publish the native judgment after all its premises succeeded.
+    NativeYield(Produced),
+    /// Retain a synthesized field type in the flat native result stack.
+    NativeCollect,
+    /// An extra record field was typed but does not contribute to the expected
+    /// type.
+    NativeDiscard,
+    /// Assemble a record's exact inferred field types.
+    NativeRecord
+    {
+        /// The source record supplies labels.
+        term: ValueId,
+        /// The result-stack suffix owned by this record.
+        base: usize,
+    },
+    /// Await the case scrutinee's nominal classifier.
+    NativeCase(ComputationId),
+    /// Await formation under the case's one motive binder.
+    NativeMotive
+    {
+        /// The case.
+        term: ComputationId,
+        /// Its scrutinee classifier.
+        datatype: ValueTypeId,
+    },
+    /// Await a projection operand's record classifier.
+    NativeProjection(ComputationId),
     /// Await the first component path.
     PathProductFirst
     {
@@ -804,6 +835,8 @@ struct Machine<'context, 'arena>
     context: &'context mut CheckingContext<'arena>,
     /// The rules waiting on subterms, innermost last.
     frames: Vec<Frame>,
+    /// Inferred record field types; nested records own separate suffixes.
+    native_types: Vec<ValueTypeId>,
     /// The crossings of the conversion boundary so far.
     conversions: ConversionCount,
     /// The steps left before the run refuses.
@@ -854,6 +887,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let mut machine = Machine {
             context,
             frames: Vec::new(),
+            native_types: Vec::new(),
             conversions: ConversionCount::default(),
             remaining,
         };
@@ -1011,6 +1045,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
     /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    /// - witness: `native_formers::native_formers::record_width_depth_and_projection`
     #[spec(ensures: |ret| match ret {
         | Ok(Step::Ascend(produced)) => matches!((goal, produced),
             (Goal::Value { direction: Direction::Synthesise, .. }, Produced::ValueType(_))
@@ -1130,7 +1165,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
-            | Ok(Step::Ascend(_)) => self.frames.len() == depth,
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value(term), Some(Value::Record(_))) && self.frames.len() > depth),
             | Ok(Step::Descend(_)) => self.frames.len() > depth,
             | Err(_) => true,
         },
@@ -1142,6 +1177,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     {
         let produced = |found: FormedValueType| Ok(Step::Ascend(Produced::ValueType(found.id())));
         match *self.value(term)? {
+            | Value::Constructor { .. } => self.native_constructor(term),
+            | Value::Record(_) => self.native_record(term),
             | Value::Primitive { primitive, .. } => {
                 let computation = primitive.declared_type(self.context.arena_mut());
                 let classifier = self.context.arena_mut().value_type_thunk(computation);
@@ -1301,7 +1338,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| ret.is_err()
-            || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= depth),
+            || ((matches!(ret, Ok(Step::Descend(_))) || (matches!(self.context.arena().value(term), Some(Value::Record(_))) && matches!(ret, Ok(Step::Ascend(Produced::Checked))))) && self.frames.len() >= depth),
     )]
     fn check_value(
         &mut self,
@@ -1310,6 +1347,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.value(term)? {
+            | Value::Record(_) => self.check_native_record(term, expected),
             | Value::Thunk(body) => {
                 let body_type = self.thunk_expected(term, expected)?;
                 Ok(Step::Descend(Goal::Computation {
@@ -1338,6 +1376,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | Value::PathRefl(_)
+            | Value::Constructor { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Primitive { .. }
@@ -1479,6 +1518,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
             | Value::PathRefl(_)
+            | Value::Constructor { .. }
+            | Value::Record(_)
             | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
@@ -1528,6 +1569,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match *self.computation(term)? {
+            | Computation::DataCase { scrutinee, .. } => {
+                self.frames.push(Frame::NativeCase(term));
+                Ok(Step::Descend(Goal::Value {
+                    term: scrutinee,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | Computation::RecordProjection(record, _) => {
+                self.frames.push(Frame::NativeProjection(term));
+                Ok(Step::Descend(Goal::Value {
+                    term: record,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Computation::Primitive {
                 primitive,
                 arguments,
@@ -1657,6 +1712,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | Computation::Primitive { .. }
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
             | Computation::Transport(..)
             | Computation::Force(_)
             | Computation::Application(..) => {
@@ -1762,6 +1819,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Ok(ValueTypeView::Thunk(held)) => body == held,
                 | Ok(ValueTypeView::Element { .. }) => true,
                 | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit
+                    | ValueTypeView::Data { .. } | ValueTypeView::Record(_)
                     | ValueTypeView::Universe { .. } | ValueTypeView::Lift { .. }
                     | ValueTypeView::Product(..) | ValueTypeView::Sum(..) | ValueTypeView::PathUniverse(..) | ValueTypeView::StaticPi { .. }) | Err(_) => false,
             },
@@ -1779,6 +1837,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
         match value_type_view(self.context.arena(), head)? {
             | ValueTypeView::Thunk(body) => Ok(body),
             | ValueTypeView::PathUniverse(..)
+            | ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
             | ValueTypeView::Sum(..)
             | ValueTypeView::Integer
             | ValueTypeView::String
@@ -2031,7 +2091,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
-            | Ok(Step::Ascend(_)) => self.frames.len() == depth,
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_))) && self.frames.len() >= depth),
             | Ok(Step::Descend(_)) => self.frames.len() >= depth,
             | Err(_) => true,
         },
@@ -2042,6 +2102,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match value_type_view(self.context.arena(), at)? {
+            | ValueTypeView::Data { .. } => self.native_data(at),
+            | ValueTypeView::Record(fields) => {
+                for &field in fields.values().rev() {
+                    self.frames
+                        .push(Frame::NativeNext(Goal::Form(TypeNode::Value(field))));
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
             | ValueTypeView::PathUniverse(source, target) => {
                 let _source = crate::formation::path_code(self.context.arena(), source)?;
                 let _target = crate::formation::path_code(self.context.arena(), target)?;
@@ -2158,7 +2226,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         quoted: TypeNode,
     ) -> Result<ValueTypeId, CheckRefusal>
     {
-        let level = level_of(self.context.arena(), quoted)?;
+        let level = level_of(self.context, quoted)?;
         let sort = match quoted {
             | TypeNode::Value(_) => GroundSort::Value,
             | TypeNode::Computation(_) => GroundSort::Computation,
@@ -2201,7 +2269,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         else {
             return Err(CheckRefusal::MachineInvariant);
         };
-        if bool::from(level_of(arena, TypeNode::Value(inner))?.lt(target)) {
+        if bool::from(level_of(self.context, TypeNode::Value(inner))?.lt(target)) {
             Ok(())
         }
         else {
@@ -2255,6 +2323,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             match value_type_view(self.context.arena(), head)? {
                 | ValueTypeView::Universe { .. } | ValueTypeView::StaticPi { .. } => {},
                 | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Data { .. }
+                | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
@@ -2311,6 +2381,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     (code, target.clone(), GroundSort::Value)
                 },
                 | ValueTypeView::PathUniverse(..)
+                | ValueTypeView::Data { .. }
+                | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
@@ -2438,6 +2510,53 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ) -> Result<Step, CheckRefusal>
     {
         match (frame, produced) {
+            | (Frame::NativeNext(goal), Produced::Checked) => Ok(Step::Descend(goal)),
+            | (Frame::NativeYield(result), Produced::Checked) => Ok(Step::Ascend(result)),
+            | (Frame::NativeCollect, Produced::ValueType(field)) => {
+                self.native_types.push(field);
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (Frame::NativeDiscard, Produced::ValueType(_)) => Ok(Step::Ascend(Produced::Checked)),
+            | (Frame::NativeRecord { term, base }, Produced::Checked) => {
+                let Some(matched_native_node) = self.context.arena().value(term)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let Value::Record(ref fields) = *matched_native_node
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                if self.native_types.len().checked_sub(base) != Some(fields.len()) {
+                    return Err(CheckRefusal::MachineInvariant);
+                }
+                let fields = fields
+                    .keys()
+                    .cloned()
+                    .zip(self.native_types.drain(base ..))
+                    .collect();
+                let record = self.context.arena_mut().value_type_record(fields);
+                Ok(Step::Ascend(Produced::ValueType(record)))
+            },
+            | (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
+                self.native_case(term, datatype)
+            },
+            | (Frame::NativeMotive { term, datatype }, Produced::Checked) => {
+                self.native_branches(term, datatype)
+            },
+            | (Frame::NativeProjection(term), Produced::ValueType(record)) => {
+                self.native_projection(term, record)
+            },
+            | (
+                Frame::NativeNext(_)
+                | Frame::NativeYield(_)
+                | Frame::NativeCollect
+                | Frame::NativeDiscard
+                | Frame::NativeRecord { .. }
+                | Frame::NativeCase(_)
+                | Frame::NativeMotive { .. }
+                | Frame::NativeProjection(_),
+                _,
+            ) => Err(CheckRefusal::MachineInvariant),
             | (
                 Frame::PrimitiveSecond {
                     argument,
@@ -2553,6 +2672,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 match value_type_view(self.context.arena(), head)? {
                     | ValueTypeView::Thunk(body) => Ok(Step::Ascend(Produced::CompType(body))),
                     | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Data { .. }
+                    | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
@@ -3713,6 +3834,7 @@ mod tests
         let mut machine = Machine {
             context: &mut context,
             frames: Vec::new(),
+            native_types: Vec::new(),
             conversions: ConversionCount::default(),
             remaining: 1_usize,
         };
@@ -3745,6 +3867,7 @@ mod tests
         let mut machine = Machine {
             context: &mut context,
             frames: Vec::new(),
+            native_types: Vec::new(),
             conversions: ConversionCount::default(),
             remaining: 1,
         };
@@ -4064,6 +4187,7 @@ mod tests
                         );
                     },
                     | Value::PathRefl(_)
+                    | Value::Constructor { .. } | Value::Record(_)
                     | Value::PathProduct(..)
                     | Value::PathEquiv {..}
                     | Value::Pair(..)
@@ -4115,8 +4239,8 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Transport(..) | Computation::Bind(..) => {
-                        prop_assert!(false, "the free recipe mints no bind");
+                    | Computation::Transport(..) | Computation::Bind(..) | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                        prop_assert!(false, "the free recipe mints no bind or native eliminator");
                     },
                     | Computation::Case { .. } => {
                         prop_assert!(false, "the recipe mints no former outside the fragment");

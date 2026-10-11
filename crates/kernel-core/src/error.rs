@@ -41,6 +41,10 @@ use crate::env::OutstandingCount;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ValueTypeHead
 {
+    /// A generative datatype application.
+    Data,
+    /// A structural record classifier.
+    Record,
     /// A finite session code.
     Session,
     /// A universe-path classifier.
@@ -84,6 +88,8 @@ impl ValueTypeHead
     pub const fn of(value_type: &ValueType) -> Self
     {
         match *value_type {
+            | ValueType::Data { .. } => Self::Data,
+            | ValueType::Record(_) => Self::Record,
             | ValueType::PathUniverse(..) => Self::PathUniverse,
             | ValueType::Base(_) => Self::Base,
             | ValueType::Unit => Self::Unit,
@@ -243,6 +249,10 @@ impl CompTypeWitness
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ExpectedValueShape
 {
+    /// A nominal datatype, for a constructor or nominal case.
+    Data,
+    /// A structural record, for a record literal or projection.
+    Record,
     /// A universe path, for transport or a product-path component.
     PathUniverse,
     /// A product, for a pair.
@@ -468,6 +478,29 @@ impl CompTypeMismatch
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelError
 {
+    /// A nominal head does not name an admitted data declaration.
+    NotADataType
+    {
+        index: ConstantIndex
+    },
+    /// A data signature's kind is not a positive universe.
+    DataKindNotUniverse,
+    /// An application supplies the wrong number of declaration arguments.
+    DataArgumentArity,
+    /// A constructor tag is absent from the declaration table.
+    UnknownConstructor
+    {
+        tag: gandr_kernel_term::ConstructorTag,
+    },
+    /// A constructor supplies the wrong number of fields.
+    ConstructorArity,
+    /// A case does not provide exactly one branch per constructor.
+    NonExhaustiveDataCase,
+    /// A required record field is absent.
+    AbsentRecordField
+    {
+        label: gandr_kernel_term::FieldLabel,
+    },
     /// Session formation or finite relation replay failed.
     Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
@@ -680,6 +713,21 @@ impl core::fmt::Display for KernelError
     ) -> core::fmt::Result
     {
         match *self {
+            | Self::NotADataType { .. } => f.write_str("a nominal head named no data declaration"),
+            | Self::DataKindNotUniverse => {
+                f.write_str("a data declaration kind was not a positive universe")
+            },
+            | Self::DataArgumentArity => {
+                f.write_str("a data application had the wrong argument arity")
+            },
+            | Self::UnknownConstructor { .. } => {
+                f.write_str("a constructor tag was absent from its declaration")
+            },
+            | Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
+            | Self::NonExhaustiveDataCase => {
+                f.write_str("a data case did not cover exactly its constructor table")
+            },
+            | Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
             | Self::Session(ref error) => error.fmt(f),
             | Self::Path(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),

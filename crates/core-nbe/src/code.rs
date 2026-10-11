@@ -221,10 +221,95 @@ enum Atom
     Applied(Node, Node),
     /// A static lambda, by the lambda node itself, at its place.
     Operator(ValueId, Place),
+    /// A structural ordinary value used as a nominal argument.
+    FirstOrder(Node),
     /// Anything else, which compares by identity alone.
     Other(Node),
 }
 
+/// Variable-arity argument children borrowed from syntax or the domain table.
+#[derive(Debug)]
+enum ArgumentFields<'run>
+{
+    /// Unevaluated ordered constructor fields.
+    Source(core::slice::Iter<'run, ValueId>, Place),
+    /// Unevaluated record fields, in label order.
+    Record(
+        alloc::collections::btree_map::Values<'run, gandr_core_term::FieldLabel, ValueId>,
+        Place,
+    ),
+    /// Evaluated fields, in the same order as their source signature.
+    Held(core::slice::Iter<'run, DomainValueId>),
+}
+
+impl Iterator for ArgumentFields<'_>
+{
+    type Item = Node;
+    /// Map the next child into its captured reading.
+    ///
+    /// # Specification
+    /// trivial.
+    fn next(&mut self) -> Option<Node>
+    {
+        match *self {
+            | Self::Source(ref mut values, ref place) => {
+                values.next().map(|value| Node::Code(*value, *place))
+            },
+            | Self::Record(ref mut values, ref place) => {
+                values.next().map(|value| Node::Code(*value, *place))
+            },
+            | Self::Held(ref mut values) => values.next().copied().map(Node::Held),
+        }
+    }
+    /// Preserve the exact remaining child count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn size_hint(&self) -> (usize, Option<usize>)
+    {
+        let count = match *self {
+            | Self::Source(ref values, _) => values.len(),
+            | Self::Record(ref values, _) => values.len(),
+            | Self::Held(ref values) => values.len(),
+        };
+        (count, Some(count))
+    }
+}
+impl ExactSizeIterator for ArgumentFields<'_>
+{
+}
+
+/// An ordinary structural value as seen through either kind of capture.
+#[derive(Debug)]
+enum FirstOrder<'run>
+{
+    /// The unique unit value.
+    Unit,
+    /// An exact literal payload in the core arena.
+    Literal(ValueId),
+    /// An ordered product.
+    Pair(Node, Node),
+    /// A tagged sum value.
+    Injection(gandr_kernel_term::Side, Node),
+    /// A constructor with its complete nominal classifier.
+    Constructor
+    {
+        /// The complete nominal classifier, in its captured reading.
+        datatype: Node,
+        /// The constructor ordinal within that nominal declaration.
+        tag: gandr_core_term::ConstructorTag,
+        /// Payload values in declaration order.
+        fields: ArgumentFields<'run>,
+    },
+    /// A record with its exact labels and captured field values.
+    Record
+    {
+        /// Source labels, preserving the exact structural record shape.
+        labels: &'run alloc::collections::BTreeMap<gandr_core_term::FieldLabel, ValueId>,
+        /// Captured values in the same label order.
+        fields: ArgumentFields<'run>,
+    },
+}
 /// The comparison's state: the shared binder chains and the binders numbered
 /// so far.
 struct Walk<'run>
@@ -470,34 +555,38 @@ impl<'run> Walk<'run>
             _ => node,
         };
         match node {
-        Node::Code(code, place) => match self.core.value(code) {
-            None => ret == Err(ConversionFault::MachineInvariant),
-            Some(&Value::Constant(constant)) => ret == Ok(Atom::Constant(constant, self.constant(constant))),
-            Some(&Value::Quote(quoted)) => ret == Ok(Atom::Quote(quoted, place)),
-            Some(&Value::QuoteComputation(quoted)) => ret == Ok(Atom::QuoteComputation(quoted, place)),
-            Some(&Value::Lift { .. }) => ret == Ok(Atom::Lift(code, place)),
-            Some(&Value::StaticLambda(_)) => ret == Ok(Atom::Operator(code, place)),
-            Some(&Value::StaticApplication(head, argument)) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
-            Some(_) => ret == Ok(Atom::Other(node)),
-        },
-        Node::Held(value) => match self.domain.value(value) {
-            None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-            Some(&DomainValue::Neutral { neutral, .. }) => self.domain.neutral(neutral).map_or_else(
+        Node::Code(code, place) => self.core.value(code).map_or_else(|| ret == Err(ConversionFault::MachineInvariant), |matched_native_node| match *matched_native_node {
+Value::Constant(constant) => ret == Ok(Atom::Constant(constant, self.constant(constant))),
+Value::Quote(quoted) => ret == Ok(Atom::Quote(quoted, place)),
+Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, place)),
+Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
+Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
+Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
+Value::Constructor { .. } | Value::Record(_) | Value::Unit | Value::Literal(_) | Value::Pair(..) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
+_ => ret == Ok(Atom::Other(node)),
+}),
+        Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
+DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |held| ret == self.stuck(neutral, SpinePrefix(held.spine().len()))),
-            Some(&DomainValue::Code { code, .. }) => self.domain.value_closure(code).map_or_else(
+DomainValue::Code { code, .. } => self.domain.value_closure(code).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |closure| match self.core.value(closure.body()) {
-                    None => ret == Err(ConversionFault::MachineInvariant),
-                    Some(&Value::Quote(quoted)) => ret == Ok(Atom::Quote(quoted, Self::opened(code))),
-                    Some(&Value::QuoteComputation(quoted)) => ret == Ok(Atom::QuoteComputation(quoted, Self::opened(code))),
-                    Some(_) => ret == Ok(Atom::Other(node)),
+                |closure| match closure.body() {
+                    crate::ValueBody::ValueType(quoted) => ret == Ok(Atom::Quote(quoted,Self::opened(code))),
+                    crate::ValueBody::CompType(quoted) => ret == Ok(Atom::QuoteComputation(quoted,Self::opened(code))),
+                    crate::ValueBody::Source(body) => match self.core.value(body) {
+                        None => ret == Err(ConversionFault::MachineInvariant),
+                        Some(&Value::Quote(quoted)) => ret == Ok(Atom::Quote(quoted,Self::opened(code))),
+                        Some(&Value::QuoteComputation(quoted)) => ret == Ok(Atom::QuoteComputation(quoted,Self::opened(code))),
+                        Some(_) => ret == Ok(Atom::Other(node)),
+                    },
                 }),
-            Some(&DomainValue::StaticLambda { lambda, .. }) => self.domain.value_closure(lambda).map_or_else(
+DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-                |closure| ret == Ok(Atom::Operator(closure.body(), Self::opened(lambda)))),
-            Some(_) => ret == Ok(Atom::Other(node)),
-        },
+                |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), _ => ret == Err(ConversionFault::MachineInvariant) }),
+DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Unit { .. } | DomainValue::Literal { .. } | DomainValue::Pair { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
+_ => ret == Ok(Atom::Other(node)),
+}),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
         Node::ValueType(..) | Node::CompType(..) => ret == Ok(Atom::Other(node)),
     } })]
@@ -514,6 +603,12 @@ impl<'run> Walk<'run>
                     .value(code)
                     .ok_or(ConversionFault::MachineInvariant)?;
                 match *written {
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Unit
+                    | Value::Literal(_)
+                    | Value::Pair(..)
+                    | Value::Injection(..) => return Ok(Atom::FirstOrder(node)),
                     | Value::Variable { zone, index } => {
                         let free = match zone {
                             | Zone::Intuitionistic => match self.local(place.chain, index) {
@@ -547,10 +642,6 @@ impl<'run> Walk<'run>
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
-                    | Value::Unit
-                    | Value::Literal(_)
-                    | Value::Pair(..)
-                    | Value::Injection(..)
                     | Value::Thunk(_) => return Ok(Atom::Other(node)),
                 }
             },
@@ -560,6 +651,12 @@ impl<'run> Walk<'run>
         };
         let stood = Node::Held(held);
         match *self.domain.value(held).ok_or(dangling)? {
+            | DomainValue::Constructor { .. }
+            | DomainValue::Record { .. }
+            | DomainValue::Unit { .. }
+            | DomainValue::Literal { .. }
+            | DomainValue::Pair { .. }
+            | DomainValue::Injection { .. } => Ok(Atom::FirstOrder(stood)),
             | DomainValue::Neutral { neutral, .. } => {
                 let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
                 self.stuck(neutral, SpinePrefix(stuck.spine().len()))
@@ -567,39 +664,49 @@ impl<'run> Walk<'run>
             | DomainValue::Code { code, .. } => {
                 let closure = self.domain.value_closure(code).ok_or(dangling)?;
                 let place = Self::opened(code);
-                match *self
-                    .core
-                    .value(closure.body())
-                    .ok_or(ConversionFault::MachineInvariant)?
-                {
-                    | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
-                    | Value::QuoteComputation(quoted) => Ok(Atom::QuoteComputation(quoted, place)),
-                    | Value::PathRefl(_)
-                    | Value::Primitive { .. }
-                    | Value::PathProduct(..)
-                    | Value::PathEquiv { .. }
-                    | Value::Variable { .. }
-                    | Value::Constant(_)
-                    | Value::Unit
-                    | Value::Literal(_)
-                    | Value::Pair(..)
-                    | Value::Injection(..)
-                    | Value::Thunk(_)
-                    | Value::Lift { .. }
-                    | Value::StaticLambda(_)
-                    | Value::StaticApplication(..) => Ok(Atom::Other(stood)),
+                match closure.body() {
+                    | crate::ValueBody::ValueType(quoted) => Ok(Atom::Quote(quoted, place)),
+                    | crate::ValueBody::CompType(quoted) => {
+                        Ok(Atom::QuoteComputation(quoted, place))
+                    },
+                    | crate::ValueBody::Source(body) => match *self
+                        .core
+                        .value(body)
+                        .ok_or(ConversionFault::MachineInvariant)?
+                    {
+                        | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
+                        | Value::QuoteComputation(quoted) => {
+                            Ok(Atom::QuoteComputation(quoted, place))
+                        },
+                        | Value::PathRefl(_)
+                        | Value::Primitive { .. }
+                        | Value::Constructor { .. }
+                        | Value::Record(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Unit
+                        | Value::Literal(_)
+                        | Value::Pair(..)
+                        | Value::Injection(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::StaticLambda(_)
+                        | Value::StaticApplication(..) => Ok(Atom::Other(stood)),
+                    },
                 }
             },
             | DomainValue::StaticLambda { lambda, .. } => {
                 let closure = self.domain.value_closure(lambda).ok_or(dangling)?;
-                Ok(Atom::Operator(closure.body(), Self::opened(lambda)))
+                let crate::ValueBody::Source(body) = closure.body()
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                Ok(Atom::Operator(body, Self::opened(lambda)))
             },
             | DomainValue::PathCertificate { .. }
             | DomainValue::PathProduct { .. }
-            | DomainValue::Unit { .. }
-            | DomainValue::Literal { .. }
-            | DomainValue::Pair { .. }
-            | DomainValue::Injection { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
         }
@@ -679,6 +786,8 @@ impl<'run> Walk<'run>
             )),
             | Some(
                 &(Elimination::Transport(_)
+                | Elimination::DataCase(_)
+                | Elimination::RecordProjection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Apply(_)
                 | Elimination::Force
@@ -756,7 +865,7 @@ impl<'run> Walk<'run>
             Ok((one, other)) => match (one, other) {
                 (Atom::Quote(..), Atom::Quote(..)) | (Atom::QuoteComputation(..), Atom::QuoteComputation(..))
                 | (Atom::Lift(..), Atom::Lift(..)) | (Atom::Applied(..), Atom::Applied(..))
-                | (Atom::Operator(..), Atom::Operator(..)) =>
+                | (Atom::Operator(..),Atom::Operator(..)) | (Atom::FirstOrder(_),Atom::FirstOrder(_)) =>
                     matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant))
                         && (left != right || ret.is_err() || ret == Ok(Alike::Same)),
                 (Atom::Local(a), Atom::Local(b)) => ret == Ok(Alike::between(&a, &b)),
@@ -773,94 +882,7 @@ impl<'run> Walk<'run>
         right: ValueClosureId,
     ) -> Result<Alike, ConversionFault>
     {
-        let mut pending: Vec<(Node, Node)> = Vec::new();
-        let left_atom = self.closure_atom(left)?;
-        let right_atom = self.closure_atom(right)?;
-        let mut atoms = Vec::from([(left_atom, right_atom)]);
-        loop {
-            while let Some((one, other)) = atoms.pop() {
-                match (one, other) {
-                    | (Atom::Quote(first, here), Atom::Quote(second, there)) => {
-                        pending
-                            .push((Node::ValueType(first, here), Node::ValueType(second, there)));
-                    },
-                    | (
-                        Atom::QuoteComputation(first, here),
-                        Atom::QuoteComputation(second, there),
-                    ) => {
-                        pending.push((Node::CompType(first, here), Node::CompType(second, there)));
-                    },
-                    | (Atom::Lift(first, here), Atom::Lift(second, there)) => {
-                        let (
-                            Some(&Value::Lift {
-                                target: ref left_target,
-                                body: left_body,
-                            }),
-                            Some(&Value::Lift {
-                                target: ref right_target,
-                                body: right_body,
-                            }),
-                        ) = (self.core.value(first), self.core.value(second))
-                        else {
-                            return Err(ConversionFault::MachineInvariant);
-                        };
-                        if left_target != right_target {
-                            return Ok(Alike::Different);
-                        }
-                        let one = self.atom(Node::Code(left_body, here))?;
-                        let other = self.atom(Node::Code(right_body, there))?;
-                        atoms.push((one, other));
-                    },
-                    | (
-                        Atom::Applied(head, argument),
-                        Atom::Applied(other_head, other_argument),
-                    ) => {
-                        let arguments = (self.atom(argument)?, self.atom(other_argument)?);
-                        let heads = (self.atom(head)?, self.atom(other_head)?);
-                        atoms.push(arguments);
-                        atoms.push(heads);
-                    },
-                    | (Atom::Operator(first, here), Atom::Operator(second, there)) => {
-                        let (
-                            Some(&Value::StaticLambda(left_body)),
-                            Some(&Value::StaticLambda(right_body)),
-                        ) = (self.core.value(first), self.core.value(second))
-                        else {
-                            return Err(ConversionFault::MachineInvariant);
-                        };
-                        let (inside, other_inside) = self.crossed(here, there);
-                        let one = self.atom(Node::Code(left_body, inside))?;
-                        let other = self.atom(Node::Code(right_body, other_inside))?;
-                        atoms.push((one, other));
-                    },
-                    | (Atom::Local(first), Atom::Local(second)) if first == second => {},
-                    | (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
-                        if (zone, first) == (other_zone, second) => {},
-                    | (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {
-                    },
-                    | (Atom::Other(first), Atom::Other(second)) if first == second => {},
-                    | (
-                        Atom::Local(_)
-                        | Atom::Variable(..)
-                        | Atom::Constant(..)
-                        | Atom::Quote(..)
-                        | Atom::QuoteComputation(..)
-                        | Atom::Lift(..)
-                        | Atom::Applied(..)
-                        | Atom::Operator(..)
-                        | Atom::Other(_),
-                        _,
-                    ) => return Ok(Alike::Different),
-                }
-            }
-            let Some((one, other)) = pending.pop()
-            else {
-                return Ok(Alike::Same);
-            };
-            if self.formers(one, other, &mut pending, &mut atoms)? == Alike::Different {
-                return Ok(Alike::Different);
-            }
-        }
+        self.equal_atoms(self.closure_atom(left)?, self.closure_atom(right)?)
     }
 
     /// The atom a closure's own body reads as.
@@ -882,7 +904,11 @@ impl<'run> Walk<'run>
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     #[spec(ensures: |ret| self.domain.value_closure(closure).map_or_else(
         || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-        |held| ret == self.atom(Node::Code(held.body(), Self::opened(closure))))) ]
+        |held| match held.body() {
+            crate::ValueBody::Source(body) => ret == self.atom(Node::Code(body,Self::opened(closure))),
+            crate::ValueBody::ValueType(body) => ret == Ok(Atom::Quote(body,Self::opened(closure))),
+            crate::ValueBody::CompType(body) => ret == Ok(Atom::QuoteComputation(body,Self::opened(closure))),
+        }))]
     fn closure_atom(
         &self,
         closure: ValueClosureId,
@@ -892,7 +918,13 @@ impl<'run> Walk<'run>
             .domain
             .value_closure(closure)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
-        self.atom(Node::Code(held.body(), Self::opened(closure)))
+        match held.body() {
+            | crate::ValueBody::Source(body) => self.atom(Node::Code(body, Self::opened(closure))),
+            | crate::ValueBody::ValueType(body) => Ok(Atom::Quote(body, Self::opened(closure))),
+            | crate::ValueBody::CompType(body) => {
+                Ok(Atom::QuoteComputation(body, Self::opened(closure)))
+            },
+        }
     }
 
     /// The node `node` reads as once every decode of a quote at its root has
@@ -956,6 +988,8 @@ impl<'run> Walk<'run>
                 {
                     | ValueType::Element { code, .. } => (code, place),
                     | ValueType::PathUniverse(..)
+                    | ValueType::Data { .. }
+                    | ValueType::Record(_)
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Product(..)
@@ -1026,7 +1060,14 @@ impl<'run> Walk<'run>
             let expected = match roots {
                 Err(fault) => Err(fault),
                 Ok((Node::ValueType(first, here), Node::ValueType(second, there))) => match (self.core.value_type(first), self.core.value_type(second)) {
-                    (Some(left), Some(right)) => match (left, right) {
+(Some(left), Some(right)) => {
+if let ValueType::Data { declaration: ref a, arguments: ref left } = *left
+&& let ValueType::Data { declaration: ref b, arguments: ref right } = *right {
+if a != b || left.len() != right.len() { Ok((Alike::Different,0,0)) }
+else { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) }
+} else if let ValueType::Record(ref left) = *left && let ValueType::Record(ref right) = *right {
+if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.values().zip(right.values()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
+} else { match (left, right) {
                         (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) =>
                             self.atom(Node::Code(a, here)).and_then(|first_left| {
                                 let first_right = self.atom(Node::Code(c, there))?;
@@ -1055,7 +1096,7 @@ impl<'run> Walk<'run>
                             } else { Err(ConversionFault::MachineInvariant) }
                         },
                         _ => Ok((Alike::Different, 0, 0)),
-                    },
+} } },
                     _ => Err(ConversionFault::MachineInvariant),
                 },
                 Ok((Node::CompType(first, _), Node::CompType(second, _))) => match (self.core.comp_type(first), self.core.comp_type(second)) {
@@ -1072,6 +1113,7 @@ impl<'run> Walk<'run>
                     },
                     _ => Err(ConversionFault::MachineInvariant),
                 },
+                Ok((left @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)),right @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)))) => self.atom(left).and_then(|a| self.atom(right).map(|b| { children_correct = atoms.get(entry_atoms..) == Some(&[(a,b)]); (Alike::Same,0,1) })),
                 Ok(_) => Ok((Alike::Different, 0, 0)),
             };
             children_correct && match expected {
@@ -1093,105 +1135,191 @@ impl<'run> Walk<'run>
         let one = self.decoded(one)?;
         let other = self.decoded(other)?;
         match (one, other) {
+            | (
+                left @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)),
+                right @ (Node::Code(..) | Node::Held(_) | Node::Stuck(..)),
+            ) => {
+                let pair = (self.atom(left)?, self.atom(right)?);
+                atoms.push(pair);
+                Ok(Alike::Same)
+            },
             | (Node::ValueType(first, here), Node::ValueType(second, there)) => {
                 let (Some(left), Some(right)) =
                     (self.core.value_type(first), self.core.value_type(second))
                 else {
                     return Err(ConversionFault::MachineInvariant);
                 };
-                match (left, right) {
-                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
-                        let first = (
-                            self.atom(Node::Code(a, here))?,
-                            self.atom(Node::Code(c, there))?,
-                        );
-                        let second = (
-                            self.atom(Node::Code(b, here))?,
-                            self.atom(Node::Code(d, there))?,
-                        );
-                        atoms.extend([first, second]);
-                        Ok(Alike::Same)
-                    },
-                    | (&ValueType::Base(a), &ValueType::Base(b)) => Ok(Alike::between(&a, &b)),
-                    | (&ValueType::Unit, &ValueType::Unit) => Ok(Alike::Same),
-                    | (&ValueType::Abstract(a), &ValueType::Abstract(b)) => {
+                {
+                    let (matched_left_value, matched_right_value) = (left, right);
+                    if let ValueType::Data {
+                        declaration: ref a,
+                        arguments: ref left,
+                    } = *matched_left_value
+                        && let ValueType::Data {
+                            declaration: ref b,
+                            arguments: ref right,
+                        } = *matched_right_value
+                    {
+                        {
+                            if a != b || left.len() != right.len() {
+                                return Ok(Alike::Different);
+                            }
+                            pending.extend(
+                                left.iter()
+                                    .zip(right)
+                                    .map(|(a, b)| (Node::Code(*a, here), Node::Code(*b, there))),
+                            );
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::Record(ref left) = *matched_left_value
+                        && let ValueType::Record(ref right) = *matched_right_value
+                    {
+                        {
+                            if !left.keys().eq(right.keys()) {
+                                return Ok(Alike::Different);
+                            }
+                            pending.extend(left.values().zip(right.values()).map(|(a, b)| {
+                                (Node::ValueType(*a, here), Node::ValueType(*b, there))
+                            }));
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::PathUniverse(a, b) = *matched_left_value
+                        && let ValueType::PathUniverse(c, d) = *matched_right_value
+                    {
+                        {
+                            let first = (
+                                self.atom(Node::Code(a, here))?,
+                                self.atom(Node::Code(c, there))?,
+                            );
+                            let second = (
+                                self.atom(Node::Code(b, here))?,
+                                self.atom(Node::Code(d, there))?,
+                            );
+                            atoms.extend([first, second]);
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::Base(a) = *matched_left_value
+                        && let ValueType::Base(b) = *matched_right_value
+                    {
                         Ok(Alike::between(&a, &b))
-                    },
-                    | (
-                        &ValueType::Universe {
-                            ref sort,
-                            ref level,
-                        },
-                        &ValueType::Universe {
+                    }
+                    else if (matches!(*matched_left_value, ValueType::Unit)
+                        && matches!(*matched_right_value, ValueType::Unit))
+                    {
+                        Ok(Alike::Same)
+                    }
+                    else if let ValueType::Abstract(a) = *matched_left_value
+                        && let ValueType::Abstract(b) = *matched_right_value
+                    {
+                        Ok(Alike::between(&a, &b))
+                    }
+                    else if let ValueType::Universe {
+                        ref sort,
+                        ref level,
+                    } = *matched_left_value
+                        && let ValueType::Universe {
                             sort: ref other_sort,
                             level: ref other_level,
-                        },
-                    ) => Ok(Alike::between(&(sort, level), &(other_sort, other_level))),
-                    | (&ValueType::Product(a, b), &ValueType::Product(c, d))
-                    | (&ValueType::Sum(a, b), &ValueType::Sum(c, d))
-                    | (
-                        &ValueType::StaticPi {
-                            domain: a,
-                            codomain: b,
-                        },
-                        &ValueType::StaticPi {
+                        } = *matched_right_value
+                    {
+                        Ok(Alike::between(&(sort, level), &(other_sort, other_level)))
+                    }
+                    else if let ValueType::Product(a, b) = *matched_left_value
+                        && let ValueType::Product(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
+                            pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::Sum(a, b) = *matched_left_value
+                        && let ValueType::Sum(c, d) = *matched_right_value
+                    {
+                        {
+                            pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
+                            pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::StaticPi {
+                        domain: a,
+                        codomain: b,
+                    } = *matched_left_value
+                        && let ValueType::StaticPi {
                             domain: c,
                             codomain: d,
-                        },
-                    ) => {
-                        pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
-                        pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
-                        Ok(Alike::Same)
-                    },
-                    | (&ValueType::Thunk(a), &ValueType::Thunk(b)) => {
-                        pending.push((Node::CompType(a, here), Node::CompType(b, there)));
-                        Ok(Alike::Same)
-                    },
-                    | (
-                        &ValueType::Lift { inner, ref target },
-                        &ValueType::Lift {
+                        } = *matched_right_value
+                    {
+                        {
+                            pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
+                            pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::Thunk(a) = *matched_left_value
+                        && let ValueType::Thunk(b) = *matched_right_value
+                    {
+                        {
+                            pending.push((Node::CompType(a, here), Node::CompType(b, there)));
+                            Ok(Alike::Same)
+                        }
+                    }
+                    else if let ValueType::Lift { inner, ref target } = *matched_left_value
+                        && let ValueType::Lift {
                             inner: other_inner,
                             target: ref other_target,
-                        },
-                    ) => {
-                        if target != other_target {
-                            return Ok(Alike::Different);
+                        } = *matched_right_value
+                    {
+                        {
+                            if target != other_target {
+                                return Ok(Alike::Different);
+                            }
+                            pending.push((
+                                Node::ValueType(inner, here),
+                                Node::ValueType(other_inner, there),
+                            ));
+                            Ok(Alike::Same)
                         }
-                        pending.push((
-                            Node::ValueType(inner, here),
-                            Node::ValueType(other_inner, there),
-                        ));
-                        Ok(Alike::Same)
-                    },
-                    | (
-                        &ValueType::Element { code, ref target },
-                        &ValueType::Element {
+                    }
+                    else if let ValueType::Element { code, ref target } = *matched_left_value
+                        && let ValueType::Element {
                             code: other_code,
                             target: ref other_target,
-                        },
-                    ) => {
-                        if target != other_target {
-                            return Ok(Alike::Different);
+                        } = *matched_right_value
+                    {
+                        {
+                            if target != other_target {
+                                return Ok(Alike::Different);
+                            }
+                            let left_atom = self.atom(Node::Code(code, here))?;
+                            let right_atom = self.atom(Node::Code(other_code, there))?;
+                            atoms.push((left_atom, right_atom));
+                            Ok(Alike::Same)
                         }
-                        let left_atom = self.atom(Node::Code(code, here))?;
-                        let right_atom = self.atom(Node::Code(other_code, there))?;
-                        atoms.push((left_atom, right_atom));
-                        Ok(Alike::Same)
-                    },
-                    | (
-                        &(ValueType::PathUniverse(..)
-                        | ValueType::Base(_)
-                        | ValueType::Unit
-                        | ValueType::Product(..)
-                        | ValueType::Sum(..)
-                        | ValueType::Thunk(_)
-                        | ValueType::Universe { .. }
-                        | ValueType::Lift { .. }
-                        | ValueType::Element { .. }
-                        | ValueType::Abstract(_)
-                        | ValueType::StaticPi { .. }),
-                        _,
-                    ) => Ok(Alike::Different),
+                    }
+                    else {
+                        {
+                            match *matched_left_value {
+                                | ValueType::PathUniverse(..)
+                                | ValueType::Data { .. }
+                                | ValueType::Record(_)
+                                | ValueType::Base(_)
+                                | ValueType::Unit
+                                | ValueType::Product(..)
+                                | ValueType::Sum(..)
+                                | ValueType::Thunk(_)
+                                | ValueType::Universe { .. }
+                                | ValueType::Lift { .. }
+                                | ValueType::Element { .. }
+                                | ValueType::Abstract(_)
+                                | ValueType::StaticPi { .. } => Ok(Alike::Different),
+                            }
+                        }
+                    }
                 }
             },
             | (Node::CompType(first, here), Node::CompType(second, there)) => {
@@ -1316,11 +1444,352 @@ impl<'run> Walk<'run>
         closure: ValueClosureId,
     ) -> Result<Rigidity, ConversionFault>
     {
-        let mut atoms = Vec::from([self.closure_atom(closure)?]);
+        self.rigidity_atom(self.closure_atom(closure)?)
+    }
+
+    /// Resolve an ordinary argument without erasing its environment or labels.
+    ///
+    /// # Specification
+    /// - requires: the node is an ordinary structural value.
+    /// - ensures: classifier and child references keep their original capture.
+    /// - fails: dangling nodes or malformed record field tables.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — captured parameters agree with literal parameters
+    ///   only by value.
+    /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret,Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)))]
+    fn first_order(
+        &self,
+        node: Node,
+    ) -> Result<FirstOrder<'run>, ConversionFault>
+    {
+        let malformed = ConversionFault::MachineInvariant;
+        let dangling = ConversionFault::Domain(DomainFault::Dangling);
+        match node {
+            | Node::Code(value, place) => match *(self.core.value(value).ok_or(malformed)?) {
+                | Value::Unit => Ok(FirstOrder::Unit),
+                | Value::Literal(_) => Ok(FirstOrder::Literal(value)),
+                | Value::Pair(ref a, ref b) => Ok(FirstOrder::Pair(
+                    Node::Code(*a, place),
+                    Node::Code(*b, place),
+                )),
+                | Value::Injection(ref side, ref body) => {
+                    Ok(FirstOrder::Injection(*side, Node::Code(*body, place)))
+                },
+                | Value::Constructor {
+                    ref datatype,
+                    ref tag,
+                    ref fields,
+                } => Ok(FirstOrder::Constructor {
+                    datatype: Node::ValueType(*datatype, place),
+                    tag: *tag,
+                    fields: ArgumentFields::Source(fields.iter(), place),
+                }),
+                | Value::Record(ref labels) => Ok(FirstOrder::Record {
+                    labels,
+                    fields: ArgumentFields::Record(labels.values(), place),
+                }),
+                | _ => Err(malformed),
+            },
+            | Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
+                | DomainValue::Unit { .. } => Ok(FirstOrder::Unit),
+                | DomainValue::Literal { literal, .. } => Ok(FirstOrder::Literal(literal)),
+                | DomainValue::Pair { first, second, .. } => {
+                    Ok(FirstOrder::Pair(Node::Held(first), Node::Held(second)))
+                },
+                | DomainValue::Injection { side, body, .. } => {
+                    Ok(FirstOrder::Injection(side, Node::Held(body)))
+                },
+                | DomainValue::Constructor {
+                    datatype,
+                    tag,
+                    fields,
+                    ..
+                } => {
+                    let closure = self.domain.value_closure(datatype).ok_or(dangling)?;
+                    let crate::ValueBody::ValueType(classifier) = closure.body()
+                    else {
+                        return Err(malformed);
+                    };
+                    Ok(FirstOrder::Constructor {
+                        datatype: Node::ValueType(classifier, Self::opened(datatype)),
+                        tag,
+                        fields: ArgumentFields::Held(
+                            self.domain
+                                .fields(fields)
+                                .map_err(ConversionFault::Domain)?
+                                .iter(),
+                        ),
+                    })
+                },
+                | DomainValue::Record { source, fields, .. } => {
+                    let Some(matched_native_node) = self.core.value(source)
+                    else {
+                        return Err(malformed);
+                    };
+                    let Value::Record(ref labels) = *matched_native_node
+                    else {
+                        return Err(malformed);
+                    };
+                    let fields = self
+                        .domain
+                        .fields(fields)
+                        .map_err(ConversionFault::Domain)?;
+                    if labels.len() != fields.len() {
+                        return Err(malformed);
+                    }
+                    Ok(FirstOrder::Record {
+                        labels,
+                        fields: ArgumentFields::Held(fields.iter()),
+                    })
+                },
+                | _ => Err(malformed),
+            },
+            | _ => Err(malformed),
+        }
+    }
+
+    /// Compare ordinary former payloads and queue their ordered children.
+    ///
+    /// # Specification
+    /// - requires: both nodes denote ordinary structural values.
+    /// - ensures: unequal tags, labels or literal payloads differ before child
+    ///   comparison.
+    /// - fails: dangling source or domain references, without partial
+    ///   obligations.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh equal literals agree while changed labels and
+    ///   arguments separate.
+    /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    #[spec(captures:[entry=pending.len()],ensures:|ret| ret.is_ok() || pending.len() == entry)]
+    fn first_order_pair(
+        &self,
+        left: Node,
+        right: Node,
+        pending: &mut Vec<(Node, Node)>,
+    ) -> Result<Alike, ConversionFault>
+    {
+        match (self.first_order(left)?, self.first_order(right)?) {
+            | (FirstOrder::Unit, FirstOrder::Unit) => Ok(Alike::Same),
+            | (FirstOrder::Literal(a), FirstOrder::Literal(b)) => {
+                let (Some(left_node), Some(right_node)) = (self.core.value(a), self.core.value(b))
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let Value::Literal(ref a) = *left_node
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                let Value::Literal(ref b) = *right_node
+                else {
+                    return Err(ConversionFault::MachineInvariant);
+                };
+                Ok(Alike::between(a, b))
+            },
+            | (FirstOrder::Pair(a, b), FirstOrder::Pair(c, d)) => {
+                pending.extend([(a, c), (b, d)]);
+                Ok(Alike::Same)
+            },
+            | (FirstOrder::Injection(a, b), FirstOrder::Injection(c, d)) if a == c => {
+                pending.push((b, d));
+                Ok(Alike::Same)
+            },
+            | (
+                FirstOrder::Constructor {
+                    datatype: left_datatype,
+                    tag: left_tag,
+                    fields: left_fields,
+                },
+                FirstOrder::Constructor {
+                    datatype: right_datatype,
+                    tag: right_tag,
+                    fields: right_fields,
+                },
+            ) if left_tag == right_tag && left_fields.len() == right_fields.len() => {
+                pending.extend(left_fields.zip(right_fields));
+                pending.push((left_datatype, right_datatype));
+                Ok(Alike::Same)
+            },
+            | (
+                FirstOrder::Record {
+                    labels: a,
+                    fields: b,
+                },
+                FirstOrder::Record {
+                    labels: c,
+                    fields: d,
+                },
+            ) if a.keys().eq(c.keys()) => {
+                pending.extend(b.zip(d));
+                Ok(Alike::Same)
+            },
+            | _ => Ok(Alike::Different),
+        }
+    }
+
+    /// Compare quoted roots or structural argument roots on the same iterative
+    /// worklist.
+    ///
+    /// # Specification
+    /// - requires: roots belong to the held arenas.
+    /// - ensures: equal live roots compare reflexively; every queued child must
+    ///   also agree.
+    /// - fails: a dangling child or malformed source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nominal identities and unequal ordinary arguments
+    ///   separate.
+    /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    #[spec(ensures: |ret| left_atom != right_atom || ret.is_err() || ret == Ok(Alike::Same))]
+    fn equal_atoms(
+        &mut self,
+        left_atom: Atom,
+        right_atom: Atom,
+    ) -> Result<Alike, ConversionFault>
+    {
+        let mut pending: Vec<(Node, Node)> = Vec::new();
+        let mut atoms = Vec::from([(left_atom, right_atom)]);
+        loop {
+            while let Some((one, other)) = atoms.pop() {
+                match (one, other) {
+                    | (Atom::FirstOrder(first), Atom::FirstOrder(second)) => {
+                        if self.first_order_pair(first, second, &mut pending)? == Alike::Different {
+                            return Ok(Alike::Different);
+                        }
+                    },
+                    | (Atom::Quote(first, here), Atom::Quote(second, there)) => {
+                        pending
+                            .push((Node::ValueType(first, here), Node::ValueType(second, there)));
+                    },
+                    | (
+                        Atom::QuoteComputation(first, here),
+                        Atom::QuoteComputation(second, there),
+                    ) => {
+                        pending.push((Node::CompType(first, here), Node::CompType(second, there)));
+                    },
+                    | (Atom::Lift(first, here), Atom::Lift(second, there)) => {
+                        let (
+                            Some(&Value::Lift {
+                                target: ref left_target,
+                                body: left_body,
+                            }),
+                            Some(&Value::Lift {
+                                target: ref right_target,
+                                body: right_body,
+                            }),
+                        ) = (self.core.value(first), self.core.value(second))
+                        else {
+                            return Err(ConversionFault::MachineInvariant);
+                        };
+                        if left_target != right_target {
+                            return Ok(Alike::Different);
+                        }
+                        let one = self.atom(Node::Code(left_body, here))?;
+                        let other = self.atom(Node::Code(right_body, there))?;
+                        atoms.push((one, other));
+                    },
+                    | (
+                        Atom::Applied(head, argument),
+                        Atom::Applied(other_head, other_argument),
+                    ) => {
+                        let arguments = (self.atom(argument)?, self.atom(other_argument)?);
+                        let heads = (self.atom(head)?, self.atom(other_head)?);
+                        atoms.push(arguments);
+                        atoms.push(heads);
+                    },
+                    | (Atom::Operator(first, here), Atom::Operator(second, there)) => {
+                        let (
+                            Some(&Value::StaticLambda(left_body)),
+                            Some(&Value::StaticLambda(right_body)),
+                        ) = (self.core.value(first), self.core.value(second))
+                        else {
+                            return Err(ConversionFault::MachineInvariant);
+                        };
+                        let (inside, other_inside) = self.crossed(here, there);
+                        let one = self.atom(Node::Code(left_body, inside))?;
+                        let other = self.atom(Node::Code(right_body, other_inside))?;
+                        atoms.push((one, other));
+                    },
+                    | (Atom::Local(first), Atom::Local(second)) if first == second => {},
+                    | (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
+                        if (zone, first) == (other_zone, second) => {},
+                    | (Atom::Constant(first, _), Atom::Constant(second, _)) if first == second => {
+                    },
+                    | (Atom::Other(first), Atom::Other(second)) if first == second => {},
+                    | (
+                        Atom::Local(_)
+                        | Atom::FirstOrder(_)
+                        | Atom::Variable(..)
+                        | Atom::Constant(..)
+                        | Atom::Quote(..)
+                        | Atom::QuoteComputation(..)
+                        | Atom::Lift(..)
+                        | Atom::Applied(..)
+                        | Atom::Operator(..)
+                        | Atom::Other(_),
+                        _,
+                    ) => return Ok(Alike::Different),
+                }
+            }
+            let Some((one, other)) = pending.pop()
+            else {
+                return Ok(Alike::Same);
+            };
+            if self.formers(one, other, &mut pending, &mut atoms)? == Alike::Different {
+                return Ok(Alike::Different);
+            }
+        }
+    }
+
+    /// Inspect every structural type or ordinary argument below a root.
+    ///
+    /// # Specification
+    /// - requires: the root resolves in the held arenas.
+    /// - ensures: unhandled computation-bearing arguments remain flexible,
+    ///   never a rigid refutation.
+    /// - fails: dangling or malformed children.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nominal arguments contribute their own rigidity.
+    /// - witness: `code::tests::native_types_compare_identity_labels_and_value_arguments`
+    #[spec(ensures: |ret| !matches!(root,Atom::Other(_) | Atom::Operator(..) | Atom::Constant(_,Rigidity::Flexible)) || ret == Ok(Rigidity::Flexible))]
+    fn rigidity_atom(
+        &mut self,
+        root: Atom,
+    ) -> Result<Rigidity, ConversionFault>
+    {
+        let mut atoms = Vec::from([root]);
         let mut types: Vec<Node> = Vec::new();
         while !atoms.is_empty() || !types.is_empty() {
             while let Some(atom) = atoms.pop() {
                 match atom {
+                    | Atom::FirstOrder(node) => match self.first_order(node)? {
+                        | FirstOrder::Unit | FirstOrder::Literal(_) => {},
+                        | FirstOrder::Pair(a, b) => {
+                            atoms.push(self.atom(a)?);
+                            atoms.push(self.atom(b)?);
+                        },
+                        | FirstOrder::Injection(_, body) => atoms.push(self.atom(body)?),
+                        | FirstOrder::Constructor {
+                            datatype, fields, ..
+                        } => {
+                            types.push(datatype);
+                            for field in fields {
+                                atoms.push(self.atom(field)?);
+                            }
+                        },
+                        | FirstOrder::Record { fields, .. } => {
+                            for field in fields {
+                                atoms.push(self.atom(field)?);
+                            }
+                        },
+                    },
                     | Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid) => {
                     },
                     | Atom::Constant(_, Rigidity::Flexible)
@@ -1356,6 +1825,13 @@ impl<'run> Walk<'run>
                         .value_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
+                        | ValueType::Data { ref arguments, .. } => {
+                            for argument in arguments {
+                                atoms.push(self.atom(Node::Code(*argument, place))?);
+                            }
+                        },
+                        | ValueType::Record(ref fields) => types
+                            .extend(fields.values().map(|field| Node::ValueType(*field, place))),
                         | ValueType::PathUniverse(source, target) => {
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
@@ -1527,7 +2003,7 @@ mod tests
     ///   through different environment depths; reversing the supplied binding
     ///   order or losing a binding changes which codes agree.
     /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
-    #[spec(ensures: |ret| domain.value_closure(ret).is_some_and(|closure| closure.body() == quote
+    #[spec(ensures: |ret| domain.value_closure(ret).is_some_and(|closure| closure.body() == crate::ValueBody::Source(quote)
         && bound.iter().rev().enumerate().all(|(index, value)| u32::try_from(index).is_ok_and(|index|
             closure.environment().lookup(Zone::Intuitionistic, DeBruijnIndex::from(index)) == Some(*value))))) ]
     fn code_of(
@@ -1901,7 +2377,8 @@ mod tests
         let unit = core.value_type_unit();
         let quote = core.value_quote(unit);
         let mut domain = DomainArena::new();
-        let closure = domain.value_closure_node(quote, Environment::new());
+        let closure =
+            domain.value_closure_node(crate::ValueBody::Source(quote), Environment::new());
         let place = super::Walk::opened(closure);
         let mut walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
         walk.next = super::Binder(
@@ -1932,7 +2409,8 @@ mod tests
         let unit = core.value_type_unit();
         let quote = core.value_quote(unit);
         let mut domain = DomainArena::new();
-        let closure = domain.value_closure_node(quote, Environment::new());
+        let closure =
+            domain.value_closure_node(crate::ValueBody::Source(quote), Environment::new());
         let place = super::Walk::opened(closure);
         let mut walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
         let old = walk.crossed_alone(place);
@@ -2006,8 +2484,8 @@ mod tests
         let mut environment = Environment::new();
         environment.extend(Zone::Intuitionistic, int_value);
         environment.extend(Zone::Linear, linear_value);
-        let closure = domain.value_closure_node(quote, environment);
-        let empty = domain.value_closure_node(quote, Environment::new());
+        let closure = domain.value_closure_node(crate::ValueBody::Source(quote), environment);
+        let empty = domain.value_closure_node(crate::ValueBody::Source(quote), Environment::new());
         let before_absent = domain.watermark();
         let absent_held = domain.value_unit(TermFace::Reduced);
         domain.truncate_to(before_absent);
@@ -2156,6 +2634,115 @@ mod tests
         assert_eq!(
             Err(crate::ConversionFault::MachineInvariant),
             compare_codes(&core, &domain, ConstantReading::Unread, left, broken)
+        );
+    }
+
+    #[test]
+    fn native_types_compare_identity_labels_and_value_arguments()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let first = core.value_unit();
+        let second = core.value_unit();
+        let key = FieldLabel::from(String::from("key"));
+        let other_key = FieldLabel::from(String::from("other"));
+        let record = core.value_record(BTreeMap::from([(key.clone(), first)]));
+        let same_record = core.value_record(BTreeMap::from([(key.clone(), second)]));
+        let other_record = core.value_record(BTreeMap::from([(other_key.clone(), first)]));
+        let name = ConstantIndex::from(0_usize);
+        let other_name = ConstantIndex::from(1_usize);
+        let indexed = core.value_type_data(name, Vec::from([record]));
+        let repeated = core.value_type_data(name, Vec::from([same_record]));
+        let renamed = core.value_type_data(other_name, Vec::from([record]));
+        let relabeled = core.value_type_data(name, Vec::from([other_record]));
+        let constructor_type = core.value_type_data(other_name, Vec::new());
+        let constructor = core.value_constructor(
+            constructor_type,
+            ConstructorTag::from(0_usize),
+            Vec::from([first]),
+        );
+        let other_constructor = core.value_constructor(
+            constructor_type,
+            ConstructorTag::from(1_usize),
+            Vec::from([first]),
+        );
+        let tagged = core.value_type_data(name, Vec::from([constructor]));
+        let retagged = core.value_type_data(name, Vec::from([other_constructor]));
+        let unit_type = core.value_type_unit();
+        let wide = core.value_type_record(BTreeMap::from([
+            (key.clone(), unit_type),
+            (other_key, unit_type),
+        ]));
+        let narrow = core.value_type_record(BTreeMap::from([(key.clone(), unit_type)]));
+        let repeated_type = core.value_type_record(BTreeMap::from([(key.clone(), unit_type)]));
+        let nested = core.value_type_record(BTreeMap::from([(key, narrow)]));
+        let empty = core.value_type_record(BTreeMap::new());
+        let mut domain = DomainArena::new();
+        let [
+            indexed,
+            repeated,
+            renamed,
+            relabeled,
+            tagged,
+            retagged,
+            wide,
+            narrow,
+            repeated_type,
+            nested,
+            empty,
+        ] = [
+            indexed,
+            repeated,
+            renamed,
+            relabeled,
+            tagged,
+            retagged,
+            wide,
+            narrow,
+            repeated_type,
+            nested,
+            empty,
+        ]
+        .map(|ty| {
+            let quote = core.value_quote(ty);
+            code_of(&core, &mut domain, quote, &[])
+        });
+        assert_eq!(
+            compare_rigidly(&core, &domain, indexed, repeated),
+            CodeComparison::Equal
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, indexed, renamed),
+            CodeComparison::Apart
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, indexed, relabeled),
+            CodeComparison::Apart
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, tagged, retagged),
+            CodeComparison::Apart
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, narrow, repeated_type),
+            CodeComparison::Equal
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, wide, narrow),
+            CodeComparison::Apart,
+            "width assignment is not definitional equality"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, narrow, nested),
+            CodeComparison::Apart
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, narrow, empty),
+            CodeComparison::Apart
         );
     }
 }

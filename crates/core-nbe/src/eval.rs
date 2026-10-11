@@ -205,6 +205,18 @@ pub enum EvalFault
     /// frame that miscounts surfaces as a refusal instead of a wrong
     /// answer.
     MachineInvariant,
+    /// Nominal elimination received a value other than a constructor or
+    /// neutral.
+    CasedNonConstructor,
+    /// The constructor ordinal has no branch in the supplied case.
+    UnknownConstructor
+    {
+        tag: gandr_core_term::ConstructorTag,
+    },
+    /// Record projection received a non-record, non-neutral value.
+    ProjectedNonRecord,
+    /// The exact projection label is absent from the record.
+    AbsentRecordField,
 }
 
 /// A definition chain with every body lowered into the core arena a run
@@ -479,6 +491,28 @@ impl<'run> Definitions<'run>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Task
 {
+    /// Assemble evaluated nominal fields and capture the classifier's scope.
+    Constructor
+    {
+        /// The source constructor whose classifier is captured.
+        term: ValueId,
+        /// The constructor occurrence's lexical environment.
+        env: EnvId,
+    },
+    /// Assemble evaluated record fields in source label order.
+    Record(ValueId),
+    /// Select a native branch and apply its constructor fields.
+    DataCase
+    {
+        /// The source case carrying its motive and branch table.
+        term: ComputationId,
+        /// The environment in which its branch functions are evaluated.
+        env: EnvId,
+    },
+    /// Reapply a suspended nominal case after its head unfolds.
+    DataCaseClosure(CompClosureId),
+    /// Select the exact source label from an evaluated record.
+    RecordProjection(ComputationId),
     /// Enter a source or native computation body.
     Body
     {
@@ -1272,7 +1306,7 @@ fn denotes(
 ///   closures carrying substitutions lose them. Ignoring the captured
 ///   environment gives the open closure a source shortcut it cannot justify.
 /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
-/// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+/// - witness: `eval::tests::native_cases_reapply_when_head_unfolds`
 #[spec(
     ensures: |ret| (ret == SourceKept::Kept)
         == (usize::from(environment.depth(Zone::Intuitionistic)) == 0_usize
@@ -1933,12 +1967,14 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_))),
+        requires: matches!(spine.first(), Some(Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
                 let mut answer = Answer::Value;
                 let ordered = spine.iter().all(|elimination| match *elimination {
+                    Elimination::DataCase(closure) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::DataCaseClosure(held)) if *held == closure) },
+                    Elimination::RecordProjection(term) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::RecordProjection(held)) if *held == term) },
                     Elimination::Transport(value) => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Transport)) },
                     Elimination::ProductTransport(path) => { answer = Answer::Computation;
@@ -1969,6 +2005,14 @@ impl<'run> Evaluation<'run>
         let mut answer = Answer::Value;
         for elimination in spine.iter().rev() {
             match *elimination {
+                | Elimination::DataCase(closure) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::DataCaseClosure(closure));
+                },
+                | Elimination::RecordProjection(term) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::RecordProjection(term));
+                },
                 | Elimination::Transport(value) => {
                     answer = Answer::Computation;
                     machine.tasks.push(Task::Transport);
@@ -2286,6 +2330,9 @@ fn run(
         entry_first = machine.values.len().checked_sub(2_usize).and_then(|index| machine.values.get(index)).copied()],
     ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
         && (ret.is_err() || match task {
+            Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
+            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::RecordProjection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
+            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -2327,9 +2374,7 @@ fn run(
                 && machine.values.len() == entry_values.saturating_add(1_usize) && machine.values.last() == Some(&value),
             Task::Remember(pending) => machine.tasks.len() == entry_tasks && machine.values.len() == entry_values
                 && machine.comps.len() == entry_comps && machine.sharing.pending.get(pending.0).is_none_or(Option::is_none),
-            Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) => machine.tasks.len() >= entry_tasks,
-        }),
+            }),
 )]
 fn step(
     core: &CoreArena,
@@ -2339,6 +2384,21 @@ fn step(
 ) -> Result<(), EvalFault>
 {
     match task {
+        | Task::Constructor { term, env } => step_constructor(core, domain, machine, term, env),
+        | Task::Record(term) => step_record(core, domain, machine, term),
+        | Task::DataCase { term, env } => step_data_case(core, domain, machine, term, env),
+        | Task::RecordProjection(term) => step_record_projection(core, domain, machine, term),
+        | Task::DataCaseClosure(closure) => {
+            let closure = domain
+                .comp_closure(closure)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let crate::closure::CompBody::Source(term) = closure.body()
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let env = machine.hold_env(closure.environment().clone());
+            step_data_case(core, domain, machine, term, env)
+        },
         | Task::Value { term, env } => {
             let recalled = machine.recall(CoreTerm::Value(term), env)?;
             match recalled {
@@ -2505,7 +2565,7 @@ fn step(
 /// - witness: `eval::tests::a_lift_over_a_substituted_body_loses_its_face`
 /// - witness: `eval::tests::a_variable_resolves_out_of_the_environment`
 /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
-/// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+/// - witness: `eval::tests::native_records_and_cases_compute`
 /// - witness: `eval::tests::normalizes_beta_redex`
 /// - witness: `eval::tests::normalization_preserves_a_stuck_application`
 #[spec(
@@ -2532,6 +2592,26 @@ fn step_value(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
+        | Value::Constructor { ref fields, .. } => {
+            machine.tasks.push(Task::Constructor { term, env });
+            machine.tasks.extend(
+                fields
+                    .iter()
+                    .rev()
+                    .map(|field| Task::Value { term: *field, env }),
+            );
+            Ok(())
+        },
+        | Value::Record(ref fields) => {
+            machine.tasks.push(Task::Record(term));
+            machine.tasks.extend(
+                fields
+                    .values()
+                    .rev()
+                    .map(|field| Task::Value { term: *field, env }),
+            );
+            Ok(())
+        },
         | Value::PathRefl(_) | Value::PathEquiv { .. } => {
             machine
                 .values
@@ -2606,7 +2686,7 @@ fn step_value(
         | Value::Quote(_) | Value::QuoteComputation(_) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
-            let closure = domain.value_closure_node(term, captured);
+            let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);
             let face = composite_face(closed, term);
             machine.values.push(domain.value_code(closure, face));
             Ok(())
@@ -2617,7 +2697,7 @@ fn step_value(
         | Value::StaticLambda(_) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
-            let closure = domain.value_closure_node(term, captured);
+            let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);
             let face = composite_face(closed, term);
             machine
                 .values
@@ -2682,6 +2762,19 @@ fn step_comp(
     };
     match *node {
         | Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
+        | Computation::DataCase { scrutinee, .. } => {
+            machine.tasks.push(Task::DataCase { term, env });
+            machine.tasks.push(Task::Value {
+                term: scrutinee,
+                env,
+            });
+            Ok(())
+        },
+        | Computation::RecordProjection(record, _) => {
+            machine.tasks.push(Task::RecordProjection(term));
+            machine.tasks.push(Task::Value { term: record, env });
+            Ok(())
+        },
         | Computation::Transport(path, value) => {
             machine.tasks.push(Task::Transport);
             machine.tasks.push(Task::Value { term: value, env });
@@ -2807,6 +2900,8 @@ fn step_force(
             Ok(())
         },
         | DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
@@ -2972,7 +3067,11 @@ fn step_static_apply(
             else {
                 return Err(EvalFault::Domain(DomainFault::Dangling));
             };
-            let Some(&Value::StaticLambda(term)) = core.value(closure.body())
+            let crate::ValueBody::Source(body) = closure.body()
+            else {
+                return Err(EvalFault::MachineInvariant);
+            };
+            let Some(&Value::StaticLambda(term)) = core.value(body)
             else {
                 return Err(EvalFault::DanglingTerm);
             };
@@ -2991,6 +3090,8 @@ fn step_static_apply(
             Ok(())
         },
         | DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
@@ -3142,6 +3243,8 @@ fn step_case(
             Ok(())
         },
         | DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
@@ -3287,6 +3390,8 @@ fn step_case_closures(
             Ok(())
         },
         | DomainValue::PathCertificate { .. }
+        | DomainValue::Constructor { .. }
+        | DomainValue::Record { .. }
         | DomainValue::PathProduct { .. }
         | DomainValue::Unit { .. }
         | DomainValue::Literal { .. }
@@ -3407,6 +3512,254 @@ fn step_transport(
     }
 }
 
+/// Assemble a nominal value from its already evaluated fields.
+///
+/// # Specification
+/// - requires: fields occupy the value stack suffix in signature order.
+/// - ensures: a constructor retains those fields, its ordinal and captured
+///   classifier.
+/// - fails: missing source nodes, environments or stack operands.
+/// - panics: none.
+///
+/// # Errors
+/// Returns an evaluation invariant, domain or environment fault.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct fields stay ordered when a case applies its
+///   branch.
+/// - witness: `eval::tests::native_records_and_cases_compute`
+#[spec(ensures: |ret| ret.is_err() || matches!(machine.values.last().and_then(|id| domain.value(*id)),Some(DomainValue::Constructor { .. }))) ]
+fn step_constructor(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ValueId,
+    env: EnvId,
+) -> Result<(), EvalFault>
+{
+    let Some(&Value::Constructor {
+        datatype,
+        tag,
+        ref fields,
+    }) = core.value(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let start = machine
+        .values
+        .len()
+        .checked_sub(fields.len())
+        .ok_or(EvalFault::MachineInvariant)?;
+    let captured = machine.capture(env)?;
+    let mut kept = capture_keeps_source(&captured);
+    for (value, source) in machine
+        .values
+        .get(start ..)
+        .ok_or(EvalFault::MachineInvariant)?
+        .iter()
+        .zip(fields)
+    {
+        kept = kept.and(denotes(domain, *value, *source));
+    }
+    let fields = domain.hold_fields(machine.values.drain(start ..));
+    let datatype = domain.value_closure_node(crate::ValueBody::ValueType(datatype), captured);
+    let value = domain.value_constructor(datatype, tag, fields, composite_face(kept, term));
+    machine.values.push(value);
+    Ok(())
+}
+
+/// Assemble a record without copying labels out of the source arena.
+///
+/// # Specification
+/// - requires: evaluated fields occupy the stack suffix in source label order.
+/// - ensures: the record retains that order and keeps its source only when
+///   every field does.
+/// - fails: missing source nodes, spans or stack operands.
+/// - panics: none.
+///
+/// # Errors
+/// Returns a dangling term, domain fault or machine invariant refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — selecting either of two unequal fields distinguishes
+///   order.
+/// - witness: `eval::tests::native_records_and_cases_compute`
+#[spec(ensures: |ret| ret.is_err() || matches!(machine.values.last().and_then(|id| domain.value(*id)),Some(DomainValue::Record { .. }))) ]
+fn step_record(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ValueId,
+) -> Result<(), EvalFault>
+{
+    let Some(matched_native_node) = core.value(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let Value::Record(ref fields) = *matched_native_node
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let start = machine
+        .values
+        .len()
+        .checked_sub(fields.len())
+        .ok_or(EvalFault::MachineInvariant)?;
+    let mut kept = SourceKept::Kept;
+    for (value, source) in machine
+        .values
+        .get(start ..)
+        .ok_or(EvalFault::MachineInvariant)?
+        .iter()
+        .zip(fields.values())
+    {
+        kept = kept.and(denotes(domain, *value, *source));
+    }
+    let fields = domain.hold_fields(machine.values.drain(start ..));
+    let value = domain
+        .value_record(term, fields, composite_face(kept, term))
+        .map_err(EvalFault::Domain)?;
+    machine.values.push(value);
+    Ok(())
+}
+
+/// Select a nominal branch, or suspend the complete case on a neutral head.
+///
+/// # Specification
+/// - requires: the scrutinee is the top value operand.
+/// - ensures: a constructor selects exactly its ordinal and supplies fields in
+///   order; a neutral retains the whole case and its ambient capture.
+/// - fails: a missing branch, a non-constructor or malformed machine state.
+/// - panics: none.
+///
+/// # Errors
+/// Returns the typed constructor, domain, term or machine refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct fields, unknown tags and reapplication
+///   distinguish selection.
+/// - witness: `eval::tests::native_records_and_cases_compute`
+/// - witness: `eval::tests::native_cases_reapply_when_head_unfolds`
+#[spec(ensures: |ret| ret != Err(EvalFault::OutOfFuel))]
+fn step_data_case(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ComputationId,
+    env: EnvId,
+) -> Result<(), EvalFault>
+{
+    let Some(matched_native_node) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let Computation::DataCase { ref branches, .. } = *matched_native_node
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let scrutinee = machine.pop_value()?;
+    match *domain
+        .value(scrutinee)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        | DomainValue::Constructor { tag, fields, .. } => {
+            let branch = *branches
+                .get(usize::from(tag))
+                .ok_or(EvalFault::UnknownConstructor { tag })?;
+            for field in domain
+                .fields(fields)
+                .map_err(EvalFault::Domain)?
+                .iter()
+                .rev()
+            {
+                machine.tasks.push(Task::Apply);
+                machine.tasks.push(Task::Supply(*field));
+            }
+            machine.tasks.push(Task::Comp { term: branch, env });
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let closure = domain.comp_closure_node(term, machine.capture(env)?);
+            let grown = extend_spine(domain, neutral, Elimination::DataCase(closure))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | _ => Err(EvalFault::CasedNonConstructor),
+    }
+}
+
+/// Select the exact label from a record, or suspend projection on a neutral.
+///
+/// # Specification
+/// - requires: the record operand is the top value.
+/// - ensures: returns the selected field, never a positional substitute for a
+///   missing label.
+/// - fails: absent labels, non-records, dangling domains or malformed state.
+/// - panics: none.
+///
+/// # Errors
+/// Returns the typed record, domain, term or machine refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unequal fields and an absent label distinguish exact
+///   lookup.
+/// - witness: `eval::tests::native_records_and_cases_compute`
+#[spec(ensures: |ret| ret != Err(EvalFault::OutOfFuel))]
+fn step_record_projection(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    term: ComputationId,
+) -> Result<(), EvalFault>
+{
+    let Some(matched_native_node) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let Computation::RecordProjection(_, ref label) = *matched_native_node
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let record = machine.pop_value()?;
+    match *domain
+        .value(record)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    {
+        | DomainValue::Record { source, fields, .. } => {
+            let Some(matched_native_node) = core.value(source)
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let Value::Record(ref source_fields) = *matched_native_node
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let position = source_fields
+                .keys()
+                .position(|field| field == label)
+                .ok_or(EvalFault::AbsentRecordField)?;
+            let value = *domain
+                .fields(fields)
+                .map_err(EvalFault::Domain)?
+                .get(position)
+                .ok_or(EvalFault::MachineInvariant)?;
+            machine
+                .comps
+                .push(domain.comp_return(value, CompTermFace::Reduced));
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::RecordProjection(term))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | _ => Err(EvalFault::ProjectedNonRecord),
+    }
+}
 #[cfg(test)]
 mod tests
 {
@@ -3444,7 +3797,6 @@ mod tests
     use super::eval_comp_within;
     use super::eval_computation;
     use super::eval_value;
-    use super::eval_value_within;
     use super::face_of;
     use crate::arena::DomainArena;
     use crate::closure::Environment;
@@ -4492,61 +4844,6 @@ mod tests
     }
 
     #[test]
-    fn a_quote_is_suspended_over_its_environment()
-    {
-        let mut core = CoreArena::new();
-        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
-        let decoded = core.value_type_element(occurrence, Level::zero());
-        let open = core.value_quote(decoded);
-        let unit = core.value_type_unit();
-        let closed = core.value_quote(unit);
-
-        let (chain, environment) = nothing_unfolds();
-        let scope = environment.root();
-        let definitions = Definitions::new(&chain, &environment, scope);
-        let mut domain = DomainArena::new();
-        let bound = domain.value_unit(TermFace::Reduced);
-        let mut supplied = Environment::new();
-        supplied.extend(Zone::Intuitionistic, bound);
-
-        let (produced, _) =
-            eval_value_within(&core, &mut domain, definitions, ample(), open, supplied)
-                .expect("the supplied environment holds the quote's one free variable");
-        let Some(&DomainValue::Code { code, face }) = domain.value(produced)
-        else {
-            panic!("a quote evaluates to a code");
-        };
-        assert_eq!(
-            TermFace::Reduced,
-            face,
-            "a quote over a non-empty environment no longer denotes its source alone"
-        );
-        let suspended = domain
-            .value_closure(code)
-            .expect("the code's closure resolves");
-        assert_eq!(
-            open,
-            suspended.body(),
-            "the closure suspends the quote itself"
-        );
-        assert_eq!(
-            Some(bound),
-            suspended
-                .environment()
-                .lookup(Zone::Intuitionistic, innermost()),
-            "and holds the environment the quoted type reads"
-        );
-
-        let produced = eval_value(&core, &mut domain, definitions, ample(), closed)
-            .expect("a closed quote evaluates");
-        assert_eq!(
-            Some(TermFace::Source(closed)),
-            face_of(&domain, produced),
-            "a quote over the empty environment still denotes its source"
-        );
-    }
-
-    #[test]
     fn a_loop_declines_on_fuel_rather_than_diverging()
     {
         let mut core = CoreArena::new();
@@ -5113,5 +5410,424 @@ mod tests
             Err(EvalFault::BoundNonReturner),
             wrong_bind.resume(&core, &mut domain, ample())
         );
+    }
+
+    #[test]
+    fn native_records_and_cases_compute()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let left = core.value_injection(Side::Left, unit);
+        let right = core.value_injection(Side::Right, unit);
+        let pair = core.value_pair(unit, unit);
+        let empty = core.value_record(BTreeMap::new());
+        let labels = ["a", "b", "c", "d", "e"].map(|label| FieldLabel::from(String::from(label)));
+        let source = core.value_record(
+            labels
+                .iter()
+                .cloned()
+                .zip([unit, left, right, pair, empty])
+                .collect(),
+        );
+        let variables = [4_u32, 3, 2, 1, 0]
+            .map(|index| core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+        let record = core.value_record(labels.iter().cloned().zip(variables).collect());
+        let untaken = core.value_record(
+            labels
+                .iter()
+                .cloned()
+                .zip([unit, right, left, pair, empty])
+                .collect(),
+        );
+        let mut selected = core.computation_return(record);
+        let mut alternate = core.computation_return(untaken);
+        for _ in 0 .. 5_u8 {
+            selected = core.computation_lambda(selected);
+            alternate = core.computation_lambda(alternate);
+        }
+        let unit_type = core.value_type_unit();
+        let sum = core.value_type_sum(unit_type, unit_type);
+        let product = core.value_type_product(unit_type, unit_type);
+        let empty_type = core.value_type_record(BTreeMap::new());
+        let record_type = core.value_type_record(
+            labels
+                .iter()
+                .cloned()
+                .zip([unit_type, sum, sum, product, empty_type])
+                .collect(),
+        );
+        let motive = core.comp_type_returner(record_type);
+        let datatype = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+        let fields = [unit, left, right, pair, empty];
+        let constructor =
+            core.value_constructor(datatype, ConstructorTag::from(1_usize), Vec::from(fields));
+        let cased =
+            core.computation_data_case(constructor, motive, Vec::from([alternate, selected]));
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), cased).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("case returns its selected record");
+        };
+        let normal = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            value,
+        )
+        .unwrap();
+        let Some(matched_native_node) = core.value(normal)
+        else {
+            panic!("record readback");
+        };
+        let Value::Record(ref record) = *matched_native_node
+        else {
+            panic!("record readback");
+        };
+        assert!(record.keys().eq(labels.iter()));
+        let mut actual = record.values().copied();
+        assert!(matches!(
+            core.value(actual.next().unwrap()),
+            Some(Value::Unit)
+        ));
+        assert!(matches!(
+            core.value(actual.next().unwrap()),
+            Some(Value::Injection(Side::Left, _))
+        ));
+        assert!(matches!(
+            core.value(actual.next().unwrap()),
+            Some(Value::Injection(Side::Right, _))
+        ));
+        assert!(matches!(
+            core.value(actual.next().unwrap()),
+            Some(Value::Pair(_, _))
+        ));
+        assert!(
+            matches!(core.value(actual.next().unwrap()),Some(Value::Record(fields)) if fields.is_empty())
+        );
+        let projection = core.computation_record_projection(source, labels[2].clone());
+        let projected =
+            eval_computation(&core, &mut domain, definitions, ample(), projection).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(projected)
+        else {
+            panic!("projection returns a field");
+        };
+        assert!(matches!(
+            domain.value(value),
+            Some(DomainValue::Injection {
+                side: Side::Right,
+                ..
+            })
+        ));
+        let absent =
+            core.computation_record_projection(source, FieldLabel::from(String::from("absent")));
+        let wrong_record = core.computation_record_projection(unit, labels[0].clone());
+        let wrong_data = core.computation_data_case(unit, motive, Vec::from([alternate, selected]));
+        let unknown =
+            core.value_constructor(datatype, ConstructorTag::from(2_usize), Vec::from(fields));
+        let unknown = core.computation_data_case(unknown, motive, Vec::from([alternate, selected]));
+        for (term, fault) in [
+            (absent, EvalFault::AbsentRecordField),
+            (wrong_record, EvalFault::ProjectedNonRecord),
+            (wrong_data, EvalFault::CasedNonConstructor),
+            (unknown, EvalFault::UnknownConstructor {
+                tag: ConstructorTag::from(2_usize),
+            }),
+        ] {
+            assert_eq!(
+                eval_computation(&core, &mut domain, definitions, ample(), term),
+                Err(fault)
+            );
+        }
+        // Unselected suspended fields must stay unopened.
+        let poison = core.value_thunk(wrong_record);
+        let quiet = core.value_record(BTreeMap::from([
+            (labels[0].clone(), poison),
+            (labels[1].clone(), right),
+        ]));
+        let quiet = core.computation_record_projection(quiet, labels[1].clone());
+        let projected = eval_computation(&core, &mut domain, definitions, ample(), quiet).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(projected)
+        else {
+            panic!("only the selected field returns");
+        };
+        let normal = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            value,
+        )
+        .unwrap();
+        assert!(matches!(
+            core.value(normal),
+            Some(Value::Injection(Side::Right, _))
+        ));
+        let argument = core.value_variable(Zone::Intuitionistic, innermost());
+        let identity = core.computation_return(argument);
+        let identity = core.computation_lambda(identity);
+        let identity = core.value_thunk(identity);
+        let module = core.value_record(BTreeMap::from([
+            (labels[0].clone(), poison),
+            (labels[1].clone(), identity),
+        ]));
+        let selected = core.computation_record_projection(module, labels[1].clone());
+        let forced = core.computation_force(argument);
+        let applied = core.computation_application(forced, right);
+        let applied = core.computation_bind(selected, applied);
+        let evaluated =
+            eval_computation(&core, &mut domain, definitions, ample(), applied).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("the projected function applies");
+        };
+        assert!(matches!(
+            domain.value(value),
+            Some(DomainValue::Injection {
+                side: Side::Right,
+                ..
+            })
+        ));
+        let poisoned = core.computation_record_projection(module, labels[0].clone());
+        let poisoned = core.computation_bind(poisoned, forced);
+        assert_eq!(
+            eval_computation(&core, &mut domain, definitions, ample(), poisoned),
+            Err(EvalFault::ProjectedNonRecord)
+        );
+
+        // A constructor's classifier closes over the argument, not merely its
+        // value fields. Readback must substitute that captured value index.
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let indexed = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
+        let constructor =
+            core.value_constructor(indexed, ConstructorTag::from(0_usize), Vec::from([source]));
+        let returned = core.computation_return(constructor);
+        let lambda = core.computation_lambda(returned);
+        let applied = core.computation_application(lambda, unit);
+        let evaluated =
+            eval_computation(&core, &mut domain, definitions, ample(), applied).unwrap();
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+        else {
+            panic!("constructor introduction");
+        };
+        let normal = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            value,
+        )
+        .unwrap();
+        let Some(matched_native_node) = core.value(normal)
+        else {
+            panic!("native constructor survives normalization");
+        };
+        let Value::Constructor {
+            ref datatype,
+            ref fields,
+            ..
+        } = *matched_native_node
+        else {
+            panic!("native constructor survives normalization");
+        };
+        let Some(matched_native_node) = core.value_type(*datatype)
+        else {
+            panic!("native classifier survives normalization");
+        };
+        let ValueType::Data {
+            ref declaration,
+            ref arguments,
+        } = *matched_native_node
+        else {
+            panic!("native classifier survives normalization");
+        };
+        assert_eq!(*declaration, ConstantIndex::from(3_usize));
+        assert!(
+            matches!(arguments.as_slice(),[argument] if matches!(core.value(*argument),Some(Value::Unit)))
+        );
+        assert!(
+            matches!(fields.as_slice(),[field] if matches!(core.value(*field),Some(Value::Record(record)) if record.keys().eq(labels.iter())))
+        );
+    }
+
+    #[test]
+    fn native_cases_reapply_when_head_unfolds()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let captured = core.value_injection(Side::Left, unit);
+        let field = core.value_injection(Side::Right, unit);
+        let label = FieldLabel::from(String::from("field"));
+        let data = core.value_type_data(ConstantIndex::from(2_usize), Vec::new());
+        let constructor =
+            core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([field]));
+        let record = core.value_record(BTreeMap::from([(label.clone(), field)]));
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let motive_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
+        let motive = core.comp_type_returner(motive_type);
+        let index = core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([bound]));
+        let result_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([index]));
+        let pair = core.value_pair(outer, bound);
+        let result = core.value_constructor(
+            result_type,
+            ConstructorTag::from(0_usize),
+            Vec::from([pair]),
+        );
+        let returned = core.computation_return(result);
+        let branch = core.computation_lambda(returned);
+        let data_reference = core.value_constant(ConstantIndex::from(0_usize));
+        let record_reference = core.value_constant(ConstantIndex::from(1_usize));
+        let cased = core.computation_data_case(data_reference, motive, Vec::from([branch]));
+        let projected = core.computation_record_projection(record_reference, label);
+        let mut chain = DefinitionChain::new();
+        for (constant, entry) in [(0_usize, 0_u32), (1, 1)] {
+            chain
+                .define(
+                    ConstantIndex::from(constant),
+                    GlobalIndex::from(entry),
+                    Transparency::Manifest,
+                    &[],
+                )
+                .unwrap();
+        }
+        let Ok(chain) = LoweredChain::lower(chain, |entry| {
+            Ok::<_, Infallible>(if entry.constant() == ConstantIndex::from(0_usize) {
+                constructor
+            }
+            else {
+                record
+            })
+        });
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let held = eval_value(&core, &mut domain, definitions, ample(), captured).unwrap();
+        let mut supplied = Environment::new();
+        supplied.extend(Zone::Intuitionistic, held);
+        let (stuck, _) =
+            eval_comp_within(&core, &mut domain, definitions, ample(), cased, supplied).unwrap();
+        let normal = crate::readback::readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::ZeroUnfold,
+            ample(),
+            stuck,
+        )
+        .unwrap();
+        let Some(matched_native_node) = core.computation(normal)
+        else {
+            panic!("stuck native case keeps its eliminator");
+        };
+        let gandr_core_term::Computation::DataCase { ref motive, .. } = *matched_native_node
+        else {
+            panic!("stuck native case keeps its eliminator");
+        };
+        let Some(matched_native_node) = core.comp_type(*motive)
+        else {
+            panic!("motive returns a value");
+        };
+        let gandr_core_term::CompType::Returner(ref motive) = *matched_native_node
+        else {
+            panic!("motive returns a value");
+        };
+        let Some(matched_native_node) = core.value_type(*motive)
+        else {
+            panic!("dependent motive");
+        };
+        let ValueType::Data { ref arguments, .. } = *matched_native_node
+        else {
+            panic!("dependent motive");
+        };
+        assert!(
+            matches!(arguments.as_slice(),[argument] if matches!(core.value(*argument),Some(Value::Variable {zone:Zone::Intuitionistic,index}) if *index == innermost())),
+            "the motive's scrutinee binder must not become the captured value"
+        );
+        let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(stuck)
+        else {
+            panic!("constant head is initially stuck");
+        };
+        let spine = Vec::from(domain.neutral(neutral).unwrap().spine());
+        let head = eval_value(&core, &mut domain, definitions, ample(), constructor).unwrap();
+        let (progress, _) = Evaluation::eliminate(definitions, head, &spine)
+            .resume(&core, &mut domain, ample())
+            .unwrap();
+        let Progress::Finished(Glued::Computation(answer)) = progress
+        else {
+            panic!("case reapplication finishes");
+        };
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(answer)
+        else {
+            panic!("case returns its branch result");
+        };
+        let Some(&DomainValue::Constructor { fields, .. }) = domain.value(value)
+        else {
+            panic!("native result");
+        };
+        let [ref pair] = *(domain.fields(fields).unwrap())
+        else {
+            panic!("one result field");
+        };
+        let Some(&DomainValue::Pair { first, second, .. }) = domain.value(*pair)
+        else {
+            panic!("capture and payload pair");
+        };
+        assert!(matches!(
+            domain.value(first),
+            Some(DomainValue::Injection {
+                side: Side::Left,
+                ..
+            })
+        ));
+        assert!(matches!(
+            domain.value(second),
+            Some(DomainValue::Injection {
+                side: Side::Right,
+                ..
+            })
+        ));
+        let projected =
+            eval_computation(&core, &mut domain, definitions, ample(), projected).unwrap();
+        let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(projected)
+        else {
+            panic!("record constant is initially stuck");
+        };
+        let spine = Vec::from(domain.neutral(neutral).unwrap().spine());
+        let head = eval_value(&core, &mut domain, definitions, ample(), record).unwrap();
+        let (progress, _) = Evaluation::eliminate(definitions, head, &spine)
+            .resume(&core, &mut domain, ample())
+            .unwrap();
+        let Progress::Finished(Glued::Computation(answer)) = progress
+        else {
+            panic!("projection reapplication finishes");
+        };
+        let Some(&DomainComp::Return { value, .. }) = domain.computation(answer)
+        else {
+            panic!("projection returns its field");
+        };
+        assert!(matches!(
+            domain.value(value),
+            Some(DomainValue::Injection {
+                side: Side::Right,
+                ..
+            })
+        ));
     }
 }

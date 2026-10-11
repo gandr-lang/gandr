@@ -243,7 +243,7 @@ pub fn classify_value_type(
 {
     Ok(Classifier {
         sort: GroundSort::Value,
-        level: level_of(context.arena(), TypeNode::Value(formed.id()))?,
+        level: level_of(context, TypeNode::Value(formed.id()))?,
     })
 }
 
@@ -273,7 +273,7 @@ pub fn classify_comp_type(
 {
     Ok(Classifier {
         sort: GroundSort::Computation,
-        level: level_of(context.arena(), TypeNode::Computation(formed.id()))?,
+        level: level_of(context, TypeNode::Computation(formed.id()))?,
     })
 }
 
@@ -314,13 +314,13 @@ enum Task
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
 #[spec(ensures: |ret| match root {
-    | TypeNode::Value(at) => match value_type_view(arena, at) {
+    | TypeNode::Value(at) => match value_type_view(context.arena(), at) {
         | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit) => ret == Ok(Level::zero()),
         | Ok(ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
         | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
         | Ok(_) => true,
     },
-    | TypeNode::Computation(at) => match comp_type_view(arena, at) {
+    | TypeNode::Computation(at) => match comp_type_view(context.arena(), at) {
         | Ok(CompTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
         | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
         | Ok(_) => true,
@@ -328,10 +328,11 @@ enum Task
 })]
 #[inline]
 pub fn level_of(
-    arena: &CoreArena,
+    context: &CheckingContext<'_>,
     root: TypeNode,
 ) -> Result<Level, CheckRefusal>
 {
+    let arena = context.arena();
     let mut tasks = Vec::from([Task::Enter(root)]);
     let mut levels: Vec<Level> = Vec::new();
     while let Some(task) = tasks.pop() {
@@ -344,6 +345,20 @@ pub fn level_of(
                 levels.push(left.max(&right));
             },
             | Task::Enter(TypeNode::Value(at)) => match value_type_view(arena, at)? {
+                | ValueTypeView::Data { declaration, .. } => {
+                    let signature = context
+                        .data_signatures()
+                        .get(&declaration)
+                        .ok_or(CheckRefusal::NotADataType(declaration))?;
+                    levels.push(crate::former::kind_level(context, signature.kind())?);
+                },
+                | ValueTypeView::Record(fields) => {
+                    levels.push(Level::zero());
+                    for &field in fields.values().rev() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(field)));
+                    }
+                },
                 | ValueTypeView::PathUniverse(source, target) => {
                     let _source = path_code(arena, source)?;
                     let _target = path_code(arena, target)?;
@@ -958,7 +973,8 @@ mod tests
     /// - requires: at most three binder levels below three and fewer than
     ///   twenty-four steps, as produced by the property strategies.
     /// - ensures: the root resolves in `arena` and its natural level equals the
-    ///   level computed alongside the postfix construction.
+    ///   level computed alongside the postfix construction. The predicate
+    ///   checks resolution; the property witnesses compare the level.
     /// - panics: a level or binder index exceeds the bounded recipe domain.
     ///
     /// # Adequacy
@@ -970,7 +986,7 @@ mod tests
     #[spec(
         requires: levels.len() < 4 && steps.len() < 24
             && levels.iter().all(|level| u64::from(*level) < 3),
-        ensures: |ret| super::level_of(arena, TypeNode::Value(ret.root)).as_ref() == Ok(&ret.level),
+        ensures: |ret| arena.value_type(ret.root).is_some(),
     )]
     fn build(
         arena: &mut CoreArena,

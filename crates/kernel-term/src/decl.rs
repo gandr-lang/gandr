@@ -273,9 +273,19 @@ impl LevelSignature
 ///   and replacement names are observed, but neither the tests nor this data
 ///   layer prove admission, typing or the truth of provenance.
 /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationContent
 {
+    /// A nominal data declaration, identified by its admission position.
+    Data
+    {
+        /// Classifier telescope, each entry scoped under earlier parameters.
+        parameters: Vec<ValueTypeId>,
+        /// Field types per constructor, scoped under the whole telescope.
+        constructors: Vec<Vec<ValueTypeId>>,
+        /// Universe classifier bounding every constructor field.
+        kind: ValueTypeId,
+    },
     /// A typed definition: a declared value type and a fully elaborated body,
     /// which a checker verifies against that type.
     Def
@@ -575,7 +585,7 @@ impl Declaration
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
     #[spec(
-        captures: entry = (self.content, self.levels.params, self.levels.constraints.len(), self.provenance.len(), self.provenance.first().copied(), self.provenance.last().copied(), name.0.len()),
+        captures: entry = (self.content.clone(), self.levels.params, self.levels.constraints.len(), self.provenance.len(), self.provenance.first().copied(), self.provenance.last().copied(), name.0.len()),
         ensures: |ret| ret.content == entry.0
                 && ret.levels.params == entry.1
                 && ret.levels.constraints.len() == entry.2
@@ -1112,6 +1122,37 @@ impl Drop for DeclarationBuilder<'_>
     fn drop(&mut self)
     {
         self.arena.truncate_to(self.content_start);
+    }
+}
+
+impl DeclarationBuilder<'_>
+{
+    /// Finish a nominal declaration with a parameter telescope and
+    /// constructors.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn data(
+        self,
+        levels: LevelSignature,
+        parameters: Vec<ValueTypeId>,
+        constructors: Vec<Vec<ValueTypeId>>,
+        kind: ValueTypeId,
+    ) -> Declaration
+    {
+        let _kept = ManuallyDrop::new(self);
+        Declaration {
+            levels,
+            content: DeclarationContent::Data {
+                parameters,
+                constructors,
+                kind,
+            },
+            provenance: Vec::new(),
+            name: StructuredName::default(),
+        }
     }
 }
 

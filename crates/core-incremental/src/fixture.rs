@@ -297,11 +297,12 @@ pub fn declaration(
         ret.items().len() == entries.len()
         && ret.items().iter().zip(entries).enumerate().all(|(ordinal, (item, &(key, digits)))| {
             let canonical = digits.0.trim_start_matches('0');
+            let gandr_core_checker::DeclarationContent::Value { ref signature, ref body } = *item.declaration().content() else { return false; };
             item.key().as_ref() == key.0.as_bytes()
                 && usize::from(item.declaration().constant()) == ordinal
                 && usize::from(item.declaration().origin()) == ordinal
-                && item.declaration().signature() == Maybe::Absent(signature::Absent::Unsigned)
-                && match item.declaration().body() {
+                && *signature == Maybe::Absent(signature::Absent::Unsigned)
+                && match *body {
                     Maybe::Present(id) => matches!(ret.arena().value(id), Some(&gandr_core_term::Value::Literal(Literal::Integer(ref literal))) if literal.sign() == Sign::NonNegative && literal.magnitude().as_ref() == if canonical.is_empty() { "0" } else { canonical }),
                     Maybe::Absent(_) => false,
                 }
@@ -379,12 +380,13 @@ pub fn checked(program: &mut Program) -> Checkpoints
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 #[spec(ensures: |ret| {
         ret.items().iter().enumerate().all(|(ordinal, item)| {
+            let gandr_core_checker::DeclarationContent::Value { ref signature, ref body } = *item.declaration().content() else { return false; };
             usize::from(item.declaration().constant()) == ordinal
-                && match item.declaration().signature() {
+                && match *signature {
                     | Maybe::Present(id) => ret.arena().value_type(id).is_some(),
                     | Maybe::Absent(_) => true,
                 }
-                && match item.declaration().body() {
+                && match *body {
                     | Maybe::Present(id) => ret.arena().value(id).is_some(),
                     | Maybe::Absent(_) => true,
                 }

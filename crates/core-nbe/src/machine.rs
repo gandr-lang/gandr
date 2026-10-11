@@ -556,7 +556,7 @@ impl MachineReport
 ///   is refused, and a decline under a starving schedule stays a decline
 ///   through the kernel.
 /// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
-/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
 /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
 /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
@@ -688,7 +688,6 @@ enum RootFastPath
 ///   an unnecessary search. Missing domain roots remain checked refusals rather
 ///   than identity successes.
 /// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
-/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
 /// - witness: `machine::tests::invalid_roots_refuse_before_identity_or_search`
 #[spec(
     ensures: |ret| match (problem.left, problem.right) {
@@ -869,7 +868,7 @@ impl Chain
     ///   checks append direction and retained spine endpoints.
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     #[spec(
         captures: [left = self.left.len(), right = self.right.len(), constant = unfolded.constant, length = unfolded.spine.len(), first = unfolded.spine.first().copied(), last = unfolded.spine.last().copied()],
         ensures: |ret| {
@@ -1354,6 +1353,14 @@ where
             None
         };
         let goal = match sides {
+            | SupportSides::Closed(left, right) => Goal {
+                left: Slot::Waiting(self.enter_channel(left)?),
+                right: Slot::Waiting(self.enter_channel(right)?),
+                depth: level,
+                frozen: Frozen::default(),
+                chain: Chain::default(),
+                next: Next::Classify,
+            },
             | SupportSides::Heads(left, right) => Goal {
                 left: Slot::Ready(left),
                 right: Slot::Ready(right),
@@ -1447,7 +1454,7 @@ where
     ///   and reused bodies observe whether the right dependencies and depth
     ///   survive admission; missing a wait edge prevents completion, while
     ///   waiting again on a completed premise causes a false cycle.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
@@ -1741,7 +1748,7 @@ where
     ///   outcome, release dependencies or wake needed waiters loses a result or
     ///   keeps cancelled work alive.
     /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_refutation_outranks_a_decline`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     #[spec(
@@ -1948,7 +1955,7 @@ where
     ///   same kind. Forced comparisons and divergence under a finite budget
     ///   distinguish dropping paused work, retaining completed work and
     ///   dispatching a channel as a goal.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     #[spec(
@@ -2011,8 +2018,7 @@ where
     ///   and charged budget distinguish running before a body exists, charging
     ///   a wait, losing paused work and failing to publish the channel’s
     ///   evaluated answer.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
-    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
     /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
     #[spec(
@@ -2088,7 +2094,7 @@ where
     ///   successful forced and eta comparisons, the finite precedence outcomes
     ///   and reuse of completed premises; advancing a blocked goal or losing
     ///   its next action changes those answers.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
@@ -2145,7 +2151,7 @@ where
     ///   verdict-bearing process refuses. Forced and eta comparisons observe
     ///   the supplied head; malformed waits distinguish a checked refusal from
     ///   treating a goal verdict as an evaluated term.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
     /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
     #[spec(
@@ -2184,7 +2190,8 @@ where
     ///   decisions recorded and its sides replaced — or the goal declined when
     ///   the step would repeat an unfolding on its chain — or a choice's
     ///   alternatives started; the goal's share tracks the height of the
-    ///   defined heads it compares.
+    ///   defined heads it compares. Positive leaves retain an explicit shared
+    ///   comparison, so the next sibling cannot consume their trace boundary.
     /// - provides: the table read once per goal turn.
     /// - fails: every fault the table or the rule raises.
     /// - panics: none.
@@ -2193,17 +2200,14 @@ where
     /// Every fault the table or the rule raises.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — for well-formed weak heads, the rule table selects
-    ///   shared comparison, a leaf, decomposition, unfolding, force, eta, a
-    ///   choice or an undecided-code decline. Verdicts, named trace decisions
-    ///   and kernel replay distinguish a wrong arm or side; the budget witness
-    ///   observes missing classification charges.
-    /// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+    /// - hypothesis: L3 — for well-formed weak heads, the rule table selects a
+    ///   leaf, decomposition, unfolding, force, eta, a choice or an
+    ///   undecided-code decline. Verdicts, named trace decisions and kernel
+    ///   replay distinguish a wrong arm or side; the budget witness observes
+    ///   missing classification charges.
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
-    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
     /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
     /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
     #[spec(
@@ -2235,19 +2239,18 @@ where
         let share = self.share_at(height);
         self.process_mut(id)?.share = share;
         match planned {
-            | Plan::Shared(settled) => {
-                self.derivations
-                    .decide(id, ConversionDecision::ComparedShared {
-                        left: TraceNode::of(pair.0),
-                        right: TraceNode::of(pair.1),
-                    })?;
+            | Plan::Shared(settled) | Plan::Leaf(settled) => {
+                if matches!(planned, Plan::Shared(_)) || settled == Settled::Convertible {
+                    self.derivations
+                        .decide(id, ConversionDecision::ComparedShared {
+                            left: TraceNode::of(pair.0),
+                            right: TraceNode::of(pair.1),
+                        })?;
+                }
                 self.answer(id, settled, &[])?;
                 Ok(Turn::Done)
             },
-            | Plan::Leaf(settled) => {
-                self.answer(id, settled, &[])?;
-                Ok(Turn::Done)
-            },
+
             | Plan::Decompose(subgoals) => {
                 self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
             },
@@ -2450,6 +2453,13 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         if subgoals.is_empty() {
+            if collapse == Collapse::Allowed {
+                self.derivations
+                    .decide(id, ConversionDecision::ComparedShared {
+                        left: TraceNode::of(pair.0),
+                        right: TraceNode::of(pair.1),
+                    })?;
+            }
             self.answer(id, Settled::Convertible, &[])?;
             return Ok(Turn::Done);
         }
@@ -2457,13 +2467,37 @@ where
         let mut ready = false;
         let mut children = Vec::with_capacity(subgoals.len());
         for subgoal in subgoals {
-            let sides = match subgoal {
-                | Subgoal::Values(left, right) => {
-                    SupportSides::Heads(Glued::Value(left), Glued::Value(right))
+            let (sides, depth) = match subgoal {
+                | Subgoal::Values(left, right) => (
+                    SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
+                    goal.depth,
+                ),
+                | Subgoal::Opened(left, right) => (SupportSides::Opened(left, right), goal.depth),
+                | Subgoal::Classifiers(left, right) => {
+                    let left = self.domain.value_code(left, TermFace::Reduced);
+                    let right = self.domain.value_code(right, TermFace::Reduced);
+                    (
+                        SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
+                        goal.depth,
+                    )
                 },
-                | Subgoal::Opened(left, right) => SupportSides::Opened(left, right),
+                | Subgoal::CaseMotives(left, right) => {
+                    let depth = deeper(goal.depth)?;
+                    let variable = self.variable(goal.depth)?;
+                    let left = self.case_motive(left, variable)?;
+                    let right = self.case_motive(right, variable)?;
+                    (
+                        SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
+                        depth,
+                    )
+                },
+                | Subgoal::CaseBranch { left, right, tag } => {
+                    let left = self.case_branch(left, tag)?;
+                    let right = self.case_branch(right, tag)?;
+                    (SupportSides::Closed(left, right), goal.depth)
+                },
             };
-            let child = self.start_fresh(sides, goal.depth)?;
+            let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
             waiting |= outcome == Outcome::Pending;
             ready |= matches!(
@@ -2487,6 +2521,72 @@ where
         })
     }
 
+    /// Quote a native case motive under the same fresh scrutinee on both sides.
+    ///
+    /// # Specification
+    /// - requires: the supplied variable is fresh at the parent goal's depth.
+    /// - ensures: the motive reads that variable at index zero and preserves
+    ///   outer capture.
+    /// - fails: dangling or malformed case sources.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dependent motives distinguish the fresh scrutinee
+    ///   from outer variables.
+    /// - witness: `machine::tests::native_records_cases_and_traces_agree`
+    #[spec(ensures:|ret| ret.is_err() || ret.as_ref().is_ok_and(|value| matches!(self.domain.value(*value),Some(DomainValue::Code { .. }))))]
+    fn case_motive(
+        &mut self,
+        case: CompClosureId,
+        variable: DomainValueId,
+    ) -> Result<DomainValueId, ConversionFault>
+    {
+        let (motive, _) = crate::rules::case_source(self.core, self.domain, case)?;
+        let closure = self
+            .domain
+            .comp_closure(case)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let mut environment = closure.environment().clone();
+        environment.extend(Zone::Intuitionistic, variable);
+        let quoted = self
+            .domain
+            .value_closure_node(crate::ValueBody::CompType(motive), environment);
+        Ok(self.domain.value_code(quoted, TermFace::Reduced))
+    }
+
+    /// Capture one ordinary case branch without introducing an implicit field
+    /// binder.
+    ///
+    /// # Specification
+    /// - requires: nothing; missing ordinals are refused.
+    /// - ensures: returns the selected branch over the case's original ambient
+    ///   environment.
+    /// - fails: dangling captures or absent branch ordinals.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — branch lambdas, rather than case metadata, bind
+    ///   constructor fields.
+    /// - witness: `machine::tests::native_records_cases_and_traces_agree`
+    #[spec(ensures:|ret| ret.is_err() || ret.as_ref().is_ok_and(|closure| self.domain.comp_closure(*closure).is_some()))]
+    fn case_branch(
+        &mut self,
+        case: CompClosureId,
+        tag: gandr_core_term::ConstructorTag,
+    ) -> Result<CompClosureId, ConversionFault>
+    {
+        let (_, branches) = crate::rules::case_source(self.core, self.domain, case)?;
+        let body = *branches
+            .get(usize::from(tag))
+            .ok_or(ConversionFault::MachineInvariant)?;
+        let closure = self
+            .domain
+            .comp_closure(case)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let environment = closure.environment().clone();
+        Ok(self.domain.comp_closure_node(body, environment))
+    }
+
     /// The neutral a weak head is.
     ///
     /// # Specification
@@ -2508,7 +2608,7 @@ where
     ///   computation-spine refutation observe which head was extracted, while
     ///   the malformed-head probe distinguishes shape refusal from
     ///   dangling-domain refusal.
-    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
     /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
     #[spec(
@@ -2564,8 +2664,7 @@ where
     ///   constants; the malformed-head probe observes the different shape and
     ///   missing-domain refusals instead of letting a nonconstant head become a
     ///   definition.
-    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
     #[spec(
         ensures: |ret| ret == self.domain.neutral(neutral)
@@ -2649,8 +2748,7 @@ where
     ///   The observer is the ordered unfolding/reduction trace and resulting
     ///   verdict, separating wrong-side replacement, lost spine arguments and a
     ///   constant-only cycle key.
-    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
     #[spec(
@@ -2721,7 +2819,6 @@ where
     ///   trace must name both forces and the resulting computations must agree
     ///   or refute as their returned values do; leaving a value slot behind or
     ///   forcing only one side changes that observation.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
@@ -2766,6 +2863,8 @@ where
                     Self::set_side(goal, side, Slot::Ready(Glued::Computation(forced)));
                 },
                 | DomainValue::PathCertificate { .. }
+                | DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
@@ -2878,8 +2977,7 @@ where
     ///   preserved. The observer is the selected conversion trace and its
     ///   independent replay; missing a branch, charging the wrong arity, moving
     ///   authority or dropping inherited freezes changes those results.
-    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
     #[spec(
@@ -2960,8 +3058,7 @@ where
     ///   kernel’s replay and cycle behavior distinguish the wrong side, an
     ///   omitted freeze/postponement, a shortcut that unfolds unnecessarily and
     ///   an uncharged move.
-    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
     /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
@@ -2992,7 +3089,7 @@ where
                     .decide(id, ConversionDecision::ConstShortcut {
                         constant: TraceNode::Constant(constant),
                     })?;
-                let spines = spine_subgoals(self.domain, left, right)?;
+                let spines = spine_subgoals(self.core, self.domain, left, right)?;
                 match spines {
                     | Spines::Agree(subgoals) => {
                         self.decompose(id, goal, pair, subgoals, Collapse::Never)
@@ -3056,7 +3153,7 @@ where
     ///   and the following reduction; two distinct definitions and a defined
     ///   function against eta separate swapped-side extraction from a correct
     ///   identifier.
-    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     #[spec(
         ensures: |ret| ret.is_err() || ret.is_ok_and(|constant| {
@@ -3477,7 +3574,7 @@ where
     ///   applications distinguish a lost spine, repeated evaluation and a body
     ///   channel mistaken for a reapplied one.
     /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
-    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
     /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
     #[spec(
@@ -3615,7 +3712,7 @@ where
     ///   reuse of the same closures observe the returned computations and
     ///   completed-channel reuse; allocating a new channel for every force or
     ///   reusing a different closure changes those results.
-    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
     #[spec(
         captures: [entries = self.entries.len(), processes = self.processes.len()],
@@ -3816,8 +3913,7 @@ mod tests
         ///   Observable unfolding traces and the one-body/two-definition
         ///   process count distinguish confusing a name with an admission
         ///   position, losing a body or duplicating a shared lowering.
-        /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
-        /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
         /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
         #[spec(
             captures: [mark = core.watermark()],
@@ -4140,8 +4236,6 @@ mod tests
         ///   ordered trace and the empty conversion derivation on decline;
         ///   eager emission of speculative branches, wrong-side decisions and a
         ///   decline emitted as evidence change these witnesses.
-        /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
-        /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
         /// - witness: `machine::tests::a_refutation_outranks_a_decline`
         /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
         /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
@@ -4397,6 +4491,8 @@ mod tests
     #[spec(
         ensures: |ret| match node {
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
+          Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
+          Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -4406,6 +4502,8 @@ mod tests
           Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
+          Computation::RecordProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
           Computation::Lambda(body) => ret.as_slice() == [CoreTerm::Computation(body)],
@@ -4423,6 +4521,12 @@ mod tests
     {
         match node {
             | CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
+                | Value::Constructor { ref fields, .. } => {
+                    fields.iter().copied().map(CoreTerm::Value).collect()
+                },
+                | Value::Record(ref fields) => {
+                    fields.values().copied().map(CoreTerm::Value).collect()
+                },
                 | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
@@ -4450,6 +4554,16 @@ mod tests
                     .computation(id)
                     .expect("a reached computation resolves")
                 {
+                    | Computation::DataCase {
+                        scrutinee,
+                        ref branches,
+                        ..
+                    } => core::iter::once(CoreTerm::Value(scrutinee))
+                        .chain(branches.iter().copied().map(CoreTerm::Computation))
+                        .collect(),
+                    | Computation::RecordProjection(record, _) => {
+                        Vec::from([CoreTerm::Value(record)])
+                    },
                     | Computation::Primitive { arguments, .. } => {
                         arguments.iter().copied().map(CoreTerm::Value).collect()
                     },
@@ -4546,6 +4660,26 @@ mod tests
                         | CoreTerm::Value(id) => {
                             let key =
                                 match core.value(id).expect("a reached value resolves").clone() {
+                                    | Value::Constructor {
+                                        datatype,
+                                        tag,
+                                        mut fields,
+                                    } => {
+                                        for field in &mut fields {
+                                            *field = value(*field);
+                                        }
+                                        Value::Constructor {
+                                            datatype,
+                                            tag,
+                                            fields,
+                                        }
+                                    },
+                                    | Value::Record(mut fields) => {
+                                        for field in fields.values_mut() {
+                                            *field = value(*field);
+                                        }
+                                        Value::Record(fields)
+                                    },
                                     | value @ Value::Primitive { .. } => value,
                                     | Value::PathRefl(code) => Value::PathRefl(value(code)),
                                     | Value::PathProduct(first, second) => {
@@ -4597,6 +4731,21 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::DataCase {
+                                    scrutinee,
+                                    motive,
+                                    ref branches,
+                                } => Computation::DataCase {
+                                    scrutinee: value(scrutinee),
+                                    motive,
+                                    branches: branches
+                                        .iter()
+                                        .map(|branch| computation(*branch))
+                                        .collect(),
+                                },
+                                | Computation::RecordProjection(record, ref label) => {
+                                    Computation::RecordProjection(value(record), label.clone())
+                                },
                                 | Computation::Primitive {
                                     primitive,
                                     mut arguments,
@@ -4670,6 +4819,8 @@ mod tests
     #[spec(
         ensures: |ret| match node {
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
+          Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
+          Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -4679,6 +4830,8 @@ mod tests
           Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
+          Computation::RecordProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
           Computation::Lambda(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
@@ -4924,6 +5077,8 @@ mod tests
                                     body: value(0),
                                 },
                                 | Value::PathRefl(_)
+                                | Value::Constructor { .. }
+                                | Value::Record(_)
                                 | Value::PathProduct(..)
                                 | Value::PathEquiv { .. }
                                 | Value::Quote(_)
@@ -4946,6 +5101,10 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::DataCase { .. }
+                                | Computation::RecordProjection(..) => {
+                                    panic!("native eliminators are outside the duplication fixture")
+                                },
                                 | Computation::Primitive { .. } => {
                                     panic!("the duplication fixtures carry no native operation")
                                 },
@@ -5218,6 +5377,8 @@ mod tests
         #[spec(
             ensures: |ret| if self.translated(node) == Translated::Made { ret.is_empty() } else { match node {
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
+              Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
+              Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -5229,6 +5390,8 @@ mod tests
               Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
              }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+              Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
+              Computation::RecordProjection(record,_) => ret.as_slice() == [Node::Value(record)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
               Computation::Lambda(body) => ret.as_slice() == [Node::Computation(body)],
@@ -5238,6 +5401,8 @@ mod tests
               Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [Node::Value(scrutinee),Node::Computation(on_left),Node::Computation(on_right)],
              }),
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
+              ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
+              ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
               ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
@@ -5263,9 +5428,19 @@ mod tests
             }
             match node {
                 | Node::Value(value) => {
-                    match core.value(value).expect("a fixture value resolves") {
-                        | &Value::PathRefl(code) => Vec::from([Node::Value(code)]),
-                        | &Value::PathEquiv {
+                    match *(core.value(value).expect("a fixture value resolves")) {
+                        | Value::Constructor {
+                            ref datatype,
+                            ref fields,
+                            ..
+                        } => core::iter::once(Node::ValueType(*datatype))
+                            .chain(fields.iter().copied().map(Node::Value))
+                            .collect(),
+                        | Value::Record(ref fields) => {
+                            fields.values().copied().map(Node::Value).collect()
+                        },
+                        | Value::PathRefl(code) => Vec::from([Node::Value(code)]),
+                        | Value::PathEquiv {
                             path_type,
                             forward,
                             backward,
@@ -5275,47 +5450,58 @@ mod tests
                             Node::Value(forward),
                             Node::Value(backward),
                         ]),
-                        | &(Value::PathProduct(first, second)
+                        | Value::PathProduct(first, second)
                         | Value::Pair(first, second)
-                        | Value::StaticApplication(first, second)) => {
+                        | Value::StaticApplication(first, second) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
-                        | &Value::StaticLambda(body) => Vec::from([Node::Value(body)]),
-                        | &(Value::Injection(_, body) | Value::Lift { body, .. }) => {
+                        | Value::StaticLambda(body) => Vec::from([Node::Value(body)]),
+                        | Value::Injection(_, body) | Value::Lift { body, .. } => {
                             Vec::from([Node::Value(body)])
                         },
-                        | &Value::Thunk(body) => Vec::from([Node::Computation(body)]),
-                        | &Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
-                        | &Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
-                        | &Value::Primitive { .. }
-                        | &(Value::Variable { .. }
+                        | Value::Thunk(body) => Vec::from([Node::Computation(body)]),
+                        | Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
+                        | Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
+                        | Value::Primitive { .. }
+                        | Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
-                        | Value::Literal(_)) => Vec::new(),
+                        | Value::Literal(_) => Vec::new(),
                     }
                 },
                 | Node::Computation(computation) => {
-                    match core
+                    match *(core
                         .computation(computation)
-                        .expect("a fixture computation resolves")
+                        .expect("a fixture computation resolves"))
                     {
-                        | &Computation::Primitive { ref arguments, .. } => {
+                        | Computation::DataCase {
+                            ref scrutinee,
+                            ref motive,
+                            ref branches,
+                        } => [Node::Value(*scrutinee), Node::CompType(*motive)]
+                            .into_iter()
+                            .chain(branches.iter().copied().map(Node::Computation))
+                            .collect(),
+                        | Computation::RecordProjection(ref record, _) => {
+                            Vec::from([Node::Value(*record)])
+                        },
+                        | Computation::Primitive { ref arguments, .. } => {
                             arguments.iter().copied().map(Node::Value).collect()
                         },
-                        | &Computation::Transport(path, value) => {
+                        | Computation::Transport(path, value) => {
                             Vec::from([Node::Value(path), Node::Value(value)])
                         },
-                        | &Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
-                        | &Computation::Application(head, argument) => {
+                        | Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
+                        | Computation::Application(head, argument) => {
                             Vec::from([Node::Computation(head), Node::Value(argument)])
                         },
-                        | &(Computation::Return(value) | Computation::Force(value)) => {
+                        | Computation::Return(value) | Computation::Force(value) => {
                             Vec::from([Node::Value(value)])
                         },
-                        | &Computation::Bind(bound, body) => {
+                        | Computation::Bind(bound, body) => {
                             Vec::from([Node::Computation(bound), Node::Computation(body)])
                         },
-                        | &Computation::Case {
+                        | Computation::Case {
                             scrutinee,
                             on_left,
                             on_right,
@@ -5331,6 +5517,12 @@ mod tests
                         .value_type(value_type)
                         .expect("a fixture type resolves")
                     {
+                        | ValueType::Data { ref arguments, .. } => {
+                            arguments.iter().copied().map(Node::Value).collect()
+                        },
+                        | ValueType::Record(ref fields) => {
+                            fields.values().copied().map(Node::ValueType).collect()
+                        },
                         | ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
@@ -5412,29 +5604,45 @@ mod tests
             };
             match node {
                 | Node::Value(id) => {
-                    let copy = match core.value(id).expect("a fixture value resolves") {
-                        | &Value::Primitive { .. } => panic!("the kernel has no native operation"),
-                        | &Value::Variable {
+                    let copy = match *(core.value(id).expect("a fixture value resolves")) {
+                        | Value::Constructor {
+                            ref datatype,
+                            ref tag,
+                            ref fields,
+                        } => {
+                            let datatype = self.value_types[datatype];
+                            let fields = fields.iter().map(|field| value(self, *field)).collect();
+                            self.arena.value_constructor(datatype, *tag, fields)
+                        },
+                        | Value::Record(ref fields) => {
+                            let fields = fields
+                                .iter()
+                                .map(|(label, field)| (label.clone(), value(self, *field)))
+                                .collect();
+                            self.arena.value_record(fields)
+                        },
+                        | Value::Primitive { .. } => panic!("the kernel has no native operation"),
+                        | Value::Variable {
                             zone: Zone::Intuitionistic,
                             index,
                         } => self.arena.value_variable(index),
-                        | &Value::Variable {
+                        | Value::Variable {
                             zone: Zone::Linear, ..
                         } => {
                             panic!("the kernel's terms have no linear zone")
                         },
-                        | &Value::Constant(constant) => self.arena.value_constant(constant),
-                        | &Value::Unit => self.arena.value_unit(),
-                        | &Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
-                        | &Value::PathRefl(code) => {
+                        | Value::Constant(constant) => self.arena.value_constant(constant),
+                        | Value::Unit => self.arena.value_unit(),
+                        | Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
+                        | Value::PathRefl(code) => {
                             let code = value(self, code);
                             self.arena.value_path_refl(code)
                         },
-                        | &Value::PathProduct(first, second) => {
+                        | Value::PathProduct(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_path_product(first, second)
                         },
-                        | &Value::PathEquiv {
+                        | Value::PathEquiv {
                             path_type,
                             forward,
                             backward,
@@ -5450,35 +5658,35 @@ mod tests
                                 alloc::sync::Arc::clone(evidence),
                             )
                         },
-                        | &Value::Pair(first, second) => {
+                        | Value::Pair(first, second) => {
                             let (first, second) = (value(self, first), value(self, second));
                             self.arena.value_pair(first, second)
                         },
-                        | &Value::Injection(side, body) => {
+                        | Value::Injection(side, body) => {
                             let body = value(self, body);
                             self.arena.value_injection(side, body)
                         },
-                        | &Value::Thunk(body) => {
+                        | Value::Thunk(body) => {
                             let body = computation(self, body);
                             self.arena.value_thunk(body)
                         },
-                        | &Value::Quote(quoted) => {
+                        | Value::Quote(quoted) => {
                             let quoted = *self.value_types.get(&quoted).expect("children first");
                             self.arena.value_quote(quoted)
                         },
-                        | &Value::QuoteComputation(quoted) => {
+                        | Value::QuoteComputation(quoted) => {
                             let quoted = *self.comp_types.get(&quoted).expect("children first");
                             self.arena.value_quote_computation(quoted)
                         },
-                        | &Value::Lift { ref target, body } => {
+                        | Value::Lift { ref target, body } => {
                             let body = value(self, body);
                             self.arena.value_lift(target.clone(), body)
                         },
-                        | &Value::StaticApplication(head, argument) => {
+                        | Value::StaticApplication(head, argument) => {
                             let (head, argument) = (value(self, head), value(self, argument));
                             self.arena.value_static_application(head, argument)
                         },
-                        | &Value::StaticLambda(_) => {
+                        | Value::StaticLambda(_) => {
                             panic!("the kernel has no static lambda: a replay fixture lifts it")
                         },
                     };
@@ -5489,6 +5697,25 @@ mod tests
                         .computation(id)
                         .expect("a fixture computation resolves")
                     {
+                        | Computation::DataCase {
+                            scrutinee,
+                            motive,
+                            ref branches,
+                        } => {
+                            let scrutinee = value(self, scrutinee);
+                            let motive = self.comp_types[&motive];
+                            let branches = branches
+                                .iter()
+                                .map(|branch| computation(self, *branch))
+                                .collect();
+                            self.arena
+                                .computation_data_case(scrutinee, motive, branches)
+                        },
+                        | Computation::RecordProjection(record, ref label) => {
+                            let record = value(self, record);
+                            self.arena
+                                .computation_record_projection(record, label.clone())
+                        },
                         | Computation::Primitive { .. } => {
                             panic!("the kernel has no native operation")
                         },
@@ -5537,6 +5764,23 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.value_type(id).expect("a fixture type resolves") {
+                        | ValueType::Data {
+                            declaration,
+                            ref arguments,
+                        } => {
+                            let arguments = arguments
+                                .iter()
+                                .map(|argument| value(self, *argument))
+                                .collect();
+                            self.arena.value_type_data(declaration, arguments)
+                        },
+                        | ValueType::Record(ref fields) => {
+                            let fields = fields
+                                .iter()
+                                .map(|(label, field)| (label.clone(), value_type(self, *field)))
+                                .collect();
+                            self.arena.value_type_record(fields)
+                        },
                         | ValueType::PathUniverse(source, target) => {
                             let (source, target) = (value(self, source), value(self, target));
                             self.arena.value_type_path_universe(source, target)
@@ -6015,48 +6259,6 @@ mod tests
     }
 
     #[test]
-    fn a_forced_unfolding_meets_a_former()
-    {
-        let mut core = CoreArena::new();
-        let body = core.value_unit();
-        let reference = core.value_constant(Name::Zero.constant());
-        let unit = core.value_unit();
-        let paired = core.value_pair(unit, unit);
-        let world = World::new(core, &[(Name::Zero, body)]);
-        let unfolded = [
-            ConversionDecision::Unfold {
-                constant: named(Name::Zero),
-            },
-            ConversionDecision::ReduceLeft {
-                redex: named(Name::Zero),
-            },
-        ];
-
-        let (verdict, decisions) = world.traced(Sides::Values(reference, unit));
-        assert_eq!(MachineVerdict::Convertible, verdict);
-        assert_eq!(
-            Vec::from(unfolded),
-            decisions,
-            "a defined head against a former has one rule: unfold it"
-        );
-
-        let (verdict, decisions) = world.traced(Sides::Values(reference, paired));
-        assert_eq!(
-            MachineVerdict::NotConvertible,
-            verdict,
-            "and the unfolding is forced, so the refutation after it is authoritative"
-        );
-        assert!(
-            matches!(decisions.as_slice(), &[
-                ConversionDecision::Unfold { constant },
-                ConversionDecision::ReduceLeft { redex },
-                ConversionDecision::ComparedShared { .. },
-            ] if constant == named(Name::Zero) && redex == named(Name::Zero)),
-            "and the unit and the pair it meets are refuted by their guards: {decisions:?}"
-        );
-    }
-
-    #[test]
     fn a_code_constant_unfolds_to_its_quote()
     {
         let mut core = CoreArena::new();
@@ -6152,42 +6354,6 @@ mod tests
     }
 
     #[test]
-    fn two_defined_heads_meet_by_unfolding()
-    {
-        let mut core = CoreArena::new();
-        let first = core.value_unit();
-        let second = core.value_unit();
-        let zero = core.value_constant(Name::Zero.constant());
-        let one = core.value_constant(Name::One.constant());
-        let world = World::new(core, &[(Name::Zero, first), (Name::One, second)]);
-
-        let (verdict, decisions) = world.traced(Sides::Values(zero, one));
-        assert_eq!(MachineVerdict::Convertible, verdict);
-        assert_eq!(
-            Vec::from([
-                ConversionDecision::Postpone {
-                    constant: named(Name::One),
-                },
-                ConversionDecision::Unfold {
-                    constant: named(Name::Zero),
-                },
-                ConversionDecision::ReduceLeft {
-                    redex: named(Name::Zero),
-                },
-                ConversionDecision::Unfold {
-                    constant: named(Name::One),
-                },
-                ConversionDecision::ReduceRight {
-                    redex: named(Name::One),
-                },
-            ]),
-            decisions,
-            "the branch freezing the left constant refutes, which is not authoritative, \
-             so the answer is the left unfolding's"
-        );
-    }
-
-    #[test]
     fn one_body_is_evaluated_once_for_two_definitions()
     {
         let processes = |entries: [Name; 2]| {
@@ -6210,39 +6376,6 @@ mod tests
             4_usize,
             processes([Name::Zero, Name::Zero]),
             "two definitions the table gave one body unfold through one channel"
-        );
-    }
-
-    #[test]
-    fn the_const_shortcut_wins_without_unfolding()
-    {
-        let mut core = CoreArena::new();
-        let function = identity(&mut core);
-        let argument = core.value_unit();
-        let head = core.value_constant(Name::Zero.constant());
-        let defined = core.value_constant(Name::One.constant());
-        let unit = core.value_unit();
-        let left = call(&mut core, head, &[defined]);
-        let right = call(&mut core, head, &[unit]);
-        let world = World::new(core, &[(Name::Zero, function), (Name::One, argument)]);
-
-        let (verdict, decisions) = world.traced(Sides::Computations(left, right));
-        assert_eq!(MachineVerdict::Convertible, verdict);
-        assert_eq!(
-            Vec::from([
-                ConversionDecision::ConstShortcut {
-                    constant: named(Name::Zero),
-                },
-                ConversionDecision::Unfold {
-                    constant: named(Name::One),
-                },
-                ConversionDecision::ReduceLeft {
-                    redex: named(Name::One),
-                },
-            ]),
-            decisions,
-            "one head over arguments that agree after unfolding them: the head itself \
-             never unfolds in the winning derivation"
         );
     }
 
@@ -6306,60 +6439,6 @@ mod tests
             ]),
             "a rigid head cannot unfold, so η is the one rule, and the expanded pair closes \
              structurally: {decisions:?}"
-        );
-    }
-
-    #[test]
-    fn thunks_meet_by_forcing()
-    {
-        let mut core = CoreArena::new();
-        let body = core.value_unit();
-        let reference = core.value_constant(Name::Zero.constant());
-        let unit = core.value_unit();
-        let returned = core.computation_return(reference);
-        let left = core.value_thunk(returned);
-        let returned = core.computation_return(unit);
-        let right = core.value_thunk(returned);
-        let world = World::new(core, &[(Name::Zero, body)]);
-
-        let (verdict, decisions) = world.traced(Sides::Values(left, right));
-        assert_eq!(MachineVerdict::Convertible, verdict);
-        assert!(
-            matches!(decisions.as_slice(), [
-                ConversionDecision::Force { thunk: TraceNode::Value(_) },
-                ConversionDecision::Force { thunk: TraceNode::Value(_) },
-                ConversionDecision::Unfold { constant },
-                ConversionDecision::ReduceLeft { redex },
-            ] if *constant == named(Name::Zero) && *redex == named(Name::Zero)),
-            "both thunks are entered, then the returned values compared: {decisions:?}"
-        );
-    }
-
-    #[test]
-    fn identity_closes_a_goal_on_shared_nodes()
-    {
-        let mut core = CoreArena::new();
-        let body = core.value_unit();
-        let reference = core.value_constant(Name::Zero.constant());
-        let unit = core.value_unit();
-        let shared = core.value_unit();
-        let left = core.value_pair(reference, shared);
-        let right = core.value_pair(unit, shared);
-        let world = World::new(core, &[(Name::Zero, body)]);
-
-        let (verdict, decisions) = world.traced(Sides::Values(left, right));
-        assert_eq!(MachineVerdict::Convertible, verdict);
-        assert!(
-            matches!(decisions.as_slice(), [
-                ConversionDecision::Unfold { .. },
-                ConversionDecision::ReduceLeft { .. },
-                ConversionDecision::ComparedShared {
-                    left: TraceNode::Value(_),
-                    right: TraceNode::Value(_),
-                },
-            ]),
-            "the second components are one source term, so identity closes their goal \
-             with no rule: {decisions:?}"
         );
     }
 
@@ -6950,22 +7029,19 @@ mod tests
         let world = World::new(core, &[(Name::Zero, first), (Name::One, second)]);
         let sides = Sides::Values(zero, one);
         let (verdict, mut decisions) = world.traced(sides);
-        let Some(last) = decisions.last_mut()
-        else {
-            panic!("two defined heads unfold before they meet");
-        };
-        assert_eq!(
-            ConversionDecision::ReduceRight {
-                redex: named(Name::One)
-            },
-            *last
-        );
-        *last = ConversionDecision::ReduceLeft {
+        let position = decisions
+            .iter()
+            .position(|decision| {
+                matches!(*decision,
+            ConversionDecision::ReduceRight { redex } if redex == named(Name::One))
+            })
+            .expect("the right definition unfolds before the heads meet");
+        decisions[position] = ConversionDecision::ReduceLeft {
             redex: named(Name::One),
         };
         assert_eq!(
             KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
-                at: TracePosition::from(4_usize),
+                at: TracePosition::from(position),
             })),
             world.replayed(sides, verdict, &decisions),
             "the right side's unfolding read on the left, where the head is already unit"
@@ -7376,114 +7452,6 @@ mod tests
             broken.decisions().copied().collect::<Vec<_>>(),
             "a missing child refuses after the preceding preorder prefix"
         );
-    }
-
-    #[test]
-    fn derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes()
-    {
-        let mut core = CoreArena::new();
-        let unit_body = core.value_unit();
-        let pair_body = core.value_pair(unit_body, unit_body);
-        let first_body = core.computation_return(unit_body);
-        let second_body = core.computation_return(pair_body);
-        let mut domain = DomainArena::new();
-        let unit = domain.value_unit(crate::TermFace::Reduced);
-        let other = domain.value_unit(crate::TermFace::Reduced);
-        let first_comp = domain.comp_return(unit, crate::CompTermFace::Reduced);
-        let second_comp = domain.comp_return(other, crate::CompTermFace::Reduced);
-        let first_closure = domain.comp_closure_node(first_body, crate::Environment::new());
-        let second_closure = domain.comp_closure_node(second_body, crate::Environment::new());
-        let first_thunk = domain.value_thunk(first_closure, crate::TermFace::Reduced);
-        let second_thunk = domain.value_thunk(second_closure, crate::TermFace::Reduced);
-        let root = ProcessId(0);
-        let child = ProcessId(1);
-        let start = ConversionDecision::ComparedShared {
-            left: TraceNode::Value(unit),
-            right: TraceNode::Value(unit),
-        };
-        let child_decision = ConversionDecision::ComparedShared {
-            left: TraceNode::Value(other),
-            right: TraceNode::Value(other),
-        };
-        let mut derivations = crate::derivation::Derivations::new(
-            gandr_kernel_conversion_trace::SinkActivity::Active,
-        );
-        derivations.open(root).expect("the root is first");
-        derivations.open(child).expect("the child is next");
-        derivations.decide(root, start).expect("the root is open");
-        derivations
-            .decide(child, child_decision)
-            .expect("the child is open");
-        for pair in [
-            (crate::Glued::Value(unit), crate::Glued::Value(other)),
-            (
-                crate::Glued::Computation(first_comp),
-                crate::Glued::Computation(second_comp),
-            ),
-        ] {
-            derivations
-                .agree_on(root, pair, Vec::from([child]))
-                .expect("the root is open");
-            let mut log = TraceLog::new();
-            derivations
-                .emit(&core, &domain, root, &mut log)
-                .expect("the equal pair closes without its children");
-            assert_eq!(
-                Vec::from([start, ConversionDecision::ComparedShared {
-                    left: TraceNode::of(pair.0),
-                    right: TraceNode::of(pair.1)
-                }]),
-                log.decisions().copied().collect::<Vec<_>>()
-            );
-        }
-        derivations
-            .agree_on(
-                root,
-                (
-                    crate::Glued::Value(first_thunk),
-                    crate::Glued::Value(second_thunk),
-                ),
-                Vec::from([child]),
-            )
-            .expect("the root is open");
-        let mut deferred = TraceLog::new();
-        derivations
-            .emit(&core, &domain, root, &mut deferred)
-            .expect("a deferred pair retains its children");
-        assert_eq!(
-            Vec::from([start, child_decision]),
-            deferred.decisions().copied().collect::<Vec<_>>()
-        );
-        let floor = domain.watermark();
-        let absent = domain.value_unit(crate::TermFace::Reduced);
-        domain.truncate_to(floor);
-        for (pair, fault) in [
-            (
-                (
-                    crate::Glued::Value(unit),
-                    crate::Glued::Computation(first_comp),
-                ),
-                crate::ConversionFault::Polarity,
-            ),
-            (
-                (crate::Glued::Value(absent), crate::Glued::Value(absent)),
-                crate::ConversionFault::Domain(crate::DomainFault::Dangling),
-            ),
-        ] {
-            derivations
-                .agree_on(root, pair, Vec::from([child]))
-                .expect("the root is open");
-            let mut refused = TraceLog::new();
-            assert_eq!(
-                Err(fault),
-                derivations.emit(&core, &domain, root, &mut refused)
-            );
-            assert_eq!(
-                Vec::from([start]),
-                refused.decisions().copied().collect::<Vec<_>>(),
-                "a refused collapse keeps only the already emitted parent decision"
-            );
-        }
     }
 
     #[test]
@@ -8311,6 +8279,158 @@ mod tests
             assert_eq!(
                 certified(expected),
                 world.replayed(sides, verdict, &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_records_cases_and_traces_agree()
+    {
+        use alloc::string::String;
+
+        use gandr_core_term::ConstructorTag;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let other_unit = core.value_unit();
+        let x = FieldLabel::from(String::from("x"));
+        let y = FieldLabel::from(String::from("y"));
+        let record = core.value_record(BTreeMap::from([(x.clone(), unit), (y.clone(), unit)]));
+        let repeated_record = core.value_record(BTreeMap::from([
+            (x.clone(), other_unit),
+            (y.clone(), other_unit),
+        ]));
+        let narrow = core.value_record(BTreeMap::from([(x.clone(), unit)]));
+        let data = core.value_type_data(ConstantIndex::from(2_usize), Vec::from([unit]));
+        let repeated_type =
+            core.value_type_data(ConstantIndex::from(2_usize), Vec::from([other_unit]));
+        let other_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([unit]));
+        let constructor =
+            core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([record]));
+        let repeated_constructor = core.value_constructor(
+            repeated_type,
+            ConstructorTag::from(0_usize),
+            Vec::from([repeated_record]),
+        );
+        let other_tag =
+            core.value_constructor(data, ConstructorTag::from(1_usize), Vec::from([record]));
+        let other_constructor = core.value_constructor(
+            other_type,
+            ConstructorTag::from(0_usize),
+            Vec::from([record]),
+        );
+        let bound = innermost(&mut core);
+        let identity = core.computation_return(bound);
+        let branch = core.computation_lambda(identity);
+        let unit_type = core.value_type_unit();
+        let record_type = core.value_type_record(BTreeMap::from([
+            (x.clone(), unit_type),
+            (y.clone(), unit_type),
+        ]));
+        let motive = core.comp_type_returner(record_type);
+        let named_data = core.value_constant(Name::Zero.constant());
+        let named_record = core.value_constant(Name::One.constant());
+        let fired = core.computation_data_case(named_data, motive, Vec::from([branch]));
+        let expected_record = core.computation_return(record);
+        let projection = core.computation_record_projection(named_record, x.clone());
+        let expected_unit = core.computation_return(unit);
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let motive_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([bound]));
+        let dependent_motive = core.comp_type_returner(motive_type);
+        let reconstructed =
+            core.value_constructor(data, ConstructorTag::from(0_usize), Vec::from([bound]));
+        let result_type =
+            core.value_type_data(ConstantIndex::from(3_usize), Vec::from([reconstructed]));
+        let result = core.value_constructor(
+            result_type,
+            ConstructorTag::from(0_usize),
+            Vec::from([unit]),
+        );
+        let different_result = core.value_constructor(
+            result_type,
+            ConstructorTag::from(1_usize),
+            Vec::from([unit]),
+        );
+        let result = core.computation_return(result);
+        let different_result = core.computation_return(different_result);
+        let result = core.computation_lambda(result);
+        let different_result = core.computation_lambda(different_result);
+        let first_case = core.computation_data_case(rigid, dependent_motive, Vec::from([result]));
+        let repeated_case =
+            core.computation_data_case(rigid, dependent_motive, Vec::from([result]));
+        let changed_case =
+            core.computation_data_case(rigid, dependent_motive, Vec::from([different_result]));
+        let empty_case = core.computation_data_case(rigid, dependent_motive, Vec::new());
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let outer_type = core.value_type_data(ConstantIndex::from(3_usize), Vec::from([outer]));
+        let outer_motive = core.comp_type_returner(outer_type);
+        let outer_case = core.computation_data_case(rigid, outer_motive, Vec::from([result]));
+        let under_binder = core.computation_lambda(first_case);
+        let capturing_motive = core.computation_lambda(outer_case);
+        let rigid_projection = core.computation_record_projection(rigid, x.clone());
+        let repeated_projection = core.computation_record_projection(rigid, x);
+        let other_projection = core.computation_record_projection(rigid, y);
+        let world = World::new(core, &[(Name::Zero, constructor), (Name::One, record)]);
+        for (sides, expected) in [
+            (
+                Sides::Values(record, repeated_record),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Values(record, narrow),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Values(constructor, repeated_constructor),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Values(constructor, other_tag),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Values(constructor, other_constructor),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(fired, expected_record),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(projection, expected_unit),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(first_case, repeated_case),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(first_case, changed_case),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(first_case, empty_case),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(under_binder, capturing_motive),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(rigid_projection, repeated_projection),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(rigid_projection, other_projection),
+                MachineVerdict::NotConvertible,
+            ),
+        ] {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(verdict, expected, "{sides:?}");
+            assert_eq!(
+                world.replayed(sides, verdict, &decisions),
+                certified(expected),
                 "{sides:?}: {decisions:?}"
             );
         }

@@ -15,6 +15,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Structured names](#structured-names)
 - [Universe families and quotes](#universe-families-and-quotes)
 - [Static operators](#static-operators)
+- [Nominal data and structural records](#nominal-data-and-structural-records)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
@@ -143,6 +144,14 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 **Reversal.** A static lambda former arrives when a declaration must carry an operator itself rather than its instances — an operator exported across a module boundary whose instances the importer forms.
 
+## Nominal data and structural records
+
+`DeclarationContent::Data` carries parameter classifiers, constructor field lists and a universe kind. Its `KIND_DATA` byte is `0x06`. A nominal application names the admitted declaration and retains every argument as a value child; a constructor carries its complete classifier, tag and fields. A case carries its scrutinee, a motive binding that scrutinee and ambient branch functions. Record types and values carry fields in strictly increasing UTF-8 label order; projection carries one label and its record value.
+
+These six nodes use counted arities where their children vary. Canonical encoding includes counts, labels and every child, including empty records and nullary constructors. Decoding rejects malformed ordering, lengths and child families; it does not grant typing authority. Ordinary kernel admission checks the reconstructed declaration. `native_formers::native_formers::native_declarations_and_eliminators_survive_canonical_decode` in kernel-core exercises that complete path.
+
+**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so the format remains version 2. **Reversal.** A changed framing or reassigned meaning requires a version change; recursive signatures and conversion evidence need explicit new readers.
+
 ## Tag numbering and versioning
 
 The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Empty, absurd and native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
@@ -173,9 +182,16 @@ The original `0x00–0x1F` meanings are frozen, including static operators at `0
 | `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
 | `0x53–0x59` | Inline send, receive, select, offer, end, Mu and Var opcodes | Graph fields only; refused as native node tags |
 | `0x5A` | Session Path evidence, classifier and payload-proof children | Admitted |
-| `0x5B–0xFF` | Unassigned | Refused |
+| `0x5B–0x5C` | Reserved List cons and fold | Refused |
+| `0x5D` | Nominal data application, declaration and counted value arguments | Admitted |
+| `0x5E` | Record type, ordered labels and value-type children | Admitted |
+| `0x5F` | Constructor, classifier, tag and counted value fields | Admitted |
+| `0x60` | Record value, ordered labels and value children | Admitted |
+| `0x61` | Data case, scrutinee, motive and counted branches | Admitted |
+| `0x62` | Record projection, label and value child | Admitted |
+| `0x63–0xFF` | Unassigned | Refused |
 
-The admitted domain is sparse: the greatest assigned native byte is `0x5A`, not a promise to accept every smaller byte. Boundary witnesses admit session tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
+The admitted domain is sparse: the greatest assigned native byte is `0x62`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 

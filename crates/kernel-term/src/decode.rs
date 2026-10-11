@@ -251,6 +251,8 @@ impl Table
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DeclKind
 {
+    /// A nominal data signature with a parameter and constructor table.
+    Data,
     /// A typed definition.
     Def,
     /// A tracked typed hole.
@@ -301,6 +303,10 @@ struct DeclMeta
     root_declared: GlobalIndex,
     /// The body value's global index, for a definition only.
     root_body: Option<GlobalIndex>,
+    /// Parameter roots for a data signature; empty for other declarations.
+    parameters: Vec<GlobalIndex>,
+    /// Constructor field roots for a data signature.
+    constructors: Vec<Vec<GlobalIndex>>,
     /// The sealing-provenance slot's atoms, for a definition only.
     provenance: Vec<ConstantIndex>,
 }
@@ -544,7 +550,7 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
     }
     let metrics = budget_report(&table, &metas);
     check_budget(metrics)?;
-    let declarations = build_declarations(&mut table, &mut metas);
+    let declarations = build_declarations(&mut table, &mut metas)?;
     check_minted_atom_table(&declared_atoms, &declarations)?;
     if encode(&table.arena, &declarations).as_image() != image {
         return Err(DecodeError::Malformed {
@@ -621,7 +627,11 @@ fn budget_report(
     let mut largest = ExpandedWork::default();
     let mut total = ExpandedWork::default();
     for meta in metas {
-        for root in core::iter::once(meta.root_declared).chain(meta.root_body) {
+        for root in core::iter::once(meta.root_declared)
+            .chain(meta.root_body)
+            .chain(meta.parameters.iter().copied())
+            .chain(meta.constructors.iter().flatten().copied())
+        {
             let size = size_of(root);
             largest = largest.max(size);
             total = total.saturating_add(size);
@@ -807,9 +817,9 @@ fn value_id_at(
 /// Resolve each declaration's roots to arena ids and build the sequence.
 ///
 /// # Specification
-/// - requires: declared roots resolve to live value types; exactly definitions
-///   have a body root, and each such root resolves to a live value. The segment
-///   decoder establishes these conditions.
+/// - requires: declared roots and all Data schema roots resolve to live value
+///   types; exactly definitions have a body root, which resolves to a live
+///   value. The segment decoder establishes these conditions.
 /// - ensures: returns one declaration per metadata record in order, preserving
 ///   its mark, kind, roots and levels. Definition provenance is retained; other
 ///   forms have none. Names move to the declarations and leave empty source
@@ -820,56 +830,104 @@ fn value_id_at(
 /// - panics: none within that domain.
 ///
 /// # Adequacy
-/// - hypothesis: L3 assembles all three declaration forms over distinguishable
-///   shared prefix roots, preserving full level interfaces, marks and
-///   definition provenance while moving empty and Unicode names out of the
-///   metadata. A complete arena snapshot detects accidental reminting or prefix
-///   mutation; this does not establish typing or producer-claim truth.
+/// - hypothesis: L3 — ordinary declaration assembly preserves shared roots,
+///   level interfaces, marks, provenance and moved Unicode names; native
+///   artifacts retain their schema and constructor roots through canonical
+///   decoding. An arena snapshot detects accidental reminting.
 /// - witness: `decode::tests::declaration_assembly_preserves_claims_and_consumes_names`
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 #[spec(
-    requires: metas.iter().all(|meta| value_type_id_at(&table.nodes, meta.root_declared).is_some_and(|id| table.arena.value_type(id).is_some())
-            && match (meta.kind, meta.root_body) { (DeclKind::Def, Some(root)) => value_id_at(&table.nodes, root).is_some_and(|id| table.arena.value(id).is_some()), (DeclKind::Axiom | DeclKind::AbstractType, None) => true, _ => false }), captures: entry = (table.arena.watermark(), metas.iter().fold(0_usize,
-        |total, meta| total.saturating_add(meta.name.segments().len()))),
-    ensures: |ret| table.arena.watermark() == entry.0
-            && ret.len() == metas.len()
-            && metas.iter().all(|meta| meta.name.segments().is_empty())
-            && ret.iter().fold(0_usize,
-        |total, marked| total.saturating_add(marked.declaration().name().segments().len())) == entry.1
-            && ret.iter().zip(metas.iter()).all(|(marked, meta)| marked.mark() == meta.mark
-            && marked.declaration().levels() == &meta.levels
-            && Some(marked.declaration().declared_id()) == value_type_id_at(&table.nodes, meta.root_declared)
-            && match (*marked.declaration().content(), meta.kind, meta.root_body) { (DeclarationContent::Def { body, .. }, DeclKind::Def, Some(root)) => Some(body) == value_id_at(&table.nodes, root)
-            && marked.declaration().provenance() == meta.provenance.as_slice(), (DeclarationContent::Axiom { .. }, DeclKind::Axiom, None) | (DeclarationContent::AbstractType { .. }, DeclKind::AbstractType, None) => marked.declaration().provenance().is_empty(), _ => false }),
+    requires: metas.iter().all(|meta| value_type_id_at(&table.nodes, meta.root_declared).is_some()
+        && match meta.kind {
+            DeclKind::Def => meta.root_body.is_some_and(|root| value_id_at(&table.nodes, root).is_some()),
+            DeclKind::Data => meta.root_body.is_none() && meta.parameters.iter().chain(meta.constructors.iter().flatten()).all(|root| value_type_id_at(&table.nodes, *root).is_some()),
+            DeclKind::Axiom | DeclKind::AbstractType => meta.root_body.is_none(),
+        }),
+    captures: entry = table.arena.watermark(),
+    ensures: |ret| table.arena.watermark() == entry && ret.as_ref().is_ok_and(|declarations|
+        declarations.len() == metas.len() && declarations.iter().zip(metas.iter()).all(|(marked, meta)| {
+            let declaration = marked.declaration();
+            marked.mark() == meta.mark && declaration.levels() == &meta.levels
+                && declaration.provenance() == meta.provenance && meta.name.segments().is_empty()
+                && match *declaration.content() {
+                    DeclarationContent::Def { declared, body } => matches!(meta.kind, DeclKind::Def)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared)
+                        && meta.root_body.and_then(|root| value_id_at(&table.nodes, root)) == Some(body),
+                    DeclarationContent::Axiom { declared } => matches!(meta.kind, DeclKind::Axiom)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(declared),
+                    DeclarationContent::AbstractType { kind } => matches!(meta.kind, DeclKind::AbstractType)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind),
+                    DeclarationContent::Data { ref parameters, ref constructors, kind } => matches!(meta.kind, DeclKind::Data)
+                        && value_type_id_at(&table.nodes, meta.root_declared) == Some(kind)
+                        && parameters.len() == meta.parameters.len()
+                        && parameters.iter().zip(&meta.parameters).all(|(id, root)| value_type_id_at(&table.nodes, *root) == Some(*id))
+                        && constructors.len() == meta.constructors.len()
+                        && constructors.iter().zip(&meta.constructors).all(|(fields, roots)| fields.len() == roots.len()
+                            && fields.iter().zip(roots).all(|(id, root)| value_type_id_at(&table.nodes, *root) == Some(*id))),
+                }
+        })),
 )]
 fn build_declarations(
     table: &mut Table,
     metas: &mut [DeclMeta],
-) -> Vec<MarkedDeclaration>
+) -> Result<Vec<MarkedDeclaration>, DecodeError>
 {
-    let mut declarations: Vec<MarkedDeclaration> = Vec::new();
+    let mut declarations = Vec::new();
     for meta in metas.iter_mut() {
-        let declared_id = value_type_id_at(&table.nodes, meta.root_declared);
-        let body_id = meta.root_body.map(|root| value_id_at(&table.nodes, root));
-        let mut builder = DeclarationBuilder::new(&mut table.arena);
-        let declared = declared_id.unwrap_or_else(|| builder.arena().value_type_unit());
-        let declaration = match (meta.kind, body_id) {
-            | (DeclKind::Def, Some(body_id)) => {
-                let body = body_id.unwrap_or_else(|| builder.arena().value_unit());
-                builder.sealed_def(meta.levels.clone(), declared, body, meta.provenance.clone())
+        let declared =
+            value_type_id_at(&table.nodes, meta.root_declared).ok_or(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            })?;
+        let declaration = match meta.kind {
+            | DeclKind::Data => {
+                let resolve = |root: &GlobalIndex| {
+                    value_type_id_at(&table.nodes, *root).ok_or(DecodeError::Malformed {
+                        site: MalformedSite::Polarity,
+                    })
+                };
+                let parameters = meta
+                    .parameters
+                    .iter()
+                    .map(resolve)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let constructors = meta
+                    .constructors
+                    .iter()
+                    .map(|fields| fields.iter().map(resolve).collect::<Result<Vec<_>, _>>())
+                    .collect::<Result<Vec<_>, _>>()?;
+                DeclarationBuilder::new(&mut table.arena).data(
+                    meta.levels.clone(),
+                    parameters,
+                    constructors,
+                    declared,
+                )
             },
-            | (DeclKind::AbstractType, _) => builder.abstract_type(meta.levels.clone(), declared),
-            // A missing body reaches this arm only outside the validated
-            // metadata domain. A present but unresolved id takes the unit
-            // fallback above; enabled preconditions reject both states.
-            | (DeclKind::Def | DeclKind::Axiom, _) => builder.axiom(meta.levels.clone(), declared),
+            | DeclKind::Def => {
+                let root = meta.root_body.ok_or(DecodeError::Malformed {
+                    site: MalformedSite::ChildOrder,
+                })?;
+                let body = value_id_at(&table.nodes, root).ok_or(DecodeError::Malformed {
+                    site: MalformedSite::Polarity,
+                })?;
+                DeclarationBuilder::new(&mut table.arena).sealed_def(
+                    meta.levels.clone(),
+                    declared,
+                    body,
+                    meta.provenance.clone(),
+                )
+            },
+            | DeclKind::AbstractType => DeclarationBuilder::new(&mut table.arena)
+                .abstract_type(meta.levels.clone(), declared),
+            | DeclKind::Axiom => {
+                DeclarationBuilder::new(&mut table.arena).axiom(meta.levels.clone(), declared)
+            },
         };
         declarations.push(MarkedDeclaration::new(
             meta.mark,
             declaration.named(core::mem::take(&mut meta.name)),
         ));
     }
-    declarations
+    Ok(declarations)
 }
 
 /// A forward byte cursor with bounds-checked reads: the decoder's totality
@@ -1484,7 +1542,7 @@ impl<'bytes> ByteReader<'bytes>
         && match (meta.kind, meta.root_body) {
             (DeclKind::Def, Some(root)) => root < table.next_index()
                 && table.families.get(root.offset().0) == Some(&Family::Value),
-            (DeclKind::Axiom | DeclKind::AbstractType, None) => true,
+            (DeclKind::Data | DeclKind::Axiom | DeclKind::AbstractType, None) => true,
             _ => false,
         }))]
 fn decode_declaration(
@@ -1505,7 +1563,25 @@ fn decode_declaration(
     }
     let root_declared = decode_root(reader, table, Family::ValueType)?;
     let mut provenance: Vec<ConstantIndex> = Vec::new();
+    let mut parameters = Vec::new();
+    let mut constructors = Vec::new();
     let root_body = match kind {
+        | DeclKind::Data => {
+            let count = usize::from(reader.read_usize()?);
+            for _ in 0 .. count {
+                parameters.push(decode_root(reader, table, Family::ValueType)?);
+            }
+            let count = usize::from(reader.read_usize()?);
+            for _ in 0 .. count {
+                let arity = usize::from(reader.read_usize()?);
+                let mut fields = Vec::new();
+                for _ in 0 .. arity {
+                    fields.push(decode_root(reader, table, Family::ValueType)?);
+                }
+                constructors.push(fields);
+            }
+            None
+        },
         | DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             provenance = decode_definition_slots(reader)?;
@@ -1522,6 +1598,8 @@ fn decode_declaration(
         levels,
         root_declared,
         root_body,
+        parameters,
+        constructors,
         provenance,
     })
 }
@@ -1666,6 +1744,85 @@ fn decode_entry(
     let tag = reader.next_tag()?;
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
+        | tags::NODE_VT_DATA => {
+            let declaration = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let count = usize::from(reader.read_usize()?);
+            let mut arguments = Vec::new();
+            for _ in 0 .. count {
+                arguments.push(read_value(reader, table, this, &mut children)?);
+            }
+            (
+                DecodedNode::ValueType(table.arena.value_type_data(declaration, arguments)),
+                Family::ValueType,
+            )
+        },
+        | tags::NODE_VT_RECORD | tags::NODE_V_RECORD => {
+            let count = usize::from(reader.read_usize()?);
+            let mut labels = Vec::new();
+            for _ in 0 .. count {
+                labels.push(crate::FieldLabel::from(
+                    reader.read_text(MalformedSite::LiteralPayload)?,
+                ));
+            }
+            if tag == tags::NODE_VT_RECORD {
+                let mut fields = alloc::collections::BTreeMap::new();
+                for label in labels {
+                    fields.insert(label, read_value_type(reader, table, this, &mut children)?);
+                }
+                (
+                    DecodedNode::ValueType(table.arena.value_type_record(fields)),
+                    Family::ValueType,
+                )
+            }
+            else {
+                let mut fields = alloc::collections::BTreeMap::new();
+                for label in labels {
+                    fields.insert(label, read_value(reader, table, this, &mut children)?);
+                }
+                (
+                    DecodedNode::Value(table.arena.value_record(fields)),
+                    Family::Value,
+                )
+            }
+        },
+        | tags::NODE_V_CONSTRUCTOR => {
+            let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
+            let count = usize::from(reader.read_usize()?);
+            let datatype = read_value_type(reader, table, this, &mut children)?;
+            let mut fields = Vec::new();
+            for _ in 0 .. count {
+                fields.push(read_value(reader, table, this, &mut children)?);
+            }
+            (
+                DecodedNode::Value(table.arena.value_constructor(datatype, tag, fields)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_C_DATA_CASE => {
+            let count = usize::from(reader.read_usize()?);
+            let scrutinee = read_value(reader, table, this, &mut children)?;
+            let motive = read_comp_type(reader, table, this, &mut children)?;
+            let mut branches = Vec::new();
+            for _ in 0 .. count {
+                branches.push(read_computation(reader, table, this, &mut children)?);
+            }
+            (
+                DecodedNode::Computation(
+                    table
+                        .arena
+                        .computation_data_case(scrutinee, motive, branches),
+                ),
+                Family::Computation,
+            )
+        },
+        | tags::NODE_C_RECORD_PROJECTION => {
+            let label = crate::FieldLabel::from(reader.read_text(MalformedSite::LiteralPayload)?);
+            let record = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Computation(table.arena.computation_record_projection(record, label)),
+                Family::Computation,
+            )
+        },
         | tags::NODE_VT_SESSION => {
             let graph = session::graph(reader)?;
             let payloads = read_value_type(reader, table, this, &mut children)?;
@@ -2303,12 +2460,13 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 ///   validity.
 /// - witness: `decode::tests::tag_alphabets_partition_every_byte`
 #[spec(
-    ensures: |ret| match u8::from(kind) { 0 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
+    ensures: |ret| match u8::from(kind) { 0 => ret.as_ref() == Ok(&DeclKind::Def), 1 => ret.as_ref() == Ok(&DeclKind::Axiom), 2 => ret.as_ref() == Ok(&DeclKind::AbstractType), 6 => ret.as_ref() == Ok(&DeclKind::Data), 3 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleSig }), 4 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::ModuleDef }), 5 => ret.as_ref() == Err(&DecodeError::ReservedDeclarationKind { kind: ReservedKind::FunctorDef }), _ => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::DeclarationKind, tag: kind }) },
 )]
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
     match kind {
+        | tags::KIND_DATA => Ok(DeclKind::Data),
         | tags::KIND_DEF => Ok(DeclKind::Def),
         | tags::KIND_AXIOM => Ok(DeclKind::Axiom),
         // The abstract-type kind is deliberately live here: it was reserved with
@@ -3266,6 +3424,7 @@ mod tests
                 | 5 => Err(DecodeError::ReservedDeclarationKind {
                     kind: super::ReservedKind::FunctorDef,
                 }),
+                | 6 => Ok(super::DeclKind::Data),
                 | _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
@@ -3630,6 +3789,8 @@ mod tests
             let metas: alloc::vec::Vec<_> = roots
                 .iter()
                 .map(|&root| super::DeclMeta {
+                    parameters: vec![],
+                    constructors: vec![],
                     mark: super::AdmissionMark::Checked,
                     kind: super::DeclKind::Axiom,
                     name: super::StructuredName::default(),
@@ -3710,6 +3871,8 @@ mod tests
         }
         let table = four_family_table();
         let meta = super::DeclMeta {
+            parameters: vec![],
+            constructors: vec![],
             mark: super::AdmissionMark::Checked,
             kind: super::DeclKind::Def,
             name: super::StructuredName::default(),
@@ -4449,6 +4612,8 @@ mod tests
         ]);
         let mut metas = [
             super::DeclMeta {
+                parameters: vec![],
+                constructors: vec![],
                 mark: super::AdmissionMark::UncheckedBypass,
                 kind: super::DeclKind::Def,
                 name: name(&["definition", "é"]),
@@ -4462,6 +4627,8 @@ mod tests
                 ],
             },
             super::DeclMeta {
+                parameters: vec![],
+                constructors: vec![],
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::Axiom,
                 name: name(&[""]),
@@ -4471,6 +4638,8 @@ mod tests
                 provenance: vec![],
             },
             super::DeclMeta {
+                parameters: vec![],
+                constructors: vec![],
                 mark: super::AdmissionMark::Checked,
                 kind: super::DeclKind::AbstractType,
                 name: name(&[]),
@@ -4481,7 +4650,8 @@ mod tests
             },
         ];
         let arena_before = table.arena.clone();
-        let declarations = super::build_declarations(&mut table, &mut metas);
+        let declarations =
+            super::build_declarations(&mut table, &mut metas).expect("validated declaration roots");
         assert_eq!(table.arena, arena_before);
         let expected = [
             super::DeclarationContent::Def { declared, body },
@@ -4511,7 +4681,8 @@ mod tests
             );
             assert!(meta.name.segments().is_empty());
         }
-        let empty = super::build_declarations(&mut table, &mut []);
+        let empty =
+            super::build_declarations(&mut table, &mut []).expect("empty declaration sequence");
         assert_eq!(empty, []);
         assert_eq!(table.arena, arena_before);
     }

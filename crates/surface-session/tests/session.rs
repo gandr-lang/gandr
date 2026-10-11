@@ -104,7 +104,7 @@ fn checks() -> Outcome
 /// # Specification
 /// - requires: nothing.
 /// - ensures: returns the original produced node slice for synthesized typing,
-///   and an empty slice for checked, owed, or refused typing.
+///   and an empty slice for checked, native, owed, or refused typing.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -120,14 +120,14 @@ fn checks() -> Outcome
     Typing::Synthesised { ref produced, .. } => {
         core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(produced.nodes()))
     }
-    Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => ret.is_empty(),
+    Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => ret.is_empty(),
 },
 )]
 fn produced(typing: &Typing) -> &[ContentNode]
 {
     match *typing {
         | Typing::Synthesised { ref produced, .. } => produced.nodes(),
-        | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
+        | Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => &[],
     }
 }
 

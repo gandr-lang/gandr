@@ -122,6 +122,46 @@ pub enum Answer
     Untyped,
     /// This type is held.
     Typed(TypeContent),
+    /// The complete nominal signature, or its absence in the nominal table.
+    Data(Option<crate::content::DataContent>),
+}
+
+/// Which signature table a consultation reads.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Consultation
+{
+    /// The value-signature table.
+    Value,
+    /// The nominal-signature table.
+    Data,
+}
+
+impl Answer
+{
+    /// The signature table this answer describes.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn consultation(&self) -> Consultation
+    {
+        match *(self) {
+            | Self::Untyped | Self::Typed(_) => Consultation::Value,
+            | Self::Data(_) => Consultation::Data,
+        }
+    }
+
+    /// Every node retained by this answer, or no nodes for an absence.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn nodes(&self) -> &[crate::content::ContentNode]
+    {
+        match *(self) {
+            | Self::Untyped | Self::Data(None) => &[],
+            | Self::Typed(ref ty) => ty.nodes(),
+            | Self::Data(Some(ref signature)) => signature.nodes(),
+        }
+    }
 }
 
 /// One answer a judgement consulted, by the reference it asked about.
@@ -132,7 +172,8 @@ pub enum Answer
 ///
 /// # Adequacy
 /// - hypothesis: L2 — changed support invalidates reuse; canonicalization
-///   preserves the first answer for a repeated reference.
+///   preserves the first answer for each repeated reference and signature
+///   table.
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
 /// - witness: `checkpoint::tests::support_canonicalization_keeps_the_first_answer`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -215,8 +256,8 @@ impl ItemCheckpoint
     /// # Specification
     /// - requires: nothing — raw parts are admitted. Construction canonicalizes
     ///   support but does not establish a prior judgement's truth.
-    /// - ensures: the parts, with the support ascending by reference and each
-    ///   reference once, its first answer kept.
+    /// - ensures: the parts, with support ascending by reference and signature
+    ///   table; each pair appears once, its first answer kept.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -232,7 +273,7 @@ impl ItemCheckpoint
                 && ret.support.windows(2).all(|pair| {
                     pair.first()
                         .zip(pair.last())
-                        .is_none_or(|(left, right)| left.reference < right.reference)
+                        .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
                 })
         },
     )]
@@ -275,7 +316,7 @@ impl ItemCheckpoint
         &self.footprint
     }
 
-    /// The answers the judgement consulted, ascending by reference.
+    /// The consulted answers, ascending by reference and signature table.
     ///
     /// # Specification
     /// trivial.
@@ -332,9 +373,9 @@ impl ItemCheckpoint
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the replacement support is ascending and unique by reference,
-    ///   retaining the first answer for each reference; other fields are
-    ///   retained.
+    /// - ensures: replacement support is ascending and unique by reference and
+    ///   signature table, retaining the first answer for each pair; other
+    ///   fields are retained.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -350,7 +391,7 @@ impl ItemCheckpoint
                 && ret.support.windows(2).all(|pair| {
                     pair.first()
                         .zip(pair.last())
-                        .is_none_or(|(left, right)| left.reference < right.reference)
+                        .is_none_or(|(left,right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
                 })
         },
     )]
@@ -1399,7 +1440,8 @@ where
 ///   items already passed, no type position of it or of a recorded answer names
 ///   a value-changed definition, and its type can be seated; every other item
 ///   is judged in a context that has admitted exactly the items before it, as
-///   batch does.
+///   batch does. Support is ordered and unique by reference and signature
+///   table, retaining value and Data consultations separately.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1411,6 +1453,7 @@ where
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
 /// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 /// - witness: `tests::incremental::an_opaque_footprint_is_never_adopted`
+/// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
 #[spec(
     requires: encoded.len() == edited.items().len()
         && encoded
@@ -1448,7 +1491,9 @@ where
                     && outcome.support.windows(2).all(|pair| {
                         pair.first()
                             .zip(pair.last())
-                            .is_none_or(|(left, right)| left.reference < right.reference)
+                            .is_none_or(|(left, right)|
+                                (&left.reference, left.answer.consultation())
+                                    < (&right.reference, right.answer.consultation()))
                     })
             })
     },
@@ -1501,7 +1546,10 @@ where
     let mut context = CheckingContext::new(arena, budget);
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
         let ordinal = ItemOrdinal::from(index);
-        let Some(declaration) = layout.items.get(index).map(|item| *item.declaration())
+        let Some(declaration) = layout
+            .items
+            .get(index)
+            .map(super::region::Item::declaration)
         else {
             break;
         };
@@ -1540,7 +1588,7 @@ where
                     | recall::Absent::Unseated => {},
                 }
                 bump(&mut census.judged);
-                let supported = check_declaration_supported(&mut context, &declaration);
+                let supported = check_declaration_supported(&mut context, declaration);
                 let arena = context.arena();
                 let projection = Projection {
                     arena,
@@ -1549,7 +1597,16 @@ where
                 };
                 let typing = projection.typing(&supported.verdict());
                 let support = answered(supported.support(), arena, layout);
-                let answer = answer_of(context.signature(declaration.constant()), arena, layout);
+                let answer = match *(declaration.content()) {
+                    | gandr_core_checker::DeclarationContent::Value { .. } => {
+                        answer_of(context.signature(declaration.constant()), arena, layout)
+                    },
+                    | gandr_core_checker::DeclarationContent::Data(_) => {
+                        Answer::Data(context.data_signatures().get(&declaration.constant()).map(
+                            |signature| crate::content::DataContent::of(arena, layout, signature),
+                        ))
+                    },
+                };
                 (
                     Outcome {
                         footprint,
@@ -1586,8 +1643,8 @@ where
     captures: [before = usize::from(census.minted)],
     ensures: |ret| {
         if matches!(
-            (item.content.signature(), &checkpoint.typing),
-            (Maybe::Absent(_), &Typing::Synthesised { .. })
+            (item.content.declaration(), &checkpoint.typing),
+            (crate::content::DeclarationRoots::Value { signature:Maybe::Absent(_),.. }, &Typing::Synthesised { .. })
         ) {
             usize::from(census.minted) == before.saturating_add(1)
                 && match ret {
@@ -1609,8 +1666,14 @@ fn seat_of(
     census: &mut ResumeCensus,
 ) -> Maybe<ValueTypeId, seating::Absent>
 {
-    match (item.content.signature(), &checkpoint.typing) {
-        | (Maybe::Absent(_), &Typing::Synthesised { ref produced, .. }) => {
+    match (item.content.declaration(), &checkpoint.typing) {
+        | (
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(_),
+                ..
+            },
+            &Typing::Synthesised { ref produced, .. },
+        ) => {
             bump(&mut census.minted);
             produced.mint(arena, layout)
         },
@@ -1639,7 +1702,7 @@ struct AdoptionInput<'input, 'base>
     /// The edited item's footprint.
     footprint: &'input Footprint,
     /// The edited item's declaration.
-    declaration: gandr_core_checker::Declaration,
+    declaration: &'input gandr_core_checker::Declaration,
     /// The edited program.
     layout: &'input Layout,
     /// The answers of the items passed so far.
@@ -1720,15 +1783,65 @@ fn adopt(
     if touches(input, &checkpoint.support) == Standing::Falls {
         return Maybe::Absent(recall::Absent::ValueRead);
     }
+    let (signature, body) = match *(input.declaration.content()) {
+        | gandr_core_checker::DeclarationContent::Value {
+            ref signature,
+            ref body,
+        } => (*signature, *body),
+        | gandr_core_checker::DeclarationContent::Data(ref signature) => {
+            let answer = match checkpoint.typing {
+                | Typing::Data => {
+                    if context
+                        .adopt_data(
+                            input.declaration.constant(),
+                            alloc::sync::Arc::clone(signature),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                    Answer::Data(Some(crate::content::DataContent::of(
+                        context.arena(),
+                        input.layout,
+                        signature,
+                    )))
+                },
+                | Typing::Refused(_) => {
+                    if context
+                        .adopt(
+                            input.declaration.constant(),
+                            Maybe::Absent(signature_table::Absent::Untyped),
+                            Maybe::Absent(unfolding::Absent::Rigid),
+                        )
+                        .is_err()
+                    {
+                        return Maybe::Absent(recall::Absent::Unseated);
+                    }
+                    Answer::Data(None)
+                },
+                | Typing::Checked { .. } | Typing::Synthesised { .. } | Typing::Owed => {
+                    return Maybe::Absent(recall::Absent::Unseated);
+                },
+            };
+            return Maybe::Present((
+                checkpoint.support.clone(),
+                checkpoint.typing.clone(),
+                answer,
+            ));
+        },
+    };
+    if matches!(checkpoint.typing, Typing::Data) {
+        return Maybe::Absent(recall::Absent::Unseated);
+    }
     let seat: Maybe<FormedValueType, signature_table::Absent>;
     let answer: Answer;
-    match (input.declaration.signature(), &checkpoint.typing) {
+    match (signature, &checkpoint.typing) {
         | (Maybe::Present(signature), _) => match form_value_type(context, signature) {
             | Ok(formed) => {
                 seat = Maybe::Present(formed);
                 answer = match input.item.content.signature_type() {
-                    | Maybe::Present(ty) => Answer::Typed(ty),
-                    | Maybe::Absent(_) => Answer::Untyped,
+                    | Some(ty) => Answer::Typed(ty),
+                    | None => Answer::Untyped,
                 };
             },
             | Err(_) => {
@@ -1748,16 +1861,20 @@ fn adopt(
             seat = Maybe::Present(formed);
             answer = Answer::Typed(produced.clone());
         },
-        | (Maybe::Absent(_), &(Typing::Checked { .. } | Typing::Owed | Typing::Refused(_))) => {
+        | (
+            Maybe::Absent(_),
+            &(Typing::Data | Typing::Checked { .. } | Typing::Owed | Typing::Refused(_)),
+        ) => {
             seat = Maybe::Absent(signature_table::Absent::Untyped);
             answer = Answer::Untyped;
         },
     }
-    let unfolds = match (&checkpoint.typing, input.declaration.body()) {
+    let unfolds = match (&checkpoint.typing, body) {
         | (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
             Maybe::Present(body)
         },
-        | (_, Maybe::Absent(_)) | (&(Typing::Owed | Typing::Refused(_)), Maybe::Present(_)) => {
+        | (_, Maybe::Absent(_))
+        | (&(Typing::Data | Typing::Owed | Typing::Refused(_)), Maybe::Present(_)) => {
             Maybe::Absent(unfolding::Absent::Rigid)
         },
     };
@@ -1802,9 +1919,13 @@ fn adopt(
                     .take(usize::from(input.ordinal))
                     .zip(input.supplied)
                     .find(|&(reference, _)| *reference == answered.reference)
-                    .map_or_else(
-                        || answered.answer == Answer::Untyped,
-                        |(_, current)| *current == answered.answer,
+                    .map(|(_,current)| current).map_or_else(
+                        || matches!(answered.answer,Answer::Untyped | Answer::Data(None)),
+                        |current| match answered.answer {
+                            Answer::Untyped => !matches!(current,Answer::Typed(_)),
+                            Answer::Data(None) => !matches!(current,Answer::Data(Some(_))),
+                            Answer::Typed(_) | Answer::Data(Some(_)) => *current == answered.answer,
+                        },
                     )
             })
     },
@@ -1821,9 +1942,10 @@ fn support_holds(
             },
             | Maybe::Present(_) | Maybe::Absent(_) => None,
         };
-        match current {
-            | Some(current) => *current == answered.answer,
-            | None => answered.answer == Answer::Untyped,
+        match answered.answer {
+            | Answer::Untyped => !matches!(current, Some(Answer::Typed(_))),
+            | Answer::Data(None) => !matches!(current, Some(Answer::Data(Some(_)))),
+            | Answer::Typed(_) | Answer::Data(Some(_)) => current == Some(&answered.answer),
         }
     });
     if holds {
@@ -1856,16 +1978,11 @@ fn support_holds(
                 .footprint
                 .type_reads()
                 .any(|reference| input.value_changed.contains(reference))
-                || support.iter().any(|answered| match answered.answer {
-                    | Answer::Typed(ref ty) => ty.nodes().iter().any(|node| match *node {
-                        | crate::content::ContentNode::Constant(ref reference)
-                        | crate::content::ContentNode::Abstract(ref reference) => {
-                            input.value_changed.contains(reference)
-                        },
-                        | _ => false,
-                    }),
-                    | Answer::Untyped => false,
-                }))
+                || support.iter().any(|answered| answered.answer.nodes().iter().any(|node| match *node {
+                    crate::content::ContentNode::Constant(ref reference) | crate::content::ContentNode::Abstract(ref reference)
+                    | crate::content::ContentNode::Data { declaration:ref reference,.. } => input.value_changed.contains(reference),
+                    _ => false,
+                })))
     },
 )]
 fn touches(
@@ -1875,9 +1992,15 @@ fn touches(
 {
     let changed = |reference: &Reference| input.value_changed.contains(reference);
     let touched = input.footprint.type_reads().any(changed)
-        || support.iter().any(|answered| match answered.answer {
-            | Answer::Typed(ref ty) => ty.references().any(changed),
-            | Answer::Untyped => false,
+        || support.iter().any(|answered| {
+            answered
+                .answer
+                .nodes()
+                .iter()
+                .any(|node| match node.reference() {
+                    | Maybe::Present(reference) => changed(reference),
+                    | Maybe::Absent(_) => false,
+                })
         });
     if touched {
         Standing::Falls
@@ -1887,13 +2010,13 @@ fn touches(
     }
 }
 
-/// The support of a judgement, by reference, ascending, each once.
+/// The consulted answers, canonical by reference and signature table.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: each consulted position's reference beside its answer's content,
-///   ascending by reference; the unoccupied positions collapse into one entry,
-///   all of whose answers are `Untyped`.
+///   ascending by reference and signature table. Unoccupied positions collapse
+///   into one absent answer per signature table.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1905,11 +2028,11 @@ fn touches(
 /// - witness: `tests::incremental::uncoordinated_rename_leaves_a_dangling_reader`
 #[spec(
     ensures: |ret| {
-        ret.len() <= support.consulted().len()
+        ret.len() <= support.consulted().len().saturating_add(support.data_consulted().len())
             && ret.windows(2).all(|pair| {
                 pair.first()
                     .zip(pair.last())
-                    .is_none_or(|(left, right)| left.reference < right.reference)
+                    .is_none_or(|(left, right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
             })
     },
 )]
@@ -1919,7 +2042,7 @@ fn answered(
     layout: &Layout,
 ) -> Vec<Answered>
 {
-    let answers: Vec<Answered> = support
+    let mut answers: Vec<Answered> = support
         .consulted()
         .iter()
         .map(|consulted| Answered {
@@ -1927,15 +2050,25 @@ fn answered(
             answer: answer_of(consulted.answer(), arena, layout),
         })
         .collect();
+    answers.extend(support.data_consulted().iter().map(|consulted| {
+        Answered {
+            reference: layout.resolve(consulted.constant()),
+            answer: Answer::Data(
+                consulted
+                    .signature()
+                    .map(|signature| crate::content::DataContent::of(arena, layout, signature)),
+            ),
+        }
+    }));
     canonical_support(answers)
 }
 
-/// `support` ascending by reference, each reference once.
+/// `support` ascending by reference and signature table, each pair once.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the entries sorted stably by reference, of each run of equal
-///   references the first kept.
+/// - ensures: entries are sorted stably by reference and signature table; the
+///   first answer for each pair is retained.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1951,14 +2084,20 @@ fn answered(
             && ret.windows(2).all(|pair| {
                 pair.first()
                     .zip(pair.last())
-                    .is_none_or(|(left, right)| left.reference < right.reference)
+                    .is_none_or(|(left, right)| (&left.reference,left.answer.consultation()) < (&right.reference,right.answer.consultation()))
             })
     },
 )]
 fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
 {
-    support.sort_by(|left, right| left.reference.cmp(&right.reference));
-    support.dedup_by(|later, earlier| later.reference == earlier.reference);
+    support.sort_by(|left, right| {
+        (&left.reference, left.answer.consultation())
+            .cmp(&(&right.reference, right.answer.consultation()))
+    });
+    support.dedup_by(|later, earlier| {
+        later.reference == earlier.reference
+            && later.answer.consultation() == earlier.answer.consultation()
+    });
     support
 }
 
@@ -1986,6 +2125,7 @@ fn canonical_support(mut support: Vec<Answered>) -> Vec<Answered>
                     .is_some_and(|node| node.sort() == crate::content::Sort::ValueType)
         },
         | Answer::Untyped => !present,
+        Answer::Data(_) => false,
     },
 )]
 fn answer_of(
@@ -2210,7 +2350,7 @@ mod tests
                 candidate: &candidate,
                 item: &item,
                 footprint: &footprint,
-                declaration,
+                declaration: program.items()[0].declaration(),
                 layout: program.layout(),
                 supplied: &[],
                 ordinal: ItemOrdinal::from(0_usize),

@@ -87,6 +87,8 @@ pub enum SupportSides
     /// Two closures, each to be opened under the fresh variable at the
     /// support's level.
     Opened(CompClosureId, CompClosureId),
+    /// Two captured computations, entered without introducing a binder.
+    Closed(CompClosureId, CompClosureId),
 }
 
 /// The whole input of a goal the machine starts fresh: its sides and the
@@ -126,6 +128,8 @@ enum SideContent
     Former(Polarity),
     /// A closure to be opened.
     Opened,
+    /// A captured computation entered without a fresh binder.
+    Closed,
 }
 
 impl GoalSupport
@@ -156,7 +160,7 @@ impl GoalSupport
     #[spec(ensures: |ret| {
         let resolving = match sides {
             SupportSides::Heads(left, right) => side_content(domain, left).is_ok() && side_content(domain, right).is_ok(),
-            SupportSides::Opened(left, right) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
+            SupportSides::Opened(left,right) | SupportSides::Closed(left,right) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
         };
         if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
         else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
@@ -173,7 +177,7 @@ impl GoalSupport
                 let right = side_content(domain, right)?;
                 (left, right)
             },
-            | SupportSides::Opened(left, right) => {
+            | SupportSides::Opened(left, right) | SupportSides::Closed(left, right) => {
                 domain
                     .comp_closure(left)
                     .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
@@ -182,7 +186,11 @@ impl GoalSupport
                         .comp_closure(right)
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
                 }
-                (SideContent::Opened, SideContent::Opened)
+                let content = match sides {
+                    | SupportSides::Closed(..) => SideContent::Closed,
+                    | _ => SideContent::Opened,
+                };
+                (content, content)
             },
         };
         let high = DigestWord::from(u64::from(ContentHash::of(&left)));

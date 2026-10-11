@@ -845,6 +845,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(
         requires: match *value {
+            Value::Constructor { datatype, ref fields, .. } => self.placed.contains_key(&AnyNode::ValueType(datatype)) && fields.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
+            Value::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::SessionPath { path_type, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
             Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
             Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
@@ -857,6 +859,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *value {
+            Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
+            Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
             Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
             Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL,
             Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
@@ -881,6 +885,27 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *value {
+            | Value::Constructor {
+                datatype,
+                tag,
+                ref fields,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_CONSTRUCTOR);
+                record.put_count(ComponentCount(usize::from(tag)));
+                record.put_count(ComponentCount(fields.len()));
+                record.put_content(self.content_of(AnyNode::ValueType(datatype)));
+                for field in fields {
+                    record.put_content(self.content_of(AnyNode::Value(*field)));
+                }
+            },
+            | Value::Record(ref fields) => {
+                record.put_tag(gandr_kernel_term::NODE_V_RECORD);
+                record.put_count(ComponentCount(fields.len()));
+                for (label, value) in fields {
+                    record.put_text(EncodedText(label.as_ref()));
+                    record.put_content(self.content_of(AnyNode::Value(*value)));
+                }
+            },
             | Value::SessionPath {
                 path_type,
                 payload_paths,
@@ -981,6 +1006,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     #[spec(
         requires: match *computation {
+            Computation::DataCase { scrutinee, motive, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
+            Computation::RecordProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
             Computation::Lambda(body) => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
@@ -994,6 +1021,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
+            Computation::DataCase { .. } => gandr_kernel_term::NODE_C_DATA_CASE,
+            Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
             Computation::Absurd(_) => gandr_kernel_term::NODE_C_ABSURD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
@@ -1011,6 +1040,24 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *computation {
+            | Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_DATA_CASE);
+                record.put_count(ComponentCount(branches.len()));
+                record.put_content(self.content_of(AnyNode::Value(scrutinee)));
+                record.put_content(self.content_of(AnyNode::CompType(motive)));
+                for branch in branches {
+                    record.put_content(self.content_of(AnyNode::Computation(*branch)));
+                }
+            },
+            | Computation::RecordProjection(value, ref label) => {
+                record.put_tag(gandr_kernel_term::NODE_C_RECORD_PROJECTION);
+                record.put_text(EncodedText(label.as_ref()));
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
             | Computation::Absurd(value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_ABSURD);
                 record.put_content(self.content_of(AnyNode::Value(value)));
@@ -1076,6 +1123,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
     #[spec(
         requires: match *value_type {
+            ValueType::Data { ref arguments, .. } => arguments.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
+            ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
             ValueType::PathUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
             ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
@@ -1087,6 +1136,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *value_type {
+            ValueType::Data { .. } => gandr_kernel_term::NODE_VT_DATA,
+            ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
             ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
             ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
@@ -1111,6 +1162,25 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )
     {
         match *value_type {
+            | ValueType::Data {
+                declaration,
+                ref arguments,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_DATA);
+                record.put_count(ComponentCount(usize::from(declaration)));
+                record.put_count(ComponentCount(arguments.len()));
+                for argument in arguments {
+                    record.put_content(self.content_of(AnyNode::Value(*argument)));
+                }
+            },
+            | ValueType::Record(ref fields) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_RECORD);
+                record.put_count(ComponentCount(fields.len()));
+                for (label, ty) in fields {
+                    record.put_text(EncodedText(label.as_ref()));
+                    record.put_content(self.content_of(AnyNode::ValueType(*ty)));
+                }
+            },
             | ValueType::PathUniverse(source, target) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
                 record.put_content(self.content_of(AnyNode::Value(source)));
@@ -1274,101 +1344,54 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
 /// - witness: `session::tests::session_relations_replay_without_search`
 /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
-#[spec(
-    captures: entry_len = tasks.len(),
-    ensures: {
-        let children = match node {
-            AnyNode::Value(id) => match arena.value(id) {
-                Some(&Value::SessionPath { path_type, payload_paths, .. }) => [Some(AnyNode::ValueType(path_type)), Some(AnyNode::Value(payload_paths)), None],
-                Some(&Value::PathEquiv { path_type, forward, backward, .. }) => [Some(AnyNode::ValueType(path_type)), Some(AnyNode::Value(forward)), Some(AnyNode::Value(backward))],
-                None | Some(
-                    &Value::Variable(_)
-                    | &Value::Constant(_)
-                    | &Value::Unit
-                    | &Value::Literal(_)
-                ) => [None; 3],
-                Some(
-                    &Value::PathProduct(first, second) | &Value::Pair(first, second)
-                    | &Value::StaticApplication(first, second)
-                ) => [Some(AnyNode::Value(first)), Some(AnyNode::Value(second)), None],
-                Some(
-                    &Value::PathRefl(body) | &Value::Injection(_, body)
-                    | &Value::Lift { body, .. }
-                ) => [Some(AnyNode::Value(body)), None, None],
-                Some(
-                    &Value::Thunk(body)
-                ) => [Some(AnyNode::Computation(body)), None, None],
-                Some(
-                    &Value::Quote(quoted)
-                ) => [Some(AnyNode::ValueType(quoted)), None, None],
-                Some(
-                    &Value::QuoteComputation(quoted)
-                ) => [Some(AnyNode::CompType(quoted)), None, None],
-            },
-            AnyNode::Computation(id) => match arena.computation(id) {
-                Some(&Computation::Transport(path, value)) => [Some(AnyNode::Value(path)), Some(AnyNode::Value(value)), None],
-                None => [None; 3],
-                Some(
-                    &Computation::Lambda(body)
-                ) => [Some(AnyNode::Computation(body)), None, None],
-                Some(
-                    &Computation::Application(head, argument)
-                ) => [Some(AnyNode::Computation(head)), Some(AnyNode::Value(argument)), None],
-                Some(
-                    &Computation::Absurd(value) | &Computation::Return(value)
-                    | &Computation::Force(value)
-                ) => [Some(AnyNode::Value(value)), None, None],
-                Some(
-                    &Computation::Bind(bound, body)
-                ) => [Some(AnyNode::Computation(bound)), Some(AnyNode::Computation(body)), None],
-                Some(
-                    &Computation::Case { scrutinee, on_left, on_right }
-                ) => [Some(AnyNode::Value(scrutinee)), Some(AnyNode::Computation(on_left)), Some(AnyNode::Computation(on_right))],
-            },
-            AnyNode::ValueType(id) => match arena.value_type(id) {
-                Some(&ValueType::Session { payloads, .. }) => [Some(AnyNode::ValueType(payloads)), None, None],
-                Some(&ValueType::PathUniverse(source, target)) => [Some(AnyNode::Value(source)), Some(AnyNode::Value(target)), None],
-                None | Some(
-                    &ValueType::Base(_)
-                    | &ValueType::Empty | &ValueType::Unit
-                    | &ValueType::Universe { .. }
-                    | &ValueType::Abstract(_)
-                ) => [None; 3],
-                Some(
-                    &ValueType::Product(first, second)
-                    | &ValueType::Sum(first, second)
-                    | &ValueType::StaticPi { domain: first, codomain: second }
-                ) => [Some(AnyNode::ValueType(first)), Some(AnyNode::ValueType(second)), None],
-                Some(
-                    &ValueType::Thunk(body)
-                ) => [Some(AnyNode::CompType(body)), None, None],
-                Some(
-                    &ValueType::List(inner) | &ValueType::Lift { inner, .. }
-                ) => [Some(AnyNode::ValueType(inner)), None, None],
-                Some(
-                    &ValueType::Element { code, .. }
-                ) => [Some(AnyNode::Value(code)), None, None],
-            },
-            AnyNode::CompType(id) => match arena.comp_type(id) {
-                None => [None; 3],
-                Some(
-                    &CompType::Returner(result)
-                ) => [Some(AnyNode::ValueType(result)), None, None],
-                Some(
-                    &CompType::Arrow { domain, codomain }
-                    | &CompType::Pi { domain, codomain }
-                ) => [Some(AnyNode::ValueType(domain)), Some(AnyNode::CompType(codomain)), None],
-                Some(
-                    &CompType::Element { code, .. }
-                ) => [Some(AnyNode::Value(code)), None, None],
-            },
-        };
-        tasks.get(entry_len..).is_some_and(|added|
-            added.len() == children.iter().flatten().count()
-            && added.iter().zip(children.into_iter().flatten()).all(|(task, child)|
-                matches!(task, &EncodeTask::Open(held) if held == child)))
+#[spec(captures: entry_len = tasks.len(), ensures: tasks.get(entry_len..).is_some_and(|added| {
+    let opened = added.iter().map(|task| match *task { EncodeTask::Open(node) => Some(node), EncodeTask::Close(_) => None });
+    match node {
+        AnyNode::Value(id) => match arena.value(id) { Some(matched_native_node) => match *matched_native_node {
+Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))).map(Some)),
+Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
+Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::SessionPath { path_type, payload_paths, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
+Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
+Value::PathProduct(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+Value::PathRefl(body) | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
+Value::Thunk(body) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
+Value::Quote(quoted) => opened.eq((core::iter::once(AnyNode::ValueType(quoted))).map(Some)),
+Value::QuoteComputation(quoted) => opened.eq((core::iter::once(AnyNode::CompType(quoted))).map(Some)),
+},
+None => opened.eq((core::iter::empty()).map(Some)),
+},
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::DataCase {scrutinee,motive,ref branches}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
+            Some(&Computation::RecordProjection(record,_)) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
+            None => opened.eq((core::iter::empty()).map(Some)),
+            Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
+            Some(&Computation::Lambda(body)) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
+            Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
+            Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
+            Some(&Computation::Bind(bound,body)) => opened.eq(([AnyNode::Computation(bound),AnyNode::Computation(body)].into_iter()).map(Some)),
+            Some(&Computation::Case {scrutinee,on_left,on_right}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::Computation(on_left),AnyNode::Computation(on_right)].into_iter()).map(Some)),
+        },
+        AnyNode::ValueType(id) => match arena.value_type(id) { Some(matched_native_node) => match *matched_native_node {
+ValueType::Data {ref arguments,..} => opened.eq((arguments.iter().copied().map(AnyNode::Value)).map(Some)),
+ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::ValueType)).map(Some)),
+ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
+ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
+ValueType::PathUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
+ValueType::Thunk(body) => opened.eq((core::iter::once(AnyNode::CompType(body))).map(Some)),
+ValueType::Element {code,..} => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
+},
+None => opened.eq((core::iter::empty()).map(Some)),
+},
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            None => opened.eq((core::iter::empty()).map(Some)),
+            Some(&CompType::Returner(result)) => opened.eq((core::iter::once(AnyNode::ValueType(result))).map(Some)),
+            Some(&CompType::Arrow{domain,codomain} | &CompType::Pi {domain,codomain}) => opened.eq(([AnyNode::ValueType(domain),AnyNode::CompType(codomain)].into_iter()).map(Some)),
+            Some(&CompType::Element {code,..}) => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
+        },
     }
-)]
+}))]
 fn push_children(
     arena: &TermArena,
     node: AnyNode,
@@ -1377,6 +1400,18 @@ fn push_children(
 {
     match node {
         | AnyNode::Value(id) => match arena.value(id) {
+            | Some(&Value::Constructor {
+                datatype,
+                ref fields,
+                ..
+            }) => tasks.extend(
+                (core::iter::once(AnyNode::ValueType(datatype))
+                    .chain(fields.iter().copied().map(AnyNode::Value)))
+                .map(EncodeTask::Open),
+            ),
+            | Some(&Value::Record(ref fields)) => {
+                tasks.extend((fields.values().copied().map(AnyNode::Value)).map(EncodeTask::Open));
+            },
             | None
             | Some(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
@@ -1420,6 +1455,19 @@ fn push_children(
             },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
+            | Some(&Computation::DataCase {
+                scrutinee,
+                motive,
+                ref branches,
+            }) => tasks.extend(
+                ([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]
+                    .into_iter()
+                    .chain(branches.iter().copied().map(AnyNode::Computation)))
+                .map(EncodeTask::Open),
+            ),
+            | Some(&Computation::RecordProjection(record, _)) => {
+                tasks.extend((core::iter::once(AnyNode::Value(record))).map(EncodeTask::Open));
+            },
             | None => {},
             | Some(&Computation::Transport(path, value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
@@ -1454,6 +1502,11 @@ fn push_children(
             },
         },
         | AnyNode::ValueType(id) => match arena.value_type(id) {
+            | Some(&ValueType::Data { ref arguments, .. }) => {
+                tasks.extend((arguments.iter().copied().map(AnyNode::Value)).map(EncodeTask::Open));
+            },
+            | Some(&ValueType::Record(ref fields)) => tasks
+                .extend((fields.values().copied().map(AnyNode::ValueType)).map(EncodeTask::Open)),
             | None
             | Some(
                 &ValueType::Base(_)

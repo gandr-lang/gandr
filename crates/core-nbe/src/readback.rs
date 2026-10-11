@@ -85,6 +85,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -623,6 +624,24 @@ enum Task
     Bind,
     /// Assemble a sum elimination over the value term and the two branches.
     Case,
+    /// Assemble a constructor, including its normalized nominal classifier.
+    Constructor
+    {
+        /// Constructor position in the declaration.
+        tag: gandr_core_term::ConstructorTag,
+        /// The field span supplies the operand count.
+        fields: crate::FieldSpan,
+    },
+    /// Assemble a record with the source's exact labels.
+    Record(ValueId),
+    /// Assemble a nominal type with the source's declaration identity.
+    DataType(ValueTypeId),
+    /// Assemble a record type with the source's exact labels.
+    RecordType(ValueTypeId),
+    /// Assemble a case with a normalized motive and ambient branch functions.
+    DataCase(ComputationId),
+    /// Assemble a projection with the source's exact label.
+    RecordProjection(ComputationId),
     /// Read back a value type a quote carries, in a frame.
     QuotedValueType
     {
@@ -1282,7 +1301,11 @@ fn open_static(
         else {
             return Err(ReadbackFault::Domain(DomainFault::Dangling));
         };
-        let Some(&Value::StaticLambda(term)) = core.value(held.body())
+        let crate::ValueBody::Source(body) = held.body()
+        else {
+            return Err(ReadbackFault::MachineInvariant);
+        };
+        let Some(&Value::StaticLambda(term)) = core.value(body)
         else {
             return Err(ReadbackFault::MachineInvariant);
         };
@@ -1813,6 +1836,29 @@ fn run(
             && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
+        | Task::Constructor { tag, fields } => domain.fields(fields).is_ok_and(|fields|
+            entry_values.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.values.len()))
+            && entry_value_types.checked_sub(1) == Some(machine.value_types.len())
+            && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Constructor { tag: actual, .. }) if *actual == tag)),
+        | Task::Record(source) => matches!(core.value(source), Some(Value::Record(fields))
+            if entry_values.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Record(result)) if fields.keys().eq(result.keys())))),
+        | Task::DataType(source) => matches!(core.value_type(source), Some(ValueType::Data { declaration, arguments })
+            if entry_values.checked_sub(arguments.len()) == Some(machine.values.len())
+            && machine.value_types.len() == entry_value_types.saturating_add(1)
+            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Data { declaration: actual, arguments: args }) if actual == declaration && args.len() == arguments.len()))),
+        | Task::RecordType(source) => matches!(core.value_type(source), Some(ValueType::Record(fields))
+            if entry_value_types.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Record(result)) if fields.keys().eq(result.keys())))),
+        | Task::DataCase(source) => matches!(core.computation(source), Some(Computation::DataCase { branches, .. })
+            if entry_values.checked_sub(1) == Some(machine.values.len())
+            && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
+            && entry_comps.checked_sub(branches.len()).and_then(|n| n.checked_add(1)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::DataCase { branches: actual, .. }) if actual.len() == branches.len()))),
+        | Task::RecordProjection(source) => matches!(core.computation(source), Some(Computation::RecordProjection(_, label))
+            if entry_values.checked_sub(1) == Some(machine.values.len())
+            && machine.comps.len() == entry_comps.saturating_add(1)
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::RecordProjection(_, actual)) if actual == label))),
         | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
         | Task::QuotedCompType { .. } | Task::QuotedCode { .. } => true,
     }),
@@ -1827,6 +1873,126 @@ fn step(
     match task {
         | Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
         | Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
+        | Task::Constructor { tag, fields } => {
+            let count = domain.fields(fields).map_err(ReadbackFault::Domain)?.len();
+            let start = machine
+                .values
+                .len()
+                .checked_sub(count)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let datatype = machine.pop_value_type()?;
+            let fields = machine.values.drain(start ..).collect();
+            machine
+                .values
+                .push(core.value_constructor(datatype, tag, fields));
+            Ok(())
+        },
+        | Task::Record(source) => {
+            let Some(matched_native_node) = core.value(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Value::Record(ref fields) = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .values
+                .len()
+                .checked_sub(fields.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let fields = fields
+                .keys()
+                .cloned()
+                .zip(machine.values.drain(start ..))
+                .collect();
+            machine.values.push(core.value_record(fields));
+            Ok(())
+        },
+        | Task::DataType(source) => {
+            let Some(matched_native_node) = core.value_type(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let ValueType::Data {
+                ref declaration,
+                ref arguments,
+            } = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let declaration = *declaration;
+            let start = machine
+                .values
+                .len()
+                .checked_sub(arguments.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let arguments = machine.values.drain(start ..).collect();
+            machine
+                .value_types
+                .push(core.value_type_data(declaration, arguments));
+            Ok(())
+        },
+        | Task::RecordType(source) => {
+            let Some(matched_native_node) = core.value_type(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let ValueType::Record(ref fields) = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .value_types
+                .len()
+                .checked_sub(fields.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let fields = fields
+                .keys()
+                .cloned()
+                .zip(machine.value_types.drain(start ..))
+                .collect();
+            machine.value_types.push(core.value_type_record(fields));
+            Ok(())
+        },
+        | Task::DataCase(source) => {
+            let Some(matched_native_node) = core.computation(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Computation::DataCase { ref branches, .. } = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let start = machine
+                .comps
+                .len()
+                .checked_sub(branches.len())
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let motive = machine.pop_comp_type()?;
+            let scrutinee = machine.pop_value()?;
+            let branches = machine.comps.drain(start ..).collect();
+            machine
+                .comps
+                .push(core.computation_data_case(scrutinee, motive, branches));
+            Ok(())
+        },
+        | Task::RecordProjection(source) => {
+            let Some(matched_native_node) = core.computation(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Computation::RecordProjection(_, ref label) = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let label = label.clone();
+            let record = machine.pop_value()?;
+            machine
+                .comps
+                .push(core.computation_record_projection(record, label));
+            Ok(())
+        },
         | Task::PathProduct => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
@@ -2100,16 +2266,25 @@ fn held_level(
     captures: [entry_tasks = machine.tasks.len(), entry_results = machine.value_types.len(), entry_fuel = machine.fuel],
     ensures: |ret| machine.fuel == entry_fuel && if core.value_type(quoted).is_none() {
         ret == Err(ReadbackFault::MachineInvariant) && machine.tasks.len() == entry_tasks && machine.value_types.len() == entry_results
-    } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) {
-        | Some(&ValueType::PathUniverse(..) | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
-        | Some(&ValueType::Product(first, second)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
-        | Some(&ValueType::Sum(first, second)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
-        | Some(&ValueType::StaticPi { domain: first, codomain: second }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
-        | Some(&ValueType::Thunk(body)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ThunkType, Task::QuotedCompType { quoted: child, frame: child_frame, binders: child_binders }] if *child == body && *child_frame == frame && *child_binders == binders),
-        | Some(&ValueType::Lift { inner, ref target }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LiftType { target: held }, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == inner && *child_frame == frame && *child_binders == binders),
-        | Some(&ValueType::Element { code, ref target }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Element { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
-        | None => false,
-    }) },
+    } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::Product(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+ValueType::Sum(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+ValueType::StaticPi { domain: first, codomain: second } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+ValueType::Thunk(body) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ThunkType, Task::QuotedCompType { quoted: child, frame: child_frame, binders: child_binders }] if *child == body && *child_frame == frame && *child_binders == binders),
+ValueType::Lift { inner, ref target } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LiftType { target: held }, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == inner && *child_frame == frame && *child_binders == binders),
+ValueType::Element { code, ref target } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Element { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
+ValueType::Data { ref arguments, .. } => machine.value_types.len() == entry_results
+            && new_tasks.first() == Some(&Task::DataType(quoted))
+            && new_tasks.len() == arguments.len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(arguments.iter().rev()).all(|(task, argument)| *task == Task::QuotedCode { code: *argument, frame, binders }),
+ValueType::Record(ref fields) => machine.value_types.len() == entry_results
+            && new_tasks.first() == Some(&Task::RecordType(quoted))
+            && new_tasks.len() == fields.len().saturating_add(1)
+            && new_tasks.iter().skip(1).zip(fields.values().rev()).all(|(task, field)| *task == Task::QuotedValueType { quoted: *field, frame, binders }),
+},
+None => false,
+}) },
 )]
 fn step_quoted_value_type(
     core: &CoreArena,
@@ -2122,20 +2297,35 @@ fn step_quoted_value_type(
 {
     let node = core
         .value_type(quoted)
-        .cloned()
         .ok_or(ReadbackFault::MachineInvariant)?;
     let at = |quoted: ValueTypeId| Task::QuotedValueType {
         quoted,
         frame,
         binders,
     };
-    match node {
+    match *node {
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => {
             machine.value_types.push(quoted);
+        },
+        | ValueType::Data { ref arguments, .. } => {
+            machine.tasks.push(Task::DataType(quoted));
+            for &code in arguments.iter().rev() {
+                machine.tasks.push(Task::QuotedCode {
+                    code,
+                    frame,
+                    binders,
+                });
+            }
+        },
+        | ValueType::Record(ref fields) => {
+            machine.tasks.push(Task::RecordType(quoted));
+            machine
+                .tasks
+                .extend(fields.values().rev().map(|&field| at(field)));
         },
         | ValueType::Product(first, second) => {
             machine.tasks.push(Task::Product);
@@ -2165,13 +2355,13 @@ fn step_quoted_value_type(
                 binders,
             });
         },
-        | ValueType::Lift { inner, target } => {
-            let target = domain.hold_level(target);
+        | ValueType::Lift { inner, ref target } => {
+            let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::LiftType { target });
             machine.tasks.push(at(inner));
         },
-        | ValueType::Element { code, target } => {
-            let target = domain.hold_level(target);
+        | ValueType::Element { code, ref target } => {
+            let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::Element { target });
             machine.tasks.push(Task::QuotedCode {
                 code,
@@ -2374,6 +2564,48 @@ fn step_value(
         return Ok(());
     }
     match node {
+        | DomainValue::Constructor {
+            datatype,
+            tag,
+            fields,
+            ..
+        } => {
+            let closure = domain
+                .value_closure(datatype)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let crate::ValueBody::ValueType(quoted) = closure.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let frame = machine.hold_frame(closure.environment().clone());
+            machine.tasks.push(Task::Constructor { tag, fields });
+            for &value in domain
+                .fields(fields)
+                .map_err(ReadbackFault::Domain)?
+                .iter()
+                .rev()
+            {
+                machine.tasks.push(Task::Value { value, binders });
+            }
+            machine.tasks.push(Task::QuotedValueType {
+                quoted,
+                frame,
+                binders,
+            });
+            Ok(())
+        },
+        | DomainValue::Record { source, fields, .. } => {
+            let fields = domain.fields(fields).map_err(ReadbackFault::Domain)?;
+            if !matches!(core.value(source), Some(Value::Record(labels)) if labels.len() == fields.len())
+            {
+                return Err(ReadbackFault::MachineInvariant);
+            }
+            machine.tasks.push(Task::Record(source));
+            for &value in fields.iter().rev() {
+                machine.tasks.push(Task::Value { value, binders });
+            }
+            Ok(())
+        },
         | DomainValue::PathCertificate { certificate, .. } => {
             machine.values.push(certificate);
             Ok(())
@@ -2449,8 +2681,8 @@ fn step_value(
             };
             let body = closure.body();
             let frame = machine.hold_frame(closure.environment().clone());
-            match core.value(body) {
-                | Some(&Value::Quote(quoted)) => {
+            match body {
+                | crate::ValueBody::ValueType(quoted) => {
                     machine.tasks.push(Task::Quote);
                     machine.tasks.push(Task::QuotedValueType {
                         quoted,
@@ -2458,7 +2690,7 @@ fn step_value(
                         binders,
                     });
                 },
-                | Some(&Value::QuoteComputation(quoted)) => {
+                | crate::ValueBody::CompType(quoted) => {
                     machine.tasks.push(Task::QuoteComputation);
                     machine.tasks.push(Task::QuotedCompType {
                         quoted,
@@ -2466,7 +2698,25 @@ fn step_value(
                         binders,
                     });
                 },
-                | Some(_) | None => return Err(ReadbackFault::MachineInvariant),
+                | crate::ValueBody::Source(body) => match core.value(body) {
+                    | Some(&Value::Quote(quoted)) => {
+                        machine.tasks.push(Task::Quote);
+                        machine.tasks.push(Task::QuotedValueType {
+                            quoted,
+                            frame,
+                            binders,
+                        });
+                    },
+                    | Some(&Value::QuoteComputation(quoted)) => {
+                        machine.tasks.push(Task::QuoteComputation);
+                        machine.tasks.push(Task::QuotedCompType {
+                            quoted,
+                            frame,
+                            binders,
+                        });
+                    },
+                    | Some(_) | None => return Err(ReadbackFault::MachineInvariant),
+                },
             }
             Ok(())
         },
@@ -2713,7 +2963,9 @@ fn step_neutral(
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
-                        | Elimination::Case { .. } => None,
+                        | Elimination::Case { .. }
+                        | Elimination::DataCase(_)
+                        | Elimination::RecordProjection(_) => None,
                     })
                     .collect()
             };
@@ -2842,6 +3094,80 @@ fn step_spine(
     };
     let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
+        | Elimination::RecordProjection(source) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::RecordProjection(source));
+            Ok(())
+        },
+        | Elimination::DataCase(closure) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let held = domain
+                .comp_closure(closure)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let crate::CompBody::Source(source) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Some(matched_native_node) = core.computation(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let Computation::DataCase {
+                ref motive,
+                ref branches,
+                ..
+            } = *matched_native_node
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let zone = Zone::Intuitionistic;
+            let deeper = binders
+                .opened(zone)
+                .ok_or(ReadbackFault::BinderCeiling { zone })?;
+            let mut environment = held.environment().clone();
+            let fresh = domain
+                .neutral_node(
+                    NeutralHead::Variable {
+                        zone,
+                        level: binders.fresh(zone),
+                    },
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(ReadbackFault::Domain)?;
+            let bound = domain
+                .value_neutral(fresh, TermFace::Reduced)
+                .map_err(ReadbackFault::Domain)?;
+            environment.extend(zone, bound);
+            let frame = machine.hold_frame(environment);
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::DataCase(source));
+            for &branch in branches.iter().rev() {
+                let environment = domain
+                    .comp_closure(closure)
+                    .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?
+                    .environment()
+                    .clone();
+                let evaluated = crate::eval::eval_body_within(
+                    core,
+                    domain,
+                    machine.definitions,
+                    machine.fuel,
+                    crate::CompBody::Source(branch),
+                    environment,
+                );
+                let (comp, remaining) = evaluated.map_err(ReadbackFault::Eval)?;
+                machine.fuel = remaining;
+                machine.tasks.push(Task::Comp { comp, binders });
+            }
+            machine.tasks.push(Task::QuotedCompType {
+                quoted: *motive,
+                frame,
+                binders: deeper,
+            });
+            Ok(())
+        },
         | Elimination::Transport(value) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);

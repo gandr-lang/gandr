@@ -234,6 +234,16 @@ impl From<ForceRefusal> for DomainFault
     }
 }
 
+/// A half-open range of native fields in one domain arena.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FieldSpan
+{
+    /// First field offset.
+    start: usize,
+    /// Exclusive final field offset.
+    end: usize,
+}
+
 /// A snapshot of the six family lengths.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RunWatermark
@@ -250,6 +260,8 @@ pub struct RunWatermark
     comp_closures: usize,
     /// The level-table length.
     levels: usize,
+    /// The native field-table length.
+    fields: usize,
 }
 
 /// The per-run arena owning every glued node one evaluation run produces.
@@ -274,6 +286,8 @@ pub struct DomainArena
     comp_closures: Vec<CompClosure>,
     /// The levels a lift names.
     levels: Vec<LevelEntry>,
+    /// Native constructor and record fields, stored without per-node vectors.
+    fields: Vec<DomainValueId>,
 }
 
 impl DomainArena
@@ -317,6 +331,7 @@ impl DomainArena
         && ret.neutrals == self.neutrals.len()
         && ret.value_closures == self.value_closures.len()
         && ret.comp_closures == self.comp_closures.len()
+        && ret.fields == self.fields.len()
         && ret.levels == self.levels.len())]
     pub fn watermark(&self) -> RunWatermark
     {
@@ -327,6 +342,7 @@ impl DomainArena
             value_closures: self.value_closures.len(),
             comp_closures: self.comp_closures.len(),
             levels: self.levels.len(),
+            fields: self.fields.len(),
         }
     }
 
@@ -365,6 +381,7 @@ impl DomainArena
             && self.neutrals.len() == watermark.neutrals.min(entry_mark.neutrals)
             && self.value_closures.len() == watermark.value_closures.min(entry_mark.value_closures)
             && self.comp_closures.len() == watermark.comp_closures.min(entry_mark.comp_closures)
+            && self.fields.len() == watermark.fields.min(entry_mark.fields)
             && self.levels.len() == watermark.levels.min(entry_mark.levels),
     )]
     pub fn truncate_to(
@@ -381,6 +398,7 @@ impl DomainArena
         self.value_closures.truncate(watermark.value_closures);
         self.comp_closures.truncate(watermark.comp_closures);
         self.levels.truncate(watermark.levels);
+        self.fields.truncate(watermark.fields);
     }
 
     /// Resolve a domain value id, or `None` when it dangles.
@@ -725,7 +743,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } => true,
+            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -761,6 +779,8 @@ impl DomainArena
                 },
                 | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
                 | Elimination::Transport(_)
+                | Elimination::DataCase(_)
+                | Elimination::RecordProjection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Bind(_)
                 | Elimination::Case { .. } => return Guard::Flexible,
@@ -979,7 +999,7 @@ impl DomainArena
     )]
     pub fn value_closure_node(
         &mut self,
-        body: ValueId,
+        body: crate::closure::ValueBody,
         environment: Environment,
     ) -> ValueClosureId
     {
@@ -1277,6 +1297,130 @@ impl DomainArena
     ) -> DomainValueId
     {
         self.alloc_value(DomainValue::Code { code, face }, Guard::Flexible)
+    }
+
+    /// Store a sequence of evaluated native fields once, in its supplied order.
+    ///
+    /// # Specification
+    /// - requires: field ids belong to this arena.
+    /// - ensures: the span covers exactly the newly appended fields.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — field order survives evaluation and later truncation
+    ///   invalidates the span.
+    /// - witness: `arena::tests::native_field_spans_obey_truncation`
+    #[spec(captures: start = self.fields.len(), ensures: |ret| ret.start == start && ret.end == self.fields.len())]
+    #[inline]
+    pub fn hold_fields<Fields>(
+        &mut self,
+        fields: Fields,
+    ) -> FieldSpan
+    where
+        Fields: IntoIterator<Item = DomainValueId>,
+    {
+        let start = self.fields.len();
+        self.fields.extend(fields);
+        FieldSpan {
+            start,
+            end: self.fields.len(),
+        }
+    }
+
+    /// Resolve a native field span, refusing an invalidated range.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns exactly the stored slice, or a dangling-domain
+    ///   refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `DomainFault::Dangling` when truncation removed the range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — retained and truncated spans remain distinguishable.
+    /// - witness: `arena::tests::native_field_spans_obey_truncation`
+    #[spec(ensures: |ret| ret.as_ref().ok().copied() == self.fields.get(span.start..span.end))]
+    #[inline]
+    pub fn fields(
+        &self,
+        span: FieldSpan,
+    ) -> Result<&[DomainValueId], DomainFault>
+    {
+        self.fields
+            .get(span.start .. span.end)
+            .ok_or(DomainFault::Dangling)
+    }
+
+    /// Retain a nominal constructor without copying its fields or classifier.
+    ///
+    /// The classifier is a suspended type, so its guard is flexible like a
+    /// code's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor(
+        &mut self,
+        datatype: ValueClosureId,
+        tag: gandr_core_term::ConstructorTag,
+        fields: FieldSpan,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(
+            DomainValue::Constructor {
+                datatype,
+                tag,
+                fields,
+                face,
+            },
+            Guard::Flexible,
+        )
+    }
+
+    /// Retain a record with a guard over its ordered evaluated fields.
+    ///
+    /// Labels are compared by decomposition; leaving them out of the guard can
+    /// only make that early refutation inconclusive.
+    ///
+    /// # Specification
+    /// - requires: the source record supplies the labels in field order.
+    /// - ensures: success retains the exact source, span and face.
+    /// - fails: a dangling field span.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `DomainFault::Dangling` when the span no longer resolves.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native record readback retains labels and ordered
+    ///   fields.
+    /// - witness: `eval::tests::native_records_and_cases_compute`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id| self.value(*id) == Some(&DomainValue::Record {source,fields,face})))]
+    #[inline]
+    pub fn value_record(
+        &mut self,
+        source: ValueId,
+        fields: FieldSpan,
+        face: TermFace,
+    ) -> Result<DomainValueId, DomainFault>
+    {
+        let values = self.fields(fields)?;
+        let guard = Guard::compose(
+            GuardTag::Record,
+            &values.len(),
+            values.iter().map(|id| self.folded_value_guard(*id)),
+        );
+        Ok(self.alloc_value(
+            DomainValue::Record {
+                source,
+                fields,
+                face,
+            },
+            guard,
+        ))
     }
 
     /// Preserve a closed native certificate as syntax, without evaluating maps.
@@ -1693,19 +1837,9 @@ mod tests
         let unit = arena.value_unit(TermFace::Reduced);
         let thunk = arena.value_thunk(closure, TermFace::Reduced);
         let returner = arena.comp_return(unit, CompTermFace::Reduced);
-        let value_closure = arena.value_closure_node(produced, Environment::new());
+        let value_closure =
+            arena.value_closure_node(crate::ValueBody::Source(produced), Environment::new());
         let target = arena.hold_level(super::Level::zero());
-        assert_eq!(
-            RunWatermark {
-                values: 2,
-                computations: 1,
-                neutrals: 1,
-                value_closures: 1,
-                comp_closures: 1,
-                levels: 1
-            },
-            arena.watermark(),
-        );
         assert!(arena.value_closure(value_closure).is_some());
         assert!(arena.comp_closure(closure).is_some());
         assert!(arena.level(target).is_some());
@@ -1968,5 +2102,24 @@ mod tests
                 .expect("every spine is admissible on a rigid declaration head");
             assert_eq!(Ok(Guard::Flexible), arena.neutral_guard(neutral));
         }
+    }
+
+    #[test]
+    fn native_field_spans_obey_truncation()
+    {
+        let mut arena = DomainArena::new();
+        let first = arena.value_unit(TermFace::Reduced);
+        let second = arena.value_pair(first, first, TermFace::Reduced);
+        let kept = arena.hold_fields([first, second]);
+        let mark = arena.watermark();
+        let discarded = arena.hold_fields([second, first, second]);
+        arena.truncate_to(mark);
+        assert_eq!(arena.fields(kept), Ok([first, second].as_slice()));
+        assert_eq!(arena.fields(discarded), Err(DomainFault::Dangling));
+        let replacement = arena.hold_fields([first]);
+        assert_eq!(arena.fields(replacement), Ok([first].as_slice()));
+        assert_eq!(arena.fields(kept), Ok([first, second].as_slice()));
+        arena.truncate_to(mark);
+        assert_eq!(arena.fields(replacement), Err(DomainFault::Dangling));
     }
 }

@@ -289,7 +289,7 @@ impl Derivations
     ///   shared-comparison decision, while a deferred pair retains the children
     ///   in order; earlier decisions of the parent remain in both cases. Losing
     ///   the pair or its children changes which trace is emitted.
-    /// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
+    /// - witness: `machine::tests::native_records_cases_and_traces_agree`
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no derivation for `process`.
@@ -328,10 +328,11 @@ impl Derivations
     ///   followed by its children's derivations in order — except that an
     ///   agreeing decomposition whose pair the search-free steps settle equal
     ///   emits its ending as one [`ConversionDecision::ComparedShared`] on that
-    ///   pair after its own decisions. This is the reading a replay gives to a
-    ///   decision met at a decomposable goal it can close. A derivation shared
-    ///   by two parents is emitted under each. Nothing is emitted when not
-    ///   recording.
+    ///   pair after its own decisions. An uncollapsed agreeing decomposition
+    ///   emits a `Decompose` delimiter before its children, so a child's
+    ///   closing decision cannot be mistaken for the parent's. Shared
+    ///   derivations are emitted under each parent; inactive sinks receive
+    ///   none.
     /// - provides: the sequential trace the kernel replays. The predicate
     ///   checks inactivity, root resolution and observable decision counts; the
     ///   witnesses pin preorder and repeated children.
@@ -366,8 +367,8 @@ impl Derivations
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
     /// - witness: `machine::tests::recording_does_not_move_the_verdict`
     /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::native_records_cases_and_traces_agree`
     /// - witness: `machine::tests::derivations_emit_preorder_and_repeat_shared_children`
-    /// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
     /// - witness: `machine::tests::derivation_refusals_preserve_state_and_inactive_recording_is_empty`
     // economy: a derivation shared by two parents is emitted once per parent,
     // so a proof whose sharing is a deep DAG emits its expansion. The replay
@@ -430,7 +431,10 @@ impl Derivations
                         },
                         | Settlement::GuardedApart
                         | Settlement::StructurallyApart
-                        | Settlement::Deferred(_) => stack.extend(children.iter().rev()),
+                        | Settlement::Deferred(_) => {
+                            sink.record(ConversionDecision::Decompose);
+                            stack.extend(children.iter().rev());
+                        },
                     }
                 },
             }
@@ -452,11 +456,10 @@ impl Derivations
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the emission collapses equal value and computation pairs,
-///   retains a deferred pair’s children, and refuses a mixed-polarity or
-///   removed pair. Treating a deferral as equality or ignoring polarity changes
-///   the emitted trace or refusal.
-/// - witness: `machine::tests::derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes`
+/// - hypothesis: L3 — native value and computation comparisons emit traces
+///   accepted by independent kernel replay. Losing a decomposition delimiter or
+///   collapsing a deferred comparison changes that observable result.
+/// - witness: `machine::tests::native_records_cases_and_traces_agree`
 ///
 /// # Errors
 /// - [`ConversionFault::Polarity`] — a value met a computation.

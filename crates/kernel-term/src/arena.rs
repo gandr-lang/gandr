@@ -153,7 +153,7 @@ impl crate::decl::DeclarationContent
     /// - witness: `decl::tests::finishers_preserve_payloads_and_staged_graphs`
     /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
     #[spec(
-        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared } => declared.0 },
+        ensures: |ret| ret.0 == match *self { Self::Def { declared, .. } | Self::Axiom { declared } | Self::AbstractType { kind: declared } | Self::Data { kind: declared, .. } => declared.0 },
     )]
     #[inline]
     #[must_use]
@@ -162,6 +162,7 @@ impl crate::decl::DeclarationContent
         match *self {
             | Self::Def { declared, .. }
             | Self::Axiom { declared }
+            | Self::Data { kind: declared, .. }
             | Self::AbstractType { kind: declared } => declared,
         }
     }
@@ -800,6 +801,8 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match value {
+            Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
+            Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
             Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
@@ -849,6 +852,8 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match computation {
+            Computation::DataCase { scrutinee, motive, ref branches } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
+            Computation::RecordProjection(record, _) => self.value(record).is_some(),
             Computation::Lambda(body) => self.computation(body).is_some(),
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
             Computation::Return(value) | Computation::Force(value) | Computation::Absurd(value) => self.value(value).is_some(),
@@ -896,6 +901,8 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match value_type {
+            ValueType::Data { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()),
+            ValueType::Record(ref fields) => fields.values().all(|field| self.value_type(*field).is_some()),
             ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
@@ -2403,22 +2410,25 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[must_use]
     #[spec(ensures: |ret| match node {
-        AnyNode::Value(id) => match self.value(id) {
-            Some(&Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_))
-            | None => ret.is_empty(),
-            Some(&Value::PathEquiv { path_type, forward, backward, .. }) =>
+        AnyNode::Value(id) => self.value(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
+Value::Constructor { datatype, ref fields, .. } => ret.iter().copied().eq(core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))),
+Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::Value)),
+Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
-            Some(&Value::SessionPath { path_type, payload_paths, .. }) => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
-            Some(&Value::PathRefl(code)) => ret.as_slice() == [AnyNode::Value(code)],
-            Some(&Value::PathProduct(first, second) | &Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
+Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
+Value::PathRefl(code) => ret.as_slice() == [AnyNode::Value(code)],
+Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
-            Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) =>
+Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
-            Some(&Value::Thunk(body)) => ret.as_slice() == [AnyNode::Computation(body)],
-            Some(&Value::Quote(quoted)) => ret.as_slice() == [AnyNode::ValueType(quoted)],
-            Some(&Value::QuoteComputation(quoted)) => ret.as_slice() == [AnyNode::CompType(quoted)],
-        },
+Value::Thunk(body) => ret.as_slice() == [AnyNode::Computation(body)],
+Value::Quote(quoted) => ret.as_slice() == [AnyNode::ValueType(quoted)],
+Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)],
+}),
         AnyNode::Computation(id) => match self.computation(id) {
+            Some(&Computation::DataCase { scrutinee, motive, ref branches }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
+            Some(&Computation::RecordProjection(record, _)) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&Computation::Lambda(body)) => ret.as_slice() == [AnyNode::Computation(body)],
@@ -2435,18 +2445,18 @@ impl TermArena
                     AnyNode::Computation(on_right),
                 ],
         },
-        AnyNode::ValueType(id) => match self.value_type(id) {
-            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. } | &ValueType::Abstract(_))
-            | None => ret.is_empty(),
-            Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
-                | &ValueType::StaticPi { domain: first, codomain: second }) =>
+        AnyNode::ValueType(id) => self.value_type(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
+ValueType::Data { ref arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
+ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::ValueType)),
+ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => ret.is_empty(),
+ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
-            Some(&ValueType::Session { payloads, .. }) => ret.as_slice() == [AnyNode::ValueType(payloads)],
-            Some(&ValueType::PathUniverse(source, target)) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
-            Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
-            Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => ret.as_slice() == [AnyNode::ValueType(inner)],
-            Some(&ValueType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
-        },
+ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
+ValueType::PathUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
+ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
+ValueType::Lift { inner, .. } | ValueType::List(inner) => ret.as_slice() == [AnyNode::ValueType(inner)],
+ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
+}),
         AnyNode::CompType(id) => match self.comp_type(id) {
             None => ret.is_empty(),
             Some(&CompType::Returner(result)) => ret.as_slice() == [AnyNode::ValueType(result)],
@@ -2463,6 +2473,17 @@ impl TermArena
         let mut children: Vec<AnyNode> = Vec::new();
         match node {
             | AnyNode::Value(id) => match self.value(id) {
+                | Some(&Value::Constructor {
+                    datatype,
+                    ref fields,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(datatype));
+                    children.extend(fields.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&Value::Record(ref fields)) => {
+                    children.extend(fields.values().copied().map(AnyNode::Value));
+                },
                 | Some(
                     &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
                 )
@@ -2504,6 +2525,17 @@ impl TermArena
                 },
             },
             | AnyNode::Computation(id) => match self.computation(id) {
+                | Some(&Computation::DataCase {
+                    scrutinee,
+                    motive,
+                    ref branches,
+                }) => {
+                    children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
+                    children.extend(branches.iter().copied().map(AnyNode::Computation));
+                },
+                | Some(&Computation::RecordProjection(record, _)) => {
+                    children.push(AnyNode::Value(record));
+                },
                 | None => {},
                 | Some(&Computation::Transport(path, value)) => {
                     children.push(AnyNode::Value(path));
@@ -2536,6 +2568,12 @@ impl TermArena
                 },
             },
             | AnyNode::ValueType(id) => match self.value_type(id) {
+                | Some(&ValueType::Data { ref arguments, .. }) => {
+                    children.extend(arguments.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&ValueType::Record(ref fields)) => {
+                    children.extend(fields.values().copied().map(AnyNode::ValueType));
+                },
                 | Some(
                     &ValueType::Base(_)
                     | &ValueType::Unit
@@ -2583,6 +2621,104 @@ impl TermArena
             },
         }
         children
+    }
+}
+
+impl TermArena
+{
+    /// Mint a nominal datatype application without claiming formation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_data(
+        &mut self,
+        declaration: ConstantIndex,
+        arguments: Vec<ValueId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Data {
+            declaration,
+            arguments,
+        })
+    }
+
+    /// Mint a structural record classifier in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<crate::FieldLabel, ValueTypeId>,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Record(fields))
+    }
+
+    /// Mint a constructor without claiming its tag, arity or field types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_constructor(
+        &mut self,
+        datatype: ValueTypeId,
+        tag: crate::ConstructorTag,
+        fields: Vec<ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Constructor {
+            datatype,
+            tag,
+            fields,
+        })
+    }
+
+    /// Mint a record value in canonical label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_record(
+        &mut self,
+        fields: alloc::collections::BTreeMap<crate::FieldLabel, ValueId>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Record(fields))
+    }
+
+    /// Mint a case whose motive binds its scrutinee and branches bind fields.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: Vec<ComputationId>,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::DataCase {
+            scrutinee,
+            motive,
+            branches,
+        })
+    }
+
+    /// Mint a named record projection without claiming the field exists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_record_projection(
+        &mut self,
+        record: ValueId,
+        label: crate::FieldLabel,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RecordProjection(record, label))
     }
 }
 

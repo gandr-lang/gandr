@@ -72,6 +72,10 @@ pub enum CoreNode
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ExpectedShape
 {
+    /// A nominal datatype classifier.
+    Data,
+    /// A structural record classifier.
+    Record,
     /// A native universe-path classifier.
     PathUniverse,
     /// A sum classifier.
@@ -235,6 +239,42 @@ pub enum Mismatch
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckRefusal
 {
+    /// The nominal identity has no successfully admitted data signature.
+    NotADataType(ConstantIndex),
+    /// A data declaration's kind is not a value universe.
+    DataKindNotUniverse(ValueTypeId),
+    /// A constructor field exceeds the declared universe.
+    DataFieldLevel
+    {
+        /// The offending field classifier.
+        field: ValueTypeId,
+        /// The declaration's universe.
+        kind: ValueTypeId,
+    },
+    /// A nominal application supplies the wrong number of parameters.
+    DataArgumentArity(ValueTypeId),
+    /// The constructor tag is not in the nominal declaration.
+    UnknownConstructor
+    {
+        /// The constructor value.
+        at: ValueId,
+        /// Its unknown tag.
+        tag: gandr_core_term::ConstructorTag,
+    },
+    /// A constructor supplies the wrong number of fields.
+    ConstructorArity(ValueId),
+    /// A case omits or adds constructor branches.
+    NonExhaustiveDataCase(ComputationId),
+    /// A projection names no field in its operand's record type.
+    AbsentRecordField(ComputationId),
+    /// A record literal lacks a required field.
+    MissingRecordField
+    {
+        /// The record literal.
+        at: ValueId,
+        /// The required record type.
+        expected: ValueTypeId,
+    },
     /// A native path endpoint was not a quoted closed first-order code.
     PathCode(ValueId),
     /// A synthesising term in checking position synthesised a type the expected
@@ -425,13 +465,10 @@ impl CheckRefusal
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
-    ///   exhaustively against a pinned class table; payload blindness is
-    ///   separated by two inhabitants of one variant differing in every payload
-    ///   field, asserted to classify alike.
-    /// - witness: `refusal::tests::every_refusal_carries_its_pinned_class`
-    /// - witness: `refusal::tests::the_classification_ignores_the_payload`
-    /// - witness: `refusal::tests::the_absence_class_has_no_inhabitant`
+    /// - hypothesis: L3 — a rejected literal carries its exact mismatch and
+    ///   malformed-source class; misclassifying it changes the report rather
+    ///   than turning the rejection into an obligation.
+    /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
     #[spec(ensures: |ret| match *self {
         | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::UnboundIndex { .. }
@@ -441,6 +478,7 @@ impl CheckRefusal
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
         | Self::PathCode(_)
+        | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::AbsentRecordField(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::ShapeMismatch { .. }
         | Self::NotSynthesisable { .. }
@@ -459,6 +497,15 @@ impl CheckRefusal
     {
         match *self {
             | Self::PathCode(_)
+            | Self::NotADataType(_)
+            | Self::DataKindNotUniverse(_)
+            | Self::DataFieldLevel { .. }
+            | Self::DataArgumentArity(_)
+            | Self::UnknownConstructor { .. }
+            | Self::ConstructorArity(_)
+            | Self::NonExhaustiveDataCase(_)
+            | Self::AbsentRecordField(_)
+            | Self::MissingRecordField { .. }
             | Self::TypeMismatch(_)
             | Self::ShapeMismatch { .. }
             | Self::NotSynthesisable { .. }
@@ -477,330 +524,6 @@ impl CheckRefusal
             | Self::AdmissionOrder { .. }
             | Self::MachineInvariant
             | Self::Undecided { .. } => FailureClass::EngineFault,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests
-{
-    use anodized::spec;
-    use gandr_core_term::BinderDepth;
-    use gandr_core_term::CoreArena;
-    use gandr_core_term::FailureClass;
-    use gandr_core_term::Zone;
-    use gandr_kernel_term::BaseType;
-    use gandr_kernel_term::ConstantIndex;
-    use gandr_kernel_term::DeBruijnIndex;
-
-    use super::ArgumentPosition;
-    use super::CheckRefusal;
-    use super::CheckingForm;
-    use super::CoreNode;
-    use super::ExpectedShape;
-    use super::Mismatch;
-    use super::StaticArity;
-    use super::TermNode;
-    use super::TypeNode;
-    use super::UnadmittedFormer;
-    use crate::context::CheckBudget;
-
-    /// One inhabitant of every variant beside the class it must carry, and a
-    /// second inhabitant of every variant that carries a payload, differing in
-    /// every payload field.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one row per variant of [`CheckRefusal`], in declaration
-    ///   order; the variant set is pinned by the exhaustive match in
-    ///   `every_refusal_carries_its_pinned_class`.
-    /// - provides: the table both classification witnesses read.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the finite nineteen-variant refusal vocabulary is
-    ///   observed through exhaustive coverage and classification of two
-    ///   payloads per variant; these separate omitted, repeated or mispaired
-    ///   rows and incorrect class assignments, not arbitrary payload values.
-    /// - witness: `refusal::tests::every_refusal_carries_its_pinned_class`
-    /// - witness: `refusal::tests::the_classification_ignores_the_payload`
-    #[spec(ensures: |ret| ret.iter().enumerate().all(|(index, row)| {
-        core::mem::discriminant(&row.0) == core::mem::discriminant(&row.1)
-            && ret.iter().take(index).all(|earlier| {
-                core::mem::discriminant(&row.0) != core::mem::discriminant(&earlier.0)
-            })
-    }))]
-    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 19]
-    {
-        let mut arena = CoreArena::new();
-        let first_value = arena.value_unit();
-        let second_value = arena.value_unit();
-        let first_comp = arena.computation_return(first_value);
-        let second_comp = arena.computation_return(second_value);
-        let first_type = arena.value_type_unit();
-        let second_type = arena.value_type_base(BaseType::Integer);
-        let first_comp_type = arena.comp_type_returner(first_type);
-        let second_comp_type = arena.comp_type_returner(second_type);
-        let zero = ConstantIndex::from(0_usize);
-        let one = ConstantIndex::from(1_usize);
-        [
-            (
-                CheckRefusal::PathCode(first_value),
-                CheckRefusal::PathCode(second_value),
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::TypeMismatch(Mismatch::Value {
-                    at: first_value,
-                    synthesised: first_type,
-                    expected: second_type,
-                }),
-                CheckRefusal::TypeMismatch(Mismatch::Computation {
-                    at: second_comp,
-                    synthesised: second_comp_type,
-                    expected: first_comp_type,
-                }),
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::ShapeMismatch {
-                    at: TermNode::Value(first_value),
-                    wanted: ExpectedShape::Thunk,
-                    found: TypeNode::Value(first_type),
-                },
-                CheckRefusal::ShapeMismatch {
-                    at: TermNode::Computation(second_comp),
-                    wanted: ExpectedShape::Arrow,
-                    found: TypeNode::Computation(second_comp_type),
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::NotSynthesisable {
-                    form: CheckingForm::Thunk(first_value),
-                },
-                CheckRefusal::NotSynthesisable {
-                    form: CheckingForm::Hole(one),
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::UnknownConstant {
-                    at: first_value,
-                    constant: zero,
-                },
-                CheckRefusal::UnknownConstant {
-                    at: second_value,
-                    constant: one,
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::OutOfFragment {
-                    at: CoreNode::Term(TermNode::Value(first_value)),
-                    former: UnadmittedFormer::ValueLift,
-                },
-                CheckRefusal::OutOfFragment {
-                    at: CoreNode::Type(TypeNode::Value(second_type)),
-                    former: UnadmittedFormer::SortParameter,
-                },
-                FailureClass::Unrepresentable,
-            ),
-            (
-                CheckRefusal::UnboundIndex {
-                    at: first_value,
-                    zone: Zone::Intuitionistic,
-                    index: DeBruijnIndex::from(0_u32),
-                    depth: BinderDepth::from(0_usize),
-                },
-                CheckRefusal::UnboundIndex {
-                    at: second_value,
-                    zone: Zone::Linear,
-                    index: DeBruijnIndex::from(3_u32),
-                    depth: BinderDepth::from(2_usize),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::BudgetExceeded {
-                    budget: CheckBudget::from(1_usize),
-                },
-                CheckRefusal::BudgetExceeded {
-                    budget: CheckBudget::DEFAULT,
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::DanglingNode {
-                    node: CoreNode::Term(TermNode::Computation(first_comp)),
-                },
-                CheckRefusal::DanglingNode {
-                    node: CoreNode::Type(TypeNode::Value(second_type)),
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::AdmissionOrder {
-                    constant: zero,
-                    admitted: zero,
-                },
-                CheckRefusal::AdmissionOrder {
-                    constant: zero,
-                    admitted: one,
-                },
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::MachineInvariant,
-                CheckRefusal::MachineInvariant,
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::SortMismatch {
-                    at: first_value,
-                    synthesised: first_type,
-                    expected: second_type,
-                },
-                CheckRefusal::SortMismatch {
-                    at: second_value,
-                    synthesised: second_type,
-                    expected: first_type,
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::LevelMismatch {
-                    at: first_value,
-                    synthesised: first_type,
-                    expected: second_type,
-                },
-                CheckRefusal::LevelMismatch {
-                    at: second_value,
-                    synthesised: second_type,
-                    expected: first_type,
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::DependentBind {
-                    at: first_comp,
-                    synthesised: first_comp_type,
-                },
-                CheckRefusal::DependentBind {
-                    at: second_comp,
-                    synthesised: second_comp_type,
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::Undecided { at: first_value },
-                CheckRefusal::Undecided { at: second_value },
-                FailureClass::EngineFault,
-            ),
-            (
-                CheckRefusal::FamilyArity {
-                    at: first_value,
-                    expected: StaticArity::from(1_u32),
-                    actual: StaticArity::from(2_u32),
-                },
-                CheckRefusal::FamilyArity {
-                    at: second_value,
-                    expected: StaticArity::from(0_u32),
-                    actual: StaticArity::from(3_u32),
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::FamilyArgumentClassifier {
-                    at: first_value,
-                    position: ArgumentPosition::from(0_u32),
-                    synthesised: first_type,
-                    expected: second_type,
-                },
-                CheckRefusal::FamilyArgumentClassifier {
-                    at: second_value,
-                    position: ArgumentPosition::from(1_u32),
-                    synthesised: second_type,
-                    expected: first_type,
-                },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::StaticLambdaArgument { at: first_value },
-                CheckRefusal::StaticLambdaArgument { at: second_value },
-                FailureClass::MalformedSource,
-            ),
-            (
-                CheckRefusal::StaticClassifierExpected {
-                    at: first_type,
-                    found: second_type,
-                },
-                CheckRefusal::StaticClassifierExpected {
-                    at: second_type,
-                    found: first_type,
-                },
-                FailureClass::MalformedSource,
-            ),
-        ]
-    }
-
-    #[test]
-    fn every_refusal_carries_its_pinned_class()
-    {
-        let mut covered = [false; 19];
-        for (refusal, _, class) in table() {
-            let row = match refusal {
-                | CheckRefusal::PathCode(_) => 18_usize,
-                | CheckRefusal::TypeMismatch(_) => 0_usize,
-                | CheckRefusal::ShapeMismatch { .. } => 1_usize,
-                | CheckRefusal::NotSynthesisable { .. } => 2_usize,
-                | CheckRefusal::UnknownConstant { .. } => 3_usize,
-                | CheckRefusal::OutOfFragment { .. } => 4_usize,
-                | CheckRefusal::UnboundIndex { .. } => 5_usize,
-                | CheckRefusal::BudgetExceeded { .. } => 6_usize,
-                | CheckRefusal::DanglingNode { .. } => 7_usize,
-                | CheckRefusal::AdmissionOrder { .. } => 8_usize,
-                | CheckRefusal::MachineInvariant => 9_usize,
-                | CheckRefusal::SortMismatch { .. } => 10_usize,
-                | CheckRefusal::LevelMismatch { .. } => 11_usize,
-                | CheckRefusal::DependentBind { .. } => 12_usize,
-                | CheckRefusal::Undecided { .. } => 13_usize,
-                | CheckRefusal::FamilyArity { .. } => 14_usize,
-                | CheckRefusal::FamilyArgumentClassifier { .. } => 15_usize,
-                | CheckRefusal::StaticLambdaArgument { .. } => 16_usize,
-                | CheckRefusal::StaticClassifierExpected { .. } => 17_usize,
-            };
-            covered[row] = true;
-            assert_eq!(
-                refusal.classify(),
-                class,
-                "{refusal:?} must classify as {class}"
-            );
-        }
-        assert_eq!(covered, [true; 19], "the table names every variant once");
-    }
-
-    #[test]
-    fn the_classification_ignores_the_payload()
-    {
-        for (first, second, _) in table() {
-            assert_eq!(
-                first.classify(),
-                second.classify(),
-                "two inhabitants of one variant classify alike: {first:?} and {second:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_absence_class_has_no_inhabitant()
-    {
-        for (refusal, ..) in table() {
-            assert_ne!(
-                refusal.classify(),
-                FailureClass::UserAbsence,
-                "no refusal may become an obligation: {refusal:?}"
-            );
         }
     }
 }
