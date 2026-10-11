@@ -13,6 +13,7 @@ use core::fmt;
 
 use anodized::spec;
 use lookup::Lookup;
+use lookup::Position;
 use lookup::Probe;
 use lookup::hash_of;
 use quenchant_shape::shape::Maybe;
@@ -39,6 +40,23 @@ coordinate!(
     "A finite natural numeral used by the staging experiment."
 );
 coordinate!(Budget, "Remaining work units for a staging walk.");
+
+/// An arena prefix: the first term and the first classifier coordinate past
+/// it, read by [`Arena::extent`].
+///
+/// # Specification
+/// - provides: the floor a snapshot is truncated back to and the boundary above
+///   which a segment's own allocations sit.
+/// - panics: none.
+/// - executable: none — a pair of coordinates with derived equality.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Extent
+{
+    /// The first term coordinate past the prefix: the prefix's term count.
+    pub terms: TermId,
+    /// The first classifier coordinate past the prefix: its classifier count.
+    pub types: TypeId,
+}
 
 /// The outer framework and one indexed inner universe.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -454,6 +472,114 @@ impl Arena
                 Ok(id)
             },
         }
+    }
+
+    /// The arena's current prefix: its term and classifier counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn extent(&self) -> Extent
+    {
+        Extent {
+            terms: TermId(self.terms.len()),
+            types: TypeId(self.types.len()),
+        }
+    }
+
+    /// The terms allocated above `floor`, in allocation order.
+    ///
+    /// # Specification
+    /// - ensures: the `i`th entry is the term at coordinate `floor.terms + i`;
+    ///   empty when `floor` covers the whole arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prefix, a segment above it and a floor past the
+    ///   arena's end distinguish an off-by-one slice from the allocations above
+    ///   the floor.
+    /// - witness: `stage::tests::truncation_restores_the_prefix`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| output.len() == self.terms.len().saturating_sub(floor.terms.0)
+        && output.iter().enumerate().all(|(offset, term)|
+            self.terms.get(floor.terms.0.saturating_add(offset)) == Some(term)))]
+    pub fn terms_above(
+        &self,
+        floor: Extent,
+    ) -> &[Term]
+    {
+        self.terms.get(floor.terms.0 ..).unwrap_or_default()
+    }
+
+    /// The classifiers allocated above `floor`, in allocation order.
+    ///
+    /// # Specification
+    /// - ensures: the `i`th entry is the classifier `i` coordinates past
+    ///   `floor.types`; empty when `floor` covers the whole arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prefix, a segment above it and a floor past the
+    ///   arena's end distinguish an off-by-one slice from the allocations above
+    ///   the floor.
+    /// - witness: `stage::tests::truncation_restores_the_prefix`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |output| output.len() == self.types.len().saturating_sub(floor.types.0)
+        && output.iter().enumerate().all(|(offset, ty)|
+            self.types.get(floor.types.0.saturating_add(offset)) == Some(ty)))]
+    pub fn types_above(
+        &self,
+        floor: Extent,
+    ) -> &[Type]
+    {
+        self.types.get(floor.types.0 ..).unwrap_or_default()
+    }
+
+    /// Drop every term and classifier at or above `floor`, with their lookup
+    /// entries, so one arena serves as the snapshot of a prefix again and
+    /// again.
+    ///
+    /// # Specification
+    /// - requires: `floor` was read from this arena by [`extent`](Self::extent)
+    ///   and nothing below it was truncated since, so no term below
+    ///   `floor.terms` names a classifier at or above `floor.types`.
+    /// - ensures: the extent is `floor`, clamped to the current one; every
+    ///   coordinate below it keeps its descriptor, and [`find`](Self::find) and
+    ///   both allocators answer exactly as they did when `floor` was read, so
+    ///   an allocation sequence replayed after truncation mints the coordinates
+    ///   it minted the first time.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a segment holding new terms, new classifiers,
+    ///   repeated allocations and colliding lookup entries is truncated and
+    ///   reallocated: a lost or stale lookup entry changes a later coordinate
+    ///   or a [`find`](Self::find) answer, and a floor past the end changes the
+    ///   clamped extent.
+    /// - witness: `stage::tests::truncation_restores_the_prefix`
+    /// - witness: `stage::lookup::tests::removal_keeps_every_other_position`
+    #[inline]
+    #[spec(captures: before = self.extent(),
+        ensures: self.terms.len() == floor.terms.0.min(before.terms.0)
+            && self.types.len() == floor.types.0.min(before.types.0))]
+    pub fn truncate_to(
+        &mut self,
+        floor: Extent,
+    )
+    {
+        let terms = floor.terms.0.min(self.terms.len());
+        for (position, term) in self.terms.iter().enumerate().skip(terms) {
+            self.term_ids.remove(hash_of(term), Position(position));
+        }
+        self.terms.truncate(terms);
+        let types = floor.types.0.min(self.types.len());
+        for (position, ty) in self.types.iter().enumerate().skip(types) {
+            self.type_ids.remove(hash_of(ty), Position(position));
+        }
+        self.types.truncate(types);
     }
 }
 
@@ -1081,5 +1207,86 @@ mod tests
                 }
             }
         }
+    }
+
+    /// Allocate one fixed segment over `zero` and `outer`: new classifiers,
+    /// enough new terms to grow the lookup past its first capacities, terms
+    /// over each other and a repeated allocation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn segment(
+        arena: &mut Arena,
+        zero: TermId,
+        outer: TypeId,
+    ) -> (Vec<TermId>, Vec<TypeId>)
+    {
+        let arrow = arena.alloc_type(Type::Arrow(outer, outer)).unwrap();
+        let lift = arena.alloc_type(Type::Lift(arrow)).unwrap();
+        let mut terms = Vec::new();
+        for value in 1 .. 40 {
+            let numeral = arena
+                .alloc(Term::Natural(Stage::Outer, Natural(value)))
+                .unwrap();
+            terms.push(numeral);
+            terms.push(arena.alloc(Term::Multiply(zero, numeral)).unwrap());
+            terms.push(arena.alloc(Term::Lambda(arrow, numeral)).unwrap());
+        }
+        terms.push(arena.alloc(Term::Code(lift)).unwrap());
+        terms.push(arena.alloc(Term::Multiply(zero, terms[0])).unwrap());
+        (terms, Vec::from([arrow, lift]))
+    }
+
+    #[test]
+    fn truncation_restores_the_prefix()
+    {
+        let mut arena = Arena::default();
+        let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+        let zero = arena
+            .alloc(Term::Natural(Stage::Outer, Natural(0)))
+            .unwrap();
+        let floor = arena.extent();
+        let mut pristine = arena.clone();
+        let first = segment(&mut arena, zero, outer);
+        let grown = arena.extent();
+        let above = arena.terms_above(floor).to_vec();
+        assert_eq!(
+            above.len(),
+            grown.terms.0.checked_sub(floor.terms.0).unwrap()
+        );
+        for (offset, term) in above.iter().enumerate() {
+            let id = TermId(floor.terms.0.checked_add(offset).unwrap());
+            assert_eq!(arena.term(id), Ok(*term));
+        }
+        assert_eq!(arena.types_above(floor), [
+            Type::Arrow(outer, outer),
+            Type::Lift(first.1[0])
+        ]);
+        arena.truncate_to(floor);
+        assert_eq!(arena.extent(), floor);
+        assert!(arena.terms_above(floor).is_empty());
+        assert!(arena.types_above(floor).is_empty());
+        for term in &above {
+            assert_eq!(
+                arena.find(term),
+                Maybe::Absent(interned::Absent::Uninterned)
+            );
+        }
+        assert_eq!(
+            arena.find(&Term::Natural(Stage::Outer, Natural(0))),
+            Maybe::Present(zero)
+        );
+        assert_eq!(arena.alloc_type(Type::Nat(Stage::Outer)), Ok(outer));
+        assert_eq!(segment(&mut arena, zero, outer), first);
+        assert_eq!(arena.extent(), grown);
+        assert_eq!(segment(&mut pristine, zero, outer), first);
+        let past = Extent {
+            terms: TermId(usize::MAX),
+            types: TypeId(usize::MAX),
+        };
+        assert!(arena.terms_above(past).is_empty());
+        assert!(arena.types_above(past).is_empty());
+        arena.truncate_to(past);
+        assert_eq!(arena.extent(), grown);
     }
 }
