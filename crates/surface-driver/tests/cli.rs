@@ -561,6 +561,43 @@ mod cli
     }
 
     #[test]
+    fn every_width_stages_the_serial_run()
+    {
+        let at = |jobs: &[&str], environment: Option<&str>| {
+            let mut command = gandr(&["stage", "pow:0..8", "double:0..8", "pow:0..4"]);
+            command.args(jobs);
+            match environment {
+                | Some(threads) => command.env("GANDR_JOBS", threads),
+                | None => command.env_remove("GANDR_JOBS"),
+            };
+            ran(command)
+        };
+        let serial = at(&["--jobs", "1"], None);
+        assert_eq!(code(&serial), Code(0_i32), "{}", stderr(&serial));
+        let printed = stdout(&serial);
+        let lines: Vec<&str> = printed.lines().collect();
+        assert_eq!(lines.len(), 5, "{printed}");
+        assert!(lines[0].starts_with("pow:0..8: 9 of 9 certificates readmitted; "));
+        assert!(lines[1].starts_with("double:0..8: 18 of 18 certificates readmitted; "));
+        assert!(lines[2].starts_with("pow:0..4: 5 of 5 certificates readmitted; "));
+        assert!(lines[3].strip_prefix("digest: ").is_some_and(
+            |digest| digest.len() == 16 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+        ));
+        assert_eq!(lines[4], "verdict: readmitted");
+        for (label, wider) in [
+            ("--jobs 4", at(&["--jobs", "4"], None)),
+            ("GANDR_JOBS=3", at(&[], Some("3"))),
+            ("the host's width", at(&[], None)),
+        ] {
+            assert_eq!(
+                (code(&wider), stdout(&wider), stderr(&wider)),
+                (code(&serial), stdout(&serial), stderr(&serial)),
+                "{label} prints the serial run"
+            );
+        }
+    }
+
+    #[test]
     fn a_malformed_invocation_exits_two()
     {
         for arguments in [
@@ -569,6 +606,10 @@ mod cli
             &["frobnicate"],
             &["check", "--unknown", "a.gandr"],
             &["check", "--jobs", "0", "a.gandr"],
+            &["stage"],
+            &["stage", "triple:0..4"],
+            &["stage", "pow:5..4"],
+            &["stage", "double:0"],
         ] {
             let output = ran(gandr(arguments));
             assert_eq!(code(&output), Code(2_i32), "{arguments:?}");

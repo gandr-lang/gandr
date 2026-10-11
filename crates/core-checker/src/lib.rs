@@ -173,6 +173,7 @@ mod coverage;
 mod declaration;
 #[cfg(test)]
 mod fixture;
+pub mod fork;
 mod formation;
 mod former;
 mod judgement;
@@ -180,6 +181,7 @@ mod ledger;
 mod module;
 mod refusal;
 pub mod stage;
+pub mod staging;
 mod support;
 pub mod template;
 mod view;

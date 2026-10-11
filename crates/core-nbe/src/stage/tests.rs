@@ -139,6 +139,76 @@ fn power_residualizes()
 }
 
 #[test]
+fn double_residualizes()
+{
+    let mut arena = Arena::default();
+    let model = Model(0);
+    let token = arena.alloc_type(Type::In(model)).unwrap();
+    let program = double(&mut arena, model).unwrap();
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(model))).unwrap();
+    let lifted = arena.alloc_type(Type::Lift(inner)).unwrap();
+    let meta_function = arena.alloc_type(Type::Arrow(lifted, lifted)).unwrap();
+    let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+    let signature = arena.alloc_type(Type::Arrow(outer, meta_function)).unwrap();
+    assert_eq!(
+        infer(&mut arena, &[token], program, &mut Budget(100_000)),
+        Ok(signature)
+    );
+    assert_ne!(
+        program,
+        power(&mut arena, model).unwrap(),
+        "a different program from the power"
+    );
+    for exponent in 0_u32 ..= 6 {
+        for input in [2_usize, 3] {
+            let numeral = arena
+                .alloc(Term::Natural(
+                    Stage::Outer,
+                    Natural(exponent.try_into().unwrap()),
+                ))
+                .unwrap();
+            let source = arena.alloc(Term::Apply(program, numeral)).unwrap();
+            let quoted = arena
+                .alloc(Term::Natural(Stage::Inner(model), Natural(input)))
+                .unwrap();
+            let quoted = arena.alloc(Term::Quote(quoted)).unwrap();
+            let source = arena.alloc(Term::Apply(source, quoted)).unwrap();
+            let certificate = normalize(&mut arena, source, &mut Budget(1_000_000)).unwrap();
+            assert_eq!(
+                replay(&mut arena, &[token], &certificate, &mut Budget(1_000_000)),
+                Ok(lifted)
+            );
+            let Term::Quote(residual) = arena.term(certificate.target).unwrap()
+            else {
+                panic!("quoted residual");
+            };
+            let mut tasks = Vec::from([(residual, false)]);
+            let mut values = Vec::new();
+            let mut multiplications = 0_u32;
+            while let Some((term, ready)) = tasks.pop() {
+                match arena.term(term).unwrap() {
+                    | Term::Natural(Stage::Inner(Model(0)), Natural(value)) => values.push(value),
+                    | Term::Multiply(left, right) if !ready => {
+                        tasks.push((term, true));
+                        tasks.push((right, false));
+                        tasks.push((left, false));
+                    },
+                    | Term::Multiply(..) => {
+                        multiplications += 1;
+                        let right = values.pop().unwrap();
+                        let left = values.pop().unwrap();
+                        values.push(left.checked_mul(right).unwrap());
+                    },
+                    | other => panic!("non-first-order residual: {other:?}"),
+                }
+            }
+            assert_eq!(multiplications, 2 * exponent);
+            assert_eq!(values, [input.pow(2 * exponent)]);
+        }
+    }
+}
+
+#[test]
 fn object_computations_remain_residual()
 {
     let mut arena = Arena::default();

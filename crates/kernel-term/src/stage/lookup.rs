@@ -32,6 +32,11 @@ pub(super) struct DescriptorHash(u32);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SlotIndex(usize);
 
+/// A dense position among the entries a table indexes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Position(pub usize);
+
 /// One slot: a dense position and the hash of the descriptor stored there.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Slot
@@ -395,6 +400,69 @@ impl Lookup
             }
         }
     }
+
+    /// Forget `position`, recorded under `hash`, closing its probe gap by
+    /// shifting later entries of the same run backward.
+    ///
+    /// # Specification
+    /// - requires: when recorded, `position` was recorded under `hash`.
+    /// - ensures: no slot records `position`; one fewer entry is counted when
+    ///   one did; every other recorded position stays where its probe sequence
+    ///   reaches it, so a probe for its descriptor still finds it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — removing the head, the middle and the wrapped tail of
+    ///   one colliding run, then probing every survivor, distinguishes a hole
+    ///   left open, an entry shifted past its home and a removal that forgets
+    ///   the wrong position.
+    /// - witness: `stage::lookup::tests::removal_keeps_every_other_position`
+    #[inline]
+    #[spec(captures: [before = self.len, recorded = self.slots.iter().any(|slot|
+            u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))],
+        ensures: self.slots.iter().all(|slot|
+                u32::try_from(position.0) != Ok(slot.position))
+            && self.len == if recorded { before.saturating_sub(1) } else { before })]
+    pub(super) fn remove(
+        &mut self,
+        hash: DescriptorHash,
+        position: Position,
+    )
+    {
+        let Ok(position) = u32::try_from(position.0)
+        else {
+            return;
+        };
+        let mask = self.slots.len().saturating_sub(1);
+        let mut hole = self.home(hash);
+        loop {
+            match self.slots.get(hole.0) {
+                | Some(stored) if stored.position == position => break,
+                | Some(stored) if stored.position != VACANT => hole = self.next(hole),
+                | Some(_) | None => return,
+            }
+        }
+        let mut next = self.next(hole);
+        while let Some(stored) = self.slots.get(next.0).copied() {
+            if stored.position == VACANT {
+                break;
+            }
+            // `stored` may fill the hole only if the hole lies on its probe
+            // path: no farther from its home than its current slot.
+            let home = self.home(stored.hash);
+            if next.0.wrapping_sub(home.0) & mask >= next.0.wrapping_sub(hole.0) & mask {
+                if let Some(target) = self.slots.get_mut(hole.0) {
+                    *target = stored;
+                }
+                hole = next;
+            }
+            next = self.next(next);
+        }
+        if let Some(target) = self.slots.get_mut(hole.0) {
+            *target = Slot::EMPTY;
+        }
+        self.len = self.len.saturating_sub(1);
+    }
 }
 
 #[cfg(test)]
@@ -502,5 +570,46 @@ mod tests
         assert_eq!(lookup.len, 0);
         assert_eq!(lookup.insert(slot, hash, &full[1 ..]), Ok(()));
         assert_eq!(lookup.len, 1);
+    }
+
+    #[test]
+    fn removal_keeps_every_other_position()
+    {
+        let mut lookup = Lookup::default();
+        let mut entries = Vec::new();
+        // One run of colliding entries homed in the table's last slot, so the
+        // run wraps past slot zero, then a few entries of their own.
+        let last = DescriptorHash(u32::try_from(MINIMUM).unwrap().checked_sub(1).unwrap());
+        let hashes: Vec<DescriptorHash> = core::iter::repeat_n(last, 6)
+            .chain((0 .. 2).map(DescriptorHash))
+            .collect();
+        for (key, hash) in hashes.iter().enumerate() {
+            let key = Key(u64::try_from(key).unwrap());
+            intern(&mut lookup, &mut entries, *hash, key);
+        }
+        assert_eq!(lookup.slots.len(), MINIMUM);
+        let mut live: Vec<usize> = (0 .. hashes.len()).collect();
+        for removed in [0_usize, 3, 5, 6] {
+            lookup.remove(hashes[removed], Position(removed));
+            live.retain(|position| *position != removed);
+            assert_eq!(lookup.len, live.len());
+            for &position in &live {
+                assert_eq!(
+                    lookup.probe(hashes[position], &entries, &entries[position]),
+                    Probe::Found(position),
+                    "position {position} survives the removal of {removed}"
+                );
+            }
+            assert!(matches!(
+                lookup.probe(hashes[removed], &entries, &entries[removed]),
+                Probe::Vacant(_)
+            ));
+        }
+        lookup.remove(hashes[3], Position(3));
+        assert_eq!(
+            lookup.len,
+            live.len(),
+            "removing a forgotten position is a no-op"
+        );
     }
 }

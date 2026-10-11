@@ -1,5 +1,8 @@
 //! Gate clauses over staging equations and complete producer certificates.
 
+use alloc::format;
+use alloc::string::String;
+
 use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_core::admission::Refusal;
 use gandr_kernel_term::stage::Index;
@@ -1780,6 +1783,103 @@ fn normalized(edition: Edition) -> (Arena, Vec<Certificate>)
     }
     (arena, certificates)
 }
+
+/// Group a program's concatenated equations at once, by rule and the
+/// constructors of each source and its children: the one-pass harvest the
+/// per-certificate grouping must agree with.
+///
+/// # Specification
+/// - ensures: families in first-occurrence order, members in producer order.
+/// - panics: a step whose sides the arena does not hold.
+/// - executable: none — an oracle; the witness compares it with the grouping
+///   under test.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an independent oracle; the harvest under test shares no
+///   code with it.
+/// - witness: `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`
+fn grouped_at_once(
+    arena: &Arena,
+    certificates: &[Certificate],
+) -> Vec<Vec<Step>>
+{
+    let mut keys: Vec<(Rule, Vec<core::mem::Discriminant<Term>>)> = Vec::new();
+    let mut families: Vec<Vec<Step>> = Vec::new();
+    for step in certificates
+        .iter()
+        .flat_map(|certificate| &certificate.steps)
+    {
+        let source = arena.term(step.source).unwrap();
+        let mut tags = Vec::from([core::mem::discriminant(&source)]);
+        for child in source.children().into_iter().flatten() {
+            tags.push(core::mem::discriminant(&arena.term(child).unwrap()));
+        }
+        let key = (step.rule, tags);
+        match keys.iter().position(|known| *known == key) {
+            | Some(family) => families[family].push(*step),
+            | None => {
+                keys.push(key);
+                families.push(Vec::from([*step]));
+            },
+        }
+    }
+    families
+}
+
+#[test]
+fn grouping_by_certificate_keeps_first_occurrence_and_member_order()
+{
+    for edition in [
+        POWER_TO_EIGHT,
+        DOUBLE_TO_EIGHT,
+        staged(Body::Triple, Natural(0), Natural(5), TWO_THREE),
+    ] {
+        let (arena, certificates) = normalized(edition);
+        let families = harvest(&arena, ProgramId(3), &certificates).unwrap();
+        let oracle = grouped_at_once(&arena, &certificates);
+        // A key absent from the first certificate opens its family later.
+        let first = harvest(&arena, ProgramId(3), &certificates[.. 1]).unwrap();
+        assert!(first.len() < families.len());
+        assert_eq!(
+            families
+                .iter()
+                .map(|family| family.members.clone())
+                .collect::<Vec<_>>(),
+            oracle
+        );
+        assert!(families.iter().all(|family| family.program == ProgramId(3)));
+        for (index, family) in families.iter().enumerate() {
+            assert!(
+                families
+                    .iter()
+                    .skip(index)
+                    .skip(1)
+                    .all(|later| later.key() != family.key())
+            );
+        }
+    }
+    let (arena, certificates) = normalized(DOUBLE_TO_EIGHT);
+    let last = certificates.last().unwrap();
+    let grouping = Grouping::of(&arena, last).unwrap();
+    let mut joined = Harvest::new(ProgramId(0));
+    joined.join(&grouping, &last.steps).unwrap();
+    let before = joined.clone().finish();
+    assert_eq!(
+        joined.join(&grouping, &last.steps[1 ..]),
+        Err(StageError::Unbalanced)
+    );
+    let after = joined.finish();
+    assert_eq!(
+        after
+            .iter()
+            .map(|family| family.members.clone())
+            .collect::<Vec<_>>(),
+        before
+            .iter()
+            .map(|family| family.members.clone())
+            .collect::<Vec<_>>()
+    );
+}
 #[test]
 fn staged_families_keep_their_verdicts_under_the_probe()
 {
@@ -2114,15 +2214,19 @@ fn drafts_refuse_what_a_fresh_run_would_generalize_differently()
 /// An edit trace: programs normalized in order, one memo carried through.
 type Trace = Vec<Edition>;
 
-#[test]
-fn drafts_equal_fresh_runs_across_the_edit_traces()
+/// The edit-pair corpus: exponents and inputs widened, bodies edited, and
+/// programs alternated, each trace carried through one memo.
+///
+/// # Specification
+/// trivial.
+fn edit_traces() -> Vec<Trace>
 {
     let n = Natural;
     let generated = |members, arms| Edition::Generated {
         members: Members(members),
         arms: Arms(arms),
     };
-    let traces: Vec<Trace> = Vec::from([
+    Vec::from([
         (1 ..= 4)
             .map(|k| staged(Body::Power, n(k), n(k), &[]))
             .collect(),
@@ -2169,7 +2273,151 @@ fn drafts_equal_fresh_runs_across_the_edit_traces()
             generated(64, 8),
         ]),
         Vec::from([POWER_TO_EIGHT, DOUBLE_TO_EIGHT, POWER_TO_EIGHT]),
-    ]);
+    ])
+}
+
+/// A fork that runs items last to first, each from a state of its own, and
+/// the right half before the left: every worker a stranger to the others.
+struct Scrambled;
+
+impl crate::fork::Fork for Scrambled
+{
+    /// Every item from a fresh state, last first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn each<Item, State, Start, Job>(
+        &self,
+        items: &mut [Item],
+        start: Start,
+        job: Job,
+    ) where
+        Item: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+    {
+        for item in items.iter_mut().rev() {
+            job(&mut start(), item);
+        }
+    }
+
+    /// The right half, then the left.
+    ///
+    /// # Specification
+    /// trivial.
+    fn join<Left, Right, LeftOutput, RightOutput>(
+        &self,
+        left: Left,
+        right: Right,
+    ) -> (LeftOutput, RightOutput)
+    where
+        Left: FnOnce() -> LeftOutput + Send,
+        Right: FnOnce() -> RightOutput + Send,
+        LeftOutput: Send,
+        RightOutput: Send,
+    {
+        let right = right();
+        (left(), right)
+    }
+}
+
+/// A program's families admitted on `fork` under a stopped clock, each report
+/// as debug text.
+///
+/// # Specification
+/// trivial.
+fn admitted<F>(
+    memo: &mut Memo,
+    arena: &Arena,
+    families: &[Family],
+    fork: &F,
+) -> Vec<String>
+where
+    F: crate::fork::Fork,
+{
+    memo.admit_families(
+        arena,
+        families,
+        PriceGate::Memoized,
+        Budget(100_000_000),
+        fork,
+        &memo::tests::Stopped,
+    )
+    .iter()
+    .map(|report| format!("{report:?}"))
+    .collect()
+}
+
+#[test]
+fn forked_families_equal_one_by_one_admission_across_the_edit_traces()
+{
+    let allowance = Budget(100_000_000);
+    for trace in edit_traces() {
+        let mut one_by_one = Memo::default();
+        let mut serial = Memo::default();
+        let mut scrambled = Memo::default();
+        let mut cache = InheritanceCache::new();
+        for edition in trace {
+            let (arena, certificates) = normalized(edition);
+            let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
+            let expected: Vec<String> = families
+                .iter()
+                .map(|family| {
+                    let report = one_by_one.admit_family(
+                        &arena,
+                        family,
+                        PriceGate::Memoized,
+                        &mut cache,
+                        &mut { allowance },
+                        &mut memo::tests::Stopped,
+                    );
+                    format!("{report:?}")
+                })
+                .collect();
+            let forked = [
+                (
+                    admitted(&mut serial, &arena, &families, &crate::fork::Serial),
+                    &serial,
+                ),
+                (
+                    admitted(&mut scrambled, &arena, &families, &Scrambled),
+                    &scrambled,
+                ),
+            ];
+            for (reports, memo) in forked {
+                assert_eq!(reports, expected);
+                for family in &families {
+                    assert_eq!(
+                        format!("{:?}", memo.template(family)),
+                        format!("{:?}", one_by_one.template(family))
+                    );
+                }
+            }
+        }
+    }
+    let (arena, certificates) = normalized(DOUBLE_TO_EIGHT);
+    let families = harvest(&arena, ProgramId(0), &certificates).unwrap();
+    let first = families.first().unwrap();
+    let reports = Memo::default().admit_families(
+        &arena,
+        &[first.clone(), first.clone()],
+        PriceGate::Memoized,
+        allowance,
+        &Scrambled,
+        &memo::tests::Stopped,
+    );
+    assert!(reports[0].is_ok());
+    assert_eq!(
+        reports[1].as_ref().map(|_| ()),
+        Err(&StageError::Unbalanced),
+        "a repeated key is not admitted"
+    );
+}
+
+#[test]
+fn drafts_equal_fresh_runs_across_the_edit_traces()
+{
+    let traces = edit_traces();
     let mut exact = 0_usize;
     let mut widened = 0_usize;
     let mut rebased = 0_usize;

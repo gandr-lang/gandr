@@ -7,19 +7,20 @@
 //!
 //! # Exit codes
 //!
-//! - `0`: every declaration settled, or a script's run returned a value; also
-//!   `--help`, `--version`, a bare invocation, `lsp --capabilities`, a
-//!   language-server session ended by `exit` after `shutdown`, a read-evaluate
-//!   loop that reached the end of its input or `:quit`, a terminal face the
-//!   user left, and `tui --smoke`.
+//! - `0`: every declaration settled, or a script's run returned a value, or
+//!   every staged certificate was readmitted; also `--help`, `--version`, a
+//!   bare invocation, `lsp --capabilities`, a language-server session ended by
+//!   `exit` after `shutdown`, a read-evaluate loop that reached the end of its
+//!   input or `:quit`, a terminal face the user left, and `tui --smoke`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
 //!   its root expects; a script's run was blamed on a goal or stopped short of
-//!   a value; also a language-server session ended before `shutdown`.
+//!   a value; the kernel refused a staged certificate; also a language-server
+//!   session ended before `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
 //!   malformed invocation, output the driver could not write, a language-server
 //!   stream that failed, a read-evaluate loop or a terminal face stopped by a
-//!   fault, a terminal face asked for without a terminal, or a script that
-//!   never reached the machine.
+//!   fault, a terminal face asked for without a terminal, a script that never
+//!   reached the machine, or a staged program that could not be checked.
 
 use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
@@ -37,11 +38,14 @@ use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
+use gandr_surface_dispatcher::StageVerdict;
+use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
@@ -67,6 +71,9 @@ const FAULTED: u8 = 2;
 
 /// The exit code of a script that never reached the machine.
 const UNREACHED: u8 = 2;
+
+/// The exit code of a staged run whose certificate the kernel refused.
+const REFUSED: u8 = 1;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -156,16 +163,33 @@ enum Command
         /// The source file to run.
         path: PathBuf,
     },
+    /// Check staging observer programs: build each, normalize every source,
+    /// readmit every certificate and admit every family through one memo.
+    ///
+    /// Prints one line per program, then the run's digest and verdict, the
+    /// same at every width. Exits 0 when the kernel readmits every
+    /// certificate, 1 when it refuses one, and 2 when a program cannot be
+    /// checked.
+    Stage
+    {
+        /// The threads each program's stages fork onto.
+        #[command(flatten)]
+        jobs: Jobs,
+        /// The programs, in order: `pow:LO..HI` or `double:LO..HI`, both
+        /// exponents inclusive.
+        #[arg(required = true, value_name = "PROGRAM")]
+        programs: Vec<ProgramSpec>,
+    },
 }
 
-/// The threads `check` and `test` parse and lower their sources on.
+/// The threads `check`, `test` and `stage` work on.
 #[derive(Debug, clap::Args)]
 #[repr(transparent)]
 struct Jobs
 {
-    /// Parse and lower the sources on this many threads; 1 walks them one at
-    /// a time. Defaults to the host's physical performance cores. The output
-    /// is the same at every count.
+    /// Work on this many threads; 1 runs everything on one. Defaults to the
+    /// host's physical performance cores. The output is the same at every
+    /// count.
     #[arg(long, short = 'j', env = "GANDR_JOBS", value_name = "THREADS")]
     jobs: Option<NonZeroUsize>,
 }
@@ -276,6 +300,10 @@ fn main() -> ExitCode
             width: Width::from(jobs),
         },
         | Some(Command::Run { path }) => Invocation::Run { path },
+        | Some(Command::Stage { jobs, programs }) => Invocation::Stage {
+            programs,
+            width: Width::from(jobs),
+        },
         | Some(Command::Lsp {
             capabilities: false,
         }) => return lsp(),
@@ -532,7 +560,8 @@ fn usage(error: &clap::Error) -> ExitCode
 ///   cannot carry through the pipeline is a line on standard error. The run's
 ///   report and its verdict close standard output, and the exit code is the
 ///   verdict's. A script follows [`script`]: its value goes to standard output,
-///   its diagnostics to standard error and its run status chooses the exit.
+///   its diagnostics to standard error and its run status chooses the exit. A
+///   staging follows [`stage`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -552,6 +581,7 @@ fn usage(error: &clap::Error) -> ExitCode
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
+/// - witness: `cli::cli::every_width_stages_the_serial_run`
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -569,7 +599,64 @@ fn render(
         },
         | Outcome::Run { verb, walk, width } => run(verb, walk, width, stdout, stderr),
         | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
+        | Outcome::Stage(staging) => stage(staging, stdout, stderr),
     }
+}
+
+/// Check `staging`'s programs, printing one line per program, then the run's
+/// digest and verdict, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each program's line in order on standard output — its spelling,
+///   the certificates the kernel readmitted and each family class's count, or
+///   the fault that left it unchecked — then `digest: ` and sixteen hexadecimal
+///   digits, then `verdict: ` and the verdict. The exit is zero when every
+///   certificate was readmitted, one when the kernel refused one, and two when
+///   a program could not be checked or a family's admission faulted. A pool
+///   that does not start is `gandr: ` and the fault on standard error, and
+///   exits two. Every byte written and the exit are the same at every width.
+/// - provides: `gandr stage`.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the power and double programs print the same lines,
+///   digest, verdict and exit at one thread, several and the host's width, by
+///   flag and by environment; a malformed spelling exits two before anything
+///   runs. A refused certificate cannot be built from a spelling; its exit is
+///   the dispatcher's verdict witness.
+/// - witness: `cli::cli::every_width_stages_the_serial_run`
+/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(REFUSED) || *exit == ExitCode::from(FAULTED)))]
+fn stage(
+    staging: Staging,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let run = match staging.run() {
+        | Ok(run) => run,
+        | Err(fault) => {
+            writeln!(stderr, "gandr: {fault}")?;
+            return Ok(ExitCode::from(FAULTED));
+        },
+    };
+    for staged in run.programs() {
+        writeln!(stdout, "{staged}")?;
+    }
+    let verdict = run.verdict();
+    writeln!(stdout, "digest: {}", run.digest())?;
+    writeln!(stdout, "verdict: {verdict}")?;
+    Ok(match verdict {
+        | StageVerdict::Readmitted => ExitCode::SUCCESS,
+        | StageVerdict::Refused => ExitCode::from(REFUSED),
+        | StageVerdict::Faulted => ExitCode::from(FAULTED),
+    })
 }
 
 /// Visit `walk` at `width` under `verb`, printing each step, then the report
