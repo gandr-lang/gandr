@@ -197,6 +197,7 @@ run = "prek validate-config prek.toml"
 
 ["check:format"]
 description = "Shared formatter and configuration wall"
+depends = ["aube:install"]
 run = "treefmt --ci"
 
 # npm sidecars and mise.lock move together; a warm install can hide a digest
@@ -204,4 +205,4 @@ run = "treefmt --ci"
 # Name the npm pins so a workstation does not install unrelated global tools.
 ["check:lockfile"]
 description = "Check npm-backed pins install from the committed lockfile"
-run = "mise install --locked npm:oxfmt npm:@commitlint/cli"
+run = "mise install --locked npm:oxfmt npm:oxlint npm:oxlint-tsgolint npm:@commitlint/cli"

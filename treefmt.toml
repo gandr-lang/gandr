@@ -14,9 +14,13 @@ excludes = [
   # per-project lockfiles in other formats stay consumer deltas.
   "**/LICENSE.*.txt",
   "Cargo.lock",
+  "aube-lock.yaml",
   "mise.lock",
   # mise's npm backend owns these dependency locks and install manifests.
   ".mise/locks/**",
+  # Installed packages and the extension's build output.
+  "**/node_modules/**",
+  "contrib/gandr-vscode/dist/**",
   # The tool's own cache, written at the root of every tree rumdl runs in.
   # Gitignoring is not scoping: the excludes are explicit.
   ".rumdl_cache",
@@ -58,7 +62,14 @@ includes = ["*.toml"]
 [formatter.oxfmt]
 command = "oxfmt"
 options = ["--config", ".oxfmtrc.json"]
-includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs"]
+includes = ["*.json", "*.jsonc", "*.yaml", "*.yml", "*.mjs", "*.ts"]
+
+# Check-only: type-aware lint, the TypeScript checker included.
+[formatter.oxlint]
+priority = 1
+command = "oxlint"
+options = ["--config", ".oxlintrc.json"]
+includes = ["*.ts"]
 
 [formatter.typos]
 command = "typos"

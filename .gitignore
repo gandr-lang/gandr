@@ -1,4 +1,7 @@
 /target
+node_modules/
+/contrib/gandr-vscode/dist
+*.vsix
 .mise.local.toml
 mise.local.lock
 /.rumdl_cache

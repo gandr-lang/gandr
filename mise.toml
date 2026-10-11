@@ -59,7 +59,10 @@ includes = [".config/mise/tasks"]
 # Workflow and composite-action lint belongs to the treefmt wall.
 "github:zizmorcore/zizmor" = "1.30.1"
 "npm:@commitlint/cli" = "21.2.2"
-"npm:oxfmt" = "0.65.0"
+"npm:oxfmt" = "0.72.0"
+# Type-aware oxlint runs its rules and the TypeScript checker through tsgolint.
+"npm:oxlint" = "1.87.0"
+"npm:oxlint-tsgolint" = "7.0.2004"
 node = "26.8.1"
 
 # Dylint driver and linker; both match the library's `dylint_linting` and
