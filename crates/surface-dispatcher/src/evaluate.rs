@@ -645,7 +645,7 @@ impl<'source> Program<'source>
             | Err(evaluation) => return evaluation,
         };
         let terminal = match machine.store().value(terminal) {
-            | Some(&HeapValue::Thunk { .. }) => {
+            | Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
                 let forced = match machine.run(forced, budget) {
                     | Ok(outcome) => outcome,
                     | Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
@@ -854,6 +854,7 @@ impl<'source> Program<'source>
                         &(HeapValue::Literal(_)
                         | HeapValue::Constructed { .. }
                         | HeapValue::Thunk { .. }
+                        | HeapValue::Fixpoint { .. }
                         | HeapValue::Closure { .. }),
                     )
                     | None => Err(Evaluation::Stuck(stuck)),
@@ -881,7 +882,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match machine.store().value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Closure { .. })) | None =>
+        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. })) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -897,7 +898,10 @@ impl<'source> Program<'source>
                     pending.extend(fields.iter().rev().copied());
                 },
                 | Some(
-                    &(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Closure { .. }),
+                    &(HeapValue::Literal(_)
+                    | HeapValue::Thunk { .. }
+                    | HeapValue::Fixpoint { .. }
+                    | HeapValue::Closure { .. }),
                 )
                 | None => {},
             }

@@ -471,6 +471,12 @@ impl Walk<'_>
                     depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
                 ));
             },
+            | ProducerNode::Fixpoint { body, .. } => {
+                self.stack.push(Visit::Command(
+                    body,
+                    depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                ));
+            },
             | ProducerNode::Cocase { ref arms } => {
                 let mut seen = BTreeSet::new();
                 for arm in arms {
@@ -577,6 +583,21 @@ impl Walk<'_>
                     self.stack.push(Visit::Command(arm.body, under));
                 }
             },
+            | ConsumerNode::DataCase { ref branches, then } => {
+                for &branch in branches {
+                    let node = self
+                        .arena
+                        .producer(branch)
+                        .ok_or(CheckRefusal::DanglingProducer(branch))?;
+                    if let ProducerNode::Mu { .. } = *node {
+                        return Err(CheckRefusal::NonValueArgument(branch));
+                    }
+                }
+                self.stack.push(Visit::Consumer(then, depth));
+                for &branch in branches.iter().rev() {
+                    self.stack.push(Visit::Producer(branch, depth));
+                }
+            },
         }
         Ok(())
     }
@@ -674,7 +695,7 @@ impl Walk<'_>
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
+    | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
 })]
@@ -684,7 +705,8 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
         | ProducerNode::Primitive { .. }
         | ProducerNode::Literal(_)
         | ProducerNode::Constructor { .. }
-        | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
+        | ProducerNode::Thunk { .. }
+        | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
         | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => {
             None
@@ -704,14 +726,14 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 ///   observations and incorrectly fixed tails are distinguished.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ConsumerNode::Case { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
+    | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
     | ConsumerNode::Destructor { tag: DestructorTag::Apply, .. } => Some(Polarity::Negative),
     | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
 })]
 fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
     match *node {
-        | ConsumerNode::Case { .. } => Some(Polarity::Positive),
+        | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => Some(Polarity::Positive),
         | ConsumerNode::Destructor { tag, .. } => Some(tag.polarity()),
         | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
     }
@@ -891,6 +913,66 @@ mod tests
             free.covariables().first(),
             "α1 under one μ is the root's free α0"
         );
+
+        let own = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            })
+            .expect("a leaf mints");
+        let outer = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32),
+            })
+            .expect("a leaf mints");
+        let return_point = arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+            .expect("a leaf mints");
+        let pair = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Pair,
+                producers: Box::from([own, outer]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        let body = arena
+            .mint_cut(Polarity::Positive, pair, return_point)
+            .expect("children resolve");
+        let root = cut_against_top(&mut arena, ProducerNode::Fixpoint {
+            body,
+            evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        });
+        let free = check_command(&arena, root).expect("well formed");
+        assert_eq!(
+            (
+                alloc::collections::BTreeSet::from([(
+                    Zone::Intuitionistic,
+                    DeBruijnIndex::from(0_u32)
+                )]),
+                alloc::collections::BTreeSet::new()
+            ),
+            (free.producers().clone(), free.covariables().clone()),
+            "a recursive thunk binds x0 and α0, so only x1 is free, as the root's x0"
+        );
+
+        let branch = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            })
+            .expect("a leaf mints");
+        let then = top(&mut arena);
+        let root = cut_against_unit(&mut arena, ConsumerNode::DataCase {
+            branches: Box::from([branch]),
+            then,
+        });
+        let free = check_command(&arena, root).expect("well formed");
+        assert!(
+            free.producers()
+                .contains(&(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))),
+            "a nominal match binds nothing, so its branch's x0 is free"
+        );
     }
 
     /// A root the arena does not hold is dangling.
@@ -929,6 +1011,17 @@ mod tests
             Err(CheckRefusal::NonValueArgument(capture)),
             check_command(&arena, root),
             "a capture in field position is a non-value"
+        );
+
+        let then = top(&mut arena);
+        let root = cut_against_unit(&mut arena, ConsumerNode::DataCase {
+            branches: Box::from([capture]),
+            then,
+        });
+        assert_eq!(
+            Err(CheckRefusal::NonValueArgument(capture)),
+            check_command(&arena, root),
+            "a capture as a nominal match's branch is a non-value"
         );
     }
 
@@ -1212,6 +1305,13 @@ mod tests
             ),
             (ProducerNode::Thunk { body }, Some(Polarity::Positive)),
             (
+                ProducerNode::Fixpoint {
+                    body,
+                    evidence: gandr_kernel_term::FixpointEvidence::Partial,
+                },
+                Some(Polarity::Positive),
+            ),
+            (
                 ProducerNode::Cocase {
                     arms: Box::from([]),
                 },
@@ -1228,6 +1328,13 @@ mod tests
             (
                 ConsumerNode::Case {
                     arms: Box::from([]),
+                },
+                Some(Polarity::Positive),
+            ),
+            (
+                ConsumerNode::DataCase {
+                    branches: Box::from([]),
+                    then: ConsumerId::from(0_u32),
                 },
                 Some(Polarity::Positive),
             ),

@@ -7,7 +7,9 @@
 //! form. A first-order answer agrees node for node; an answer that suspends a
 //! computation agrees once the machine's reading, which keeps a closure's body
 //! as written, is normalised too; an ill-typed redex stops both at the same
-//! elimination.
+//! elimination. Recursive definitions meet two strategies here: the machine
+//! unfolds a fixpoint when it is forced, the normaliser when it is applied to
+//! a canonical argument, and on a closed first-order answer the two agree.
 
 use alloc::vec::Vec;
 
@@ -20,6 +22,7 @@ use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::eval_computation;
 use gandr_core_nbe::readback_computation;
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::ConsumerNode;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::Machine;
@@ -28,12 +31,15 @@ use gandr_core_sequent::Provenance;
 use gandr_core_sequent::StepCount;
 use gandr_core_sequent::Stuck;
 use gandr_core_sequent::focus_computation;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Side;
 use proptest::prelude::*;
 
@@ -55,6 +61,9 @@ enum Stop
     ForcedNonThunk,
     /// A case met a value that is not an injection.
     CasedNonInjection,
+    /// A nominal match met a value that is not a constructor it has a branch
+    /// for.
+    UnmatchedConstructor,
     /// A variable no binding answers.
     UnboundVariable,
 }
@@ -164,6 +173,7 @@ fn case(
 /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 #[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
     | Answer::Term { ref core, term } => core.computation(term).is_some(),
@@ -188,7 +198,7 @@ fn machine(
                 .expect("a halted value of the pure fragment reads back");
             Answer::Term { core: read, term }
         },
-        | Ok(Outcome::Stuck(stuck)) => Answer::Stopped(machine_stop(&stuck)),
+        | Ok(Outcome::Stuck(stuck)) => Answer::Stopped(machine_stop(&arena, &stuck)),
         | Err(fault) => panic!("the machine faulted: {fault}"),
     }
 }
@@ -198,25 +208,31 @@ fn machine(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for an unobservable apply or force, an
-///   unmatched case, or an unbound value variable.
+///   unmatched structural or nominal match, or an unbound value variable.
 /// - provides: an evaluator-independent refusal vocabulary.
-/// - panics: for any machine state outside those four classes.
+/// - panics: for any machine state outside those five classes.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — hand-built applications, forces and cases with the wrong
-///   head have their declared stops; an unbound forced variable remains
-///   unbound. These distinguish exchanged stop classes; states impossible for
-///   the supported focused fragment are not mapped.
+/// - hypothesis: L3 — hand-built applications, forces, cases and nominal
+///   matches with the wrong head have their declared stops; an unbound forced
+///   variable remains unbound. These distinguish exchanged stop classes; states
+///   impossible for the supported focused fragment are not mapped.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 #[spec(ensures: |ret| match *stuck {
     | Stuck::Unobservable { head: DestructorTag::Apply, .. } => ret == Stop::AppliedNonFunction,
     | Stuck::Unobservable { head: DestructorTag::Force, .. } => ret == Stop::ForcedNonThunk,
-    | Stuck::Unmatched { .. } => ret == Stop::CasedNonInjection,
+    | Stuck::Unmatched { arms, .. } => if matches!(arena.consumer(arms), Some(&ConsumerNode::DataCase { .. })) {
+        ret == Stop::UnmatchedConstructor
+    } else { ret == Stop::CasedNonInjection },
     | Stuck::UnboundVariable { .. } => ret == Stop::UnboundVariable,
     | _ => false,
 })]
-fn machine_stop(stuck: &Stuck) -> Stop
+fn machine_stop(
+    arena: &CommandArena,
+    stuck: &Stuck,
+) -> Stop
 {
     match *stuck {
         | Stuck::Unobservable {
@@ -227,7 +243,17 @@ fn machine_stop(stuck: &Stuck) -> Stop
             head: DestructorTag::Force,
             ..
         } => Stop::ForcedNonThunk,
-        | Stuck::Unmatched { .. } => Stop::CasedNonInjection,
+        | Stuck::Unmatched { arms, .. } => match arena.consumer(arms) {
+            | Some(&ConsumerNode::DataCase { .. }) => Stop::UnmatchedConstructor,
+            | Some(
+                &(ConsumerNode::Case { .. }
+                | ConsumerNode::Covariable(_)
+                | ConsumerNode::MuTilde { .. }
+                | ConsumerNode::Destructor { .. }
+                | ConsumerNode::Top),
+            )
+            | None => Stop::CasedNonInjection,
+        },
         | Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
         | Stuck::UnboundCovariable(_)
         | Stuck::Primitive(_)
@@ -264,6 +290,7 @@ fn machine_stop(stuck: &Stuck) -> Stop
 /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 #[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
     | Answer::Term { ref core, term } => core.computation(term).is_some(),
@@ -302,22 +329,25 @@ fn normalised(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the common semantic stop for each wrong-head elimination and
-///   unbound variable, without conflating the four classes.
+///   unbound variable, without conflating the five classes; a non-constructor
+///   and a constructor without a branch are the one nominal stop.
 /// - provides: the normalizer side of the shared refusal vocabulary.
 /// - panics: for fuel, dangling-term, domain or machine-invariant faults, or a
 ///   non-returning bind outside the supported fixtures.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the malformed apply, force and case fixtures and the
-///   unbound variable name their exact semantic stop in both evaluators. These
-///   distinguish exchanged error classes; internal faults and resource failures
-///   are deliberately outside this mapping.
+/// - hypothesis: L3 — the malformed apply, force, case and nominal match
+///   fixtures and the unbound variable name their exact semantic stop in both
+///   evaluators. These distinguish exchanged error classes; internal faults and
+///   resource failures are deliberately outside this mapping.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+/// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 #[spec(ensures: |ret| match fault {
     | EvalFault::AppliedNonFunction => ret == Stop::AppliedNonFunction,
     | EvalFault::ForcedNonThunk => ret == Stop::ForcedNonThunk,
     | EvalFault::CasedNonInjection => ret == Stop::CasedNonInjection,
+    | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => ret == Stop::UnmatchedConstructor,
     | EvalFault::UnboundVariable { .. } => ret == Stop::UnboundVariable,
     | _ => false,
 })]
@@ -327,10 +357,11 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::AppliedNonFunction => Stop::AppliedNonFunction,
         | EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
         | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
+        | EvalFault::CasedNonConstructor | EvalFault::UnknownConstructor { .. } => {
+            Stop::UnmatchedConstructor
+        },
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
         | EvalFault::TransportedNonPath
-        | EvalFault::CasedNonConstructor
-        | EvalFault::UnknownConstructor { .. }
         | EvalFault::ProjectedNonRecord
         | EvalFault::AbsentRecordField
         | EvalFault::NativePrimitive(_)
@@ -448,6 +479,7 @@ fn agreement(
 ///   these pure fixtures, not arbitrary well-typed programs.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+/// - witness: `tests::differential::hand_built_declared_data_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
 #[spec(requires: cases.iter().all(|case| case.core.computation(case.root).is_some()))]
 fn assert_cases(cases: Vec<Case>)
@@ -750,6 +782,314 @@ fn hand_built_exact_readback_cases_agree()
                     core.value_thunk(suspended)
                 });
                 core.computation_lambda(body)
+            },
+        ),
+    ]);
+}
+
+/// A datatype's declaration constant in a hand-built case.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Declaration(usize);
+
+/// A constructor's ordinal in a hand-built case.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Ordinal(usize);
+
+/// How many successors a numeral stacks on zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Successors(usize);
+
+/// Nat: zero, and successor over one Nat.
+const NAT: Declaration = Declaration(0);
+/// List: nil, and cons over a head and a list.
+const LIST: Declaration = Declaration(1);
+/// Tree: a leaf, and a node over a function from Nat to Tree.
+const TREE: Declaration = Declaration(2);
+
+/// The constructor `ordinal` of the datatype declared at `declaration`,
+/// over `fields`.
+///
+/// # Specification
+/// trivial.
+fn constructed(
+    core: &mut CoreArena,
+    declaration: Declaration,
+    ordinal: Ordinal,
+    fields: Vec<ValueId>,
+) -> ValueId
+{
+    let datatype = core.value_type_data(ConstantIndex::from(declaration.0), Vec::new());
+    core.value_constructor(datatype, ordinal.0.into(), fields)
+}
+
+/// The numeral with `count` successors on zero.
+///
+/// # Specification
+/// trivial.
+fn numeral(
+    core: &mut CoreArena,
+    count: Successors,
+) -> ValueId
+{
+    let mut value = constructed(core, NAT, Ordinal(0), Vec::new());
+    for _ in 0 .. count.0 {
+        value = constructed(core, NAT, Ordinal(1), alloc::vec![value]);
+    }
+    value
+}
+
+/// `F Nat`, the motive of every hand-built match.
+///
+/// # Specification
+/// trivial.
+fn returns_nat(core: &mut CoreArena) -> CompTypeId
+{
+    let nat = core.value_type_data(ConstantIndex::from(NAT.0), Vec::new());
+    core.comp_type_returner(nat)
+}
+
+/// `r ← head; return succ r`: one successor on what `head` returns, the
+/// result bound under the binders `head` stands at.
+///
+/// # Specification
+/// trivial.
+fn successor_of(
+    core: &mut CoreArena,
+    head: ComputationId,
+) -> ComputationId
+{
+    let rebuilt = returning(core, |core| {
+        let result = variable(core, Index(0));
+        constructed(core, NAT, Ordinal(1), alloc::vec![result])
+    });
+    core.computation_bind(head, rebuilt)
+}
+
+/// The structural fixpoint over `function`.
+///
+/// # Specification
+/// trivial.
+fn recursive(
+    core: &mut CoreArena,
+    function: ComputationId,
+) -> ComputationId
+{
+    core.computation_fixpoint(function, FixpointEvidence::StructuralDescent)
+}
+
+/// Nominal matches select by ordinal and apply their fields in order;
+/// recursive definitions over Nat, List and a Tree with a function field
+/// compute the normaliser's answer through their own binding; a match on a
+/// literal, an ordinal past the branches and the empty match stop both
+/// evaluators at the nominal match.
+#[test]
+fn hand_built_declared_data_cases_agree()
+{
+    assert_cases(alloc::vec![
+        case(
+            Label("the first branch over its field"),
+            Expected::Exactly,
+            |core| {
+                let seven = integer(core, Integer(7_i32));
+                let scrutinee = constructed(core, NAT, Ordinal(0), alloc::vec![seven]);
+                let own = returning(core, |core| variable(core, Index(0)));
+                let first = core.computation_lambda(own);
+                let zero = returning(core, |core| integer(core, Integer(0_i32)));
+                let second = core.computation_lambda(zero);
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+            },
+        ),
+        case(
+            Label("a later branch by ordinal"),
+            Expected::Exactly,
+            |core| {
+                let five = integer(core, Integer(5_i32));
+                let scrutinee = constructed(core, NAT, Ordinal(1), alloc::vec![five]);
+                let zero = returning(core, |core| integer(core, Integer(0_i32)));
+                let first = core.computation_lambda(zero);
+                let own = returning(core, |core| variable(core, Index(0)));
+                let second = core.computation_lambda(own);
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+            },
+        ),
+        case(
+            Label("a fieldless branch runs as written"),
+            Expected::Exactly,
+            |core| {
+                let scrutinee = constructed(core, NAT, Ordinal(0), Vec::new());
+                let branch = returning(core, |core| integer(core, Integer(99_i32)));
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, alloc::vec![branch])
+            },
+        ),
+        case(
+            Label("two fields applied in order"),
+            Expected::Exactly,
+            |core| {
+                let one = integer(core, Integer(1_i32));
+                let two = integer(core, Integer(2_i32));
+                let scrutinee = constructed(core, LIST, Ordinal(1), alloc::vec![one, two]);
+                let empty = returning(core, CoreArena::value_unit);
+                let pair = returning(core, |core| {
+                    let head = variable(core, Index(1));
+                    let tail = variable(core, Index(0));
+                    core.value_pair(head, tail)
+                });
+                let inner = core.computation_lambda(pair);
+                let cons = core.computation_lambda(inner);
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, alloc::vec![empty, cons])
+            },
+        ),
+        case(
+            Label("evaluation continues after the match"),
+            Expected::Exactly,
+            |core| {
+                let three = integer(core, Integer(3_i32));
+                let scrutinee = constructed(core, NAT, Ordinal(0), alloc::vec![three]);
+                let own = returning(core, |core| variable(core, Index(0)));
+                let branch = core.computation_lambda(own);
+                let motive = returns_nat(core);
+                let matched = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
+                let doubled = returning(core, |core| {
+                    let bound = variable(core, Index(0));
+                    core.value_pair(bound, bound)
+                });
+                core.computation_bind(matched, doubled)
+            },
+        ),
+        case(Label("a returned constructor"), Expected::Exactly, |core| {
+            returning(core, |core| numeral(core, Successors(2)))
+        },),
+        case(Label("plus 2 1 by recursion"), Expected::Exactly, |core| {
+            let base = returning(core, |core| variable(core, Index(0)));
+            let recurse = {
+                let own = variable(core, Index(3));
+                let forced = core.computation_force(own);
+                let predecessor = variable(core, Index(0));
+                let once = core.computation_application(forced, predecessor);
+                let addend = variable(core, Index(1));
+                core.computation_application(once, addend)
+            };
+            let rebuilt = successor_of(core, recurse);
+            let step = core.computation_lambda(rebuilt);
+            let augend = variable(core, Index(1));
+            let motive = returns_nat(core);
+            let matched = core.computation_data_case(augend, motive, alloc::vec![base, step]);
+            let inner = core.computation_lambda(matched);
+            let function = core.computation_lambda(inner);
+            let plus = recursive(core, function);
+            let two = numeral(core, Successors(2));
+            let one = numeral(core, Successors(1));
+            let once = core.computation_application(plus, two);
+            core.computation_application(once, one)
+        }),
+        case(
+            Label("the length of a three-element list"),
+            Expected::Exactly,
+            |core| {
+                let base = returning(core, |core| numeral(core, Successors(0)));
+                let recurse = {
+                    let own = variable(core, Index(3));
+                    let forced = core.computation_force(own);
+                    let tail = variable(core, Index(0));
+                    core.computation_application(forced, tail)
+                };
+                let rebuilt = successor_of(core, recurse);
+                let inner = core.computation_lambda(rebuilt);
+                let step = core.computation_lambda(inner);
+                let list = variable(core, Index(0));
+                let motive = returns_nat(core);
+                let matched = core.computation_data_case(list, motive, alloc::vec![base, step]);
+                let function = core.computation_lambda(matched);
+                let length = recursive(core, function);
+                let mut list = constructed(core, LIST, Ordinal(0), Vec::new());
+                for _ in 0_u8 .. 3_u8 {
+                    let head = core.value_unit();
+                    list = constructed(core, LIST, Ordinal(1), alloc::vec![head, list]);
+                }
+                core.computation_application(length, list)
+            },
+        ),
+        case(
+            Label("the size of a tree through its function field"),
+            Expected::Exactly,
+            |core| {
+                let base = returning(core, |core| numeral(core, Successors(0)));
+                let branch = {
+                    let field = variable(core, Index(0));
+                    let forced = core.computation_force(field);
+                    let zero = numeral(core, Successors(0));
+                    core.computation_application(forced, zero)
+                };
+                let recurse = {
+                    let own = variable(core, Index(3));
+                    let forced = core.computation_force(own);
+                    let subtree = variable(core, Index(0));
+                    core.computation_application(forced, subtree)
+                };
+                let rebuilt = successor_of(core, recurse);
+                let descended = core.computation_bind(branch, rebuilt);
+                let step = core.computation_lambda(descended);
+                let tree = variable(core, Index(0));
+                let motive = returns_nat(core);
+                let matched = core.computation_data_case(tree, motive, alloc::vec![base, step]);
+                let function = core.computation_lambda(matched);
+                let size = recursive(core, function);
+                let mut tree = constructed(core, TREE, Ordinal(0), Vec::new());
+                for _ in 0_u8 .. 2_u8 {
+                    let below = core.computation_return(tree);
+                    let ignoring = core.computation_lambda(below);
+                    let children = core.value_thunk(ignoring);
+                    tree = constructed(core, TREE, Ordinal(1), alloc::vec![children]);
+                }
+                core.computation_application(size, tree)
+            },
+        ),
+        case(
+            Label("a recursive thunk returned unforced"),
+            Expected::Exactly,
+            |core| {
+                let own = returning(core, |core| variable(core, Index(0)));
+                let function = core.computation_lambda(own);
+                let identity = recursive(core, function);
+                returning(core, |core| core.value_thunk(identity))
+            },
+        ),
+        case(
+            Label("a match on a literal"),
+            Expected::Stops(Stop::UnmatchedConstructor),
+            |core| {
+                let one = integer(core, Integer(1_i32));
+                let own = returning(core, |core| variable(core, Index(0)));
+                let branch = core.computation_lambda(own);
+                let motive = returns_nat(core);
+                core.computation_data_case(one, motive, alloc::vec![branch])
+            },
+        ),
+        case(
+            Label("an ordinal past the branches"),
+            Expected::Stops(Stop::UnmatchedConstructor),
+            |core| {
+                let scrutinee = constructed(core, LIST, Ordinal(2), Vec::new());
+                let first = returning(core, CoreArena::value_unit);
+                let second = returning(core, CoreArena::value_unit);
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, alloc::vec![first, second])
+            },
+        ),
+        case(
+            Label("the empty match"),
+            Expected::Stops(Stop::UnmatchedConstructor),
+            |core| {
+                let scrutinee = constructed(core, NAT, Ordinal(0), Vec::new());
+                let motive = returns_nat(core);
+                core.computation_data_case(scrutinee, motive, Vec::new())
             },
         ),
     ]);

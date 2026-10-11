@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::Zone;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
@@ -318,10 +319,12 @@ fn command(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — literals, both variable namespaces, constructor fields,
-///   captures, thunks and zero-, one- and two-arm copattern objects have exact
-///   rendered syntax. The depth boundary distinguishes wrong child depth;
-///   missing addresses and unequal fields expose wrong lookup.
+///   datatype ordinals, captures, thunks, recursive thunks under both evidences
+///   and zero-, one- and two-arm copattern objects have exact rendered syntax.
+///   The depth boundary distinguishes wrong child depth; missing addresses and
+///   unequal fields expose wrong lookup.
 /// - witness: `pretty::tests::renders_structural_heads`
+/// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::renders_lambda_cocase`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
@@ -339,6 +342,7 @@ fn command(
                 matches!(ret.as_slice(), &[Piece::Text(Token("()"))])
             } else { matches!(ret.first(), Some(&Piece::Text(Token(name))) if name == constructor_name(tag).0) },
         | ProducerNode::Thunk { body } => matches!(ret.as_slice(), &[Piece::Text(Token("{force(α) ⇒ ")), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
+        | ProducerNode::Fixpoint { body, .. } => matches!(ret.as_slice(), &[Piece::Text(Token("fix")), Piece::Text(_), Piece::Command(found, _), Piece::Text(Token("}"))] if body == found),
         | ProducerNode::Mu { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μα. ")), Piece::Command(found, _)] if body == found),
         | ProducerNode::Cocase { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("cocase {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
@@ -379,10 +383,26 @@ fn producer(
             if *tag == ConstructorTag::Unit && producers.is_empty() && consumers.is_empty() {
                 return alloc::vec![text!("()")];
             }
-            applied(constructor_name(tag), producers, consumers, depth)
+            let mut pieces = applied(constructor_name(tag), producers, consumers, depth);
+            if let ConstructorTag::Data { tag: ordinal, .. } = *tag {
+                pieces.insert(
+                    1,
+                    Piece::Owned(alloc::format!("[{}]", usize::from(ordinal))),
+                );
+            }
+            pieces
         },
         | ProducerNode::Thunk { body } => alloc::vec![
             text!("{force(α) ⇒ "),
+            Piece::Command(body, depth),
+            text!("}"),
+        ],
+        | ProducerNode::Fixpoint { body, evidence } => alloc::vec![
+            text!("fix"),
+            Piece::Text(Token(match evidence {
+                | FixpointEvidence::Partial => "{x; force(α) ⇒ ",
+                | FixpointEvidence::StructuralDescent => "[<]{x; force(α) ⇒ ",
+            })),
             Piece::Command(body, depth),
             text!("}"),
         ],
@@ -409,17 +429,20 @@ fn producer(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the covariable, terminal, binder, destructor or match syntax;
-///   children remain in source order at depth, and absent consumers are marked.
+/// - ensures: the covariable, terminal, binder, destructor, match or nominal
+///   match syntax; children remain in source order at depth, and absent
+///   consumers are marked.
 /// - provides: consumer syntax before recursive expansion.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — terminal and covariable leaves, binders, both destructor
-///   heads and empty or multi-arm matches have exact syntax. Distinct fields
-///   and depth-limit cases distinguish changed order, wrong head labels and
-///   incorrectly scheduled children.
+///   heads, empty or multi-arm matches and a nominal match's branches and
+///   continuation have exact syntax. Distinct fields and depth-limit cases
+///   distinguish changed order, wrong head labels and incorrectly scheduled
+///   children.
 /// - witness: `pretty::tests::renders_structural_heads`
+/// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
@@ -436,6 +459,9 @@ fn producer(
         | ConsumerNode::Case { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("case {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq(arms.iter().map(|arm| arm.body)),
+        | ConsumerNode::DataCase { ref branches, then } => matches!(ret.first(), Some(&Piece::Text(Token("datacase"))))
+            && ret.iter().filter_map(|piece| match *piece { Piece::Producer(id, _) => Some(id), _ => None }).eq(branches.iter().copied())
+            && ret.iter().filter_map(|piece| match *piece { Piece::Consumer(id, _) => Some(id), _ => None }).eq(core::iter::once(then)),
     },
 })]
 fn consumer(
@@ -464,13 +490,19 @@ fn consumer(
             };
             applied(name, producers, consumers, depth)
         },
+        | ConsumerNode::DataCase { ref branches, then } => applied(
+            Token("datacase"),
+            branches,
+            core::slice::from_ref(&then),
+            depth,
+        ),
         | ConsumerNode::Case { ref arms } => {
             let mut pieces = alloc::vec![text!("case {")];
             for (position, arm) in arms.iter().enumerate() {
                 if position > 0 {
                     pieces.push(text!(" | "));
                 }
-                pieces.push(Piece::Text(pattern_text(&arm.constructor)));
+                pieces.push(pattern(&arm.constructor));
                 pieces.push(Piece::Command(arm.body, depth));
             }
             pieces.push(text!("}"));
@@ -543,8 +575,10 @@ fn applied(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: unit, pair, inl, inr or lift for the corresponding constructor.
-/// - provides: the fixed head spelling, independent of a lift's level.
+/// - ensures: unit, pair, inl, inr, lift or ctor for the corresponding
+///   constructor.
+/// - provides: the fixed head spelling, independent of a lift's level; a
+///   datatype constructor's ordinal is written after it by the caller.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -553,6 +587,7 @@ fn applied(
 ///   rather than its nullary abbreviation. This distinguishes swapped labels;
 ///   no round-trip or parser compatibility is claimed.
 /// - witness: `pretty::tests::renders_structural_heads`
+/// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
 #[spec(ensures: |ret| match *tag {
@@ -561,6 +596,7 @@ fn applied(
     | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl"),
     | ConstructorTag::Injection(Side::Right) => matches!(ret.0.as_bytes(), b"inr"),
     | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift"),
+    | ConstructorTag::Data { .. } => matches!(ret.0.as_bytes(), b"ctor"),
 })]
 const fn constructor_name(tag: &ConstructorTag) -> Token
 {
@@ -570,6 +606,7 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
         | ConstructorTag::Injection(Side::Left) => Token("inl"),
         | ConstructorTag::Injection(Side::Right) => Token("inr"),
         | ConstructorTag::Lift(_) => Token("lift"),
+        | ConstructorTag::Data { .. } => Token("ctor"),
     }
 }
 
@@ -577,32 +614,49 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the constructor's fixed pattern spelling with one unnamed x per
-///   producer field, followed by the arm separator.
+/// - ensures: the constructor's pattern spelling with one unnamed x per
+///   producer field, followed by the arm separator; a datatype constructor
+///   writes its ordinal.
 /// - provides: the binder notation in a match.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every pattern-head kind has an exact rendered arm,
-///   covering zero, one and two binders. These distinguish exchanged labels and
-///   the wrong binder count within the current vocabulary.
+///   covering zero, one and two binders and a datatype ordinal. These
+///   distinguish exchanged labels and the wrong binder count within the current
+///   vocabulary.
 /// - witness: `pretty::tests::renders_structural_heads`
+/// - witness: `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`
 /// - witness: `pretty::tests::structural_rendering_preserves_fields_arms_and_separators`
-#[spec(ensures: |ret| match *tag {
-    | ConstructorTag::Unit => matches!(ret.0.as_bytes(), b"() \xE2\x87\x92 "),
-    | ConstructorTag::Pair => matches!(ret.0.as_bytes(), b"pair(x, x) \xE2\x87\x92 "),
-    | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl(x) \xE2\x87\x92 "),
-    | ConstructorTag::Injection(Side::Right) => matches!(ret.0.as_bytes(), b"inr(x) \xE2\x87\x92 "),
-    | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift(x) \xE2\x87\x92 "),
+#[spec(ensures: |ref ret| match (tag, ret) {
+    | (&ConstructorTag::Unit, &Piece::Text(Token(text))) => text == "() ⇒ ",
+    | (&ConstructorTag::Pair, &Piece::Text(Token(text))) => text == "pair(x, x) ⇒ ",
+    | (&ConstructorTag::Injection(Side::Left), &Piece::Text(Token(text))) => text == "inl(x) ⇒ ",
+    | (&ConstructorTag::Injection(Side::Right), &Piece::Text(Token(text))) => text == "inr(x) ⇒ ",
+    | (&ConstructorTag::Lift(_), &Piece::Text(Token(text))) => text == "lift(x) ⇒ ",
+    | (&ConstructorTag::Data { tag: ordinal, arity }, &Piece::Owned(ref text)) =>
+        text.starts_with(&alloc::format!("ctor[{}](", usize::from(ordinal)))
+            && text.matches('x').count() == usize::from(arity),
+    | _ => false,
 })]
-const fn pattern_text(tag: &ConstructorTag) -> Token
+fn pattern(tag: &ConstructorTag) -> Piece
 {
     match *tag {
-        | ConstructorTag::Unit => Token("() ⇒ "),
-        | ConstructorTag::Pair => Token("pair(x, x) ⇒ "),
-        | ConstructorTag::Injection(Side::Left) => Token("inl(x) ⇒ "),
-        | ConstructorTag::Injection(Side::Right) => Token("inr(x) ⇒ "),
-        | ConstructorTag::Lift(_) => Token("lift(x) ⇒ "),
+        | ConstructorTag::Unit => text!("() ⇒ "),
+        | ConstructorTag::Pair => text!("pair(x, x) ⇒ "),
+        | ConstructorTag::Injection(Side::Left) => text!("inl(x) ⇒ "),
+        | ConstructorTag::Injection(Side::Right) => text!("inr(x) ⇒ "),
+        | ConstructorTag::Lift(_) => text!("lift(x) ⇒ "),
+        | ConstructorTag::Data {
+            tag: ordinal,
+            arity,
+        } => {
+            let binders = alloc::vec!["x"; usize::from(arity)].join(", ");
+            Piece::Owned(alloc::format!(
+                "ctor[{}]({binders}) ⇒ ",
+                usize::from(ordinal)
+            ))
+        },
     }
 }
 
@@ -668,6 +722,7 @@ mod tests
     use gandr_kernel_term::Magnitude;
 
     use super::*;
+    use crate::boundary::ProducerArity;
     use crate::il::CopatternArm;
     use crate::il::CovariableIndex;
     use crate::il::PatternArm;
@@ -849,6 +904,101 @@ mod tests
             render_command(&arena, CommandId::from(99_u32)),
             "a dangling root"
         );
+    }
+
+    /// A datatype constructor writes its ordinal after its head, a nominal
+    /// match its branches and continuation, a structural arm on a datatype
+    /// constructor one binder per field, and a recursive thunk its evidence.
+    #[test]
+    fn renders_datatype_heads_nominal_matches_and_recursive_thunks()
+    {
+        let mut arena = CommandArena::new();
+        let zero = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Data {
+                    tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                    arity: ProducerArity::ZERO,
+                },
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("a leaf mints");
+        let constant = arena
+            .mint_producer(ProducerNode::Constant(3_usize.into()))
+            .expect("a leaf mints");
+        let cons = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Data {
+                    tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                    arity: ProducerArity::TWO,
+                },
+                producers: Box::from([constant, zero]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        assert_eq!(
+            "ctor[1](c3, ctor[0]())",
+            render_producer(&arena, cons),
+            "the ordinals and the fields in order"
+        );
+
+        let top = arena
+            .mint_consumer(ConsumerNode::Top)
+            .expect("a leaf mints");
+        let returned = arena
+            .mint_cut(Polarity::Positive, constant, top)
+            .expect("children resolve");
+        let branch = arena
+            .mint_producer(ProducerNode::Thunk { body: returned })
+            .expect("the body resolves");
+        let nominal = arena
+            .mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([branch, constant]),
+                then: top,
+            })
+            .expect("children resolve");
+        assert_eq!(
+            "datacase({force(α) ⇒ ⟨c3 |+ ★⟩}, c3; ★)",
+            render_consumer(&arena, nominal),
+            "the branches in order, then the continuation"
+        );
+
+        let structural = arena
+            .mint_consumer(ConsumerNode::Case {
+                arms: Box::from([PatternArm {
+                    constructor: ConstructorTag::Data {
+                        tag: gandr_kernel_term::ConstructorTag::from(2_usize),
+                        arity: ProducerArity::TWO,
+                    },
+                    body: returned,
+                }]),
+            })
+            .expect("the arm resolves");
+        assert_eq!(
+            "case {ctor[2](x, x) ⇒ ⟨c3 |+ ★⟩}",
+            render_consumer(&arena, structural),
+            "one binder per field"
+        );
+
+        for (evidence, expected) in [
+            (FixpointEvidence::Partial, "fix{x; force(α) ⇒ ⟨c3 |+ ★⟩}"),
+            (
+                FixpointEvidence::StructuralDescent,
+                "fix[<]{x; force(α) ⇒ ⟨c3 |+ ★⟩}",
+            ),
+        ] {
+            let recursive = arena
+                .mint_producer(ProducerNode::Fixpoint {
+                    body: returned,
+                    evidence,
+                })
+                .expect("the body resolves");
+            assert_eq!(
+                expected,
+                render_producer(&arena, recursive),
+                "the evidence {evidence:?}"
+            );
+        }
     }
 
     /// Elision precedes lookup at the limit, while shallower missing addresses

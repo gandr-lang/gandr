@@ -19,7 +19,7 @@ The floor has **13 ported rows and 4 deferred rows**. Checker witness names belo
 | `record_literal_checks_against_a_narrower_record` | `record_width_depth_and_projection` | Ported |
 | `record_projection_reduces_and_stays_spine_local` | `core-nbe::eval::tests::native_records_and_cases_compute` | Ported |
 | `a_record_module_projects_its_component_and_nothing_else` | `core-nbe::eval::tests::native_records_and_cases_compute` | Ported |
-| `data_case_selects_arm_returns_three` | `core-nbe::eval::tests::native_records_and_cases_compute` | Ported |
-| `data_case_on_non_ctor_is_stuck` | `core-nbe::eval::tests::native_records_and_cases_compute` | Ported |
+| `data_case_selects_arm_returns_three` | `core-nbe::eval::tests::native_records_and_cases_compute`; on the L machine, `core-sequent::machine::tests::data_case_selects_arm_returns_three` | Ported |
+| `data_case_on_non_ctor_is_stuck` | `core-nbe::eval::tests::native_records_and_cases_compute`; on the L machine, `core-sequent::machine::tests::data_case_on_non_ctor_is_stuck` | Ported |
 
 The record depth witnesses in this port concern nested structural records; they do not stand in for the deferred graded-thunk witnesses. The evaluator's malformed non-constructor case is an explicit fault, not an invented constructor branch. Additional witnesses cover signature formation and invalidation, branch coverage, malformed tags and arities, admission renumbering, exact artifact decoding, and children beyond the former fixed three-child snapshot limit.

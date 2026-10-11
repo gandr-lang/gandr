@@ -79,9 +79,9 @@ index_wrapper! {
 /// A constructor head `K` of a positive type.
 ///
 /// The vocabulary is the core language's positive introductions: the unit,
-/// the pair, the two injections and the explicit universe lift. Each head
-/// declares its arity; the typed-IL check and the machine read the
-/// declaration rather than a constant.
+/// the pair, the two injections, the explicit universe lift and a nominal
+/// datatype's constructors. Each head declares its arity; the typed-IL check
+/// and the machine read the declaration rather than a constant.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ConstructorTag
 {
@@ -93,6 +93,16 @@ pub enum ConstructorTag
     Injection(Side),
     /// An explicit lift to the target level, of one field.
     Lift(Level),
+    /// A nominal datatype's constructor, by its ordinal in the declaration,
+    /// with the number of fields it carries. The datatype itself is a type,
+    /// which the IL does not carry.
+    Data
+    {
+        /// The constructor's ordinal in its declaration.
+        tag: gandr_kernel_term::ConstructorTag,
+        /// The number of fields the constructor carries.
+        arity: ProducerArity,
+    },
 }
 
 impl ConstructorTag
@@ -102,7 +112,7 @@ impl ConstructorTag
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `0` for the unit, `2` for the pair, `1` for an injection and
-    ///   a lift.
+    ///   a lift, and a datatype constructor's own field count.
     /// - provides: the one arity table a constructor node is held to.
     /// - fails: never.
     /// - panics: none.
@@ -119,13 +129,15 @@ impl ConstructorTag
         | Self::Unit => matches!(ret, ProducerArity::ZERO),
         | Self::Pair => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
+        | Self::Data { arity, .. } => ret == arity,
     })]
-    pub const fn producer_arity(&self) -> ProducerArity
+    pub fn producer_arity(&self) -> ProducerArity
     {
         match *self {
             | Self::Unit => ProducerArity::ZERO,
             | Self::Pair => ProducerArity::TWO,
             | Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
+            | Self::Data { arity, .. } => arity,
         }
     }
 
@@ -151,7 +163,9 @@ impl ConstructorTag
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
-            | Self::Unit | Self::Pair | Self::Injection(_) | Self::Lift(_) => ConsumerArity::ZERO,
+            | Self::Unit | Self::Pair | Self::Injection(_) | Self::Lift(_) | Self::Data { .. } => {
+                ConsumerArity::ZERO
+            },
         }
     }
 }
@@ -320,6 +334,18 @@ pub enum ProducerNode
         /// The suspended command, binding one covariable.
         body: CommandId,
     },
+    /// A recursive thunk `fix{x; force(α) ⇒ s}`: a thunk whose suspended
+    /// command binds the thunk itself as its innermost producer variable `x`,
+    /// beside the continuation a force supplies. It is the image of a core
+    /// fixpoint `fix x. M`.
+    Fixpoint
+    {
+        /// The suspended command, binding one producer variable and one
+        /// covariable.
+        body: CommandId,
+        /// The termination claim the core fixpoint carries.
+        evidence: gandr_kernel_term::FixpointEvidence,
+    },
     /// A copattern object `cocase {D(x̄; ᾱ) ⇒ s, …}` of a negative type.
     Cocase
     {
@@ -361,6 +387,17 @@ pub enum ConsumerNode
     {
         /// The arms, one per constructor head the match answers.
         arms: Box<[PatternArm]>,
+    },
+    /// A nominal match `datacase(t̄; c)`: the value it receives is a datatype's
+    /// constructor `K_i(v̄)`, and the branch `t_i` — a thunk of a function over
+    /// the constructor's fields — is forced against `apply(v̄; c)`. The match
+    /// opens no binder, so its continuation `c` is any consumer.
+    DataCase
+    {
+        /// One branch per constructor, in ordinal order.
+        branches: Box<[ProducerId]>,
+        /// The continuation each branch returns to.
+        then: ConsumerId,
     },
     /// The terminal consumer `★`: the run's answer is what reaches it.
     Top,
@@ -972,7 +1009,7 @@ impl CommandArena
         | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
             producers.iter().all(|id| self.producer(*id).is_some())
                 && consumers.iter().all(|id| self.consumer(*id).is_some()),
-        | ProducerNode::Thunk { body } | ProducerNode::Mu { body } => self.command(body).is_some(),
+        | ProducerNode::Thunk { body } | ProducerNode::Mu { body } | ProducerNode::Fixpoint { body, .. } => self.command(body).is_some(),
         | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
     })]
     fn producer_children_resolve(
@@ -990,9 +1027,9 @@ impl CommandArena
                 ref consumers,
                 ..
             } => self.children_resolve(producers, consumers),
-            | ProducerNode::Thunk { body } | ProducerNode::Mu { body } => {
-                self.command_resolves(body)
-            },
+            | ProducerNode::Thunk { body }
+            | ProducerNode::Mu { body }
+            | ProducerNode::Fixpoint { body, .. } => self.command_resolves(body),
             | ProducerNode::Cocase { ref arms } => {
                 for arm in arms {
                     self.command_resolves(arm.body)?;
@@ -1027,6 +1064,8 @@ impl CommandArena
             producers.iter().all(|id| self.producer(*id).is_some())
                 && consumers.iter().all(|id| self.consumer(*id).is_some()),
         | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+        | ConsumerNode::DataCase { ref branches, then } =>
+            branches.iter().all(|id| self.producer(*id).is_some()) && self.consumer(then).is_some(),
     })]
     fn consumer_children_resolve(
         &self,
@@ -1041,6 +1080,9 @@ impl CommandArena
                 ref consumers,
                 ..
             } => self.children_resolve(producers, consumers),
+            | ConsumerNode::DataCase { ref branches, then } => {
+                self.children_resolve(branches, core::slice::from_ref(&then))
+            },
             | ConsumerNode::Case { ref arms } => {
                 for arm in arms {
                     self.command_resolves(arm.body)?;
@@ -1133,6 +1175,13 @@ mod tests
             (ConstructorTag::Injection(Side::Left), 1_usize),
             (ConstructorTag::Injection(Side::Right), 1_usize),
             (ConstructorTag::Lift(level), 1_usize),
+            (
+                ConstructorTag::Data {
+                    tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                    arity: ProducerArity::from(3_usize),
+                },
+                3_usize,
+            ),
         ];
         for (tag, arity) in cases {
             assert_eq!(
@@ -1175,6 +1224,10 @@ mod tests
             ConstructorTag::Injection(Side::Left),
             ConstructorTag::Injection(Side::Right),
             ConstructorTag::Lift(Level::zero()),
+            ConstructorTag::Data {
+                tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+                arity: ProducerArity::TWO,
+            },
         ] {
             assert_eq!(
                 ConsumerArity::ZERO,
@@ -1270,6 +1323,30 @@ mod tests
                 consumers: Box::from([ConsumerId::from(5_u32)]),
             }),
             "the consumer child dangles"
+        );
+        assert_eq!(
+            Err(MintRefusal::DanglingCommand(CommandId::from(2_u32))),
+            arena.mint_producer(ProducerNode::Fixpoint {
+                body: CommandId::from(2_u32),
+                evidence: gandr_kernel_term::FixpointEvidence::Partial,
+            }),
+            "the recursive thunk's body dangles"
+        );
+        assert_eq!(
+            Err(MintRefusal::DanglingProducer(ProducerId::from(4_u32))),
+            arena.mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([ProducerId::from(4_u32)]),
+                then: top,
+            }),
+            "a nominal match's branch dangles"
+        );
+        assert_eq!(
+            Err(MintRefusal::DanglingConsumer(ConsumerId::from(6_u32))),
+            arena.mint_consumer(ConsumerNode::DataCase {
+                branches: Box::from([]),
+                then: ConsumerId::from(6_u32),
+            }),
+            "a nominal match's continuation dangles"
         );
         assert_eq!(entry, arena.watermark(), "a refused mint appends nothing");
     }

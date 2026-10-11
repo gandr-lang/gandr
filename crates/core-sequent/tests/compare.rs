@@ -2,7 +2,8 @@
 //!
 //! The core's derived equality compares child ids, which two arenas assign
 //! independently; these walks compare what the ids name instead, node by node,
-//! over an explicit stack.
+//! over an explicit stack. The types focusing erases — a datatype
+//! constructor's datatype and a nominal match's motive — are not compared.
 
 use alloc::vec::Vec;
 
@@ -94,18 +95,22 @@ pub fn same_value(
 /// - requires: both reachable term graphs are acyclic.
 /// - ensures: Same exactly when every corresponding supported node has the same
 ///   constructor, labels and ordered children; absent nodes, quoted types and
-///   static forms and native paths differ, even if their raw addresses agree.
+///   static forms and native paths differ, even if their raw addresses agree. A
+///   datatype constructor's datatype and a nominal match's motive are not
+///   compared.
 /// - provides: equality independent of each arena's allocation history for the
 ///   pure term fragment used by the focusing and machine suites.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — independently allocated graphs agree despite different
-///   addresses; distinct leaves, each pair field, branch labels, binders and
-///   eliminators differ. Missing nodes, quotes, static forms and native paths
-///   are outside this observer's pure focusing fragment. These finite cases
-///   challenge ignored labels or children and address comparison, not cyclic
-///   inputs or equivalence modulo evaluation.
+///   addresses; distinct leaves, each pair field, branch labels, binders,
+///   eliminators, constructor ordinals and field counts, nominal branches and
+///   fixpoint evidence differ, while a datatype or motive alone does not.
+///   Missing nodes, quotes, static forms and native paths are outside this
+///   observer's pure focusing fragment. These finite cases challenge ignored
+///   labels or children and address comparison, not cyclic inputs or
+///   equivalence modulo evaluation.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
 #[spec(ensures: |ret| match start {
@@ -115,7 +120,9 @@ pub fn same_value(
             | Value::Injection(side, _) => ret != Agreement::Same || matches!(*right, Value::Injection(other_side, _) if side == other_side),
             | Value::Lift { ref target, .. } => ret != Agreement::Same || matches!(*right, Value::Lift { target: ref other_target, .. } if target == other_target),
             | Value::Pair(_, _) | Value::Thunk(_) => ret != Agreement::Same || core::mem::discriminant(left) == core::mem::discriminant(right),
-            Value::Constructor { .. } | Value::Record(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
+            | Value::Constructor { tag, ref fields, .. } => ret != Agreement::Same
+                || matches!(*right, Value::Constructor { tag: other_tag, fields: ref other_fields, .. } if tag == other_tag && fields.len() == other_fields.len()),
+            Value::Record(_) | Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(_, _) | Value::Hole(_) | Value::Mark { .. } => ret == Agreement::Differ,
         },
         | _ => ret == Agreement::Differ,
     },
@@ -177,6 +184,24 @@ fn walk(
                         pending.push(Pending::Values(body, other_body));
                         target == other_target
                     },
+                    | (
+                        &Value::Constructor {
+                            tag, ref fields, ..
+                        },
+                        &Value::Constructor {
+                            tag: other_tag,
+                            fields: ref other_fields,
+                            ..
+                        },
+                    ) => {
+                        pending.extend(
+                            fields
+                                .iter()
+                                .zip(other_fields)
+                                .map(|(&field, &other)| Pending::Values(field, other)),
+                        );
+                        tag == other_tag && fields.len() == other_fields.len()
+                    },
                     | _ => false,
                 }
             },
@@ -229,6 +254,37 @@ fn walk(
                         pending.push(Pending::Computations(on_right, other_right));
                         true
                     },
+                    | (
+                        &Computation::DataCase {
+                            scrutinee,
+                            ref branches,
+                            ..
+                        },
+                        &Computation::DataCase {
+                            scrutinee: other_scrutinee,
+                            branches: ref other_branches,
+                            ..
+                        },
+                    ) => {
+                        pending.push(Pending::Values(scrutinee, other_scrutinee));
+                        pending.extend(
+                            branches
+                                .iter()
+                                .zip(other_branches)
+                                .map(|(&branch, &other)| Pending::Computations(branch, other)),
+                        );
+                        branches.len() == other_branches.len()
+                    },
+                    | (
+                        &Computation::Fixpoint { body, evidence },
+                        &Computation::Fixpoint {
+                            body: other_body,
+                            evidence: other_evidence,
+                        },
+                    ) => {
+                        pending.push(Pending::Computations(body, other_body));
+                        evidence == other_evidence
+                    },
                     | _ => false,
                 }
             },
@@ -260,6 +316,11 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let left_integer = integer(&mut left, Integer(7));
     let left_injection = left.value_injection(Side::Left, left_unit);
     let left_lift = left.value_lift(Level::zero(), left_unit);
+    let left_datatype = left.value_type_data(0_usize.into(), alloc::vec![]);
+    let left_constructor = left.value_constructor(left_datatype, 1_usize.into(), alloc::vec![
+        left_unit,
+        left_variable
+    ]);
     let mut right = CoreArena::new();
     let other_zone = right.value_variable(Zone::Linear, 0_u32.into());
     let right_unit = right.value_unit();
@@ -269,6 +330,18 @@ fn structural_equality_ignores_addresses_but_not_labels()
     let right_integer = integer(&mut right, Integer(7));
     let right_injection = right.value_injection(Side::Left, right_unit);
     let right_lift = right.value_lift(Level::zero(), right_unit);
+    let erased = right.value_type_unknown();
+    let right_constructor = right.value_constructor(erased, 1_usize.into(), alloc::vec![
+        right_unit,
+        right_variable
+    ]);
+    let changed_ordinal = right.value_constructor(erased, 0_usize.into(), alloc::vec![
+        right_unit,
+        right_variable
+    ]);
+    let changed_field =
+        right.value_constructor(erased, 1_usize.into(), alloc::vec![right_unit, right_unit]);
+    let dropped_field = right.value_constructor(erased, 1_usize.into(), alloc::vec![right_unit]);
     for (a, b) in [
         (left_unit, right_unit),
         (left_variable, right_variable),
@@ -277,8 +350,16 @@ fn structural_equality_ignores_addresses_but_not_labels()
         (left_integer, right_integer),
         (left_injection, right_injection),
         (left_lift, right_lift),
+        (left_constructor, right_constructor),
     ] {
         assert_eq!(Agreement::Same, same_value(&left, a, &right, b));
+    }
+    for (a, b) in [
+        (left_constructor, changed_ordinal),
+        (left_constructor, changed_field),
+        (left_constructor, dropped_field),
+    ] {
+        assert_eq!(Agreement::Differ, same_value(&left, a, &right, b));
     }
     let changed_index = right.value_variable(Zone::Intuitionistic, 1_u32.into());
     let changed_first = right.value_pair(right_variable, right_variable);
@@ -331,6 +412,7 @@ fn structural_equality_ignores_addresses_but_not_labels()
 fn computation_comparison_preserves_every_child_role()
 {
     use gandr_core_term::Zone;
+    use gandr_kernel_term::FixpointEvidence;
     use gandr_kernel_term::Side;
 
     let mut left = CoreArena::new();
@@ -345,6 +427,11 @@ fn computation_comparison_preserves_every_child_role()
     let bound = left.computation_bind(returned_unit, returned_variable);
     let injected = left.value_injection(Side::Left, unit);
     let cased = left.computation_case(injected, returned_unit, returned_variable);
+    let unit_type = left.value_type_unit();
+    let motive = left.comp_type_returner(unit_type);
+    let matched =
+        left.computation_data_case(unit, motive, alloc::vec![returned_unit, returned_variable]);
+    let recursive = left.computation_fixpoint(returned_unit, FixpointEvidence::StructuralDescent);
     let mut right = CoreArena::new();
     let other_variable = right.value_variable(Zone::Intuitionistic, 0_u32.into());
     right.computation_return(other_variable);
@@ -359,6 +446,13 @@ fn computation_comparison_preserves_every_child_role()
     let other_injected = right.value_injection(Side::Left, other_unit);
     let other_cased =
         right.computation_case(other_injected, other_returned_unit, other_returned_variable);
+    let erased = right.comp_type_unknown();
+    let other_matched = right.computation_data_case(other_unit, erased, alloc::vec![
+        other_returned_unit,
+        other_returned_variable
+    ]);
+    let other_recursive =
+        right.computation_fixpoint(other_returned_unit, FixpointEvidence::StructuralDescent);
     for (a, b) in [
         (returned_unit, other_returned_unit),
         (returned_variable, other_returned_variable),
@@ -367,6 +461,8 @@ fn computation_comparison_preserves_every_child_role()
         (forced, other_forced),
         (bound, other_bound),
         (cased, other_cased),
+        (matched, other_matched),
+        (recursive, other_recursive),
     ] {
         assert_eq!(Agreement::Same, same_computation(&left, a, &right, b));
     }
@@ -399,6 +495,20 @@ fn computation_comparison_preserves_every_child_role()
     );
     let changed_right_arm =
         right.computation_case(other_injected, other_returned_unit, other_returned_unit);
+    let changed_match_scrutinee = right.computation_data_case(other_variable, erased, alloc::vec![
+        other_returned_unit,
+        other_returned_variable
+    ]);
+    let changed_branch = right.computation_data_case(other_unit, erased, alloc::vec![
+        other_returned_unit,
+        other_returned_unit
+    ]);
+    let dropped_branch =
+        right.computation_data_case(other_unit, erased, alloc::vec![other_returned_unit]);
+    let changed_evidence =
+        right.computation_fixpoint(other_returned_unit, FixpointEvidence::Partial);
+    let changed_recursive_body =
+        right.computation_fixpoint(other_returned_variable, FixpointEvidence::StructuralDescent);
     for (a, b) in [
         (function, changed_function),
         (applied, changed_head),
@@ -410,6 +520,11 @@ fn computation_comparison_preserves_every_child_role()
         (cased, changed_case_scrutinee),
         (cased, changed_left_arm),
         (cased, changed_right_arm),
+        (matched, changed_match_scrutinee),
+        (matched, changed_branch),
+        (matched, dropped_branch),
+        (recursive, changed_evidence),
+        (recursive, changed_recursive_body),
     ] {
         assert_eq!(Agreement::Differ, same_computation(&left, a, &right, b));
     }
