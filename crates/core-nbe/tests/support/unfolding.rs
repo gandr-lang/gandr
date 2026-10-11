@@ -123,7 +123,6 @@ Value::Constructor {ref fields,..} => 2_u64.saturating_add(u64::try_from(fields.
 Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
 Value::PathEquiv { .. } => 4,
 Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) |
-// hint: Logic changed on both sides. Requires understanding intent of each change.
 Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
 Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
 Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
