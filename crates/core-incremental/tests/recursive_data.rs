@@ -39,16 +39,16 @@ use quenchant_shape::shape::Maybe;
 /// # Specification
 /// trivial.
 fn definition(
-    position: usize,
+    position: ConstantIndex,
     declared: ValueTypeId,
     body: ValueId,
 ) -> Declaration
 {
     Declaration::new(
-        ConstantIndex::from(position),
+        position,
         Maybe::Present(declared),
         Maybe::Present(body),
-        OriginToken::from(position),
+        OriginToken::from(usize::from(position)),
     )
 }
 
@@ -57,14 +57,14 @@ fn definition(
 /// # Specification
 /// trivial.
 fn data(
-    position: usize,
+    position: ConstantIndex,
     signature: DataSignature,
 ) -> Declaration
 {
     Declaration::data(
-        ConstantIndex::from(position),
+        position,
         signature,
-        OriginToken::from(position),
+        OriginToken::from(usize::from(position)),
     )
 }
 
@@ -74,10 +74,10 @@ fn data(
 /// trivial.
 fn var(
     arena: &mut CoreArena,
-    index: u32,
+    index: DeBruijnIndex,
 ) -> ValueId
 {
-    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    arena.value_variable(Zone::Intuitionistic, index)
 }
 
 /// A one-parameter, one-field declaration at `position` whose field the
@@ -87,13 +87,13 @@ fn var(
 /// trivial.
 fn occurrence(
     arena: &mut CoreArena,
-    position: usize,
+    position: ConstantIndex,
     field: impl FnOnce(&mut CoreArena, ValueTypeId) -> (Vec<ValueTypeId>, ValueTypeId),
 ) -> Declaration
 {
     let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-    let parameter = var(arena, 0);
-    let own = arena.value_type_data(ConstantIndex::from(position), vec![parameter]);
+    let parameter = var(arena, DeBruijnIndex::from(0));
+    let own = arena.value_type_data(position, vec![parameter]);
     let (mut extra, field) = field(arena, own);
     let mut parameters = vec![universe];
     parameters.append(&mut extra);
@@ -120,13 +120,16 @@ fn program() -> Program
     let mut arena = CoreArena::new();
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let nat = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
-    let nat_data = data(0, DataSignature::new(vec![], vec![vec![], vec![nat]], kind));
+    let nat_data = data(
+        ConstantIndex::from(0_usize),
+        DataSignature::new(vec![], vec![vec![], vec![nat]], kind),
+    );
 
     let unit_type = arena.value_type_unit();
     let unit_returner = arena.comp_type_returner(unit_type);
     let suspended_unit = arena.value_type_thunk(unit_returner);
     let looping = |arena: &mut CoreArena, evidence| {
-        let recursive = var(arena, 0);
+        let recursive = var(arena, DeBruijnIndex::from(0));
         let forced = arena.computation_force(recursive);
         let fixpoint = arena.computation_fixpoint(forced, evidence);
         arena.value_thunk(fixpoint)
@@ -135,7 +138,7 @@ fn program() -> Program
     let claimed = looping(&mut arena, FixpointEvidence::StructuralDescent);
     let headed = {
         let unit = arena.value_unit();
-        let bound = var(&mut arena, 0);
+        let bound = var(&mut arena, DeBruijnIndex::from(0));
         let returned = arena.computation_return(bound);
         let identity = arena.computation_lambda(returned);
         let fixpoint = arena.computation_fixpoint(identity, FixpointEvidence::Partial);
@@ -153,17 +156,17 @@ fn program() -> Program
         let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
         let on_zero = arena.computation_return(zero);
         // Under the field: p 0, x 1, rec 2.
-        let recursive = var(&mut arena, 2);
-        let field = var(&mut arena, 0);
+        let recursive = var(&mut arena, DeBruijnIndex::from(2));
+        let field = var(&mut arena, DeBruijnIndex::from(0));
         let forced = arena.computation_force(recursive);
         let call = arena.computation_application(forced, field);
-        let result = var(&mut arena, 0);
+        let result = var(&mut arena, DeBruijnIndex::from(0));
         let once = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
         let twice = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![once]);
         let returned = arena.computation_return(twice);
         let bound = arena.computation_bind(call, returned);
         let on_successor = arena.computation_lambda(bound);
-        let scrutinee = var(&mut arena, 0);
+        let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
         let case =
             arena.computation_data_case(scrutinee, nat_returner, vec![on_zero, on_successor]);
         let lambda = arena.computation_lambda(case);
@@ -171,17 +174,17 @@ fn program() -> Program
         arena.value_thunk(fixpoint)
     };
 
-    let negative = occurrence(&mut arena, 5, |arena, own| {
+    let negative = occurrence(&mut arena, ConstantIndex::from(5_usize), |arena, own| {
         let unit = arena.value_type_unit();
         let returner = arena.comp_type_returner(unit);
         let function = arena.comp_type_arrow(own, returner);
         (vec![], arena.value_type_thunk(function))
     });
-    let nested = occurrence(&mut arena, 6, |arena, own| {
+    let nested = occurrence(&mut arena, ConstantIndex::from(6_usize), |arena, own| {
         let unit = arena.value_type_unit();
         (vec![], arena.value_type_product(own, unit))
     });
-    let non_uniform = occurrence(&mut arena, 7, |arena, _own| {
+    let non_uniform = occurrence(&mut arena, ConstantIndex::from(7_usize), |arena, _own| {
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
         (
@@ -189,14 +192,17 @@ fn program() -> Program
             arena.value_type_data(ConstantIndex::from(7_usize), vec![code]),
         )
     });
-    let later = occurrence(&mut arena, 8, |arena, _own| {
+    let later = occurrence(&mut arena, ConstantIndex::from(8_usize), |arena, _own| {
         (
             vec![],
             arena.value_type_data(ConstantIndex::from(9_usize), vec![]),
         )
     });
-    let tail = data(9, DataSignature::new(vec![], vec![vec![]], kind));
-    let telescope = occurrence(&mut arena, 10, |arena, own| {
+    let tail = data(
+        ConstantIndex::from(9_usize),
+        DataSignature::new(vec![], vec![vec![]], kind),
+    );
+    let telescope = occurrence(&mut arena, ConstantIndex::from(10_usize), |arena, own| {
         let unit = arena.value_type_unit();
         (vec![own], unit)
     });
@@ -205,19 +211,19 @@ fn program() -> Program
         Item::new(ItemKey::from("Nat"), nat_data),
         Item::new(
             ItemKey::from("loop"),
-            definition(1, suspended_unit, partial),
+            definition(ConstantIndex::from(1_usize), suspended_unit, partial),
         ),
         Item::new(
             ItemKey::from("claimed"),
-            definition(2, suspended_unit, claimed),
+            definition(ConstantIndex::from(2_usize), suspended_unit, claimed),
         ),
         Item::new(
             ItemKey::from("headed"),
-            definition(3, suspended_unit, headed),
+            definition(ConstantIndex::from(3_usize), suspended_unit, headed),
         ),
         Item::new(
             ItemKey::from("double"),
-            definition(4, doubling_type, doubling),
+            definition(ConstantIndex::from(4_usize), doubling_type, doubling),
         ),
         Item::new(ItemKey::from("Negative"), negative),
         Item::new(ItemKey::from("Nested"), nested),

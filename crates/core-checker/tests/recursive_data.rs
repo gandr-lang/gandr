@@ -32,6 +32,7 @@ mod recursive_data
     use gandr_core_nbe::ReadbackMode;
     use gandr_core_nbe::ResharingMemo;
     use gandr_core_nbe::TraceNode;
+    use gandr_core_term::Binders;
     use gandr_core_term::CertificateEquality;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::ComputationId;
@@ -108,13 +109,16 @@ mod recursive_data
         pub(super) const WITNESS: usize = 16;
     }
 
-    /// The constant at a module position.
+    /// A data declaration at its source position.
     ///
     /// # Specification
     /// trivial.
-    fn at(position: usize) -> ConstantIndex
+    fn data(
+        constant: ConstantIndex,
+        signature: DataSignature,
+    ) -> Declaration
     {
-        ConstantIndex::from(position)
+        Declaration::data(constant, signature, origin(constant))
     }
 
     /// The origin a declaration at `constant` carries.
@@ -150,10 +154,10 @@ mod recursive_data
     /// trivial.
     fn var(
         arena: &mut CoreArena,
-        index: u32,
+        index: DeBruijnIndex,
     ) -> ValueId
     {
-        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        arena.value_variable(Zone::Intuitionistic, index)
     }
 
     /// The universe of small value types.
@@ -171,7 +175,7 @@ mod recursive_data
     /// trivial.
     fn nat(arena: &mut CoreArena) -> ValueTypeId
     {
-        arena.value_type_data(at(at::NAT), vec![])
+        arena.value_type_data(ConstantIndex::from(at::NAT), vec![])
     }
 
     /// `List a`, at the element code `a`.
@@ -183,24 +187,22 @@ mod recursive_data
         element: ValueId,
     ) -> ValueTypeId
     {
-        arena.value_type_data(at(at::LIST), vec![element])
+        arena.value_type_data(ConstantIndex::from(at::LIST), vec![element])
     }
 
-    /// The numeral `n` as `succ (… zero)`.
+    /// The numerals zero through four, each as `succ (… zero)`.
     ///
     /// # Specification
     /// trivial.
-    fn numeral(
-        arena: &mut CoreArena,
-        n: usize,
-    ) -> ValueId
+    fn numerals(arena: &mut CoreArena) -> [ValueId; 5]
     {
         let nat = nat(arena);
-        let mut built = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
-        for _step in 0 .. n {
-            built = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![built]);
-        }
-        built
+        let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), vec![]);
+        let one = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![zero]);
+        let two = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![one]);
+        let three = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![two]);
+        let four = arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![three]);
+        [zero, one, two, three, four]
     }
 
     /// The list of `elements` at the element code `code`.
@@ -246,12 +248,12 @@ mod recursive_data
     /// trivial.
     fn function(
         arena: &mut CoreArena,
-        binders: usize,
+        binders: Binders,
         body: ComputationId,
     ) -> ValueId
     {
         let mut built = body;
-        for _binder in 0 .. binders {
+        for _binder in 0 .. u32::from(binders) {
             built = arena.computation_lambda(built);
         }
         arena.value_thunk(built)
@@ -291,10 +293,10 @@ mod recursive_data
     {
         let kind = kind(arena);
         let nat = nat(arena);
-        let element_code = var(arena, 0);
+        let element_code = var(arena, DeBruijnIndex::from(0));
         let element = arena.value_type_element(element_code, Level::zero());
         let tail = list(arena, element_code);
-        let tree = arena.value_type_data(at(at::TREE), vec![]);
+        let tree = arena.value_type_data(ConstantIndex::from(at::TREE), vec![]);
         let into_tree = arena.comp_type_returner(tree);
         let branches = arena.comp_type_arrow(nat, into_tree);
         let branches = arena.value_type_thunk(branches);
@@ -331,60 +333,64 @@ mod recursive_data
             is_tree_signature,
         ] = signatures(arena);
         let mut declarations = vec![
-            Declaration::data(at(at::NAT), nat_signature.clone(), origin(at(at::NAT))),
-            Declaration::data(at(at::LIST), list_signature.clone(), origin(at(at::LIST))),
-            Declaration::data(at(at::TREE), tree_signature.clone(), origin(at(at::TREE))),
-            Declaration::data(at(at::IS_NAT), is_nat_signature, origin(at(at::IS_NAT))),
-            Declaration::data(at(at::IS_TREE), is_tree_signature, origin(at(at::IS_TREE))),
+            data(ConstantIndex::from(at::NAT), nat_signature.clone()),
+            data(ConstantIndex::from(at::LIST), list_signature.clone()),
+            data(ConstantIndex::from(at::TREE), tree_signature.clone()),
+            data(ConstantIndex::from(at::IS_NAT), is_nat_signature),
+            data(ConstantIndex::from(at::IS_TREE), is_tree_signature),
         ];
         let nat = nat(arena);
         let returns_nat = arena.comp_type_returner(nat);
-        let zero = numeral(arena, 0);
+        let [zero, ..] = numerals(arena);
 
         // plus m n = elim_Nat[Nat → F Nat] (λk. k) (λp ih k. succ (ih k)) m n
         let nat_to_nat = arena.comp_type_arrow(nat, returns_nat);
         declarations.push(derived(
             arena,
-            at(at::ELIM_NAT_FUNCTION),
-            at(at::NAT),
+            ConstantIndex::from(at::ELIM_NAT_FUNCTION),
+            ConstantIndex::from(at::NAT),
             &nat_signature,
             nat_to_nat,
         ));
         let on_zero = {
-            let k = var(arena, 0);
+            let k = var(arena, DeBruijnIndex::from(0));
             let returned = arena.computation_return(k);
-            function(arena, 1, returned)
+            function(arena, Binders::from(1), returned)
         };
         let on_successor = {
-            let hypothesis = var(arena, 1);
-            let k = var(arena, 0);
+            let hypothesis = var(arena, DeBruijnIndex::from(1));
+            let k = var(arena, DeBruijnIndex::from(0));
             let recursive = call(arena, hypothesis, &[k]);
-            let result = var(arena, 0);
+            let result = var(arena, DeBruijnIndex::from(0));
             let successor =
                 arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
             let returned = arena.computation_return(successor);
             let bound = arena.computation_bind(recursive, returned);
-            function(arena, 3, bound)
+            function(arena, Binders::from(3), bound)
         };
         let plus_body = {
-            let eliminator = arena.value_constant(at(at::ELIM_NAT_FUNCTION));
-            let m = var(arena, 1);
-            let n = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_NAT_FUNCTION));
+            let m = var(arena, DeBruijnIndex::from(1));
+            let n = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[on_zero, on_successor, m, n]);
-            function(arena, 2, applied)
+            function(arena, Binders::from(2), applied)
         };
         let plus_type = {
             let inner = arena.comp_type_arrow(nat, returns_nat);
             let outer = arena.comp_type_arrow(nat, inner);
             arena.value_type_thunk(outer)
         };
-        declarations.push(definition(at(at::PLUS), plus_type, plus_body));
+        declarations.push(definition(
+            ConstantIndex::from(at::PLUS),
+            plus_type,
+            plus_body,
+        ));
 
         // length A xs = elim_List[F Nat] A zero (λa t ih. succ ih) xs
         declarations.push(derived(
             arena,
-            at(at::ELIM_LIST_NAT),
-            at(at::LIST),
+            ConstantIndex::from(at::ELIM_LIST_NAT),
+            ConstantIndex::from(at::LIST),
             &list_signature,
             returns_nat,
         ));
@@ -393,78 +399,82 @@ mod recursive_data
             arena.value_thunk(returned)
         };
         let on_cons = {
-            let hypothesis = var(arena, 0);
+            let hypothesis = var(arena, DeBruijnIndex::from(0));
             let recursive = arena.computation_force(hypothesis);
-            let result = var(arena, 0);
+            let result = var(arena, DeBruijnIndex::from(0));
             let successor =
                 arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
             let returned = arena.computation_return(successor);
             let bound = arena.computation_bind(recursive, returned);
-            function(arena, 3, bound)
+            function(arena, Binders::from(3), bound)
         };
         let length_body = {
-            let eliminator = arena.value_constant(at(at::ELIM_LIST_NAT));
-            let code = var(arena, 1);
-            let xs = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_LIST_NAT));
+            let code = var(arena, DeBruijnIndex::from(1));
+            let xs = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[code, on_nil, on_cons, xs]);
-            function(arena, 2, applied)
+            function(arena, Binders::from(2), applied)
         };
         let length_type = {
-            let code = var(arena, 0);
+            let code = var(arena, DeBruijnIndex::from(0));
             let elements = list(arena, code);
             let counted = arena.comp_type_arrow(elements, returns_nat);
             let kind = kind(arena);
             let generic = arena.comp_type_pi(kind, counted);
             arena.value_type_thunk(generic)
         };
-        declarations.push(definition(at(at::LENGTH), length_type, length_body));
+        declarations.push(definition(
+            ConstantIndex::from(at::LENGTH),
+            length_type,
+            length_body,
+        ));
 
         // append A xs ys = elim_List[List A → F (List A)] A (λzs. zs)
         //                    (λa t ih zs. cons a (ih zs)) xs ys
         let appending = {
-            let code = var(arena, 1);
+            let code = var(arena, DeBruijnIndex::from(1));
             let elements = list(arena, code);
             let returned = arena.comp_type_returner(elements);
             arena.comp_type_arrow(elements, returned)
         };
         declarations.push(derived(
             arena,
-            at(at::ELIM_LIST_APPEND),
-            at(at::LIST),
+            ConstantIndex::from(at::ELIM_LIST_APPEND),
+            ConstantIndex::from(at::LIST),
             &list_signature,
             appending,
         ));
         let on_nil = {
-            let zs = var(arena, 0);
+            let zs = var(arena, DeBruijnIndex::from(0));
             let returned = arena.computation_return(zs);
-            function(arena, 1, returned)
+            function(arena, Binders::from(1), returned)
         };
         let on_cons = {
             // Under `A xs ys` and `a t ih zs`: zs 0, ih 1, a 3, A 6.
-            let hypothesis = var(arena, 1);
-            let zs = var(arena, 0);
+            let hypothesis = var(arena, DeBruijnIndex::from(1));
+            let zs = var(arena, DeBruijnIndex::from(0));
             let recursive = call(arena, hypothesis, &[zs]);
             // Under the bind as well: r 0, a 4, A 7.
-            let code = var(arena, 7);
+            let code = var(arena, DeBruijnIndex::from(7));
             let datatype = list(arena, code);
-            let head = var(arena, 4);
-            let rest = var(arena, 0);
+            let head = var(arena, DeBruijnIndex::from(4));
+            let rest = var(arena, DeBruijnIndex::from(0));
             let cons =
                 arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![head, rest]);
             let returned = arena.computation_return(cons);
             let bound = arena.computation_bind(recursive, returned);
-            function(arena, 4, bound)
+            function(arena, Binders::from(4), bound)
         };
         let append_body = {
-            let eliminator = arena.value_constant(at(at::ELIM_LIST_APPEND));
-            let code = var(arena, 2);
-            let xs = var(arena, 1);
-            let ys = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_LIST_APPEND));
+            let code = var(arena, DeBruijnIndex::from(2));
+            let xs = var(arena, DeBruijnIndex::from(1));
+            let ys = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[code, on_nil, on_cons, xs, ys]);
-            function(arena, 3, applied)
+            function(arena, Binders::from(3), applied)
         };
         let append_type = {
-            let code = var(arena, 0);
+            let code = var(arena, DeBruijnIndex::from(0));
             let elements = list(arena, code);
             let returned = arena.comp_type_returner(elements);
             let second = arena.comp_type_arrow(elements, returned);
@@ -473,16 +483,20 @@ mod recursive_data
             let generic = arena.comp_type_pi(kind, first);
             arena.value_type_thunk(generic)
         };
-        declarations.push(definition(at(at::APPEND), append_type, append_body));
+        declarations.push(definition(
+            ConstantIndex::from(at::APPEND),
+            append_type,
+            append_body,
+        ));
 
         // map A B f xs = elim_List[Π B. U (El A → F (El B)) → F (List B)] A
         //                  (λB g. nil) (λa t ih B g. b ← g a; r ← ih B g;
         //                  cons b r) xs B f
         let mapping = {
             // Under `A x B`: A 2, B 0.
-            let source = var(arena, 2);
+            let source = var(arena, DeBruijnIndex::from(2));
             let source = arena.value_type_element(source, Level::zero());
-            let target = var(arena, 0);
+            let target = var(arena, DeBruijnIndex::from(0));
             let target_element = arena.value_type_element(target, Level::zero());
             let into_target = arena.comp_type_returner(target_element);
             let step = arena.comp_type_arrow(source, into_target);
@@ -495,33 +509,33 @@ mod recursive_data
         };
         declarations.push(derived(
             arena,
-            at(at::ELIM_LIST_MAP),
-            at(at::LIST),
+            ConstantIndex::from(at::ELIM_LIST_MAP),
+            ConstantIndex::from(at::LIST),
             &list_signature,
             mapping,
         ));
         let on_nil = {
-            let code = var(arena, 1);
+            let code = var(arena, DeBruijnIndex::from(1));
             let datatype = list(arena, code);
             let nil = arena.value_constructor(datatype, ConstructorTag::from(0_usize), vec![]);
             let returned = arena.computation_return(nil);
-            function(arena, 2, returned)
+            function(arena, Binders::from(2), returned)
         };
         let on_cons = {
             // Under `a t ih B g`: g 0, B 1, ih 2, a 4.
-            let step = var(arena, 0);
-            let head = var(arena, 4);
+            let step = var(arena, DeBruijnIndex::from(0));
+            let head = var(arena, DeBruijnIndex::from(4));
             let image = call(arena, step, &[head]);
             // Under `b`: b 0, g 1, B 2, ih 3.
-            let hypothesis = var(arena, 3);
-            let code = var(arena, 2);
-            let step = var(arena, 1);
+            let hypothesis = var(arena, DeBruijnIndex::from(3));
+            let code = var(arena, DeBruijnIndex::from(2));
+            let step = var(arena, DeBruijnIndex::from(1));
             let rest = call(arena, hypothesis, &[code, step]);
             // Under `r`: r 0, b 1, B 3.
-            let code = var(arena, 3);
+            let code = var(arena, DeBruijnIndex::from(3));
             let datatype = list(arena, code);
-            let mapped_head = var(arena, 1);
-            let mapped_rest = var(arena, 0);
+            let mapped_head = var(arena, DeBruijnIndex::from(1));
+            let mapped_rest = var(arena, DeBruijnIndex::from(0));
             let cons = arena.value_constructor(datatype, ConstructorTag::from(1_usize), vec![
                 mapped_head,
                 mapped_rest,
@@ -529,25 +543,25 @@ mod recursive_data
             let returned = arena.computation_return(cons);
             let inner = arena.computation_bind(rest, returned);
             let outer = arena.computation_bind(image, inner);
-            function(arena, 5, outer)
+            function(arena, Binders::from(5), outer)
         };
         let map_body = {
             // Under `A B f xs`: xs 0, f 1, B 2, A 3.
-            let eliminator = arena.value_constant(at(at::ELIM_LIST_MAP));
-            let source = var(arena, 3);
-            let target = var(arena, 2);
-            let step = var(arena, 1);
-            let xs = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_LIST_MAP));
+            let source = var(arena, DeBruijnIndex::from(3));
+            let target = var(arena, DeBruijnIndex::from(2));
+            let step = var(arena, DeBruijnIndex::from(1));
+            let xs = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[
                 source, on_nil, on_cons, xs, target, step,
             ]);
-            function(arena, 4, applied)
+            function(arena, Binders::from(4), applied)
         };
         let map_type = {
             // Under `A B`: A 1, B 0.
-            let source = var(arena, 1);
+            let source = var(arena, DeBruijnIndex::from(1));
             let source_element = arena.value_type_element(source, Level::zero());
-            let target = var(arena, 0);
+            let target = var(arena, DeBruijnIndex::from(0));
             let target_element = arena.value_type_element(target, Level::zero());
             let into_target = arena.comp_type_returner(target_element);
             let step = arena.comp_type_arrow(source_element, into_target);
@@ -562,13 +576,13 @@ mod recursive_data
             let outer = arena.comp_type_pi(kind, inner);
             arena.value_type_thunk(outer)
         };
-        declarations.push(definition(at(at::MAP), map_type, map_body));
+        declarations.push(definition(ConstantIndex::from(at::MAP), map_type, map_body));
 
         // depth t = elim_Tree[F Nat] zero (λf ih. succ (ih zero)) t
         declarations.push(derived(
             arena,
-            at(at::ELIM_TREE),
-            at(at::TREE),
+            ConstantIndex::from(at::ELIM_TREE),
+            ConstantIndex::from(at::TREE),
             &tree_signature,
             returns_nat,
         ));
@@ -577,71 +591,79 @@ mod recursive_data
             arena.value_thunk(returned)
         };
         let on_node = {
-            let hypothesis = var(arena, 0);
+            let hypothesis = var(arena, DeBruijnIndex::from(0));
             let recursive = call(arena, hypothesis, &[zero]);
-            let result = var(arena, 0);
+            let result = var(arena, DeBruijnIndex::from(0));
             let successor =
                 arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![result]);
             let returned = arena.computation_return(successor);
             let bound = arena.computation_bind(recursive, returned);
-            function(arena, 2, bound)
+            function(arena, Binders::from(2), bound)
         };
         let depth_body = {
-            let eliminator = arena.value_constant(at(at::ELIM_TREE));
-            let tree = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_TREE));
+            let tree = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[on_leaf, on_node, tree]);
-            function(arena, 1, applied)
+            function(arena, Binders::from(1), applied)
         };
         let depth_type = {
-            let tree = arena.value_type_data(at(at::TREE), vec![]);
+            let tree = arena.value_type_data(ConstantIndex::from(at::TREE), vec![]);
             let measured = arena.comp_type_arrow(tree, returns_nat);
             arena.value_type_thunk(measured)
         };
-        declarations.push(definition(at(at::DEPTH), depth_type, depth_body));
+        declarations.push(definition(
+            ConstantIndex::from(at::DEPTH),
+            depth_type,
+            depth_body,
+        ));
 
         // witness n = elim_Nat[F (IsNat x)] here (λp ih. here) n
         let naming = {
-            let scrutinee = var(arena, 0);
-            let indexed = arena.value_type_data(at(at::IS_NAT), vec![scrutinee]);
+            let scrutinee = var(arena, DeBruijnIndex::from(0));
+            let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![scrutinee]);
             arena.comp_type_returner(indexed)
         };
         declarations.push(derived(
             arena,
-            at(at::ELIM_NAT_DEPENDENT),
-            at(at::NAT),
+            ConstantIndex::from(at::ELIM_NAT_DEPENDENT),
+            ConstantIndex::from(at::NAT),
             &nat_signature,
             naming,
         ));
         let on_zero = {
-            let indexed = arena.value_type_data(at(at::IS_NAT), vec![zero]);
+            let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![zero]);
             let here = arena.value_constructor(indexed, ConstructorTag::from(0_usize), vec![]);
             let returned = arena.computation_return(here);
             arena.value_thunk(returned)
         };
         let on_successor = {
             // Under `p ih`: p 1.
-            let predecessor = var(arena, 1);
+            let predecessor = var(arena, DeBruijnIndex::from(1));
             let successor =
                 arena.value_constructor(nat, ConstructorTag::from(1_usize), vec![predecessor]);
-            let indexed = arena.value_type_data(at(at::IS_NAT), vec![successor]);
+            let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![successor]);
             let here = arena.value_constructor(indexed, ConstructorTag::from(0_usize), vec![]);
             let returned = arena.computation_return(here);
-            function(arena, 2, returned)
+            function(arena, Binders::from(2), returned)
         };
         let witness_body = {
-            let eliminator = arena.value_constant(at(at::ELIM_NAT_DEPENDENT));
-            let n = var(arena, 0);
+            let eliminator = arena.value_constant(ConstantIndex::from(at::ELIM_NAT_DEPENDENT));
+            let n = var(arena, DeBruijnIndex::from(0));
             let applied = call(arena, eliminator, &[on_zero, on_successor, n]);
-            function(arena, 1, applied)
+            function(arena, Binders::from(1), applied)
         };
         let witness_type = {
-            let n = var(arena, 0);
-            let indexed = arena.value_type_data(at(at::IS_NAT), vec![n]);
+            let n = var(arena, DeBruijnIndex::from(0));
+            let indexed = arena.value_type_data(ConstantIndex::from(at::IS_NAT), vec![n]);
             let returned = arena.comp_type_returner(indexed);
             let every = arena.comp_type_pi(nat, returned);
             arena.value_type_thunk(every)
         };
-        declarations.push(definition(at(at::WITNESS), witness_type, witness_body));
+        declarations.push(definition(
+            ConstantIndex::from(at::WITNESS),
+            witness_type,
+            witness_body,
+        ));
         declarations
     }
 
@@ -706,7 +728,7 @@ mod recursive_data
     ///
     /// # Specification
     /// - requires: both live in `arena`; `term` is closed.
-    /// - ensures: whether the normal form is syntactically `expected`.
+    /// - ensures: the syntactic equality of the normal form with `expected`.
     /// - panics: if evaluation or readback fault, or no round settles.
     ///
     /// # Termination
@@ -717,12 +739,13 @@ mod recursive_data
     /// - hypothesis: L3 — each program's result is compared with its exact
     ///   expected value and with a near miss.
     /// - witness: `recursive_data::recursive_data::definitions_by_eliminator_normalise`
+    #[spec(requires: arena.computation(term).is_some() && arena.computation(expected).is_some())]
     fn normalises_to(
         arena: &mut CoreArena,
         report: &ModuleReport,
         term: ComputationId,
         expected: ComputationId,
-    ) -> bool
+    ) -> CertificateEquality
     {
         let chain = lowered(report);
         let environment = DefinitionalEnvironment::new();
@@ -749,8 +772,7 @@ mod recursive_data
                 == CertificateEquality::Equal
             {
                 let expected = arena.value_thunk(expected);
-                return gandr_core_term::equal_certificate_syntax(arena, after, expected)
-                    == CertificateEquality::Equal;
+                return gandr_core_term::equal_certificate_syntax(arena, after, expected);
             }
             focus = read;
         }
@@ -763,9 +785,9 @@ mod recursive_data
         let mut arena = CoreArena::new();
         let [nat, list, tree, ..] = signatures(&mut arena);
         let declarations = vec![
-            Declaration::data(at(at::NAT), nat, origin(at(at::NAT))),
-            Declaration::data(at(at::LIST), list, origin(at(at::LIST))),
-            Declaration::data(at(at::TREE), tree, origin(at(at::TREE))),
+            data(ConstantIndex::from(at::NAT), nat),
+            data(ConstantIndex::from(at::LIST), list),
+            data(ConstantIndex::from(at::TREE), tree),
         ];
         let (report, crossed) = run(&mut arena, &declarations);
         for (position, (judged, readmitted)) in
@@ -773,7 +795,7 @@ mod recursive_data
         {
             assert_eq!(judged.verdict(), Verdict::Data, "{position}");
             assert!(
-                matches!(readmitted.outcome(), Outcome::Data { admitted, .. } if admitted.position() == at(position)),
+                matches!(readmitted.outcome(), Outcome::Data { admitted, .. } if admitted.position() == ConstantIndex::from(position)),
                 "{:?}",
                 readmitted.outcome()
             );
@@ -815,10 +837,10 @@ mod recursive_data
     fn checker_refusal(fixture: Fixture) -> Verdict
     {
         let mut arena = CoreArena::new();
-        let position = at(0);
+        let position = ConstantIndex::from(0);
         let universe = kind(&mut arena);
         let unit = arena.value_type_unit();
-        let parameter = var(&mut arena, 0);
+        let parameter = var(&mut arena, DeBruijnIndex::from(0));
         let own = arena.value_type_data(position, vec![parameter]);
         let mut parameters = vec![universe];
         let field = match fixture {
@@ -836,7 +858,7 @@ mod recursive_data
                 let code = arena.value_quote(unit);
                 arena.value_type_data(position, vec![code])
             },
-            | Fixture::Later => arena.value_type_data(at(1), vec![]),
+            | Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
             | Fixture::Parameter => {
                 parameters.push(own);
                 unit
@@ -859,16 +881,21 @@ mod recursive_data
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the kernel's refusal.
+    /// - ensures: the kernel's refusal, one of the occurrence refusals.
     /// - panics: if the kernel admits it.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the kernel names the occurrence the checker names.
     /// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+    #[spec(ensures: |ret| matches!(ret, KernelError::NegativeOccurrence(_)
+        | KernelError::NestedOccurrence(_)
+        | KernelError::IndexOccurrence(_)
+        | KernelError::NonUniformOccurrence(_)
+        | KernelError::CrossBlockReference { .. }))]
     fn kernel_refusal(fixture: Fixture) -> KernelError
     {
         let mut environment = Environment::new();
-        let position = at(0);
+        let position = ConstantIndex::from(0);
         let mut staging = environment.stage();
         let arena = staging.arena();
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
@@ -891,7 +918,7 @@ mod recursive_data
                 let code = arena.value_quote(unit);
                 arena.value_type_data(position, vec![code])
             },
-            | Fixture::Later => arena.value_type_data(at(1), vec![]),
+            | Fixture::Later => arena.value_type_data(ConstantIndex::from(1), vec![]),
             | Fixture::Parameter => {
                 parameters.push(own);
                 unit
@@ -941,11 +968,11 @@ mod recursive_data
                 Fixture::Later,
                 CheckRefusal::CrossBlockReference {
                     site: field,
-                    index: at(1),
+                    index: ConstantIndex::from(1),
                 },
                 KernelError::CrossBlockReference {
                     site: field,
-                    index: at(1),
+                    index: ConstantIndex::from(1),
                 },
             ),
             (
@@ -1010,10 +1037,10 @@ mod recursive_data
         let nat = nat(arena);
         let returner = arena.comp_type_returner(nat);
         let classifier = arena.comp_type_arrow(nat, returner);
-        let zero = numeral(arena, 0);
+        let [zero, ..] = numerals(arena);
         let returned = arena.computation_return(zero);
         let case_on_argument = |arena: &mut CoreArena, on_successor: ComputationId| {
-            let argument = var(arena, 0);
+            let argument = var(arena, DeBruijnIndex::from(0));
             let case =
                 arena.computation_data_case(argument, returner, vec![returned, on_successor]);
             arena.computation_lambda(case)
@@ -1022,32 +1049,32 @@ mod recursive_data
         // `succ` field: `p` 0, `x` 1, `rec` 2.
         let body = match claim {
             | Claim::Descends => {
-                let recursive = var(arena, 2);
-                let field = var(arena, 0);
+                let recursive = var(arena, DeBruijnIndex::from(2));
+                let field = var(arena, DeBruijnIndex::from(0));
                 let call = call(arena, recursive, &[field]);
                 let on_successor = arena.computation_lambda(call);
                 case_on_argument(arena, on_successor)
             },
             | Claim::NotCase => {
-                let recursive = var(arena, 1);
-                let argument = var(arena, 0);
+                let recursive = var(arena, DeBruijnIndex::from(1));
+                let argument = var(arena, DeBruijnIndex::from(0));
                 let call = call(arena, recursive, &[argument]);
                 arena.computation_lambda(call)
             },
             | Claim::Bare => {
-                let recursive = var(arena, 0);
+                let recursive = var(arena, DeBruijnIndex::from(0));
                 arena.computation_force(recursive)
             },
             | Claim::MissingField => case_on_argument(arena, returned),
             | Claim::Unguarded => {
-                let recursive = var(arena, 2);
+                let recursive = var(arena, DeBruijnIndex::from(2));
                 let forced = arena.computation_force(recursive);
                 let on_successor = arena.computation_lambda(forced);
                 case_on_argument(arena, on_successor)
             },
             | Claim::AtScrutinee => {
-                let recursive = var(arena, 2);
-                let scrutinee = var(arena, 1);
+                let recursive = var(arena, DeBruijnIndex::from(2));
+                let scrutinee = var(arena, DeBruijnIndex::from(1));
                 let call = call(arena, recursive, &[scrutinee]);
                 let on_successor = arena.computation_lambda(call);
                 case_on_argument(arena, on_successor)
@@ -1058,8 +1085,8 @@ mod recursive_data
         let value = arena.value_thunk(fixpoint);
         (
             vec![
-                Declaration::data(at(at::NAT), nat_signature, origin(at(at::NAT))),
-                definition(at(1), declared, value),
+                data(ConstantIndex::from(at::NAT), nat_signature),
+                definition(ConstantIndex::from(1_usize), declared, value),
             ],
             fixpoint,
         )
@@ -1130,7 +1157,7 @@ mod recursive_data
             let mut arena = CoreArena::new();
             let unit_type = arena.value_type_unit();
             let returner = arena.comp_type_returner(unit_type);
-            let recursive = var(&mut arena, 0);
+            let recursive = var(&mut arena, DeBruijnIndex::from(0));
             let forced = arena.computation_force(recursive);
             let fixpoint = arena.computation_fixpoint(forced, evidence);
             let declared = arena.value_type_thunk(returner);
@@ -1138,15 +1165,15 @@ mod recursive_data
             // At an application's head a fixpoint stands where a type must be
             // synthesised: `(fix rec. λx. return x) ()`.
             let unit = arena.value_unit();
-            let bound = var(&mut arena, 0);
+            let bound = var(&mut arena, DeBruijnIndex::from(0));
             let returned = arena.computation_return(bound);
             let identity = arena.computation_lambda(returned);
             let headed = arena.computation_fixpoint(identity, evidence);
             let applied = arena.computation_application(headed, unit);
             let applied = arena.value_thunk(applied);
             let declarations = [
-                definition(at(0), declared, value),
-                definition(at(1), declared, applied),
+                definition(ConstantIndex::from(0), declared, value),
+                definition(ConstantIndex::from(1), declared, applied),
             ];
             let (report, crossed) = run(&mut arena, &declarations);
             (
@@ -1196,7 +1223,7 @@ mod recursive_data
             assert!(
                 matches!(readmitted.outcome(),
                     Outcome::Data { admitted, .. } | Outcome::Defined { admitted, .. }
-                        if admitted.position() == at(position)),
+                        if admitted.position() == ConstantIndex::from(position)),
                 "{position}: {:?}",
                 readmitted.outcome()
             );
@@ -1205,11 +1232,16 @@ mod recursive_data
         assert!(crossed.audit().unchecked_admissions().is_empty());
         // A motive naming its scrutinee has no hypothesis at a function field.
         let [_, _, tree_signature, ..] = signatures(&mut arena);
-        let scrutinee = var(&mut arena, 0);
-        let indexed = arena.value_type_data(at(at::IS_TREE), vec![scrutinee]);
+        let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
+        let indexed = arena.value_type_data(ConstantIndex::from(at::IS_TREE), vec![scrutinee]);
         let naming = arena.comp_type_returner(indexed);
         assert_eq!(
-            eliminator::derive(&mut arena, at(at::TREE), &tree_signature, naming),
+            eliminator::derive(
+                &mut arena,
+                ConstantIndex::from(at::TREE),
+                &tree_signature,
+                naming
+            ),
             Err(DerivationRefusal::DependentMotiveAtFunctionField(
                 OccurrenceSite::Field {
                     tag: ConstructorTag::from(1_usize),
@@ -1228,54 +1260,75 @@ mod recursive_data
         let unit_type = arena.value_type_unit();
         let unit_code = arena.value_quote(unit_type);
         let unit = arena.value_unit();
-        let numerals: Vec<ValueId> = (0 .. 5).map(|n| numeral(&mut arena, n)).collect();
+        let numerals = numerals(&mut arena);
         let returned: Vec<ComputationId> = numerals
             .iter()
             .map(|&n| arena.computation_return(n))
             .collect();
 
-        let plus = arena.value_constant(at(at::PLUS));
+        let plus = arena.value_constant(ConstantIndex::from(at::PLUS));
         let sum = call(&mut arena, plus, &[numerals[2], numerals[2]]);
-        assert!(normalises_to(&mut arena, &report, sum, returned[4]));
-        assert!(!normalises_to(&mut arena, &report, sum, returned[3]));
+        assert_eq!(
+            normalises_to(&mut arena, &report, sum, returned[4]),
+            CertificateEquality::Equal
+        );
+        assert_ne!(
+            normalises_to(&mut arena, &report, sum, returned[3]),
+            CertificateEquality::Equal
+        );
 
-        let length = arena.value_constant(at(at::LENGTH));
+        let length = arena.value_constant(ConstantIndex::from(at::LENGTH));
         let pair = list_of(&mut arena, unit_code, &[unit, unit]);
         let counted = call(&mut arena, length, &[unit_code, pair]);
-        assert!(normalises_to(&mut arena, &report, counted, returned[2]));
+        assert_eq!(
+            normalises_to(&mut arena, &report, counted, returned[2]),
+            CertificateEquality::Equal
+        );
 
-        let append = arena.value_constant(at(at::APPEND));
+        let append = arena.value_constant(ConstantIndex::from(at::APPEND));
         let single = list_of(&mut arena, unit_code, &[unit]);
         let joined = call(&mut arena, append, &[unit_code, single, single]);
         let expected = arena.computation_return(pair);
-        assert!(normalises_to(&mut arena, &report, joined, expected));
+        assert_eq!(
+            normalises_to(&mut arena, &report, joined, expected),
+            CertificateEquality::Equal
+        );
         let wrong = arena.computation_return(single);
-        assert!(!normalises_to(&mut arena, &report, joined, wrong));
+        assert_ne!(
+            normalises_to(&mut arena, &report, joined, wrong),
+            CertificateEquality::Equal
+        );
 
-        let map = arena.value_constant(at(at::MAP));
+        let map = arena.value_constant(ConstantIndex::from(at::MAP));
         let constant = {
             let returned = arena.computation_return(unit);
-            function(&mut arena, 1, returned)
+            function(&mut arena, Binders::from(1), returned)
         };
         let mapped = call(&mut arena, map, &[unit_code, unit_code, constant, pair]);
         let expected = arena.computation_return(pair);
-        assert!(normalises_to(&mut arena, &report, mapped, expected));
+        assert_eq!(
+            normalises_to(&mut arena, &report, mapped, expected),
+            CertificateEquality::Equal
+        );
 
-        let depth = arena.value_constant(at(at::DEPTH));
-        let tree_type = arena.value_type_data(at(at::TREE), vec![]);
+        let depth = arena.value_constant(ConstantIndex::from(at::DEPTH));
+        let tree_type = arena.value_type_data(ConstantIndex::from(at::TREE), vec![]);
         let leaf = arena.value_constructor(tree_type, ConstructorTag::from(0_usize), vec![]);
         let leaves = {
             let returned = arena.computation_return(leaf);
-            function(&mut arena, 1, returned)
+            function(&mut arena, Binders::from(1), returned)
         };
         let node = arena.value_constructor(tree_type, ConstructorTag::from(1_usize), vec![leaves]);
         let deeper = {
             let returned = arena.computation_return(node);
-            function(&mut arena, 1, returned)
+            function(&mut arena, Binders::from(1), returned)
         };
         let root = arena.value_constructor(tree_type, ConstructorTag::from(1_usize), vec![deeper]);
         let measured = call(&mut arena, depth, &[root]);
-        assert!(normalises_to(&mut arena, &report, measured, returned[2]));
+        assert_eq!(
+            normalises_to(&mut arena, &report, measured, returned[2]),
+            CertificateEquality::Equal
+        );
     }
 
     /// The kernel's reading of a normaliser decision, through the positions
@@ -1353,12 +1406,10 @@ mod recursive_data
             .collect();
         // The normaliser decides `plus 2 2 ≡ 4` and `plus 2 2 ≢ 3` with a
         // trace.
-        let plus = arena.value_constant(at(at::PLUS));
-        let two = numeral(&mut arena, 2);
+        let plus = arena.value_constant(ConstantIndex::from(at::PLUS));
+        let [_, _, two, three, four] = numerals(&mut arena);
         let sum = call(&mut arena, plus, &[two, two]);
-        let four = numeral(&mut arena, 4);
         let four = arena.computation_return(four);
-        let three = numeral(&mut arena, 3);
         let three = arena.computation_return(three);
         let chain = lowered(&report);
         let environment = DefinitionalEnvironment::new();
@@ -1407,7 +1458,7 @@ mod recursive_data
                 })
                 .collect(),
         );
-        let nat = positions[&at(at::NAT)];
+        let nat = positions[&ConstantIndex::from(at::NAT)];
         let nat_type = kernel.value_type_data(nat, vec![]);
         let kernel_numeral = |kernel: &mut gandr_kernel_term::TermArena, n: usize| {
             let mut built =
@@ -1421,7 +1472,7 @@ mod recursive_data
         let two = kernel_numeral(&mut kernel, 2);
         let four = kernel_numeral(&mut kernel, 4);
         let three = kernel_numeral(&mut kernel, 3);
-        let plus = kernel.value_constant(positions[&at(at::PLUS)]);
+        let plus = kernel.value_constant(positions[&ConstantIndex::from(at::PLUS)]);
         let forced = kernel.computation_force(plus);
         let partial = kernel.computation_application(forced, two);
         let sum = kernel.computation_application(partial, two);
