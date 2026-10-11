@@ -469,6 +469,8 @@ pub enum Former
     /// A capitalised name in term position: an earlier declaration, or a type
     /// atom or the universe standing where a value is read, which is quoted.
     Constructor,
+    /// An unfinished term or pattern, `?` with an optional source name.
+    Hole,
     /// A number literal.
     Number,
     /// A string literal.
@@ -556,9 +558,10 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 31_usize] = [
+    pub const ALL: [Self; 32_usize] = [
         Self::Name,
         Self::Constructor,
+        Self::Hole,
         Self::Number,
         Self::Text,
         Self::Parenthesized,
@@ -610,9 +613,10 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 32_usize] = [
+pub const FORMERS: [(&str, Former); 33_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
+    ("hole", Former::Hole),
     ("number", Former::Number),
     ("string", Former::Text),
     ("parenthesized_expression", Former::Parenthesized),

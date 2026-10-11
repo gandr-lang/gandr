@@ -46,6 +46,7 @@ extern crate alloc;
 
 mod edit;
 mod item_source;
+mod live_match;
 mod session;
 
 pub use crate::edit::Action;
@@ -68,6 +69,10 @@ pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;
 pub use crate::item_source::fault_span;
 pub use crate::item_source::program;
+pub use crate::live_match::MatchAnalysis;
+pub use crate::live_match::MatchCheckpoint;
+pub use crate::live_match::MatchRun;
+pub use crate::live_match::MatchRunFault;
 pub use crate::session::ImportRow;
 pub use crate::session::KernelCheckpoint;
 pub use crate::session::Persistence;

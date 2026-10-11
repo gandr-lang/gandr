@@ -23,7 +23,10 @@ publish.workspace = true
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+gandr-core-checker.workspace = true
 gandr-core-incremental.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true

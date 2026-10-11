@@ -56,7 +56,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 ## Provided features
 
-- `eval_value` and `eval_computation`: weak-head evaluation, refusing with `EvalFault`; `eval_value_within`, the same for a value in an environment the caller supplies, which is how a caller evaluates an operator's body at its arguments without minting the instance.
+- `eval_value` and `eval_computation`: weak-head evaluation, refusing with `EvalFault`; `eval_value_within` and `eval_comp_within` evaluate in an environment supplied by the caller and return the remaining fuel. This lets operator bodies and selected pattern arms run at retained bindings without minting an application.
 - `readback_value` and `readback_computation` under `ReadbackMode::ZeroUnfold` or `ReadbackMode::Unfolding`, refusing with `ReadbackFault`.
 - `DomainArena` with `DomainValueId`, `DomainCompId`, `NeutralId`, `ValueClosureId` and `CompClosureId`: checked constructors and lookups, `force_neutral`, and `RunWatermark` with `DomainArena::truncate_to`.
 - The glued vocabulary: `DomainValue`, `DomainComp`, `Neutral`, `NeutralHead`, `Elimination`, `TermFace`, `CompTermFace`, `Unfolding` and `Glued`.

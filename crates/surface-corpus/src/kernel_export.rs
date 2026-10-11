@@ -112,6 +112,9 @@ enum Class
     /// The checker accepted it as a type operator, which stays on the
     /// checker's side for the instances that name it.
     Static,
+    /// The checker accepted it with a hole or the unknown type, which the
+    /// kernel has no image of: an unfinished program crosses nothing.
+    Unfinished,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -253,17 +256,18 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// # Specification
 /// - requires: the checker verdict and kernel readmission agree: accepted
 ///   definitions or static operators, owed assumptions, matching refusal marks,
-///   or accepted/owed declarations withheld by a dependency.
+///   accepted/owed declarations withheld by a dependency, or accepted/owed
+///   declarations holding a hole or the unknown type.
 /// - ensures: returns exactly the corresponding boundary class, retaining the
 ///   checker refusal’s canonical name for a mark.
 /// - panics: when the fixture’s verdict and readmission disagree.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the current corpus supplies readmitted definitions,
-///   assumptions, refusal marks, static declarations and withheld dependencies.
-///   Exact partition-to-artifact membership distinguishes admitting excluded
-///   declarations or losing admitted names; the predicate additionally states
-///   pair compatibility and exact class selection.
+///   assumptions, refusal marks, static declarations, withheld dependencies and
+///   holed declarations. Exact partition-to-artifact membership distinguishes
+///   admitting excluded declarations or losing admitted names; the predicate
+///   additionally states pair compatibility and exact class selection.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[spec(
@@ -272,12 +276,20 @@ fn sources(root: Root) -> Vec<PathBuf>
         Verdict::Checked { .. } | Verdict::Synthesised { .. },
         &(bridge::Outcome::Defined { .. }
         | bridge::Outcome::Static
-        | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. })),
+        | bridge::Outcome::Refused(
+            bridge::Refusal::Withheld { .. }
+            | bridge::Refusal::Hole { .. }
+            | bridge::Refusal::Unknown { .. }
+        )),
     )
     | (
         Verdict::Owed(_),
         &(bridge::Outcome::Assumed { .. }
-        | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. })),
+        | bridge::Outcome::Refused(
+            bridge::Refusal::Withheld { .. }
+            | bridge::Refusal::Hole { .. }
+            | bridge::Refusal::Unknown { .. }
+        )),
     )
     | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
@@ -292,6 +304,11 @@ fn sources(root: Root) -> Vec<PathBuf>
         _,
         &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
         Class::Withheld,
+    )
+    | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }),
+        Class::Unfinished,
     ) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
         refusal == mark && name == Refusal::Checking(refusal).name()
@@ -322,6 +339,12 @@ fn class_of(
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
         ) => Class::Withheld,
+        | (
+            Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
+            &bridge::Outcome::Refused(
+                bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. },
+            ),
+        ) => Class::Unfinished,
         | (verdict, outcome) => panic!(
             "{}: the verdict {verdict:?} and the kernel's outcome {outcome:?} disagree",
             path.display()
