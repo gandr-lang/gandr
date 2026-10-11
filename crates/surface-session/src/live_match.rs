@@ -68,6 +68,34 @@ pub struct MatchAnalysis
     coverage: Result<Coverage, CoverageFault>,
 }
 
+/// Execution of the selected arm; a possible arm executes no body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MatchRun
+{
+    /// The selected arm evaluated in the checkpoint's semantic domain.
+    Evaluated
+    {
+        /// The selected source-order arm.
+        arm: ArmIndex,
+        /// The resulting computation in the retained domain.
+        result: gandr_core_nbe::DomainCompId,
+    },
+    /// An unfinished test prevented selection.
+    Held(ArmIndex),
+    /// Every written test refuted the scrutinee.
+    Uncovered,
+}
+
+/// Why a selected arm could not be executed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MatchRunFault
+{
+    /// The body table omitted the selected arm.
+    MissingArm(ArmIndex),
+    /// The core evaluator refused the selected body.
+    Eval(EvalFault),
+}
+
 impl MatchAnalysis
 {
     /// Each arm's three-valued answer, without erasing shadowed arms.
@@ -254,6 +282,67 @@ impl MatchCheckpoint
         };
         self.scrutinee = scrutinee;
         Ok(remaining)
+    }
+
+    /// Run the selected arm under the bindings produced by its live answer.
+    ///
+    /// # Specification
+    /// - requires: `analysis` was produced by this checkpoint without an
+    ///   intervening fill. Each body is closed apart from its pattern binders
+    ///   and the global definitions. Binders are in pattern traversal order.
+    /// - ensures: a possible arm executes no body, an exhausted match remains
+    ///   uncovered, and a selected arm executes exactly its own body.
+    /// - provides: execution without re-evaluating the scrutinee or matching
+    ///   the patterns again.
+    /// - fails: the selected body is absent or the evaluator refuses it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the missing arm or the core evaluation fault.
+    ///
+    /// # Adequacy
+    /// - hypothesis: a pattern hole holds both its own and later bodies,
+    ///   whereas an earlier settled arm still executes.
+    /// - witness: `tests::pattern_holes::an_unfilled_hole_never_runs_its_own_arm`
+    /// - witness: `tests::pattern_holes::an_arm_before_the_hole_still_wins`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(run, remaining)|
+        u32::from(remaining) <= u32::from(fuel) && match run {
+            MatchRun::Evaluated { result, .. } => self.domain.computation(result).is_some(),
+            MatchRun::Held(_) | MatchRun::Uncovered => remaining == fuel,
+        }))]
+    #[inline]
+    pub fn run(
+        &mut self,
+        core: &CoreArena,
+        definitions: Definitions<'_>,
+        fuel: Fuel,
+        analysis: &MatchAnalysis,
+        bodies: &[gandr_core_term::ComputationId],
+    ) -> Result<(MatchRun, Fuel), MatchRunFault>
+    {
+        match *analysis.selection() {
+            | Selection::Indeterminate { arm } => Ok((MatchRun::Held(arm), fuel)),
+            | Selection::Exhausted => Ok((MatchRun::Uncovered, fuel)),
+            | Selection::Taken { arm, ref bindings } => {
+                let &body = bodies
+                    .get(usize::from(arm))
+                    .ok_or(MatchRunFault::MissingArm(arm))?;
+                let mut environment = Environment::new();
+                for &bound in bindings {
+                    environment.extend(gandr_core_term::Zone::Intuitionistic, bound);
+                }
+                let (result, remaining) = gandr_core_nbe::eval_comp_within(
+                    core,
+                    &mut self.domain,
+                    definitions,
+                    fuel,
+                    body,
+                    environment,
+                )
+                .map_err(MatchRunFault::Eval)?;
+                Ok((MatchRun::Evaluated { arm, result }, remaining))
+            },
+        }
     }
 
     /// The retained semantic domain, including selected pattern bindings.

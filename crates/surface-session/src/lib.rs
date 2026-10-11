@@ -71,6 +71,8 @@ pub use crate::item_source::fault_span;
 pub use crate::item_source::program;
 pub use crate::live_match::MatchAnalysis;
 pub use crate::live_match::MatchCheckpoint;
+pub use crate::live_match::MatchRun;
+pub use crate::live_match::MatchRunFault;
 pub use crate::session::ImportRow;
 pub use crate::session::KernelCheckpoint;
 pub use crate::session::Persistence;

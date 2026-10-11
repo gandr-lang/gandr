@@ -19,6 +19,7 @@ mod tests
     use gandr_surface_repl::encode_match;
     use gandr_surface_repl::write_block;
     use gandr_surface_session::MatchCheckpoint;
+    use gandr_surface_session::MatchRun;
 
     #[test]
     fn a_fill_updates_the_external_match_transcript()
@@ -43,6 +44,13 @@ mod tests
         let before = checkpoint
             .analyze(&mut context, formed, &patterns, &[left, right])
             .unwrap();
+        assert!(matches!(
+            checkpoint
+                .run(&core, definitions, Fuel::from(0_u32), &before, &[])
+                .unwrap()
+                .0,
+            MatchRun::Held(_)
+        ));
         let mut transcript = Vec::new();
         write_block(&mut transcript, &encode_match(&before)).unwrap();
         let before = String::from_utf8(transcript).unwrap();
@@ -63,6 +71,26 @@ mod tests
         let after = checkpoint
             .analyze(&mut context, formed, &patterns, &[left, right])
             .unwrap();
+        let value = core.value_unit();
+        let body = core.computation_return(value);
+        let (executed, _) = checkpoint
+            .run(&core, definitions, Fuel::from(1000_u32), &after, &[
+                body, body,
+            ])
+            .unwrap();
+        let MatchRun::Evaluated { result, .. } = executed
+        else {
+            panic!("the fill releases the selected arm")
+        };
+        let Some(&gandr_core_nbe::DomainComp::Return { value, .. }) =
+            checkpoint.domain().computation(result)
+        else {
+            panic!("the selected arm returns")
+        };
+        assert!(matches!(
+            checkpoint.domain().value(value),
+            Some(&gandr_core_nbe::DomainValue::Unit { .. })
+        ));
         let mut transcript = Vec::new();
         write_block(&mut transcript, &encode_match(&after)).unwrap();
         let after = String::from_utf8(transcript).unwrap();

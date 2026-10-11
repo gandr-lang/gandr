@@ -121,6 +121,7 @@ pub use crate::eval::Definitions;
 pub use crate::eval::EvalFault;
 pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;
+pub use crate::eval::eval_comp_within;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;
 pub use crate::eval::eval_value_within;

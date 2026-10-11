@@ -272,3 +272,98 @@ fn filling_a_hole_refines_a_possible_verdict()
         bindings: Vec::new()
     });
 }
+
+#[test]
+fn filling_preserves_the_captured_scrutinee_environment()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let hole = HoleId::from(7_u32);
+    let body = core.value_hole(hole);
+    let lambda = core.value_static_lambda(body);
+    let argument = core.value_unit();
+    let applied = core.value_static_application(lambda, argument);
+    let mut checkpoint = checkpoint(&core, applied);
+    let mut patterns = Patterns::new();
+    let expected = patterns.mint(Pattern::Unit);
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let formed = form_value_type(&mut context, unit).unwrap();
+    assert_eq!(
+        checkpoint
+            .analyze(&mut context, formed, &patterns, &[expected])
+            .unwrap()
+            .branches(),
+        &[BranchStatus::Possibly]
+    );
+    let filling = core.value_variable(
+        gandr_core_term::Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    checkpoint
+        .fill(
+            &mut core,
+            definitions,
+            Fuel::from(1000_u32),
+            hole,
+            TermId::Value(filling),
+        )
+        .unwrap();
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    assert_eq!(
+        checkpoint
+            .analyze(&mut context, formed, &patterns, &[expected])
+            .unwrap()
+            .branches(),
+        &[BranchStatus::Satisfied]
+    );
+}
+
+#[test]
+fn the_eliminator_still_fires_on_a_hole_payload()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_type_unit();
+    let sum = core.value_type_sum(unit, unit);
+    let hole = core.value_hole(HoleId::from(0_u32));
+    let left = core.value_injection(Side::Left, hole);
+    let mut checkpoint = checkpoint(&core, left);
+    let mut patterns = Patterns::new();
+    let binder = patterns.mint(Pattern::Binder);
+    let left = patterns.mint(Pattern::Injection(Side::Left, binder));
+    let right = patterns.mint(Pattern::Injection(Side::Right, binder));
+    let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+    let formed = form_value_type(&mut context, sum).unwrap();
+    let analysis = checkpoint
+        .analyze(&mut context, formed, &patterns, &[left, right])
+        .unwrap();
+    let bound = core.value_variable(
+        gandr_core_term::Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let returned = core.computation_return(bound);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let (outcome, _) = checkpoint
+        .run(&core, definitions, Fuel::from(1000_u32), &analysis, &[
+            returned, returned,
+        ])
+        .unwrap();
+    let gandr_surface_session::MatchRun::Evaluated { arm, result } = outcome
+    else {
+        panic!("the constructor head selects")
+    };
+    assert_eq!(arm, ArmIndex::from(0_usize));
+    let Some(&gandr_core_nbe::DomainComp::Return { value, .. }) =
+        checkpoint.domain().computation(result)
+    else {
+        panic!("returning the hole is not a stuck eliminator")
+    };
+    assert!(matches!(
+        checkpoint.domain().value(value),
+        Some(&gandr_core_nbe::DomainValue::Neutral { .. })
+    ));
+}

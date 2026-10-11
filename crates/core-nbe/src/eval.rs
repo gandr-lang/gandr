@@ -1642,6 +1642,7 @@ pub fn eval_computation(
     || ret.as_ref().is_ok_and(|pair| {
         domain.computation(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
     }))]
+#[inline]
 pub fn eval_comp_within(
     core: &CoreArena,
     domain: &mut DomainArena,
