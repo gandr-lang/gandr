@@ -98,6 +98,31 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why no data declaration's signature is forming.
+    mod forming {
+        /// The reason no block is open.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No data signature is being formed.
+            Idle,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no nominal signature is in scope at a position.
+    pub mod data_scope {
+        /// The reason no signature is in scope.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No admitted declaration and no forming block names the
+            /// position.
+            Unknown,
+        }
+    }
+}
+
 /// The work one judgement may spend before it refuses.
 ///
 /// One step is charged per machine transition, so the allowance bounds a run
@@ -206,6 +231,14 @@ pub struct CheckingContext<'arena>
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
     support: SupportLog,
+    /// The data declaration whose signature is forming, which names itself.
+    forming: Maybe<
+        (
+            ConstantIndex,
+            alloc::sync::Arc<gandr_core_term::DataSignature>,
+        ),
+        forming::Absent,
+    >,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -216,7 +249,7 @@ impl<'arena> CheckingContext<'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the context holds no binder, no signature, no definition and
-    ///   no lift, and has admitted nothing.
+    ///   no lift, has admitted nothing and forms no block.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
     /// - intension: mints three value-type nodes into `arena` — the unit type,
@@ -260,6 +293,7 @@ impl<'arena> CheckingContext<'arena>
             lifts: BTreeMap::new(),
             budget,
             support: SupportLog::Off,
+            forming: Maybe::Absent(forming::Absent::Idle),
         }
     }
     /// Native signatures already admitted in this context.
@@ -313,33 +347,102 @@ impl<'arena> CheckingContext<'arena>
         signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
     ) -> Result<(), CheckRefusal>
     {
-        crate::former::form_signature(self, &signature)?;
+        crate::former::form_signature(self, constant, &signature)?;
         self.admit(constant)?;
         self.record_data(constant, signature);
         Ok(())
+    }
+
+    /// Open the block of the data declaration at `position` for its
+    /// signature's formation: until the block closes, a nominal lookup of
+    /// `position` answers `signature`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a block already open is replaced.
+    /// - ensures: [`Self::data_in_scope`] answers `signature` at `position`.
+    /// - provides: the one scope a data declaration's fields name it in.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field naming its own family forms inside the block
+    ///   and a later reference to the same family, outside it, needs the
+    ///   admitted signature.
+    /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+    #[spec(ensures: matches!(self.data_in_scope(position), Maybe::Present(_)))]
+    pub(crate) fn open_block(
+        &mut self,
+        position: ConstantIndex,
+        signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
+    )
+    {
+        self.forming = Maybe::Present((position, signature));
+    }
+
+    /// Close the forming block.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close_block(&mut self)
+    {
+        self.forming = Maybe::Absent(forming::Absent::Idle);
+    }
+
+    /// The nominal signature in scope at `constant`, without logging: the
+    /// forming block's when it is that position's, else the admitted one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn data_in_scope(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<alloc::sync::Arc<gandr_core_term::DataSignature>, data_scope::Absent>
+    {
+        if let Maybe::Present((position, ref signature)) = self.forming
+            && position == constant
+        {
+            return Maybe::Present(alloc::sync::Arc::clone(signature));
+        }
+        self.data_signatures
+            .get(&constant)
+            .map_or(Maybe::Absent(data_scope::Absent::Unknown), |signature| {
+                Maybe::Present(alloc::sync::Arc::clone(signature))
+            })
     }
 
     /// Read and log a complete nominal signature, including its absence.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the exact stored table is returned; a supported judgment logs
-    ///   its identity and table, rather than only its universe.
+    /// - ensures: the forming block's signature at its own position, unlogged;
+    ///   otherwise the exact stored table, and a supported judgment logs its
+    ///   identity and table, rather than only its universe.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — changing only a constructor table, or supplying a
-    ///   formerly missing declaration, changes a dependent judgment's answer.
+    ///   formerly missing declaration, changes a dependent judgment's answer; a
+    ///   declaration's own fields read its forming signature, which no later
+    ///   run can disagree with.
     /// - witness: `native_formers::native_formers::native_signature_support_and_adoption`
-    #[spec(ensures: |ret| ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
+    /// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+    #[spec(ensures: |ret| match self.forming {
+Maybe::Present((position, ref signature)) if position == constant => ret.as_ref() == Some(signature),
+Maybe::Present(_) | Maybe::Absent(_) => ret.as_ref() == self.data_signatures.get(&constant) && match self.support {
 SupportLog::Off => true,
 SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.constant() == constant && entry.signature() == ret.as_deref()),
+},
 })]
     pub(crate) fn consult_data(
         &mut self,
         constant: ConstantIndex,
     ) -> Option<alloc::sync::Arc<gandr_core_term::DataSignature>>
     {
+        if let Maybe::Present((position, ref signature)) = self.forming
+            && position == constant
+        {
+            return Some(alloc::sync::Arc::clone(signature));
+        }
         let answer = self
             .data_signatures
             .get(&constant)

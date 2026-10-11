@@ -826,7 +826,7 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Value(path)), depth));
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));
                     },
-                    | Computation::Lambda(body) => {
+                    | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
                         work.push((CoreNode::Term(TermNode::Computation(body)), under));
                     },
                     | Computation::Application(head, argument) => {

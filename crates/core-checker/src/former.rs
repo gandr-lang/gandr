@@ -12,8 +12,10 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use quenchant_shape::shape::Maybe;
 
 use crate::CheckRefusal;
 use crate::CheckingContext;
@@ -52,14 +54,21 @@ pub fn kind_level(
 
 /// Check a parameter telescope and every constructor field before admission.
 ///
-/// Fields see the complete parameter telescope, but no constructor fields or
-/// self reference. A refused signature leaves no binder or nominal entry.
+/// Fields see the complete parameter telescope and the declaration's own
+/// family, at its admission position, but no constructor fields. The family
+/// may occur in a field only strictly positively and at its parameter
+/// variables, which the occurrence walk decides before anything forms. A
+/// refused signature leaves no binder, block or nominal entry.
 ///
 /// # Specification
-/// - requires: the nominal entry has not been installed in the context.
-/// - ensures: every parameter and field forms in its declared scope; fields fit
-///   the declared value universe; the original binder depth is restored.
-/// - fails: kind, formation and field-universe refusals are retained.
+/// - requires: the nominal entry has not been installed in the context, and
+///   `position` is the admission position the declaration takes.
+/// - ensures: every occurrence of the family is strictly positive and uniform;
+///   every parameter and field forms in its declared scope; fields fit the
+///   declared value universe; the original binder depth is restored and the
+///   block closed.
+/// - fails: occurrence, kind, formation and field-universe refusals are
+///   retained.
 /// - panics: none.
 ///
 /// # Errors
@@ -67,15 +76,22 @@ pub fn kind_level(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — dependent parameters, an invalid field, an excessive
-///   field universe and a self reference distinguish the admission premises.
+///   field universe, admitted self references and refused occurrences
+///   distinguish the admission premises.
 /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
-#[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth)]
+/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`
+/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name_in_both_checkers`
+#[spec(captures: depth = context.depth(Zone::Intuitionistic), ensures: context.depth(Zone::Intuitionistic) == depth
+    && (matches!(context.data_in_scope(position), Maybe::Absent(_)) || context.data_signatures().contains_key(&position)))]
 pub fn form_signature(
     context: &mut CheckingContext<'_>,
-    signature: &DataSignature,
+    position: ConstantIndex,
+    signature: &Arc<DataSignature>,
 ) -> Result<(), CheckRefusal>
 {
+    crate::occurrence::occurrences(context.arena(), position, signature)?;
     let depth = context.depth(Zone::Intuitionistic);
+    context.open_block(position, Arc::clone(signature));
     let outcome = (|| {
         let _kind = form_value_type(context, signature.kind())?;
         let level = kind_level(context, signature.kind())?;
@@ -97,6 +113,7 @@ pub fn form_signature(
         }
         Ok(())
     })();
+    context.close_block();
     while context.depth(Zone::Intuitionistic) != depth {
         let _closed = context
             .binders()
@@ -121,7 +138,7 @@ pub fn form_signature(
 /// # Adequacy
 /// - hypothesis: L3 — equal carriers at distinct positions stay nominal.
 /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
-#[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if context.data_signatures().get(declaration) == Some(signature) && signature.parameters().len() == arguments.len())) == ret.is_ok())]
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.parameters().len() == arguments.len())) == ret.is_ok())]
 pub fn signature(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
