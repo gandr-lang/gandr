@@ -1022,7 +1022,7 @@ impl<'source> Program<'source>
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
 Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
-| Computation::Hole(_) | Computation::Mark { .. })) |
+| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1045,7 +1045,8 @@ None => ret.0 == "<computation>",
                 | Computation::RecordProjection(..)
                 | Computation::Case { .. }
                 | Computation::Hole(_)
-                | Computation::Mark { .. }),
+                | Computation::Mark { .. }
+                | Computation::Fixpoint { .. }),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
@@ -1313,7 +1314,9 @@ fn references(
                     Node::Computation(on_left),
                     Node::Computation(on_right),
                 ]),
-                | Some(&Computation::Mark { body, .. }) => pending.push(Node::Computation(body)),
+                | Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
+                    pending.push(Node::Computation(body));
+                },
                 | Some(&Computation::Hole(_)) | None => {},
             },
         }

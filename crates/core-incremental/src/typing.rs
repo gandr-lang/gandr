@@ -30,6 +30,8 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DescentRefusal;
+use gandr_kernel_term::OccurrenceSite;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemOrdinal;
@@ -99,6 +101,8 @@ pub enum Form
     StaticLambda(Site),
     /// The item's own hole.
     Hole,
+    /// A fixpoint.
+    Fixpoint(Site),
 }
 
 /// A refusal, projected.
@@ -301,6 +305,30 @@ pub enum Refusal
         at: Site,
         /// The child that classifies no codes.
         found: TypeContent,
+    },
+    /// A data declaration's own family occurs under a function's domain.
+    NegativeOccurrence(OccurrenceSite),
+    /// A data declaration's own family occurs inside another former.
+    NestedOccurrence(OccurrenceSite),
+    /// A data declaration's own family occurs inside a term a type reads.
+    IndexOccurrence(OccurrenceSite),
+    /// A data declaration's own family is applied off its parameters.
+    NonUniformOccurrence(OccurrenceSite),
+    /// A data declaration names a position after its own.
+    CrossBlockReference
+    {
+        /// The parameter or field that names it.
+        site: OccurrenceSite,
+        /// What the later position names.
+        index: Reference,
+    },
+    /// A fixpoint's structural-descent claim does not replay.
+    DescentNotReplayed
+    {
+        /// The fixpoint.
+        at: Site,
+        /// The rule of the descent walk that failed.
+        reason: DescentRefusal,
     },
 }
 
@@ -561,7 +589,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | (CheckingForm::Case(id), Form::Case(at))
             | (CheckingForm::Lambda(id), Form::Lambda(at))
-            | (CheckingForm::Return(id), Form::Return(at)) => {
+            | (CheckingForm::Return(id), Form::Return(at))
+            | (CheckingForm::Fixpoint(id), Form::Fixpoint(at)) => {
                 at == self.site(ArenaNode::Computation(id))
             },
             | (CheckingForm::Hole(_), Form::Hole) => true,
@@ -627,6 +656,12 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 ..
             } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && position == returned }
  else if let CheckRefusal::StaticClassifierExpected { at, .. } = matched_left_value && let Refusal::StaticClassifierExpected { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::ValueType(at)) }
+ else if let (CheckRefusal::NegativeOccurrence(site), &Refusal::NegativeOccurrence(projected))
+     | (CheckRefusal::NestedOccurrence(site), &Refusal::NestedOccurrence(projected))
+     | (CheckRefusal::IndexOccurrence(site), &Refusal::IndexOccurrence(projected))
+     | (CheckRefusal::NonUniformOccurrence(site), &Refusal::NonUniformOccurrence(projected)) = (matched_left_value, matched_right_value) { site == projected }
+ else if let CheckRefusal::CrossBlockReference { site, index } = matched_left_value && let Refusal::CrossBlockReference { site: projected, index: ref returned } = *matched_right_value { site == projected && *returned == self.layout.resolve(index) }
+ else if let CheckRefusal::DescentNotReplayed { at, reason } = matched_left_value && let Refusal::DescentNotReplayed { at: projected, reason: returned } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && reason == returned }
  else { false }
 })]
     fn refusal(
@@ -705,6 +740,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     | CheckingForm::Hole(_) => Form::Hole,
                     | CheckingForm::StaticLambda(id) => {
                         Form::StaticLambda(self.site(ArenaNode::Value(id)))
+                    },
+                    | CheckingForm::Fixpoint(id) => {
+                        Form::Fixpoint(self.site(ArenaNode::Computation(id)))
                     },
                 },
             },
@@ -786,6 +824,18 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                     at: self.site(ArenaNode::ValueType(at)),
                     found: self.value_type(found),
                 }
+            },
+            | CheckRefusal::NegativeOccurrence(site) => Refusal::NegativeOccurrence(site),
+            | CheckRefusal::NestedOccurrence(site) => Refusal::NestedOccurrence(site),
+            | CheckRefusal::IndexOccurrence(site) => Refusal::IndexOccurrence(site),
+            | CheckRefusal::NonUniformOccurrence(site) => Refusal::NonUniformOccurrence(site),
+            | CheckRefusal::CrossBlockReference { site, index } => Refusal::CrossBlockReference {
+                site,
+                index: self.layout.resolve(index),
+            },
+            | CheckRefusal::DescentNotReplayed { at, reason } => Refusal::DescentNotReplayed {
+                at: self.site(ArenaNode::Computation(at)),
+                reason,
             },
         }
     }

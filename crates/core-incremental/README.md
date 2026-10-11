@@ -15,6 +15,7 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 - [The synthesis stream](#the-synthesis-stream)
 - [Native universe-path content](#native-universe-path-content)
 - [Native declaration content and support](#native-declaration-content-and-support)
+- [Recursive data and fixpoints](#recursive-data-and-fixpoints)
 - [Specification evidence](#specification-evidence)
 - [Consumer and open rows](#consumer-and-open-rows)
 - [License](#license)
@@ -178,7 +179,7 @@ A stream opens with the item count, carries one event per item in source order â
 
 The content table preserves universe sorts and levels, quotes, static operators and native universe paths. Native path tags occupy `0x40â€“0x44` in this cache codec; they are not kernel artifact tags. Candidate evidence is exact content, including ordered direction and dialogue boundaries, and never a cached admission receipt. Type-only signature content refuses term-bearing path classifiers just as it refuses quotes and decodes.
 
-Checkpoint sets use `GCKPT\0\0\x05`; programs use `GPROG\0\0\x03`. Their identities bind the checker, native declaration categories, support queries and refusal vocabulary. Earlier identities are rejected rather than reusing answers from a different fragment. Static family, universe and native-former round-trip witnesses exercise their distinct tags and payloads.
+Checkpoint sets use `GCKPT\0\0\x06`; programs use `GPROG\0\0\x04`. Their identities bind the checker, native declaration categories, support queries and refusal vocabulary. Earlier identities are rejected rather than reusing answers from a different fragment. Static family, universe and native-former round-trip witnesses exercise their distinct tags and payloads.
 
 **Choice.** Preserve native classifiers, maps and candidate evidence as content instead of caching a certificate verdict. Structural path conversion may erase evidence, but checkpoint identity must not. **Reversal.** Persisting `Flow_U`, element identity, the bridge mode, higher fields, funext or guarded List inhabitants requires its own versioned content vocabulary and validated dependency support; none is inferred from a native path entry.
 
@@ -189,6 +190,12 @@ A declaration's roots are `DeclarationRoots::Value` or `DeclarationRoots::Data`;
 Support keys distinguish a value-signature query from a data-signature query at the same reference. A data answer contains the complete nominal schema or its absence, not merely its universe. Adoption reforms a retained data declaration in the new context. Term-bearing nominal type content remains outside the type-only adoption reader and is conservatively rechecked; it is never promoted to an authority-bearing cache hit.
 
 **Choice.** Extend ordinary declaration content and query-specific support instead of treating data as a value signature. **Reversal.** A wider adoption reader must validate term-valued indices and their dependencies before reusing them. `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation` round-trips accepted and refused items, adopts an unchanged module, invalidates a constructor after a schema-only change, and compares incremental results with fresh checking.
+
+## Recursive data and fixpoints
+
+A fixpoint persists as cache node tag `0x19` with its evidence and its body; it is a term, never a seatable type. A data declaration's fields may name it: the self reference resolves to the item's own reference, and the checker reads the forming block without a support query, so a recursive declaration's footprint holds no query of itself. The occurrence refusals keep their parameter or field site, a reference past the block keeps the reference it names, and a descent refusal keeps its fixpoint's site and the rule of the walk that failed.
+
+**Choice.** Persist the evidence as content, so a partial and a structurally descending fixpoint never share an address. **Reversal.** A mutual block would add a block reference to the support vocabulary; until then one block is one item. `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume` round-trips a recursive family, a fixpoint and each new refusal and adopts the unchanged program.
 
 ## Specification evidence
 

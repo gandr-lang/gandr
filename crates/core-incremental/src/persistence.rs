@@ -1753,6 +1753,12 @@ mod tests
             | Typing::Refused(Refusal::StaticClassifierExpected { .. }) => {
                 "static-classifier-expected"
             },
+            | Typing::Refused(Refusal::NegativeOccurrence(_)) => "negative-occurrence",
+            | Typing::Refused(Refusal::NestedOccurrence(_)) => "nested-occurrence",
+            | Typing::Refused(Refusal::IndexOccurrence(_)) => "index-occurrence",
+            | Typing::Refused(Refusal::NonUniformOccurrence(_)) => "non-uniform-occurrence",
+            | Typing::Refused(Refusal::CrossBlockReference { .. }) => "cross-block-reference",
+            | Typing::Refused(Refusal::DescentNotReplayed { .. }) => "descent-not-replayed",
         })
     }
 

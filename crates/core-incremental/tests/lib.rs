@@ -17,3 +17,6 @@ mod incremental;
 
 #[cfg(test)]
 mod native_formers;
+
+#[cfg(test)]
+mod recursive_data;

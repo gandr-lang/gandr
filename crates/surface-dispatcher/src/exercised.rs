@@ -540,7 +540,8 @@ fn checking_row(
                 | CheckingForm::Case(_)
                 | CheckingForm::Return(_)
                 | CheckingForm::Hole(_)
-                | CheckingForm::StaticLambda(_),
+                | CheckingForm::StaticLambda(_)
+                | CheckingForm::Fixpoint(_),
         }
         | CheckRefusal::PathCode(_)
         | CheckRefusal::TypeMismatch(_)
@@ -558,7 +559,13 @@ fn checking_row(
         | CheckRefusal::FamilyArity { .. }
         | CheckRefusal::FamilyArgumentClassifier { .. }
         | CheckRefusal::StaticLambdaArgument { .. }
-        | CheckRefusal::StaticClassifierExpected { .. } => {},
+        | CheckRefusal::StaticClassifierExpected { .. }
+        | CheckRefusal::NegativeOccurrence(_)
+        | CheckRefusal::NestedOccurrence(_)
+        | CheckRefusal::IndexOccurrence(_)
+        | CheckRefusal::NonUniformOccurrence(_)
+        | CheckRefusal::CrossBlockReference { .. }
+        | CheckRefusal::DescentNotReplayed { .. } => {},
     }
 }
 
@@ -787,6 +794,9 @@ fn formers(
                     worklist.push(Node::Value(scrutinee));
                     worklist.push(Node::Computation(on_left));
                     worklist.push(Node::Computation(on_right));
+                },
+                | Some(&Computation::Fixpoint { body, .. }) => {
+                    worklist.push(Node::Computation(body));
                 },
                 | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {},
             },

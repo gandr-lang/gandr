@@ -72,6 +72,8 @@ pub enum Form
     Hole,
     /// A mark: the record of a refusal has no image.
     Mark,
+    /// A fixpoint: the vocabulary has no recursion.
+    Fixpoint,
 }
 impl core::fmt::Display for Form
 {
@@ -109,6 +111,7 @@ impl core::fmt::Display for Form
             | Self::PathEquiv => "an equivalence path",
             | Self::Hole => "a term hole",
             | Self::Mark => "a mark",
+            | Self::Fixpoint => "a fixpoint",
         })
     }
 }
@@ -323,6 +326,9 @@ pub fn lower_computation(
                     },
                     | Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
                     | Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
+                    | Computation::Fixpoint { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Fixpoint));
+                    },
                 }
             },
             | Step::Value(id, depth) => {

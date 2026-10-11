@@ -148,8 +148,8 @@ impl Branch
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: an intuitionistic variable at distance `d` names level `depth - 1
-///   - d` when that is non-negative.
+/// - ensures: the level `depth - 1 - d` for an intuitionistic variable at
+///   distance `d`, when that is non-negative.
 /// - panics: none.
 ///
 /// # Adequacy

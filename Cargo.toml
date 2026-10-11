@@ -316,6 +316,7 @@ path = "crates/kernel-strata"
 # - runtime-compile-host
 # - storage-artifact
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering
 # - surface-pretty

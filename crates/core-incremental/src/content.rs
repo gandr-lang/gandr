@@ -44,6 +44,7 @@ use gandr_core_term::hole::MarkIndex;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use quenchant_shape::shape::Maybe;
@@ -299,6 +300,14 @@ pub enum ContentNode
         mark: MarkIndex,
         /// The computation marked.
         body: NodeIndex,
+    },
+    /// A fixpoint over its body, under the self binder, with its evidence.
+    Fixpoint
+    {
+        /// The body.
+        body: NodeIndex,
+        /// The termination evidence it carries.
+        evidence: FixpointEvidence,
     },
     /// A base-type atom.
     Base(BaseType),
@@ -570,7 +579,8 @@ impl ContentNode
         | Self::Force(_)
         | Self::Case { .. }
         | Self::ComputationHole(_)
-        | Self::ComputationMark { .. } => matches!(ret,Sort::Computation),
+        | Self::ComputationMark { .. }
+        | Self::Fixpoint { .. } => matches!(ret,Sort::Computation),
         Self::Data { .. } | Self::RecordType(_) | Self::PathUniverse(..)
         | Self::Base(_)
         | Self::UnitType
@@ -630,7 +640,8 @@ impl ContentNode
             | Self::Force(_)
             | Self::Case { .. }
             | Self::ComputationHole(_)
-            | Self::ComputationMark { .. } => Sort::Computation,
+            | Self::ComputationMark { .. }
+            | Self::Fixpoint { .. } => Sort::Computation,
             | Self::Data { .. }
             | Self::RecordType(_)
             | Self::PathUniverse(..)
@@ -709,7 +720,7 @@ impl ContentNode
             | Self::Element { code: a, .. }
             | Self::ComputationElement { code: a, .. }
             | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
-            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) => {
+            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) | Self::Fixpoint { body: a, .. } => {
                 actual == Some(&[(a, M)][..])
             },
             | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
@@ -800,9 +811,10 @@ impl ContentNode
             | Self::Return(body)
             | Self::Force(body)
             | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
-            | Self::ComputationMark { body, .. } | Self::Thunk(body) | Self::Lambda(body) => {
-                Children::of(&[(body, M)])
-            },
+            | Self::ComputationMark { body, .. }
+            | Self::Thunk(body)
+            | Self::Lambda(body)
+            | Self::Fixpoint { body, .. } => Children::of(&[(body, M)]),
             | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
             | Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
             | Self::Case {
@@ -903,6 +915,7 @@ impl ContentNode
             | Self::ValueMark { .. }
             | Self::ComputationHole(_)
             | Self::ComputationMark { .. }
+            | Self::Fixpoint { .. }
             | Self::UnknownType
             | Self::UnknownComputationType => Maybe::Absent(referencing::Absent::NotAReference),
         }
@@ -1932,6 +1945,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 mark,
                 body: self.discover(ArenaNode::Computation(body)),
             },
+            | Computation::Fixpoint { body, evidence } => ContentNode::Fixpoint {
+                body: self.discover(ArenaNode::Computation(body)),
+                evidence,
+            },
         }
     }
 
@@ -2315,6 +2332,10 @@ where
         | ContentNode::ComputationMark { mark, body } => ContentNode::ComputationMark {
             mark,
             body: image(body),
+        },
+        | ContentNode::Fixpoint { body, evidence } => ContentNode::Fixpoint {
+            body: image(body),
+            evidence,
         },
         | ContentNode::StaticPi { domain, codomain } => {
             let domain = image(domain);
@@ -2722,7 +2743,8 @@ fn mint_node(
         | ContentNode::Hole(_)
         | ContentNode::ValueMark { .. }
         | ContentNode::ComputationHole(_)
-        | ContentNode::ComputationMark { .. } => Maybe::Absent(seating::Absent::Unseatable),
+        | ContentNode::ComputationMark { .. }
+        | ContentNode::Fixpoint { .. } => Maybe::Absent(seating::Absent::Unseatable),
     }
 }
 
