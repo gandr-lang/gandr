@@ -13,7 +13,9 @@
 //! visit it at, and the walk's I/O — listing a directory, reading a source —
 //! happens as the driver advances it with [`Walk::step`] or hands it a
 //! visitor with [`Walk::visit`]. The `run` verb routes to a [`Script`], which
-//! reads its one source when the driver runs it.
+//! reads its one source when the driver runs it. The `stage` verb routes to a
+//! [`Staging`], which reads nothing: it builds its programs when the driver
+//! runs it.
 //!
 //! # Sources fork; judgement keeps walk order
 //!
@@ -48,6 +50,14 @@
 //! asked for, so `check` performs no run beyond the outcomes its sources
 //! state.
 //!
+//! # Staged programs check on the driver's pool
+//!
+//! The `stage` verb builds staging observer programs and checks each through
+//! the checker's program entry, which forks every stage — normalization,
+//! readmission, family admission — through the fork the verb hands it: a
+//! work-stealing pool of the invocation's width, or the calling thread at one.
+//! Every program of a run shares one memo, in order.
+//!
 //! # Membership is location
 //!
 //! [`classify`] decides from a source's path alone which root it sits under:
@@ -67,6 +77,7 @@ mod exercised;
 mod report;
 mod root;
 mod script;
+mod stage;
 mod walk;
 mod width;
 
@@ -108,6 +119,15 @@ pub use crate::script::Script;
 pub use crate::script::ScriptRun;
 pub use crate::script::execute;
 pub use crate::script::run_source;
+pub use crate::stage::PoolFault;
+pub use crate::stage::ProgramSpec;
+pub use crate::stage::RunDigest;
+pub use crate::stage::SpecError;
+pub use crate::stage::StageFault;
+pub use crate::stage::StageRun;
+pub use crate::stage::StageVerdict;
+pub use crate::stage::Staged;
+pub use crate::stage::Staging;
 pub use crate::walk::SourceFault;
 pub use crate::walk::Standing;
 pub use crate::walk::Step;
@@ -147,6 +167,15 @@ pub enum Invocation
         /// The source file.
         path: PathBuf,
     },
+    /// `stage`: check staging observer programs, in order, through one
+    /// memo.
+    Stage
+    {
+        /// The programs, in order.
+        programs: Vec<ProgramSpec>,
+        /// The threads each program's stages fork onto.
+        width: Width,
+    },
 }
 
 /// What an invocation routed to, for the driver to render.
@@ -172,6 +201,8 @@ pub enum Outcome
     },
     /// A source file to run as a program, not yet read.
     Script(Script),
+    /// Staging observer programs to check, not yet built.
+    Stage(Staging),
 }
 
 /// The toolchain-management status, rendered by the driver.
@@ -218,16 +249,18 @@ impl core::fmt::Display for StatusReport
 ///   invocation to the status report, `check` to a walk run under
 ///   [`Verb::Check`] with the same goals setting, and `test` to a walk run
 ///   under [`Verb::Test`], each walk over the invocation's paths in order at
-///   the invocation's width; `run` to a [`Script`] of its path. Routing
-///   performs no I/O of its own: a walk or a script reads nothing until it is
-///   advanced, and building the grammar it parses with is computation. The
-///   optional `tracing` feature reports a span to the caller's subscriber.
+///   the invocation's width; `run` to a [`Script`] of its path; `stage` to a
+///   [`Staging`] of its programs, in order, at its width. Routing performs no
+///   I/O of its own: a walk or a script reads nothing until it is advanced, a
+///   staging builds nothing until it runs, and building the grammar a walk
+///   parses with is computation. The optional `tracing` feature reports a span
+///   to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all four invocation variants and both goals policies have
+/// - hypothesis: L3 — all five invocation variants and both goals policies have
 ///   exact outcomes. Missing-path fixtures observe the first routed path and
 ///   the script path; they do not enumerate arbitrary path lists or prove the
 ///   complete walk order, which has its own witnesses.
@@ -235,6 +268,7 @@ impl core::fmt::Display for StatusReport
 /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
 /// - witness: `tests::the_test_verb_routes_to_a_walk`
 /// - witness: `tests::the_run_verb_routes_to_a_script`
+/// - witness: `tests::the_stage_verb_routes_to_a_staging`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
@@ -244,13 +278,21 @@ impl core::fmt::Display for StatusReport
         verb = match &invocation {
             &Invocation::Check { goals, width, .. } => Some((Verb::Check(goals), width)),
             &Invocation::Test { width, .. } => Some((Verb::Test, width)),
-            &Invocation::Status | &Invocation::Run { .. } => None,
+            &Invocation::Status | &Invocation::Run { .. } | &Invocation::Stage { .. } => None,
+        },
+        staged = match &invocation {
+            &Invocation::Stage { ref programs, width } => Some((programs.clone(), width)),
+            &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
+                | &Invocation::Run { .. } => None,
         },
     ],
     ensures: |ref ret| match *ret {
         Outcome::Status(_) => status,
         Outcome::Run { verb: routed, width, .. } => Some((routed, width)) == verb,
-        Outcome::Script(_) => !status && verb.is_none(),
+        Outcome::Script(_) => !status && verb.is_none() && staged.is_none(),
+        Outcome::Stage(ref staging) =>
+            staged.as_ref().is_some_and(|&(ref programs, width)|
+                staging.programs() == programs.as_slice() && staging.width() == width),
     },
 )]
 pub fn dispatch(invocation: Invocation) -> Outcome
@@ -272,6 +314,7 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             width,
         },
         | Invocation::Run { path } => Outcome::Script(Script::new(path)),
+        | Invocation::Stage { programs, width } => Outcome::Stage(Staging::new(programs, width)),
     }
 }
 
@@ -410,5 +453,25 @@ mod tests
             PathBuf::from("no/such/script.gandr"),
             "the script reads the path given"
         );
+    }
+
+    /// `stage` routes to a staging of its programs, in order, at its width.
+    #[test]
+    fn the_stage_verb_routes_to_a_staging()
+    {
+        let programs: Vec<super::ProgramSpec> = ["double:0..4", "pow:2..3"]
+            .iter()
+            .map(|spelling| spelling.parse().expect("a program spelling"))
+            .collect();
+        let outcome = dispatch(Invocation::Stage {
+            programs: programs.clone(),
+            width: Width::PerformanceCores,
+        });
+        let Outcome::Stage(staging) = outcome
+        else {
+            panic!("stage routes to a staging");
+        };
+        assert_eq!(staging.programs(), programs.as_slice());
+        assert_eq!(staging.width(), Width::PerformanceCores);
     }
 }
