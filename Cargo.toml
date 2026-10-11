@@ -205,6 +205,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering (dev)
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
@@ -227,6 +228,7 @@ path = "crates/core-incremental"
 # - kernel-core (dev)
 # - surface-dispatcher
 # - surface-pretty (dev)
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
@@ -253,6 +255,7 @@ path = "crates/core-sequent"
 # - surface-dispatcher
 # - surface-lowering
 # - surface-pretty
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"

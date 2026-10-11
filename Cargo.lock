@@ -800,7 +800,10 @@ dependencies = [
 name = "gandr-surface-repl"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-checker",
  "gandr-core-incremental",
+ "gandr-core-nbe",
+ "gandr-core-term",
  "gandr-kernel-term",
  "gandr-storage-records",
  "gandr-surface-corpus",
