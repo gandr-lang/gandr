@@ -1754,6 +1754,7 @@ def bad : Integer ; def bad = "text" ; def small : Type ; def small = Integer ;"
         let sparse = gandr_surface_lowering::LoweredModule::new(
             Vec::from([answer]),
             Vec::new(),
+            Vec::new(),
             lowered.attributes().clone(),
             lowered.origins().clone(),
             gandr_surface_lowering::ModuleImports::default(),

@@ -30,9 +30,12 @@
 //! and, when every parameter and the result carry a type, a signature too. An
 //! implicit telescope or `rec` is a form the fragment does not admit.
 //! Attributes written before `def` are tiles of that same form, so a
-//! declaration's attributes are read with it, and an attribute block standing
-//! on its own — after the last declaration — decorates nothing and refuses the
-//! module.
+//! declaration's attributes are read with it. A data declaration's form holds
+//! none: the grammar leaves an attribute block before `data` standing on its
+//! own, and the pass files every block that runs up to a data declaration
+//! under it. Any other attribute block standing on its own — after the last
+//! declaration, or before a form that is not a data declaration — decorates
+//! nothing and refuses the module.
 //!
 //! The collection pass reads a function tail only as far as the halves it
 //! writes: the parameter list, the result and the block are the function's own
@@ -56,12 +59,22 @@
 //!
 //! `import "URI" as name ;` is kept in source order and its alias bound in the
 //! module's import scope as it is read; no address is resolved.
+//!
+//! # A data declaration is one more slot
+//!
+//! `data T(a : A) : U { C : (x : B) --> T(a) ; … }` takes the next admission
+//! position under its family's name and files a definition half lowered at the
+//! declaration form itself, like a function tail. Its constructors go into one
+//! table by name, each with its family, tag and arity, so a term or a pattern
+//! naming one resolves it without searching the declarations.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::DataSignature;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
@@ -106,6 +119,11 @@ use crate::origin::OriginTable;
 use crate::origin::OriginToken;
 use crate::resolve::SurfaceName;
 
+mod data;
+
+pub use self::data::Constructor;
+pub use self::data::DataForm;
+
 quenchant_shape::reason_enum! {
     /// Why a declared name has no half of one kind.
     pub mod declaration_half {
@@ -114,6 +132,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// No declaration of that kind was written for the name.
             Unwritten,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module holds no data signature at an index.
+    pub mod data_signature {
+        /// The index is past the module's signature list.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The module lowered fewer data declarations than the index.
+            Unlisted,
         }
     }
 }
@@ -578,7 +608,8 @@ pub struct Structure<'source>
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
 /// - ensures: A written operand uses its syntax form, a function uses the whole
-///   declaration tail, and a witness body names an existing member slot.
+///   declaration tail, a witness body names an existing member slot, and a data
+///   declaration names its position in the collection's data list.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -592,6 +623,7 @@ pub struct Structure<'source>
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
 /// - witness: `modules::modules::signatures_attach_to_their_defs`
+/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Operand
 {
@@ -602,6 +634,9 @@ pub enum Operand
     Function,
     /// The member a witness re-states, whose constant is the witness's body.
     Member(SlotIndex),
+    /// The data declaration `data T … { … }` at this position of the
+    /// collection's data list, lowered at the declaration form itself.
+    Data(usize),
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -857,6 +892,10 @@ pub struct Collected<'source>
     pub scopes: Vec<(NodeIndex, ComponentScope)>,
     /// The imports, in source order, with their aliases bound.
     pub imports: ModuleImports<'source>,
+    /// The data declarations, in source order.
+    pub data: Vec<DataForm>,
+    /// Every constructor a data declaration declares, by name.
+    pub constructors: BTreeMap<SurfaceName<'source>, Constructor>,
 }
 
 impl<'source> Collected<'source>
@@ -1183,6 +1222,9 @@ enum Tail<'source>
     Function(Signing),
     /// The first fault of the form.
     Refused(LoweringRefusal<'source>),
+    /// A data declaration, its form read into the collection's data list at
+    /// this position.
+    Data(usize),
 }
 
 /// The collection pass's working state.
@@ -1337,6 +1379,8 @@ pub fn collect<'source>(
             modules: BTreeMap::new(),
             scopes: Vec::new(),
             imports: ModuleImports::new(),
+            data: Vec::new(),
+            constructors: BTreeMap::new(),
         },
         pieces: Pieces::new(),
     };
@@ -1349,9 +1393,27 @@ pub fn collect<'source>(
             fault: FormFault::Repaired(repaired.repair),
         });
     }
+    let mut decorations: Vec<Placed> = Vec::new();
     for piece in root.pieces {
         collector.fuel.spend()?;
-        collector.module_child(piece.placed())?;
+        let child = piece.placed();
+        let former = collector.root_former(child)?;
+        if former == Former::AttributeBlock {
+            decorations.push(child);
+            continue;
+        }
+        if former == Former::Data {
+            collector.data(child, &decorations)?;
+            decorations.clear();
+            continue;
+        }
+        if let Some(&stray) = decorations.first() {
+            collector.module_child(stray)?;
+        }
+        collector.module_child(child)?;
+    }
+    if let Some(&stray) = decorations.first() {
+        collector.module_child(stray)?;
     }
 
     Ok(collector.collected)
@@ -2007,6 +2069,7 @@ impl<'source> Collector<'_, 'source>
                     (Operand::Written(operand), false, true)
                 },
                 | Tail::Function(signing) => (Operand::Function, signing == Signing::Signed, true),
+                | Tail::Data(form) => (Operand::Data(form), false, true),
                 | Tail::Refused(_) => {
                     return entry.signature == signature
                         && entry.definition == definition
@@ -2081,6 +2144,7 @@ impl<'source> Collector<'_, 'source>
                 HalfKind::Definition,
             ]),
             | Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
+            | Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
             | Tail::Refused(refusal) => {
                 entry.refuse(declaration.node, refusal);
                 return;
@@ -4475,6 +4539,7 @@ const fn repaired_module<'source>(
         | Tail::Refused(_) => {
             !matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN)
         },
+        | Tail::Data(_) => false,
     },
 )]
 fn read_tail<'source>(
@@ -4657,9 +4722,10 @@ const fn unadmitted<'source>(
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
-/// - ensures: Completed, type-only, body-only and refused declarations remain
-///   distinct; identifiers refer to the producing core arena, not to an
-///   authenticated arena identity.
+/// - ensures: Completed, type-only, body-only, nominal and refused declarations
+///   remain distinct; identifiers refer to the producing core arena, not to an
+///   authenticated arena identity, and a nominal outcome's index to the
+///   producing module's signature list.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -4674,6 +4740,7 @@ const fn unadmitted<'source>(
 /// - witness: `module::tests::a_second_signature_is_refused`
 /// - witness: `module::tests::a_second_definition_is_refused`
 /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DeclarationOutcome<'source>
 {
@@ -4697,8 +4764,54 @@ pub enum DeclarationOutcome<'source>
         /// The value the definition lowered to.
         body: ValueId,
     },
+    /// A data declaration: a nominal family whose signature the module holds
+    /// at this index.
+    Data(DataIndex),
     /// The declaration's first refusal.
     Refused(LoweringRefusal<'source>),
+}
+
+/// The position of a data declaration's signature in the module that lowered
+/// it.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the position is read against the module that produced it, by
+///   [`LoweredModule::data`]; another module's list does not authenticate it.
+/// - executable: none — the index holds no list to check its bound against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two data declarations of one module take distinct,
+///   ascending positions, each answering its own signature.
+/// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DataIndex(usize);
+
+impl From<usize> for DataIndex
+{
+    /// The data signature at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<DataIndex> for usize
+{
+    /// The position `index` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: DataIndex) -> Self
+    {
+        index.0
+    }
 }
 
 /// The parts of one lowered declaration, as the pass that assembles a module
@@ -5117,6 +5230,8 @@ pub struct LoweredModule<'source>
 {
     /// The declarations, in admission order.
     declarations: Vec<LoweredDeclaration<'source>>,
+    /// The data declarations' signatures, by [`DataIndex`].
+    data: Vec<Arc<DataSignature>>,
     /// The modules, in pre-order: a module before every module nested in it.
     structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
@@ -5139,6 +5254,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub const fn new(
         declarations: Vec<LoweredDeclaration<'source>>,
+        data: Vec<Arc<DataSignature>>,
         structures: Vec<LoweredStructure<'source>>,
         attributes: AttributeTable,
         origins: OriginTable,
@@ -5148,12 +5264,43 @@ impl<'source> LoweredModule<'source>
     {
         Self {
             declarations,
+            data,
             structures,
             attributes,
             origins,
             imports,
             recognition,
         }
+    }
+
+    /// The signature of the data declaration whose outcome holds `index`.
+    ///
+    /// # Specification
+    /// - requires: `index` comes from one of this module's outcomes.
+    /// - ensures: the signature at that position, which the declaration's
+    ///   checker input carries unchanged; another module's index answers
+    ///   whatever this module holds there, or nothing past its end.
+    /// - fails: [`data_signature::Absent::Unlisted`] past the end.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two declarations answer their own signatures and an
+    ///   index past the list answers nothing.
+    /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(signature) => self.data.get(index.0).is_some_and(|held| Arc::ptr_eq(held, signature)),
+        | Maybe::Absent(_) => index.0 >= self.data.len(),
+    })]
+    #[inline]
+    pub fn data(
+        &self,
+        index: DataIndex,
+    ) -> Maybe<&Arc<DataSignature>, data_signature::Absent>
+    {
+        self.data.get(index.0).map_or(
+            Maybe::Absent(data_signature::Absent::Unlisted),
+            Maybe::Present,
+        )
     }
 
     /// The modules, in pre-order: a module before every module nested in it.

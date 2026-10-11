@@ -12,6 +12,7 @@ extern crate alloc;
 mod static_operators
 {
     use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
 
     use anodized::spec;
     use gandr_core_checker::CheckBudget;
@@ -224,6 +225,17 @@ mod static_operators
                         Maybe::Absent(signature::Absent::Unsigned),
                         Maybe::Present(body),
                     ),
+                    | DeclarationOutcome::Data(index) => {
+                        let Maybe::Present(signature) = module.data(index)
+                        else {
+                            panic!("a data declaration keeps its signature: {index:?}")
+                        };
+                        return Declaration::data(
+                            declaration.constant(),
+                            Arc::clone(signature),
+                            OriginToken::from(usize::from(declaration.origin())),
+                        );
+                    },
                     | DeclarationOutcome::Refused(refusal) => {
                         panic!("every declaration lowers: {refusal:?}")
                     },

@@ -1,5 +1,7 @@
+@[ checks ]
 data Empty : Type {}
 
+@[ refuses("OutOfFragment") ]
 def absurd(v: Empty) -> -F Integer {
   case v {}
 }

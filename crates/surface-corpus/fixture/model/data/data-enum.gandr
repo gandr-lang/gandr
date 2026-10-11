@@ -1,9 +1,11 @@
+@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
   Blue : Color;
 }
 
+@[ checks ]
 def rank() -> -F Integer {
   case (Green : Color) {
     Red => ret 0,
@@ -11,5 +13,3 @@ def rank() -> -F Integer {
     Blue => ret 2
   }
 }
-
-rank()

@@ -101,6 +101,9 @@ enum Class
     /// The checker owed its body and the kernel admitted its signature as an
     /// axiom.
     Assumed,
+    /// The checker formed its native signature and the kernel admitted it as
+    /// a nominal declaration.
+    Data,
     /// The checker refused it, under this name, and it crossed as its mark
     /// alone.
     Marked(RefusalName),
@@ -275,7 +278,8 @@ fn sources(root: Root) -> Vec<PathBuf>
         Verdict::Owed(_),
         &(bridge::Outcome::Assumed { .. }
         | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. })),
-    ) => true,
+    )
+    | (Verdict::Data, &bridge::Outcome::Data { .. }) => true,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
     _ => false,
 },
@@ -283,6 +287,7 @@ fn sources(root: Root) -> Vec<PathBuf>
     (_, &bridge::Outcome::Defined { .. }, Class::Defined)
     | (_, &bridge::Outcome::Static, Class::Static)
     | (_, &bridge::Outcome::Assumed { .. }, Class::Assumed)
+    | (_, &bridge::Outcome::Data { .. }, Class::Data)
     | (
         _,
         &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
@@ -309,6 +314,7 @@ fn class_of(
             Class::Static
         },
         | (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
+        | (Verdict::Data, &bridge::Outcome::Data { .. }) => Class::Data,
         | (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
             Class::Marked(Refusal::Checking(refusal).name())
         },
@@ -360,7 +366,7 @@ fn class_of(
                     .classes
                     .iter()
                     .filter(|&&(_, class)| {
-                        matches!(class, Class::Defined | Class::Assumed)
+                        matches!(class, Class::Defined | Class::Assumed | Class::Data)
                     })
                     .count()
             && exported
@@ -378,7 +384,7 @@ fn class_of(
                             .iter()
                             .any(|&(constant, class)| {
                                 constant == named
-                                    && matches!(class, Class::Defined | Class::Assumed)
+                                    && matches!(class, Class::Defined | Class::Assumed | Class::Data)
                             })
                 })
             && exported
@@ -457,7 +463,7 @@ fn export(
             }
             class_of(&path, judgement.verdict(), crossing.outcome())
         };
-        if matches!(class, Class::Defined | Class::Assumed) {
+        if matches!(class, Class::Defined | Class::Assumed | Class::Data) {
             crossed_names.push(names.get(&constant).cloned().unwrap_or_default());
         }
         classes.push((constant, class));
@@ -660,7 +666,7 @@ mod kernel_corpus_partition
                 assert!(
                     !matches!(
                         classes.get(&named),
-                        Some(&(Class::Defined | Class::Assumed))
+                        Some(&(Class::Defined | Class::Assumed | Class::Data))
                     ),
                     "{path}: the declaration at {} is withheld for naming {}, which crossed",
                     usize::from(declaration),
@@ -670,7 +676,9 @@ mod kernel_corpus_partition
             let crossed = exported
                 .classes
                 .iter()
-                .filter(|&&(_, class)| matches!(class, Class::Defined | Class::Assumed))
+                .filter(|&&(_, class)| {
+                    matches!(class, Class::Defined | Class::Assumed | Class::Data)
+                })
                 .count();
             let (manifest, store) = commit(&exported.artifact);
             assert_eq!(

@@ -91,7 +91,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 26_usize] = [
+    pub const ALL: [Self; 44_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -118,6 +118,24 @@ impl FormName
         Self::FORK_SHARED_STATEMENT,
         Self::EXPRESSION_STATEMENT,
         Self::MODULE,
+        Self::DATA,
+        Self::DATA_GENERATOR,
+        Self::CONSTRUCTOR_BLOCK_MEMBER,
+        Self::OP_MEMBER,
+        Self::RULE_MEMBER,
+        Self::CASE,
+        Self::CASE_WITH_VIEW,
+        Self::CONSTRUCTOR_PATTERN,
+        Self::WILDCARD,
+        Self::LITERAL_PATTERN,
+        Self::OR_PATTERN,
+        Self::AS_PATTERN,
+        Self::HOLE,
+        Self::IDENTIFIER,
+        Self::CONSTRUCTOR,
+        Self::BOOLEAN,
+        Self::NUMBER,
+        Self::STRING,
     ];
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
@@ -174,6 +192,45 @@ impl FormName
     pub const UNIT: Self = Self("unit");
     /// The statement `unpack … = e ;`, inlined into its block.
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
+    /// The data declaration `data T(a : A) : U { … }`.
+    pub const DATA: Self = Self("data_declaration");
+    /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
+    /// the declaration.
+    pub const DATA_GENERATOR: Self = Self("data_generator");
+    /// The declined constructor member `C(fields) : T`, inlined into the data
+    /// block so it is declined by name.
+    pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
+    /// A data block's reserved operation member `op name(…) -> R`.
+    pub const OP_MEMBER: Self = Self("op_member");
+    /// A data block's reserved 2-cell member `rule lhs ==> rhs`.
+    pub const RULE_MEMBER: Self = Self("rule_member");
+    /// The match `case e -> T? { p => c, … }`.
+    pub const CASE: Self = Self("case_expression");
+    /// A match's view `with e`, folded into the match, and the absurd match
+    /// `case e {}` the same reserved adaptation admits.
+    pub const CASE_WITH_VIEW: Self = Self("case_with_view");
+    /// The constructor pattern `C(p, …)` or `C`.
+    pub const CONSTRUCTOR_PATTERN: Self = Self("constructor_pattern");
+    /// The wildcard pattern `_`.
+    pub const WILDCARD: Self = Self("wildcard");
+    /// A literal pattern: a number, a string or a boolean.
+    pub const LITERAL_PATTERN: Self = Self("literal_pattern");
+    /// The or-pattern `p | q`.
+    pub const OR_PATTERN: Self = Self("or_pattern");
+    /// The as-pattern `p as x`.
+    pub const AS_PATTERN: Self = Self("as_pattern");
+    /// A hole `?` or `?name`, in a pattern or a term.
+    pub const HOLE: Self = Self("hole");
+    /// An identifier: a binder where a pattern is read.
+    pub const IDENTIFIER: Self = Self("identifier");
+    /// A capitalised name: a nullary constructor where a pattern is read.
+    pub const CONSTRUCTOR: Self = Self("constructor");
+    /// A boolean literal standing as its own pattern.
+    pub const BOOLEAN: Self = Self("boolean");
+    /// A number standing as its own pattern.
+    pub const NUMBER: Self = Self("number");
+    /// A string standing as its own pattern.
+    pub const STRING: Self = Self("string");
 }
 
 impl From<NamedKind<'static>> for FormName
@@ -328,6 +385,27 @@ impl TileName
     pub const UNPACK: Self = Self("unpack");
     /// The keyword `val`, opening a statement.
     pub const VAL: Self = Self("val");
+    /// The match keyword `case`.
+    pub const CASE: Self = Self("case");
+    /// A constructor name written as one of a form's own tiles: a data
+    /// declaration's generator or a constructor pattern's head.
+    pub const CONSTRUCTOR: Self = Self("constructor");
+    /// The data declaration keyword `data`.
+    pub const DATA: Self = Self("data");
+    /// The boolean literal `false` written as a pattern's own tile.
+    pub const FALSE: Self = Self("false");
+    /// A generator's result arrow `-->`.
+    pub const GENERATOR: Self = Self("-->");
+    /// The reserved operation-member keyword `op` of a data block.
+    pub const OP: Self = Self("op");
+    /// The reserved operation-member keyword `oper` of a data block.
+    pub const OPER: Self = Self("oper");
+    /// The reserved 2-cell member keyword `rule` of a data block.
+    pub const RULE: Self = Self("rule");
+    /// The boolean literal `true` written as a pattern's own tile.
+    pub const TRUE: Self = Self("true");
+    /// The view keyword `with` of a match.
+    pub const WITH: Self = Self("with");
 
     /// The three tiles that can name a parameter: an identifier, a type
     /// variable and a type identifier, the spellings the parameter list parses.
@@ -408,6 +486,9 @@ pub enum Former
     Force,
     /// The application `c(v)`.
     Call,
+    /// The match `case e -> T? { p => c, … }` over nominal data, integers and
+    /// booleans.
+    Case,
     /// An infix operation in the native vocabulary.
     Binary,
     /// A prefix operation in the native vocabulary.
@@ -451,6 +532,8 @@ pub enum Former
     /// of its body — a definition or a nested module — which the grammar
     /// files under the same kind.
     Module,
+    /// The nominal data declaration `data T(a : A) : U { C : … ; … }`.
+    Data,
     /// Every other kind: a form the fragment does not admit.
     Unadmitted,
 }
@@ -473,7 +556,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 29_usize] = [
+    pub const ALL: [Self; 31_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Number,
@@ -484,6 +567,7 @@ impl Former
         Self::Return,
         Self::Force,
         Self::Call,
+        Self::Case,
         Self::Binary,
         Self::Unary,
         Self::Projection,
@@ -502,6 +586,7 @@ impl Former
         Self::AttributeBlock,
         Self::Import,
         Self::Module,
+        Self::Data,
         Self::Unadmitted,
     ];
 }
@@ -525,7 +610,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 30_usize] = [
+pub const FORMERS: [(&str, Former); 32_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("number", Former::Number),
@@ -536,6 +621,7 @@ pub const FORMERS: [(&str, Former); 30_usize] = [
     ("ret_expression", Former::Return),
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
+    ("case_expression", Former::Case),
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
@@ -556,6 +642,7 @@ pub const FORMERS: [(&str, Former); 30_usize] = [
     ("attribute_block", Former::AttributeBlock),
     ("import_declaration", Former::Import),
     ("module_declaration", Former::Module),
+    ("data_declaration", Former::Data),
 ];
 
 /// The former a form of named kind `kind` is read as.

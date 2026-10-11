@@ -88,19 +88,19 @@ mod native_formers
             arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
         let bad = Declaration::data(
             ConstantIndex::from(0_usize),
-            DataSignature::new(vec![], vec![], bad_kind),
+            DataSignature::new(vec![], vec![], bad_kind).into(),
             OriginToken::from(0_usize),
         );
         let first = ConstantIndex::from(1_usize);
         let second = ConstantIndex::from(2_usize);
         let one = Declaration::data(
             first,
-            DataSignature::new(vec![], vec![vec![unit_type]], kind),
+            DataSignature::new(vec![], vec![vec![unit_type]], kind).into(),
             OriginToken::from(1_usize),
         );
         let two = Declaration::data(
             second,
-            DataSignature::new(vec![], vec![vec![unit_type]], kind),
+            DataSignature::new(vec![], vec![vec![unit_type]], kind).into(),
             OriginToken::from(2_usize),
         );
         let datatype = arena.value_type_data(first, vec![]);
@@ -173,8 +173,20 @@ mod native_formers
             crossed.readmitted()[3].outcome()
         );
         assert!(crossed.audit().axioms().is_empty());
-        let artifact =
-            gandr_kernel_term::decode(crossed.export(BTreeMap::new()).as_image()).unwrap();
+        let family = gandr_kernel_term::StructuredName::from(vec![
+            gandr_kernel_term::NameSegment::from_text(String::from("Unit1")).unwrap(),
+        ]);
+        let artifact = gandr_kernel_term::decode(
+            crossed
+                .export(BTreeMap::from([(first, family.clone())]))
+                .as_image(),
+        )
+        .unwrap();
+        assert_eq!(
+            artifact.declarations()[0].declaration().name(),
+            &family,
+            "a nominal declaration crosses under its own name"
+        );
         let gandr_kernel_term::DeclarationContent::Def { body, .. } =
             *artifact.declarations()[2].declaration().content()
         else {
@@ -204,7 +216,7 @@ mod native_formers
         let indexed = ConstantIndex::from(1_usize);
         let declaration = Declaration::data(
             family,
-            DataSignature::new(vec![kind], vec![vec![element]], kind),
+            DataSignature::new(vec![kind], vec![vec![element]], kind).into(),
             OriginToken::from(0_usize),
         );
         let unit_type = arena.value_type_unit();
@@ -213,7 +225,7 @@ mod native_formers
         let datatype = arena.value_type_data(family, vec![unit_code]);
         let index_declaration = Declaration::data(
             indexed,
-            DataSignature::new(vec![datatype], vec![vec![]], kind),
+            DataSignature::new(vec![datatype], vec![vec![]], kind).into(),
             OriginToken::from(1_usize),
         );
         let scrutinee =
@@ -435,7 +447,7 @@ mod native_formers
         let data = ConstantIndex::from(1_usize);
         let declaration = Declaration::data(
             data,
-            DataSignature::new(vec![function], vec![vec![]], kind),
+            DataSignature::new(vec![function], vec![vec![]], kind).into(),
             OriginToken::from(1_usize),
         );
         let returned = arena.computation_return(unit);
@@ -512,7 +524,7 @@ mod native_formers
         let constant = ConstantIndex::from(0_usize);
         let declaration = Declaration::data(
             constant,
-            DataSignature::new(vec![], vec![], kind),
+            DataSignature::new(vec![], vec![], kind).into(),
             OriginToken::from(0_usize),
         );
         let datatype = arena.value_type_data(constant, vec![]);
@@ -555,7 +567,7 @@ mod native_formers
         let constant = ConstantIndex::from(0_usize);
         let declaration = Declaration::data(
             constant,
-            DataSignature::new(vec![], vec![vec![unit_type]], kind),
+            DataSignature::new(vec![], vec![vec![unit_type]], kind).into(),
             OriginToken::from(0_usize),
         );
         let datatype = arena.value_type_data(constant, vec![]);
@@ -589,7 +601,7 @@ mod native_formers
 
         let changed_declaration = Declaration::data(
             constant,
-            DataSignature::new(vec![], vec![vec![]], kind),
+            DataSignature::new(vec![], vec![vec![]], kind).into(),
             OriginToken::from(0_usize),
         );
         let changed = {

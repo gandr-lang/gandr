@@ -738,17 +738,18 @@ impl Readmission
     /// - hypothesis: L3 — a module whose first declaration is marked, whose
     ///   later ones read earlier ones, and whose last has no name, decoded and
     ///   asserted at each declaration's exact name and the kernel position each
-    ///   reference reads.
+    ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    /// - witness: `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[spec(
         requires: self.readmitted.iter().all(|entry| match entry.outcome {
-            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
             | _ => true,
         }),
         captures: [before = names.len(), named = self.readmitted.iter().filter(|entry|
-            matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. }) && names.contains_key(&entry.constant)).count()],
+            matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) && names.contains_key(&entry.constant)).count()],
         ensures: before.checked_sub(names.len()) == Some(named) && self.readmitted.iter().all(|entry|
-            !matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. }) || !names.contains_key(&entry.constant)),
+            !matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) || !names.contains_key(&entry.constant)),
     )]
     #[inline]
     #[must_use]
@@ -759,8 +760,9 @@ impl Readmission
     {
         let mut kernel_names = BTreeMap::new();
         for entry in &self.readmitted {
-            if let Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } =
-                entry.outcome
+            if let Outcome::Defined { admitted, .. }
+            | Outcome::Assumed { admitted, .. }
+            | Outcome::Data { admitted, .. } = entry.outcome
             {
                 kernel_names.insert(
                     admitted.position(),

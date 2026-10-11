@@ -987,6 +987,54 @@ impl<'source> Scope<'source>
 
         DeBruijnIndex::from(depth)
     }
+
+    /// Whether each frame of the chain rooted at `from` binds in a telescope,
+    /// innermost first: an untyped frame always, a typed one when a type
+    /// position names it.
+    ///
+    /// # Specification
+    /// - requires: `from` is outermost or an existing frame position; every
+    ///   mention has been recorded.
+    /// - ensures: one answer per frame from `from` to the outermost, in that
+    ///   order, each the rule [`Self::telescope_index`] counts by; nothing for
+    ///   the outermost frame.
+    /// - provides: the difference between a type's telescope indices and the
+    ///   term indices of the same chain, which relocating a type into a term
+    ///   reads.
+    /// - fails: never.
+    /// - panics: none. The walk follows parent links, which always name an
+    ///   earlier frame, so it ends.
+    /// - executable: none — the specification facade wraps the body in a
+    ///   closure, which cannot return the opaque iterator; the witness checks
+    ///   each answer of a chain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned typed frame, an unmentioned one and an
+    ///   untyped one, each reported in chain order.
+    /// - witness: `resolve::tests::a_chain_reports_which_frames_bind_in_a_telescope`
+    #[inline]
+    pub fn telescope_binders(
+        &self,
+        from: Frame,
+    ) -> impl Iterator<Item = bool> + '_
+    {
+        let first = match from {
+            | Frame::Inner(id) => Some(id),
+            | Frame::Outermost => None,
+        };
+        core::iter::successors(first, |id| match self.frames.get(id.0)?.parent {
+            | Frame::Inner(parent) => Some(parent),
+            | Frame::Outermost => None,
+        })
+        .map(|id| {
+            self.frames
+                .get(id.0)
+                .is_none_or(|entry| match entry.declared {
+                    | Maybe::Present(_) => entry.mentioned.0,
+                    | Maybe::Absent(_) => true,
+                })
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1357,6 +1405,37 @@ mod tests
             scope.telescope_index(Frame::Inner(y), b),
             DeBruijnIndex::from(1_u32),
             "an untyped binder between always counts"
+        );
+    }
+
+    #[test]
+    fn a_chain_reports_which_frames_bind_in_a_telescope()
+    {
+        use alloc::vec::Vec;
+
+        let mut scope = Scope::new();
+        let a = scope.extend_typed(
+            Frame::Outermost,
+            SurfaceName::from("a"),
+            NodeIndex::from(1_usize),
+        );
+        let x = scope.extend_typed(
+            Frame::Inner(a),
+            SurfaceName::from("x"),
+            NodeIndex::from(2_usize),
+        );
+        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"));
+        scope.mention(a);
+
+        assert_eq!(
+            scope.telescope_binders(Frame::Inner(y)).collect::<Vec<_>>(),
+            Vec::from([true, false, true]),
+            "innermost first: the untyped frame, the unmentioned typed one, the mentioned one"
+        );
+        assert_eq!(
+            scope.telescope_binders(Frame::Outermost).count(),
+            0,
+            "the outermost frame binds nothing"
         );
     }
 }

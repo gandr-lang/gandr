@@ -5,11 +5,14 @@
 //! earn, each asserted through the declarations the lowering hands a checker
 //! and through the checker's verdicts over them.
 
+extern crate alloc;
+
 /// The module cases, in a `cfg(test)` module so the crate's lint wall reads
 /// them as test code rather than as shipping code.
 #[cfg(test)]
 mod modules
 {
+    use alloc::sync::Arc;
     use core::fmt::Write as _;
 
     use anodized::spec;
@@ -118,6 +121,8 @@ mod modules
         Uncompleted,
         /// A definition alone.
         Bodied,
+        /// A native data signature.
+        Data,
         /// The lowering's refusal.
         Refused(LoweringRefusal<'source>),
     }
@@ -330,6 +335,7 @@ mod modules
                         ret.arena.value_type(declared_type).is_some()
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -383,6 +389,7 @@ mod modules
                         ret.arena.value_type(declared_type).is_some()
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -435,6 +442,7 @@ mod modules
                         ret.arena.value_type(declared_type).is_some()
                     },
                     | DeclarationOutcome::Bodied { body } => ret.arena.value(body).is_some(),
+                    | DeclarationOutcome::Data(index) => matches!(ret.module.data(index), Maybe::Present(signature) if ret.arena.value_type(signature.kind()).is_some()),
                     | DeclarationOutcome::Refused(_) => true,
                 })
         },
@@ -543,7 +551,8 @@ mod modules
                                     Amounts::Uncompleted,
                                     DeclarationOutcome::Uncompleted { .. },
                                 )
-                                | (Amounts::Bodied, DeclarationOutcome::Bodied { .. }) => true,
+                                | (Amounts::Bodied, DeclarationOutcome::Bodied { .. })
+                                | (Amounts::Data, DeclarationOutcome::Data(_)) => true,
                                 | (
                                     Amounts::Refused(actual),
                                     DeclarationOutcome::Refused(expected),
@@ -565,6 +574,7 @@ mod modules
                     | DeclarationOutcome::Completed { .. } => Amounts::Completed,
                     | DeclarationOutcome::Uncompleted { .. } => Amounts::Uncompleted,
                     | DeclarationOutcome::Bodied { .. } => Amounts::Bodied,
+                    | DeclarationOutcome::Data(_) => Amounts::Data,
                     | DeclarationOutcome::Refused(refusal) => Amounts::Refused(refusal),
                 };
                 (
@@ -683,6 +693,7 @@ mod modules
                 body
             },
             | outcome @ (DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
             | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a body, not {outcome:?}")
             },
@@ -779,7 +790,9 @@ mod modules
         match declaration(lowered, path, role).outcome() {
             | DeclarationOutcome::Completed { declared_type, .. }
             | DeclarationOutcome::Uncompleted { declared_type } => declared_type,
-            | outcome @ (DeclarationOutcome::Bodied { .. } | DeclarationOutcome::Refused(_)) => {
+            | outcome @ (DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Refused(_)) => {
                 panic!("`{path}` has a declared type, not {outcome:?}")
             },
         }
@@ -936,6 +949,16 @@ mod modules
                         Maybe::Absent(signature::Absent::Unsigned),
                         Maybe::Present(body),
                     ),
+                    | DeclarationOutcome::Data(index) => {
+                        return match lowered.module.data(index) {
+                            | Maybe::Present(signature) => Some(Declaration::data(
+                                declaration.constant(),
+                                Arc::clone(signature),
+                                OriginToken::from(usize::from(declaration.origin())),
+                            )),
+                            | Maybe::Absent(_) => None,
+                        };
+                    },
                     | DeclarationOutcome::Refused(_) => return None,
                 };
                 Some(Declaration::new(

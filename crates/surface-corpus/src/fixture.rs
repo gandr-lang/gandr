@@ -6,6 +6,7 @@
 //! settles exactly what a real run hands this crate.
 
 use alloc::format;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -157,7 +158,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
 /// - requires: `module` is a lowered fixture module.
 /// - ensures: only non-refused declarations are returned, in admission order,
 ///   preserving each constant, origin, declared type and body or its absence
-///   reason.
+///   reason, and a data declaration's native signature, shared with `module`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -190,7 +191,11 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                     }),
             )
             .all(|(declared, lowered)| {
-                let gandr_core_checker::DeclarationContent::Value { ref signature, body: ref held_body } = *declared.content() else { return false; };
+                let gandr_core_checker::DeclarationContent::Value { ref signature, body: ref held_body } = *declared.content() else {
+                    return matches!(*declared.content(), gandr_core_checker::DeclarationContent::Data(ref held) if matches!(lowered.outcome(), DeclarationOutcome::Data(index) if module.data(index) == Maybe::Present(held)))
+                        && declared.constant() == lowered.constant()
+                        && usize::from(declared.origin()) == usize::from(lowered.origin());
+                };
                 declared.constant() == lowered.constant()
                     && usize::from(declared.origin()) == usize::from(lowered.origin())
                     && match lowered.outcome() {
@@ -206,7 +211,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                             *signature == Maybe::Absent(signature::Absent::Unsigned)
                                 && *held_body == Maybe::Present(value)
                         }
-                        DeclarationOutcome::Refused(_) => false,
+                        DeclarationOutcome::Data(_) | DeclarationOutcome::Refused(_) => false,
                     }
             })
 },
@@ -230,6 +235,16 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                     Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(value),
                 ),
+                | DeclarationOutcome::Data(index) => {
+                    return match module.data(index) {
+                        | Maybe::Present(signature) => Some(Declaration::data(
+                            lowered.constant(),
+                            Arc::clone(signature),
+                            OriginToken::from(usize::from(lowered.origin())),
+                        )),
+                        | Maybe::Absent(_) => None,
+                    };
+                },
                 | DeclarationOutcome::Refused(_) => return None,
             };
             let origin = OriginToken::from(usize::from(lowered.origin()));

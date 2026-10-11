@@ -130,8 +130,9 @@ impl fmt::Display for FragmentSort
 ///
 /// # Specification
 /// - requires: the producer identifies the boundary crossed by the source form.
-/// - ensures: reserved, unadmitted, wrong-sort and wrong-arity reports remain
-///   distinct; an arity report carries the number of operands offered.
+/// - ensures: reserved, unadmitted, wrong-sort, wrong-arity, indexed and
+///   unannotated reports remain distinct; an arity report carries the number of
+///   operands offered.
 /// - provides: why a parsed form has no representation at this position.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -143,6 +144,8 @@ impl fmt::Display for FragmentSort
 ///   lambda and zero/two-operand refusals distinguish the four boundaries by
 ///   exact typed payloads. The fixtures do not enumerate every grammar form.
 /// - witness: `lower::tests::the_reserved_lazy_product_is_declined`
+/// - witness: `lower::native::tests::an_indexed_generator_is_declined`
+/// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
@@ -159,6 +162,14 @@ pub enum FragmentBoundary
     /// The form is a former of this sort, offered a number of operands it does
     /// not take.
     Arity(OperandCount),
+    /// The form is a generator whose result applies its family to something
+    /// other than the family's own parameters, in order: an indexed family,
+    /// which the fragment does not read.
+    Indexed,
+    /// The form needs a type the source does not state: a match over nominal
+    /// data with no answer type written or known from its function, or a
+    /// constructor of a parameterized family with no classifier.
+    Unannotated,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -178,6 +189,10 @@ impl fmt::Display for FragmentBoundary
             | Self::Unadmitted => f.write_str("is not admitted by the fragment"),
             | Self::WrongSort => f.write_str("is not a former of this sort"),
             | Self::Arity(operands) => write!(f, "does not take {operands} operands"),
+            | Self::Indexed => {
+                f.write_str("applies its family to an index, which the fragment does not read")
+            },
+            | Self::Unannotated => f.write_str("needs a type the source does not state"),
         }
     }
 }
@@ -536,6 +551,14 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A match some scrutinee reaches no arm of: a constructor, or an integer
+    /// or boolean value, that every arm's pattern refuses.
+    NonExhaustiveMatch
+    {
+        /// The bytes the match covers.
+        span: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -681,6 +704,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the module `{name}` at {span} is named with a lowercase initial; a top-level \
                  module's name starts with an uppercase letter"
             ),
+            | Self::NonExhaustiveMatch { span } => write!(
+                f,
+                "the match at {span} leaves a value of its scrutinee that no arm matches"
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -756,6 +783,7 @@ impl LoweringRefusal<'_>
             | Self::UnknownMember { span, .. }
             | Self::UnreadAscription { span, .. }
             | Self::LowercaseModuleName { span, .. }
+            | Self::NonExhaustiveMatch { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
