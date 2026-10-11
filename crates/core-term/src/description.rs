@@ -109,8 +109,8 @@ impl<'names> DecodeContext<'names>
     /// Returns the unresolved source name.
     ///
     /// # Adequacy
-    /// - hypothesis: a local parameter shadows a closed global type of the same
-    ///   name.
+    /// - hypothesis: L3 — a local parameter shadows a closed global type of the
+    ///   same name.
     /// - witness: `description::tests::native_indices_remain_values_under_telescope_scope`
     #[spec(ensures: |result| result.is_ok() == (self.locals.iter().any(|local| local.name == name) || self.types.contains_key(name)))]
     fn binding(
@@ -557,7 +557,7 @@ fn interpret<G>(
 /// Returns a name or telescope refusal rather than inventing a classifier.
 ///
 /// # Adequacy
-/// - hypothesis: a telescope with both a type and a value distinguishes
+/// - hypothesis: L3 — a telescope with both a type and a value distinguishes
 ///   quotation and scope.
 /// - witness: `description::tests::native_indices_remain_values_under_telescope_scope`
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value_type(*id).is_some()))]
@@ -602,8 +602,8 @@ fn interpret_binding(
 /// Returns `ParameterArity` for an impossible telescope coordinate.
 ///
 /// # Adequacy
-/// - hypothesis: two different telescope depths expose an off-by-one binder
-///   conversion.
+/// - hypothesis: L3 — two different telescope depths expose an off-by-one
+///   binder conversion.
 /// - witness: `description::tests::native_indices_remain_values_under_telescope_scope`
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| matches!(arena.value(*id), Some(&crate::Value::Variable { zone: crate::Zone::Intuitionistic, index }) if usize::try_from(u32::from(index)).ok().and_then(|index| index.checked_add(level.0)).and_then(|sum| sum.checked_add(1)) == Some(depth.0))))]
 fn parameter_value(
@@ -617,7 +617,7 @@ fn parameter_value(
         .checked_sub(level.0)
         .and_then(|remaining| remaining.checked_sub(1))
         .ok_or(DecodeError::ParameterArity)?;
-    let index = u32::try_from(index).map_err(|_| DecodeError::ParameterArity)?;
+    let index = u32::try_from(index).map_err(|_overflow| DecodeError::ParameterArity)?;
     Ok(arena.value_variable(
         crate::Zone::Intuitionistic,
         gandr_kernel_term::DeBruijnIndex::from(index),

@@ -91,7 +91,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 45_usize] = [
+    pub const ALL: [Self; 43_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -122,8 +122,6 @@ impl FormName
         Self::DATA,
         Self::DATA_GENERATOR,
         Self::CONSTRUCTOR_BLOCK_MEMBER,
-        Self::OP_MEMBER,
-        Self::RULE_MEMBER,
         Self::CASE,
         Self::CASE_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
@@ -204,10 +202,6 @@ impl FormName
     /// The declined constructor member `C(fields) : T`, inlined into the data
     /// block so it is declined by name.
     pub const CONSTRUCTOR_BLOCK_MEMBER: Self = Self("constructor_block_member");
-    /// A data block's reserved operation member `op name(…) -> R`.
-    pub const OP_MEMBER: Self = Self("op_member");
-    /// A data block's reserved 2-cell member `rule lhs ==> rhs`.
-    pub const RULE_MEMBER: Self = Self("rule_member");
     /// The match `case e -> T? { p => c, … }`.
     pub const CASE: Self = Self("case_expression");
     /// A match's view `with e`, folded into the match, and the absurd match
@@ -1591,6 +1585,17 @@ impl<'pieces> Cursor<'pieces>
             rest: pieces,
             edge: ByteSpan::new(form.start(), form.start()).unwrap_or(form),
         }
+    }
+
+    /// The unread suffix, borrowed without advancing the cursor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn remaining(&self) -> &'pieces [Piece]
+    {
+        self.rest
     }
 
     /// The next piece, unread.

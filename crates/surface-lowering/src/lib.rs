@@ -116,7 +116,10 @@
 extern crate alloc;
 
 mod attribute;
+pub mod circuit;
 mod classify;
+pub mod desc_cells;
+pub mod description;
 mod error;
 #[cfg(test)]
 mod fixture;

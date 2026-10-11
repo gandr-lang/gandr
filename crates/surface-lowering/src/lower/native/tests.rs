@@ -728,34 +728,50 @@ fn an_indexed_generator_is_declined()
 }
 
 #[test]
-fn members_outside_the_fragment_are_declined_by_name()
+fn operation_and_rule_members_are_left_to_the_description_route()
 {
+    let source = "data NatOp : Type { Zero : NatOp; One : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; rule add(Zero, n) ==> n; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n";
     let mut arena = CoreArena::new();
-    let module = lowered(
-        SourceText::from(
-            "data NatOp : Type { Zero : NatOp; oper add(m : NatOp, n : NatOp) -> NatOp; }\ndata NatRule : Type { Nil : NatRule; rule id(Nil) ==> Nil; }\ndata NatRetired : Type { Only : NatRetired; op stale(x : NatRetired) -> NatRetired; }\n",
-        ),
-        &mut arena,
-    );
-    for (name, form) in [
-        (SurfaceName::from("NatOp"), FormName::OP_MEMBER),
-        (SurfaceName::from("NatRule"), FormName::RULE_MEMBER),
-        (SurfaceName::from("NatRetired"), FormName::OP_MEMBER),
-    ] {
-        assert!(
-            matches!(
-                refusal_of(&module, name),
-                LoweringRefusal::OutOfFragment {
-                    form: declined,
-                    sort: FragmentSort::Declaration,
-                    boundary: FragmentBoundary::Unadmitted,
-                    ..
-                } if declined == form
-            ),
-            "`{name}` declines its member by name: {:?}",
-            refusal_of(&module, name)
+    let module = lowered(SourceText::from(source), &mut arena);
+    let [ref operated, ref retired, ref held] = *module.declarations()
+    else {
+        panic!("two families and the retired member's refusal");
+    };
+    for (family, arities) in [(operated, &[0_usize, 0][..]), (retired, &[0][..])] {
+        let DeclarationOutcome::Data(index) = family.outcome()
+        else {
+            panic!("`{}` keeps its native reading", family.name());
+        };
+        let Maybe::Present(signature) = module.data(index)
+        else {
+            panic!("`{}` holds its signature", family.name());
+        };
+        assert_eq!(
+            signature
+                .constructors()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            arities,
+            "`{}` keeps every generator beside its members",
+            family.name()
         );
     }
+    assert_eq!(held.name(), SurfaceName::from("NatRetired"));
+    let DeclarationOutcome::Refused(refusal) = held.outcome()
+    else {
+        panic!("the retired member is held");
+    };
+    let Maybe::Present(span) = refusal.span()
+    else {
+        panic!("the held refusal is located");
+    };
+    assert_eq!(
+        source.get(usize::from(span.start()) .. usize::from(span.end())),
+        Some("op stale(x : NatRetired) -> NatRetired")
+    );
+    assert_eq!(module.cells().diagnostics, []);
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]
