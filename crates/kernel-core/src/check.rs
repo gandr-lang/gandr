@@ -2735,8 +2735,9 @@ pub fn check_declaration(
 ///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
 ///   obligations that exhaust the null memo's occurrence budget. Each counter
 ///   is monotone, and the initial formation goal charges at least one
-///   type-plane event, subject to saturation. The arena's original prefix
-///   remains available on either verdict.
+///   type-plane event, subject to saturation, unless a data declaration's
+///   occurrence walk refuses it before formation starts. The arena's original
+///   prefix remains available on either verdict.
 /// - provides: both memo policies through one function. Per-goal accounting,
 ///   memo provenance and typing agreement still require their event history or
 ///   differential witnesses, not a second check inside a return predicate.
@@ -2756,12 +2757,13 @@ pub fn check_declaration(
 /// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
 /// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
 #[spec(captures: [entry_mark = arena.watermark(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
     entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
     entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
-    ensures: entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
         let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
         let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
         let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
@@ -2770,8 +2772,13 @@ pub fn check_declaration(
             && term_recalled >= entry_term_recalled
             && type_expanded >= entry_type_expanded
             && type_recalled >= entry_type_recalled
-            && type_expanded.saturating_add(type_recalled)
-                >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64)
+            && (matches!(ret, Err(KernelError::CrossBlockReference { .. }
+                    | KernelError::NegativeOccurrence(_)
+                    | KernelError::IndexOccurrence(_)
+                    | KernelError::NestedOccurrence(_)
+                    | KernelError::NonUniformOccurrence(_)))
+                || type_expanded.saturating_add(type_recalled)
+                    >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64))
     })]
 #[inline]
 pub fn check_declaration_with_memo<M>(
