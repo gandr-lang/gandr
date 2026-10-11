@@ -31,7 +31,7 @@ cargo build-dist    # the shipped binary: fat LTO, size-optimized std
 
 `cargo build --release` is the everyday optimized build; `cargo build-dist` (`.cargo/config.toml`) is the whole-program one. `cargo nextest run --workspace` runs the tests; `mise run check:tests-enforcing` runs them again with every specification checked at runtime.
 
-The Clippy wall runs in both plain and enforcing modes locally and in CI. `mise run check:clippy-enforcing` covers cfg-gated runtime sentinels under the enforcing test profile in `target/enforcing`; CI restores the enforcing test artifacts before linting.
+The Clippy wall runs in both plain and enforcing modes locally and in CI. `mise run check:clippy-enforcing` covers cfg-gated runtime sentinels under the enforcing test profile in `target/enforcing`. Clippy writes check metadata rather than build artifacts, so the CI lane restores only the shared crate downloads. The plain pass stays whole because the plain expansion turns each predicate into `(true || predicate)`, code the enforcing pass never lints.
 
 Dylint runs plain in both modes. Its separately built plugin does not inherit workspace features; the task strips the panic and print enforcement cfgs while preserving the policy flags. The lints read source, and quenchant's gates check the plugin's own specifications.
 
@@ -43,7 +43,7 @@ Plain and enforcing jobs run concurrently on the existing Linux and macOS runner
 
 Cargo validates source checksums rather than checkout timestamps. Successful compilation remains cacheable when a later test fails, without changing that failure's verdict. A cache miss may restore a compatible completed queue's artifacts, including a failed test run: unlike branch-local caches, these are readable from a new queue ref. Artifact names carry the same manifest, lockfile, toolchain and Cargo-configuration fingerprint as cache prefixes, so incompatible queue state cannot replace a compatible cache. Main promotes exact-commit queue artifacts into shared caches; hosted manual runs and queue retries also warm branch-local caches. Plain jobs remain the writers for the shared dependency and toolchain caches.
 
-The policy lane restores the same enforcing test artifacts for witness discovery. Its exact-key cache contains both the Dylint library and the installed specification-gate binary; toolchain, policy and dependency pins invalidate them together. It still executes Dylint, invocation-state, enforcing-configuration and witness checks on every run. Mise caches installed tools by locked pins, including sizelint, so warm CI installs reuse binaries.
+The enforcing Linux test lane resolves adequacy witnesses after its build, so witness discovery lists binaries that already exist instead of compiling the enforcing graph a second time. The policy lane builds no test graph. Its exact-key cache contains both the Dylint library and the installed specification-gate binary, which the enforcing lane restores from the same key; toolchain, policy and dependency pins invalidate them together. Dylint, invocation-state, enforcing-configuration and witness checks still run on every run. Mise caches installed tools by locked pins, including sizelint, so warm CI installs reuse binaries.
 
 Archive creation stops the job if either tar or zstd fails.
 

@@ -122,7 +122,7 @@ jobs:
           path: &policy-state |
             target/dylint
             target/workflow-tools
-          key: policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
+          key: &policy-state-key policy-state-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'mise.toml', 'mise.lock', 'Cargo.toml', 'Cargo.lock') }}
       - &save-policy-state
         name: save Dylint library and gate binary
         if: ${{ !cancelled() && env.ACT != 'true' && ((github.event_name == 'push' && hashFiles('build-state-cargo-dylint-crate.tar.zst') != '') || (github.event_name == 'workflow_dispatch' && steps.policy-library.outcome == 'success' && steps.invocation-state.outcome == 'success')) && steps.policy-state-restore.outputs.cache-hit != 'true' }}
@@ -361,6 +361,18 @@ jobs:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || 'check:tests' }}
           NEXTEST_PROFILE: ${{ env.CI_ENFORCING == 'true' && 'ci-enforcing' || 'ci' }}
         run: mise run "$CI_TEST_TASK"
+      # Witness discovery lists the enforcing test inventory, so it runs where
+      # that graph is already built: anywhere else it compiles the graph again.
+      # The gate binary comes from the policy lane's exact cache when present.
+      - name: restore the gate binary
+        if: ${{ env.CI_WITNESSES == 'true' }}
+        uses: *cache-restore
+        with:
+          path: *policy-state
+          key: *policy-state-key
+      - name: resolve adequacy witnesses
+        if: ${{ !cancelled() && env.CI_WITNESSES == 'true' && steps.build-workspace.outcome == 'success' }}
+        run: mise run check:witnesses
       - name: run the corpus roots
         if: &plain-flavor ${{ env.CI_ENFORCING != 'true' }}
         run: mise run check:corpus
@@ -385,6 +397,7 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
+      CI_WITNESSES: "true"
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
@@ -444,24 +457,22 @@ jobs:
       ENFORCING_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
     steps: *test-verdict-steps
 
+  # Clippy writes check metadata, which a restored build directory does not
+  # hold, so this lane restores only the shared crate downloads. Both passes
+  # cover the workspace: the plain expansion keeps each predicate as
+  # `(true || predicate)` with no panic, which is code the enforcing pass never
+  # lints.
   cargo-clippy-crate:
     name: check Clippy wall
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: &light-rust-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && github.event_name != 'push' }}
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
-    env:
-      CI_BUILD_STATE: cargo-test-enforcing
     steps:
       - *git-checkout
-      - *identify-build-state
-      # Shared crate downloads are restore-only in this lane.
       - *install-policy-tools
       - *setup-rust
-      - *restore-test-state
-      - *download-build-state
-      - *unpack-build-state
       - name: lint every target
         run: cargo clippy --locked --workspace --all-targets -- --deny warnings
       - name: lint every target with specification enforcement
@@ -472,22 +483,16 @@ jobs:
   # restores the exact compiler- and revision-matched policy artifacts.
   cargo-dylint-crate:
     name: check quenchant compiler policy
-    needs: *cached-test-needs
+    needs: *rust-needs
     if: *heavy-lane
     runs-on: *linux
-    permissions: *build-state-read-permissions
+    permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
-    env:
-      # Witness discovery uses the same enforcing binaries as the test lane.
-      CI_BUILD_STATE: cargo-test-enforcing
     steps:
       - *git-checkout
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
-      - *restore-test-state
-      - *download-build-state
-      - *unpack-build-state
       - *restore-dylint-drivers
       - *restore-policy-state
       - name: lint every workspace target
@@ -496,15 +501,13 @@ jobs:
         # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
       # The specification gates run from the gate binary installed at the
-      # policy's metadata revision: the invocation state, the enforcing
-      # requirement, and adequacy-witness resolution.
+      # policy's metadata revision: the invocation state and the enforcing
+      # requirement. The enforcing test lane resolves adequacy witnesses.
       - name: check the specification invocation state
         id: invocation-state
         run: mise run check:anodized
       - name: require specification enforcement
         run: mise run check:anodized-enforcing
-      - name: resolve adequacy witnesses
-        run: mise run check:witnesses
       # This lane hands over its policy caches, not the dependency cache.
       - name: archive Dylint library and gate binary
         id: build-state-archive
