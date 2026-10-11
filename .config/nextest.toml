@@ -12,11 +12,11 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 # Start the hosted heavy tail first; the ci profile inherits these overrides.
 # Priorities change scheduling only, never cases, domains or timeouts.
 [[profile.default.overrides]]
-filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget)"
+filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget) or test(=parse::tests::arbitrary_source_parses_by_form_as_whole)"
 priority = 100
 
 [[profile.default.overrides]]
-filter = "test(=corpus::every_source_submits_as_the_walk_composes_it) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds) or test(=session::every_corpus_report_is_published_where_the_walk_renders_it)"
+filter = "test(=corpus::every_source_submits_as_the_walk_composes_it) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds) or test(=session::every_corpus_report_is_published_where_the_walk_renders_it) or test(=cli::every_width_prints_the_serial_run) or test(=parse::tests::form_split_parses_as_the_whole_source)"
 priority = 90
 
 [[profile.default.overrides]]
@@ -39,5 +39,10 @@ path = "junit.xml"
 
 # Nextest stores reports by profile, independently of Cargo's target directory.
 # Separate names prevent the enforcing pass from overwriting the plain report.
+# Enforced specifications cost the slowest tests up to three minutes on a
+# hosted runner, and runner load stretches that further. The kill limit stays
+# at least twice the slowest enforcing test; once the specification cost
+# falls, this profile inherits the ci limit.
 [profile.ci-enforcing]
 inherits = "ci"
+slow-timeout = { period = "60s", terminate-after = 10 }
