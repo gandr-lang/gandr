@@ -1025,6 +1025,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-workflow-spec-cost"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "gandr-workflow-test-timing",
+ "proc-macro2",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "serde",
+ "serde_json",
+ "syn 3.0.4",
+]
+
+[[package]]
 name = "gandr-workflow-test-timing"
 version = "0.0.0"
 dependencies = [
