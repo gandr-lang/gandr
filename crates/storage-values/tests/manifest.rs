@@ -4,6 +4,7 @@
 use alloc::collections::BTreeSet;
 use core::cell::Cell;
 
+use anodized::spec;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TokenCount;
@@ -476,7 +477,7 @@ impl ChunkStore for Counted
     ///   representable increment; profile mismatch cases make no request.
     /// - witness: `tests::manifest::load_counts_include_refusals_and_successes`
     /// - witness: `tests::manifest::a_profile_mismatch_is_refused_before_any_chunk_is_read`
-    #[anodized::spec(requires: self.loads.get().0 < usize::MAX,
+    #[spec(requires: self.loads.get().0 < usize::MAX,
         captures: before = self.loads.get().0,
         ensures: |ret| self.loads.get().0.checked_sub(before) == Some(1_usize)
             && ret.as_ref().ok().is_none_or(|chunk| chunk.digest() == digest))]

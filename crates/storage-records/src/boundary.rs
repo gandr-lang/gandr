@@ -898,6 +898,8 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::BoundaryMaskBits;
     use super::BoundaryParams;
     use super::BoundaryProfile;
@@ -931,7 +933,7 @@ mod tests
     ///   and changed fixture bytes are distinguished on these corpora.
     /// - witness: `boundary::tests::spans_partition_the_input`
     /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
-    #[anodized::spec(requires: u64::from(count) <= 100_000_000,
+    #[spec(requires: u64::from(count) <= 100_000_000,
         ensures: |ret| u64::try_from(ret.len()) == Ok(u64::from(count))
             && ret.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key()))]
     fn corpus(count: RecordCount) -> Vec<Record>
@@ -966,7 +968,7 @@ mod tests
     ///   change those observers.
     /// - witness: `boundary::tests::spans_partition_the_input`
     /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
-    #[anodized::spec(ensures: |ret| ret.iter().copied()
+    #[spec(ensures: |ret| ret.iter().copied()
         .eq(records.iter().map(Record::as_record_ref)))]
     fn borrow(records: &[Record]) -> Vec<RecordRef<'_>>
     {
@@ -1282,7 +1284,7 @@ mod tests
         /// - hypothesis: L3 observes the sink refusal through both parameter
         ///   formatters, distinguishing swallowed or converted refusals.
         /// - witness: `boundary::tests::parameter_formatting_preserves_values_and_refusal`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

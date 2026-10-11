@@ -1117,6 +1117,7 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_term::FormatVersion;
     use gandr_storage_records::NodeHash;
     use gandr_storage_records::ProfileCommitment;
@@ -1153,7 +1154,7 @@ mod tests
     ///   tree corresponding to these synthetic fields.
     /// - witness: `manifest::tests::the_manifest_layout_is_golden`
     /// - witness: `manifest::tests::the_identity_is_blake3_of_the_canonical_bytes`
-    #[anodized::spec(ensures: |ret| ret.kernel_format == FormatVersion(0x0203)
+    #[spec(ensures: |ret| ret.kernel_format == FormatVersion(0x0203)
         && ret.commitment.as_ref() == COMMITMENT
         && ret.record_count == RecordCount(42)
         && ret.root_node.as_ref() == ROOT)]
@@ -1419,7 +1420,7 @@ mod tests
         ///   distinguishes swallowed sink failures; it does not model partial
         ///   acceptance of a single write or other I/O errors.
         /// - witness: `manifest::tests::identity_rendering_preserves_all_bytes_and_refusals`
-        #[anodized::spec(captures: before = self.0, ensures: |ret| if s.len() <= before {
+        #[spec(captures: before = self.0, ensures: |ret| if s.len() <= before {
             ret == Ok(()) && self.0 == before.saturating_sub(s.len())
         } else {
             ret == Err(core::fmt::Error) && self.0 == before

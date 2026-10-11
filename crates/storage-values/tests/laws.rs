@@ -4,6 +4,7 @@
 
 use alloc::collections::BTreeSet;
 
+use anodized::spec;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_values::CanonicalWord;
@@ -151,7 +152,7 @@ proptest! {
 ///   kappa one; the predicates admit a complete tree with all seven shapes.
 /// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
 /// - witness: `tests::laws::a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the_old_value`
-#[anodized::spec(ensures: |ret| anodized::types::Spec::predicate(&ret)
+#[spec(ensures: |ret| anodized::types::Spec::predicate(&ret)
     && ret.0.iter().fold(0_u8, |seen, item| seen | match *item {
         crate::generate::Item::Open(shape) => match shape {
             Shape::Unit => 0x01_u8, Shape::Word => 0x02_u8, Shape::Bytes => 0x04_u8,

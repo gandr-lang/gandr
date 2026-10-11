@@ -9,6 +9,7 @@
 //! subtrees and the empty-payload constructor; profiles toward kappa one,
 //! powers of two, and caps at and below kappa.
 
+use anodized::spec;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
@@ -135,7 +136,7 @@ impl Shape
     /// - hypothesis: L3 literal encodings cover all seven shapes; tags just
     ///   outside the assigned range are refused at the consumed open record.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(shape) => shape.tag() == tag,
         Err(error) => !Self::ALL.iter().any(|shape| shape.tag() == tag)
             && error == ValueError::UnexpectedConstructor { found: tag, position: reader.position() },
@@ -193,7 +194,7 @@ enum Next
 /// - hypothesis: L3 fixed fields, a zero-child list, counted children at the
 ///   integer width and forged mixed/unknown field states separate transitions.
 /// - witness: `tests::generate::generated_refinements_reject_impossible_states`
-#[anodized::spec(maintains: self.fields.is_empty()
+#[spec(maintains: self.fields.is_empty()
     || (self.children == 0_u64 && Shape::ALL.iter().any(|shape|
         shape.fields().ends_with(self.fields))))]
 #[derive(Clone, Copy, Debug)]
@@ -234,7 +235,7 @@ impl Owed
     /// - hypothesis: L3 observes ordered fixed fields, zero and two children,
     ///   repeated exhaustion and the maximum child count without wrapping.
     /// - witness: `tests::generate::generated_refinements_reject_impossible_states`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+    #[spec(requires: anodized::types::Spec::predicate(self),
         captures: [fields = self.fields, children = self.children],
         ensures: |ret| anodized::types::Spec::predicate(self)
             && match fields.split_first() {
@@ -303,7 +304,7 @@ pub struct ItemIndex(pub usize);
 ///   and depths; a zero index and depth reaching the payload index are refused.
 /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
 /// - witness: `tests::generate::generated_refinements_reject_impossible_states`
-#[anodized::spec(maintains: usize::try_from(u64::from(self.depth))
+#[spec(maintains: usize::try_from(u64::from(self.depth))
     .is_ok_and(|depth| depth < self.payload.0))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Leaf
@@ -330,7 +331,7 @@ pub struct Leaf
 ///   record bound belongs to its producer, not to this codec's value type.
 /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
 /// - witness: `tests::generate::generated_refinements_reject_impossible_states`
-#[anodized::spec(maintains: {
+#[spec(maintains: {
     let mut open: Vec<Owed> = Vec::new();
     let mut next = Next::Field(Field::Child);
     let mut complete = false;
@@ -389,7 +390,7 @@ impl Tree
     /// - hypothesis: L3 a literal heterogeneous tree separates record indices
     ///   from constructor ordinals and payload byte offsets.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(ensures: |ret| ret.len()
+    #[spec(ensures: |ret| ret.len()
         == self.0.iter().filter(|item| matches!(item, Item::Open(_))).count()
         && ret.iter().all(|index| matches!(self.0.get(index.0), Some(Item::Open(_))))
         && ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
@@ -417,7 +418,7 @@ impl Tree
     /// - hypothesis: L3 nested and empty constructors retain all inner exits
     ///   without treating the root's close as a boundary event.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+    #[spec(requires: anodized::types::Spec::predicate(self),
         ensures: |ret| ret.len() == self.0.iter().filter(|item|
             matches!(item, Item::Close)).count().saturating_sub(1_usize)
             && ret.iter().all(|index| self.0.get(index.0) == Some(&Item::Close)
@@ -448,7 +449,7 @@ impl Tree
     /// - hypothesis: L3 an interior tagged value retains its word and nested
     ///   word leaf while excluding the following sibling and outer close.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+    #[spec(requires: anodized::types::Spec::predicate(self)
         && matches!(self.0.get(open.0), Some(Item::Open(_))),
         ensures: |ret| anodized::types::Spec::predicate(&ret)
             && self.0.get(open.0 ..).is_some_and(|suffix| suffix.starts_with(&ret.0)))]
@@ -489,7 +490,7 @@ impl Tree
     /// - hypothesis: L3 heterogeneous siblings and a nested word leaf have
     ///   exact indices and depths; nonleaf payload fields must be excluded.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+    #[spec(requires: anodized::types::Spec::predicate(self),
         ensures: |ret| {
             let mut depth = 0_u64;
             ret.iter().copied().eq(self.0.iter().enumerate().filter_map(|(index, item)| {
@@ -548,7 +549,7 @@ impl Tree
     /// - hypothesis: L3 distinct word, binary and empty-byte leaves pin the
     ///   replacement and every untouched record, including a binary tail.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+    #[spec(requires: anodized::types::Spec::predicate(self)
         && leaf.payload.0 > 0_usize
         && matches!(self.0.get(leaf.payload.0.saturating_sub(1_usize)),
             Some(Item::Open(Shape::Word | Shape::Bytes)))
@@ -607,7 +608,7 @@ impl CanonicalValue for Tree
     ///   are bounded by 4096 records, with repeated and deeply nested subtrees.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
     /// - witness: `tests::laws::every_generated_value_round_trips_flat`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self))]
+    #[spec(requires: anodized::types::Spec::predicate(self))]
     fn emit_tokens<Sink>(
         &self,
         sink: &mut Sink,
@@ -643,7 +644,7 @@ impl CanonicalValue for Tree
     /// - hypothesis: L3 all seven shapes have literal byte evidence; unknown
     ///   tags and missing counted children are refused by kind and position.
     /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
-    #[anodized::spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
+    #[spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
         || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
             && reader.spent() > spent))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
@@ -728,7 +729,7 @@ struct RecordCount(u64);
 ///   flattenings; malformed field and count claims are rejected.
 /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
 /// - witness: `tests::generate::arena_refinements_reject_stale_metadata`
-#[anodized::spec(maintains: self.records.0 >= 2_u64 && {
+#[spec(maintains: self.records.0 >= 2_u64 && {
     let mut owed = Owed::new(self.shape);
     let mut valid = true;
     for slot in &self.slots {
@@ -794,7 +795,7 @@ enum Task
 ///   independently. No bounded-value restriction is imposed on the arena.
 /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
 /// - witness: `tests::generate::arena_refinements_reject_stale_metadata`
-#[anodized::spec(maintains: self.0.iter().enumerate().all(|(index, node)|
+#[spec(maintains: self.0.iter().enumerate().all(|(index, node)|
     anodized::types::Spec::predicate(node)
         && node.slots.iter().all(|slot| match *slot {
             Slot::Child(child) => child.0 < index,
@@ -826,7 +827,7 @@ impl Arena
     /// - hypothesis: L3 repeated children retain logical multiplicity; a
     ///   compact doubling DAG reaches the counter width without flattening.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+    #[spec(requires: slots.iter().all(|slot| match *slot {
         Slot::Child(child) => child.0 < self.0.len(),
         Slot::Word(_) | Slot::Bytes(_) => true,
     }), ensures: |ret| slots.iter().try_fold(2_u128, |total, slot|
@@ -861,7 +862,7 @@ impl Arena
     /// - hypothesis: L3 mixed fields and repeated child handles preserve their
     ///   exact flattening; only referenced children leave the frontier.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+    #[spec(requires: slots.iter().all(|slot| match *slot {
         Slot::Child(child) => child.0 < self.0.len(),
         Slot::Word(_) | Slot::Bytes(_) => true,
     }), captures: [entry = self.0.len(), width = slots.len()],
@@ -908,7 +909,7 @@ impl Arena
     /// - hypothesis: L3 an unused sibling remains a root while two references
     ///   to one child remove that child only once from the frontier.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(ensures: |ret| ret.len() == self.0.iter()
+    #[spec(ensures: |ret| ret.len() == self.0.iter()
         .filter(|node| node.nested == Nested(false)).count()
         && ret.iter().all(|id| self.0.get(id.0).is_some_and(|node| node.nested == Nested(false)))
         && ret.windows(2).all(|pair| pair.first().zip(pair.get(1))
@@ -936,7 +937,7 @@ impl Arena
     /// - hypothesis: L3 empty and repeated-child lists bind the count word and
     ///   flattened order; a wide fan reaches the record-budget boundary.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: u64::try_from(children.len()).is_ok()
+    #[spec(requires: u64::try_from(children.len()).is_ok()
         && children.iter().all(|child| child.0 < self.0.len()),
         captures: entry = self.0.len(), ensures: |ret| ret.0 == entry
             && self.0.len().checked_sub(entry) == Some(1_usize)
@@ -967,7 +968,7 @@ impl Arena
     /// - hypothesis: L3 counts exactly 4096 and 4097 distinguish the admitted
     ///   boundary from replacement; repeated doubling also triggers fallback.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+    #[spec(requires: slots.iter().all(|slot| match *slot {
         Slot::Child(child) => child.0 < self.0.len(),
         Slot::Word(_) | Slot::Bytes(_) => true,
     }), captures: [entry = self.0.len(), requested = self.records(&slots)],
@@ -1002,7 +1003,7 @@ impl Arena
     /// - hypothesis: L3 latest, oldest, wrapped and maximum-width selectors
     ///   have exact indices in a three-node arena.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: !self.0.is_empty() && usize::try_from(back.0).is_ok(),
+    #[spec(requires: !self.0.is_empty() && usize::try_from(back.0).is_ok(),
         ensures: |ret| usize::try_from(back.0).ok()
             .and_then(|back| back.checked_rem(self.0.len()))
             .and_then(|back| self.0.len().checked_sub(1_usize)?.checked_sub(back)) == Some(ret.0))]
@@ -1039,7 +1040,7 @@ impl Arena
     /// - hypothesis: L3 repeated references, a zero-length spine and a
     ///   multi-level spine separate reuse from bounded new construction.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: !self.0.is_empty()
+    #[spec(requires: !self.0.is_empty()
         || matches!(*step, Step::Unit | Step::Word(_) | Step::Bytes(_)),
         captures: entry = self.0.len(), ensures: |ret| if let Step::Spine(SpineLength(0_u32), _, back) = *step {
             self.0.len() == entry && ret == self.pick(back)
@@ -1115,7 +1116,7 @@ impl Arena
     ///   subsequences, while exact-budget and one-past values distinguish the
     ///   codec's unrestricted grammar from the bounded producer.
     /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-    #[anodized::spec(requires: root.0 < self.0.len(),
+    #[spec(requires: root.0 < self.0.len(),
         ensures: |ret| anodized::types::Spec::predicate(&ret)
             && self.0.get(root.0).is_some_and(|node|
                 u64::try_from(ret.0.len()) == Ok(node.records.0)))]
@@ -1162,7 +1163,7 @@ impl Arena
 /// - hypothesis: L3 empty and repeated-child fans flatten through the real
 ///   arena list constructor with exact counts and child order.
 /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
-#[anodized::spec(requires: u64::try_from(children.len()).is_ok(),
+#[spec(requires: u64::try_from(children.len()).is_ok(),
     ensures: |ret| ret.len().checked_sub(1_usize) == Some(children.len())
         && ret.first().is_some_and(|slot| match *slot {
             Slot::Word(count) => u64::try_from(children.len()) == Ok(u64::from(count)),
@@ -1230,7 +1231,7 @@ pub enum Step
 ///   at most forty steps, each spine of at most ninety-six constructors.
 /// - witness: `tests::generate::builds_preserve_reuse_and_trim_oldest_roots`
 /// - witness: `tests::laws::every_generated_value_commits_and_derefs_back_equal`
-#[anodized::spec(requires: matches!(*first, Step::Unit | Step::Word(_) | Step::Bytes(_)),
+#[spec(requires: matches!(*first, Step::Unit | Step::Word(_) | Step::Bytes(_)),
     ensures: |ret| anodized::types::Spec::predicate(&ret)
         && u64::try_from(ret.0.len()).is_ok_and(|count| count <= RECORD_BUDGET.0))]
 fn build(
@@ -1610,7 +1611,7 @@ pub fn cut_case() -> impl Strategy<Value = (Tree, ValueProfile)>
 ///   real commits; subtree and leaf selection have literal oracles.
 /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 /// - witness: `tests::generate::prior_recipes_select_only_tree_values`
-#[anodized::spec(maintains: match *self {
+#[spec(maintains: match *self {
     Self::Fresh(ref value) => anodized::types::Spec::predicate(value),
     Self::Subtree(_) | Self::Edited(_) | Self::Itself => true,
 })]
@@ -1646,7 +1647,7 @@ impl PriorValue
     ///   value admits the edit recipe without selecting from empty.
     /// - witness: `tests::generate::prior_recipes_select_only_tree_values`
     /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+    #[spec(requires: anodized::types::Spec::predicate(self)
         && (matches!(*self, Self::Fresh(_)) || anodized::types::Spec::predicate(main)),
         ensures: |ret| anodized::types::Spec::predicate(&ret) && match *self {
             Self::Fresh(ref value) => ret == *value,

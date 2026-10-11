@@ -1429,6 +1429,8 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::ChildIndex;
     use super::ChildRef;
     use super::DecodedNode;
@@ -1502,7 +1504,7 @@ mod tests
     ///   a discarded seed or a changed tail.
     /// - witness: `node::tests::internal_nodes_round_trip`
     /// - witness: `node::tests::a_mismatched_identity_is_refused`
-    #[anodized::spec(ensures: |ret| ret.as_ref().first() == Some(&seed.0)
+    #[spec(ensures: |ret| ret.as_ref().first() == Some(&seed.0)
         && ret.as_ref().iter().skip(1_usize).all(|byte| *byte == 0_u8))]
     fn node_hash(seed: HashSeed) -> NodeHash
     {
@@ -1530,7 +1532,7 @@ mod tests
     /// - witness: `node::tests::leaves_round_trip`
     /// - witness: `node::tests::internal_nodes_round_trip`
     /// - witness: `node::tests::truncation_is_refused`
-    #[anodized::spec(ensures: |ret| ret == decode_node(bytes, &mut DecodeWork::new()))]
+    #[spec(ensures: |ret| ret == decode_node(bytes, &mut DecodeWork::new()))]
     fn decode(bytes: EncodedNode<'_>) -> Result<DecodedNode, RecordTreeError>
     {
         let mut work = DecodeWork::new();
@@ -1553,7 +1555,7 @@ mod tests
     ///   decoded records, the literal least key and count; the predicate checks
     ///   cardinality, order and the per-position key/value recipe.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.len() == 40_usize
+    #[spec(ensures: |ret| ret.len() == 40_usize
         && ret.iter().enumerate().all(|(index, record)|
             record.key().as_ref().strip_prefix(b"key-").is_some_and(|digits|
                 digits.len() == 4_usize && digits.iter().all(u8::is_ascii_digit)
@@ -1588,7 +1590,7 @@ mod tests
     ///   position for position with the owned corpus. It distinguishes loss or
     ///   permutation during borrowing.
     /// - witness: `node::tests::leaves_round_trip`
-    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(records.iter().map(Record::as_record_ref)))]
+    #[spec(ensures: |ret| ret.iter().copied().eq(records.iter().map(Record::as_record_ref)))]
     fn borrow(records: &[Record]) -> Vec<RecordRef<'_>>
     {
         records.iter().map(Record::as_record_ref).collect()
@@ -2198,7 +2200,7 @@ mod tests
     ///   fault.
     /// - witness: `node::tests::unsorted_leaf_records_are_refused`
     /// - witness: `node::tests::a_wrong_internal_record_total_is_refused`
-    #[anodized::spec(ensures: |ret| ret.0.iter().copied().eq(
+    #[spec(ensures: |ret| ret.0.iter().copied().eq(
         b"gandr:storage-records:node:v1".iter().copied().chain([2_u8, 0_u8, u8::from(kind)])))]
     fn header(kind: WireTag) -> NodeBytes
     {
@@ -2230,7 +2232,7 @@ mod tests
     ///   separate a damaged count from the intended payload fault.
     /// - witness: `node::tests::repeated_leaf_keys_are_refused`
     /// - witness: `node::tests::an_overstated_record_count_is_refused`
-    #[anodized::spec(ensures: |ret| ret.0.iter().copied().eq(
+    #[spec(ensures: |ret| ret.0.iter().copied().eq(
         b"gandr:storage-records:node:v1".iter().copied().chain([2_u8, 0_u8, 0_u8])
             .chain(u64::from(count).to_le_bytes())))]
     fn leaf_prefix(count: RecordCount) -> NodeBytes
@@ -2261,7 +2263,7 @@ mod tests
     /// - witness: `node::tests::a_childless_internal_node_is_refused`
     /// - witness: `node::tests::an_empty_child_is_refused`
     /// - witness: `node::tests::a_wrong_internal_record_total_is_refused`
-    #[anodized::spec(ensures: |ret| ret.0.iter().copied().eq(
+    #[spec(ensures: |ret| ret.0.iter().copied().eq(
         b"gandr:storage-records:node:v1".iter().copied().chain([2_u8, 0_u8, 1_u8])
             .chain(u64::from(records).to_le_bytes()).chain(u64::from(children).to_le_bytes())))]
     fn internal_prefix(
@@ -2298,7 +2300,7 @@ mod tests
     /// - witness: `node::tests::repeated_leaf_keys_are_refused`
     /// - witness: `node::tests::unsorted_leaf_records_are_refused`
     /// - witness: `node::tests::decode_work_records_attempts_and_preserves_early_refusals`
-    #[anodized::spec(
+    #[spec(
         captures: entry_len = bytes.0.len(),
         ensures: bytes.0.get(entry_len ..).is_some_and(|suffix| suffix.iter().copied().eq(
             u64::try_from(key.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes()
@@ -2334,7 +2336,7 @@ mod tests
     ///   the earlier buffer.
     /// - witness: `node::tests::unsorted_separators_are_refused`
     /// - witness: `node::tests::a_wrong_internal_record_total_is_refused`
-    #[anodized::spec(
+    #[spec(
         captures: entry_len = bytes.0.len(),
         ensures: bytes.0.get(entry_len ..).is_some_and(|suffix| suffix.iter().copied().eq(
             u64::try_from(key.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes()
@@ -2373,7 +2375,7 @@ mod tests
     ///   reversal and omitted data for these bounded fixtures.
     /// - witness: `node::tests::repeated_leaf_keys_are_refused`
     /// - witness: `node::tests::unsorted_separators_are_refused`
-    #[anodized::spec(
+    #[spec(
         captures: entry_len = bytes.0.len(),
         ensures: bytes.0.get(entry_len ..).is_some_and(|suffix| suffix.iter().copied().eq(
             u64::try_from(body.0.len()).unwrap_or(u64::MAX).to_le_bytes()

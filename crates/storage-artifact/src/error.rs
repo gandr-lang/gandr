@@ -266,6 +266,7 @@ mod tests
 {
     use alloc::string::ToString as _;
 
+    use anodized::spec;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DecodeError;
     use gandr_kernel_term::FormatVersion;
@@ -300,7 +301,7 @@ mod tests
         ///   accepts text. Later writes are not sampled by this observer.
         /// - witness: `error::tests::every_refusal_renders_apart`
         /// - witness: `error::tests::every_manifest_field_renders_apart`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _s: &str,

@@ -580,6 +580,7 @@ mod tests
 {
     use alloc::string::ToString as _;
 
+    use anodized::spec;
     use gandr_storage_chunker::TokenCount;
 
     use super::ChunkFrameField;
@@ -619,7 +620,7 @@ mod tests
         ///   sink that accepts a write. Later-write failures are not sampled.
         /// - witness: `error::tests::fields_and_faults_remain_distinct`
         /// - witness: `error::tests::refusals_retain_payloads_and_propagate_sink_errors`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _s: &str,

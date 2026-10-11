@@ -68,6 +68,8 @@ mod tests
 {
     use alloc::string::ToString as _;
 
+    use anodized::spec;
+
     use super::ChildIndexBase;
 
     /// A formatting sink that refuses every write.
@@ -92,7 +94,7 @@ mod tests
         /// - hypothesis: L3 on both index-base renderings observes exact write
         ///   refusal, distinguishing a sink that silently accepts text.
         /// - witness: `index_base::tests::bases_remain_distinct_and_propagate_refusal`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _s: &str,

@@ -27,7 +27,7 @@ dependencies = [
 [[package]]
 name = "anodized"
 version = "0.7.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
+source = "git+https://github.com/gandr-lang/anodized?rev=5483862f402da57329dd22e8e2f272fde576af87#5483862f402da57329dd22e8e2f272fde576af87"
 dependencies = [
  "anodized-macros",
 ]
@@ -35,7 +35,7 @@ dependencies = [
 [[package]]
 name = "anodized-core"
 version = "0.7.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
+source = "git+https://github.com/gandr-lang/anodized?rev=5483862f402da57329dd22e8e2f272fde576af87#5483862f402da57329dd22e8e2f272fde576af87"
 dependencies = [
  "bitflags",
  "proc-macro2",
@@ -46,7 +46,7 @@ dependencies = [
 [[package]]
 name = "anodized-macros"
 version = "0.7.0"
-source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
+source = "git+https://github.com/gandr-lang/anodized?rev=5483862f402da57329dd22e8e2f272fde576af87#5483862f402da57329dd22e8e2f272fde576af87"
 dependencies = [
  "anodized-core",
  "proc-macro2",
@@ -427,7 +427,6 @@ name = "gandr-core-checker"
 version = "0.0.0"
 dependencies = [
  "allocation-counter",
- "anodized",
  "crossbeam-channel",
  "crossbeam-deque",
  "gandr-core-nbe",
@@ -439,6 +438,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-theory-deep-inference",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
  "ringbuf",
  "rtrb",
@@ -450,7 +450,6 @@ dependencies = [
 name = "gandr-core-incremental"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "blake3",
  "gandr-core-checker",
  "gandr-core-term",
@@ -459,6 +458,7 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-theory-orders",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -466,7 +466,6 @@ dependencies = [
 name = "gandr-core-nbe"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
@@ -474,6 +473,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "proptest",
+ "quenchant-anodized",
  "tracing",
 ]
 
@@ -481,32 +481,32 @@ dependencies = [
 name = "gandr-core-sequent"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-cell-complexes",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-core-session"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-kernel-core",
  "gandr-kernel-term",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "num-bigint",
+ "quenchant-anodized",
  "quenchant-arith",
  "quenchant-shape",
 ]
@@ -515,21 +515,20 @@ dependencies = [
 name = "gandr-kernel-check-memo"
 version = "0.0.0"
 dependencies = [
- "anodized",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-kernel-conversion-trace"
 version = "0.0.0"
 dependencies = [
- "anodized",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-kernel-core"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-check-memo",
@@ -537,6 +536,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "proptest",
+ "quenchant-anodized",
  "quenchant-arith",
  "quenchant-shape",
 ]
@@ -545,18 +545,18 @@ dependencies = [
 name = "gandr-kernel-strata"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-kernel-term"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -564,13 +564,13 @@ dependencies = [
 name = "gandr-lang"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "clap",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
  "gandr-surface-lsp",
  "gandr-surface-repl",
  "gandr-surface-tui",
+ "quenchant-anodized",
  "quenchant-shape",
  "tracing",
  "tracing-subscriber",
@@ -580,19 +580,18 @@ dependencies = [
 name = "gandr-runtime-compile-host"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-checker",
  "gandr-core-sequent",
  "gandr-core-term",
  "gandr-kernel-term",
  "gandr-runtime-compile-host",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-storage-artifact"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "blake3",
  "gandr-kernel-strata",
  "gandr-kernel-term",
@@ -602,6 +601,7 @@ dependencies = [
  "gandr-theory-decomposition-spaces",
  "gandr-theory-deep-inference",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -609,35 +609,34 @@ dependencies = [
 name = "gandr-storage-chunker"
 version = "0.0.0"
 dependencies = [
- "anodized",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-storage-records"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "blake3",
  "gandr-storage-chunker",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-storage-values"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "blake3",
  "gandr-storage-chunker",
  "gandr-storage-records",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-surface-corpus"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-term",
@@ -647,6 +646,7 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -655,7 +655,6 @@ name = "gandr-surface-diagnostics"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
- "anodized",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-surface-corpus",
@@ -663,6 +662,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -670,7 +670,6 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-checker",
  "gandr-core-sequent",
  "gandr-core-term",
@@ -680,6 +679,7 @@ dependencies = [
  "gandr-surface-lowering",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "quenchant-shape",
  "tracing",
 ]
@@ -688,20 +688,20 @@ dependencies = [
 name = "gandr-surface-grammar"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "expect-test",
  "gandr-surface-parser",
  "gandr-surface-render-remote",
  "gandr-surface-syntax",
  "gandr-theory-graphs",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-surface-layout"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -709,7 +709,6 @@ dependencies = [
 name = "gandr-surface-lowering"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-core",
@@ -718,6 +717,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-parser",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -725,7 +725,6 @@ dependencies = [
 name = "gandr-surface-lsp"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
@@ -734,6 +733,7 @@ dependencies = [
  "gandr-surface-render-remote",
  "gandr-surface-syntax",
  "percent-encoding",
+ "quenchant-anodized",
  "quenchant-shape",
  "serde",
  "serde_json",
@@ -743,24 +743,24 @@ dependencies = [
 name = "gandr-surface-parser"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-surface-grammar",
  "gandr-surface-syntax",
  "gandr-theory-graphs",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-surface-pretty"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "expect-test",
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-layout",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -768,8 +768,8 @@ dependencies = [
 name = "gandr-surface-render-remote"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-surface-render-remote",
+ "quenchant-anodized",
  "serde",
  "serde_json",
 ]
@@ -778,7 +778,6 @@ dependencies = [
 name = "gandr-surface-repl"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-storage-records",
@@ -791,6 +790,7 @@ dependencies = [
  "gandr-surface-render-remote",
  "gandr-surface-session",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "quenchant-shape",
  "rustyline",
 ]
@@ -799,7 +799,6 @@ dependencies = [
 name = "gandr-surface-session"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-term",
@@ -814,6 +813,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-syntax",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -821,15 +821,14 @@ dependencies = [
 name = "gandr-surface-syntax"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "blake3",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-surface-tui"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-surface-diagnostics",
@@ -837,6 +836,7 @@ dependencies = [
  "gandr-surface-render-remote",
  "gandr-surface-repl",
  "gandr-surface-syntax",
+ "quenchant-anodized",
  "ratatui",
 ]
 
@@ -844,8 +844,8 @@ dependencies = [
 name = "gandr-theory-cell-complexes"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -853,8 +853,8 @@ dependencies = [
 name = "gandr-theory-cell-complexes-tools"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -862,9 +862,9 @@ dependencies = [
 name = "gandr-theory-circuit-algebras"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -872,10 +872,10 @@ dependencies = [
 name = "gandr-theory-coherent-resolutions"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -883,12 +883,12 @@ dependencies = [
 name = "gandr-theory-computads"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-deep-inference",
  "gandr-theory-levitation",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -896,7 +896,6 @@ dependencies = [
 name = "gandr-theory-decomposition-spaces"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
@@ -905,6 +904,7 @@ dependencies = [
  "gandr-theory-dynamic-graphs",
  "gandr-theory-graphs",
  "gandr-theory-levitation",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -912,12 +912,12 @@ dependencies = [
 name = "gandr-theory-deep-inference"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -925,10 +925,10 @@ dependencies = [
 name = "gandr-theory-dynamic-graphs"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-graphs",
  "gandr-theory-orders",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -936,17 +936,17 @@ dependencies = [
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "petgraph",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-theory-levitation"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -954,7 +954,7 @@ dependencies = [
 name = "gandr-theory-nominal-automata"
 version = "0.0.0"
 dependencies = [
- "anodized",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -962,16 +962,16 @@ dependencies = [
 name = "gandr-theory-orders"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "proptest",
+ "quenchant-anodized",
 ]
 
 [[package]]
 name = "gandr-theory-sites"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-circuit-algebras",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -979,12 +979,12 @@ dependencies = [
 name = "gandr-theory-virtual-doctrines"
 version = "0.0.0"
 dependencies = [
- "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-coherent-resolutions",
  "gandr-theory-decomposition-spaces",
  "gandr-theory-levitation",
  "proptest",
+ "quenchant-anodized",
  "quenchant-shape",
 ]
 
@@ -1379,15 +1379,17 @@ dependencies = [
 [[package]]
 name = "quenchant-anodized"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+source = "git+https://github.com/gandr-lang/quenchant?rev=8b8d0702d69409549e855606a85492c777e05fc9#8b8d0702d69409549e855606a85492c777e05fc9"
 dependencies = [
+ "anodized",
+ "anodized-macros",
  "quenchant-spec-macros",
 ]
 
 [[package]]
 name = "quenchant-arith"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+source = "git+https://github.com/gandr-lang/quenchant?rev=8b8d0702d69409549e855606a85492c777e05fc9#8b8d0702d69409549e855606a85492c777e05fc9"
 dependencies = [
  "quenchant-anodized",
 ]
@@ -1395,7 +1397,7 @@ dependencies = [
 [[package]]
 name = "quenchant-shape"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+source = "git+https://github.com/gandr-lang/quenchant?rev=8b8d0702d69409549e855606a85492c777e05fc9#8b8d0702d69409549e855606a85492c777e05fc9"
 dependencies = [
  "quenchant-anodized",
 ]
@@ -1403,7 +1405,7 @@ dependencies = [
 [[package]]
 name = "quenchant-spec-macros"
 version = "0.0.0"
-source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+source = "git+https://github.com/gandr-lang/quenchant?rev=8b8d0702d69409549e855606a85492c777e05fc9#8b8d0702d69409549e855606a85492c777e05fc9"
 
 [[package]]
 name = "quote"
