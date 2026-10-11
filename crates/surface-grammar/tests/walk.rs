@@ -581,6 +581,13 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
             adjacencies.iter().any(|&(left, _)| left == mold),
             bool::from(pbg.mold_has_successor(mold))
         );
+        assert!(
+            pbg.mold_successors(mold).iter().copied().eq(adjacencies
+                .iter()
+                .copied()
+                .filter(|&(left, _)| left == mold)),
+            "mold {mold:?} reads exactly its own successor run"
+        );
         assert_eq!(
             form_first.contains(&mold),
             bool::from(pbg.mold_is_form_first(mold))
@@ -608,6 +615,15 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
     assert!(!bool::from(pbg.mold_is_form_first(past)));
     assert!(!bool::from(pbg.mold_is_form_last(past)));
     assert!(!bool::from(pbg.mold_has_required_tail(past)));
+    assert!(pbg.mold_successors(past).is_empty());
+    for &(left, right) in adjacencies {
+        assert!(bool::from(pbg.molds_adjacent(left, right)));
+        assert_eq!(
+            bool::from(pbg.molds_adjacent(right, left)),
+            adjacencies.contains(&(right, left))
+        );
+        assert!(!bool::from(pbg.molds_adjacent(left, past)));
+    }
     Ok(())
 }
 

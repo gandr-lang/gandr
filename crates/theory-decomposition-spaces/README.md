@@ -37,7 +37,7 @@ This gate is presentation-sensitive. Changing a certificate's representative can
 
 The chosen emit-to-absorb criterion is strictly less conservative than a union-of-variances test: sequential producer-to-consumer seams are admitted without inventing a reverse edge. The alternative union criterion remains a test oracle. Reconsider the representation only when a consumer requires a presentation-invariant gate and supplies the extra data that can decide one; a normalized label alone is insufficient.
 
-The graph is built afresh for each query. No standing dynamic graph, durable step address, comultiplication or antipode is part of this crate. Build-local normal-form labels never acquire a transport type here.
+The graph is built afresh for each query. Keep its gate batch-based: successive certificate pairs can change both the support and the left-join hole filter, so they are not insertion-only updates. The dynamic comparison witness streams each characterized graph in both arrival orders and agrees with the batch gate; `gandr-theory-dynamic-graphs` is a development dependency only. Reconsider the gate only for a consumer retaining one standing graph or accumulating constraints monotonically across calls. No standing dynamic graph, durable step address, comultiplication or antipode is part of this crate. Build-local normal-form labels never acquire a transport type here.
 
 ## Certificate fields
 
@@ -51,7 +51,7 @@ The deep-inference integration test [`composed_tracelets_replay_and_normalize_th
 
 ## Compatibility floor
 
-The floor has 37 named rows: 26 are present here, 10 are exercised at the storage transport boundary, and one awaits the standing dynamic graph comparison. The reversed-pair seam witness and backward-growth/compression witness are additional; the composition consumer witness lives in deep-inference, and the transport consumer witness in storage-artifact. Integration targets are discovered directly by Cargo.
+The floor has 37 named rows: 27 are present here and 10 are exercised at the storage transport boundary; none are deferred. The reversed-pair seam witness and backward-growth/compression witness are additional; the composition consumer witness lives in deep-inference, and the transport consumer witness in storage-artifact. Integration targets are discovered directly by Cargo.
 
 | Test | Disposition | Scope |
 | ---- | ----------- | ----- |
@@ -91,7 +91,7 @@ The floor has 37 named rows: 26 are present here, 10 are exercised at the storag
 | `distinct_factorizations_index_distinctly` | Present | [Storage certificate transport](../storage-artifact/README.md#certificate-transport) |
 | `a_shared_identity_with_distinct_content_is_refused` | Present | [Storage certificate transport](../storage-artifact/README.md#certificate-transport) |
 | `a_shared_identity_with_equal_content_sums_the_grading` | Present | [Storage certificate transport](../storage-artifact/README.md#certificate-transport) |
-| `the_gates_own_graph_streamed_incrementally_reproduces_its_verdict` | Deferred | Standing dynamic graph comparison |
+| `the_gates_own_graph_streamed_incrementally_reproduces_its_verdict` | Present | Standing dynamic graph comparison |
 
 The current metadata retains both faces of a fused rule. The presentation witnesses therefore use a replay-equivalent, alpha-renamed representative whose seam-named support differs, rather than assuming fusion erases mixed variance. Corpus checks compare semantic verdicts and replay, not an incidental count of pairs.
 

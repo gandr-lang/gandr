@@ -16,7 +16,6 @@ use gandr_kernel_core::admission::Point;
 use gandr_kernel_core::admission::Proposal;
 
 use super::Candidate;
-use super::PeakRoots;
 use super::StageError;
 use super::Step;
 use super::TermId;
@@ -37,22 +36,21 @@ impl Candidate
     ///
     /// # Specification
     /// - ensures: every row selects the corresponding source arm in point
-    ///   order; retains no producer cache as evidence. Target-only points
-    ///   refuse.
-    /// - fails: an unrooted point or malformed graph/column.
+    ///   order; retains no producer cache as evidence.
+    /// - fails: a malformed graph or column.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `StageError::InvalidCertificate` or `StageError::Unbalanced`.
+    /// Returns `StageError::Unbalanced`.
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — all harvested rows compare against their original
-    ///   sides, while target-only candidates cannot mint schema input.
+    ///   sides; analysis refuses every family with a target-only point, so no
+    ///   candidate carries one into schema input.
     /// - witness: `template::tests::compressed_admission_matches_plain_families`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|candidate|
-        matches!(self.peak_roots, PeakRoots::Complete)
-        && candidate.proposal.equation.rule == self.rule
+        candidate.proposal.equation.rule == self.rule
         && candidate.proposal.arms.len() == self.entries.len()
         && candidate.rows.len() == usize::from(self.cost.members)
         && candidate.rows.iter().all(|row| row.len() == self.entries.len()
@@ -60,9 +58,6 @@ impl Candidate
                 choice.point == Point(usize::from(entry.point)) && choice.guard.0 < arms.len()))))]
     pub fn admission_candidate(&self) -> Result<AdmissionCandidate, StageError>
     {
-        if !matches!(self.peak_roots, PeakRoots::Complete) {
-            return Err(StageError::InvalidCertificate);
-        }
         let mut retained = Vec::from(self.sides);
         retained.extend(
             self.entries

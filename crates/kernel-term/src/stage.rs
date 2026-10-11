@@ -5,11 +5,16 @@
 //! lifting, quotation and splicing never transform a context. This arena has
 //! no wire encoding and confers no typing or conversion authority.
 
+mod lookup;
+
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use lookup::Lookup;
+use lookup::Probe;
+use lookup::hash_of;
 use quenchant_shape::shape::Maybe;
 
 /// Declare an arena-local nominal coordinate.
@@ -36,7 +41,7 @@ coordinate!(
 coordinate!(Budget, "Remaining work units for a staging walk.");
 
 /// The outer framework and one indexed inner universe.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Stage
 {
     /// The meta level.
@@ -46,7 +51,7 @@ pub enum Stage
 }
 
 /// Classifiers of the structural natural-number staging fragment.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Type
 {
     /// Permission to use an object-language model.
@@ -62,7 +67,7 @@ pub enum Type
 }
 
 /// Terms; all recursive positions are arena coordinates.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Term
 {
     /// An ordinary hypothesis, counted from the telescope's end.
@@ -215,11 +220,11 @@ pub struct Arena
     /// Canonical classifier descriptors in dependency order.
     types: Vec<Type>,
     /// Descriptor lookup; equality here concerns syntax, not conversion.
-    type_ids: BTreeMap<Type, TypeId>,
+    type_ids: Lookup,
     /// Terms in dependency order.
     terms: Vec<Term>,
     /// Exact constructor, payload and child lookup within this arena.
-    term_ids: BTreeMap<Term, TermId>,
+    term_ids: Lookup,
 }
 
 quenchant_shape::reason_enum! {
@@ -330,17 +335,17 @@ impl Arena
     #[inline]
     #[spec(ensures: |ret| match ret {
         Maybe::Present(id) => self.terms.get(id.0) == Some(term)
-            && self.term_ids.get(term).is_some_and(|found| found.0 == id.0),
-        Maybe::Absent(_) => !self.term_ids.contains_key(term),
+            && self.terms.iter().position(|stored| stored == term) == Some(id.0),
+        Maybe::Absent(_) => !self.terms.contains(term),
     })]
     pub fn find(
         &self,
         term: &Term,
     ) -> Maybe<TermId, interned::Absent>
     {
-        match self.term_ids.get(term) {
-            | Some(id) => Maybe::Present(*id),
-            | None => Maybe::Absent(interned::Absent::Uninterned),
+        match self.term_ids.probe(hash_of(term), &self.terms, term) {
+            | Probe::Found(position) => Maybe::Present(TermId(position)),
+            | Probe::Vacant(_) => Maybe::Absent(interned::Absent::Uninterned),
         }
     }
 
@@ -349,19 +354,23 @@ impl Arena
     /// # Specification
     /// - ensures: equal descriptors receive the same coordinate; children
     ///   precede their parent, so classifier cycles cannot be minted.
-    /// - fails: `UnknownType` for an absent child.
+    /// - fails: `UnknownType` for an absent child; `Overflow` when the arena
+    ///   already holds `u32::MAX` classifiers.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `UnknownType` for an absent child.
+    /// Returns `UnknownType` for an absent child, `Overflow` at the
+    /// coordinate bound.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — equal classifiers and forward edges distinguish
     ///   canonicalization and the acyclic-prefix guard.
     /// - witness: `stage::tests::syntax_boundaries`
+    /// - witness: `stage::tests::interning_survives_lookup_growth`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id|
-        self.types.get(id.0) == Some(&ty) && self.type_ids.get(&ty) == Some(id)
+        self.types.get(id.0) == Some(&ty)
+        && self.types.iter().position(|stored| *stored == ty) == Some(id.0)
         && match ty {
             Type::Arrow(a, b) => a.0 < id.0 && b.0 < id.0,
             Type::Lift(inner) => inner.0 < id.0,
@@ -382,13 +391,18 @@ impl Arena
             },
             | Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
         }
-        if let Some(id) = self.type_ids.get(&ty) {
-            return Ok(*id);
+        let hash = hash_of(&ty);
+        match self.type_ids.probe(hash, &self.types, &ty) {
+            | Probe::Found(position) => Ok(TypeId(position)),
+            | Probe::Vacant(slot) => {
+                let id = TypeId(self.types.len());
+                self.type_ids
+                    .insert(slot, hash, &self.types)
+                    .map_err(|_full| StageError::Overflow)?;
+                self.types.push(ty);
+                Ok(id)
+            },
         }
-        let id = TypeId(self.types.len());
-        self.types.push(ty);
-        self.type_ids.insert(ty, id);
-        Ok(id)
     }
 
     /// Intern a term over existing children, without checking its typing.
@@ -396,17 +410,20 @@ impl Arena
     /// # Specification
     /// - ensures: equal descriptors receive the same coordinate; all edges
     ///   point backward, preventing cycles. Identity is arena-local syntax.
-    /// - fails: `UnknownTerm` or `UnknownType` for an absent child.
+    /// - fails: `UnknownTerm` or `UnknownType` for an absent child; `Overflow`
+    ///   when the arena already holds `u32::MAX` terms.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns the absent child's typed lookup error.
+    /// Returns the absent child's typed lookup error, or `Overflow` at the
+    /// coordinate bound.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — equal and unequal descriptors distinguish exact
     ///   interning; live and forward edges distinguish prefix checking.
     /// - witness: `stage::tests::syntax_boundaries`
     /// - witness: `stage::tests::term_interning_preserves_exact_content`
+    /// - witness: `stage::tests::interning_survives_lookup_growth`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|id|
         self.terms.get(id.0) == Some(&term)
@@ -425,13 +442,18 @@ impl Arena
             },
             | _ => {},
         }
-        if let Some(id) = self.term_ids.get(&term) {
-            return Ok(*id);
+        let hash = hash_of(&term);
+        match self.term_ids.probe(hash, &self.terms, &term) {
+            | Probe::Found(position) => Ok(TermId(position)),
+            | Probe::Vacant(slot) => {
+                let id = TermId(self.terms.len());
+                self.term_ids
+                    .insert(slot, hash, &self.terms)
+                    .map_err(|_full| StageError::Overflow)?;
+                self.terms.push(term);
+                Ok(id)
+            },
         }
-        let id = TermId(self.terms.len());
-        self.terms.push(term);
-        self.term_ids.insert(term, id);
-        Ok(id)
     }
 }
 
@@ -914,6 +936,43 @@ mod tests
             arena.alloc(Term::Code(TypeId(usize::MAX))),
             Err(StageError::UnknownType(TypeId(usize::MAX)))
         );
+    }
+
+    #[test]
+    fn interning_survives_lookup_growth()
+    {
+        let mut arena = Arena::default();
+        let mut types = Vec::from([arena.alloc_type(Type::Nat(Stage::Outer)).unwrap()]);
+        for model in 0 .. 200 {
+            let previous = *types.last().unwrap();
+            let universe = arena.alloc_type(Type::Universe(Model(model))).unwrap();
+            types.push(arena.alloc_type(Type::Arrow(universe, previous)).unwrap());
+        }
+        let mut terms = Vec::new();
+        let mut ids = Vec::new();
+        for value in 0 .. 3_000_usize {
+            let term = match (value.checked_rem(3), ids.as_slice()) {
+                | (Some(1 | 2), &[.., older, newer]) => Term::Apply(newer, older),
+                | _ => Term::Natural(Stage::Outer, Natural(value)),
+            };
+            terms.push(term);
+            ids.push(arena.alloc(term).unwrap());
+        }
+        assert_eq!(ids, (0 .. 3_000).map(TermId).collect::<Vec<_>>());
+        let cloned = arena.clone();
+        for (term, id) in terms.iter().zip(&ids) {
+            assert_eq!(arena.find(term), Maybe::Present(*id));
+            assert_eq!(cloned.find(term), Maybe::Present(*id));
+        }
+        for (term, id) in terms.iter().zip(&ids) {
+            assert_eq!(arena.alloc(*term), Ok(*id));
+        }
+        assert_eq!(arena.terms.len(), 3_000);
+        for id in &types {
+            let ty = arena.ty(*id).unwrap();
+            assert_eq!(arena.alloc_type(ty), Ok(*id));
+        }
+        assert_eq!(arena.types.len(), 401);
     }
 
     #[test]

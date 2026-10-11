@@ -11,6 +11,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Completion obligations in place of error recovery](#completion-obligations-in-place-of-error-recovery)
 - [Completion obligations are not typing obligations](#completion-obligations-are-not-typing-obligations)
 - [Label, mold, meld](#label-mold-meld)
+- [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
@@ -18,6 +19,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Checkpoints](#checkpoints)
 - [Commit reads the caller's source](#commit-reads-the-callers-source)
 - [Repair stops at the declaration boundary](#repair-stops-at-the-declaration-boundary)
+- [Forms as units](#forms-as-units)
 - [No recursion over input](#no-recursion-over-input)
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
@@ -42,12 +44,14 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 - `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
+- `TokenIndex`, `TokenRun`, `Molder::mold_run` and `Molder::form_runs`: a stream molded run by run, each run reading past its end as lookahead, and the runs a stream splits into at its predicted top-level declaration boundaries. Witnesses: `mold::tests::runs_mold_as_the_whole_stream`, `parse::tests::a_source_splits_before_each_declaration_head`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
 - `Frontier`, `MoldAdmissibility`, `FormContinuation`, `OperandContinuation`, `HeadOperandPresence` and `OpenFormPresence`: the slope-head queries the molder ranks candidates by. Witnesses: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`, `meld::tests::admits_rejects_a_stray_closer`, `meld::tests::expected_sort_reads_the_open_slot`.
 - `Completion`, `CompletionStatus` and `Expected`: the non-destructive completion query. Witnesses: `meld::tests::finalize_is_non_destructive`, `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`, `tests::acceptance::expected_agrees_with_committed_finalize`, `tests::acceptance::expected_completion_names_the_next_tile_or_hole`.
 - `Checkpoint`, `CheckpointBytes`, `CheckpointBytesRef`, `CheckpointError` and `Mark`: serializable continuation and in-place transaction. Witnesses: `meld::tests::checkpoint_resume_is_equivalent`, `meld::tests::minted_close_round_trips_and_refuses_unknown_class`, `meld::tests::mark_rollback_restores_state_exactly`, `tests::contracts::checkpoint_resume_equals_uninterrupted`.
 - `Oblig`, `ObligationInstance`, `Delta`, `DeltaEmptyStatus`, `ObligClassIndex`, `ObligationCount` and `OBLIG_CLASS_COUNT`: the completion-obligation taxonomy and its minimization order. Witnesses: `oblig::tests::severity_ladder_is_low_to_high`, `oblig::tests::higher_severity_class_dominates_the_order`, `oblig::tests::minimization_never_prefers_ambiguous_prec`.
 - `parse`, `ParseResult` and `ParseCleanStatus`: the batch entry point. Witnesses: `tests::acceptance::corpus_molds_to_zero_obligations`, `parse::tests::parse_is_lossless_and_hash_stable`, `parse::tests::arbitrary_source_parses_totally`.
+- `parse_by_form`, `FormSplit`, `FormJoin`, `FormUnit`, `UnitBase`, `UnitSeam` and `SeamBreak`: one source parsed by its top-level forms, each form molded apart from a form-boundary checkpoint and joined into the whole parse. Witnesses: `parse::tests::form_split_parses_as_the_whole_source`, `parse::tests::a_source_splits_before_each_declaration_head`, `parse::tests::arbitrary_source_parses_by_form_as_whole`.
 
 ## Expected features
 
@@ -102,6 +106,17 @@ The molder's candidates for a token are the union of the grammar's molds for eac
 
 The melder follows the paper's push rules. Shift pushes a tile whose precedence the head yields to; Reduce closes the head operator or form when the incoming tile takes precedence; Degrout completes an incomparable pair with grout and an `AmbiguousPrec` obligation. Grout is comparable to everything and sits at the bottom of the precedence order, which is what makes every push conclude.
 
+## The molder's search stops at its least key
+
+Every survivor of the pre-filter used to be dry-run for its key, the ties dry-run again for their completion, and every tied opener's lookahead window molded to its end; where the pre-filter left nothing — a token inside a lookahead window, mostly, whose admissible menu is empty — the whole menu, up to 186 molds for a `)`, took that path. Measured over the six longest corpus sources, a token cost 61 key dry-runs, 12 completions, 73 marks each copying the slope, and 128 allocations; the per-token cost ran to tens of microseconds where a parser spends a tenth of one.
+
+The choice is unchanged, and the work to reach it is bounded by the least key found. A candidate's key is at least a floor read without a dry-run — its rank bits and an empty delta — so candidates are visited floor by floor and the search stops once the least key found lies below every floor left. Pass two stops at the first empty completion, which nothing beats. Each window after the first is bounded by the best window delta so far, and is abandoned the moment its own delta reaches that bound, since a window's delta never shrinks as it molds. A dry-run no longer copies the slope: a `Mark` records lengths, and the slope edits made under a live mark go to a trail that `rollback_to` undoes newest first, restoring only the cells the dry-run touched. The completion delta is counted without collecting the obligations, a push never builds a `MoldedTile`, and the grammar answers adjacency and membership from per-mold runs and flags. Over the six longest sources a token now costs 14 key dry-runs, 12 completions, 26 marks restoring 1.2 KB, and 7 allocations; over the corpus, 9, 7, 16 and 7.
+
+The tree and the obligations are identical, node by node, on every corpus source and on each one cut short and with one significant token dropped at eight positions.
+
+- Alternatives: dropping the whole-menu fallback inside windows removed most of the cost and changed 20 sources' trees, so it is not this crate's to make — the fallback is part of the molding the corpus checks. Memoizing completions across tied candidates by the slope they leave never found two candidates leaving one slope, and cost more than it saved.
+- Reversal: a ranking key whose floor cannot be read without a dry-run, or a window delta that can shrink, voids the bound; the search then visits every survivor again.
+
 ## A closer with a required operand after it is a mid tile
 
 A tile with a same-form predecessor and no same-form successor ends its form in the paper's classification. The `]` of `+U[ω] C` and of `package [ T ] C` cannot: the grammar requires an operand after it. The melder classifies such a tile as a mid tile, so the form stays open until its operand arrives and closes around it; a closing bracket with nothing required after it, the `]` of `Type[+, 1]`, still ends its form. Read as an end, the bracket closed the bridge at its grade, and a parenthesised operand after it became a juxtaposed sibling that the lowering refused as a malformed form.
@@ -130,7 +145,7 @@ The alternative was an exact query: replay the commit on a copy of the slope. It
 
 A `Checkpoint` is the melder's whole state: the grammar fingerprint, the assembled source, the emission log, the slope, the buffered obligations and the layout tokens. `to_bytes` writes it little-endian with every variable-width field length-prefixed; a node label is written as its pinned digest tag and its payload, so the checkpoint and the digest share one numbering and reordering the label enum changes neither. A minted close's family byte is checked on read, and an unknown family is refused rather than defaulted, because pairing a ghost against the wrong family is worse than not pairing it. `resume` rebuilds the slope-head caches from the slope, and a resumed run equals the uninterrupted one, obligations and root digest included.
 
-A `Mark` is the cheap transaction beside it: the buffer and log lengths and a copy of the slope with its head caches, restored in place, which is what the molder's per-candidate dry-run uses.
+A `Mark` is the cheap transaction beside it: the source, log, obligation and space lengths, and the length of a trail of slope edits — a push, an overwritten cell, a splice with the cells it removed — recorded only while a mark is live. `rollback_to` undoes the trail back to the mark, newest first, and rebuilds the head caches from the lowest position an edit touched, which is what the molder's per-candidate dry-run uses. Marks nest; the trail empties when the outermost rolls back.
 
 ## Commit reads the caller's source
 
@@ -143,6 +158,17 @@ The alternatives were a tree owning a copy of the text, which costs a copy per p
 When a token's candidates include a declaration head, none of them continues the open form, and the innermost open form is not an item form — an unclosed `(` in a definition's value, say — the melder force-closes the open forms back to the nearest declaration before molding the head, so the repair's minted closes and obligations stay inside the damaged declaration and the next one parses whole. The boundary is any declaration head, not the `def` keyword alone.
 
 Known bound: a container whose own member carries the damage — `module M { def bad = ( 1 ; def good = 2; }` — force-closes the container too, so `good` becomes a sibling of `M` rather than its member. Telling a container apart from a declaration needs the rule a mold was numbered for, which the grammar now reads back (`Pbg::rule_of`) and this repair does not yet consult. Both declarations survive as distinct items; what the repair does not preserve is which one owns the later declaration. Reversal: when a consumer needs the member kept in its container, the boundary consults the rule.
+
+## Forms as units
+
+A long source parses faster in pieces only if each piece parses as it would have in place. The form boundary is that contract. At a top-level form boundary the whole parse's slope is a run of completed operands, and the next token can see nothing of them but the topmost: an item operand. `Checkpoint::form_boundary` is that view, a lone zero-width item operand standing in for every form before the boundary, and a `FormUnit` molds its run of tokens from it, reading lookahead past the run's end exactly as the whole parse does. Units depend on nothing but the source, so they mold in parallel, longest first.
+
+The join decides whether the boundary was real. `MeldState::join_unit` appends a unit's forms to the state the runs before it left when that state's slope holds no open form and no operator, its top is item-sorted, and the unit's fold never touched its stand-in — the melder records the lowest slope position any splice or frontier flip reaches, dry-runs included, so a unit that reached past its own forms says so. The stand-in is then dropped and the unit's ids and offsets shifted past the state's own. Any other seam is broken: the unit is discarded and its run molded onto the state in place, which is the whole parse's own step, so a wrong boundary costs time and never the parse. The melder reads nothing of a cell below the head but what a splice touches, and every obligation it flags is spanned by the incoming tile, a form tile or a splice, so a seam that holds commits the whole parse's tree and obligations. `parse::tests::form_split_parses_as_the_whole_source` checks it on every corpus source and its malformed variants, and `parse::tests::arbitrary_source_parses_by_form_as_whole` on generated ones.
+
+`Molder::form_runs` predicts the boundaries from tokens alone: before a token some fresh reading of which opens a declaration, after a `;` or a `}`, outside every bracket. It finds three in four of the corpus's real boundaries — an attribute and the declaration it decorates are separate forms, and the cut between them is not predicted, since the attribute's form is still open there — and every one it predicts that is not real breaks its seam and is re-molded.
+
+- Alternatives: re-lexing and parsing each form's text alone reproduces the whole tree on the corpus but makes the form boundary a fact about the corpus, not the parser; resuming each unit from the real state before it serializes the units.
+- Reversal: a grammar change that lets a declaration read the forms before it — a form that continues across a `;` at the top level — breaks the seams; the join still re-molds, and the split stops paying.
 
 ## No recursion over input
 
