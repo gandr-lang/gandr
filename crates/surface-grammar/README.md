@@ -16,6 +16,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Closing class](#closing-class)
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
+- [Frozen tables](#frozen-tables)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
 - [Named-kind inventory](#named-kind-inventory)
@@ -50,7 +51,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `Pbg::rule_of` and `Pbg::named_kind`: the rule a mold belongs to and the named kind that rule realises, total over the mold table — what a consumer of a molded tree dispatches on. Witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`.
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface. Witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`.
 - `walk_index`, `reachable_molds`, `comparison_table`, `seen_key_verdict`, `GrammarWalkSym`, `MAX_WALK_CHAIN_LEN`: the walk machine over a grammar and the relations read off it. Witnesses: `tests::walk::walk_index_projects_every_mold_once`, `tests::walk::comparison_table_is_conflict_free`, `tests::walk::comparison_table_coheres_with_precedence`, `tests::walk::seen_key_verdict_is_recorded`, `tests::walk::walk_lengths_respect_the_chain_cap`.
-- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups. Witnesses: `tests::surface::built_in_precedence_bands_are_exact`, `tests::surface::built_in_adaptations_name_their_rules`, `surface::tests::precedence_helper_failures_preserve_named_context`.
+- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups, the mold table thawed from frozen tables. Witnesses: `tests::surface::built_in_precedence_bands_are_exact`, `tests::surface::built_in_adaptations_name_their_rules`, `surface::tests::precedence_helper_failures_preserve_named_context`, `surface::tests::the_frozen_tables_are_the_built_ones`, `surface::tests::a_stale_frozen_table_builds_its_rules`.
 - `RoleTable`, `HighlightError`: the role of every mold, read off a grammar, and the highlight spans of a tree molded under it; a tree under another grammar and a tile past the table are refused. Witnesses: `tests::highlight::every_mold_has_a_role`, `tests::highlight::corpus_roles_match_the_golden`, `tests::highlight::spans_partition_the_tile_bytes`, `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`, `tests::highlight::a_tree_under_another_grammar_is_refused`, `tests::highlight::a_tile_past_the_table_is_refused`, `highlight::tests::mold_provenance_alignment`, `highlight::tests::role_of_pins_context_free_classes`.
 - `named_kind_parity`, `named_kind_realization`, `TREE_SITTER_NAMED_KINDS`, `PBG_ONLY_KINDS`: how every named node kind is realised. Witness: `tests::surface::named_kind_coverage_is_semantic`.
 
@@ -158,6 +159,15 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 ## Built-in surface
 
 `built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2378 molds, 77 labels projected to more than one mold, and the fingerprint `0xf9c2_15a1_2bea_b69c`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+
+## Frozen tables
+
+Building the built-in grammar took about 20 ms, 96 % of it numbering and interning the 2378 molds, and every `gandr check` paid it before the first source: with the sources parsed on twelve threads it was two thirds of the process wall. The table is a function of the constant rules, so it is computed once, when the rules change, and committed: `src/surface/frozen.rs` holds each mold's label, context, rule, closing class, form-membership bits and successors, each context's facing and step lists, the 233 distinct step lists once each, and the digest of the rules it was built from. `built_in` assembles the rules, digests them, and thaws the table when the digest matches — the statics are read where the compiler placed them, and what is derived from them (bounds, the label index, the dense flags, the successor runs, the fingerprint) is recomputed as the gated build computes it. Thawing takes about 0.6 ms. Rules that digest otherwise are built through every gate, so a stale file costs time, never a different grammar.
+
+The gates do not run on the thaw path: they proved these rules when the file was generated. `surface::tests::the_frozen_tables_are_the_built_ones` builds the rules through every gate, renders the table and compares the rendering with the committed file byte for byte, then compares the thawed grammar with the built one whole, fingerprint included. A change to any rule fails that test until `UPDATE_EXPECT=1` rewrites the file, and the rewrite is a reviewed diff of the table. The digest covers what the table reads of a rule — name, sort, group and form — and not its provenance or adaptation records, which the grammar reads from the rules themselves.
+
+- Alternatives: a build script running the gated build at every compile, which builds the grammar crate twice and hides the table from review; a serialized blob with its own decoder and refusals, where the statics need neither; building the table in parallel at first use, which the per-rule interning caps at a few times faster and which contends with the source workers, where thawing is thirty times faster at every width; memoizing the per-occurrence canonical forms, which removes about a quarter of the build.
+- Reversal: a grammar assembled at run time from user-declared operators, where the built-in table is no longer the table a source parses under; or a gated build fast enough that a 290 KB generated file stops paying for itself.
 
 ## The bridges and the universe are built-in spellings
 
