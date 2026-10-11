@@ -7,6 +7,7 @@ extern crate alloc;
 mod recursive_data
 {
     use alloc::collections::BTreeMap;
+    use alloc::sync::Arc;
 
     use anodized::spec;
     use gandr_core_checker::CheckBudget;
@@ -118,7 +119,7 @@ mod recursive_data
         signature: DataSignature,
     ) -> Declaration
     {
-        Declaration::data(constant, signature, origin(constant))
+        Declaration::data(constant, Arc::new(signature), origin(constant))
     }
 
     /// The origin a declaration at `constant` carries.
@@ -866,7 +867,7 @@ mod recursive_data
         };
         let declaration = Declaration::data(
             position,
-            DataSignature::new(parameters, vec![vec![field]], universe),
+            Arc::new(DataSignature::new(parameters, vec![vec![field]], universe)),
             origin(position),
         );
         let report = check_module(

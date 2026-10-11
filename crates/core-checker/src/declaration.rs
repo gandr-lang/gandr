@@ -183,14 +183,14 @@ impl Declaration
     #[must_use]
     pub fn data(
         constant: ConstantIndex,
-        signature: gandr_core_term::DataSignature,
+        signature: alloc::sync::Arc<gandr_core_term::DataSignature>,
         origin: OriginToken,
     ) -> Self
     {
         Self {
             constant,
             origin,
-            content: DeclarationContent::Data(alloc::sync::Arc::new(signature)),
+            content: DeclarationContent::Data(signature),
         }
     }
 

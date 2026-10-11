@@ -70,7 +70,7 @@ fn program(schema: Schema) -> Program
     };
     let data = Declaration::data(
         ConstantIndex::from(0_usize),
-        DataSignature::new(vec![unit_type], vec![fields], kind),
+        DataSignature::new(vec![unit_type], vec![fields], kind).into(),
         OriginToken::from(0_usize),
     );
     let datatype = arena.value_type_data(ConstantIndex::from(0_usize), vec![unit]);

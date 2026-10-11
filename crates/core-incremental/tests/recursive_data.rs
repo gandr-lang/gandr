@@ -1,5 +1,6 @@
 //! Recursive data, fixpoints and their refusals across persistence and reuse.
 
+use alloc::sync::Arc;
 use alloc::vec;
 
 use anodized::spec;
@@ -63,7 +64,7 @@ fn data(
 {
     Declaration::data(
         position,
-        signature,
+        Arc::new(signature),
         OriginToken::from(usize::from(position)),
     )
 }

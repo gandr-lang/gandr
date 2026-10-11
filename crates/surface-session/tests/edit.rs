@@ -868,7 +868,8 @@ fn native_snapshot(changed: Option<Leaf>) -> Snapshot
                 vec![string; 4],
                 vec![vec![string, string, string, last_field]; 4],
                 kind,
-            ),
+            )
+            .into(),
             OriginToken::from(0_usize),
         )
     };
