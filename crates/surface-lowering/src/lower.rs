@@ -2960,8 +2960,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// What `name`, written at `site` under `frame`, resolves to: the
     /// innermost binder carrying it, else a declaration strictly earlier than
-    /// the one `site` belongs to, searched from that declaration's own module
-    /// outward to the top level.
+    /// the one `site` belongs to, or that declaration itself when it is a data
+    /// declaration, searched from that declaration's own module outward to
+    /// the top level.
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
@@ -2970,7 +2971,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   member when that member's admission position is strictly earlier, and
     ///   the forward-member refusal when it is not; else a top-level
     ///   declaration strictly earlier, with its admission position and its
-    ///   signature's written type; the unresolved absence when nothing answers.
+    ///   signature's written type; the data declaration `site` belongs to,
+    ///   untyped, for its own name: a family's self reference, whose positivity
+    ///   the checker judges; the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
     /// - fails: [`LoweringRefusal::ForwardMemberReference`] for a member of an
@@ -2989,6 +2992,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
     /// - witness: `modules::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::tests::a_self_reference_is_unresolved`
+    /// - witness: `lower::native::tests::a_recursive_family_names_itself_in_its_fields`
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
     #[spec(
         captures: before = self.fuel.remaining,
@@ -2996,7 +3000,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.fuel.remaining <= before
                 && match ret {
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
-                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if usize::from(constant) < usize::from(own) && self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
+                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. })))) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
                     },
                     | Err(LoweringRefusal::ForwardMemberReference {
                         span,
@@ -3031,7 +3035,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Some(&target) = self.collected.by_name.get(&(container, name))
                 && let Some(entry) = self.collected.slots.get(usize::from(target))
             {
-                if target < own {
+                let own_family = target == own
+                    && matches!(
+                        entry.definition,
+                        Maybe::Present(Half {
+                            operand: Operand::Data(_),
+                            ..
+                        })
+                    );
+                if target < own || own_family {
                     let declared = match entry.signature {
                         | Maybe::Present(Half {
                             operand: Operand::Written(written),

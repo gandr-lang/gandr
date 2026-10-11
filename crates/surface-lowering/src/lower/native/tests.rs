@@ -360,6 +360,90 @@ fn a_data_declaration_lowers_to_its_signature()
 }
 
 #[test]
+fn a_recursive_family_names_itself_in_its_fields()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndata List(a : Type) : Type { Nil : List(a); Cons : (head : a, tail : List(a)) --> List(a); }\ndata Bad : Type { MkBad : (f : +U (Bad -> -F Nat)) --> Bad; }\ndef self_named : Later ;\ndata Later : Type { Now : Later; }\n",
+        ),
+        &mut arena,
+    );
+    let (DeclarationOutcome::Data(nat), DeclarationOutcome::Data(list)) = (
+        outcome_of(&module, SurfaceName::from("Nat")),
+        outcome_of(&module, SurfaceName::from("List")),
+    )
+    else {
+        panic!("both families lower to their signatures");
+    };
+    let (Maybe::Present(nat), Maybe::Present(list)) = (module.data(nat), module.data(list))
+    else {
+        panic!("each index names a signature");
+    };
+    let [ref zero, ref succ] = *nat.constructors()
+    else {
+        panic!("two constructors");
+    };
+    assert!(zero.is_empty());
+    let [predecessor] = **succ
+    else {
+        panic!("one field");
+    };
+    assert_eq!(
+        arena.value_type(predecessor),
+        Some(&ValueType::Data {
+            declaration: ConstantIndex::from(0_usize),
+            arguments: Vec::new(),
+        }),
+        "the successor's field is the family at its own position"
+    );
+    let [_, ref cons] = *list.constructors()
+    else {
+        panic!("two constructors");
+    };
+    let [_, tail] = **cons
+    else {
+        panic!("two fields");
+    };
+    let Some(&ValueType::Data {
+        declaration,
+        ref arguments,
+    }) = arena.value_type(tail)
+    else {
+        panic!("the tail is a nominal type");
+    };
+    assert_eq!(declaration, ConstantIndex::from(1_usize));
+    assert!(
+        matches!(
+            arguments.as_slice(),
+            [argument] if matches!(arena.value(*argument), Some(&Value::Variable { index, .. }) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32))
+        ),
+        "the tail applies the family to its own parameter"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("self_named")),
+            LoweringRefusal::UnresolvedTypeHead { .. }
+        ),
+        "a later family stays unresolved"
+    );
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(|judged| judged.verdict())
+        .collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Data,
+            Verdict::Data,
+            Verdict::Refused(gandr_core_checker::CheckRefusal::NegativeOccurrence(_)),
+            Verdict::Data,
+        ]),
+        "the positive families form and the negative one is refused by name: {verdicts:?}"
+    );
+}
+#[test]
 fn an_indexed_generator_is_declined()
 {
     let mut arena = CoreArena::new();
