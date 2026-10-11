@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 184ea307bc7afb88ac81a99f06995488914169805939495f8c5291bcf3b7322e # shrinks to src = "~"
+cc 4815c982b5710c9f2e3ef680ec7900717dc7892db5d66e8442cd3cf2be728676 # shrinks to parts = ["#!{", "${�"]
