@@ -770,3 +770,101 @@ fn holes_decline_evaluation()
         "the run that reaches the goal is blamed on it"
     );
 }
+
+/// Arithmetic is checked at Integer and evaluated through the native prelude.
+#[test]
+fn arithmetic_operators_type_check_and_evaluate()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(
+        &mut session,
+        "def answer : +U (-F Integer) ; def answer = thunk { 1 + 2 } ;",
+    );
+    assert_eq!(rows(submission.composed()), vec![(
+        "answer".to_owned(),
+        checks(),
+        Settlement::Settled
+    )]);
+    let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
+    assert!(
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "3")
+    );
+}
+
+/// An operator-backed definition remains usable by the next revision.
+#[test]
+fn operator_definition_carries_across_lines()
+{
+    let mut session = session(SourceRoot::Strict);
+    let first = "def z : +U (-F Integer) ; def z = thunk { 1 + 2 } ;";
+    let initial = submit(&mut session, first);
+    assert_eq!(rows(initial.composed()), vec![(
+        "z".to_owned(),
+        checks(),
+        Settlement::Settled
+    )]);
+    let revision = format!("{first} def answer : +U (-F Integer) ; def answer = thunk {{ z() }} ;");
+    let mut submission = submit(&mut session, &revision);
+    assert_eq!(rows(submission.composed()), vec![
+        ("z".to_owned(), checks(), Settlement::Settled),
+        ("answer".to_owned(), checks(), Settlement::Settled)
+    ]);
+    let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
+    assert!(
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "3")
+    );
+}
+
+/// Qualified prelude calls preserve identity and first-argument selection.
+#[test]
+fn module_builtins_type_and_evaluate()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(
+        &mut session,
+        "def identity : +U (-F Integer) ; def identity = thunk { prim.id(5) } ; def first : +U (-F Integer) ; def first = thunk { prim.const(7, 9) } ;",
+    );
+    assert_eq!(rows(submission.composed()), vec![
+        ("identity".to_owned(), checks(), Settlement::Settled),
+        ("first".to_owned(), checks(), Settlement::Settled)
+    ]);
+    for (name, expected) in [("identity", "5"), ("first", "7")] {
+        let constant = constant_of(submission.composed(), SurfaceName::from(name));
+        assert!(
+            matches!(submission.evaluate(constant), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == expected)
+        );
+    }
+}
+
+/// Comparison has Boolean result type and evaluates to the true injection.
+#[test]
+fn comparison_operators_type_check_and_evaluate()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(
+        &mut session,
+        "def answer : +U (-F Bool) ; def answer = thunk { 1 < 2 } ;",
+    );
+    assert_eq!(rows(submission.composed()), vec![(
+        "answer".to_owned(),
+        checks(),
+        Settlement::Settled
+    )]);
+    let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
+    assert!(
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "inl(())")
+    );
+}
+
+/// Dependent parameter types remain scoped through checking and readmission.
+#[test]
+fn a_dependent_signature_is_an_abstention_not_a_refusal()
+{
+    let mut session = session(SourceRoot::Strict);
+    let submission = submit(&mut session, "def id(a : Type, x : a) -> -F a { ret x }");
+    assert_eq!(rows(submission.composed()), vec![(
+        "id".to_owned(),
+        checks(),
+        Settlement::Settled
+    )]);
+}

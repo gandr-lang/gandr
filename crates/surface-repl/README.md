@@ -20,6 +20,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 - [The transcript](#the-transcript)
 - [A checked declaration prints what it runs to](#a-checked-declaration-prints-what-it-runs-to)
 - [Specification evidence](#specification-evidence)
+- [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
 
 <!-- tocstop -->
@@ -148,6 +149,12 @@ Five items have explicit executable exemptions. Their boundary witnesses observe
 | `interactive::converse` | The same generic source and writer prevent observing the transcript and read sequence. |
 
 Single-pass iterators and generic I/O remain the API instead of adding collection, cloning or observer traits solely for assertions. Reconsider an exemption if its API gains a non-consuming semantic observer. All predicates and witnesses run in the enforcing lane; executable checks are a bounded part of the specification, not proof of the whole protocol.
+
+## Deferred behavioral floor
+
+| Deferred witness | Missing former or reader |
+| ---------------- | ------------------------ |
+| `advertised_capabilities_match_the_live_path` | Render-bus capability advertisement |
 
 ## License
 

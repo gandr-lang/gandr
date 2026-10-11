@@ -236,21 +236,83 @@ A memo cell's only transitions are `Unforced → InProgress` by `Store::begin_fo
 
 ## Deferred rows
 
-The earlier implementation of this design carried 114 tests here and 3 more with its bridge. 38 are ported by name — each row whose former today's core has — and independent boundary witnesses exercise the executable contracts. Four more are ported by name to `gandr-surface-dispatcher`'s corpus suite, which lowers, checks and runs the corpus this crate cannot reach: `l_machine_matches_the_outcome_snapshots_on_the_model_corpus` and `l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus` settle every `runs` outcome the corpus states, and `focusing_is_total_on_the_model_corpus` and `focusing_is_total_on_the_pathological_corpus` focus every declaration the checker accepted, a code alone refused. `bless_corpus_outcomes`, which regenerated the snapshot files, is retired: the outcome rides its declaration, and a changed outcome is edited in the source it describes. Three more are ported by name to `gandr-surface-corpus`'s kernel export suite, which exports every corpus source and reads it back through the storage tier: `the_kernel_export_exit_gate_holds`, `corpus_partition_matches_the_manifest` and `corpus_exercises_multiple_exclusion_classes`, so this crate keeps no development dependency on the kernel, storage or surface tiers. `source_byte_changes_change_the_framed_digest` is retired with the checked-in records it bound to the corpus bytes: the re-homed suite pins no record. The 70 below wait for a former the core does not have yet, or for an edge this crate does not take; each returns by name with the unit that brings what it needs.
+The six scalar native witnesses below exercise the ordinary thunk, force, application and constant paths, enabled by [the native prelude](https://github.com/gandr-lang/gandr/pull/71). They retain their named behavioral obligations.
 
-| Earlier tests | What they need | Unit that brings it |
-| ------------- | -------------- | ------------------- |
-| `prim_consumer_arity_is_checked`, `focused_prim_commands_meet_the_declaration`, `hand_built_native_cases_agree`, `hand_built_prelude_cases_agree`, `identity_applied_returns_its_argument`, `const_applied_returns_its_first_argument`, `native_integer_addition_returns_sum`, `native_numeric_mismatch_and_overflow_blame_via_hole`, `native_u32_addition_returns_u32_sum`, `native_integer_less_than_returns_true`, `native_boolean_and_returns_false`, `native_boolean_not_negates_and_blames_non_booleans`, `native_integer_division_truncates_toward_zero`, `native_division_failures_blame_via_hole`, `native_integer_remainder_keeps_the_dividend_sign`, `a_forced_prelude_name_resolves_to_its_builtin` (16) | primitive operations on integers and booleans, and the prelude that names them | the builtins table |
-| `regex_extract_returns_named_capture_record`, `regex_extract_failures_blame_a_hole`, `string_builtins_escape_and_scan_conflict_markers`, `string_eq_decides_equality_and_blames_non_strings`, `path_builtins_join_and_read_components`, `native_string_append_and_length_build_and_measure` (6) | text, pattern and path primitives | the builtins table |
-| `native_list_concat_returns_concatenated_list`, `native_list_length_counts_elements`, `native_list_at_reads_an_optional`, `each_maps_a_pure_closure_over_a_list`, `combinators_nest_inside_closures`, `where_filters_by_a_pure_predicate`, `reduce_left_folds_a_list`, `any_short_circuits_to_true`, `all_short_circuits_to_false`, `flatten_concatenates_manifest_sublists`, `uniq_drops_later_structural_duplicates`, `sort_orders_homogeneous_orderable_atoms`, `sort_orders_sized_integer_atoms`, `get_returns_an_optional_cell`, `insert_extends_and_overrides_a_record`, `a_wrong_shape_argument_blames_a_hole`, `where_over_a_long_list_is_linear`, `fold_and_quantifiers_are_correct_at_moderate_scale`, `hand_built_higher_order_native_cases_agree`, `hand_built_higher_order_prelude_case_agrees` (20) | list and record values, and the higher-order primitives over them | the builtins table, over list and record formers no unit schedules yet |
-| `handler_resumption_under_projection_uses_the_ambient_continuation_once`, `hand_built_effect_cases_agree`, `hand_built_shift_cases_agree`, `host_seam_resumes_a_single_unhandled_perform`, `host_seam_decline_blames_perform_no_handler`, `host_seam_offers_deep_re_entry_in_order`, `host_seam_offers_across_a_non_matching_handler`, `host_seam_never_consulted_for_a_claimed_perform`, `host_seam_reply_flows_into_subsequent_computation`, `host_seam_first_order_payloads_read_back_identically`, `host_seam_higher_order_payload_reads_back_exactly`, `the_assert_handler_runs_combinator_assertions`, `the_assert_handler_reports_a_failure`, `a_mock_exec_handler_replaces_a_real_command` (14) | effect operations, handlers, delimited control and the host seam | effects and control |
-| `hand_built_declared_data_cases_agree`, `data_case_selects_arm_returns_three`, `data_case_on_non_ctor_is_stuck` (3) | the nominal data former and its case | the description route |
-| `hand_built_identity_cases_agree` (1) | identity types | unscheduled |
-| `sigma_split_evaluates_to_first_component`, `dependent_split_over_prod_evaluates_type_erased`, `motive_split_over_sigma_evaluates_to_first_component` (3) | Σ and the dependent eliminators beyond Π | unscheduled |
-| `renders_thunk_grade`, `placement_is_heap_everything` (2) | grades on thunks, and the placement they decide | graded thunks (unscheduled) |
-| `an_unrealized_former_declines_the_whole_program` (1) | the fixpoint and the embedding of a computation as a value | the recursion former |
-| `the_fixture_states_what_the_l_machine_answers`, `every_sampled_transition_reaches_its_own_answer` (2) | compilation to a program image | the compile host |
-| `a_package_chosen_at_runtime_answers_through_its_signature`, `unpacking_a_literal_package_runs_as_a_binding` (2) | packages | packages |
+- `identity_applied_returns_its_argument`
+- `const_applied_returns_its_first_argument`
+- `native_integer_addition_returns_sum`
+- `native_integer_less_than_returns_true`
+- `native_boolean_and_returns_false`
+- `a_forced_prelude_name_resolves_to_its_builtin`
+
+The deferred floor contains **64 witnesses**. A native core former does not imply a command-IL reader: Data and record operations remain outside focusing, and image preparation does not provide an execution host. Sized arithmetic and gradual-hole blame are not the arbitrary-precision integer and typed-refusal contract of the native table.
+
+| Deferred witness | Missing former or reader |
+| ---------------- | ------------------------ |
+| `prim_consumer_arity_is_checked` | Dup/Drop and explicit primitive-command IL reader |
+| `focused_prim_commands_meet_the_declaration` | Dup/Drop and explicit primitive-command IL reader |
+| `hand_built_native_cases_agree` | Polymorphic natives over non-scalar values and record command-IL reader |
+| `hand_built_prelude_cases_agree` | Effectful prelude handlers |
+| `native_numeric_mismatch_and_overflow_blame_via_hole` | Sized arithmetic and gradual-hole blame reader |
+| `native_u32_addition_returns_u32_sum` | Sized-integer arithmetic primitives |
+| `native_boolean_not_negates_and_blames_non_booleans` | Gradual-hole primitive failure reader; current failures are typed refusals |
+| `native_integer_division_truncates_toward_zero` | Sized-integer arithmetic primitives |
+| `native_division_failures_blame_via_hole` | Sized arithmetic and gradual-hole blame reader |
+| `native_integer_remainder_keeps_the_dividend_sign` | Gradual-hole primitive failure reader; current failures are typed refusals |
+| `regex_extract_returns_named_capture_record` | text, pattern and path primitives |
+| `regex_extract_failures_blame_a_hole` | text, pattern and path primitives |
+| `string_builtins_escape_and_scan_conflict_markers` | text, pattern and path primitives |
+| `string_eq_decides_equality_and_blames_non_strings` | text, pattern and path primitives |
+| `path_builtins_join_and_read_components` | text, pattern and path primitives |
+| `native_string_append_and_length_build_and_measure` | text, pattern and path primitives |
+| `native_list_concat_returns_concatenated_list` | list and record values, and the higher-order primitives over them |
+| `native_list_length_counts_elements` | list and record values, and the higher-order primitives over them |
+| `native_list_at_reads_an_optional` | list and record values, and the higher-order primitives over them |
+| `each_maps_a_pure_closure_over_a_list` | list and record values, and the higher-order primitives over them |
+| `combinators_nest_inside_closures` | list and record values, and the higher-order primitives over them |
+| `where_filters_by_a_pure_predicate` | list and record values, and the higher-order primitives over them |
+| `reduce_left_folds_a_list` | list and record values, and the higher-order primitives over them |
+| `any_short_circuits_to_true` | list and record values, and the higher-order primitives over them |
+| `all_short_circuits_to_false` | list and record values, and the higher-order primitives over them |
+| `flatten_concatenates_manifest_sublists` | list and record values, and the higher-order primitives over them |
+| `uniq_drops_later_structural_duplicates` | list and record values, and the higher-order primitives over them |
+| `sort_orders_homogeneous_orderable_atoms` | list and record values, and the higher-order primitives over them |
+| `sort_orders_sized_integer_atoms` | list and record values, and the higher-order primitives over them |
+| `get_returns_an_optional_cell` | list and record values, and the higher-order primitives over them |
+| `insert_extends_and_overrides_a_record` | list and record values, and the higher-order primitives over them |
+| `a_wrong_shape_argument_blames_a_hole` | list and record values, and the higher-order primitives over them |
+| `where_over_a_long_list_is_linear` | list and record values, and the higher-order primitives over them |
+| `fold_and_quantifiers_are_correct_at_moderate_scale` | list and record values, and the higher-order primitives over them |
+| `hand_built_higher_order_native_cases_agree` | list and record values, and the higher-order primitives over them |
+| `hand_built_higher_order_prelude_case_agrees` | list and record values, and the higher-order primitives over them |
+| `handler_resumption_under_projection_uses_the_ambient_continuation_once` | effect operations, handlers, delimited control and the host seam |
+| `hand_built_effect_cases_agree` | effect operations, handlers, delimited control and the host seam |
+| `hand_built_shift_cases_agree` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_resumes_a_single_unhandled_perform` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_decline_blames_perform_no_handler` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_offers_deep_re_entry_in_order` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_offers_across_a_non_matching_handler` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_never_consulted_for_a_claimed_perform` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_reply_flows_into_subsequent_computation` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_first_order_payloads_read_back_identically` | effect operations, handlers, delimited control and the host seam |
+| `host_seam_higher_order_payload_reads_back_exactly` | effect operations, handlers, delimited control and the host seam |
+| `the_assert_handler_runs_combinator_assertions` | effect operations, handlers, delimited control and the host seam |
+| `the_assert_handler_reports_a_failure` | effect operations, handlers, delimited control and the host seam |
+| `a_mock_exec_handler_replaces_a_real_command` | effect operations, handlers, delimited control and the host seam |
+| `hand_built_declared_data_cases_agree` | Constructor and data-case command-IL reader; native core formers exist in #85 |
+| `data_case_selects_arm_returns_three` | Constructor and data-case command-IL reader; native core formers exist in #85 |
+| `data_case_on_non_ctor_is_stuck` | Constructor and data-case command-IL reader; native core formers exist in #85 |
+| `hand_built_identity_cases_agree` | identity types |
+| `sigma_split_evaluates_to_first_component` | Σ and the dependent eliminators beyond Π |
+| `dependent_split_over_prod_evaluates_type_erased` | Σ and the dependent eliminators beyond Π |
+| `motive_split_over_sigma_evaluates_to_first_component` | Σ and the dependent eliminators beyond Π |
+| `renders_thunk_grade` | grades on thunks, and the placement they decide |
+| `placement_is_heap_everything` | grades on thunks, and the placement they decide |
+| `an_unrealized_former_declines_the_whole_program` | Core fixpoint and computation-as-value reader |
+| `the_fixture_states_what_the_l_machine_answers` | Dup/Drop command forms and executable Rust host; #68 provides image preparation only |
+| `every_sampled_transition_reaches_its_own_answer` | Dup/Drop command forms and executable Rust host; #68 provides image preparation only |
+| `a_package_chosen_at_runtime_answers_through_its_signature` | packages |
+| `unpacking_a_literal_package_runs_as_a_binding` | packages |
 
 ## License
 
