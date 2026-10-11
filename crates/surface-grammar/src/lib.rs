@@ -71,6 +71,7 @@ pub use crate::mold::MoldHasRequiredTail;
 pub use crate::mold::MoldHasSuccessor;
 pub use crate::mold::MoldIsFormFirst;
 pub use crate::mold::MoldIsFormLast;
+pub use crate::mold::MoldsAdjacent;
 pub use crate::mold::RCtxId;
 pub use crate::mold::RCtxStep;
 pub use crate::mold::StepSym;
