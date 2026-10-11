@@ -941,7 +941,7 @@ def broken = missing ;"#,
             "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
         );
         let pending = compose_source(
-            "def rec f(x: Integer) -> -F Integer { ret x }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
+            "def f @[a : Type] (x: a) -> -F a { ret x }\ndef identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ; def hole : Integer ;",
         );
         let mut report = RunReport::default();
         report.read(

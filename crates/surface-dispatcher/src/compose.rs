@@ -1118,7 +1118,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("OutOfFragment") ] def rec f(x: Integer) -> -F Integer { ret x }
+                r#"@[ refuses("OutOfFragment") ] def f @[a : Type] (x: a) -> -F a { ret x }
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),
@@ -1135,7 +1135,7 @@ def h = 1 ;"#,
                 boundary: FragmentBoundary::Unadmitted,
                 ..
             }]),
-            "the recursive form is refused at its own form, and only it"
+            "the implicit telescope is refused at its own form, and only it"
         );
         let settlements: Vec<Settlement> = report
             .declarations()
@@ -1292,10 +1292,10 @@ def h = 1 ;"#,
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "def rec first(x: Integer) -> -F Integer { ret x }\n\
+            "def first @[a : Type] (x: a) -> -F a { ret x }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             def rec last(x: Integer) -> -F Integer { ret x }",
+             def last @[a : Type] (x: a) -> -F a { ret x }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
@@ -1311,7 +1311,7 @@ def h = 1 ;"#,
         let (DeclarationOutcome::Refused(first), DeclarationOutcome::Refused(last)) =
             (first.outcome(), last.outcome())
         else {
-            panic!("the recursive forms are outside the fragment");
+            panic!("the implicit telescopes are outside the fragment");
         };
         assert_ne!(
             first, last,

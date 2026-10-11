@@ -534,9 +534,11 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Thunk
         | Former::Lambda
         | Former::Return
+        | Former::Block
         | Former::Force
         | Former::Call
         | Former::Case
+        | Former::Instantiation
         | Former::Projection
         | Former::TypeHead
         | Former::Universe

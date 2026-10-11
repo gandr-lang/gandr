@@ -28,7 +28,9 @@
 //! decides what it is: `: T ;` a signature, `= e ;` a definition, and a
 //! parameter list `(params) -> T? { … }` a function, which writes a definition
 //! and, when every parameter and the result carry a type, a signature too. An
-//! implicit telescope or `rec` is a form the fragment does not admit.
+//! implicit telescope is a form the fragment does not admit. `rec`, which the
+//! grammar writes before a function tail alone, is that tail's own tile: the
+//! classification closes the function by a fixpoint over its last parameter.
 //! Attributes written before `def` are tiles of that same form, so a
 //! declaration's attributes are read with it. A data declaration's form holds
 //! none: the grammar leaves an attribute block before `data` standing on its
@@ -1753,7 +1755,7 @@ impl<'source> Collector<'_, 'source>
         );
         let mut header = Cursor::new(after, declaration.span);
         let _def = header.tile(TileName::DEF);
-        let recursive = header.tile(TileName::REC);
+        let _recursive = header.tile(TileName::REC);
         let Maybe::Present(named) = header.tile(TileName::IDENTIFIER)
         else {
             return Err(self.unnamed(pieces, declaration, &header));
@@ -1770,9 +1772,6 @@ impl<'source> Collector<'_, 'source>
         }
         else if let Err(refusal) = attributed {
             Tail::Refused(refusal)
-        }
-        else if let Maybe::Present(_) = recursive {
-            Tail::Refused(unadmitted(declaration, FormName::RECURSIVE))
         }
         else {
             read_tail(&mut header, declaration)
