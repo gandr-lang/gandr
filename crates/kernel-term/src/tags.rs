@@ -538,7 +538,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -590,7 +590,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
