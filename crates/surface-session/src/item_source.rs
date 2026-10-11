@@ -100,6 +100,7 @@ quenchant_shape::reason_enum! {
                             (DeclarationOutcome::Completed {declared_type,body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Present(value)}) => signature == declared_type && value == body,
                             (DeclarationOutcome::Uncompleted {declared_type},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(signature),body:Maybe::Absent(_)}) => signature == declared_type,
                             (DeclarationOutcome::Bodied {body},&gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(_),body:Maybe::Present(value)}) => value == body,
+                            (DeclarationOutcome::Data(index),content) => matches!(*content, gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                             _ => false,
                         }
                 })

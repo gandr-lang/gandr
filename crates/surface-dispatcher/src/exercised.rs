@@ -594,6 +594,7 @@ fn is_whole_unsigned_body(
         | DeclarationOutcome::Bodied { .. }
         | DeclarationOutcome::Completed { .. }
         | DeclarationOutcome::Uncompleted { .. }
+        | DeclarationOutcome::Data(_)
         | DeclarationOutcome::Refused(_) => WholeBody::Inner,
     }
 }
@@ -641,7 +642,11 @@ fn lowering_row(
         } => rows.mark(Row::ReservedForm),
         | LoweringRefusal::OutOfFragment {
             boundary:
-                FragmentBoundary::Unadmitted | FragmentBoundary::WrongSort | FragmentBoundary::Arity(_),
+                FragmentBoundary::Unadmitted
+                | FragmentBoundary::WrongSort
+                | FragmentBoundary::Arity(_)
+                | FragmentBoundary::Indexed
+                | FragmentBoundary::Unannotated,
             ..
         }
         | LoweringRefusal::GradedBridge { .. }
@@ -660,6 +665,7 @@ fn lowering_row(
         | LoweringRefusal::UnknownMember { .. }
         | LoweringRefusal::UnreadAscription { .. }
         | LoweringRefusal::LowercaseModuleName { .. }
+        | LoweringRefusal::NonExhaustiveMatch { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},

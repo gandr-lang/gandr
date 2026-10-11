@@ -86,7 +86,8 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
-            | Self::LowercaseModuleName { .. } => {
+            | Self::LowercaseModuleName { .. }
+            | Self::NonExhaustiveMatch { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -111,7 +112,8 @@ impl LoweringRefusal<'_>
             | Self::IllTypedPayload { .. }
             | Self::ForwardMemberReference { .. }
             | Self::UnknownMember { .. }
-            | Self::LowercaseModuleName { .. } => FailureClass::MalformedSource,
+            | Self::LowercaseModuleName { .. }
+            | Self::NonExhaustiveMatch { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. } => FailureClass::Unrepresentable,

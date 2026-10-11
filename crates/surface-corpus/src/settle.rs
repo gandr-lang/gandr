@@ -978,7 +978,8 @@ pub fn settle<'source>(
             },
             | DeclarationOutcome::Completed { .. }
             | DeclarationOutcome::Uncompleted { .. }
-            | DeclarationOutcome::Bodied { .. } => {
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Data(_) => {
                 let constant = lowered.constant();
                 let Some(answer) = judged.next()
                 else {

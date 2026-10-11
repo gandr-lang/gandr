@@ -19,10 +19,21 @@
 //!
 //! The lowering writes five bridges the source did not spell — a force, a
 //! thunk, a returner, a quote and a decode — at checked sites, by the sort of
-//! the position. Each carries the origin of the syntax node whose position
-//! demanded it, marked [`Provenance::Inserted`] with the [`Insertion`] it is,
-//! so a printer or a diagnostic can show the cast a reader did not write, and
-//! every node the source did write is [`Provenance::Written`].
+//! the position, and two more: the nominal type of a constructor written
+//! without an annotation, and the eliminations a match compiles to. Each
+//! carries the origin of the syntax node whose position demanded it, marked
+//! [`Provenance::Inserted`] with the [`Insertion`] it is, so a printer or a
+//! diagnostic can show the cast a reader did not write, and every node the
+//! source did write is [`Provenance::Written`].
+//!
+//! # A match keeps its arms
+//!
+//! A match lowers to a decision tree of native eliminations, so its patterns
+//! do not survive into the core term. The table keeps them beside it: per
+//! lowered match, a [`CaseOrigin`] holding the pattern table its arms are
+//! written in, one [`ArmOrigin`] per arm alternative, and the syntax nodes of
+//! the scrutinee and every pattern and body. A live match and a coverage
+//! report read the arms from here and the tree from the arena.
 //!
 //! # The token is opaque on purpose
 //!
@@ -39,6 +50,8 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::pattern::PatternId;
+use gandr_core_term::pattern::Patterns;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
@@ -57,11 +70,14 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the five bridges the lowering writes at a checked site.
+/// One of the insertions the lowering writes at a checked site: the five
+/// bridges, the classifier of a constructor written without one, and the
+/// eliminations a match compiles to.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the tag distinguishes force, thunk, returner, quote and decode.
+/// - ensures: the tag distinguishes force, thunk, returner, quote, decode,
+///   classifier and match.
 /// - provides: the kind of an insertion recorded in an origin.
 /// - fails: not applicable to the tag itself.
 /// - panics: not applicable to the tag itself.
@@ -89,6 +105,13 @@ pub enum Insertion
     /// A decode over a value name standing where a type is read: the type the
     /// code denotes.
     Decode,
+    /// The nominal type of a constructor of a family without parameters,
+    /// which the source wrote no annotation for.
+    Classifier,
+    /// A node of the decision tree a match compiles to: a scrutinee bind, a
+    /// native or sum case, a field lambda, a literal test, or a binding an arm
+    /// body is read under.
+    Match,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
@@ -346,6 +369,8 @@ pub struct OriginTable
     comp_types: Vec<(CompTypeId, Origin)>,
     /// The declarations' own origins, in admission order.
     declarations: Vec<Origin>,
+    /// Each lowered match's arms, ascending by the root of its tree.
+    cases: Vec<(ComputationId, CaseOrigin)>,
 }
 
 /// Record one family's origin, keeping the vector ascending by id.
@@ -778,6 +803,125 @@ impl OriginTable
     {
         OriginCount(self.declarations.len())
     }
+
+    /// Record the arms of the match whose lowered tree is rooted at `root`.
+    ///
+    /// # Specification
+    /// - requires: `root` follows every match root already recorded.
+    /// - ensures: the record is appended, so the match list stays ascending by
+    ///   root and [`Self::case`] finds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two matches of one module answer their own arms by
+    ///   root, and a computation that is no match root answers nothing.
+    /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+    #[spec(
+        requires: self.cases.last().is_none_or(|&(held, _)| held < root),
+        captures: before = self.cases.len(),
+        ensures: self.cases.len() == before.saturating_add(1)
+            && self.cases.last().is_some_and(|&(held, _)| held == root),
+    )]
+    #[inline]
+    pub fn record_case(
+        &mut self,
+        root: ComputationId,
+        case: CaseOrigin,
+    )
+    {
+        self.cases.push((root, case));
+    }
+
+    /// The arms of the match whose lowered tree is rooted at `root`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the record kept for `root`, or the unrecorded absence for a
+    ///   computation no match lowered to.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::record_case`].
+    /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == self.cases.iter().any(|&(held, _)| held == root))]
+    #[inline]
+    pub fn case(
+        &self,
+        root: ComputationId,
+    ) -> Maybe<&CaseOrigin, origin::Absent>
+    {
+        self.cases
+            .binary_search_by_key(&root, |&(held, _)| held)
+            .ok()
+            .and_then(|position| self.cases.get(position))
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |entry| {
+                Maybe::Present(&entry.1)
+            })
+    }
+
+    /// Every lowered match's root and arms, in mint order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cases(&self) -> impl ExactSizeIterator<Item = (ComputationId, &CaseOrigin)>
+    {
+        self.cases.iter().map(|&(root, ref case)| (root, case))
+    }
+}
+
+/// One alternative of one arm of a lowered match.
+///
+/// # Specification
+/// - requires: nothing; the fields are admitted as supplied metadata.
+/// - ensures: the pattern names its match's table; an or-pattern's alternatives
+///   are one record each, sharing their arm and body.
+/// - executable: none — the record holds no table to resolve its pattern in.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match with an or-pattern keeps one record per
+///   alternative, in source order.
+/// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArmOrigin
+{
+    /// The arm's position among the match's arms.
+    pub arm: usize,
+    /// The alternative's pattern, in the match's table.
+    pub pattern: PatternId,
+    /// The alternative's syntax node.
+    pub written: NodeIndex,
+    /// The arm body's syntax node.
+    pub body: NodeIndex,
+}
+
+/// What a lowered match keeps of its arms.
+///
+/// # Specification
+/// - requires: nothing; the fields are admitted as supplied metadata.
+/// - ensures: the arms keep source order and name patterns of `patterns`; a
+///   pattern hole's identity is its syntax node's position, the identity the
+///   tree's stuck leaves and the term holes carry.
+/// - executable: none — the record holds no tree to check its nodes against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a match over nested constructors, a binder and a hole
+///   keeps each pattern's shape and arm.
+/// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaseOrigin
+{
+    /// The match's syntax node.
+    pub written: NodeIndex,
+    /// The scrutinee's syntax node.
+    pub scrutinee: NodeIndex,
+    /// The patterns the arms are written in.
+    pub patterns: Patterns,
+    /// The arm alternatives, in source order.
+    pub arms: Vec<ArmOrigin>,
 }
 
 #[cfg(test)]

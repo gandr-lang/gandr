@@ -228,6 +228,7 @@ impl Annotations
             | LoweringRefusal::UnknownMember { .. }
             | LoweringRefusal::UnreadAscription { .. }
             | LoweringRefusal::LowercaseModuleName { .. }
+            | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }
             | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(report_context::Absent::Unnamed),

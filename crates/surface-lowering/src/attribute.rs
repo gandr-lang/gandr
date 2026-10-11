@@ -535,6 +535,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Return
         | Former::Force
         | Former::Call
+        | Former::Case
         | Former::Projection
         | Former::TypeHead
         | Former::Universe
@@ -551,6 +552,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::AttributeBlock
         | Former::Import
         | Former::Module
+        | Former::Data
         | Former::Unadmitted => PayloadForm::OtherValue,
     }
 }

@@ -1,9 +1,11 @@
+@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
   Blue : Color;
 }
 
+@[ checks ]
 def rank(c : Color) -> -F Integer {
   case c {
     Red => ret 0,
@@ -11,6 +13,7 @@ def rank(c : Color) -> -F Integer {
   }
 }
 
+@[ checks ]
 def warm(c : Color) -> -F Integer {
   case c {
     Red | Green => ret 1,
@@ -18,16 +21,19 @@ def warm(c : Color) -> -F Integer {
   }
 }
 
+@[ checks ]
 data Inner : Type {
   No : Inner;
   Yes : (n : Integer) --> Inner;
 }
 
+@[ checks ]
 data Outer : Type {
   None : Outer;
   Some : (i : Inner) --> Outer;
 }
 
+@[ checks ]
 def depth(m : Outer) -> -F Integer {
   case m {
     Some(Yes(n)) => ret n,
@@ -36,7 +42,8 @@ def depth(m : Outer) -> -F Integer {
   }
 }
 
+@[ checks ]
 def inner = (Yes(41) : Inner);
-def answer = (Some(inner) : Outer);
 
-depth(answer)
+@[ checks ]
+def answer = (Some(inner) : Outer);

@@ -1,3 +1,4 @@
+@[ checks ]
 data Traffic : Type {
   Stop : Traffic;
   Go : Traffic;

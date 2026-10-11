@@ -16,6 +16,7 @@
 //! author's source. What crossed is exported once, as the kernel artifact a
 //! settled composition carries, each declaration under its structured name.
 
+use alloc::sync::Arc;
 use core::fmt;
 
 use anodized::spec;
@@ -654,7 +655,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                 | (
                     DeclarationOutcome::Completed { .. }
                     | DeclarationOutcome::Uncompleted { .. }
-                    | DeclarationOutcome::Bodied { .. },
+                    | DeclarationOutcome::Bodied { .. }
+                    | DeclarationOutcome::Data(_),
                     ..,
                 ) => None,
             }
@@ -671,7 +673,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole, a bodiless definition its
-///   body and no signature. A refused declaration is not offered.
+///   body and no signature, and a data declaration its native signature, shared
+///   with the lowered module. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -697,6 +700,8 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(body::Absent::Hole)},
                 DeclarationOutcome::Bodied { body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
+                DeclarationOutcome::Data(index) =>
+                    matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                 DeclarationOutcome::Refused(_) => false,
             }
     })) && expected.next().is_none()
@@ -718,6 +723,16 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 Maybe::Absent(signature::Absent::Unsigned),
                 Maybe::Present(body),
             ),
+            | DeclarationOutcome::Data(index) => {
+                if let Maybe::Present(signature) = module.data(index) {
+                    declarations.push(Declaration::data(
+                        lowered.constant(),
+                        Arc::clone(signature),
+                        OriginToken::from(usize::from(lowered.origin())),
+                    ));
+                }
+                continue;
+            },
             | DeclarationOutcome::Refused(_) => continue,
         };
         declarations.push(Declaration::new(

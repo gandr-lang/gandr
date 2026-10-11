@@ -1,8 +1,10 @@
+@[ checks ]
 data Outer : Type {
   None : Outer;
   Some : (n : Integer) --> Outer;
 }
 
+@[ refuses("NonExhaustiveMatch") ]
 def by_literal(m : Outer) -> -F Integer {
   case m {
     Some(0) => ret 0,
