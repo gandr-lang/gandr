@@ -24,6 +24,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
 - [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
 - [Contract evidence and its limits](#contract-evidence-and-its-limits)
+- [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
 <!-- tocstop -->
 
@@ -195,6 +196,118 @@ Diagnostics assert stable refusal categories and exact primary/context spans, no
 The generated source domain uses the supported scalar, declaration, reference, and nullary-function forms. Hand-built arena fixtures cover core child ordering without pretending those effect formers have surface syntax. These finite witnesses do not establish universal diff soundness, typing correctness, storage atomicity, or behavior of surface forms the grammar cannot express.
 
 The choice is cheap executable boundary checks plus independent or literal consumer observations. Re-running the full parser, evaluator, or store in a postcondition would duplicate work and effects; opaque test strategies are not sampled a second time. An exemption can be removed when the relevant state has a non-consuming observer. Broader grammars or new decision branches require broader witnesses, not a stronger claim about the existing samples.
+
+## Deferred behavioral floor
+
+The named census contains **102 obligations: seven witnessed and 95 deferred**. Five are exercised here: four native-prelude witnesses enabled by [#71](https://github.com/gandr-lang/gandr/pull/71), and the dependent-signature witness enabled by [dependent lowering](https://github.com/gandr-lang/gandr/commit/1a07bbc4b487db0ad99cf61d0bacef942df94a92).
+
+- `a_dependent_signature_is_an_abstention_not_a_refusal`
+- `arithmetic_operators_type_check_and_evaluate`
+- `operator_definition_carries_across_lines`
+- `module_builtins_type_and_evaluate`
+- `comparison_operators_type_check_and_evaluate`
+
+`cards_preserve_the_report_rows` and `a_clean_source_produces_no_cards` are witnessed by `surface-repl::remote::tests` through [the repair-card reader](https://github.com/gandr-lang/gandr/commit/53a4804ddf4f23f1736f267e54ddb64843e387af), not duplicated here.
+
+Core Data and record constructors do not provide source readers. The native table provides arithmetic and comparison, but not Boolean literals, string/regex/container operations or gradual-hole blame. A row remains deferred until every part of its named obligation is expressible.
+
+| Deferred witness | Missing former or reader |
+| ---------------- | ------------------------ |
+| `a_definition_reaches_the_typing_context_chain` | Term-identity source reader; Path_U is a different former |
+| `a_law_over_a_definition_types_from_source` | Term-identity source reader; Path_U is a different former |
+| `a_law_over_a_definition_types_when_both_arrive_in_one_source` | Term-identity source reader; Path_U is a different former |
+| `a_law_over_a_definition_that_returns_otherwise_is_refused` | Term-identity source reader; Path_U is a different former |
+| `a_graded_bridge_signature_is_an_abstention_not_a_refusal` | Graded thunk types |
+| `one_part_case_bodied_function_checks_and_evaluates` | Sum types and `case` |
+| `erased_sum_definition_is_consumed_by_a_later_case` | Sum types and `case` |
+| `case_arm_rename_targets_the_right_slot` | Sum types and `case` |
+| `case_second_arm_rename_targets_the_snd_slot` | Sum types and `case` |
+| `case_both_arms_renamed_at_once` | Sum types and `case` |
+| `case_scrutinee_edit_descends_to_one_set_int` | Sum types and `case` |
+| `injection_side_flip_is_one_set_side` | Injections at the surface |
+| `split_first_binder_rename_targets_the_fst_slot` | Pair elimination |
+| `split_second_binder_rename_targets_the_snd_slot` | Pair elimination |
+| `split_both_binders_renamed_at_once` | Pair elimination |
+| `split_scrutinee_edit_descends_to_one_set_int` | Pair elimination |
+| `projection_side_flip_is_one_set_side` | Lazy products, their projections and computation holes |
+| `projection_target_edit_descends_to_one_set_int` | Lazy products, their projections and computation holes |
+| `with_field_edit_is_one_set_int` | Lazy products, their projections and computation holes |
+| `with_second_field_edit_is_one_set_int` | Lazy products, their projections and computation holes |
+| `a_vanishing_or_appearing_computation_hole_is_erase_or_fill` | Lazy products, their projections and computation holes |
+| `grade_bump_is_one_set_grade` | Grades |
+| `attribute_and_nested_child_edit_compose` | Grades |
+| `grade_op_value_edits_localize` | Grades |
+| `binder_rename_composes_rebind_and_setvar` | Named binders, which the core's de Bruijn indices do not keep |
+| `value_ascription_change_is_one_set_annotation` | Annotations |
+| `binder_annotation_added_is_one_set_annotation` | Annotations |
+| `binder_annotation_dropped_is_one_set_annotation` | Annotations |
+| `cross_sort_root_replace_is_reconstructed` | A computation-rooted declaration body |
+| `resume_computation_edit_localizes` | Effects, handlers and delimited control |
+| `reified_stack_is_opaque_but_sound` | Effects, handlers and delimited control |
+| `handle_scrutinee_edit_localizes` | Effects, handlers and delimited control |
+| `handle_return_body_edit_localizes` | Effects, handlers and delimited control |
+| `perform_op_change_is_replace` | Effects, handlers and delimited control |
+| `handle_skeleton_change_is_replace` | Effects, handlers and delimited control |
+| `shift_binder_rebind_and_body_edit_compose` | Effects, handlers and delimited control |
+| `handle_skeleton_dimensions_are_replace` | Effects, handlers and delimited control |
+| `handle_clause_body_edit_localizes` | Effects, handlers and delimited control |
+| `resume_stack_edit_localizes` | Effects, handlers and delimited control |
+| `cross_constructor_change_is_replace` | Effects, handlers and delimited control |
+| `perform_signature_change_is_replace` | Effects, handlers and delimited control |
+| `perform_payload_edit_localizes` | Effects, handlers and delimited control |
+| `reset_body_edit_localizes` | Effects, handlers and delimited control |
+| `handle_second_clause_body_edit_localizes` | Effects, handlers and delimited control |
+| `handle_body_edits_round_trip` | Effects, handlers and delimited control |
+| `effect_control_pairs_round_trip` | Effects, handlers and delimited control |
+| `computation_top_result_types_binds_and_applies` | The unknown type, absent by construction |
+| `value_unknown_ascription_types_and_evaluates` | The unknown type, absent by construction |
+| `boolean_operators_type_check_and_evaluate` | Boolean-literal lowering reader |
+| `string_builtin_type_and_evaluate` | String-operation primitives |
+| `string_contains_scans_conflict_marker_text` | String-operation primitives |
+| `rung07_builtins_type_check_and_evaluate` | Container, string and regex primitive signatures |
+| `rung07_builtin_failures_are_gradual_blame` | Gradual-hole native and unresolved-name reader |
+| `rung07_wrong_shape_calls_are_static_type_errors` | Container, string and regex primitive signatures |
+| `regex_builtin_type_and_evaluate` | Regex-operation primitives and gradual-hole failure reader |
+| `regex_extract_failures_are_gradual_blame` | Regex-operation primitives and gradual-hole failure reader |
+| `an_unknown_prelude_member_is_declined_as_a_hole` | Gradual-hole native and unresolved-name reader |
+| `list_concat_type_checks_and_evaluates` | List-literal lowering and the named list primitive |
+| `lists_need_an_annotation_then_evaluate` | List-literal and annotation lowering |
+| `list_each_maps_a_closure_over_a_list` | List-literal lowering and the named list primitive |
+| `list_reduce_folds_a_list` | List-literal lowering and the named list primitive |
+| `list_functional_update_builtins_evaluate` | List-literal lowering and the named list primitive |
+| `out_of_bounds_list_update_blames` | List-literal lowering and the named list primitive |
+| `list_any_and_sort_evaluate` | List-literal lowering and the named list primitive |
+| `list_where_filters_by_a_predicate` | List-literal lowering and the named list primitive |
+| `record_get_and_insert_evaluate` | Record-literal lowering and record-update primitives; native core records exist in #85 |
+| `record_update_rebuilds_a_fresh_record` | Record-literal lowering and record-update primitives; native core records exist in #85 |
+| `same_shape_containers_descend_and_apply_rebuilds_them` | List/record literal and list-case lowering readers |
+| `shape_changes_replace_wholesale_and_apply_installs_the_subtree` | List/record literal and list-case lowering readers |
+| `computation_ascription_types_and_evaluates_check_only_forms` | Computation ascription in expression position |
+| `extern_declaration_carries_across_lines_and_a_foreign_call_blames_without_a_handler` | Foreign declarations |
+| `a_hidden_or_absent_user_module_component_is_declined_as_a_hole` | Missing-component goal reader; module declarations alone do not provide it |
+| `a_whole_file_submission_reports_the_missing_module_component_goal` | Missing-component goal reader; module declarations alone do not provide it |
+| `filling_a_pattern_hole_resumes_to_the_written_source` | Typed holes in `case` patterns |
+| `opening_a_pattern_hole_resumes_to_the_unfinished_source` | Typed holes in `case` patterns |
+| `filling_a_hole_invalidates_only_the_item_holding_it` | Typed holes in `case` patterns |
+| `a_type_stable_fill_adopts_its_dependent` | Typed holes in `case` patterns |
+| `every_parser_class_maps_to_its_own_name_and_rank` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `advertised_capabilities_match_the_live_path` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `report_json_carries_the_rows_and_round_trips` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `an_empty_row_set_serializes_as_an_empty_array` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `a_render_frame_round_trips_the_produced_cards` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `spans_are_in_source_and_schema_is_versioned` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `reports_round_trip_through_json` | A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them |
+| `corpus_covers_each_reachable_mark_kind` | Semantic marks, the checker's pass marking each typed node |
+| `oracle_error_marks_iff_ill_typed` | Semantic marks, the checker's pass marking each typed node |
+| `is_error_classifies_empty_hole_only` | Semantic marks, the checker's pass marking each typed node |
+| `mark_spans_lie_in_source` | Semantic marks, the checker's pass marking each typed node |
+| `no_surface_source_yields_effect_or_other_mark` | Semantic marks, the checker's pass marking each typed node |
+| `surface_marks_are_never_dropped` | Semantic marks, the checker's pass marking each typed node |
+| `catch_all_and_effect_row_mark_shapes_round_trip` | Semantic marks, the checker's pass marking each typed node |
+| `each_checker_frame_localizes_its_nested_failure` | Checker failure frames, the structural context a nested refusal is reported within |
+| `binder_naming_frames_carry_their_binder` | Checker failure frames, the structural context a nested refusal is reported within |
+| `a_computation_signature_folds_into_its_def_and_yields_one_hole_goal` | A declaration of computation type, which the lowering refuses as out of fragment |
+| `a_computation_signature_on_a_hole_free_body_types_through_the_check_entry` | A declaration of computation type, which the lowering refuses as out of fragment |
 
 ## License
 
