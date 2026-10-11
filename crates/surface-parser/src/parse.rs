@@ -20,9 +20,13 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 
+use crate::FormUnit;
 use crate::MeldError;
 use crate::MeldState;
 use crate::Molder;
+use crate::TokenRun;
+use crate::UnitSeam;
+use crate::label::Token;
 use crate::label::label;
 use crate::oblig::ObligationInstance;
 
@@ -81,7 +85,7 @@ impl From<ParseCleanStatus> for bool
 ///   the empty and non-empty obligation slice.
 /// - witness: `tests::acceptance::core_forms_are_clean`
 /// - witness: `tests::acceptance::malformed_programs_repair_predictably`
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParseResult<'source>
 {
     /// The committed concrete syntax tree.
@@ -267,6 +271,35 @@ pub fn parse<'source>(
     let mut state = MeldState::new(pbg);
     let tokens = label(SourceFragment::from(<&str>::from(source)));
     molder.mold_stream(&mut state, &tokens, source);
+    commit(state, source)
+}
+
+/// Commit a molded state over `source` as a parse result.
+///
+/// # Specification
+/// - requires: `state` holds exactly `source`'s tokens, molded.
+/// - ensures: the committed tree beside the completion's obligations,
+///   severity-ordered (highest first) then by span.
+/// - fails: [`MeldError`] when the state's source is not `source` or the arena
+///   cannot be built.
+/// - panics: none.
+///
+/// # Errors
+/// The commit's [`MeldError`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+///   four fragments commit through the whole parse and the joined form split
+///   alike; an unsorted or truncated obligation list changes both results.
+/// - witness: `parse::tests::obligations_are_reported_in_severity_then_source_order`
+/// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+/// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|parsed| parsed.tree.source() == source && parsed.obligations.iter().zip(parsed.obligations.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end()))))]
+fn commit<'source>(
+    state: MeldState<'_>,
+    source: SourceText<'source>,
+) -> Result<ParseResult<'source>, MeldError>
+{
     // `commit_with_obligations` captures the completion's repairs (force-close
     // and missing-operand obligations flagged while closing the input), which a
     // bare `commit` would drop.
@@ -281,6 +314,250 @@ pub fn parse<'source>(
             .then_with(|| left.span.end().cmp(&right.span.end()))
     });
     Ok(ParseResult { tree, obligations })
+}
+
+/// One source split at its predicted top-level form boundaries, so its forms
+/// mold apart and join into the source's parse.
+///
+/// [`new`](Self::new) labels the source once and predicts the boundaries
+/// ([`Molder::form_runs`]). [`mold`](Self::mold) molds one run into a
+/// [`FormUnit`] that depends on no other, so the runs of every source can
+/// mold in parallel, longest first. [`join`](Self::join) joins the units in
+/// run order and commits.
+///
+/// The form boundary is the parser's contract: the joined result equals
+/// [`parse`](fn@crate::parse) of the same source. A unit whose seam holds
+/// keeps its own molding; a unit whose seam breaks — the boundary was not a
+/// real one, or the unit's fold reached past it — is molded onto the state
+/// before it, which is the whole parse's own step.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `tokens` is the labeling of `source`; `runs` is the molder's form
+///   runs of it.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructor
+///   and the join carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+///   four fragments parse by form as they parse whole; a dropped seam check or
+///   a run molded without its lookahead changes a tree or an obligation.
+/// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+/// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+#[derive(Clone, Debug)]
+pub struct FormSplit<'source>
+{
+    /// The source text.
+    source: SourceText<'source>,
+    /// Its labeling.
+    tokens: Vec<Token>,
+    /// Its form runs, in source order.
+    runs: Vec<TokenRun>,
+}
+
+impl<'source> FormSplit<'source>
+{
+    /// Label `source` and predict its form runs with `molder`'s grammar.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the labeling of `source` and the molder's form runs of it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source of several declarations splits before each
+    ///   head; a stale or partial labeling moves a run.
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.source == source && ret.tokens == label(SourceFragment::from(<&str>::from(source))) && ret.runs == molder.form_runs(&ret.tokens, source))]
+    pub fn new(
+        molder: &Molder<'_>,
+        source: SourceText<'source>,
+    ) -> Self
+    {
+        let tokens = label(SourceFragment::from(<&str>::from(source)));
+        let runs = molder.form_runs(&tokens, source);
+        Self {
+            source,
+            tokens,
+            runs,
+        }
+    }
+
+    /// The predicted form runs, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn runs(&self) -> &[TokenRun]
+    {
+        &self.runs
+    }
+
+    /// Mold `run` into its form unit.
+    ///
+    /// # Specification
+    /// - requires: `run` is one of [`runs`](Self::runs).
+    /// - ensures: [`Molder::mold_unit`] of `run` over this split's tokens.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments parse by form as they parse whole; a unit molded over
+    ///   another source's tokens changes the joined tree.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.run() == run)]
+    pub fn mold<'pbg>(
+        &self,
+        molder: &mut Molder<'pbg>,
+        run: TokenRun,
+    ) -> FormUnit<'pbg>
+    {
+        molder.mold_unit(&self.tokens, run, self.source)
+    }
+
+    /// Join `units`, one per run in run order, and commit the source's parse.
+    ///
+    /// # Specification
+    /// - requires: `units` are this split's units, one per run, in run order,
+    ///   molded over `molder`'s grammar.
+    /// - ensures: the parse equals [`parse`](fn@crate::parse) of the source;
+    ///   the seams are how each unit met the state before it, in run order.
+    /// - fails: [`MeldError`] when the commit's arena cannot be built.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The commit's [`MeldError`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments parse by form as they parse whole, and a source with a
+    ///   broken seam still does; a join that skipped a broken run or committed
+    ///   a unit alone changes the result.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[spec(captures: before = units.len(), ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|joined| joined.result.tree.source() == self.source && joined.seams.len() == before))]
+    pub fn join<'pbg>(
+        &self,
+        molder: &mut Molder<'pbg>,
+        units: Vec<FormUnit<'pbg>>,
+    ) -> Result<FormJoin<'source>, MeldError>
+    {
+        let mut whole = MeldState::new(molder.pbg());
+        let mut seams = Vec::with_capacity(units.len());
+        for unit in units {
+            seams.push(molder.join_unit(&mut whole, unit, &self.tokens, self.source));
+        }
+        let result = commit(whole, self.source)?;
+        Ok(FormJoin { result, seams })
+    }
+}
+
+/// A source's parse joined from its form units, and how each seam stood.
+///
+/// # Specification
+/// - requires: constructed by [`FormSplit::join`].
+/// - ensures: the parse equals the whole parse; one seam per unit, in run
+///   order.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; the join carries
+///   the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a split source reports a held seam per real boundary and
+///   a broken one per false boundary; a miscounted seam changes the report.
+/// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+#[derive(Clone, Debug)]
+pub struct FormJoin<'source>
+{
+    /// The joined parse.
+    result: ParseResult<'source>,
+    /// How each unit met the state before it, in run order.
+    seams: Vec<UnitSeam>,
+}
+
+impl<'source> FormJoin<'source>
+{
+    /// The joined parse.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn result(&self) -> &ParseResult<'source>
+    {
+        &self.result
+    }
+
+    /// How each unit met the state before it, in run order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn seams(&self) -> &[UnitSeam]
+    {
+        &self.seams
+    }
+
+    /// Consume the join and return its parse.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_result(self) -> ParseResult<'source>
+    {
+        self.result
+    }
+}
+
+/// Batch-parse `source` by its top-level forms: split, mold each form run
+/// apart, join.
+///
+/// The serial reference of [`FormSplit`]: a caller with a pool molds the
+/// runs of [`FormSplit::runs`] on it instead.
+///
+/// # Specification
+/// - requires: `pbg` is a checked grammar; `source` is any UTF-8 text.
+/// - ensures: the result [`parse`](fn@crate::parse) returns for the same
+///   source.
+/// - fails: [`MeldError`] exactly when [`parse`](fn@crate::parse) fails.
+/// - panics: none.
+///
+/// # Errors
+/// The commit's [`MeldError`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — 400 hostile sources of one to four fragments, one per
+///   line, mixing byte soup with whole and truncated declarations, parse by
+///   form as they parse whole; any seam held where the whole parse would have
+///   reached across it changes a tree. The corpus witness drives the same steps
+///   through [`FormSplit`].
+/// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+#[inline]
+#[spec(ensures: |ret| match (ret.as_ref(), parse(pbg, source)) { (Ok(by_form), Ok(whole)) => *by_form == whole, (Err(_), Err(_)) => true, (Ok(_), Err(_)) | (Err(_), Ok(_)) => false })]
+pub fn parse_by_form<'source>(
+    pbg: &Pbg,
+    source: SourceText<'source>,
+) -> Result<ParseResult<'source>, MeldError>
+{
+    let mut molder = Molder::new(pbg);
+    let split = FormSplit::new(&molder, source);
+    let units: Vec<FormUnit<'_>> = split
+        .runs()
+        .iter()
+        .map(|&run| split.mold(&mut molder, run))
+        .collect();
+    Ok(split.join(&mut molder, units)?.into_result())
 }
 
 #[cfg(test)]
@@ -299,10 +576,17 @@ mod tests
     use anodized::spec;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
     use proptest::prelude::*;
 
+    use super::FormSplit;
     use super::parse;
+    use super::parse_by_form;
+    use crate::Molder;
+    use crate::SeamBreak;
+    use crate::UnitSeam;
+    use crate::label::label;
     use crate::testing::reconstruct;
     use crate::testing::root_digest;
 
@@ -604,6 +888,77 @@ ret greeting
     }
 
     #[test]
+    fn form_split_parses_as_the_whole_source() -> Result<(), Box<dyn Error>>
+    {
+        // Every corpus source, molded form by form and joined, parses exactly
+        // as it parses whole: the same tree and the same obligations, whether
+        // its seams hold or break.
+        let pbg = built_in()?;
+        let files = gandr_files(&corpus_root());
+        assert!(!files.is_empty(), "the corpus sources are present");
+        let mut molder = Molder::new(&pbg);
+        for path in &files {
+            let src = read_source(path)?;
+            let source = SourceText::from(src.as_str());
+            let whole = parse(&pbg, source)?;
+            let split = FormSplit::new(&molder, source);
+            let units: Vec<_> = split
+                .runs()
+                .iter()
+                .map(|&run| split.mold(&mut molder, run))
+                .collect();
+            let joined = split.join(&mut molder, units)?;
+            assert_eq!(
+                *joined.result(),
+                whole,
+                "{} parses by form as whole",
+                path.display()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_source_splits_before_each_declaration_head() -> Result<(), Box<dyn Error>>
+    {
+        // Five declarations: a plain one, an attributed one, a module whose
+        // members sit inside its braces, a data declaration followed by an
+        // expression statement, and one after that statement. The split cuts
+        // before each top-level head and nowhere else; every seam holds but
+        // the last, which follows a statement rather than a declaration.
+        let pbg = built_in()?;
+        let src = "def a = 1;\n@[doc(\"b\")] def b = 2;\nmodule M {\n  def c = 3;\n  def d = 4;\n}\ndata Bit : Type {\n  Off : Bit;\n}\n1;\ndef e = 5;\n";
+        let source = SourceText::from(src);
+        let mut molder = Molder::new(&pbg);
+        let split = FormSplit::new(&molder, source);
+        let tokens = label(SourceFragment::from(src));
+        let heads: Vec<&str> = split
+            .runs()
+            .iter()
+            .filter_map(|run| tokens.get(usize::from(run.start())))
+            .filter_map(|token| {
+                src.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)
+            })
+            .collect();
+        assert_eq!(heads, ["def", "@[", "module", "data", "def"]);
+        let units: Vec<_> = split
+            .runs()
+            .iter()
+            .map(|&run| split.mold(&mut molder, run))
+            .collect();
+        let joined = split.join(&mut molder, units)?;
+        assert_eq!(joined.seams(), [
+            UnitSeam::Joined,
+            UnitSeam::Joined,
+            UnitSeam::Joined,
+            UnitSeam::Joined,
+            UnitSeam::Broken(SeamBreak::SortMismatch),
+        ]);
+        assert_eq!(*joined.result(), parse(&pbg, source)?);
+        Ok(())
+    }
+
+    #[test]
     fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built_in()?;
@@ -652,6 +1007,7 @@ ret greeting
     ///   replacement characters before parsing; sampling does not exhaust
     ///   malformed programs or imply a distribution guarantee.
     /// - witness: `parse::tests::arbitrary_source_parses_totally`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
     fn hostile_source() -> impl Strategy<Value = String>
     {
         // A pool of gandr fragments to mutate and truncate.
@@ -692,6 +1048,22 @@ ret greeting
 
             // Losslessness holds over arbitrary input.
             prop_assert_eq!(reconstruct(parse_result.tree()), src);
+        }
+
+        #[test]
+        fn arbitrary_source_parses_by_form_as_whole(
+            parts in prop::collection::vec(hostile_source(), 1 .. 5),
+        ) {
+            use std::sync::OnceLock;
+            static PBG: OnceLock<Pbg> = OnceLock::new();
+            let pbg = PBG.get_or_init(|| built_in().expect("built-in grammar"));
+
+            // Several hostile fragments, one per line, so the split has
+            // boundaries to predict, hold and break.
+            let src = parts.join("\n");
+            let whole = parse(pbg, SourceText::from(src.as_str())).expect("commit is total");
+            let by_form = parse_by_form(pbg, SourceText::from(src.as_str())).expect("commit is total");
+            prop_assert_eq!(by_form, whole);
         }
     }
 }
