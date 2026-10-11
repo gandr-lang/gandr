@@ -11,6 +11,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Completion obligations in place of error recovery](#completion-obligations-in-place-of-error-recovery)
 - [Completion obligations are not typing obligations](#completion-obligations-are-not-typing-obligations)
 - [Label, mold, meld](#label-mold-meld)
+  - [An edit is relabeled around itself](#an-edit-is-relabeled-around-itself)
 - [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
@@ -21,6 +22,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Repair stops at the declaration boundary](#repair-stops-at-the-declaration-boundary)
 - [Forms as units](#forms-as-units)
   - [A molded form outlives its revision](#a-molded-form-outlives-its-revision)
+  - [A molded form keeps its digests](#a-molded-form-keeps-its-digests)
 - [No recursion over input](#no-recursion-over-input)
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
@@ -44,6 +46,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 ## Provided features
 
 - `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
+- `Labeling`: a source's tokens with where the labeler stood within a mode, and `Labeling::relabel`, the labeling of an edit made from the unedited source's by scanning only around the edit. Witnesses: `label::tests::an_edit_relabels_as_the_edited_source_labels`, `label::tests::a_relabel_restarts_before_what_a_token_read`.
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `TokenIndex`, `TokenRun`, `Molder::mold_run` and `Molder::form_runs`: a stream molded run by run, each run reading past its end as lookahead, and the runs a stream splits into at its predicted top-level declaration boundaries. Witnesses: `mold::tests::runs_mold_as_the_whole_stream`, `parse::tests::a_source_splits_before_each_declaration_head`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
@@ -53,7 +56,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - `Oblig`, `ObligationInstance`, `Delta`, `DeltaEmptyStatus`, `ObligClassIndex`, `ObligationCount` and `OBLIG_CLASS_COUNT`: the completion-obligation taxonomy and its minimization order. Witnesses: `oblig::tests::severity_ladder_is_low_to_high`, `oblig::tests::higher_severity_class_dominates_the_order`, `oblig::tests::minimization_never_prefers_ambiguous_prec`.
 - `parse`, `ParseResult` and `ParseCleanStatus`: the batch entry point. Witnesses: `tests::acceptance::corpus_molds_to_zero_obligations`, `parse::tests::parse_is_lossless_and_hash_stable`, `parse::tests::arbitrary_source_parses_totally`.
 - `parse_by_form`, `FormSplit`, `FormJoin`, `FormUnit`, `UnitBase`, `UnitSeam` and `SeamBreak`: one source parsed by its top-level forms, each form molded apart from a form-boundary checkpoint and joined into the whole parse. Witnesses: `parse::tests::form_split_parses_as_the_whole_source`, `parse::tests::a_source_splits_before_each_declaration_head`, `parse::tests::arbitrary_source_parses_by_form_as_whole`.
-- `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
+- `FormUnit::park`, `FormUnit::resume`, `ParkedUnit`, `FormSplit::identity` and `FormIdentity`: a molded form kept apart from the source it was molded in, with the digests of its emissions, and taken up into another revision whose run spells the same identity. Witnesses: `parse::tests::a_parked_unit_joins_as_the_unit_it_parked`, `parse::tests::an_equal_identity_molds_an_equal_unit`, `parse::tests::hostile_edits_reuse_only_equal_units`, `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`, `mold::tests::a_run_reads_eight_significant_tokens_past_its_end`.
 
 ## Expected features
 
@@ -109,6 +112,13 @@ In a shell braced parameter, non-name scalars remain whole shell-word tokens. UT
 The molder's candidates for a token are the union of the grammar's molds for each label the token could carry, visited in ascending `MoldId` order. The pre-filter drops every candidate the slope head cannot admit — a closer with no matching open form, an operator with no left operand — and most tokens are left with one, taken without a dry-run. The survivors are dry-run in a `Mark` / `rollback_to` transaction and ranked by their obligation delta, then form continuation, then sort compatibility, then the completion cost `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles the families whose openers tie and diverge only at a later tile. Nothing process-dependent reaches the choice, so molding is a function of the token stream.
 
 The melder follows the paper's push rules. Shift pushes a tile whose precedence the head yields to; Reduce closes the head operator or form when the incoming tile takes precedence; Degrout completes an incomparable pair with grout and an `AmbiguousPrec` obligation. Grout is comparable to everything and sits at the bottom of the precedence order, which is what makes every push conclude.
+
+### An edit is relabeled around itself
+
+The labeler carries a little state between tokens — inside a string, a shell block, a shell quote or a parameter expansion, an interpolation — and the lexemes it scans read ahead of themselves: a word looks for a prime, a number for its suffix, a character literal for its closing quote, a shell start along its dialect word for the brace. `Labeling` keeps a source's tokens and the tokens before which the labeler stood within a mode, and `Labeling::relabel` labels an edit of the source from them. It restarts at the last token boundary at ground on an earlier line than the edit and at least 64 bytes before it: no scanner reads further past its token than eight bytes save along a dialect word, which stops at a line break, so every token before the restart is a token of the edited source. It stops at the first boundary inside the unedited suffix where it stands at ground over a boundary the old labeling stood at ground on: the labeler never reads behind its cursor, so from there it reads the same bytes in the same mode, and the old tokens are the new ones, shifted. An edit therefore scans from the earlier of the line break before it and the margin, through the edit, to the first common ground boundary in the suffix.
+
+- Alternatives: keeping the full mode at every token boundary would let the scan restart at the edit itself, at a mode per token; restarting at a form boundary would rest on the molder's prediction of where forms begin, which a string or an interpolation can contradict; a scanner that recorded how far each scan read would make the margin exact, at a write per byte read.
+- Reversal: a scanner that reads more than the margin past its token, or past a line break, widens the margin or the restart rule with it, and the exhaustive witness over every edit position of its source says which.
 
 ## The molder's search stops at its least key
 
@@ -180,6 +190,15 @@ A `FormUnit` borrows the split it was molded in. `FormUnit::park` keeps what the
 
 - Alternatives: a digest of the same window is a fixed-width key at the cost of a hash per form and a collision bound; keying by the run's text alone would serve a unit whose lookahead now reads different tokens.
 - Reversal: a molder whose lookahead grows past eight significant tokens widens the window with it; a store persisted across processes keys by a digest of the identity.
+
+### A molded form keeps its digests
+
+A node's digest folds its label, its own text and its significant children's digests, never its offset, so a node a form unit emitted has one digest wherever the unit is joined. `Molder::mold_unit` folds the digests of a unit's emissions where the unit is molded, on whichever thread molds it, and `FormUnit::park` keeps them beside the checkpoint; the join appends them with the emissions, and the commit stages each folded emission with `TreeBuilder::node_with_digest`. The commit hashes only what the join emitted itself: the collapse across the seams, the root, and any run re-molded onto the state because its seam broke. The enforcing build folds every supplied digest again and compares, so a digest that is not the fold refuses the call. An edit's commit hashes the forms the edit molded, and a whole revision hashes its forms in parallel.
+
+A leaf's digest reads only its label and its text, so the fold looks a leaf up by that spelling among the unit's leaves before it hashes, and a form's repeated layout, keywords, punctuation and names share one digest. A unit keeps a table of the digests it folded and, per emission, a four-byte slot naming its entry; the join appends the table and shifts the slots past the state's own. On the generated two-thousand-form module the parked units with the store's text and labeling are 1.8× the lowered revision, where a digest per emission, thirty-three bytes each, put them past 2×.
+
+- Alternatives: a table of digests keyed by emission content across units costs a key hash per node, about what it saves; a builder that adopts a finished subtree whole needs a tree laid out by form, which the level-order arena is not; a digest per emission costs no lookup and 33 bytes where a slot costs 4.
+- Reversal: a digest whose preimage read a node's position or its parent would be wrong wherever a unit lands; the commit would fold every emission again, as it did before.
 
 ## No recursion over input
 

@@ -4,12 +4,24 @@
 //! # Lowered once, judged whole, resumed beside it
 //!
 //! A submission lowers its revision once. The lowered module goes two ways:
-//! the dispatcher's [`judge_module`] judges, readmits and settles it, which is
-//! the report — the same verdicts `gandr check` gives the text — and the item
-//! source's [`program`] offers the same declarations to the incremental
-//! checker, which adopts every checkpoint that still answers, judges the rest
-//! and persists the set. A revision the lowering refuses as a whole is
-//! reported and leaves the session as it was.
+//! the dispatcher's [`judge`] judges and settles it, which is the report — the
+//! same verdicts `gandr check` gives the text — and the item source's
+//! [`program`] offers the same declarations to the incremental checker, which
+//! adopts every checkpoint that still answers, judges the rest and persists
+//! the set. A revision the lowering refuses as a whole is reported and leaves
+//! the session as it was.
+//!
+//! # The kernel admission runs after the report exists
+//!
+//! [`Session::submit`] is [`Session::judge`] then [`Session::admit`]. The
+//! judgement is the interactive half: parse, lowering, judgement, settle and
+//! resume, everything a face renders. The admission offers the judged
+//! revision's accepted declarations to the kernel, exports what crossed and
+//! commits the export, the half whose cost grows with the whole module
+//! whatever the edit. A face that judges, renders, and then admits shows its
+//! reports before the kernel has re-derived them; a kernel disagreement found
+//! afterwards is reported as the fault it is, the session holding the judged
+//! revision.
 //!
 //! # The parse's repairs ride beside the step
 //!
@@ -36,6 +48,7 @@ use std::path::Path;
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::bridge::Readmitted;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
@@ -63,6 +76,7 @@ use gandr_storage_records::BlockStore;
 use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
+use gandr_surface_dispatcher::Admission;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
@@ -74,7 +88,7 @@ use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
-use gandr_surface_dispatcher::judge_module;
+use gandr_surface_dispatcher::judge;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ImportIndex;
@@ -103,6 +117,35 @@ quenchant_shape::reason_enum! {
             /// The lowering refused the revision as a whole, so it offered no
             /// items to resume over.
             RefusedWhole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a submission carries no kernel checkpoint.
+    pub mod admitted {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lowering refused the revision as a whole, so it offered
+            /// the kernel nothing.
+            RefusedWhole,
+            /// The revision was judged and its admission has not run: the
+            /// submission came from [`Session::judge`](super::Session::judge).
+            Pending,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a session runs no admission.
+    pub mod admission {
+        /// The reason none runs.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No judgement left one: none ran since the last admission, the
+            /// latest faulted, or its revision was refused as a whole.
+            Idle,
         }
     }
 }
@@ -461,6 +504,54 @@ pub enum KernelCheckpoint
     Failed(ArtifactError),
 }
 
+/// What one admission produced: the kernel artifact of every declaration that
+/// crossed, and whether it reached the block store.
+///
+/// # Specification
+/// - requires: constructed by [`Session::admit`].
+/// - ensures: the checkpoint is the one committed for the artifact.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`Session::admit`]
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Session::admit`].
+/// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Admitted
+{
+    /// The kernel artifact the admission exported.
+    kernel: EncodedArtifact,
+    /// Whether it reached the block store.
+    checkpoint: KernelCheckpoint,
+}
+
+impl Admitted
+{
+    /// The kernel artifact the admission exported.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kernel(&self) -> &EncodedArtifact
+    {
+        &self.kernel
+    }
+
+    /// Whether the artifact reached the block store, and the manifest naming
+    /// it when it did.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn checkpoint(&self) -> &KernelCheckpoint
+    {
+        &self.checkpoint
+    }
+}
+
 /// What one submitted revision became: the dispatcher's composition of its
 /// text, its standing, and what the incremental checker made of it.
 ///
@@ -498,7 +589,7 @@ pub struct Submission<'text>
     /// The edits from the latest accepted revision before it.
     edits: Maybe<EditScript, resumed::Absent>,
     /// Whether the revision's kernel checkpoint reached the block store.
-    kernel: Maybe<KernelCheckpoint, resumed::Absent>,
+    kernel: Maybe<KernelCheckpoint, admitted::Absent>,
     /// The parse's completion obligations, in source order.
     obligations: Vec<ObligationInstance>,
     /// How the parse was assembled from the form store.
@@ -581,7 +672,7 @@ impl<'text> Submission<'text>
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn kernel(&self) -> Maybe<&KernelCheckpoint, resumed::Absent>
+    pub const fn kernel(&self) -> Maybe<&KernelCheckpoint, admitted::Absent>
     {
         match self.kernel {
             | Maybe::Present(ref kernel) => Maybe::Present(kernel),
@@ -1007,6 +1098,8 @@ pub struct Session<Store, Blocks>
     forms: FormStore,
     /// The threads a revision's changed forms are molded on.
     threads: Threads,
+    /// The kernel admission the latest judgement left to run.
+    admission: Maybe<Admission, admission::Absent>,
 }
 
 impl<Store, Blocks> fmt::Debug for Session<Store, Blocks>
@@ -1091,6 +1184,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             lowerings: LoweringCount::default(),
             forms: FormStore::default(),
             threads: Width::PerformanceCores.threads(),
+            admission: Maybe::Absent(admission::Absent::Idle),
         }
     }
 
@@ -1245,76 +1339,136 @@ impl<Store, Blocks> Session<Store, Blocks>
                 lowerings,
                 forms,
                 threads,
+                admission: Maybe::Absent(admission::Absent::Idle),
             },
             restored,
         })
     }
 
-    /// Submit one revision: parse it through the form store, lower it, judge
-    /// it, resume the incremental checker over it and persist its checkpoints
-    /// and its kernel checkpoint.
+    /// Submit one revision: [`judge`](Self::judge) it, then
+    /// [`admit`](Self::admit) it.
     ///
     /// # Specification
     /// - requires: `revision` is the whole text of the session's source.
-    /// - ensures: `revision` is parsed through the session's form store — every
-    ///   form whose identity the store holds taken up, the rest molded on the
-    ///   session's threads — into the parse
-    ///   [`parse`](gandr_surface_parser::parse) gives it, and the store then
-    ///   holds the revision's forms; the submission carries how many forms were
-    ///   molded. The parse is lowered exactly once, and the lowering count is
-    ///   one more. A revision the lowering reads is judged by the dispatcher's
-    ///   [`judge_module`] — the composition `gandr check` gives the same text
-    ///   under the same root — and the same declarations are submitted to the
-    ///   incremental checker, which resumes from the latest accepted revision
-    ///   and persists the new checkpoints; the composition's kernel artifact is
-    ///   committed into the block store as records; the submission carries the
-    ///   [`diff`] of the latest accepted revision's snapshot and this one's,
-    ///   and the session then holds the revision's resume, import scope and
-    ///   snapshot. A revision the lowering refuses as a whole is reported as
-    ///   [`Composed::Refused`] with no resume, no edits and no kernel
-    ///   checkpoint. Its accepted state is unchanged, but the lowering attempt
-    ///   is counted. Either way the submission carries the parse's completion
-    ///   obligations, in source order.
+    /// - ensures: as [`judge`](Self::judge), and for a revision the lowering
+    ///   reads, the composition then carries the kernel artifact its admission
+    ///   exported and the submission the kernel checkpoint committed into the
+    ///   block store: the composition `gandr check` gives the same text under
+    ///   the same root, kernel artifact included.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
     ///   census of what the resume adopted, the manifest of the kernel
     ///   environment it leaves, the edits that led to it and the repairs the
     ///   parser made.
-    /// - fails: [`SessionFault::Compose`] when the composition faults, with the
-    ///   accepted state unchanged; [`SessionFault::Unordered`] when the lowered
-    ///   positions do not ascend, also retaining accepted state; each attempt
-    ///   remains counted. [`SessionFault::Resume`] occurs when the resume
-    ///   fails, the incremental checker then holding no resume so the next
-    ///   revision is judged whole.
+    /// - fails: as [`judge`](Self::judge); and [`SessionFault::Compose`] with
+    ///   [`ComposeFault::Readmission`] when the kernel does not re-derive an
+    ///   acceptance of a revision the judgement accepted, the session then
+    ///   holding that revision.
     /// - panics: none.
-    /// - economy: each taken-up form's checkpoint is cloned once into the join
-    ///   and each molded form parked once; the lowered arena is cloned once per
-    ///   accepted revision, so the judgement and the resume each check over
-    ///   their own copy; the snapshot and its diff are each one walk of the
-    ///   revision's terms; the kernel artifact is decoded, cut and hashed once,
-    ///   linear in its bytes.
     ///
     /// # Errors
-    /// As above. A persistence failure with a retained resume is carried as
-    /// [`Persistence::Failed`]; without a resume it is [`SessionFault::Store`].
-    /// A kernel checkpoint failure is carried as [`KernelCheckpoint::Failed`].
+    /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite corpus agreement with the batch pipeline;
     ///   accepted, refused and edited revisions; exact synthesis, import,
     ///   snapshot and lowering-count observations; and kernel readback.
     ///   Generated edit/replay and incremental/batch witnesses provide
-    ///   independent bounded relational checks. The predicate avoids cloning
-    ///   prior session state or repeating parsing, judgement, evaluation or
-    ///   storage.
+    ///   independent bounded relational checks.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+    /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |submission| match submission.composed {
+        Composed::Settled { ref kernel, .. } => matches!(kernel, Maybe::Present(_))
+            && matches!(submission.kernel, Maybe::Present(_)),
+        Composed::Refused(_) => matches!(submission.kernel, Maybe::Absent(admitted::Absent::RefusedWhole)),
+    }) && matches!(self.admission, Maybe::Absent(admission::Absent::Idle)))]
+    #[inline]
+    pub fn submit<'text>(
+        &mut self,
+        revision: SourceText<'text>,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+        Blocks: BlockStore,
+    {
+        let mut submission = self.judge(revision)?;
+        if let Maybe::Present(admitted) = self
+            .admit()
+            .map_err(|fault| SessionFault::Compose(ComposeFault::Readmission(fault)))?
+        {
+            let Admitted { kernel, checkpoint } = admitted;
+            submission.composed = submission.composed.admitted(kernel);
+            submission.kernel = Maybe::Present(checkpoint);
+        }
+        Ok(submission)
+    }
+
+    /// Judge one revision: parse it through the form store, lower it, judge
+    /// and settle it, and resume the incremental checker over it, keeping its
+    /// kernel admission for [`admit`](Self::admit).
+    ///
+    /// # Specification
+    /// - requires: `revision` is the whole text of the session's source.
+    /// - ensures: any admission an earlier judgement left is dropped first.
+    ///   `revision` is parsed through the session's form store — every form
+    ///   whose identity the store holds taken up, the rest molded on the
+    ///   session's threads — into the parse
+    ///   [`parse`](gandr_surface_parser::parse) gives it, and the store then
+    ///   holds the revision's forms; the submission carries how many forms were
+    ///   molded. The parse is lowered exactly once, and the lowering count is
+    ///   one more. A revision the lowering reads is judged and settled by the
+    ///   dispatcher's [`judge`] — the composition `gandr check` gives the same
+    ///   text under the same root, its kernel artifact not yet exported — and
+    ///   the same declarations are submitted to the incremental checker, which
+    ///   resumes from the latest accepted revision and persists the new
+    ///   checkpoints; the submission carries the [`diff`] of the latest
+    ///   accepted revision's snapshot and this one's, and no kernel checkpoint
+    ///   yet ([`admitted::Absent::Pending`]); the session then holds the
+    ///   revision's resume, import scope and snapshot, and its admission. A
+    ///   revision the lowering refuses as a whole is reported as
+    ///   [`Composed::Refused`] with no resume, no edits and no kernel
+    ///   checkpoint, and leaves no admission. Its accepted state is unchanged,
+    ///   but the lowering attempt is counted. Either way the submission carries
+    ///   the parse's completion obligations, in source order.
+    /// - provides: the interactive half of a submission: everything a face
+    ///   renders, before the kernel has been offered anything.
+    /// - fails: [`SessionFault::Compose`] when the parse or the lowering
+    ///   faults, and when the settle comparison refuses the verdicts — a kernel
+    ///   disagreement, found by running the admission then, reported in its
+    ///   place, as [`judge_module`](gandr_surface_dispatcher::judge_module)
+    ///   reports it — each with the accepted state unchanged;
+    ///   [`SessionFault::Unordered`] when the lowered positions do not ascend,
+    ///   also retaining accepted state; each attempt remains counted.
+    ///   [`SessionFault::Resume`] occurs when the resume fails, the incremental
+    ///   checker then holding no resume so the next revision is judged whole.
+    /// - panics: none.
+    /// - economy: each taken-up form's checkpoint is cloned once into the join
+    ///   and each molded form parked once; the lowered arena is cloned once per
+    ///   accepted revision, so the judgement and the resume each check over
+    ///   their own copy; the snapshot and its diff are each one walk of the
+    ///   revision's terms.
+    ///
+    /// # Errors
+    /// As above. A persistence failure with a retained resume is carried as
+    /// [`Persistence::Failed`]; without a resume it is [`SessionFault::Store`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite corpus agreement with the batch pipeline;
+    ///   accepted, refused and edited revisions; exact synthesis, import,
+    ///   snapshot and lowering-count observations. Generated edit/replay and
+    ///   incremental/batch witnesses provide independent bounded relational
+    ///   checks; a judged revision renders the reports its submission renders.
+    ///   The predicate avoids cloning prior session state or repeating parsing,
+    ///   judgement, evaluation or storage.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::session::failed_submission_retains_latest_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    /// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
     /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
     /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
     /// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
-    /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
-    /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
     #[spec(
         captures: before = (
     usize::from(self.lowerings),
@@ -1346,14 +1500,21 @@ impl<Store, Blocks> Session<Store, Blocks>
                                 )
                                 && matches!(
                                     submission.kernel,
-                                    Maybe::Absent(resumed::Absent::RefusedWhole)
-                                ) && self.snapshot.items().len() == before.1
+                                    Maybe::Absent(admitted::Absent::RefusedWhole)
+                                )
+                                && matches!(self.admission, Maybe::Absent(admission::Absent::Idle))
+                                && self.snapshot.items().len() == before.1
                                 && self.imports.rows.len() == before.2
                         }
-                        Composed::Settled { .. } => {
+                        Composed::Settled { ref kernel, .. } => {
                             matches!(submission.resumed, Maybe::Present(_))
                                 && matches!(submission.edits, Maybe::Present(_))
-                                && matches!(submission.kernel, Maybe::Present(_))
+                                && matches!(kernel, Maybe::Absent(_))
+                                && matches!(
+                                    submission.kernel,
+                                    Maybe::Absent(admitted::Absent::Pending)
+                                )
+                                && matches!(self.admission, Maybe::Present(_))
                                 && matches!(
                                     self.incremental.last(), Maybe::Present(resume) if resume
                                     .handles().len() == self.snapshot.items().len()
@@ -1364,19 +1525,20 @@ impl<Store, Blocks> Session<Store, Blocks>
             Err(_) => {
                 self.snapshot.items().len() == before.1
                     && self.imports.rows.len() == before.2
+                    && matches!(self.admission, Maybe::Absent(admission::Absent::Idle))
             }
         }
 },
     )]
     #[inline]
-    pub fn submit<'text>(
+    pub fn judge<'text>(
         &mut self,
         revision: SourceText<'text>,
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Blocks: BlockStore,
     {
+        self.admission = Maybe::Absent(admission::Absent::Idle);
         let (parsed, forms) = self
             .forms
             .parse(&self.grammar, revision, self.threads)
@@ -1396,7 +1558,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     composed,
                     resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
                     edits: Maybe::Absent(resumed::Absent::RefusedWhole),
-                    kernel: Maybe::Absent(resumed::Absent::RefusedWhole),
+                    kernel: Maybe::Absent(admitted::Absent::RefusedWhole),
                     obligations,
                     forms,
                 });
@@ -1408,8 +1570,18 @@ impl<Store, Blocks> Session<Store, Blocks>
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module);
         let snapshot = Snapshot::of(&items, module.origins());
-        let composed =
-            judge_module(self.root.corpus_root(), module, arena).map_err(SessionFault::Compose)?;
+        let (settled, admission) = judge(self.root.corpus_root(), module, arena).into_parts();
+        let composed = match settled {
+            | Ok(composed) => composed,
+            // The readmission ran before the settle comparison once; a kernel
+            // disagreement still takes precedence over a settle fault.
+            | Err(fault) => {
+                return Err(SessionFault::Compose(match admission.admit() {
+                    | Ok(_) => ComposeFault::Settle(fault),
+                    | Err(disagreement) => ComposeFault::Readmission(disagreement),
+                }));
+            },
+        };
         let (census, persistence) = match self.incremental.submit(&mut items, &mut Quiet) {
             | Ok(census) => (census, Persistence::Stored),
             | Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
@@ -1421,15 +1593,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                 | Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
-        let kernel = match composed {
-            | Composed::Settled { ref kernel, .. } => {
-                Maybe::Present(checkpoint_kernel(kernel, &mut self.blocks))
-            },
-            | Composed::Refused(_) => Maybe::Absent(resumed::Absent::RefusedWhole),
-        };
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
+        self.admission = Maybe::Present(admission);
         Ok(Submission {
             root: self.root,
             text: revision,
@@ -1440,10 +1607,57 @@ impl<Store, Blocks> Session<Store, Blocks>
                 persistence,
             }),
             edits: Maybe::Present(edits),
-            kernel,
+            kernel: Maybe::Absent(admitted::Absent::Pending),
             obligations,
             forms,
         })
+    }
+
+    /// Run the admission the latest judgement left: offer its accepted
+    /// declarations to the kernel, export what crossed and commit the export
+    /// into the block store.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: with no admission held, [`admission::Absent::Idle`] and
+    ///   nothing done. Otherwise the admission is taken and run: the kernel
+    ///   artifact of every declaration that crossed, under its structured name
+    ///   — the artifact
+    ///   [`judge_module`](gandr_surface_dispatcher::judge_module) exports for
+    ///   the same revision — beside the checkpoint [`build`] mints over the
+    ///   records [`ArtifactRecordSet::from_artifact`] cuts from it, every node
+    ///   of their tree then in the block store, or the first refusal. Either
+    ///   way the session holds no admission after.
+    /// - provides: the half of a submission that runs beside the interactive
+    ///   loop: what the kernel re-derives, and the latency until the artifact
+    ///   exists.
+    /// - fails: the readmission of the first declaration the kernel did not
+    ///   re-derive.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The readmission of the first declaration the kernel did not re-derive.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a judged revision admitted afterwards carries the
+    ///   kernel artifact and checkpoint its submission carries, a second
+    ///   admission finds none held, and a refused revision leaves none.
+    /// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
+    /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+    #[spec(ensures: |_| matches!(self.admission, Maybe::Absent(admission::Absent::Idle)))]
+    #[inline]
+    pub fn admit(&mut self) -> Result<Maybe<Admitted, admission::Absent>, Readmitted>
+    where
+        Blocks: BlockStore,
+    {
+        let held = core::mem::replace(&mut self.admission, Maybe::Absent(admission::Absent::Idle));
+        let Maybe::Present(admission) = held
+        else {
+            return Ok(Maybe::Absent(admission::Absent::Idle));
+        };
+        let kernel = admission.admit()?;
+        let checkpoint = checkpoint_kernel(&kernel, &mut self.blocks);
+        Ok(Maybe::Present(Admitted { kernel, checkpoint }))
     }
 
     /// The root the session's source sits under.

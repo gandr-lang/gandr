@@ -39,8 +39,8 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 
 - `NodeLabel`, `LabelTag`, `CarriesText` and `Significance`: the molded node vocabulary, each label with a pinned digest tag, whether it draws text from the source, and whether a parent's digest folds it. Witnesses: `label::tests::every_digest_tag_is_pinned`, `label::tests::only_layout_is_insignificant`.
 - `SyntaxTree`, `Node` and `NodeIndex`: the level-order arena with checked lookups, `children`, `positions`, `fragment` and the recorded `grammar`.
-- `TreeBuilder` and `StagedId`: bottom-up staging under a grammar fingerprint and the layout `TreeBuilder::finish` produces.
-- `NodeDigest` and `NODE_DIGEST_LEN`: the 32-byte content identity, rendered as lowercase hexadecimal.
+- `TreeBuilder` and `StagedId`: bottom-up staging under a grammar fingerprint and the layout `TreeBuilder::finish` produces; `TreeBuilder::node_with_digest` stages a node under a digest folded apart from the builder, which the enforcing build folds again and compares. Witnesses: `build::tests::a_supplied_digest_stages_the_folded_node`, `build::tests::a_supplied_digest_is_refused_as_node_refuses`.
+- `NodeDigest`, `NODE_DIGEST_LEN` and `digest_of`: the 32-byte content identity, rendered as lowercase hexadecimal, and the one fold that computes it.
 - `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
 - `SyntaxError`: every refusal, with the offset, span or staged node it names.
 - `MoldId`, `GroutSort`, `GroutShape`, `GrammarFingerprint`, `ClosingClass` and `DelimSpelling`: the references a grammar and a parser exchange — a mold's position in its grammar's table, the sort a hole stands for, the sides a piece of grout faces, the fingerprint naming the table, and the bracket family a delimiter opens or closes. Witnesses: `mold::tests::openers_and_closers_pair_by_family`, `mold::tests::a_host_index_past_the_id_width_is_refused`.

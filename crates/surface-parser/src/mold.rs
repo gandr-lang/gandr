@@ -1117,12 +1117,13 @@ impl<'pbg> Molder<'pbg>
     /// from the form-boundary checkpoint otherwise
     /// ([`FormUnit::new`]); either way its tokens are molded as
     /// [`mold_run`](Self::mold_run) molds them, lookahead past the run
-    /// included.
+    /// included. The unit's emission digests are then folded, here and on
+    /// whichever thread molds it, so the join stages them without hashing.
     ///
     /// # Specification
     /// - requires: `tokens` came from the labeler over `src`.
     /// - ensures: returns the unit for `run`, every token of `run` molded into
-    ///   it.
+    ///   it and its emission digests folded.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1144,6 +1145,7 @@ impl<'pbg> Molder<'pbg>
     {
         let mut unit = FormUnit::new(self.pbg, run);
         self.mold_run(unit.state_mut(), tokens, run, src);
+        unit.fold();
         unit
     }
 

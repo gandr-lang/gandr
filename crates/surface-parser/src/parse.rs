@@ -28,8 +28,8 @@ use crate::Molder;
 use crate::TokenIndex;
 use crate::TokenRun;
 use crate::UnitSeam;
+use crate::label::Labeling;
 use crate::label::Lexeme;
-use crate::label::Token;
 use crate::label::label;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
@@ -352,7 +352,9 @@ fn commit<'source>(
 /// One source split at its predicted top-level form boundaries, so its forms
 /// mold apart and join into the source's parse.
 ///
-/// [`new`](Self::new) labels the source once and predicts the boundaries
+/// [`new`](Self::new) labels the source once, or
+/// [`labeled`](Self::labeled) takes a labeling already made — an edited
+/// revision's ([`Labeling::relabel`]) — and predicts the boundaries
 /// ([`Molder::form_runs`]). [`mold`](Self::mold) molds one run into a
 /// [`FormUnit`] that depends on no other, so the runs of every source can
 /// mold in parallel, longest first. [`join`](Self::join) joins the units in
@@ -366,8 +368,8 @@ fn commit<'source>(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `tokens` is the labeling of `source`; `runs` is the molder's form
-///   runs of it.
+/// - ensures: `labeling` is the labeling of `source`; `runs` is the molder's
+///   form runs of its tokens.
 /// - panics: none.
 /// - executable: none — this data type has no call boundary; its constructor
 ///   and the join carry the executable clauses.
@@ -384,7 +386,7 @@ pub struct FormSplit<'source>
     /// The source text.
     source: SourceText<'source>,
     /// Its labeling.
-    tokens: Vec<Token>,
+    labeling: Labeling,
     /// Its form runs, in source order.
     runs: Vec<TokenRun>,
 }
@@ -404,19 +406,59 @@ impl<'source> FormSplit<'source>
     /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source == source && ret.tokens == label(SourceFragment::from(<&str>::from(source))) && ret.runs == molder.form_runs(&ret.tokens, source))]
+    #[spec(ensures: |ret| ret.source == source && ret.labeling.tokens() == label(SourceFragment::from(<&str>::from(source))) && ret.runs == molder.form_runs(ret.labeling.tokens(), source))]
     pub fn new(
         molder: &Molder<'_>,
         source: SourceText<'source>,
     ) -> Self
     {
-        let tokens = label(SourceFragment::from(<&str>::from(source)));
-        let runs = molder.form_runs(&tokens, source);
+        Self::labeled(
+            molder,
+            source,
+            Labeling::new(SourceFragment::from(<&str>::from(source))),
+        )
+    }
+
+    /// Predict the form runs of `source`, whose labeling `labeling` is, with
+    /// `molder`'s grammar.
+    ///
+    /// # Specification
+    /// - requires: `labeling` is the labeling of `source`.
+    /// - ensures: the split [`new`](Self::new) makes of `source`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — generated edits of every class submit through a
+    ///   session that relabels each revision as the batch composition of the
+    ///   revision submits.
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    #[inline]
+    #[must_use]
+    #[spec(requires: labeling == Labeling::new(SourceFragment::from(<&str>::from(source))),
+        ensures: |ret| ret.source == source && ret.runs == molder.form_runs(ret.labeling.tokens(), source))]
+    pub fn labeled(
+        molder: &Molder<'_>,
+        source: SourceText<'source>,
+        labeling: Labeling,
+    ) -> Self
+    {
+        let runs = molder.form_runs(labeling.tokens(), source);
         Self {
             source,
-            tokens,
+            labeling,
             runs,
         }
+    }
+
+    /// Give the split's labeling back, for the next revision to relabel.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_labeling(self) -> Labeling
+    {
+        self.labeling
     }
 
     /// The predicted form runs, in source order.
@@ -469,10 +511,11 @@ impl<'source> FormSplit<'source>
         run: TokenRun,
     ) -> FormIdentity
     {
-        let start = usize::from(run.start()).min(self.tokens.len());
-        let end = usize::from(run.end()).clamp(start, self.tokens.len());
-        let reach = usize::from(lookahead_reach(&self.tokens, TokenIndex::from(end)));
-        let window = self.tokens.get(start .. reach).unwrap_or_default();
+        let tokens = self.labeling.tokens();
+        let start = usize::from(run.start()).min(tokens.len());
+        let end = usize::from(run.end()).clamp(start, tokens.len());
+        let reach = usize::from(lookahead_reach(tokens, TokenIndex::from(end)));
+        let window = tokens.get(start .. reach).unwrap_or_default();
         let origin = window.first().map_or(0, |token| token.start);
         let bytes_end = window.last().map_or(origin, |token| token.end);
         let bytes = <&str>::from(self.source)
@@ -539,7 +582,7 @@ impl<'source> FormSplit<'source>
         run: TokenRun,
     ) -> FormUnit<'pbg>
     {
-        molder.mold_unit(&self.tokens, run, self.source)
+        molder.mold_unit(self.labeling.tokens(), run, self.source)
     }
 
     /// Join `units`, one per run in run order, and commit the source's parse.
@@ -574,7 +617,7 @@ impl<'source> FormSplit<'source>
         let mut whole = MeldState::new(molder.pbg());
         let mut seams = Vec::with_capacity(units.len());
         for unit in units {
-            seams.push(molder.join_unit(&mut whole, unit, &self.tokens, self.source));
+            seams.push(molder.join_unit(&mut whole, unit, self.labeling.tokens(), self.source));
         }
         let result = commit(whole, self.source)?;
         Ok(FormJoin { result, seams })

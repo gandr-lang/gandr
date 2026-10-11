@@ -32,6 +32,7 @@ mod parse;
 #[cfg(test)]
 mod testing;
 
+pub use crate::label::Labeling;
 pub use crate::label::Lexeme;
 pub use crate::label::Token;
 pub use crate::label::label;

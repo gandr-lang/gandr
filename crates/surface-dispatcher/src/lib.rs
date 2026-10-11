@@ -35,11 +35,14 @@
 //! print, so a source has one verdict per run whichever verb ran it.
 //!
 //! Its two halves are public: [`lower_source`] parses and lowers, and
-//! [`judge_module`] judges, readmits and settles what the lowering read.
+//! [`judge_module`] judges, settles and readmits what the lowering read.
 //! [`compose()`] is exactly the one then the other; the halves exist for the
 //! session, which keeps the lowered module to hand the incremental checker
 //! beside the verdicts. [`lower_parsed`] is [`lower_source`] past its parse,
-//! for the session, which parses through its form store.
+//! for the session, which parses through its form store. [`judge_module`] is
+//! itself [`judge`] then [`Judged::admit`]: a face renders the settled
+//! composition before the kernel has been offered anything, and the
+//! [`Admission`] completes it with its kernel artifact.
 //!
 //! # The run stage follows the check
 //!
@@ -86,13 +89,17 @@ use std::path::PathBuf;
 
 use anodized::spec;
 
+pub use crate::compose::Admission;
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
+pub use crate::compose::Judged;
 pub use crate::compose::Lowered;
 pub use crate::compose::Lowering;
 pub use crate::compose::LoweringCount;
 pub use crate::compose::adapt;
+pub use crate::compose::admitted;
 pub use crate::compose::compose;
+pub use crate::compose::judge;
 pub use crate::compose::judge_module;
 pub use crate::compose::lower_parsed;
 pub use crate::compose::lower_source;

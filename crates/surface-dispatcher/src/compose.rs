@@ -15,7 +15,20 @@
 //! between the two checkers — an engine fault, never a verdict about the
 //! author's source. What crossed is exported once, as the kernel artifact a
 //! settled composition carries, each declaration under its structured name.
+//!
+//! # The admission runs after the composition is read
+//!
+//! [`judge`] checks, focuses and settles a module and returns the settled
+//! composition beside the [`Admission`] still to run: the arena it was judged
+//! over, the verdicts and the names the export writes. Nothing the settle
+//! comparison or the program reads is minted by the readmission, so a face
+//! renders the composition's reports before the kernel has been offered
+//! anything, and the kernel artifact joins the composition when the admission
+//! completes ([`Judged::admit`]). [`judge_module`] is the two in sequence, and
+//! a kernel disagreement takes precedence over a settle fault, as it did when
+//! the readmission ran first.
 
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::fmt;
 
@@ -31,7 +44,9 @@ use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::StructuredName;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
@@ -153,8 +168,10 @@ pub enum Composed<'source>
         /// through.
         origins: OriginTable,
         /// The kernel artifact of every declaration that crossed into the
-        /// kernel, in kernel admission order, each under its structured name.
-        kernel: EncodedArtifact,
+        /// kernel, in kernel admission order, each under its structured name,
+        /// once the module's admission ran; a composition read before its
+        /// admission carries none.
+        kernel: Maybe<EncodedArtifact, admitted::Absent>,
         /// The module's declarations focused into the command IL, ready to
         /// run any of them.
         program: Program<'source>,
@@ -162,6 +179,216 @@ pub enum Composed<'source>
     /// The lowering refused the source as a whole, before any declaration
     /// existed to carry a verdict: a root that is not a list of declarations.
     Refused(LoweringRefusal<'source>),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a settled composition carries no kernel artifact.
+    pub mod admitted {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The module was judged and settled and its [`Admission`]
+            /// has not run yet.
+            ///
+            /// [`Admission`]: super::Admission
+            Pending,
+        }
+    }
+}
+
+impl Composed<'_>
+{
+    /// This composition with `kernel` as its kernel artifact.
+    ///
+    /// # Specification
+    /// - requires: `kernel` is the export of this composition's admission.
+    /// - ensures: a settled composition carries `kernel` and is otherwise
+    ///   unchanged; a whole refusal, which offered the kernel nothing, is
+    ///   returned as it was.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the composition of a module, judged and then
+    ///   admitted, equals the one-step composition, kernel artifact included;
+    ///   dropping or replacing the artifact changes it.
+    /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+    /// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret {
+        Composed::Settled { ref kernel, .. } => matches!(kernel, Maybe::Present(_)),
+        Composed::Refused(_) => true,
+    })]
+    pub fn admitted(
+        self,
+        kernel: EncodedArtifact,
+    ) -> Self
+    {
+        match self {
+            | Self::Settled {
+                report,
+                exercised,
+                unstatable,
+                origins,
+                program,
+                ..
+            } => Self::Settled {
+                report,
+                exercised,
+                unstatable,
+                origins,
+                kernel: Maybe::Present(kernel),
+                program,
+            },
+            | Self::Refused(refusal) => Self::Refused(refusal),
+        }
+    }
+}
+
+/// A lowered module judged and settled, its kernel admission still to run.
+///
+/// # Specification
+/// - requires: constructed by [`judge`].
+/// - ensures: carries the settled composition, its kernel artifact pending, or
+///   the settle comparison's fault, beside the module's [`Admission`].
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; [`judge`] and
+///   [`Judged::admit`] carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a judged module's reports equal the composition's before
+///   the kernel has been offered anything, and admitting it gives the
+///   composition; the corpus at every width composes alike through it.
+/// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
+/// - witness: `corpus::corpus::every_width_composes_the_corpus_alike`
+#[derive(Clone, Debug)]
+pub struct Judged<'source>
+{
+    /// The settled composition, its kernel artifact pending, or the settle
+    /// fault.
+    settled: Result<Composed<'source>, SettleFault>,
+    /// What offering the module to the kernel needs.
+    admission: Admission,
+}
+
+impl<'source> Judged<'source>
+{
+    /// The settled composition, its kernel artifact pending, or the settle
+    /// comparison's fault.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn settled(&self) -> &Result<Composed<'source>, SettleFault>
+    {
+        &self.settled
+    }
+
+    /// The settled composition, or its fault, and the admission still to
+    /// run, apart.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn into_parts(self) -> (Result<Composed<'source>, SettleFault>, Admission)
+    {
+        (self.settled, self.admission)
+    }
+
+    /// Run the admission and complete the composition with its kernel
+    /// artifact.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the settled composition carrying the admission's kernel
+    ///   artifact; a kernel disagreement is reported before a settle fault, so
+    ///   either fault is the one [`judge_module`] has always reported.
+    /// - fails: [`ComposeFault::Readmission`] when the kernel does not
+    ///   re-derive an acceptance; else [`ComposeFault::Settle`] when the settle
+    ///   comparison refused the verdicts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ComposeFault::Readmission`]: the kernel disagreed with the checker.
+    /// - [`ComposeFault::Settle`]: the verdicts are not the module's own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`judge_module`], which is this after [`judge`].
+    /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
+    /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Ok(Composed::Settled { ref kernel, .. }) => matches!(kernel, Maybe::Present(_)),
+        Ok(Composed::Refused(_)) | Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
+        Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
+    })]
+    pub fn admit(self) -> Result<Composed<'source>, ComposeFault<'source>>
+    {
+        let kernel = self.admission.admit().map_err(ComposeFault::Readmission)?;
+        let composed = self.settled.map_err(ComposeFault::Settle)?;
+        Ok(composed.admitted(kernel))
+    }
+}
+
+/// What offering a judged module to the kernel needs: the arena it was
+/// judged over, its verdicts, and the structured names the export writes.
+///
+/// # Specification
+/// - requires: constructed by [`judge`].
+/// - ensures: the verdicts were judged over the arena, and the names are the
+///   module's structured names by admission position.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary;
+///   [`Admission::admit`] carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Admission::admit`].
+/// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+#[derive(Clone, Debug)]
+pub struct Admission
+{
+    /// The arena the verdicts were judged over, which the readmission mints
+    /// its static reducts into.
+    arena: CoreArena,
+    /// The checker's verdicts.
+    verdicts: ModuleReport,
+    /// The structured name of every declared name, by admission position.
+    names: BTreeMap<ConstantIndex, StructuredName>,
+}
+
+impl Admission
+{
+    /// Offer every declaration the checker accepted to the kernel, and export
+    /// what crossed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the kernel artifact of every declaration that crossed, under
+    ///   its structured name, when the readmission found no disagreement.
+    /// - fails: the first declaration the kernel did not re-derive, as the
+    ///   readmission reports it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The readmission of the first declaration the kernel did not re-derive.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition and an owed axiom cross under their
+    ///   names while a refused declaration and one naming it do not; a module
+    ///   judged over a foreign arena is a disagreement.
+    /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
+    /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
+    #[inline]
+    #[spec(
+        captures: [judged = self.verdicts.judged().iter().map(gandr_core_checker::Judged::constant)
+            .collect::<alloc::vec::Vec<_>>()],
+        ensures: |ref ret| ret.as_ref().err().is_none_or(|fault| judged.contains(&fault.constant())),
+    )]
+    pub fn admit(mut self) -> Result<EncodedArtifact, bridge::Readmitted>
+    {
+        let readmission = readmitted(&mut self.arena, &self.verdicts)?;
+        Ok(readmission.export(self.names))
+    }
 }
 
 /// Why one source could not be carried through the pipeline: an engine
@@ -479,14 +706,91 @@ pub fn lower_parsed<'source>(
     })
 }
 
+/// Judge and settle one lowered module, its kernel admission left to run.
+///
+/// # Specification
+/// - requires: `module` was lowered into `arena`; `root` is the corpus root the
+///   source sits under.
+/// - ensures: the module is adapted to the checker's input, judged, built into
+///   a [`Program`] and settled under `root`, the program running each
+///   declaration that states a run outcome. The settled composition carries one
+///   report per declared name, the exercised rows its settled declarations
+///   carry, the refusals of the declarations refused at their own form, which
+///   no expectation can state, the lowering's origin table, moved rather than
+///   copied, the program, and no kernel artifact yet
+///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
+///   The admission holds the arena the verdicts were judged over, the verdicts
+///   and the module's structured names.
+/// - provides: the composition a face renders before the kernel has been
+///   offered anything; the readmission mints nothing the settle comparison or
+///   the program reads.
+/// - fails: never; a settle fault is carried.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a judged module renders the reports its composition
+///   renders, before its admission; admitted, it is the composition.
+/// - witness: `compose::tests::a_judged_module_renders_before_its_admission`
+/// - witness: `compose::tests::a_module_settles_every_declaration_once`
+#[inline]
+#[must_use]
+#[spec(
+    captures: [
+        expected_declarations = module.declarations().len(),
+        expected_names = module.structured_names(),
+    ],
+    ensures: |ret| ret.admission.names == expected_names && match ret.settled {
+        Ok(Composed::Settled { ref report, ref kernel, .. }) =>
+            report.declarations().len() == expected_declarations
+                && matches!(kernel, Maybe::Absent(admitted::Absent::Pending)),
+        Ok(Composed::Refused(_)) => false,
+        Err(_) => true,
+    },
+)]
+pub fn judge(
+    root: CorpusRoot,
+    module: LoweredModule<'_>,
+    mut arena: CoreArena,
+) -> Judged<'_>
+{
+    let declarations = adapt(&module);
+    let verdicts = check_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &declarations,
+    );
+    let names = module.structured_names();
+    let mut program = Program::new(&arena, &module, &verdicts);
+    let settled = match settle(root, &arena, &module, &verdicts, &mut program) {
+        | Ok(report) => {
+            let exercised = Exercised::of(&arena, &module, &report);
+            let unstatable = unstatable(&module);
+            Ok(Composed::Settled {
+                report,
+                exercised,
+                unstatable,
+                origins: module.into_origins(),
+                kernel: Maybe::Absent(admitted::Absent::Pending),
+                program,
+            })
+        },
+        | Err(fault) => Err(fault),
+    };
+    Judged {
+        settled,
+        admission: Admission {
+            arena,
+            verdicts,
+            names,
+        },
+    }
+}
+
 /// Judge one lowered module: the second half of the composition.
 ///
 /// # Specification
 /// - requires: `module` was lowered into `arena`; `root` is the corpus root the
 ///   source sits under.
-/// - ensures: the module is adapted to the checker's input, judged, offered to
-///   the kernel, built into a [`Program`] and settled under `root`, the program
-///   running each declaration that states a run outcome; the result is
+/// - ensures: [`judge`], then [`Judged::admit`]: the result is
 ///   [`Composed::Settled`] with one report per declared name, the exercised
 ///   rows its settled declarations carry, the refusals of the declarations
 ///   refused at their own form, which no expectation can state, the lowering's
@@ -495,8 +799,8 @@ pub fn lower_parsed<'source>(
 ///   program.
 /// - provides: the verdict set [`compose()`] gives a module the lowering read.
 /// - fails: [`ComposeFault::Readmission`] for a declaration the checker
-///   accepted that the kernel does not re-derive; [`ComposeFault::Settle`] when
-///   the settle comparison refuses the verdicts.
+///   accepted that the kernel does not re-derive; else [`ComposeFault::Settle`]
+///   when the settle comparison refuses the verdicts.
 /// - panics: none.
 ///
 /// # Errors
@@ -522,9 +826,10 @@ pub fn lower_parsed<'source>(
             .count(),
     ],
     ensures: |ref ret| match *ret {
-        Ok(Composed::Settled { ref report, ref unstatable, .. }) =>
+        Ok(Composed::Settled { ref report, ref unstatable, ref kernel, .. }) =>
             report.declarations().len() == expected_declarations
-                && unstatable.len() == expected_unstatable,
+                && unstatable.len() == expected_unstatable
+                && matches!(kernel, Maybe::Present(_)),
         Err(ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
         Ok(Composed::Refused(_)) | Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
     },
@@ -532,29 +837,10 @@ pub fn lower_parsed<'source>(
 pub fn judge_module(
     root: CorpusRoot,
     module: LoweredModule<'_>,
-    mut arena: CoreArena,
+    arena: CoreArena,
 ) -> Result<Composed<'_>, ComposeFault<'_>>
 {
-    let declarations = adapt(&module);
-    let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &declarations,
-    );
-    let readmission = readmitted(&mut arena, &verdicts)?;
-    let kernel = readmission.export(module.structured_names());
-    let mut program = Program::new(&arena, &module, &verdicts);
-    let report =
-        settle(root, &arena, &module, &verdicts, &mut program).map_err(ComposeFault::Settle)?;
-    let exercised = Exercised::of(&arena, &module, &report);
-    let unstatable = unstatable(&module);
-    Ok(Composed::Settled {
-        report,
-        exercised,
-        unstatable,
-        origins: module.into_origins(),
-        kernel,
-        program,
-    })
+    judge(root, module, arena).admit()
 }
 
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
@@ -806,12 +1092,12 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   behind as the user absence it is, so none of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
-/// - fails: [`ComposeFault::Readmission`] with the first declaration the kernel
-///   rejected or the bridge refused for any reason but a withheld constant.
+/// - fails: the readmission of the first declaration the kernel rejected or the
+///   bridge refused for any reason but a withheld constant.
 /// - panics: none.
 ///
 /// # Errors
-/// [`ComposeFault::Readmission`]: the kernel did not re-derive an acceptance.
+/// The readmission of the first declaration the kernel did not re-derive.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a mark, withheld reference and definition are admitted
@@ -830,19 +1116,18 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                     | bridge::Outcome::Marked(_) | bridge::Outcome::Static
                     | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. } | bridge::Refusal::WithheldData { .. }
                         | bridge::Refusal::Hole { .. } | bridge::Refusal::Unknown { .. }))),
-    Err(ComposeFault::Readmission(ref fault)) =>
+    Err(ref fault) =>
         verdicts.judged().iter().any(|judged| judged.constant() == fault.constant())
             && matches!(*fault.outcome(), bridge::Outcome::Rejected(_)
                 | bridge::Outcome::Refused(bridge::Refusal::OutOfFragment { .. }
                     | bridge::Refusal::LinearVariable { .. } | bridge::Refusal::DanglingNode { .. }
                     | bridge::Refusal::Cyclic { .. } | bridge::Refusal::CertificateDeclined { .. }
                     | bridge::Refusal::MachineInvariant)),
-    Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_) | ComposeFault::Settle(_)) => false,
 })]
 fn readmitted(
     arena: &mut CoreArena,
     verdicts: &ModuleReport,
-) -> Result<bridge::Readmission, ComposeFault<'static>>
+) -> Result<bridge::Readmission, bridge::Readmitted>
 {
     let readmission = bridge::readmit(arena, verdicts);
     for readmitted in readmission.readmitted() {
@@ -867,7 +1152,7 @@ fn readmitted(
                 | bridge::Refusal::MachineInvariant,
             )
             | bridge::Outcome::Rejected(_) => {
-                return Err(ComposeFault::Readmission(readmitted.clone()));
+                return Err(readmitted.clone());
             },
         }
     }
@@ -891,6 +1176,7 @@ mod tests
     use gandr_surface_corpus::Produced;
     use gandr_surface_corpus::RefusalName;
     use gandr_surface_corpus::Settlement;
+    use gandr_surface_corpus::settle;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationOutcome;
@@ -901,15 +1187,20 @@ mod tests
     use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
 
     use super::ComposeFault;
     use super::Composed;
     use super::Lowered;
     use super::LoweringCount;
     use super::adapt;
+    use super::admitted;
     use super::compose;
+    use super::judge;
     use super::lower_source;
     use super::readmitted;
+    use crate::evaluate::Program;
+    use crate::exercised::Exercised;
 
     /// The built-in grammar.
     ///
@@ -1271,7 +1562,7 @@ def h = 1 ;"#,
             "the reference is accepted by the checker despite the withheld body"
         );
         let mut foreign = CoreArena::new();
-        let Err(ComposeFault::Readmission(fault)) = readmitted(&mut foreign, &verdicts)
+        let Err(fault) = readmitted(&mut foreign, &verdicts)
         else {
             panic!("over a foreign arena the accepted ids dangle");
         };
@@ -1299,11 +1590,96 @@ def h = 1 ;"#,
     }
 
     #[test]
+    fn a_judged_module_renders_before_its_admission()
+    {
+        // The second module applies a static operator at three instances, so
+        // its readmission mints their reducts into the arena.
+        let sources = [
+            r#"def a : Integer ; def a = 1 ; @[ owes(1) ] def later : Integer ; def w : Integer ; def w = "text" ; def r = w ;"#,
+            include_str!("../../surface-corpus/strict/classifier/relative-monad.gandr"),
+        ];
+        let grammar = grammar();
+        for source in sources {
+            let mut lowerings = LoweringCount::default();
+            let lower = |lowerings: &mut LoweringCount| {
+                let Lowered::Module { module, arena } =
+                    lower_source(&grammar, SourceText::from(source), lowerings)
+                        .expect("the module lowers")
+                        .into_lowered()
+                else {
+                    panic!("the module is not refused whole");
+                };
+                (module, arena)
+            };
+            // The order the composition ran before: readmit, then settle.
+            let (module, mut arena) = lower(&mut lowerings);
+            let verdicts = check_module(
+                &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+                &adapt(&module),
+            );
+            let readmission =
+                readmitted(&mut arena, &verdicts).expect("the kernel re-derives every acceptance");
+            let kernel = readmission.export(module.structured_names());
+            let mut program = Program::new(&arena, &module, &verdicts);
+            let report = settle(
+                CorpusRoot::Fixture,
+                &arena,
+                &module,
+                &verdicts,
+                &mut program,
+            )
+            .expect("the verdicts settle");
+            let exercised = Exercised::of(&arena, &module, &report);
+            let unstatable = super::unstatable(&module);
+            let readmitted_first = Composed::Settled {
+                report,
+                exercised,
+                unstatable,
+                origins: module.into_origins(),
+                kernel: Maybe::Present(kernel),
+                program,
+            };
+            let (module, arena) = lower(&mut lowerings);
+            let judged = judge(CorpusRoot::Fixture, module, arena);
+            let Ok(
+                ref settled @ Composed::Settled {
+                    kernel: Maybe::Absent(admitted::Absent::Pending),
+                    ..
+                },
+            ) = *judged.settled()
+            else {
+                panic!("the module settles before its admission");
+            };
+            let Composed::Settled {
+                kernel: Maybe::Present(ref kernel),
+                ..
+            } = readmitted_first
+            else {
+                panic!("the module settles after its readmission");
+            };
+            assert_eq!(
+                settled.clone().admitted(kernel.clone()),
+                readmitted_first,
+                "settling before the readmission reads what settling after it read"
+            );
+            assert!(
+                judged
+                    .admit()
+                    .is_ok_and(|admitted| admitted == readmitted_first),
+                "the admission completes the composition with the same kernel artifact"
+            );
+        }
+    }
+
+    #[test]
     fn the_kernel_artifact_holds_what_crossed_under_its_names()
     {
         let grammar = grammar();
         let mut lowerings = LoweringCount::default();
-        let Ok(Composed::Settled { kernel, .. }) = compose(
+        let Ok(Composed::Settled {
+            kernel: Maybe::Present(kernel),
+            ..
+        }) = compose(
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
