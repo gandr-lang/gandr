@@ -19,6 +19,7 @@ use gandr_surface_syntax::GroutSort;
 use gandr_surface_syntax::MoldId;
 use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Dir;
+use gandr_theory_graphs::Fnv64;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecDagError;
@@ -27,6 +28,7 @@ use gandr_theory_graphs::WalkBuildError;
 
 use crate::check::validate_assumption_3;
 use crate::check::validate_operator_form;
+use crate::mold::FrozenTable;
 use crate::mold::MoldDef;
 use crate::mold::MoldHasPredecessor;
 use crate::mold::MoldHasRequiredTail;
@@ -913,6 +915,103 @@ impl Rule
     }
 }
 
+/// The frame byte that opens a [`RulesDigest`].
+const FRAME_RULES: u8 = b'R';
+
+/// A rule list as one 64-bit FNV-1a word over what a mold table reads of
+/// each rule: its name, sort, precedence group and form.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RulesDigest(pub u64);
+
+impl RulesDigest
+{
+    /// Digests `rules`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: FNV-1a over the frame byte `R` and the rule count, then each
+    ///   rule as its name and a zero byte, its sort tag, its group's index and
+    ///   its form's entry count, and each entry of the form in pre-order as a
+    ///   node — `E` empty, `S` and a sort tag, `T`, a label and a zero byte,
+    ///   `Q` or `A` and an arity, `O` optional, `R` repeat — then its extent.
+    ///   Words are little-endian and counts 64-bit, so the digest is the same
+    ///   on every platform.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a rule list and its one-field edits (another name,
+    ///   sort, group, tile label, arity, and two rules swapped) digest apart,
+    ///   and the predicate recomputes the byte stream whole; 64-bit collisions
+    ///   are outside the witness.
+    /// - witness: `model::tests::every_rule_field_a_mold_reads_moves_the_digest`
+    #[spec(ensures: |ret| {
+        let mut stream = vec![FRAME_RULES];
+        stream.extend_from_slice(&u64::try_from(rules.len()).unwrap_or(u64::MAX).to_le_bytes());
+        for rule in rules {
+            stream.extend_from_slice(rule.name.as_bytes());
+            stream.push(0_u8);
+            stream.extend_from_slice(&u16::from(rule.sort.grout_sort()).to_le_bytes());
+            stream.extend_from_slice(&u16::from(rule.prec.index()).to_le_bytes());
+            stream.extend_from_slice(&u64::try_from(rule.regex.entries.len()).unwrap_or(u64::MAX).to_le_bytes());
+            for entry in &rule.regex.entries {
+                match entry.node {
+                    RegexNode::Empty => stream.push(b'E'),
+                    RegexNode::Sym(Sym::Sort(sort)) => { stream.push(b'S'); stream.extend_from_slice(&u16::from(sort.grout_sort()).to_le_bytes()); },
+                    RegexNode::Sym(Sym::Tile(tile)) => { stream.push(b'T'); stream.extend_from_slice(tile.label.as_bytes()); stream.push(0_u8); },
+                    RegexNode::Seq(arity) => { stream.push(b'Q'); stream.extend_from_slice(&u64::try_from(arity.0).unwrap_or(u64::MAX).to_le_bytes()); },
+                    RegexNode::Alt(arity) => { stream.push(b'A'); stream.extend_from_slice(&u64::try_from(arity.0).unwrap_or(u64::MAX).to_le_bytes()); },
+                    RegexNode::Optional => stream.push(b'O'),
+                    RegexNode::Repeat => stream.push(b'R'),
+                }
+                stream.extend_from_slice(&u64::try_from(entry.extent.0).unwrap_or(u64::MAX).to_le_bytes());
+            }
+        }
+        let mut expected = Fnv64::new();
+        expected.write_bytes(stream.as_slice());
+        ret.0 == u64::from(expected.finish())
+    })]
+    pub(crate) fn of(rules: &[Rule]) -> Self
+    {
+        let mut hasher = Fnv64::new();
+        hasher.write_byte(FRAME_RULES);
+        hasher.write_u64(u64::try_from(rules.len()).unwrap_or(u64::MAX));
+        for rule in rules {
+            hasher.write_bytes(rule.name.as_bytes());
+            hasher.write_byte(0_u8);
+            hasher.write_u16(u16::from(rule.sort.grout_sort()));
+            hasher.write_u16(u16::from(rule.prec.index()));
+            hasher.write_u64(u64::try_from(rule.regex.entries.len()).unwrap_or(u64::MAX));
+            for entry in &rule.regex.entries {
+                match entry.node {
+                    | RegexNode::Empty => hasher.write_byte(b'E'),
+                    | RegexNode::Sym(Sym::Sort(sort)) => {
+                        hasher.write_byte(b'S');
+                        hasher.write_u16(u16::from(sort.grout_sort()));
+                    },
+                    | RegexNode::Sym(Sym::Tile(tile)) => {
+                        hasher.write_byte(b'T');
+                        hasher.write_bytes(tile.label.as_bytes());
+                        hasher.write_byte(0_u8);
+                    },
+                    | RegexNode::Seq(arity) => {
+                        hasher.write_byte(b'Q');
+                        hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
+                    },
+                    | RegexNode::Alt(arity) => {
+                        hasher.write_byte(b'A');
+                        hasher.write_u64(u64::try_from(arity.0).unwrap_or(u64::MAX));
+                    },
+                    | RegexNode::Optional => hasher.write_byte(b'O'),
+                    | RegexNode::Repeat => hasher.write_byte(b'R'),
+                }
+                hasher.write_u64(u64::try_from(entry.extent.0).unwrap_or(u64::MAX));
+            }
+        }
+        Self(u64::from(hasher.finish()))
+    }
+}
+
 /// A built precedence DAG with its groups' names.
 #[derive(Clone, Debug)]
 pub struct PrecTable
@@ -1356,20 +1455,7 @@ impl Pbg
             GrammarFingerprint::from(u64::from(dag.fingerprint())),
         )?;
         validate_assumption_3(&rules)?;
-        let forms = grouped_forms(&rules);
-        let rule_names = rules.iter().map(|rule| RuleName(rule.name)).collect();
-        let adaptations = rules
-            .iter()
-            .flat_map(|rule| rule.adaptations.iter().copied())
-            .collect();
-        Ok(Self {
-            dag,
-            forms,
-            rules,
-            rule_names,
-            adaptations,
-            molds,
-        })
+        Ok(Self::assemble(dag, rules, molds))
     }
 
     /// Checks `rules` over a table's DAG and builds the grammar.
@@ -1397,6 +1483,113 @@ impl Pbg
     ) -> Result<Self, PbgError>
     {
         Self::build(table.into_dag(), rules)
+    }
+
+    /// Builds the grammar of `rules` over a table's DAG from a table frozen
+    /// ahead of time, or through every gate when `rules` no longer digest to
+    /// the frozen table's rules.
+    ///
+    /// # Specification
+    /// - requires: `frozen` was frozen from the grammar of the rules it
+    ///   digests, every gate passed.
+    /// - ensures: the grammar [`build_table`](Self::build_table) returns for
+    ///   `table` and `rules`: thawed from `frozen` when its digest is `rules`',
+    ///   built otherwise.
+    /// - fails: as [`build_table`](Self::build_table) when built; as
+    ///   [`MoldTable::thaw`] when thawed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`build_table`](Self::build_table), or [`PbgError::UnknownMold`],
+    /// [`PbgError::UnknownRCtx`] or [`PbgError::MoldOverflow`] for a frozen
+    /// table that does not fit its own rules.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in surface thawed renders byte-identical to
+    ///   the one built through every gate, and a frozen table whose digest is
+    ///   not the rules' builds them, so a thaw that skipped the digest or a
+    ///   fallback that skipped a gate shows. A digest collision between two
+    ///   rule lists is outside the witnesses.
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    /// - witness: `surface::tests::a_stale_frozen_table_builds_its_rules`
+    #[spec(captures: input = (rules.len(), table.dag.fingerprint()), ensures: |ret| ret.as_ref().map_or(true, |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0))]
+    pub(crate) fn thawed(
+        table: PrecTable,
+        rules: Vec<Rule>,
+        frozen: &FrozenTable,
+    ) -> Result<Self, PbgError>
+    {
+        if frozen.rules != RulesDigest::of(&rules) {
+            return Self::build_table(table, rules);
+        }
+        let dag = table.into_dag();
+        let molds = MoldTable::thaw(
+            frozen,
+            &rules,
+            GrammarFingerprint::from(u64::from(dag.fingerprint())),
+        )?;
+        Ok(Self::assemble(dag, rules, molds))
+    }
+
+    /// Assembles a grammar from its checked parts: groups the forms and
+    /// collects the rule names and adaptation records.
+    ///
+    /// # Specification
+    /// - requires: `molds` is the mold table of `rules` over `dag`.
+    /// - ensures: the forms grouped by sort and precedence, alternatives in
+    ///   input order; the rule names; the adaptation records in rule order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both the gated build and the thaw assemble here; the
+    ///   grouped-form witness observes branch and rule order, and the
+    ///   frozen-table witness compares the two assemblies whole.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    #[spec(captures: count = rules.len(), ensures: |ret| ret.rules.len() == count && ret.rule_names.len() <= count && ret.adaptations.iter().eq(ret.rules.iter().flat_map(|rule| rule.adaptations.iter())))]
+    fn assemble(
+        dag: PrecDag,
+        rules: Vec<Rule>,
+        molds: MoldTable,
+    ) -> Self
+    {
+        let forms = grouped_forms(&rules);
+        let rule_names = rules.iter().map(|rule| RuleName(rule.name)).collect();
+        let adaptations = rules
+            .iter()
+            .flat_map(|rule| rule.adaptations.iter().copied())
+            .collect();
+        Self {
+            dag,
+            forms,
+            rules,
+            rule_names,
+            adaptations,
+            molds,
+        }
+    }
+
+    /// Renders the grammar's mold table as the source of a frozen table
+    /// digesting its rules.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`MoldTable::frozen_source`] under the rules' digest.
+    /// - fails: only as the string sink fails.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`core::fmt::Error`] from the sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the built-in surface's rendering is compared with the
+    ///   committed frozen source.
+    /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+    #[cfg(test)]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |source| source.matches("FrozenMold(").count() == self.molds.iter().count()))]
+    pub(crate) fn frozen_source(&self) -> Result<alloc::string::String, core::fmt::Error>
+    {
+        self.molds.frozen_source(RulesDigest::of(&self.rules))
     }
 
     /// The precedence DAG.
@@ -2117,10 +2310,64 @@ mod tests
     use core::error::Error as _;
     use std::io::Write as _;
 
+    use gandr_theory_graphs::Prec;
+    use gandr_theory_graphs::PrecIndex;
     use gandr_theory_graphs::PrecSpecError;
 
     use super::PbgError;
+    use super::Regex;
+    use super::Rule;
+    use super::RuleName;
+    use super::RulesDigest;
     use super::Sort;
+    use super::TileLabel;
+
+    /// Every field a mold table reads of a rule moves the digest: the name,
+    /// the sort, the group, a tile's label, a form's shape and the rules'
+    /// order. Audit fields — the provenance and the adaptation records — do
+    /// not, since the table never reads them.
+    #[test]
+    fn every_rule_field_a_mold_reads_moves_the_digest()
+    {
+        let rule = |name: &'static str, sort: Sort, group: u16, label: &'static str| {
+            Rule::new(
+                RuleName(name),
+                sort,
+                Prec::new(PrecIndex::from(group)),
+                Regex::seq([Regex::tile(TileLabel(label)), Regex::sort(Sort::Expression)]),
+            )
+        };
+        let base = [
+            rule("first", Sort::Expression, 0, "a"),
+            rule("second", Sort::Pattern, 1, "b"),
+        ];
+        let digest = RulesDigest::of(&base);
+        assert_eq!(
+            digest,
+            RulesDigest::of(&[
+                rule("first", Sort::Expression, 0, "a"),
+                rule("second", Sort::Pattern, 1, "b"),
+            ])
+        );
+        let edits = [
+            [rule("renamed", Sort::Expression, 0, "a"), base[1].clone()],
+            [rule("first", Sort::Type, 0, "a"), base[1].clone()],
+            [rule("first", Sort::Expression, 1, "a"), base[1].clone()],
+            [rule("first", Sort::Expression, 0, "z"), base[1].clone()],
+            [base[1].clone(), base[0].clone()],
+        ];
+        for edit in &edits {
+            assert_ne!(digest, RulesDigest::of(edit), "{edit:?}");
+        }
+        let mut reshaped = base.clone();
+        reshaped[0].regex =
+            Regex::alt([Regex::tile(TileLabel("a")), Regex::sort(Sort::Expression)]);
+        assert_ne!(digest, RulesDigest::of(&reshaped));
+        let mut audited = base.clone();
+        audited[0].provenance = "another_kind";
+        assert_eq!(digest, RulesDigest::of(&audited));
+        assert_ne!(digest, RulesDigest::of(&base[.. 1]));
+    }
 
     #[test]
     fn grammar_error_sources_keep_the_original_cause()
