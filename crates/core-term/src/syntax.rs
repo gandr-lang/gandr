@@ -10,10 +10,12 @@
 //! erasure that carries a core term down to a kernel term stays an id remapping
 //! rather than a payload translation.
 //!
-//! The node enums are this crate's own, and that is the half that matters: an
-//! elaboration-only former — a mark, a typed hole, a pattern hole — enters here
-//! rather than widening the vocabulary the kernel is obliged to represent,
-//! whose closedness is one of the trusted base's stated properties.
+//! The node enums are this crate's own, and that is the half that matters: the
+//! elaboration-only formers — [`Value::Hole`], [`Value::Mark`], their
+//! computation counterparts and the unknown types — enter here rather than
+//! widening the vocabulary the kernel is obliged to represent, whose closedness
+//! is one of the trusted base's stated properties. The bridge to the kernel
+//! refuses every one of them by name; [`crate::hole`] states what they mean.
 //!
 //! # A variable names its zone
 //!
@@ -53,6 +55,8 @@ use crate::arena::ComputationId;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::classifier::Sort;
+use crate::hole::HoleId;
+use crate::hole::MarkIndex;
 
 /// The zone of the unified context a binder or an occurrence belongs to.
 ///
@@ -160,6 +164,20 @@ pub enum Value
     },
     /// A structural record, in exact UTF-8 label order.
     Record(BTreeMap<FieldLabel, ValueId>),
+    /// A typed hole: a value the author has not written yet, named so a fill
+    /// can find it. It synthesises [`ValueType::Unknown`] and checks against
+    /// any type.
+    Hole(HoleId),
+    /// A marked value: a subterm the elaborator could not type, kept in place
+    /// under the mark-table entry that says why. It types as a hole does and
+    /// its body is not judged.
+    Mark
+    {
+        /// The mark-table entry recording the refusal.
+        mark: MarkIndex,
+        /// The subterm as written.
+        body: ValueId,
+    },
 }
 
 /// A computation: the negative fragment of the core term vocabulary.
@@ -212,6 +230,18 @@ pub enum Computation
     },
     /// Select a named field, returning it in the computation fragment.
     RecordProjection(ValueId, FieldLabel),
+    /// A typed hole in computation position. It synthesises
+    /// [`CompType::Unknown`] and checks against any computation type.
+    Hole(HoleId),
+    /// A marked computation: a subterm the elaborator could not type, kept in
+    /// place under the mark-table entry that says why.
+    Mark
+    {
+        /// The mark-table entry recording the refusal.
+        mark: MarkIndex,
+        /// The subterm as written.
+        body: ComputationId,
+    },
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
@@ -289,6 +319,10 @@ pub enum ValueType
         /// The classifier of the result, in the ambient context.
         codomain: ValueTypeId,
     },
+    /// The unknown value type: what a hole or a mark synthesises. It is
+    /// consistent with every value type and matches every former with unknown
+    /// components.
+    Unknown,
 }
 
 /// A computation type: the negative fragment of the core type vocabulary.
@@ -333,6 +367,9 @@ pub enum CompType
         /// level.
         target: Level,
     },
+    /// The unknown computation type: what a hole or a mark in computation
+    /// position synthesises.
+    Unknown,
 }
 
 /// One pair of native syntax roots awaiting structural comparison.
@@ -524,12 +561,25 @@ pub fn equal_certificate_syntax(
                             pending.push(CT(a, b));
                         }
                     }
+                    else if let Value::Mark {
+                        mark: left_mark,
+                        body: left_body,
+                    } = *matched_left_value
+                        && let Value::Mark {
+                            mark: right_mark,
+                            body: right_body,
+                        } = *matched_right_value
+                        && (left_mark == right_mark)
+                    {
+                        pending.push(V(left_body, right_body));
+                    }
                     else if (matches!(
                         *matched_left_value,
                         Value::Variable { .. }
                             | Value::Constant(_)
                             | Value::Unit
                             | Value::Literal(_)
+                            | Value::Hole(_)
                     ) && (a == b))
                     {
                         {}
@@ -606,6 +656,17 @@ pub fn equal_certificate_syntax(
                         C(left_branch, other_left_branch),
                         C(right_branch, other_right_branch),
                     ]),
+                    | (&Computation::Hole(left), &Computation::Hole(right)) if left == right => {},
+                    | (
+                        &Computation::Mark {
+                            mark: left_mark,
+                            body: left_body,
+                        },
+                        &Computation::Mark {
+                            mark: right_mark,
+                            body: right_body,
+                        },
+                    ) if left_mark == right_mark => pending.push(C(left_body, right_body)),
                     | _ => return CertificateEquality::Different,
                 }
             },
@@ -701,6 +762,7 @@ pub fn equal_certificate_syntax(
                             | ValueType::Unit
                             | ValueType::Universe { .. }
                             | ValueType::Abstract(_)
+                            | ValueType::Unknown
                     ) && (a == b))
                     {
                         {}
@@ -747,6 +809,7 @@ pub fn equal_certificate_syntax(
                             target: ref other,
                         },
                     ) if target == other => pending.push(V(a, b)),
+                    | (&CompType::Unknown, &CompType::Unknown) => {},
                     | _ => return CertificateEquality::Different,
                 }
             },

@@ -642,7 +642,9 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
-                    | Value::Thunk(_) => return Ok(Atom::Other(node)),
+                    | Value::Thunk(_)
+                    | Value::Hole(_)
+                    | Value::Mark { .. } => return Ok(Atom::Other(node)),
                 }
             },
             | Node::Held(value) => value,
@@ -693,7 +695,9 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::Thunk(_)
                         | Value::Lift { .. }
                         | Value::StaticLambda(_)
-                        | Value::StaticApplication(..) => Ok(Atom::Other(stood)),
+                        | Value::StaticApplication(..)
+                        | Value::Hole(_)
+                        | Value::Mark { .. } => Ok(Atom::Other(stood)),
                     },
                 }
             },
@@ -746,7 +750,7 @@ _ => ret == Ok(Atom::Other(node)),
                 NeutralHead::Variable { zone, level } => ret == Ok(Atom::Variable(zone, level)),
                 NeutralHead::Constant(constant) => ret == Ok(Atom::Constant(constant,
                     if matches!(held.unfolding(), Unfolding::Rigid) { Rigidity::Rigid } else { Rigidity::Flexible })),
-                NeutralHead::Module(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+                NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
             }
         } else {
             match held.spine().get(prefix.0.saturating_sub(1)) {
@@ -776,7 +780,9 @@ _ => ret == Ok(Atom::Other(node)),
                     };
                     Atom::Constant(constant, rigidity)
                 },
-                | NeutralHead::Module(_) => Atom::Other(Node::Stuck(neutral, prefix)),
+                | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => {
+                    Atom::Other(Node::Stuck(neutral, prefix))
+                },
             });
         };
         match held.spine().get(last) {
@@ -998,7 +1004,8 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::Universe { .. }
                     | ValueType::Lift { .. }
                     | ValueType::Abstract(_)
-                    | ValueType::StaticPi { .. } => return Ok(node),
+                    | ValueType::StaticPi { .. }
+                    | ValueType::Unknown => return Ok(node),
                 },
                 | Node::CompType(at, place) => match *self
                     .core
@@ -1006,7 +1013,10 @@ _ => ret == Ok(Atom::Other(node)),
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
                     | CompType::Element { code, .. } => (code, place),
-                    | CompType::Returner(_) | CompType::Arrow { .. } | CompType::Pi { .. } => {
+                    | CompType::Returner(_)
+                    | CompType::Arrow { .. }
+                    | CompType::Pi { .. }
+                    | CompType::Unknown => {
                         return Ok(node);
                     },
                 },
@@ -1316,7 +1326,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                                 | ValueType::Lift { .. }
                                 | ValueType::Element { .. }
                                 | ValueType::Abstract(_)
-                                | ValueType::StaticPi { .. } => Ok(Alike::Different),
+                                | ValueType::StaticPi { .. }
+                                | ValueType::Unknown => Ok(Alike::Different),
                             }
                         }
                     }
@@ -1387,7 +1398,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         &(CompType::Returner(_)
                         | CompType::Arrow { .. }
                         | CompType::Pi { .. }
-                        | CompType::Element { .. }),
+                        | CompType::Element { .. }
+                        | CompType::Unknown),
                         _,
                     ) => Ok(Alike::Different),
                 }
@@ -1840,6 +1852,9 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         | ValueType::Unit
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
+                        // An unknown type is what a fill may still decide, so
+                        // nothing that holds one is apart from anything.
+                        | ValueType::Unknown => return Ok(Rigidity::Flexible),
                         | ValueType::Product(first, second)
                         | ValueType::Sum(first, second)
                         | ValueType::StaticPi {
@@ -1877,6 +1892,7 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         | CompType::Element { code, .. } => {
                             atoms.push(self.atom(Node::Code(code, place))?);
                         },
+                        | CompType::Unknown => return Ok(Rigidity::Flexible),
                     }
                 },
                 | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => {

@@ -123,15 +123,16 @@ Value::Constructor {ref fields,..} => 2_u64.saturating_add(u64::try_from(fields.
 Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
 Value::PathEquiv { .. } => 4,
 Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) |
-Value::Unit | Value::Literal(_) => 1,
+Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
 Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
-Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) => 2,
+Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
 },
 None => return false,
 },
             CoreNode::Computation(id) => match erased.computation(id) { Some(matched_native_node) => match *matched_native_node {
 Computation::DataCase {ref branches,..} => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) => 2,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
+Computation::Hole(_) => 1,
 Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
 Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
 Computation::Case { .. } => 4,
@@ -141,7 +142,7 @@ None => return false,
             CoreNode::ValueType(id) => match erased.value_type(id) { Some(matched_native_node) => match *matched_native_node {
 ValueType::Data {ref arguments,..} => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
 ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 1,
+ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
 ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. } => 3,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
 },
@@ -150,6 +151,7 @@ None => return false,
             CoreNode::CompType(id) => match erased.comp_type(id) {
                 Some(&(CompType::Returner(_) | CompType::Element { .. })) => 2,
                 Some(&(CompType::Arrow { .. } | CompType::Pi { .. })) => 3,
+                Some(&CompType::Unknown) => 1,
                 None => return false,
             },
         };
@@ -204,7 +206,8 @@ pub fn unfolded(
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Unit
-                | Value::Literal(_) => {},
+                | Value::Literal(_)
+                | Value::Hole(_) => {},
                 | Value::PathProduct(first, second)
                 | Value::Pair(first, second)
                 | Value::StaticApplication(first, second) => {
@@ -212,7 +215,10 @@ pub fn unfolded(
                     pending.push(CoreNode::Value(second));
                 },
                 | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
-                | Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                | Value::PathRefl(body)
+                | Value::Injection(_, body)
+                | Value::Lift { body, .. }
+                | Value::Mark { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
                 | Value::Thunk(body) => pending.push(CoreNode::Computation(body)),
@@ -241,7 +247,10 @@ pub fn unfolded(
                     | Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },
-                    | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
+                    | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                        pending.push(CoreNode::Computation(body));
+                    },
+                    | Computation::Hole(_) => {},
                     | Computation::Application(head, argument) => {
                         pending.push(CoreNode::Computation(head));
                         pending.push(CoreNode::Value(argument));
@@ -281,7 +290,8 @@ pub fn unfolded(
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }
-                    | ValueType::Abstract(_) => {},
+                    | ValueType::Abstract(_)
+                    | ValueType::Unknown => {},
                     | ValueType::Product(first, second)
                     | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
@@ -307,6 +317,7 @@ pub fn unfolded(
                         pending.push(CoreNode::CompType(codomain));
                     },
                     | CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),
+                    | CompType::Unknown => {},
                 }
             },
         }

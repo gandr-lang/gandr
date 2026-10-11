@@ -18,7 +18,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - [Eager products and static operators](#eager-products-and-static-operators)
 - [A static lambda normalizes away, or is refused](#a-static-lambda-normalizes-away-or-is-refused)
 - [An accepted body is a definition](#an-accepted-body-is-a-definition)
-- [Holes are directional, and no type is unknown](#holes-are-directional-and-no-type-is-unknown)
+- [Holes, marks and coverage](#holes-marks-and-coverage)
 - [Only an absence is owed](#only-an-absence-is-owed)
 - [A declaration input owned here](#a-declaration-input-owned-here)
 - [Resolution by admission position](#resolution-by-admission-position)
@@ -50,6 +50,8 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **What.** `check_module` judges a slice of `Declaration`s in a `CheckingContext` over a `gandr-core-term` arena. A declaration carries its admission position, origin and either optional value signature/body halves or a complete nominal data signature. Each gets a `Verdict`: native data admitted, its body checked against its declared type, its unsigned body's synthesised type, the obligation its hole owes, or the `CheckRefusal` that stopped it. The four faces underneath — `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp` — are public on their own, each returning the number of conversions it made. The `ObligationLedger` collects the owed holes; `CheckRefusal::classify` sorts every refusal into the `FailureClass` that `gandr-core-term` defines for the whole pipeline. `bridge::readmit` then has the kernel re-derive the module: each accepted declaration is erased into `gandr-kernel-term` and offered to `gandr-kernel-core` — a definition for a checked or synthesised body, an axiom for an owed hole — and the `bridge::ArtifactAudit` names the axioms the artifact rests on, empty exactly when the ledger is.
 
+**Holes.** A hole inside a body synthesises the unknown type, which conversion treats as consistent with every type; `elaborate_value` and `elaborate_comp` mark each refusal where it stands and go on; `cover` answers coverage in three values; the bridge refuses a hole and erases a mark.
+
 **Why.** A front end that parses and lowers needs a judgement the corpus can assert against: one verdict per declaration, stable under every refusal around it, with what the author still owes kept apart from what the author got wrong. The judgement here is that one, over the core fragment, including programmatic forms not yet lowered from source, built so its two structural promises — a mode per former, a comparison only where the mode changes — are enforced by a lint and a module boundary rather than by review. The judgement is not trusted for its acceptances: the kernel, a separate checker over a separate vocabulary, repeats each one.
 
 **How.** Every face runs one explicit machine: a goal, a stack of frames, one step per transition against a `CheckBudget`. A rule dispatches on the term's former; a synthesising term in checking position synthesises and then crosses the value or computation bridge, the only two calls into the private conversion decision. Types reach the check faces only as `FormedValueType` and `FormedCompType`, so every type the judgement reads has already been read through the fragment's views, and a former outside the fragment is refused by name wherever it stands. Formation runs as goals of the same machine and gives every formed type one classifier, its family's universe at its natural level. A decode of a code constant unfolds to the body the constant was defined with, each unfolding certified by `gandr-core-nbe`'s conversion machine with a recorded trace. The kernel bridge erases with a second machine of the same shape, reading types through the same views, and offers each declaration in a staging session of its own, after the kernel has replayed the trace of every unfolding the declaration rests on.
@@ -59,7 +61,11 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17> — the value and computation sorts, the thunk and returner shifts `U` and `F`, and the arrow as a computation type, which fix every rule's premises.
 - Jana Dunfield and Neel Krishnaswami. "Bidirectional Typing." _ACM Computing Surveys_ 54(5) (2021). <https://doi.org/10.1145/3450952> — the discipline the rules follow: introductions check, eliminations synthesise, and the subsumption rule is the one place a synthesised type meets an expected one.
 - Zanzi Mihejevs and Jules Hedges. "Canonical bidirectional typechecking." arXiv:2512.07511 (2025). <https://arxiv.org/abs/2512.07511> — the checkable/synthesisable split read as a polarity duality whose seams are the shifts, the background for confining type comparison to the change of direction.
-- Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A. Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus." _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — the unknown-type posture for holes, consistency in place of equality, which this crate declines; see [Holes are directional](#holes-are-directional-and-no-type-is-unknown).
+- Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A. Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus." _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — holes with the unknown type, consistency in place of equality around it, the matched-type operations, and mark erasure; see [Holes, marks and coverage](docs/holes.md).
+- Cyrus Omar, Ian Voysey, Ravi Chugh and Matthew A. Hammer. "Live Functional Programming with Typed Holes." _Proceedings of the ACM on Programming Languages_ 3 (POPL), 2019. <https://doi.org/10.1145/3290327> — evaluation around holes to indeterminate results, which `gandr-core-nbe` performs on the terms this judgement types.
+- Yongwei Yuan et al. "Live Pattern Matching with Typed Holes." _Proceedings of the ACM on Programming Languages_ 7 (OOPSLA1), 2023. <https://doi.org/10.1145/3586048> — exhaustiveness and irredundancy decided only when every filling of the pattern holes agrees.
+- Eric Zhao et al. "Total Type Error Localization and Recovery with Holes." _Proceedings of the ACM on Programming Languages_ 8 (POPL), 2024. <https://doi.org/10.1145/3632910> — the marked lambda calculus: every term elaborates, each error a mark where it stands.
+- Luc Maranget. "Warnings for pattern matching." _Journal of Functional Programming_ 17(3) (2007). <https://doi.org/10.1017/S0956796807006223> — the usefulness relation both coverage questions reduce to.
 - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV: a universe of value types and a universe of computation types, both classified in the value sort, dependency on values only, and the bind whose type may not mention its binder.
 - Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot, Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the sort carried apart from the level, so a universe names both and a sort parameter is a separate question this crate refuses by name.
 - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §9's trace of the checker's decisions rechecked sequentially, which is how every unfolding the judgement takes reaches the kernel.
@@ -88,6 +94,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances. Witnesses: `bridge::tests::every_readmission_certificate_replays`, `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`.
 - `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names. Witnesses: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
 - `bridge::Refusal` and its classification retain why an accepted declaration did not cross. Witnesses: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`, `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`, `bridge::tests::a_declining_certificate_faults_the_declaration`.
+- The [hole surface](docs/holes.md): term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`. Witnesses are listed on that page.
 
 ## Expected features
 
@@ -211,17 +218,15 @@ An adopted body becomes a definition only with a supplied formed signature; an u
 
 The alternatives were defining the constant as the body as written, which makes a decode at the declared level unfold to a code at a smaller one and forces a lift into every unfolding, and unfolding only within the declaration that made the definition, which makes a type alias unusable from the next declaration. The choice reverses with transparency control: an opaque definition then stays rigid by request, and the support log grows a read per unfolding.
 
-## Holes are directional, and no type is unknown
+## Holes, marks and coverage
 
-A declaration with a declared type and no body is a hole in checking position: it absorbs the declared type and owes it, and its verdict carries the `ObligationEntry` so a caller judging one declaration needs no ledger. A declaration with neither half is a hole in synthesis position and is refused as a checking form: nothing hands it a type, and the judgement does not invent one. No unknown type exists in any sort, so a mismatch is never absorbed by a hole somewhere else in the term.
-
-This supersedes the earlier posture in which a hole carried an unknown type and checking used consistency rather than equality around it — the posture of Hazelnut's local consistency at the hole, and of a matched-type operation that gives every incomplete program a type. The alternatives were that posture, which is symmetric consistency under another name, and a fresh metavariable per hole. The choice reverses when an inference feature needs a hole's type to drive a solution, or an editor face shows that a typed incomplete program cannot be delivered by a ledger plus per-declaration verdicts; the hole then gets a metavariable, and the metavariable gets provenance.
+A hole written inside a body has the unknown type, consistent with every type; a total elaboration marks each refusal where it stands and goes on; coverage is three-valued over pattern holes; and the bridge refuses a term hole and erases a mark. The [hole surface page](docs/holes.md) states each decision with its alternatives and reversal, and what the unknown type cannot do. A declaration with no body stays the hole the next section owes.
 
 ## Only an absence is owed
 
 An `ObligationEntry` is built from an `Absence` and from nothing else, and an `Absence` has no public constructor: the hole rule makes one when a hole meets a declared type, and only then. A refusal therefore cannot be spelled as an obligation, by the checker or by a caller, and the ledger's count is the number of holes owed. The alternatives were a runtime assertion, a lint, and an audit of construction sites; each is weaker than the type, and none would survive a caller outside the crate. There is no reversal: a weaker enforcement is what the choice replaced.
 
-The producer of an obligation is a signature no definition completes, which is the shape a lowering hands over as an uncompleted declaration. Term-level holes, when the core vocabulary gains one, join this producer rather than replacing it.
+The producer of an obligation is a signature no definition completes, which is the shape a lowering hands over as an uncompleted declaration. A term hole owes nothing: it is no declaration's contract, and the bridge refuses the declaration that holds it, so the ledger and the kernel's audit agree without it. The alternative was an obligation per term hole, abstracted over its binders; it comes with the axiom that would discharge it at the bridge.
 
 ## A declaration input owned here
 
@@ -233,7 +238,7 @@ A declaration's type enters the signature table only after its own body was judg
 
 ## Every declaration gets a verdict
 
-A declaration reports its first refusal, and the run continues with the next declaration: `check_module` returns one `Judged` per declaration, in the order given. This re-cuts total marking — every error of a declaration in one pass — down to the first refusal per declaration; total marking is the alternative, and it returns when an editor face needs every error from one pass.
+A declaration reports its first refusal, and the run continues with the next declaration: `check_module` returns one `Judged` per declaration, in the order given. Every error of a term in one pass is the [total elaboration](docs/holes.md#a-total-elaboration-marks-and-goes-on)'s, at the term's grain; the module report keeps the strict verdicts.
 
 ## Out of the fragment, by name
 
@@ -299,7 +304,7 @@ The [native runtime boundary](../core-term/README.md#native-runtime-assumptions)
 
 An owed hole is a declared type with no body, which is the kernel's bodiless declaration: the bridge stages it through `Staging::axiom`, and the hole never becomes a term. The kernel then reports the assumption in the audit of the hole and of every declaration that reads it. The earlier implementation refused holes at the bridge as a class, because its holes carried an unknown type the kernel cannot state; a hole here owes a formed type, so the kernel can assume it. A hole in synthesis position has no type to assume, and the judgement has refused it already.
 
-The alternatives were refusing a module until its ledger is empty, which withholds the kernel's verdict on every complete declaration until the last hole is filled, and a placeholder term in the hole, which the kernel would check as if the author had written it. The choice reverses when term-level holes enter the core vocabulary: a hole inside a body then needs an axiom of its own, abstracted over its context, decided with that former.
+The alternatives were refusing a module until its ledger is empty, which withholds the kernel's verdict on every complete declaration until the last hole is filled, and a placeholder term in the hole, which the kernel would check as if the author had written it. A term hole inside a body is [refused where it stands](docs/holes.md#a-term-hole-is-refused-where-it-stands-and-a-mark-erased) rather than assumed.
 
 ## A mark crosses as nothing
 

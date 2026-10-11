@@ -292,11 +292,12 @@ enum Task
 /// # Specification
 /// - requires: nothing — a node outside the fragment and a dangling id are
 ///   admissible input and refused.
-/// - ensures: zero for an atom and the unit type; the successor of its level
-///   for a universe; its own level for a lift and a decode; its child's level
-///   for a thunk type and a returner; the join of its children's for an eager
-///   product, a static Pi, an arrow and a dependent arrow, whose codomain's
-///   level does not depend on the binder.
+/// - ensures: zero for an atom, the unit type and the unknown type, whichever
+///   spelling it has; the successor of its level for a universe; its own level
+///   for a lift and a decode; its child's level for a thunk type and a
+///   returner; the join of its children's for an eager product, a static Pi, an
+///   arrow and a dependent arrow, whose codomain's level does not depend on the
+///   binder.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -315,13 +316,14 @@ enum Task
 /// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
 #[spec(ensures: |ret| match root {
     | TypeNode::Value(at) => match value_type_view(context.arena(), at) {
-        | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit) => ret == Ok(Level::zero()),
+        | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit | ValueTypeView::Unknown) => ret == Ok(Level::zero()),
         | Ok(ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
         | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
         | Ok(_) => true,
     },
     | TypeNode::Computation(at) => match comp_type_view(context.arena(), at) {
         | Ok(CompTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
+        | Ok(CompTypeView::Unknown) => ret == Ok(Level::zero()),
         | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
         | Ok(_) => true,
     },
@@ -364,7 +366,10 @@ pub fn level_of(
                     let _target = path_code(arena, target)?;
                     levels.push(Level::zero());
                 },
-                | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
+                | ValueTypeView::Integer
+                | ValueTypeView::String
+                | ValueTypeView::Unit
+                | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
                 | ValueTypeView::Thunk(body) => {
@@ -405,6 +410,7 @@ pub fn level_of(
                     tasks.push(Task::Enter(TypeNode::Value(domain)));
                 },
                 | CompTypeView::Element { target, .. } => levels.push(target.clone()),
+                | CompTypeView::Unknown => levels.push(Level::zero()),
             },
         }
     }

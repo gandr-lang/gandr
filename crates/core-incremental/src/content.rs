@@ -39,6 +39,8 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::MarkIndex;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
@@ -258,6 +260,16 @@ pub enum ContentNode
     StaticLambda(NodeIndex),
     /// A static application of an operator to an argument.
     StaticApplication(NodeIndex, NodeIndex),
+    /// A term hole in value position, by its name.
+    Hole(HoleId),
+    /// A marked value: the mark's index over the value it marks.
+    ValueMark
+    {
+        /// The mark's index in its elaboration's table.
+        mark: MarkIndex,
+        /// The value marked.
+        body: NodeIndex,
+    },
     /// A lambda over its body.
     Lambda(NodeIndex),
     /// An application of a computation to a value.
@@ -277,6 +289,16 @@ pub enum ContentNode
         on_left: NodeIndex,
         /// The right branch.
         on_right: NodeIndex,
+    },
+    /// A term hole in computation position, by its name.
+    ComputationHole(HoleId),
+    /// A marked computation: the mark's index over the computation it marks.
+    ComputationMark
+    {
+        /// The mark's index in its elaboration's table.
+        mark: MarkIndex,
+        /// The computation marked.
+        body: NodeIndex,
     },
     /// A base-type atom.
     Base(BaseType),
@@ -322,6 +344,8 @@ pub enum ContentNode
     },
     /// A sealed abstract type, by what its position names.
     Abstract(Reference),
+    /// The unknown value type.
+    UnknownType,
     /// A returner type.
     Returner(NodeIndex),
     /// A non-dependent arrow.
@@ -348,6 +372,8 @@ pub enum ContentNode
         /// The level it is read at.
         target: Level,
     },
+    /// The unknown computation type.
+    UnknownComputationType,
     /// An id of this sort the arena resolves to nothing.
     Unresolved(Sort),
 }
@@ -532,7 +558,9 @@ impl ContentNode
         | Self::Quote(_)
         | Self::QuoteComputation(_)
         | Self::StaticLambda(_)
-        | Self::StaticApplication(..) => matches!(ret,Sort::Value),
+        | Self::StaticApplication(..)
+        | Self::Hole(_)
+        | Self::ValueMark { .. } => matches!(ret,Sort::Value),
         Self::DataCase { .. } | Self::RecordProjection(..) | Self::Transport(..)
         | Self::Primitive(..)
         | Self::Lambda(_)
@@ -540,7 +568,9 @@ impl ContentNode
         | Self::Return(_)
         | Self::Bind(..)
         | Self::Force(_)
-        | Self::Case { .. } => matches!(ret,Sort::Computation),
+        | Self::Case { .. }
+        | Self::ComputationHole(_)
+        | Self::ComputationMark { .. } => matches!(ret,Sort::Computation),
         Self::Data { .. } | Self::RecordType(_) | Self::PathUniverse(..)
         | Self::Base(_)
         | Self::UnitType
@@ -551,11 +581,13 @@ impl ContentNode
         | Self::TypeLift { .. }
         | Self::Element { .. }
         | Self::Abstract(_)
-        | Self::StaticPi { .. } => matches!(ret, Sort::ValueType),
+        | Self::StaticPi { .. }
+        | Self::UnknownType => matches!(ret, Sort::ValueType),
         | Self::Returner(_)
         | Self::Arrow { .. }
         | Self::Pi { .. }
-        | Self::ComputationElement { .. } => matches!(ret, Sort::CompType),
+        | Self::ComputationElement { .. }
+        | Self::UnknownComputationType => matches!(ret, Sort::CompType),
         | Self::Unresolved(sort) => matches!(
             (sort, ret),
             (Sort::Value, Sort::Value)
@@ -584,7 +616,9 @@ impl ContentNode
             | Self::Quote(_)
             | Self::QuoteComputation(_)
             | Self::StaticLambda(_)
-            | Self::StaticApplication(..) => Sort::Value,
+            | Self::StaticApplication(..)
+            | Self::Hole(_)
+            | Self::ValueMark { .. } => Sort::Value,
             | Self::DataCase { .. }
             | Self::RecordProjection(..)
             | Self::Transport(..)
@@ -594,7 +628,9 @@ impl ContentNode
             | Self::Return(_)
             | Self::Bind(..)
             | Self::Force(_)
-            | Self::Case { .. } => Sort::Computation,
+            | Self::Case { .. }
+            | Self::ComputationHole(_)
+            | Self::ComputationMark { .. } => Sort::Computation,
             | Self::Data { .. }
             | Self::RecordType(_)
             | Self::PathUniverse(..)
@@ -607,11 +643,13 @@ impl ContentNode
             | Self::TypeLift { .. }
             | Self::Element { .. }
             | Self::Abstract(_)
-            | Self::StaticPi { .. } => Sort::ValueType,
+            | Self::StaticPi { .. }
+            | Self::UnknownType => Sort::ValueType,
             | Self::Returner(_)
             | Self::Arrow { .. }
             | Self::Pi { .. }
-            | Self::ComputationElement { .. } => Sort::CompType,
+            | Self::ComputationElement { .. }
+            | Self::UnknownComputationType => Sort::CompType,
             | Self::Unresolved(sort) => sort,
         }
     }
@@ -653,7 +691,11 @@ impl ContentNode
             | Self::UnitType
             | Self::Universe { .. }
             | Self::Abstract(_)
-            | Self::Unresolved(_) => ret.count == 0,
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ComputationHole(_)
+            | Self::UnknownType
+            | Self::UnknownComputationType => ret.count == 0,
             | Self::Pair(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
@@ -665,8 +707,11 @@ impl ContentNode
             | Self::Return(a)
             | Self::Force(a)
             | Self::Element { code: a, .. }
-            | Self::ComputationElement { code: a, .. } => actual == Some(&[(a, V)][..]),
-            | Self::Thunk(a) | Self::Lambda(a) => actual == Some(&[(a, M)][..]),
+            | Self::ComputationElement { code: a, .. }
+            | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
+            | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) => {
+                actual == Some(&[(a, M)][..])
+            },
             | Self::Application(a, b) => actual == Some(&[(a, M), (b, V)][..]),
             | Self::Bind(a, b) => actual == Some(&[(a, M), (b, M)][..]),
             | Self::Case {
@@ -738,7 +783,11 @@ impl ContentNode
             | Self::UnitType
             | Self::Universe { .. }
             | Self::Abstract(_)
-            | Self::Unresolved(_) => Children::default(),
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ComputationHole(_)
+            | Self::UnknownType
+            | Self::UnknownComputationType => Children::default(),
             | Self::PathUniverse(first, second)
             | Self::PathProduct(first, second)
             | Self::Transport(first, second)
@@ -749,8 +798,11 @@ impl ContentNode
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
             | Self::Return(body)
-            | Self::Force(body) => Children::of(&[(body, V)]),
-            | Self::Thunk(body) | Self::Lambda(body) => Children::of(&[(body, M)]),
+            | Self::Force(body)
+            | Self::ValueMark { body, .. } => Children::of(&[(body, V)]),
+            | Self::ComputationMark { body, .. } | Self::Thunk(body) | Self::Lambda(body) => {
+                Children::of(&[(body, M)])
+            },
             | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
             | Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
             | Self::Case {
@@ -846,7 +898,13 @@ impl ContentNode
             | Self::StaticApplication(..)
             | Self::StaticPi { .. }
             | Self::ComputationElement { .. }
-            | Self::Unresolved(_) => Maybe::Absent(referencing::Absent::NotAReference),
+            | Self::Unresolved(_)
+            | Self::Hole(_)
+            | Self::ValueMark { .. }
+            | Self::ComputationHole(_)
+            | Self::ComputationMark { .. }
+            | Self::UnknownType
+            | Self::UnknownComputationType => Maybe::Absent(referencing::Absent::NotAReference),
         }
     }
 }
@@ -1773,6 +1831,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let head = self.discover(ArenaNode::Value(head));
                 ContentNode::StaticApplication(head, self.discover(ArenaNode::Value(argument)))
             },
+            | Value::Hole(hole) => ContentNode::Hole(hole),
+            | Value::Mark { mark, body } => ContentNode::ValueMark {
+                mark,
+                body: self.discover(ArenaNode::Value(body)),
+            },
         }
     }
 
@@ -1864,6 +1927,11 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     on_right: self.discover(ArenaNode::Computation(on_right)),
                 }
             },
+            | Computation::Hole(hole) => ContentNode::ComputationHole(hole),
+            | Computation::Mark { mark, body } => ContentNode::ComputationMark {
+                mark,
+                body: self.discover(ArenaNode::Computation(body)),
+            },
         }
     }
 
@@ -1944,6 +2012,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     codomain: self.discover(ArenaNode::ValueType(codomain)),
                 }
             },
+            | ValueType::Unknown => ContentNode::UnknownType,
         }
     }
 
@@ -1990,6 +2059,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 code: self.discover(ArenaNode::Value(code)),
                 target: target.clone(),
             },
+            | CompType::Unknown => ContentNode::UnknownComputationType,
         }
     }
 }
@@ -2160,7 +2230,11 @@ where
         | ContentNode::UnitType
         | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
-        | ContentNode::Unresolved(_) => node.clone(),
+        | ContentNode::Unresolved(_)
+        | ContentNode::Hole(_)
+        | ContentNode::ComputationHole(_)
+        | ContentNode::UnknownType
+        | ContentNode::UnknownComputationType => node.clone(),
         | ContentNode::Pair(first, second) => {
             let first = image(first);
             ContentNode::Pair(first, image(second))
@@ -2233,6 +2307,14 @@ where
         | ContentNode::StaticApplication(head, argument) => {
             let head = image(head);
             ContentNode::StaticApplication(head, image(argument))
+        },
+        | ContentNode::ValueMark { mark, body } => ContentNode::ValueMark {
+            mark,
+            body: image(body),
+        },
+        | ContentNode::ComputationMark { mark, body } => ContentNode::ComputationMark {
+            mark,
+            body: image(body),
         },
         | ContentNode::StaticPi { domain, codomain } => {
             let domain = image(domain);
@@ -2601,6 +2683,10 @@ fn mint_node(
                 | _ => ill_sorted,
             }
         },
+        | ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
+        | ContentNode::UnknownComputationType => {
+            Maybe::Present(Minted::CompType(arena.comp_type_unknown()))
+        },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::PathUniverse(..)
         | ContentNode::Constructor { .. }
@@ -2632,7 +2718,11 @@ fn mint_node(
         | ContentNode::Return(_)
         | ContentNode::Bind(..)
         | ContentNode::Force(_)
-        | ContentNode::Case { .. } => Maybe::Absent(seating::Absent::Unseatable),
+        | ContentNode::Case { .. }
+        | ContentNode::Hole(_)
+        | ContentNode::ValueMark { .. }
+        | ContentNode::ComputationHole(_)
+        | ContentNode::ComputationMark { .. } => Maybe::Absent(seating::Absent::Unseatable),
     }
 }
 

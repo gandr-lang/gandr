@@ -68,6 +68,10 @@ pub enum Form
     PathProduct,
     /// Native equivalence.
     PathEquiv,
+    /// A term hole: an incomplete program has no image.
+    Hole,
+    /// A mark: the record of a refusal has no image.
+    Mark,
 }
 impl core::fmt::Display for Form
 {
@@ -103,6 +107,8 @@ impl core::fmt::Display for Form
             | Self::PathRefl => "path reflexivity",
             | Self::PathProduct => "a product path",
             | Self::PathEquiv => "an equivalence path",
+            | Self::Hole => "a term hole",
+            | Self::Mark => "a mark",
         })
     }
 }
@@ -315,6 +321,8 @@ pub fn lower_computation(
                     | Computation::Transport(..) => {
                         return Err(LowerError::OutsideSlice(Form::Transport));
                     },
+                    | Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
+                    | Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
                 }
             },
             | Step::Value(id, depth) => {
@@ -388,6 +396,8 @@ pub fn lower_computation(
                     | Value::PathEquiv { .. } => {
                         return Err(LowerError::OutsideSlice(Form::PathEquiv));
                     },
+                    | Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
+                    | Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
                 }
                 let index = image.push(node)?;
                 emitted.push(index);

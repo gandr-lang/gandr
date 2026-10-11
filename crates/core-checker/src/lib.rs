@@ -3,8 +3,10 @@
 //! origin token, the checking context wrapped around the core context, type
 //! formation, the conversion module boundary with its declared projection,
 //! the absence-only obligation ledger, the refusal vocabulary with its
-//! classifier, and the kernel bridge that has the kernel re-derive every
-//! declaration the judgement accepted.
+//! classifier, a total elaboration that marks a refusal and goes on,
+//! three-valued match coverage over patterns with holes, and the kernel
+//! bridge that has the kernel re-derive every declaration the judgement
+//! accepted.
 //!
 //! The crate reads core nodes a producer minted and answers, per declaration,
 //! whether its body has its type. There is no surface here: no names, no
@@ -32,9 +34,12 @@
 //! value universe at or above its own, and the crossing records the lift the
 //! kernel bridge writes; nothing else moves a type up a universe.
 //!
-//! **Holes are directional.** A hole under a declared type absorbs it and owes
-//! it; a hole with nothing to absorb is refused. No unknown type stands in for
-//! a missing one.
+//! **Holes come in two grains.** A declaration with no body under a declared
+//! type absorbs it and owes it, and one with nothing to absorb is refused. A
+//! hole written inside a body synthesises the unknown type and checks against
+//! any, the unknown type is consistent with every type, and the kernel bridge
+//! refuses a hole where it stands. A total elaboration marks every refusal
+//! where it stands and goes on, so every incomplete program gets a type.
 //!
 //! **Only an absence is owed.** The ledger is built from absences, which only
 //! the hole rule makes; a refusal cannot be spelled as an obligation, and the
@@ -164,6 +169,7 @@ pub mod bridge;
 mod code;
 mod context;
 mod conversion;
+mod coverage;
 mod declaration;
 #[cfg(test)]
 mod fixture;
@@ -187,6 +193,11 @@ pub use crate::context::CheckBudget;
 pub use crate::context::CheckingContext;
 pub use crate::context::signature_table;
 pub use crate::conversion::ConversionCount;
+pub use crate::coverage::Coverage;
+pub use crate::coverage::CoverageFault;
+pub use crate::coverage::Exhaustiveness;
+pub use crate::coverage::Redundancy;
+pub use crate::coverage::cover;
 pub use crate::declaration::Declaration;
 pub use crate::declaration::DeclarationContent;
 pub use crate::declaration::OriginToken;
@@ -200,9 +211,14 @@ pub use crate::formation::form_comp_type;
 pub use crate::formation::form_value_type;
 pub use crate::formation::level_of;
 pub use crate::judgement::Checked;
+pub use crate::judgement::Direction;
+pub use crate::judgement::Elaboration;
+pub use crate::judgement::MarkEntry;
 pub use crate::judgement::Synthesised;
 pub use crate::judgement::check_comp;
 pub use crate::judgement::check_value;
+pub use crate::judgement::elaborate_comp;
+pub use crate::judgement::elaborate_value;
 pub use crate::judgement::synthesise_comp;
 pub use crate::judgement::synthesise_value;
 pub use crate::ledger::Absence;

@@ -58,6 +58,7 @@ use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
 use crate::domain::Elimination;
+use crate::domain::NeutralHead;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::eval::EvalFault;
@@ -86,6 +87,9 @@ pub enum Deferral
     /// A closure met a closure over another body, or a neutral it might equal
     /// by an η-equation; either compares only once a binder is opened.
     Binder,
+    /// A neutral standing on a hole or a mark met a side a fill might make it
+    /// equal.
+    Indeterminate,
 }
 
 /// Which step answered a pair, and how.
@@ -677,13 +681,16 @@ impl<'run> Walk<'run>
         }
     }
 
-    /// Whether a neutral's head has a body to unfold.
+    /// Whether a mismatch at a neutral is final: its head is rigid, or it may
+    /// unfold, or it stands on a hole or a mark a fill may make anything.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Context::Flexible`] for unfolding when the neutral's face
-    ///   is unforced or forced, [`Context::Rigid`] when it is rigid.
-    /// - provides: the one reading of "could unfolding repair a mismatch here".
+    /// - ensures: [`Context::Flexible`] for a hole or a mark head whatever its
+    ///   face, for unfolding when another head's face is unforced or forced,
+    ///   and [`Context::Rigid`] when that face is rigid.
+    /// - provides: the one reading of "could unfolding or a fill repair a
+    ///   mismatch here".
     /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
     /// - panics: none.
     ///
@@ -692,14 +699,18 @@ impl<'run> Walk<'run>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the same argument mismatch separates under a rigid
-    ///   head and defers under a loaded head; classifying a loaded face as
-    ///   rigid makes conversion unsound.
+    ///   head and defers under a loaded head, and a hole against a literal
+    ///   defers where a rigid variable against it separates; classifying a
+    ///   loaded face or a hole as rigid makes conversion unsound.
     /// - witness: `conv::tests::a_mismatch_separates_only_beneath_a_rigid_head`
+    /// - witness: `live::tests::a_comparison_that_meets_a_hole_declines`
     #[spec(ensures: |ret| self.domain.neutral(neutral).map_or_else(
         || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
-        |node| ret == Ok(if matches!(node.unfolding(), Unfolding::Rigid) {
-            Context::Rigid
-        } else { Context::Flexible(Deferral::Unfolding) }),
+        |node| ret == Ok(match (node.head(), node.unfolding()) {
+            (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Context::Flexible(Deferral::Indeterminate),
+            (_, Unfolding::Rigid) => Context::Rigid,
+            (_, Unfolding::Unforced(_) | Unfolding::Forced(_)) => Context::Flexible(Deferral::Unfolding),
+        }),
     ))]
     fn unfoldable(
         &self,
@@ -710,11 +721,18 @@ impl<'run> Walk<'run>
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
-        Ok(match held.unfolding() {
-            | Unfolding::Rigid => Context::Rigid,
-            | Unfolding::Unforced(_) | Unfolding::Forced(_) => {
-                Context::Flexible(Deferral::Unfolding)
+        Ok(match (held.head(), held.unfolding()) {
+            | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => {
+                Context::Flexible(Deferral::Indeterminate)
             },
+            | (
+                NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
+                Unfolding::Rigid,
+            ) => Context::Rigid,
+            | (
+                NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
+                Unfolding::Unforced(_) | Unfolding::Forced(_),
+            ) => Context::Flexible(Deferral::Unfolding),
         })
     }
 
