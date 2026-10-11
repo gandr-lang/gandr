@@ -446,18 +446,26 @@ jobs:
 
   cargo-clippy-crate:
     name: check Clippy wall
-    needs: *rust-needs
+    needs: *cached-test-needs
     if: &light-rust-lane ${{ !cancelled() && !failure() && needs.changes.outputs.rust == 'true' && github.event_name != 'push' }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      CI_BUILD_STATE: cargo-test-enforcing
     steps:
       - *git-checkout
+      - *identify-build-state
       # Shared crate downloads are restore-only in this lane.
       - *install-policy-tools
       - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *unpack-build-state
       - name: lint every target
         run: cargo clippy --locked --workspace --all-targets -- --deny warnings
+      - name: lint every target with specification enforcement
+        run: mise run check:clippy-enforcing
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request. The image carries
   # its driver; the bare-runner fallback installs the same pinned tools and
@@ -484,6 +492,8 @@ jobs:
       - *restore-policy-state
       - name: lint every workspace target
         id: policy-library
+        # The task strips enforcement cfgs: the separately built plugin runs
+        # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state, the enforcing
