@@ -158,12 +158,13 @@ default-features = false
 # - help: the generated `--help` text
 # - usage: the usage line `--help` and an argument error print
 # - error-context: the context an argument error reports
+# - env: `GANDR_JOBS`, the environment's default for `--jobs`
 # consumers:
 # - surface-driver
 [workspace.dependencies.clap]
 version = "4.6.6"
 default-features = false
-features = ["derive", "error-context", "help", "std", "usage"]
+features = ["derive", "env", "error-context", "help", "std", "usage"]
 
 # Standing observer workers exchange jobs and results.
 # features:
@@ -797,6 +798,15 @@ features = ["alloc", "derive"]
 version = "1.0.151"
 default-features = false
 features = ["alloc"]
+
+# Reads a macOS sysctl by name: the dispatcher's default width counts the
+# host's physical performance cores (`hw.perflevel0.physicalcpu`), which no
+# std interface reports. It has no features to leave off.
+# consumers:
+# - surface-dispatcher (macOS only)
+[workspace.dependencies.sysctl]
+version = "0.7.1"
+default-features = false
 
 # Optional structured diagnostics, with no runtime or output backend.
 # features:
