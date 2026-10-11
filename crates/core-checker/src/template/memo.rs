@@ -59,6 +59,7 @@ use super::draft::Walk;
 use super::draft::Widening;
 use super::harvest::FamilyKey;
 use super::spec;
+use crate::fork::Fork;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -296,7 +297,7 @@ struct Switch
 }
 
 /// What the fresh-arm cap weighs: the key's producer time and the memo's cost
-/// of one new arm.
+/// of one new arm, and what a finished widening measured of that cost.
 #[derive(Clone, Copy, Debug)]
 struct Cap
 {
@@ -304,6 +305,83 @@ struct Cap
     producing: Estimate,
     /// Seconds one new arm costs to import.
     arm: Tracked,
+    /// The per-arm import cost a finished widening measured, for the memo to
+    /// fold into `arm`.
+    measured: Tracked,
+}
+
+/// What one drafted family tells the memo-wide controller.
+#[derive(Clone, Copy, Debug)]
+enum DraftSample
+{
+    /// The family was not drafted.
+    Undrafted,
+    /// The family was drafted.
+    Drafted
+    {
+        /// Whether the kernel admitted the draft whole.
+        acceptance: Acceptance,
+        /// The draft's time as a share of its key's producer time, when that
+        /// time is measured and positive.
+        share: Tracked,
+    },
+}
+
+/// What one family's admission adds to the memo-wide controller, folded in
+/// harvest order.
+#[derive(Clone, Copy, Debug)]
+struct Samples
+{
+    /// The per-arm import cost a finished widening measured.
+    arm: Tracked,
+    /// The drafted family's outcome.
+    draft: DraftSample,
+}
+
+impl Samples
+{
+    /// A family that measured nothing.
+    const NONE: Self = Self {
+        arm: Tracked::Unsampled,
+        draft: DraftSample::Undrafted,
+    };
+}
+
+/// How the controller met one family before its admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Plan
+{
+    /// The family's key holds no template to draft from.
+    Unmemoized,
+    /// The controller's decision for a key that holds one.
+    Decided(Decision),
+}
+
+/// One family's admission as the memo planned it: the key's slot, the
+/// controller's decision, the memo's per-arm cost when the decision was made,
+/// and what the admission measured for the memo to fold afterwards.
+#[derive(Debug)]
+struct Ticket<'memo>
+{
+    /// The family's key's slot, borrowed for this family alone.
+    slot: &'memo mut Slot,
+    /// The controller's decision.
+    plan: Plan,
+    /// The memo's per-arm import cost when the decision was made.
+    arm: Tracked,
+    /// What the admission measured, folded into the memo afterwards.
+    samples: Samples,
+}
+
+/// One worker's reusable drafting and row buffers and its clock.
+struct Scratch<'worker, C>
+{
+    /// The drafter's reusable buffers.
+    drafter: &'worker mut Drafter,
+    /// The kernel's reusable row buffer.
+    row: &'worker mut Row,
+    /// The worker's clock.
+    clock: &'worker mut C,
 }
 
 /// A key's template, or the reason it holds none.
@@ -513,6 +591,45 @@ fn break_even(
 
 impl Switch
 {
+    /// Fold one family's samples: the per-arm cost it measured, and a drafted
+    /// family's acceptance and time share.
+    ///
+    /// # Specification
+    /// - ensures: the arm cost moves toward a measured sample; a drafted family
+    ///   moves the acceptance toward one when admitted and zero otherwise, and
+    ///   its share moves the accepted or refused share toward it when one was
+    ///   measured; nothing else changes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — accepted and refused drafts under a scripted clock
+    ///   fold into the memo's acceptance until it switches drafting off, and a
+    ///   finished widening's measured cost reaches the cap of the next draft.
+    /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
+    /// - witness: `template::memo::tests::the_fresh_arm_cap_withdraws_a_widening_that_costs_the_producers_time`
+    #[spec(captures: [declined = self.declined], ensures: |()| self.declined == declined)]
+    fn absorb(
+        &mut self,
+        samples: Samples,
+    )
+    {
+        if let Tracked::Sampled(each) = samples.arm {
+            self.arm = sampled(self.arm, each);
+        }
+        let DraftSample::Drafted { acceptance, share } = samples.draft
+        else {
+            return;
+        };
+        self.acceptance = toward(self.acceptance, acceptance.sample());
+        if let Tracked::Sampled(share) = share {
+            let shares = match acceptance {
+                | Acceptance::Accepted => &mut self.accepted,
+                | Acceptance::Refused => &mut self.refused,
+            };
+            *shares = sampled(*shares, share);
+        }
+    }
+
     /// Whether the memo-wide acceptance has fallen to its break-even.
     ///
     /// # Specification
@@ -624,50 +741,45 @@ impl Controls
         Decision::Decline(decline)
     }
 
-    /// Record a drafted family's outcome.
+    /// Record a drafted family's outcome in its key's state, and return what
+    /// it tells the memo.
     ///
     /// # Specification
-    /// - ensures: the key's and the memo's acceptance move toward one for an
-    ///   accepted draft and zero otherwise; the key's last accepted or refused
-    ///   time becomes `spent`; the memo's matching share moves toward `spent`
-    ///   over the key's producer time when that is measured.
+    /// - ensures: the key's acceptance moves toward one for an accepted draft
+    ///   and zero otherwise; the key's last accepted or refused time becomes
+    ///   `spent`; the sample carries the acceptance and, when the key's
+    ///   producer time is measured and positive, `spent` as a share of it.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — accepted and refused drafts under a scripted clock
     ///   move the decision across the break-even.
     /// - witness: `template::memo::tests::the_controller_drafts_while_drafting_pays_and_probes_when_it_stops`
-    #[spec(ensures: |()| match accepted {
-        Acceptance::Accepted => self.accepted == Estimate::Measured(spent),
-        Acceptance::Refused => self.refused == Estimate::Measured(spent),
-    })]
-    fn record(
+    #[spec(ensures: |output| matches!(output, DraftSample::Drafted { acceptance, .. } if acceptance == accepted)
+        && match accepted {
+            Acceptance::Accepted => self.accepted == Estimate::Measured(spent),
+            Acceptance::Refused => self.refused == Estimate::Measured(spent),
+        })]
+    fn observe(
         &mut self,
-        switch: &mut Switch,
         accepted: Acceptance,
         spent: Duration,
-    )
+    ) -> DraftSample
     {
-        let sample = match accepted {
-            | Acceptance::Accepted => Share(1.0),
-            | Acceptance::Refused => Share(0.0),
-        };
-        self.acceptance = toward(self.acceptance, sample);
-        switch.acceptance = toward(switch.acceptance, sample);
-        let shares = match accepted {
-            | Acceptance::Accepted => {
-                self.accepted = Estimate::Measured(spent);
-                &mut switch.accepted
+        self.acceptance = toward(self.acceptance, accepted.sample());
+        match accepted {
+            | Acceptance::Accepted => self.accepted = Estimate::Measured(spent),
+            | Acceptance::Refused => self.refused = Estimate::Measured(spent),
+        }
+        let share = match self.producing {
+            | Estimate::Measured(producing) if !producing.is_zero() => {
+                Tracked::Sampled(share(spent, producing))
             },
-            | Acceptance::Refused => {
-                self.refused = Estimate::Measured(spent);
-                &mut switch.refused
-            },
+            | Estimate::Measured(_) | Estimate::Unmeasured => Tracked::Unsampled,
         };
-        if let Estimate::Measured(producing) = self.producing
-            && !producing.is_zero()
-        {
-            *shares = sampled(*shares, share(spent, producing));
+        DraftSample::Drafted {
+            acceptance: accepted,
+            share,
         }
     }
 }
@@ -680,6 +792,22 @@ enum Acceptance
     Accepted,
     /// Missed, withdrawn or refused.
     Refused,
+}
+
+impl Acceptance
+{
+    /// The sample an acceptance average moves toward: one when admitted,
+    /// zero otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn sample(self) -> Share
+    {
+        match self {
+            | Self::Accepted => Share(1.0),
+            | Self::Refused => Share(0.0),
+        }
+    }
 }
 
 /// The time since an earlier reading of a clock.
@@ -807,8 +935,8 @@ impl Template
     ///   cap withdraws a draft adding $f > 0$ arms when the per-arm cost $c$
     ///   and the key's producer time $P$ are measured, $c > 0$ and $f c \ge P$;
     ///   the walk is spent by then, so only the import is weighed, and an
-    ///   import measured free never caps. A finished widening samples $c$ into
-    ///   the cap.
+    ///   import measured free never caps. A finished widening reports $c$ as
+    ///   the cap's measurement and leaves the cap's own cost unchanged.
     /// - fails: a lookup error on either side; an intern refusal.
     /// - panics: none.
     ///
@@ -865,7 +993,7 @@ impl Template
             && count > 0
         {
             let each = drafter.importing().as_secs_f64() / f64::from(count);
-            cap.arm = sampled(cap.arm, Share(each));
+            cap.measured = Tracked::Sampled(Share(each));
         }
         Ok(match finished {
             | Finished::Ready(mut draft) => {
@@ -937,7 +1065,7 @@ impl Memo
         match self.slots.iter_mut().find(|slot| slot.key == *family.key()) {
             | Some(slot) => slot.held = Held::Template(template),
             | None => self.slots.push(Slot {
-                key: family.key().clone(),
+                key: *family.key(),
                 held: Held::Template(template),
                 controls: Controls::fresh(),
             }),
@@ -999,218 +1127,433 @@ impl Memo
     where
         C: Clock,
     {
-        let members = family.members.as_slice();
-        let index = match self.slots.iter().position(|slot| slot.key == *family.key()) {
-            | Some(index) => index,
-            | None => {
-                self.slots.push(Slot {
-                    key: family.key().clone(),
-                    held: Held::Vacant,
-                    controls: Controls::fresh(),
-                });
-                self.slots.len().saturating_sub(1)
-            },
-        };
+        let (index, plan) = self.plan(family);
         let Self {
             ref mut slots,
             ref mut switch,
             ref mut drafter,
             ref mut row,
         } = *self;
-        let slot = slots.get_mut(index).ok_or(StageError::Unbalanced)?;
-        let mut spent = Spent::default();
-        let mut drafting = Drafting::Unmemoized;
-        if let Held::Template(ref memo) = slot.held {
-            match slot.controls.decide(switch) {
-                | Decision::Decline(decline) => drafting = Drafting::Declined(decline),
-                | Decision::Draft => {
-                    let begun = clock.now();
-                    let mut cap = Cap {
-                        producing: slot.controls.producing,
-                        arm: switch.arm,
-                    };
-                    let attempt = memo.attempt(arena, members, gate, &mut cap, drafter, clock)?;
-                    switch.arm = cap.arm;
-                    spent.drafting = since(clock, begun);
-                    drafting = match attempt {
-                        | Attempt::Withdrawn(withdrawn) => withdrawn,
-                        | Attempt::Ready(draft, kind) => {
-                            let begun = clock.now();
-                            let choices = rows(
-                                &draft.choices,
-                                PointCount(memo.entries.len()),
-                                MemberCount::from(members.len()),
-                            )?;
-                            let judged =
-                                judge(arena, members, draft.proposal, &choices, row, budget)?;
-                            spent.admitting = since(clock, begun);
-                            let allowance = usize::from(draft.cost.template_size);
-                            match judged {
-                                | Judged::Refused(refusal) => Drafting::Refused(refusal),
-                                | Judged::Admitted(schema)
-                                    if gate == PriceGate::Memoized
-                                        && schema.largest_replay().0 > allowance =>
-                                {
-                                    Drafting::ReplayBound(schema.largest_replay())
-                                },
-                                | Judged::Admitted(schema) => {
-                                    slot.controls.record(
-                                        switch,
-                                        Acceptance::Accepted,
-                                        spent.drafting,
-                                    );
-                                    if let Held::Template(ref mut held) = slot.held {
-                                        draft.revision.apply(held, draft.cost);
-                                    }
-                                    return Ok(FamilyReport {
-                                        admission: FamilyAdmission::Admitted {
-                                            schema,
-                                            origin: Origin::Drafted(kind),
-                                        },
-                                        drafting: Drafting::Accepted(kind),
-                                        spent,
-                                    });
-                                },
-                            }
-                        },
-                    };
-                    slot.controls
-                        .record(switch, Acceptance::Refused, spent.drafting);
-                },
-            }
-        }
-        let begun = clock.now();
-        let analysis = analyze(arena, members)?;
-        let candidate = match analysis {
-            | Analysis::Candidate(candidate) => candidate,
-            | Analysis::Refused { reason, .. } => {
-                spent.producing = since(clock, begun);
-                slot.controls.producing = Estimate::Measured(spent.producing);
-                slot.held = Held::Vacant;
-                return Ok(FamilyReport {
-                    admission: FamilyAdmission::Plain(reason),
-                    drafting,
-                    spent,
+        let slot = slots.get_mut(index.0).ok_or(StageError::Unbalanced)?;
+        let mut ticket = Ticket {
+            slot,
+            plan,
+            arm: switch.arm,
+            samples: Samples::NONE,
+        };
+        let mut scratch = Scratch {
+            drafter,
+            row,
+            clock,
+        };
+        let admitted = admit(
+            &mut ticket,
+            arena,
+            family,
+            gate,
+            cache,
+            budget,
+            &mut scratch,
+        );
+        switch.absorb(ticket.samples);
+        admitted
+    }
+
+    /// Admit a program's families, each against its own key's slot, on the
+    /// workers `fork` provides, each with a fresh inheritance cache and
+    /// `allowance` of work.
+    ///
+    /// # Specification
+    /// - ensures: one result per family, in order. The controller decides every
+    ///   family in order before any is admitted, so each decision reads the
+    ///   memo-wide state as it stood before the first family; each family is
+    ///   then admitted against its own slot as [`Memo::admit_family`] admits
+    ///   it, and what each measured folds into the memo-wide state in family
+    ///   order. The reports, the slots and the memo-wide state are therefore
+    ///   the same at every width; with a clock that never advances they are
+    ///   also those of admitting the families one by one.
+    /// - fails: per family, `Unbalanced` for a family whose key an earlier
+    ///   family of the same call holds, which one harvest never yields; the
+    ///   family is not admitted. Otherwise as [`Memo::admit_family`].
+    /// - panics: none of its own; the fork's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — warm memos from the edit-pair corpus admit each
+    ///   edition's families on a forked schedule and one by one, and the
+    ///   reports and the memo after are compared; a repeated key is refused.
+    /// - witness: `template::tests::forked_families_equal_one_by_one_admission_across_the_edit_traces`
+    #[spec(ensures: |output| output.len() == families.len())]
+    pub(crate) fn admit_families<F, C>(
+        &mut self,
+        arena: &Arena,
+        families: &[Family],
+        gate: PriceGate,
+        allowance: Budget,
+        fork: &F,
+        clock: &C,
+    ) -> Vec<Result<FamilyReport, StageError>>
+    where
+        F: Fork,
+        C: Clock + Clone + Sync,
+    {
+        let plans: Vec<(SlotIndex, Plan)> =
+            families.iter().map(|family| self.plan(family)).collect();
+        let arm = self.switch.arm;
+        let mut slots: Vec<Option<&mut Slot>> = self.slots.iter_mut().map(Some).collect();
+        let mut jobs: Vec<Job<'_, '_>> = families
+            .iter()
+            .zip(plans)
+            .map(|(family, (index, plan))| Job {
+                family,
+                ticket: slots
+                    .get_mut(index.0)
+                    .and_then(Option::take)
+                    .map(|slot| Ticket {
+                        slot,
+                        plan,
+                        arm,
+                        samples: Samples::NONE,
+                    }),
+                report: Err(StageError::Unbalanced),
+            })
+            .collect();
+        fork.each(
+            &mut jobs,
+            || (Drafter::default(), Row::default(), clock.clone()),
+            |worker, job| {
+                let (ref mut drafter, ref mut row, ref mut clock) = *worker;
+                let Some(ref mut ticket) = job.ticket
+                else {
+                    return;
+                };
+                let mut scratch = Scratch {
+                    drafter,
+                    row,
+                    clock,
+                };
+                let mut cache = InheritanceCache::new();
+                let mut budget = allowance;
+                job.report = admit(
+                    ticket,
+                    arena,
+                    job.family,
+                    gate,
+                    &mut cache,
+                    &mut budget,
+                    &mut scratch,
+                );
+            },
+        );
+        jobs.into_iter()
+            .map(|job| {
+                if let Some(ticket) = job.ticket {
+                    self.switch.absorb(ticket.samples);
+                }
+                job.report
+            })
+            .collect()
+    }
+
+    /// Find or open the slot of a family's key, and decide its draft.
+    ///
+    /// # Specification
+    /// - ensures: the position of the slot holding the family's key, opened
+    ///   vacant after every other slot when none held it; the controller's
+    ///   decision when that slot holds a template, `Unmemoized` otherwise. Only
+    ///   a decision moves a decline count.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every family of the edit-pair corpus is planned
+    ///   before its admission, and the drafted schemas are compared with fresh
+    ///   runs'.
+    /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+    #[spec(ensures: |output| self.slots.get(output.0.0).is_some_and(|slot|
+        slot.key == *family.key()
+            && (output.1 == Plan::Unmemoized) != matches!(slot.held, Held::Template(_))))]
+    fn plan(
+        &mut self,
+        family: &Family,
+    ) -> (SlotIndex, Plan)
+    {
+        let index = match self.slots.iter().position(|slot| slot.key == *family.key()) {
+            | Some(index) => index,
+            | None => {
+                self.slots.push(Slot {
+                    key: *family.key(),
+                    held: Held::Vacant,
+                    controls: Controls::fresh(),
                 });
+                self.slots.len().saturating_sub(1)
             },
         };
-        let prices = candidate.prices();
-        let pays = match gate {
-            | PriceGate::Unmemoized => prices.unmemoized.is_ok(),
-            | PriceGate::Memoized => prices.memoized.is_ok(),
+        let plan = match self.slots.get_mut(index) {
+            | Some(&mut Slot {
+                held: Held::Template(_),
+                ref mut controls,
+                ..
+            }) => Plan::Decided(controls.decide(&mut self.switch)),
+            | Some(_) | None => Plan::Unmemoized,
         };
-        if !pays {
-            let cost = candidate.cost();
+        (SlotIndex(index), plan)
+    }
+}
+
+/// A slot's position in the memo.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SlotIndex(usize);
+
+/// One family of a forked admission: the family, its ticket unless an
+/// earlier family of the same call holds its key, and its report.
+#[derive(Debug)]
+struct Job<'memo, 'family>
+{
+    /// The family offered.
+    family: &'family Family,
+    /// The family's slot and plan; none for a repeated key.
+    ticket: Option<Ticket<'memo>>,
+    /// The family's report; `Unbalanced` until its admission runs.
+    report: Result<FamilyReport, StageError>,
+}
+
+/// Admit one family against its ticket's slot: from a draft of the slot's
+/// template when the plan drafts and the kernel admits the draft whole, from
+/// the producer otherwise.
+///
+/// # Specification
+/// - ensures: as [`Memo::admit_family`] states, with the controller's decision
+///   taken from the ticket and the memo-wide samples left in it; only the
+///   ticket's slot changes.
+/// - fails: caller-budget exhaustion; a lookup or syntax error from analysis,
+///   drafting or emission.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `StageError::Exhausted` or the propagated `StageError`.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — every family [`Memo::admit_family`] and
+///   [`Memo::admit_families`] admit runs here.
+/// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+/// - witness: `template::tests::a_kernel_refused_draft_falls_back_to_the_producer`
+/// - witness: `template::tests::a_work_bound_family_admits_its_template_subfamily`
+/// - witness: `template::tests::forked_families_equal_one_by_one_admission_across_the_edit_traces`
+#[spec(captures: [available = budget.0], ensures: |output| budget.0 <= available
+    && output.as_ref().ok().is_none_or(|report| match report.admission {
+        FamilyAdmission::Admitted { origin: Origin::Drafted(kind), .. } =>
+            report.drafting == Drafting::Accepted(kind) && report.spent.producing.is_zero(),
+        _ => !matches!(report.drafting, Drafting::Accepted(_)),
+    }))]
+fn admit<C>(
+    ticket: &mut Ticket<'_>,
+    arena: &Arena,
+    family: &Family,
+    gate: PriceGate,
+    cache: &mut InheritanceCache,
+    budget: &mut Budget,
+    scratch: &mut Scratch<'_, C>,
+) -> Result<FamilyReport, StageError>
+where
+    C: Clock,
+{
+    let members = family.members.as_slice();
+    let slot = &mut *ticket.slot;
+    let samples = &mut ticket.samples;
+    let (plan, arm) = (ticket.plan, ticket.arm);
+    let drafter = &mut *scratch.drafter;
+    let row = &mut *scratch.row;
+    let clock = &mut *scratch.clock;
+    let mut spent = Spent::default();
+    let mut drafting = Drafting::Unmemoized;
+    if let Plan::Decided(decision) = plan
+        && let Held::Template(ref memo) = slot.held
+    {
+        match decision {
+            | Decision::Decline(decline) => drafting = Drafting::Declined(decline),
+            | Decision::Draft => {
+                let begun = clock.now();
+                let mut cap = Cap {
+                    producing: slot.controls.producing,
+                    arm,
+                    measured: Tracked::Unsampled,
+                };
+                let attempt = memo.attempt(arena, members, gate, &mut cap, drafter, clock)?;
+                samples.arm = cap.measured;
+                spent.drafting = since(clock, begun);
+                drafting = match attempt {
+                    | Attempt::Withdrawn(withdrawn) => withdrawn,
+                    | Attempt::Ready(draft, kind) => {
+                        let begun = clock.now();
+                        let choices = rows(
+                            &draft.choices,
+                            PointCount(memo.entries.len()),
+                            MemberCount::from(members.len()),
+                        )?;
+                        let judged = judge(arena, members, draft.proposal, &choices, row, budget)?;
+                        spent.admitting = since(clock, begun);
+                        let allowance = usize::from(draft.cost.template_size);
+                        match judged {
+                            | Judged::Refused(refusal) => Drafting::Refused(refusal),
+                            | Judged::Admitted(schema)
+                                if gate == PriceGate::Memoized
+                                    && schema.largest_replay().0 > allowance =>
+                            {
+                                Drafting::ReplayBound(schema.largest_replay())
+                            },
+                            | Judged::Admitted(schema) => {
+                                samples.draft =
+                                    slot.controls.observe(Acceptance::Accepted, spent.drafting);
+                                if let Held::Template(ref mut held) = slot.held {
+                                    draft.revision.apply(held, draft.cost);
+                                }
+                                return Ok(FamilyReport {
+                                    admission: FamilyAdmission::Admitted {
+                                        schema,
+                                        origin: Origin::Drafted(kind),
+                                    },
+                                    drafting: Drafting::Accepted(kind),
+                                    spent,
+                                });
+                            },
+                        }
+                    },
+                };
+                samples.draft = slot.controls.observe(Acceptance::Refused, spent.drafting);
+            },
+        }
+    }
+    let begun = clock.now();
+    let analysis = analyze(arena, members)?;
+    let candidate = match analysis {
+        | Analysis::Candidate(candidate) => candidate,
+        | Analysis::Refused { reason, .. } => {
             spent.producing = since(clock, begun);
             slot.controls.producing = Estimate::Measured(spent.producing);
             slot.held = Held::Vacant;
             return Ok(FamilyReport {
-                admission: FamilyAdmission::Plain(TemplateRefusal::DoesNotPay {
-                    template_size: cost.template_size,
-                    plain_size: cost.plain_size,
-                }),
+                admission: FamilyAdmission::Plain(reason),
                 drafting,
                 spent,
             });
-        }
-        let admission = candidate.admission_candidate()?;
-        let production = candidate.produce(gate, cache, budget)?;
+        },
+    };
+    let prices = candidate.prices();
+    let pays = match gate {
+        | PriceGate::Unmemoized => prices.unmemoized.is_ok(),
+        | PriceGate::Memoized => prices.memoized.is_ok(),
+    };
+    if !pays {
+        let cost = candidate.cost();
         spent.producing = since(clock, begun);
         slot.controls.producing = Estimate::Measured(spent.producing);
-        let template = match production {
-            | Production::Go(template) => template,
-            | Production::Plain { reason, .. } => {
-                slot.held = Held::Vacant;
-                return Ok(FamilyReport {
-                    admission: FamilyAdmission::Plain(reason),
-                    drafting,
-                    spent,
-                });
-            },
-            | Production::WorkBoundExceeded { bound, .. } => {
-                return Ok(FamilyReport {
-                    admission: FamilyAdmission::WorkBoundExceeded(bound),
-                    drafting,
-                    spent,
-                });
-            },
-        };
-        let begun = clock.now();
-        let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
-        let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
-        spent.admitting = spent.admitting.saturating_add(since(clock, begun));
-        let refusal = match judged {
-            | Judged::Admitted(schema) => {
-                let begun = clock.now();
-                let held = template.compacted()?;
-                spent.drafting = spent.drafting.saturating_add(since(clock, begun));
-                slot.held = Held::Template(held);
-                return Ok(FamilyReport {
-                    admission: FamilyAdmission::Admitted {
-                        schema,
-                        origin: Origin::Produced,
-                    },
-                    drafting,
-                    spent,
-                });
-            },
-            | Judged::Refused(refusal) => refusal,
-        };
-        let refused = FamilyReport {
-            admission: FamilyAdmission::Refused(refusal),
+        slot.held = Held::Vacant;
+        return Ok(FamilyReport {
+            admission: FamilyAdmission::Plain(TemplateRefusal::DoesNotPay {
+                template_size: cost.template_size,
+                plain_size: cost.plain_size,
+            }),
             drafting,
             spent,
-        };
-        if refusal != Refusal::SchemaWorkBound {
-            return Ok(refused);
-        }
-        let Held::Template(ref old) = slot.held
-        else {
-            return Ok(refused);
-        };
-        let begun = clock.now();
-        let matched = old.walk_partial(arena, members, drafter)?;
-        let finished = if matched.is_empty() {
-            Finished::Unfit(Unfit::DoesNotPay(TemplateRefusal::EmptyFamily))
-        }
-        else {
-            old.finish(
-                arena,
-                members,
-                Coverage::Partial(&matched),
-                drafter,
-                gate,
-                clock,
-            )?
-        };
-        spent.drafting = spent.drafting.saturating_add(since(clock, begun));
-        let Finished::Ready(draft) = finished
-        else {
-            return Ok(FamilyReport { spent, ..refused });
-        };
-        let begun = clock.now();
-        let subfamily: Vec<Step> = matched
-            .iter()
-            .filter_map(|member| members.get(usize::from(*member)).copied())
-            .collect();
-        let choices = rows(
-            &draft.choices,
-            PointCount(old.entries.len()),
-            MemberCount::from(subfamily.len()),
-        )?;
-        let judged = judge(arena, &subfamily, draft.proposal, &choices, row, budget)?;
-        spent.admitting = spent.admitting.saturating_add(since(clock, begun));
-        let Judged::Admitted(schema) = judged
-        else {
-            return Ok(FamilyReport { spent, ..refused });
-        };
-        Ok(FamilyReport {
-            admission: FamilyAdmission::Partial {
-                schema,
-                members: matched,
-            },
-            drafting,
-            spent,
-        })
+        });
     }
+    let admission = candidate.admission_candidate()?;
+    let production = candidate.produce(gate, cache, budget)?;
+    spent.producing = since(clock, begun);
+    slot.controls.producing = Estimate::Measured(spent.producing);
+    let template = match production {
+        | Production::Go(template) => template,
+        | Production::Plain { reason, .. } => {
+            slot.held = Held::Vacant;
+            return Ok(FamilyReport {
+                admission: FamilyAdmission::Plain(reason),
+                drafting,
+                spent,
+            });
+        },
+        | Production::WorkBoundExceeded { bound, .. } => {
+            return Ok(FamilyReport {
+                admission: FamilyAdmission::WorkBoundExceeded(bound),
+                drafting,
+                spent,
+            });
+        },
+    };
+    let begun = clock.now();
+    let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
+    let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
+    spent.admitting = spent.admitting.saturating_add(since(clock, begun));
+    let refusal = match judged {
+        | Judged::Admitted(schema) => {
+            let begun = clock.now();
+            let held = template.compacted()?;
+            spent.drafting = spent.drafting.saturating_add(since(clock, begun));
+            slot.held = Held::Template(held);
+            return Ok(FamilyReport {
+                admission: FamilyAdmission::Admitted {
+                    schema,
+                    origin: Origin::Produced,
+                },
+                drafting,
+                spent,
+            });
+        },
+        | Judged::Refused(refusal) => refusal,
+    };
+    let refused = FamilyReport {
+        admission: FamilyAdmission::Refused(refusal),
+        drafting,
+        spent,
+    };
+    if refusal != Refusal::SchemaWorkBound {
+        return Ok(refused);
+    }
+    let Held::Template(ref old) = slot.held
+    else {
+        return Ok(refused);
+    };
+    let begun = clock.now();
+    let matched = old.walk_partial(arena, members, drafter)?;
+    let finished = if matched.is_empty() {
+        Finished::Unfit(Unfit::DoesNotPay(TemplateRefusal::EmptyFamily))
+    }
+    else {
+        old.finish(
+            arena,
+            members,
+            Coverage::Partial(&matched),
+            drafter,
+            gate,
+            clock,
+        )?
+    };
+    spent.drafting = spent.drafting.saturating_add(since(clock, begun));
+    let Finished::Ready(draft) = finished
+    else {
+        return Ok(FamilyReport { spent, ..refused });
+    };
+    let begun = clock.now();
+    let subfamily: Vec<Step> = matched
+        .iter()
+        .filter_map(|member| members.get(usize::from(*member)).copied())
+        .collect();
+    let choices = rows(
+        &draft.choices,
+        PointCount(old.entries.len()),
+        MemberCount::from(subfamily.len()),
+    )?;
+    let judged = judge(arena, &subfamily, draft.proposal, &choices, row, budget)?;
+    spent.admitting = spent.admitting.saturating_add(since(clock, begun));
+    let Judged::Admitted(schema) = judged
+    else {
+        return Ok(FamilyReport { spent, ..refused });
+    };
+    Ok(FamilyReport {
+        admission: FamilyAdmission::Partial {
+            schema,
+            members: matched,
+        },
+        drafting,
+        spent,
+    })
 }

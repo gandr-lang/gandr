@@ -67,6 +67,8 @@ pub use draft::Miss;
 pub use draft::RepairCount;
 pub use draft::Unfit;
 pub use harvest::Family;
+pub(crate) use harvest::Grouping;
+pub(crate) use harvest::Harvest;
 pub use harvest::harvest;
 pub use image::plain_image;
 pub use memo::Clock;
