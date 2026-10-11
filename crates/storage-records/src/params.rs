@@ -695,6 +695,8 @@ impl TreeRoot
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
+
     use super::EncodingVersion;
     use super::TreeParams;
     use super::TreeRoot;
@@ -726,7 +728,7 @@ mod tests
     ///   18 distinguish a changed first byte, nonzero tail or collapsed seeds.
     /// - witness: `params::tests::the_manifest_digest_is_pinned`
     /// - witness: `params::tests::binding_refuses_a_foreign_root_node`
-    #[anodized::spec(ensures: |ret| ret.as_ref().first() == Some(&seed.0)
+    #[spec(ensures: |ret| ret.as_ref().first() == Some(&seed.0)
         && ret.as_ref().iter().skip(1).all(|byte| *byte == 0))]
     fn node_hash(seed: HashSeed) -> NodeHash
     {

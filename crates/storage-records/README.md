@@ -131,7 +131,7 @@ The remaining executable exemptions have explicit limits beside their items:
 | Owned optional records in a constant constructor | Moved inputs are unavailable afterward, and constant instrumentation does not support pre-state captures. |
 | Required store-trait methods | Instrumentation changes implementation hooks and object compatibility; concrete method bodies carry executable checks. |
 
-The enforcing lane supplies `--cfg anodized_panic` across the dependency graph. `anodized` defaults remain disabled; type predicates also require its data-predicate runtime. Run the crate under enforcement with:
+The enforcing lane supplies `--cfg anodized_panic` across the dependency graph. The workspace enables the `quenchant-anodized` facade's backend feature with defaults disabled; the facade is named `anodized`, and its type-predicate implementations remain available in both plain and enforcing builds. Plain builds type-check specification predicates without evaluating them; pre-state captures retain their evaluation semantics. Run the crate under enforcement with:
 
 ```sh
 CARGO_TARGET_DIR=target/enforcing RUSTFLAGS="--cfg anodized_panic" mise exec -- cargo test -p gandr-storage-records --all-targets

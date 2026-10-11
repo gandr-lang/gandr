@@ -748,6 +748,8 @@ mod tests
 {
     use core::fmt::Write as _;
 
+    use anodized::spec;
+
     use super::Source;
     use super::StreamEnd;
     use super::TokenReader;
@@ -1036,7 +1038,7 @@ mod tests
         /// - hypothesis: L3 on a reader diagnostic observes the exact refusal,
         ///   distinguishing accidental acceptance of unavailable output.
         /// - witness: `reader::tests::reader_diagnostics_omit_payload_data`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

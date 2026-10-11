@@ -372,6 +372,8 @@ impl AsRef<[u8]> for ManifestImageBuf
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
+
     /// A formatting sink that refuses every write.
     #[derive(Debug)]
     struct RefusingSink;
@@ -394,7 +396,7 @@ mod tests
         /// - hypothesis: L3 on text from the quantity boundary matrix observes
         ///   the exact error, distinguishing a sink that accepts a write.
         /// - witness: `units::tests::quantities_preserve_values_flags_and_refusal`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

@@ -309,6 +309,8 @@ mod tests
 {
     use alloc::format;
 
+    use anodized::spec;
+
     use super::FailureContext;
     use super::RecordTreeError;
     use super::WireVersion;
@@ -334,7 +336,7 @@ mod tests
         /// - hypothesis: L3 on text from every refusal class; the exact error
         ///   distinguishes a sink that incorrectly accepts the write.
         /// - witness: `error::tests::refusal_classes_stay_distinct`
-        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(core::fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

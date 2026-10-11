@@ -39,12 +39,13 @@ env.CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "dylint-link"
 env.CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "dylint-link"
 env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{% set flags = env.CARGO_ENCODED_RUSTFLAGS %}{% else %}{% set flags = env.RUSTFLAGS | default(value='') | trim | regex_replace(pattern='\\\\s+', rep='\u001f') %}{% endif %}{{ flags }}{% if flags %}\u001f{% endif %}--cfg=quenchant_compiler_policy"
 # The executable-specification lints are `allow` by default in the library and
-# denied here for the whole workspace: an attribute on every nontrivial item,
-# an adequacy section with witnesses, `Maybe` for absence, typed errors at the
-# boundary. A crate the backfill has not reached yet carries the matching
-# `allow` on its root under `cfg_attr(dylint_lib = "quenchant_dylints", …)`;
-# that line leaves with the crate's own backfill, and this flag stays.
-env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D adequacy_present -D maybe_shape -D erased_error_signature"
+# denied here for the whole workspace: an unqualified attribute on every
+# nontrivial item, an adequacy section with witnesses, `Maybe` for absence,
+# typed errors at the boundary. A crate the backfill has not reached yet
+# carries the matching `allow` on its root under
+# `cfg_attr(dylint_lib = "quenchant_dylints", …)`; that line leaves with the
+# crate's own backfill, and this flag stays.
+env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature"
 run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
 
 # External workflow consumers use one full revision in Dylint metadata for
@@ -65,7 +66,7 @@ depends = ["workflow:install"]
 env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 run = "quenchant-gates anodized --manifest-path Cargo.toml"
 
-# The proc macro chooses enforcement when the host compiles it, so the cfg is
+# The facade selects enforcement from the annotated crate's cfg, so it is
 # set for the whole graph. The enforcing tasks build into their own target
 # directory: the wall runs its tasks in parallel, and a shared directory would
 # rebuild artifacts under a sibling task's flags.

@@ -42,7 +42,9 @@ The policy lane restores the same enforcing test artifacts for witness discovery
 
 Archive creation stops the job if either tar or zstd fails.
 
-The pinned anodized fork supports executable specifications on ordinary and const functions and type refinements without requiring `std` or the `logic` feature. `anodized::types::Spec::predicate` evaluates a type invariant directly. `--cfg anodized_panic` enables boundary enforcement for the whole build graph, including compile-time evaluation of const calls; without it, boundary predicates remain type-checked but do not execute.
+The workspace names the pinned `quenchant-anodized` facade `anodized`, with defaults disabled and its `anodized` feature enabled to compile the development backend. The backend is the [anodized fork](https://github.com/gandr-lang/anodized), supporting ordinary and const functions and type refinements without `std` or the `logic` feature. `--cfg anodized_panic` selects enforcement for the whole build graph, including const evaluation and `anodized::types::Spec::predicate`. Without an instrumentation cfg, predicates remain type-checked but are not evaluated; pre-state captures retain the backend's ordinary evaluation semantics. With the feature disabled, strip mode erases specifications and excludes the backend entirely. The feature alone never enables enforcement.
+
+Import `anodized::spec` and write `#[spec(...)]`; the policy lane denies qualified specification attributes. Direct use of the fork lacks the facade's backend-free strip mode; handwritten assertions lack its shared specification representation. Reconsider the facade when the specification backend or its supported build modes change.
 
 `mise run ci:act` runs the committed Linux CI workflow in a disposable checkout. Two host-wide slots bound concurrent gates across repositories and worktrees; further invocations wait until a slot frees. Dead holders are reclaimed. Each invocation uses distinct container names. Cached actions run without GitHub fetches; missing actions download on first use.
 
