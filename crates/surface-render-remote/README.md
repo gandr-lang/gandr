@@ -18,6 +18,7 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 - [Stable diagnostic codes](#stable-diagnostic-codes)
 - [The frame](#the-frame)
 - [Forms this crate does not carry](#forms-this-crate-does-not-carry)
+- [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
 
 <!-- tocstop -->
@@ -182,6 +183,18 @@ Each form below is left out because no reader is scheduled for it; each arrives 
 | attribute cards | an attribute inspection face |
 | the type under a cursor and completion candidates | the language server's hover and completion over goals, once hole goals and the checker's spellings carry them |
 | a preview frame of the buffer before submission | a terminal face that previews a buffer before it is submitted |
+
+## Deferred behavioral floor
+
+| Deferred witness | Missing former or reader |
+| ---------------- | ------------------------ |
+| `wire::projection_part_constructors_store_fields_verbatim` | Typing-machine projection reader |
+| `wire::control_and_direction_defaults_are_the_projection_idle_states` | Typing-machine projection reader |
+| `wire::mvp_capabilities_are_whole_frame_only` | Server capability advertisement |
+| `wire::the_obligation_capability_is_the_row_capability` | Obligation-card wire reader |
+| `wire::frames_round_trip_obligation_rows_and_an_empty_row_set` | Obligation-card wire reader |
+| `present::obligation_classes_are_declared_low_severity_to_high` | Obligation-card wire reader |
+| `wire::report_view_defaults_without_attributes` | Attribute-card wire reader |
 
 ## License
 

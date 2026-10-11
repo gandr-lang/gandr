@@ -1601,6 +1601,137 @@ mod tests
     use crate::readback::ReadbackRefusal;
     use crate::store::MemoState;
 
+    /// A prelude spelling used by a native fixture.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug)]
+    struct NativeName(&'static str);
+
+    /// Apply a named prelude primitive to the supplied core values.
+    ///
+    /// # Specification
+    /// - requires: the name occurs in the prelude and every argument resolves.
+    /// - ensures: the resulting computation resolves in the same arena.
+    /// - provides: the ordinary thunk, force and curried-application path.
+    /// - panics: if the prelude does not contain the fixture's name.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct integer operands and both boolean sides
+    ///   distinguish wrong primitive selection, dropped arguments and reversal.
+    ///   Evidence covers the named scalar fixtures, not arbitrary core values.
+    /// - witness: `machine::tests::const_applied_returns_its_first_argument`
+    /// - witness: `machine::tests::native_integer_addition_returns_sum`
+    /// - witness: `machine::tests::native_boolean_and_returns_false`
+    #[spec(
+        requires: gandr_core_term::primitive::PRELUDE.iter().any(|row| row.name().as_ref() == name.0)
+            && arguments.iter().all(|&argument| core.value(argument).is_some()),
+        ensures: |ret| core.computation(ret).is_some(),
+    )]
+    fn native(
+        core: &mut CoreArena,
+        name: NativeName,
+        arguments: &[ValueId],
+    ) -> ComputationId
+    {
+        let primitive = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .find(|row| row.name().as_ref() == name.0)
+            .expect("a named prelude primitive");
+        let thunk = primitive.thunk(core);
+        let mut term = core.computation_force(thunk);
+        for &argument in arguments {
+            term = core.computation_application(term, argument);
+        }
+        term
+    }
+
+    /// Native identity preserves its integer argument.
+    #[test]
+    fn identity_applied_returns_its_argument()
+    {
+        let mut core = CoreArena::new();
+        let argument = integer(&mut core, Digits("5"));
+        let term = native(&mut core, NativeName("prim.id"), &[argument]);
+        assert_eq!(evaluated(&mut core, term), "⟨5 |+ ★⟩");
+    }
+
+    /// Native constant keeps the first of two distinct arguments.
+    #[test]
+    fn const_applied_returns_its_first_argument()
+    {
+        let mut core = CoreArena::new();
+        let first = integer(&mut core, Digits("7"));
+        let second = integer(&mut core, Digits("9"));
+        let term = native(&mut core, NativeName("prim.const"), &[first, second]);
+        assert_eq!(evaluated(&mut core, term), "⟨7 |+ ★⟩");
+    }
+
+    /// Saturated native addition returns the exact sum.
+    #[test]
+    fn native_integer_addition_returns_sum()
+    {
+        let mut core = CoreArena::new();
+        let first = integer(&mut core, Digits("1"));
+        let second = integer(&mut core, Digits("2"));
+        let term = native(&mut core, NativeName("add"), &[first, second]);
+        assert_eq!(evaluated(&mut core, term), "⟨3 |+ ★⟩");
+    }
+
+    /// Native comparison returns the true injection for increasing integers.
+    #[test]
+    fn native_integer_less_than_returns_true()
+    {
+        let mut core = CoreArena::new();
+        let first = integer(&mut core, Digits("1"));
+        let second = integer(&mut core, Digits("2"));
+        let term = native(&mut core, NativeName("lt"), &[first, second]);
+        let unit = core.value_unit();
+        let truth = core.value_injection(Side::Left, unit);
+        let expected = core.computation_return(truth);
+        assert_eq!(evaluated(&mut core, term), shown(&core, expected));
+    }
+
+    /// Native conjunction selects false from true and false.
+    #[test]
+    fn native_boolean_and_returns_false()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let truth = core.value_injection(Side::Left, unit);
+        let falsity = core.value_injection(Side::Right, unit);
+        let term = native(&mut core, NativeName("and"), &[truth, falsity]);
+        let expected = core.computation_return(falsity);
+        assert_eq!(evaluated(&mut core, term), shown(&core, expected));
+    }
+
+    /// An admitted prelude thunk unfolds through the ordinary constant path.
+    #[test]
+    fn a_forced_prelude_name_resolves_to_its_builtin()
+    {
+        let mut core = CoreArena::new();
+        let primitive = gandr_core_term::primitive::PRELUDE
+            .iter()
+            .find(|row| row.name().as_ref() == "prim.id")
+            .expect("the identity prelude binding");
+        let thunk = primitive.thunk(&mut core);
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let binding = focus_value(&core, thunk, &mut arena, &mut provenance).unwrap();
+        let mut definitions = Definitions::new();
+        let constant = definitions.push(Definition::Transparent(binding));
+        let reference = core.value_constant(constant);
+        let forced = core.computation_force(reference);
+        let argument = integer(&mut core, Digits("5"));
+        let term = core.computation_application(forced, argument);
+        let root = focus_computation(&core, term, &mut arena, &mut provenance).unwrap();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Outcome::Halted(value) = machine.run(root, budget()).unwrap()
+        else {
+            panic!("the forced prelude binding must return its argument");
+        };
+        let read = machine.read_back(value, &mut core).unwrap();
+        assert_eq!(shown(&core, read), "⟨5 |+ ★⟩");
+    }
+
     /// The decimal digits of a test literal.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug)]

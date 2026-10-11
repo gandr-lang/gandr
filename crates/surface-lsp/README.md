@@ -18,6 +18,7 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 - [Document URIs](#document-uris)
 - [Methods the server does not serve](#methods-the-server-does-not-serve)
 - [Specification evidence](#specification-evidence)
+- [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
 
 <!-- tocstop -->
@@ -191,6 +192,19 @@ Executable predicates cover UTF-16 projection and errors, token kinds and groupi
 Adequacy separates bounded observations from broader obligations. The overlap witness exhausts ordered spans and all query endpoint pairs in a five-offset domain, preserving input order and rejecting empty intersections. Other witnesses cover Unicode and line endings, framing ceilings, partial writes and flush failures, decoder refusals, lifecycle errors and ignored updates. The corpus observers independently walk the checked-in sources and compare diagnostics, causal labels and token bytes with the dispatcher and renderer; agreement is evidence over that corpus, not a proof for all programs.
 
 Two effects cannot be observed by a useful return-value predicate: `serve` owns opaque generic input/output streams, and `Capabilities::fmt` writes through an opaque formatter. Their explicit exemptions are witnessed by framed sessions, the advertised JSON and a refused-write sink. Semantic diagnostic fields are asserted directly; diagnostic prose is compared with its renderer rather than pinned as English wording.
+
+## Deferred behavioral floor
+
+| Deferred witness | Missing former or reader |
+| ---------------- | ------------------------ |
+| `hover_at_the_origin_is_total` | Type-aware hover reader |
+| `hovering_a_defined_name_reports_its_type` | Type-aware hover reader |
+| `words_inside_comments_and_strings_do_not_hover` | Type-aware hover reader |
+| `a_parameter_does_not_hover_as_an_unrelated_top_level_definition` | Type-aware hover reader |
+| `hovering_an_unknown_name_is_none` | Type-aware hover reader |
+| `the_word_scan_accepts_the_cursor_at_either_edge` | Type-aware hover reader |
+| `an_earlier_redefined_name_hovers_its_own_type` | Type-aware hover reader |
+| `a_redefined_name_hovers_its_latest_type` | Type-aware hover reader |
 
 ## License
 

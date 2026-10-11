@@ -154,8 +154,8 @@ Deferred, with the former each needs:
 | `lazy_product_and_thunk_types` | the lazy computation product |
 | `stack_type_pins_bracketed_pair_notation` | the stack type |
 | `stack_with_arrow_keeps_both_bracketed_items` | the stack type |
-| `declared_data_application_breaks_arguments` | declared data with arguments |
-| `nested_list_value_stays_grouped` | list values, from declared data |
+| `declared_data_application_breaks_arguments` | parameterized Data grammar and printer reader; [#85](https://github.com/gandr-lang/gandr/pull/85) supplies the native core former, not its presentation |
+| `nested_list_value_stays_grouped` | List value grammar and printer reader |
 | `annotations_are_transparent` | an annotated value; no core value carries one |
 | `here_witness_pins_identity_notation` | the identity witness |
 
