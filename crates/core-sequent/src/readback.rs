@@ -40,6 +40,9 @@ use crate::unfocus::decode;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReadbackRefusal
 {
+    /// A runtime continuation contains frames outside flat literal-stack
+    /// syntax.
+    NonLiteralStack(HeapValueId),
     /// The value has none: a suspended `μ`, a copattern object standing as a
     /// value, or a constructed value whose fields contradict its head.
     Unreadable(HeapValueId),
@@ -63,6 +66,9 @@ impl fmt::Display for ReadbackRefusal
     ) -> fmt::Result
     {
         match *self {
+            | Self::NonLiteralStack(id) => {
+                write!(f, "stack {id} contains runtime continuation frames")
+            },
             | Self::Unreadable(id) => write!(f, "value {id} has no core reading"),
             | Self::Dangling(id) => write!(f, "value {id} is not readable from the store"),
             | Self::Decode(refusal) => {
@@ -202,7 +208,7 @@ pub fn read_back_terminal(
 /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
 #[spec(ensures: |ret| match ret {
     | Ok(read) => store.value(value).is_some_and(|held| match held {
-        | &HeapValue::Closure { .. } => matches!(core.computation(read), Some(&gandr_core_term::Computation::Lambda(_))),
+        | &HeapValue::Closure { .. } => matches!(core.computation(read), Some(&gandr_core_term::Computation::Lambda(_) | &gandr_core_term::Computation::With(..))),
         | _ => matches!(core.computation(read), Some(&gandr_core_term::Computation::Return(_))),
     }),
     | Err(error) => store.value(value).is_some() || error == ReadbackRefusal::Dangling(value),
@@ -226,7 +232,7 @@ fn terminal(
         };
         let mut reading = Reading::new(arena, store, core);
         let closing = reading.closing(environment)?;
-        return match decode(arena, Root::Function(producer), core, &closing)? {
+        return match decode(arena, Root::Copattern(producer), core, &closing)? {
             | Decoded::Computation(function) => Ok(function),
             | Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
         };
@@ -353,6 +359,24 @@ impl<'run> Reading<'run>
                 continue;
             }
             match *store.value(id).ok_or(ReadbackRefusal::Dangling(id))? {
+                | HeapValue::Stack { ref frames } => {
+                    for frame in frames {
+                        match *frame {
+                            | crate::store::Frame::Destructor {
+                                tag: crate::il::DestructorTag::Apply,
+                                arguments: crate::store::ObservationArguments::Unary(value),
+                            } => pending.push(value),
+                            | crate::store::Frame::Destructor {
+                                tag: crate::il::DestructorTag::Project(_),
+                                arguments: crate::store::ObservationArguments::Nullary,
+                            } => {},
+                            | crate::store::Frame::Bind { environment, .. } => {
+                                pending.extend(store.bound_values(environment));
+                            },
+                            | _ => return Err(ReadbackRefusal::NonLiteralStack(id)),
+                        }
+                    }
+                },
                 | HeapValue::Literal(_) | HeapValue::Opaque(_) => {},
                 | HeapValue::Constructed { ref fields, .. } => {
                     pending.extend(fields.iter().copied());
@@ -401,10 +425,13 @@ impl<'run> Reading<'run>
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),
             | Ok(read) => self.store.value(id).zip(self.core.value(read)).is_some_and(|(held, node)| match *held {
+                | HeapValue::Stack { ref frames } => matches!(node, gandr_core_term::Value::Reify(source) if source.len() == frames.len()),
                 | HeapValue::Literal(ref literal) => matches!(*node, gandr_core_term::Value::Literal(ref found) if found == literal),
                 | HeapValue::Opaque(constant) => *node == gandr_core_term::Value::Constant(constant),
                 | HeapValue::Constructed { ref tag, ref fields } => match (tag, fields.as_ref()) {
                     | (&ConstructorTag::Unit, &[]) => *node == gandr_core_term::Value::Unit,
+                    | (&ConstructorTag::ListNil, &[]) => *node == gandr_core_term::Value::ListNil,
+                    | (&ConstructorTag::ListCons, &[head, tail]) => matches!(*node, gandr_core_term::Value::ListCons(h, t) if self.read.get(&head) == Some(&h) && self.read.get(&tail) == Some(&t)),
                     | (&ConstructorTag::Pair, &[first, second]) => matches!(*node, gandr_core_term::Value::Pair(left, right)
                         if self.read.get(&first) == Some(&left) && self.read.get(&second) == Some(&right)),
                     | (&ConstructorTag::Injection(side), &[body]) => matches!(*node, gandr_core_term::Value::Injection(found, value)
@@ -431,6 +458,35 @@ impl<'run> Reading<'run>
         let store = self.store;
         let held = store.value(id).ok_or(ReadbackRefusal::Dangling(id))?;
         match *held {
+            | HeapValue::Stack { ref frames } => {
+                let mut source = Vec::with_capacity(frames.len());
+                for frame in frames.iter().rev() {
+                    source.push(match *frame {
+                        | crate::store::Frame::Destructor {
+                            tag: crate::il::DestructorTag::Apply,
+                            arguments: crate::store::ObservationArguments::Unary(value),
+                        } => gandr_core_term::control::StackFrame::Apply(self.lookup(value)?),
+                        | crate::store::Frame::Destructor {
+                            tag: crate::il::DestructorTag::Project(side),
+                            arguments: crate::store::ObservationArguments::Nullary,
+                        } => gandr_core_term::control::StackFrame::Project(side),
+                        | crate::store::Frame::Bind { body, environment } => {
+                            let closing = store
+                                .bound_values(environment)
+                                .map(|bound| self.lookup(bound))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            let Decoded::Computation(body) =
+                                decode(self.arena, Root::BindBody(body), self.core, &closing)?
+                            else {
+                                return Err(UnfocusRefusal::DecodeInvariant.into());
+                            };
+                            gandr_core_term::control::StackFrame::Bind(body)
+                        },
+                        | _ => return Err(ReadbackRefusal::NonLiteralStack(id)),
+                    });
+                }
+                Ok(self.core.value_reify(source.into()))
+            },
             | HeapValue::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
             | HeapValue::Opaque(constant) => Ok(self.core.value_constant(constant)),
             | HeapValue::Constructed {
@@ -438,6 +494,12 @@ impl<'run> Reading<'run>
                 ref fields,
             } => match (tag, fields.as_ref()) {
                 | (&ConstructorTag::Unit, &[]) => Ok(self.core.value_unit()),
+                | (&ConstructorTag::ListNil, &[]) => Ok(self.core.value_list_nil()),
+                | (&ConstructorTag::ListCons, &[head, tail]) => {
+                    let head = self.lookup(head)?;
+                    let tail = self.lookup(tail)?;
+                    Ok(self.core.value_list_cons(head, tail))
+                },
                 | (&ConstructorTag::Pair, &[first, second]) => {
                     let first = self.lookup(first)?;
                     let second = self.lookup(second)?;

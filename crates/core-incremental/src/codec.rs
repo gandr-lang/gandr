@@ -83,9 +83,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x06";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x07";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x04";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x05";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1268,6 +1268,91 @@ where
             write_index(writer, record)?;
             writer.bytes(Bytes(label.as_ref().as_bytes()))?;
         },
+        | ContentNode::Reify(ref frames) => {
+            writer.tag(Tag(0x71));
+            writer.count(Count(frames.len()))?;
+            for frame in frames.iter() {
+                match *frame {
+                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                        writer.tag(Tag(0));
+                        write_index(writer, value)?;
+                    },
+                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                        writer.tag(Tag(1));
+                        write_index(writer, body)?;
+                    },
+                    | gandr_core_term::control::StackFrame::Project(side) => {
+                        writer.tag(Tag(2));
+                        writer.tag(match side {
+                            | Side::Left => Tag(0),
+                            | Side::Right => Tag(1),
+                        });
+                    },
+                }
+            }
+        },
+        | ContentNode::Stack { input, output } => {
+            writer.tag(Tag(0x72));
+            write_index(writer, input)?;
+            write_index(writer, output)?;
+        },
+        | ContentNode::WithType(first, second) => {
+            writer.tag(Tag(0x73));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
+        },
+        | ContentNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+        } => {
+            writer.tag(Tag(0x74));
+            write_index(writer, payload)?;
+            write_effect_signature(writer, signature)?;
+            writer.bytes(Bytes(operation.as_ref().as_bytes()))?;
+        },
+        | ContentNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+        } => {
+            writer.tag(Tag(0x75));
+            write_index(writer, subject)?;
+            write_index(writer, on_return)?;
+            write_effect_signature(writer, signature)?;
+            writer.count(Count(clauses.len()))?;
+            for clause in clauses.iter() {
+                writer.bytes(Bytes(clause.operation.as_ref().as_bytes()))?;
+                write_index(writer, clause.body)?;
+            }
+        },
+        | ContentNode::Resume(stack, body) => {
+            writer.tag(Tag(0x76));
+            write_index(writer, stack)?;
+            write_index(writer, body)?;
+        },
+        | ContentNode::Reset(body) => {
+            writer.tag(Tag(0x77));
+            write_index(writer, body)?;
+        },
+        | ContentNode::Shift(body) => {
+            writer.tag(Tag(0x78));
+            write_index(writer, body)?;
+        },
+        | ContentNode::With(first, second) => {
+            writer.tag(Tag(0x79));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
+        },
+        | ContentNode::Project(side, body) => {
+            writer.tag(Tag(0x7A));
+            writer.tag(match side {
+                | Side::Left => Tag(0),
+                | Side::Right => Tag(1),
+            });
+            write_index(writer, body)?;
+        },
         | ContentNode::PrimitiveValue(primitive) => {
             writer.tag(Tag(0x0D));
             writer.bytes(Bytes(primitive.name().as_ref().as_bytes()))?;
@@ -1446,6 +1531,28 @@ where
             write_index(writer, first)?;
             write_index(writer, second)?;
         },
+        | ContentNode::List(element) => {
+            writer.tag(Tag(0x56));
+            write_index(writer, element)?;
+        },
+        | ContentNode::ListNil => writer.tag(Tag(0x57)),
+        | ContentNode::ListCons(head, tail) => {
+            writer.tag(Tag(0x58));
+            write_index(writer, head)?;
+            write_index(writer, tail)?;
+        },
+        | ContentNode::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        } => {
+            writer.tag(Tag(0x59));
+            for child in [element, result, list, on_nil, on_cons] {
+                write_index(writer, child)?;
+            }
+        },
         | ContentNode::ThunkType(body) => {
             writer.tag(Tag(0x24));
             write_index(writer, body)?;
@@ -1495,9 +1602,19 @@ where
             write_index(writer, codomain)?;
         },
         | ContentNode::UnknownType => writer.tag(Tag(0x2C)),
-        | ContentNode::Returner(result) => {
-            writer.tag(Tag(0x30));
-            write_index(writer, result)?;
+        | ContentNode::Returner {
+            result,
+            ref effects,
+        } => {
+            if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                writer.tag(Tag(0x30));
+                write_index(writer, result)?;
+            }
+            else {
+                writer.tag(Tag(0x70));
+                write_index(writer, result)?;
+                write_effect_row(writer, effects)?;
+            }
         },
         | ContentNode::Arrow { domain, codomain } => {
             writer.tag(Tag(0x31));
@@ -1745,6 +1862,139 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
     Ok(crate::content::DataContent::from_parts(roots, nodes))
 }
 
+/// Write an inline interface in canonical operation order.
+///
+/// # Specification
+/// - ensures: names precede ordered payload and reply indices.
+/// - fails: unrepresentable byte lengths or indices.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persistence distinguishes operation names and ordered
+///   type edges.
+/// - witness: `codec::tests::control_nodes_persist_names_frames_and_branch_order`
+#[spec(ensures: |ret| matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)))]
+fn write_effect_signature<Out>(
+    writer: &mut Writer<'_, Out>,
+    signature: &gandr_core_term::effect::EffectSig<NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.bytes(Bytes(signature.name().as_ref().as_bytes()))?;
+    writer.count(Count(signature.operations().len()))?;
+    for operation in signature.operations() {
+        writer.bytes(Bytes(operation.name.as_ref().as_bytes()))?;
+        write_index(writer, operation.payload)?;
+        write_index(writer, operation.reply)?;
+    }
+    Ok(())
+}
+
+/// Read an interface without accepting duplicate or noncanonical operations.
+///
+/// # Specification
+/// - ensures: a successful signature consumes its complete name and type edges.
+/// - fails: corrupt fields or operation names not in strictly increasing order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed signatures cannot acquire a second canonical
+///   spelling.
+/// - witness: `codec::tests::effect_rows_reject_duplicate_and_noncanonical_names`
+/// - witness: `codec::tests::control_nodes_persist_names_frames_and_branch_order`
+#[spec(captures: before = reader.cursor, ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
+fn read_effect_signature(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_term::effect::EffectSig<NodeIndex>, CodecError>
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let name = EffectName::from(
+        core::str::from_utf8(reader.bytes()?.0).map_err(|_invalid_utf8| CodecError::Corrupt)?,
+    );
+    let count = reader.count()?;
+    let mut operations: Vec<EffectOp<NodeIndex>> = Vec::new();
+    for _ in 0 .. count.0 {
+        let name = OperationName::from(
+            core::str::from_utf8(reader.bytes()?.0).map_err(|_invalid_utf8| CodecError::Corrupt)?,
+        );
+        if operations
+            .last()
+            .is_some_and(|previous| previous.name >= name)
+        {
+            return Err(CodecError::Corrupt);
+        }
+        operations.push(EffectOp {
+            name,
+            payload: read_index(reader)?,
+            reply: read_index(reader)?,
+        });
+    }
+    EffectSig::new(name, operations).map_err(|_duplicate_operation| CodecError::Corrupt)
+}
+
+/// Write a canonical interface map and every operation's type indices.
+///
+/// # Specification
+/// - ensures: a representable row is written in interface and operation name
+///   order.
+/// - fails: `Unrepresentable` when a name length or node index cannot be
+///   encoded.
+///
+/// # Adequacy
+/// - hypothesis: L3 — relocation and persistence distinguish operation names
+///   and types.
+/// - witness: `codec::tests::effect_rows_persist_operation_types_and_canonical_identity`
+#[spec(ensures: |ret| matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)))]
+fn write_effect_row<Out>(
+    writer: &mut Writer<'_, Out>,
+    row: &gandr_core_term::effect::EffectRow<NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(row.signatures().len()))?;
+    for signature in row.signatures() {
+        write_effect_signature(writer, signature)?;
+    }
+    Ok(())
+}
+
+/// Read an interface map without accepting duplicate or noncanonical names.
+///
+/// # Specification
+/// - ensures: successful rows consume input and preserve canonical names and
+///   type edges.
+/// - fails: `Corrupt` for malformed input or names not in strictly increasing
+///   order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — round trips preserve nested operation types; malformed
+///   rows are refused.
+/// - witness: `codec::tests::effect_rows_reject_duplicate_and_noncanonical_names`
+/// - witness: `codec::tests::effect_rows_persist_operation_types_and_canonical_identity`
+#[spec(captures: [before = reader.cursor], ensures: |ret| match ret { Ok(_) => reader.cursor > before && reader.cursor <= reader.bytes.len(), Err(error) => error == CodecError::Corrupt })]
+fn read_effect_row(
+    reader: &mut Reader<'_>
+) -> Result<gandr_core_term::effect::EffectRow<NodeIndex>, CodecError>
+{
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    let count = reader.count()?;
+    let mut signatures: Vec<EffectSig<NodeIndex>> = Vec::new();
+    for _ in 0 .. count.0 {
+        let signature = read_effect_signature(reader)?;
+        if signatures
+            .last()
+            .is_some_and(|previous| previous.name() >= signature.name())
+        {
+            return Err(CodecError::Corrupt);
+        }
+        signatures.push(signature);
+    }
+    EffectRow::from_signatures(signatures).map_err(|_duplicate_interface| CodecError::Corrupt)
+}
 /// Read one content node.
 ///
 /// # Specification
@@ -1775,6 +2025,16 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
                     ContentNode::Record(_) => tag == 0x53,
                     ContentNode::DataCase { .. } => tag == 0x54,
                     ContentNode::RecordProjection(..) => tag == 0x55,
+                    | ContentNode::Reify(_) => tag == 0x71,
+                    | ContentNode::Stack { .. } => tag == 0x72,
+                    | ContentNode::WithType(..) => tag == 0x73,
+                    | ContentNode::Perform { .. } => tag == 0x74,
+                    | ContentNode::Handle { .. } => tag == 0x75,
+                    | ContentNode::Resume(..) => tag == 0x76,
+                    | ContentNode::Reset(_) => tag == 0x77,
+                    | ContentNode::Shift(_) => tag == 0x78,
+                    | ContentNode::With(..) => tag == 0x79,
+                    | ContentNode::Project(..) => tag == 0x7A,
                     | ContentNode::PrimitiveValue(_) => tag == 0x0D,
                     | ContentNode::Primitive(..) => tag == 0x16,
                     | ContentNode::PathUniverse(..) => tag == 0x40,
@@ -1827,7 +2087,11 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
                     } => tag == 0x2A,
                     | ContentNode::StaticPi { .. } => tag == 0x2B,
                     | ContentNode::UnknownType => tag == 0x2C,
-                    | ContentNode::Returner(_) => tag == 0x30,
+                    | ContentNode::List(_) => tag == 0x56,
+                    | ContentNode::ListNil => tag == 0x57,
+                    | ContentNode::ListCons(..) => tag == 0x58,
+                    | ContentNode::ListFold { .. } => tag == 0x59,
+                    | ContentNode::Returner { ref effects, .. } => tag == if effects.purity() == gandr_core_term::effect::Purity::Pure { 0x30 } else { 0x70 },
                     | ContentNode::Arrow { .. } => tag == 0x31,
                     | ContentNode::Pi { .. } => tag == 0x32,
                     | ContentNode::ComputationElement { .. } => tag == 0x33,
@@ -1862,6 +2126,76 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             branches: read_indices(reader)?,
         },
         | 0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
+        | 0x71 => {
+            let count = reader.count()?;
+            let mut frames = Vec::new();
+            for _ in 0 .. count.0 {
+                frames.push(match reader.tag()?.0 {
+                    | 0 => gandr_core_term::control::StackFrame::Apply(read_index(reader)?),
+                    | 1 => gandr_core_term::control::StackFrame::Bind(read_index(reader)?),
+                    | 2 => gandr_core_term::control::StackFrame::Project(match reader.tag()?.0 {
+                        | 0 => Side::Left,
+                        | 1 => Side::Right,
+                        | _ => return Err(CodecError::Corrupt),
+                    }),
+                    | _ => return Err(CodecError::Corrupt),
+                });
+            }
+            ContentNode::Reify(frames.into())
+        },
+        | 0x72 => ContentNode::Stack {
+            input: read_index(reader)?,
+            output: read_index(reader)?,
+        },
+        | 0x73 => ContentNode::WithType(read_index(reader)?, read_index(reader)?),
+        | 0x74 => {
+            let payload = read_index(reader)?;
+            let signature = read_effect_signature(reader)?;
+            let operation = gandr_core_term::effect::OperationName::from(
+                core::str::from_utf8(reader.bytes()?.0)
+                    .map_err(|_invalid_utf8| CodecError::Corrupt)?,
+            );
+            ContentNode::Perform {
+                signature,
+                operation,
+                payload,
+            }
+        },
+        | 0x75 => {
+            let subject = read_index(reader)?;
+            let on_return = read_index(reader)?;
+            let signature = read_effect_signature(reader)?;
+            let count = reader.count()?;
+            let mut clauses = Vec::new();
+            for _ in 0 .. count.0 {
+                let operation = gandr_core_term::effect::OperationName::from(
+                    core::str::from_utf8(reader.bytes()?.0)
+                        .map_err(|_invalid_utf8| CodecError::Corrupt)?,
+                );
+                clauses.push(gandr_core_term::control::EffectClause {
+                    operation,
+                    body: read_index(reader)?,
+                });
+            }
+            ContentNode::Handle {
+                signature,
+                subject,
+                on_return,
+                clauses: clauses.into(),
+            }
+        },
+        | 0x76 => ContentNode::Resume(read_index(reader)?, read_index(reader)?),
+        | 0x77 => ContentNode::Reset(read_index(reader)?),
+        | 0x78 => ContentNode::Shift(read_index(reader)?),
+        | 0x79 => ContentNode::With(read_index(reader)?, read_index(reader)?),
+        | 0x7A => {
+            let side = match reader.tag()?.0 {
+                | 0 => Side::Left,
+                | 1 => Side::Right,
+                | _ => return Err(CodecError::Corrupt),
+            };
+            ContentNode::Project(side, read_index(reader)?)
+        },
         | 0x0D | 0x16 => {
             use gandr_core_term::primitive::Arguments;
             use gandr_core_term::primitive::PRELUDE;
@@ -2063,9 +2397,30 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             ContentNode::StaticPi { domain, codomain }
         },
         | 0x2C => ContentNode::UnknownType,
+        | 0x56 => ContentNode::List(read_index(reader)?),
+        | 0x57 => ContentNode::ListNil,
+        | 0x58 => ContentNode::ListCons(read_index(reader)?, read_index(reader)?),
+        | 0x59 => ContentNode::ListFold {
+            element: read_index(reader)?,
+            result: read_index(reader)?,
+            list: read_index(reader)?,
+            on_nil: read_index(reader)?,
+            on_cons: read_index(reader)?,
+        },
         | 0x30 => {
             let result = read_index(reader)?;
-            ContentNode::Returner(result)
+            ContentNode::Returner {
+                result,
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            }
+        },
+        | 0x70 => {
+            let result = read_index(reader)?;
+            let effects = read_effect_row(reader)?;
+            if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                return Err(CodecError::Corrupt);
+            }
+            ContentNode::Returner { result, effects }
         },
         | 0x31 => {
             let domain = read_index(reader)?;
@@ -2960,8 +3315,8 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
     }
 }
 
-/// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 8] = [
+/// The tags of the unadmitted formers, in stable wire order.
+const FORMERS: [UnadmittedFormer; 18] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::NumericAtom,
@@ -2970,10 +3325,20 @@ const FORMERS: [UnadmittedFormer; 8] = [
     UnadmittedFormer::SortParameter,
     UnadmittedFormer::TopUniverse,
     UnadmittedFormer::StaticLambda,
+    UnadmittedFormer::EffectRow,
+    UnadmittedFormer::Reify,
+    UnadmittedFormer::Stack,
+    UnadmittedFormer::Perform,
+    UnadmittedFormer::Handle,
+    UnadmittedFormer::Resume,
+    UnadmittedFormer::Reset,
+    UnadmittedFormer::Shift,
+    UnadmittedFormer::With,
+    UnadmittedFormer::Project,
 ];
 
 /// The shapes a rule can require, in stable wire order.
-const SHAPES: [ExpectedShape; 9] = [
+const SHAPES: [ExpectedShape; 12] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
@@ -2983,6 +3348,9 @@ const SHAPES: [ExpectedShape; 9] = [
     ExpectedShape::Sum,
     ExpectedShape::Data,
     ExpectedShape::Record,
+    ExpectedShape::Stack,
+    ExpectedShape::With,
+    ExpectedShape::List,
 ];
 
 /// The termination evidence a fixpoint carries, in stable wire order.
@@ -3260,6 +3628,36 @@ where
             write_site(writer, at)?;
             write_type(writer, expected)?;
         },
+        | Refusal::EffectSignatureConflict {
+            at,
+            ref first,
+            ref second,
+        } => {
+            writer.tag(Tag(34));
+            write_site(writer, at)?;
+            write_type(writer, first)?;
+            write_type(writer, second)?;
+        },
+        | Refusal::UnknownOperation { at } => {
+            writer.tag(Tag(35));
+            write_site(writer, at)?;
+        },
+        | Refusal::HandlerCoverage { at } => {
+            writer.tag(Tag(36));
+            write_site(writer, at)?;
+        },
+        | Refusal::ShiftWithoutReset { at } => {
+            writer.tag(Tag(37));
+            write_site(writer, at)?;
+        },
+        | Refusal::DependentStack {
+            at,
+            ref synthesised,
+        } => {
+            writer.tag(Tag(38));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+        },
         | Refusal::PathCode(site) => {
             writer.tag(Tag(18));
             write_site(writer, site)?;
@@ -3287,6 +3685,30 @@ where
         | Refusal::NotSynthesisable { form } => {
             writer.tag(Tag(2));
             match form {
+                | Form::Reify(site) => {
+                    writer.tag(Tag(9));
+                    write_site(writer, site)?;
+                },
+                | Form::Handle(site) => {
+                    writer.tag(Tag(10));
+                    write_site(writer, site)?;
+                },
+                | Form::Reset(site) => {
+                    writer.tag(Tag(11));
+                    write_site(writer, site)?;
+                },
+                | Form::Shift(site) => {
+                    writer.tag(Tag(12));
+                    write_site(writer, site)?;
+                },
+                | Form::With(site) => {
+                    writer.tag(Tag(13));
+                    write_site(writer, site)?;
+                },
+                | Form::List(site) => {
+                    writer.tag(Tag(8));
+                    write_site(writer, site)?;
+                },
                 | Form::Injection(site) => {
                     writer.tag(Tag(5));
                     write_site(writer, site)?;
@@ -3550,6 +3972,11 @@ where
                     | Refusal::NonUniformOccurrence(_) => 31,
                     | Refusal::CrossBlockReference { .. } => 32,
                     | Refusal::DescentNotReplayed { .. } => 33,
+                    | Refusal::EffectSignatureConflict { .. } => 34,
+                    | Refusal::UnknownOperation { .. } => 35,
+                    | Refusal::HandlerCoverage { .. } => 36,
+                    | Refusal::ShiftWithoutReset { .. } => 37,
+                    | Refusal::DependentStack { .. } => 38,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -3620,6 +4047,12 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 | 5 => Form::Injection(read_site(reader)?),
                 | 6 => Form::Case(read_site(reader)?),
                 | 7 => Form::Fixpoint(read_site(reader)?),
+                | 8 => Form::List(read_site(reader)?),
+                | 9 => Form::Reify(read_site(reader)?),
+                | 10 => Form::Handle(read_site(reader)?),
+                | 11 => Form::Reset(read_site(reader)?),
+                | 12 => Form::Shift(read_site(reader)?),
+                | 13 => Form::With(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -3738,6 +4171,24 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let at = read_site(reader)?;
             let reason = read_listed(reader, &DESCENT_REFUSALS)?;
             Refusal::DescentNotReplayed { at, reason }
+        },
+        | 34 => Refusal::EffectSignatureConflict {
+            at: read_site(reader)?,
+            first: read_type(reader)?,
+            second: read_type(reader)?,
+        },
+        | 35 => Refusal::UnknownOperation {
+            at: read_site(reader)?,
+        },
+        | 36 => Refusal::HandlerCoverage {
+            at: read_site(reader)?,
+        },
+        | 37 => Refusal::ShiftWithoutReset {
+            at: read_site(reader)?,
+        },
+        | 38 => Refusal::DependentStack {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
         },
         | _ => return Err(CodecError::Corrupt),
     };
@@ -4584,6 +5035,8 @@ mod tests
         );
     }
 
+    use gandr_kernel_term::BaseType;
+
     use super::Answer;
     use super::Answered;
     use super::BTreeSet;
@@ -4688,6 +5141,249 @@ mod tests
         };
         assert_eq!(overflow.take(Count(1)), Err(CodecError::Corrupt));
         assert_eq!(overflow.cursor, usize::MAX);
+    }
+
+    #[test]
+    fn effect_rows_persist_operation_types_and_canonical_identity()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let index = NodeIndex::from;
+        let rows = [index(1_usize), index(2_usize)].map(|reply| {
+            let effects = EffectRow::from_signatures([
+                EffectSig::new(EffectName::from("Z"), [EffectOp {
+                    name: OperationName::from("get"),
+                    payload: index(1_usize),
+                    reply,
+                }])
+                .expect("distinct operations"),
+                EffectSig::new(EffectName::from("A"), [EffectOp {
+                    name: OperationName::from("put"),
+                    payload: index(2_usize),
+                    reply: index(1_usize),
+                }])
+                .expect("distinct operations"),
+            ])
+            .expect("distinct interfaces");
+            super::TypeContent::from_nodes(vec![
+                ContentNode::Returner {
+                    result: index(1_usize),
+                    effects,
+                },
+                ContentNode::UnitType,
+                ContentNode::Base(BaseType::String),
+            ])
+        });
+        let [first, second] = rows;
+        let mut first_bytes = CheckpointBytes::from(Vec::new());
+        let mut second_bytes = CheckpointBytes::from(Vec::new());
+        super::write_type(
+            &mut Writer {
+                sink: &mut first_bytes,
+            },
+            &first,
+        )
+        .expect("portable row");
+        super::write_type(
+            &mut Writer {
+                sink: &mut second_bytes,
+            },
+            &second,
+        )
+        .expect("portable row");
+        assert_ne!(
+            first_bytes.as_ref(),
+            second_bytes.as_ref(),
+            "an operation's reply type contributes to content identity"
+        );
+        assert_ne!(
+            blake3::hash(first_bytes.as_ref()),
+            blake3::hash(second_bytes.as_ref())
+        );
+        let refusal = super::Refusal::EffectSignatureConflict {
+            at: super::Site::Node(index(9_usize)),
+            first,
+            second,
+        };
+        let mut bytes = CheckpointBytes::from(Vec::new());
+        super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal).expect("portable refusal");
+        let mut reader = Reader {
+            bytes: bytes.as_ref(),
+            cursor: 0,
+        };
+        assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+        assert_eq!(reader.finish(), Ok(()));
+    }
+
+    #[test]
+    fn control_nodes_persist_names_frames_and_branch_order()
+    {
+        use gandr_core_term::control::EffectClause;
+        use gandr_core_term::control::StackFrame;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_kernel_term::Side;
+        let index = NodeIndex::from;
+        let signature = EffectSig::new("State".into(), [
+            EffectOp {
+                name: "first".into(),
+                payload: index(3_usize),
+                reply: index(4_usize),
+            },
+            EffectOp {
+                name: "second".into(),
+                payload: index(4_usize),
+                reply: index(3_usize),
+            },
+        ])
+        .expect("distinct operations");
+        let clauses = alloc::sync::Arc::from([
+            EffectClause {
+                operation: "second".into(),
+                body: index(5_usize),
+            },
+            EffectClause {
+                operation: "first".into(),
+                body: index(6_usize),
+            },
+        ]);
+        let nodes = [
+            ContentNode::Reify(alloc::sync::Arc::from([
+                StackFrame::Apply(index(1_usize)),
+                StackFrame::Bind(index(2_usize)),
+                StackFrame::Project(Side::Right),
+                StackFrame::Apply(index(3_usize)),
+            ])),
+            ContentNode::Stack {
+                input: index(1_usize),
+                output: index(2_usize),
+            },
+            ContentNode::WithType(index(1_usize), index(2_usize)),
+            ContentNode::Perform {
+                signature: signature.clone(),
+                operation: "second".into(),
+                payload: index(1_usize),
+            },
+            ContentNode::Handle {
+                signature,
+                subject: index(1_usize),
+                on_return: index(2_usize),
+                clauses,
+            },
+            ContentNode::Resume(index(1_usize), index(2_usize)),
+            ContentNode::Reset(index(1_usize)),
+            ContentNode::Shift(index(1_usize)),
+            ContentNode::With(index(1_usize), index(2_usize)),
+            ContentNode::Project(Side::Left, index(1_usize)),
+        ];
+        let mut encodings = alloc::collections::BTreeSet::new();
+        for node in nodes {
+            let mut bytes = CheckpointBytes::default();
+            super::write_node(&mut Writer { sink: &mut bytes }, &node)
+                .expect("portable control node");
+            assert!(
+                encodings.insert(bytes.as_ref().to_vec()),
+                "distinct control identities"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_node(&mut reader), Ok(node));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+        let at = super::Site::Node(index(7_usize));
+        let typed = super::TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        for refusal in [
+            super::Refusal::UnknownOperation { at },
+            super::Refusal::HandlerCoverage { at },
+            super::Refusal::ShiftWithoutReset { at },
+            super::Refusal::DependentStack {
+                at,
+                synthesised: typed,
+            },
+            super::Refusal::NotSynthesisable {
+                form: super::Form::Reify(at),
+            },
+            super::Refusal::NotSynthesisable {
+                form: super::Form::Handle(at),
+            },
+            super::Refusal::NotSynthesisable {
+                form: super::Form::Reset(at),
+            },
+            super::Refusal::NotSynthesisable {
+                form: super::Form::Shift(at),
+            },
+            super::Refusal::NotSynthesisable {
+                form: super::Form::With(at),
+            },
+        ] {
+            let mut bytes = CheckpointBytes::default();
+            super::write_refusal(&mut Writer { sink: &mut bytes }, &refusal)
+                .expect("portable control refusal");
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Ok(refusal));
+            assert_eq!(reader.finish(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn effect_rows_reject_duplicate_and_noncanonical_names()
+    {
+        for names in [["State", "State"], ["State", "IO"]] {
+            let mut bytes = CheckpointBytes::from(Vec::new());
+            let mut writer = Writer { sink: &mut bytes };
+            writer.count(Count(2)).expect("count");
+            for name in names {
+                writer.bytes(Bytes(name.as_bytes())).expect("name");
+                writer.count(Count(0)).expect("count");
+            }
+            assert_eq!(
+                super::read_effect_row(&mut Reader {
+                    bytes: bytes.as_ref(),
+                    cursor: 0
+                }),
+                Err(CodecError::Corrupt)
+            );
+        }
+        for names in [["put", "put"], ["put", "get"]] {
+            let mut bytes = CheckpointBytes::from(Vec::new());
+            let mut writer = Writer { sink: &mut bytes };
+            writer.count(Count(1)).expect("count");
+            writer.bytes(Bytes(b"State")).expect("name");
+            writer.count(Count(2)).expect("count");
+            for name in names {
+                writer.bytes(Bytes(name.as_bytes())).expect("name");
+                super::write_index(&mut writer, NodeIndex::from(0_usize)).expect("payload");
+                super::write_index(&mut writer, NodeIndex::from(1_usize)).expect("reply");
+            }
+            assert_eq!(
+                super::read_effect_row(&mut Reader {
+                    bytes: bytes.as_ref(),
+                    cursor: 0
+                }),
+                Err(CodecError::Corrupt)
+            );
+        }
+        let mut bytes = CheckpointBytes::from(Vec::new());
+        let mut writer = Writer { sink: &mut bytes };
+        writer.tag(Tag(0x70));
+        super::write_index(&mut writer, NodeIndex::from(0_usize)).expect("result");
+        writer.count(Count(0)).expect("empty row");
+        assert_eq!(
+            super::read_node(&mut Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0
+            }),
+            Err(CodecError::Corrupt),
+            "an empty row uses the pure returner tag"
+        );
     }
 
     #[test]
@@ -4812,7 +5508,10 @@ mod tests
             Err(CodecError::Corrupt)
         );
         let computation = decode(vec![
-            ContentNode::Returner(NodeIndex::from(1_usize)),
+            ContentNode::Returner {
+                result: NodeIndex::from(1_usize),
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            },
             ContentNode::UnitType,
         ])
         .expect("closed computation type");
@@ -4875,7 +5574,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 6, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 7, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -4885,14 +5584,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 5;
+        *wrong_version.get_mut(7).expect("version byte") = 6;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x04\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x05\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -5035,7 +5734,7 @@ mod tests
             );
         }
 
-        for (prefix, consumed) in [(&[2, 8][..], 2), (&[5, 1, 2][..], 3)] {
+        for (prefix, consumed) in [(&[2, 0xFF][..], 2), (&[5, 1, 2][..], 3)] {
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(&[0; 16]);
             let mut reader = Reader {

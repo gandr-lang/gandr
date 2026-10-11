@@ -17,6 +17,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Duplication stance](#duplication-stance)
 - [Granularity stance](#granularity-stance)
 - [Evaluation](#evaluation)
+  - [Pure normalization boundary](#pure-normalization-boundary)
 - [Live evaluation](#live-evaluation)
 - [Lowered definition bodies](#lowered-definition-bodies)
 - [Readback modes](#readback-modes)
@@ -58,6 +59,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 - `eval_value` and `eval_computation`: weak-head evaluation, refusing with `EvalFault`; `eval_value_within` and `eval_comp_within` evaluate in an environment supplied by the caller and return the remaining fuel. This lets operator bodies and selected pattern arms run at retained bindings without minting an application.
 - `readback_value` and `readback_computation` under `ReadbackMode::ZeroUnfold` or `ReadbackMode::Unfolding`, refusing with `ReadbackFault`.
+- Native list values and pure right folds: evaluation reduces cells iteratively, while a neutral list retains its nil closure and two-binder cell closure. Readback preserves annotations and captured variables; conversion compares both branch scopes, with kernel-replayed equality and refutations. Witnesses: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`, `machine::tests::neutral_list_fold_conversion_replays_both_branch_scopes`.
 - `DomainArena` with `DomainValueId`, `DomainCompId`, `NeutralId`, `ValueClosureId` and `CompClosureId`: checked constructors and lookups, `force_neutral`, and `RunWatermark` with `DomainArena::truncate_to`.
 - The glued vocabulary: `DomainValue`, `DomainComp`, `Neutral`, `NeutralHead`, `Elimination`, `TermFace`, `CompTermFace`, `Unfolding` and `Glued`.
 - `ValueClosure`, `CompClosure` and the two-zone `Environment` they close over.
@@ -187,6 +189,14 @@ Alternatives: no parameter, with the skeleton hard-wired, which leaves the finer
 A composite keeps its source face exactly when every child's face is `Source(c)` for the very `c` the source node names; a variable resolved out of the environment makes its parent `Reduced`. A closure keeps its source face only when it captured the empty environment. A stuck computation spine is marked `Reduced` even where nothing reduced. A constant becomes a neutral whose unfolding face reads the definition through the scope's transparency; nothing is expanded, because eager unfolding would defeat the face evaluation fills. Extending a neutral's spine carries the unfolding along, since forcing means unfolding the head and re-applying the spine.
 
 A resumable slice checks its budget before removing a task: a zero slice pauses without losing work, and a task that finishes on the final available step finishes rather than pauses. Missing operands in a malformed re-applied spine are named `EvalFault::MachineInvariant` refusals in both build modes, not assumptions that contract enforcement may turn into panics. Witnesses: `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause` and `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`.
+
+### Pure normalization boundary
+
+Conversion refuses all eight runtime-control formers with `EvalFault::RuntimeControl(ControlFormer)`; it never invokes a host. Stack/With type codes still compare and read back structurally with captured scope and effect-operation types intact.
+
+**Choice.** The sequent machine executes control; conversion stays pure. Host interpretation makes equality state-dependent; erasure certifies another program. Revisit only for a pure equational theory with independently checked evidence, not an adapter.
+
+Witnesses: `runtime_control_is_refused_by_former`, `control_type_codes_read_back_their_captured_scope`, `control_scopes_keep_only_ambient_indices`, `control_type_codes_compare_distinct_inputs_and_outputs`.
 
 ## Live evaluation
 

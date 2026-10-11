@@ -285,6 +285,10 @@ enum FirstOrder<'run>
 {
     /// The unique unit value.
     Unit,
+    /// The empty native list.
+    ListNil,
+    /// A native list cell, retaining both ordered children.
+    ListCons(Node, Node),
     /// An exact literal payload in the core arena.
     Literal(ValueId),
     /// An ordered product.
@@ -562,7 +566,7 @@ Value::QuoteComputation(quoted) => ret == Ok(Atom::QuoteComputation(quoted, plac
 Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
-Value::Constructor { .. } | Value::Record(_) | Value::Unit | Value::Literal(_) | Value::Pair(..) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
+Value::Constructor { .. } | Value::Record(_) | Value::Unit | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Pair(..) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
 _ => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
@@ -584,7 +588,7 @@ DomainValue::Code { code, .. } => self.domain.value_closure(code).map_or_else(
 DomainValue::StaticLambda { lambda, .. } => self.domain.value_closure(lambda).map_or_else(
                 || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
                 |closure| match closure.body() { crate::ValueBody::Source(body) => ret == Ok(Atom::Operator(body,Self::opened(lambda))), _ => ret == Err(ConversionFault::MachineInvariant) }),
-DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Unit { .. } | DomainValue::Literal { .. } | DomainValue::Pair { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
+DomainValue::Constructor { .. } | DomainValue::Record { .. } | DomainValue::Unit { .. } | DomainValue::ListNil { .. } | DomainValue::ListCons { .. } | DomainValue::Literal { .. } | DomainValue::Pair { .. } | DomainValue::Injection { .. } => ret == Ok(Atom::FirstOrder(node)),
 _ => ret == Ok(Atom::Other(node)),
 }),
         Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
@@ -606,6 +610,8 @@ _ => ret == Ok(Atom::Other(node)),
                     | Value::Constructor { .. }
                     | Value::Record(_)
                     | Value::Unit
+                    | Value::ListNil
+                    | Value::ListCons(..)
                     | Value::Literal(_)
                     | Value::Pair(..)
                     | Value::Injection(..) => return Ok(Atom::FirstOrder(node)),
@@ -639,6 +645,7 @@ _ => ret == Ok(Atom::Other(node)),
                         ));
                     },
                     | Value::PathRefl(_)
+                    | Value::Reify(_)
                     | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
@@ -656,6 +663,8 @@ _ => ret == Ok(Atom::Other(node)),
             | DomainValue::Constructor { .. }
             | DomainValue::Record { .. }
             | DomainValue::Unit { .. }
+            | DomainValue::ListNil { .. }
+            | DomainValue::ListCons { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
             | DomainValue::Injection { .. } => Ok(Atom::FirstOrder(stood)),
@@ -688,6 +697,9 @@ _ => ret == Ok(Atom::Other(node)),
                         | Value::PathEquiv { .. }
                         | Value::Variable { .. }
                         | Value::Constant(_)
+                        | Value::Reify(_)
+                        | Value::ListNil
+                        | Value::ListCons(..)
                         | Value::Unit
                         | Value::Literal(_)
                         | Value::Pair(..)
@@ -798,6 +810,7 @@ _ => ret == Ok(Atom::Other(node)),
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
+                | Elimination::ListFold { .. }
                 | Elimination::Case { .. }
                 | Elimination::Fixpoint(_)),
             ) => Ok(Atom::Other(Node::Stuck(neutral, prefix))),
@@ -997,10 +1010,12 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::PathUniverse(..)
                     | ValueType::Data { .. }
                     | ValueType::Record(_)
+                    | ValueType::Stack { .. }
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Product(..)
                     | ValueType::Sum(..)
+                    | ValueType::List(_)
                     | ValueType::Thunk(_)
                     | ValueType::Universe { .. }
                     | ValueType::Lift { .. }
@@ -1014,7 +1029,8 @@ _ => ret == Ok(Atom::Other(node)),
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
                     | CompType::Element { code, .. } => (code, place),
-                    | CompType::Returner(_)
+                    | CompType::Returner { .. }
+                    | CompType::With(..)
                     | CompType::Arrow { .. }
                     | CompType::Pi { .. }
                     | CompType::Unknown => {
@@ -1090,9 +1106,9 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         (&ValueType::Unit, &ValueType::Unit) => Ok((Alike::Same, 0, 0)),
                         (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
                         (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
-                        (&ValueType::Product(..), &ValueType::Product(..)) | (&ValueType::Sum(..), &ValueType::Sum(..))
+                        (&ValueType::Stack { .. }, &ValueType::Stack { .. }) | (&ValueType::Product(..), &ValueType::Product(..)) | (&ValueType::Sum(..), &ValueType::Sum(..))
                         | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. }) => Ok((Alike::Same, 2, 0)),
-                        (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
+                        (&ValueType::List(_), &ValueType::List(_)) | (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
                         (&ValueType::Lift { inner, ref target }, &ValueType::Lift { inner: other_inner, target: ref other_target }) => {
                             if target == other_target {
                                 children_correct = pending.last().is_some_and(|&(left, right)| matches!((left, right),
@@ -1111,16 +1127,21 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                     _ => Err(ConversionFault::MachineInvariant),
                 },
                 Ok((Node::CompType(first, _), Node::CompType(second, _))) => match (self.core.comp_type(first), self.core.comp_type(second)) {
-                    (Some(left), Some(right)) => match (left, right) {
-                        (&CompType::Returner(_), &CompType::Returner(_)) => Ok((Alike::Same, 1, 0)),
-                        (&CompType::Arrow { .. }, &CompType::Arrow { .. }) | (&CompType::Pi { .. }, &CompType::Pi { .. }) => Ok((Alike::Same, 2, 0)),
-                        (&CompType::Element { code, ref target }, &CompType::Element { code: other_code, target: ref other_target }) => {
-                            if target != other_target { Ok((Alike::Different, 0, 0)) }
-                            else if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
-                                self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
-                            } else { Err(ConversionFault::MachineInvariant) }
+                    (Some(left), Some(right)) => match *left {
+                        CompType::Returner { effects: ref first, .. } => match *right {
+                            CompType::Returner { effects: ref second, .. } if matching_effect_shapes(first, second) == Alike::Same => Ok((Alike::Same, 1_usize.saturating_add(first.types().count()), 0)),
+                            _ => Ok((Alike::Different, 0, 0)),
                         },
-                        _ => Ok((Alike::Different, 0, 0)),
+                        CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => if core::mem::discriminant(left) == core::mem::discriminant(right) { Ok((Alike::Same, 2, 0)) } else { Ok((Alike::Different, 0, 0)) },
+                        CompType::Element { code, ref target } => match *right {
+                            CompType::Element { code: other_code, target: ref other_target } if target == other_target => {
+                                if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
+                                    self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
+                                } else { Err(ConversionFault::MachineInvariant) }
+                            },
+                            _ => Ok((Alike::Different, 0, 0)),
+                        },
+                        CompType::Unknown => Ok((Alike::Different, 0, 0)),
                     },
                     _ => Err(ConversionFault::MachineInvariant),
                 },
@@ -1195,6 +1216,27 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                             }));
                             Ok(Alike::Same)
                         }
+                    }
+                    else if let ValueType::Stack {
+                        input: a,
+                        output: b,
+                    } = *matched_left_value
+                        && let ValueType::Stack {
+                            input: c,
+                            output: d,
+                        } = *matched_right_value
+                    {
+                        pending.extend([
+                            (Node::CompType(b, here), Node::CompType(d, there)),
+                            (Node::CompType(a, here), Node::CompType(c, there)),
+                        ]);
+                        Ok(Alike::Same)
+                    }
+                    else if let ValueType::List(a) = *matched_left_value
+                        && let ValueType::List(b) = *matched_right_value
+                    {
+                        pending.push((Node::ValueType(a, here), Node::ValueType(b, there)));
+                        Ok(Alike::Same)
                     }
                     else if let ValueType::PathUniverse(a, b) = *matched_left_value
                         && let ValueType::PathUniverse(c, d) = *matched_right_value
@@ -1319,6 +1361,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                                 | ValueType::Data { .. }
                                 | ValueType::Record(_)
                                 | ValueType::Base(_)
+                                | ValueType::List(_)
+                                | ValueType::Stack { .. }
                                 | ValueType::Unit
                                 | ValueType::Product(..)
                                 | ValueType::Sum(..)
@@ -1341,8 +1385,30 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                     return Err(ConversionFault::MachineInvariant);
                 };
                 match (left, right) {
-                    | (&CompType::Returner(a), &CompType::Returner(b)) => {
+                    | (&CompType::With(a, b), &CompType::With(c, d)) => {
+                        pending.extend([
+                            (Node::CompType(b, here), Node::CompType(d, there)),
+                            (Node::CompType(a, here), Node::CompType(c, there)),
+                        ]);
+                        Ok(Alike::Same)
+                    },
+                    | (
+                        &CompType::Returner {
+                            result: a,
+                            effects: ref first,
+                        },
+                        &CompType::Returner {
+                            result: b,
+                            effects: ref second,
+                        },
+                    ) => {
+                        if matching_effect_shapes(first, second) == Alike::Different {
+                            return Ok(Alike::Different);
+                        }
                         pending.push((Node::ValueType(a, here), Node::ValueType(b, there)));
+                        pending.extend(first.types().zip(second.types()).map(|(left, right)| {
+                            (Node::ValueType(left, here), Node::ValueType(right, there))
+                        }));
                         Ok(Alike::Same)
                     },
                     | (
@@ -1396,7 +1462,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         Ok(Alike::Same)
                     },
                     | (
-                        &(CompType::Returner(_)
+                        &(CompType::Returner { .. }
+                        | CompType::With(..)
                         | CompType::Arrow { .. }
                         | CompType::Pi { .. }
                         | CompType::Element { .. }
@@ -1483,6 +1550,11 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
         match node {
             | Node::Code(value, place) => match *(self.core.value(value).ok_or(malformed)?) {
                 | Value::Unit => Ok(FirstOrder::Unit),
+                | Value::ListNil => Ok(FirstOrder::ListNil),
+                | Value::ListCons(first, second) => Ok(FirstOrder::ListCons(
+                    Node::Code(first, place),
+                    Node::Code(second, place),
+                )),
                 | Value::Literal(_) => Ok(FirstOrder::Literal(value)),
                 | Value::Pair(ref a, ref b) => Ok(FirstOrder::Pair(
                     Node::Code(*a, place),
@@ -1508,6 +1580,10 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
             },
             | Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
                 | DomainValue::Unit { .. } => Ok(FirstOrder::Unit),
+                | DomainValue::ListNil { .. } => Ok(FirstOrder::ListNil),
+                | DomainValue::ListCons { first, second, .. } => {
+                    Ok(FirstOrder::ListCons(Node::Held(first), Node::Held(second)))
+                },
                 | DomainValue::Literal { literal, .. } => Ok(FirstOrder::Literal(literal)),
                 | DomainValue::Pair { first, second, .. } => {
                     Ok(FirstOrder::Pair(Node::Held(first), Node::Held(second)))
@@ -1587,7 +1663,9 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
     ) -> Result<Alike, ConversionFault>
     {
         match (self.first_order(left)?, self.first_order(right)?) {
-            | (FirstOrder::Unit, FirstOrder::Unit) => Ok(Alike::Same),
+            | (FirstOrder::Unit, FirstOrder::Unit) | (FirstOrder::ListNil, FirstOrder::ListNil) => {
+                Ok(Alike::Same)
+            },
             | (FirstOrder::Literal(a), FirstOrder::Literal(b)) => {
                 let (Some(left_node), Some(right_node)) = (self.core.value(a), self.core.value(b))
                 else {
@@ -1603,7 +1681,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                 };
                 Ok(Alike::between(a, b))
             },
-            | (FirstOrder::Pair(a, b), FirstOrder::Pair(c, d)) => {
+            | (FirstOrder::Pair(a, b), FirstOrder::Pair(c, d))
+            | (FirstOrder::ListCons(a, b), FirstOrder::ListCons(c, d)) => {
                 pending.extend([(a, c), (b, d)]);
                 Ok(Alike::Same)
             },
@@ -1783,8 +1862,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
             while let Some(atom) = atoms.pop() {
                 match atom {
                     | Atom::FirstOrder(node) => match self.first_order(node)? {
-                        | FirstOrder::Unit | FirstOrder::Literal(_) => {},
-                        | FirstOrder::Pair(a, b) => {
+                        | FirstOrder::Unit | FirstOrder::ListNil | FirstOrder::Literal(_) => {},
+                        | FirstOrder::Pair(a, b) | FirstOrder::ListCons(a, b) => {
                             atoms.push(self.atom(a)?);
                             atoms.push(self.atom(b)?);
                         },
@@ -1845,6 +1924,9 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         },
                         | ValueType::Record(ref fields) => types
                             .extend(fields.values().map(|field| Node::ValueType(*field, place))),
+                        | ValueType::Stack { input, output } => types
+                            .extend([Node::CompType(input, place), Node::CompType(output, place)]),
+                        | ValueType::List(element) => types.push(Node::ValueType(element, place)),
                         | ValueType::PathUniverse(source, target) => {
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
@@ -1880,7 +1962,15 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         .comp_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
-                        | CompType::Returner(result) => types.push(Node::ValueType(result, place)),
+                        | CompType::With(first, second) => types
+                            .extend([Node::CompType(first, place), Node::CompType(second, place)]),
+                        | CompType::Returner {
+                            result,
+                            ref effects,
+                        } => {
+                            types.push(Node::ValueType(result, place));
+                            types.extend(effects.types().map(|ty| Node::ValueType(ty, place)));
+                        },
                         | CompType::Arrow { domain, codomain } => {
                             types.push(Node::ValueType(domain, place));
                             types.push(Node::CompType(codomain, place));
@@ -1903,6 +1993,38 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
         }
         Ok(Rigidity::Rigid)
     }
+}
+
+/// Match interface and operation names before comparing their scoped types.
+///
+/// # Specification
+/// - ensures: [`Alike::Same`] exactly when the rows have the same interface and
+///   operation coverage.
+/// - provides: only the rigid row shape, never equality of operation types.
+///
+/// # Adequacy
+/// - hypothesis: L3 — changing names or an operation type separates distinct
+///   code comparisons; separately allocated equal rows still compare equal.
+/// - witness: `code::tests::effect_rows_compare_names_and_scoped_operation_types`
+#[spec(ensures: |ret| ret == Alike::Different || first.signatures().len() == second.signatures().len())]
+fn matching_effect_shapes(
+    first: &gandr_core_term::effect::EffectRow,
+    second: &gandr_core_term::effect::EffectRow,
+) -> Alike
+{
+    let same = first.signatures().len() == second.signatures().len()
+        && first
+            .signatures()
+            .zip(second.signatures())
+            .all(|(left, right)| {
+                left.name() == right.name()
+                    && left.operations().len() == right.operations().len()
+                    && left
+                        .operations()
+                        .zip(right.operations())
+                        .all(|(left, right)| left.name == right.name)
+            });
+    if same { Alike::Same } else { Alike::Different }
 }
 
 /// Compare two codes or two type operators, each closed over its
@@ -2142,6 +2264,148 @@ mod tests
             CodeComparison::Apart,
             compare_rigidly(&core, &domain, left, other),
             "a decode at another level is another type, and nothing in either unfolds"
+        );
+    }
+
+    #[test]
+    fn effect_rows_compare_names_and_scoped_operation_types()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let unit_quote = core.value_quote(unit);
+        let integer_quote = core.value_quote(integer);
+        let index = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let parameter = core.value_type_element(index, Level::zero());
+        let mut quoted = |effect: &str, operation: &str, reply| {
+            let signature = EffectSig::new(EffectName::from(effect), alloc::vec![EffectOp {
+                name: OperationName::from(operation),
+                payload: unit,
+                reply
+            }])
+            .unwrap();
+            let result =
+                core.comp_type_returner_with_effects(unit, EffectRow::singleton(signature));
+            core.value_quote_computation(result)
+        };
+        let dependent = quoted("State", "get", parameter);
+        let concrete = quoted("State", "get", unit);
+        let other_effect = quoted("Other", "get", unit);
+        let other_operation = quoted("State", "put", unit);
+        let mut domain = DomainArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let held_unit = eval_value_within(
+            &core,
+            &mut domain,
+            definitions,
+            Fuel::from(64_u32),
+            unit_quote,
+            Environment::new(),
+        )
+        .unwrap()
+        .0;
+        let held_integer = eval_value_within(
+            &core,
+            &mut domain,
+            definitions,
+            Fuel::from(64_u32),
+            integer_quote,
+            Environment::new(),
+        )
+        .unwrap()
+        .0;
+        let at_unit = code_of(&core, &mut domain, dependent, &[held_unit]);
+        let at_integer = code_of(&core, &mut domain, dependent, &[held_integer]);
+        let written = code_of(&core, &mut domain, concrete, &[]);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, at_unit, written)
+        );
+        assert_eq!(
+            CodeComparison::Apart,
+            compare_rigidly(&core, &domain, at_integer, written)
+        );
+        for changed in [other_effect, other_operation] {
+            let changed = code_of(&core, &mut domain, changed, &[]);
+            assert_eq!(
+                CodeComparison::Apart,
+                compare_rigidly(&core, &domain, at_unit, changed)
+            );
+        }
+    }
+
+    #[test]
+    fn control_type_codes_compare_distinct_inputs_and_outputs()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let returned_integer = core.comp_type_returner(integer);
+        let unit_quote = core.value_quote(unit);
+        let integer_quote = core.value_quote(integer);
+        let index = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let parameter = core.value_type_element(index, Level::zero());
+        let mut quote = |element, reverse| {
+            let list = core.value_type_list(element);
+            let input = core.comp_type_returner(list);
+            let output = if reverse {
+                core.comp_type_with(input, returned_integer)
+            }
+            else {
+                core.comp_type_with(returned_integer, input)
+            };
+            let stack = core.value_type_stack(input, output);
+            core.value_quote(stack)
+        };
+        let dependent = quote(parameter, false);
+        let concrete = quote(unit, false);
+        let reversed = quote(unit, true);
+        let mut domain = DomainArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let held_unit = eval_value_within(
+            &core,
+            &mut domain,
+            definitions,
+            Fuel::from(64_u32),
+            unit_quote,
+            Environment::new(),
+        )
+        .unwrap()
+        .0;
+        let held_integer = eval_value_within(
+            &core,
+            &mut domain,
+            definitions,
+            Fuel::from(64_u32),
+            integer_quote,
+            Environment::new(),
+        )
+        .unwrap()
+        .0;
+        let at_unit = code_of(&core, &mut domain, dependent, &[held_unit]);
+        let at_integer = code_of(&core, &mut domain, dependent, &[held_integer]);
+        let written = code_of(&core, &mut domain, concrete, &[]);
+        let reversed = code_of(&core, &mut domain, reversed, &[]);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, at_unit, written)
+        );
+        assert_eq!(
+            CodeComparison::Apart,
+            compare_rigidly(&core, &domain, at_integer, written)
+        );
+        assert_eq!(
+            CodeComparison::Apart,
+            compare_rigidly(&core, &domain, at_unit, reversed)
         );
     }
 

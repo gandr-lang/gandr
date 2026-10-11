@@ -904,7 +904,7 @@ mod tests
             };
             body = inner;
         }
-        let Some(&CompType::Returner(result)) = arena.comp_type(signature)
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(signature)
         else {
             panic!("returner");
         };

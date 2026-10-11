@@ -259,6 +259,8 @@ pub enum ExpectedValueShape
     Product,
     /// A sum, for an injection or a case scrutinee.
     Sum,
+    /// A native list, for nil and cons.
+    List,
     /// A thunk type, for a thunk or a force.
     Thunk,
     /// A static Pi, for a static application's head.
@@ -287,6 +289,8 @@ pub enum NonInferableForm
     Absurd,
     /// A fixpoint carries no classifier annotation.
     Fixpoint,
+    /// A native list introduction needs its element classifier.
+    List,
 }
 
 /// Which polarity the checker machine's produced register was expected to hold.

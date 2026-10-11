@@ -126,6 +126,10 @@ pub enum Value
     Pair(ValueId, ValueId),
     /// A sum injection, introducing `A + B` on the given side.
     Injection(Side, ValueId),
+    /// The empty native list, checked against its element type.
+    ListNil,
+    /// A native list cell with its head and list tail.
+    ListCons(ValueId, ValueId),
     /// A thunk, suspending a computation into the value type `U C`.
     Thunk(ComputationId),
     /// An explicit universe lift: given `body : A` with `A`'s level strictly
@@ -179,6 +183,8 @@ pub enum Value
         /// The subterm as written.
         body: ValueId,
     },
+    /// A first-class stack, ordered from the first observation to its answer.
+    Reify(alloc::sync::Arc<[crate::control::StackFrame]>),
 }
 
 /// A computation: the negative fragment of the core term vocabulary.
@@ -255,6 +261,52 @@ pub enum Computation
         /// The subterm as written.
         body: ComputationId,
     },
+    /// A pure right fold; the cell branch binds head then folded result.
+    ListFold
+    {
+        /// Element type in the ambient context.
+        element: ValueTypeId,
+        /// Result type in the ambient context.
+        result: ValueTypeId,
+        /// Native list to eliminate.
+        list: ValueId,
+        /// Empty branch in the ambient context.
+        on_nil: ComputationId,
+        /// Cell branch beneath two intuitionistic binders.
+        on_cons: ComputationId,
+    },
+    /// Perform an operation from an inline-carried interface.
+    Perform
+    {
+        /// Operation names and their payload and reply types.
+        signature: crate::effect::EffectSig,
+        /// The selected operation.
+        operation: crate::effect::OperationName,
+        /// Its value payload.
+        payload: ValueId,
+    },
+    /// Handle one interface deeply; clauses run outside the handled scope.
+    Handle
+    {
+        /// The interface whose operations are handled.
+        signature: crate::effect::EffectSig,
+        /// The computation being handled.
+        subject: ComputationId,
+        /// Return clause beneath one intuitionistic result binder.
+        on_return: ComputationId,
+        /// Operation clauses beneath payload then resumption binders.
+        clauses: alloc::sync::Arc<[crate::control::EffectClause]>,
+    },
+    /// Feed a computation to a first-class stack.
+    Resume(ValueId, ComputationId),
+    /// Delimit a continuation capture.
+    Reset(ComputationId),
+    /// Capture to the nearest reset, binding one intuitionistic stack value.
+    Shift(ComputationId),
+    /// A lazy negative pair; only the observed component executes.
+    With(ComputationId, ComputationId),
+    /// Observe one component of a negative product.
+    Project(Side, ComputationId),
 }
 
 /// A value type: the positive fragment of the core type vocabulary.
@@ -281,6 +333,8 @@ pub enum ValueType
     Product(ValueTypeId, ValueTypeId),
     /// The sum `A + B`, with left and right injections.
     Sum(ValueTypeId, ValueTypeId),
+    /// The native finite-list type over its element type.
+    List(ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
     Thunk(CompTypeId),
     /// The universe of one sort at a canonical level `l`: `Type[+, l]`
@@ -336,14 +390,29 @@ pub enum ValueType
     /// consistent with every value type and matches every former with unknown
     /// components.
     Unknown,
+    /// A first-class continuation consuming one computation and delivering
+    /// another.
+    Stack
+    {
+        /// The computation consumed by the stack.
+        input: CompTypeId,
+        /// The answer delivered by the stack.
+        output: CompTypeId,
+    },
 }
 
 /// A computation type: the negative fragment of the core type vocabulary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CompType
 {
-    /// The returner `F A` of a value type `A`.
-    Returner(ValueTypeId),
+    /// The returner `F^effects A` of a value type `A`.
+    Returner
+    {
+        /// The returned value type.
+        result: ValueTypeId,
+        /// The closed set of interfaces this computation may perform.
+        effects: crate::effect::EffectRow,
+    },
     /// The non-dependent function type `A → C`: its codomain stands in the
     /// ambient context and binds nothing.
     Arrow
@@ -383,6 +452,8 @@ pub enum CompType
     /// The unknown computation type: what a hole or a mark in computation
     /// position synthesises.
     Unknown,
+    /// A lazy negative product; an observation selects one component.
+    With(CompTypeId, CompTypeId),
 }
 
 /// One pair of native syntax roots awaiting structural comparison.
@@ -441,11 +512,89 @@ pub fn equal_certificate_syntax(
     right: ValueId,
 ) -> CertificateEquality
 {
+    equal_syntax(arena, StructuralGoal::Value(left, right))
+}
+
+/// Compare signature type syntax without making allocation identity observable.
+///
+/// # Specification
+/// - ensures: equal roots have the same former and structurally equal children.
+/// - fails: unreadable roots or children compare different.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separately allocated equal signatures retain row
+///   inclusion; changing an operation reply removes inclusion.
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+#[spec(ensures: |ret| ret != CertificateEquality::Equal || match (arena.value_type(left), arena.value_type(right)) {
+    (Some(left), Some(right)) => core::mem::discriminant(left) == core::mem::discriminant(right),
+    _ => false,
+})]
+pub fn equal_type_syntax(
+    arena: &crate::CoreArena,
+    left: ValueTypeId,
+    right: ValueTypeId,
+) -> CertificateEquality
+{
+    equal_syntax(arena, StructuralGoal::ValueType(left, right))
+}
+
+/// Queue operation type pairs after checking interface and operation
+/// identities.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] preserves names and queues payload
+///   before reply per operation; [`CertificateEquality::Different`] queues
+///   nothing further for a mismatched name or arity.
+/// - executable: none — this is the structural comparison's work-list rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered allocations preserve equality, changed replies
+///   do not.
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+fn signature_children(
+    pending: &mut alloc::vec::Vec<StructuralGoal>,
+    left: &crate::effect::EffectSig,
+    right: &crate::effect::EffectSig,
+) -> CertificateEquality
+{
+    if left.name() != right.name() || left.operations().len() != right.operations().len() {
+        return CertificateEquality::Different;
+    }
+    for (left, right) in left.operations().zip(right.operations()) {
+        if left.name != right.name {
+            return CertificateEquality::Different;
+        }
+        pending.extend([
+            StructuralGoal::ValueType(left.payload, right.payload),
+            StructuralGoal::ValueType(left.reply, right.reply),
+        ]);
+    }
+    CertificateEquality::Equal
+}
+
+/// Run the shared, evidence-erasing structural comparison.
+///
+/// # Specification
+/// - ensures: returns equal exactly when every reached pair agrees in syntax
+///   after path evidence is erased; no reduction is performed.
+/// - executable: none — the contract is the inductive graph comparison, not a
+///   second traversal pretending to be an independent postcondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both certificate and type roots must reach the same child
+///   comparison rules without depending on allocation order.
+/// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
+/// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+fn equal_syntax(
+    arena: &crate::CoreArena,
+    root: StructuralGoal,
+) -> CertificateEquality
+{
     use StructuralGoal::CompType as CT;
     use StructuralGoal::Computation as C;
     use StructuralGoal::Value as V;
     use StructuralGoal::ValueType as VT;
-    let mut pending = alloc::vec![V(left, right)];
+    let mut pending = alloc::vec![root];
     let mut visited = alloc::collections::BTreeSet::new();
     while let Some(goal) = pending.pop() {
         if !visited.insert(goal) {
@@ -483,6 +632,38 @@ pub fn equal_certificate_syntax(
                         {
                             pending.extend(a.values().zip(b.values()).map(|(a, b)| V(*a, *b)));
                         }
+                    }
+                    else if let Value::Reify(ref left) = *matched_left_value
+                        && let Value::Reify(ref right) = *matched_right_value
+                        && left.len() == right.len()
+                    {
+                        for (left, right) in left.iter().zip(right.iter()) {
+                            match (*left, *right) {
+                                | (
+                                    crate::control::StackFrame::Apply(left),
+                                    crate::control::StackFrame::Apply(right),
+                                ) => pending.push(V(left, right)),
+                                | (
+                                    crate::control::StackFrame::Bind(left),
+                                    crate::control::StackFrame::Bind(right),
+                                ) => pending.push(C(left, right)),
+                                | (
+                                    crate::control::StackFrame::Project(left),
+                                    crate::control::StackFrame::Project(right),
+                                ) if left == right => {},
+                                | _ => return CertificateEquality::Different,
+                            }
+                        }
+                    }
+                    else if matches!(
+                        (matched_left_value, matched_right_value),
+                        (&Value::ListNil, &Value::ListNil)
+                    ) {
+                    }
+                    else if let (&Value::ListCons(a, b), &Value::ListCons(c, d)) =
+                        (matched_left_value, matched_right_value)
+                    {
+                        pending.extend([V(a, c), V(b, d)]);
                     }
                     else if let Value::PathRefl(a) = *matched_left_value
                         && let Value::PathRefl(b) = *matched_right_value
@@ -628,6 +809,88 @@ pub fn equal_certificate_syntax(
                         &Computation::RecordProjection(b, ref bl),
                     ) if al == bl => pending.push(V(a, b)),
                     | (
+                        &Computation::Perform {
+                            signature: ref left,
+                            operation: ref left_op,
+                            payload: left_payload,
+                        },
+                        &Computation::Perform {
+                            signature: ref right,
+                            operation: ref right_op,
+                            payload: right_payload,
+                        },
+                    ) if left_op == right_op => {
+                        if signature_children(&mut pending, left, right)
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                        pending.push(V(left_payload, right_payload));
+                    },
+                    | (
+                        &Computation::Handle {
+                            signature: ref left,
+                            subject: left_subject,
+                            on_return: left_return,
+                            clauses: ref left_clauses,
+                        },
+                        &Computation::Handle {
+                            signature: ref right,
+                            subject: right_subject,
+                            on_return: right_return,
+                            clauses: ref right_clauses,
+                        },
+                    ) if left_clauses.len() == right_clauses.len() => {
+                        if signature_children(&mut pending, left, right)
+                            == CertificateEquality::Different
+                        {
+                            return CertificateEquality::Different;
+                        }
+                        pending
+                            .extend([C(left_subject, right_subject), C(left_return, right_return)]);
+                        for (left, right) in left_clauses.iter().zip(right_clauses.iter()) {
+                            if left.operation != right.operation {
+                                return CertificateEquality::Different;
+                            }
+                            pending.push(C(left.body, right.body));
+                        }
+                    },
+                    | (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
+                        pending.extend([V(a, c), C(b, d)]);
+                    },
+                    | (&Computation::Reset(a), &Computation::Reset(b))
+                    | (&Computation::Shift(a), &Computation::Shift(b))
+                    | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
+                    | (&Computation::With(a, b), &Computation::With(c, d))
+                    | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
+                        pending.extend([C(a, c), C(b, d)]);
+                    },
+                    | (&Computation::Project(a, b), &Computation::Project(c, d)) if a == c => {
+                        pending.push(C(b, d));
+                    },
+                    | (
+                        &Computation::ListFold {
+                            element: left_element,
+                            result: left_result,
+                            list: left_list,
+                            on_nil: left_nil,
+                            on_cons: left_cons,
+                        },
+                        &Computation::ListFold {
+                            element: right_element,
+                            result: right_result,
+                            list: right_list,
+                            on_nil: right_nil,
+                            on_cons: right_cons,
+                        },
+                    ) => pending.extend([
+                        VT(left_element, right_element),
+                        VT(left_result, right_result),
+                        V(left_list, right_list),
+                        C(left_nil, right_nil),
+                        C(left_cons, right_cons),
+                    ]),
+                    | (
                         &Computation::Primitive {
                             primitive: a,
                             arguments: ref aa,
@@ -641,7 +904,6 @@ pub fn equal_certificate_syntax(
                             .zip(right_arguments.iter())
                             .map(|(a, b)| V(*a, *b)),
                     ),
-                    | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
                     | (
                         &Computation::Fixpoint {
                             body: a,
@@ -659,9 +921,6 @@ pub fn equal_certificate_syntax(
                     },
                     | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
                         pending.extend([V(a, c), V(b, d)]);
-                    },
-                    | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
-                        pending.extend([C(a, c), C(b, d)]);
                     },
                     | (
                         &Computation::Case {
@@ -721,6 +980,24 @@ pub fn equal_certificate_syntax(
                         {
                             pending.extend(a.values().zip(b.values()).map(|(a, b)| VT(*a, *b)));
                         }
+                    }
+                    else if let (
+                        &ValueType::Stack {
+                            input: a,
+                            output: b,
+                        },
+                        &ValueType::Stack {
+                            input: c,
+                            output: d,
+                        },
+                    ) = (matched_left_value, matched_right_value)
+                    {
+                        pending.extend([CT(a, c), CT(b, d)]);
+                    }
+                    else if let (&ValueType::List(a), &ValueType::List(b)) =
+                        (matched_left_value, matched_right_value)
+                    {
+                        pending.push(VT(a, b));
                     }
                     else if let ValueType::PathUniverse(a, b) = *matched_left_value
                         && let ValueType::PathUniverse(c, d) = *matched_right_value
@@ -801,7 +1078,31 @@ pub fn equal_certificate_syntax(
                     return CertificateEquality::Different;
                 };
                 match (a, b) {
-                    | (&CompType::Returner(a), &CompType::Returner(b)) => pending.push(VT(a, b)),
+                    | (&CompType::With(a, b), &CompType::With(c, d)) => {
+                        pending.extend([CT(a, c), CT(b, d)]);
+                    },
+                    | (
+                        &CompType::Returner {
+                            result: a,
+                            effects: ref first,
+                        },
+                        &CompType::Returner {
+                            result: b,
+                            effects: ref second,
+                        },
+                    ) => {
+                        if first.signatures().len() != second.signatures().len() {
+                            return CertificateEquality::Different;
+                        }
+                        for (left, right) in first.signatures().zip(second.signatures()) {
+                            if signature_children(&mut pending, left, right)
+                                == CertificateEquality::Different
+                            {
+                                return CertificateEquality::Different;
+                            }
+                        }
+                        pending.push(VT(a, b));
+                    },
                     | (
                         &CompType::Arrow {
                             domain: a,

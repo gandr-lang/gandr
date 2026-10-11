@@ -146,11 +146,18 @@ pub fn origin_histogram(provenance: &Provenance) -> BTreeMap<FocusOrigin, NodeCo
 #[spec(ensures: |ref ret| ret.lines().count() == 2
     && ret.split_once('\n').is_some_and(|(_, population)| population.starts_with("nodes: ") && population.ends_with(" total)"))
     && ret.starts_with(match provenance.origin(root) {
+        | Some(FocusOrigin::Perform) => "root [perform]: ",
+        | Some(FocusOrigin::Handle) => "root [handle]: ",
+        | Some(FocusOrigin::Resume) => "root [resume]: ",
+        | Some(FocusOrigin::Reset) => "root [reset]: ",
+        | Some(FocusOrigin::Shift) => "root [shift]: ",
+        | Some(FocusOrigin::With) => "root [with]: ",
         | Some(FocusOrigin::Return) => "root [return]: ",
         | Some(FocusOrigin::Force) => "root [force]: ",
         | Some(FocusOrigin::Fixpoint) => "root [fixpoint]: ",
         | Some(FocusOrigin::Lambda) => "root [lambda]: ",
         | Some(FocusOrigin::Case) => "root [case]: ",
+        | Some(FocusOrigin::ListFold) => "root [list-fold]: ",
         | Some(FocusOrigin::Bind) => "root [bind]: ",
         | Some(FocusOrigin::TopValue) => "root [top-value]: ",
         | None => "root [unrecorded]: ",
@@ -164,11 +171,18 @@ pub fn dump(
 {
     let population = stats(arena);
     let origin = match provenance.origin(root) {
+        | Some(FocusOrigin::Perform) => "perform",
+        | Some(FocusOrigin::Handle) => "handle",
+        | Some(FocusOrigin::Resume) => "resume",
+        | Some(FocusOrigin::Reset) => "reset",
+        | Some(FocusOrigin::Shift) => "shift",
+        | Some(FocusOrigin::With) => "with",
         | Some(FocusOrigin::Return) => "return",
         | Some(FocusOrigin::Force) => "force",
         | Some(FocusOrigin::Fixpoint) => "fixpoint",
         | Some(FocusOrigin::Lambda) => "lambda",
         | Some(FocusOrigin::Case) => "case",
+        | Some(FocusOrigin::ListFold) => "list-fold",
         | Some(FocusOrigin::Bind) => "bind",
         | Some(FocusOrigin::TopValue) => "top-value",
         | None => "unrecorded",

@@ -308,6 +308,7 @@ fn walk(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Pair(first, second)
+                    | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), depth, results));
@@ -327,7 +328,10 @@ fn walk(
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), depth, results));
                 },
-                | Some(&(Value::Constant(_) | Value::Unit | Value::Literal(_))) | None => {},
+                | Some(
+                    &(Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::ListNil),
+                )
+                | None => {},
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
                 | Some(&Computation::Application(head, argument)) => {
@@ -398,6 +402,19 @@ fn walk(
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), depth, results));
                     pending.push((AnyNode::Value(value), depth, results));
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.push((AnyNode::ValueType(element), depth, results));
+                    pending.push((AnyNode::ValueType(result), depth, results));
+                    pending.push((AnyNode::Value(list), depth, results));
+                    pending.push((AnyNode::Computation(on_nil), depth, results));
+                    pending.push((AnyNode::Computation(on_cons), deeper.deeper(), results));
                 },
                 | None => {},
             },

@@ -130,6 +130,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
+        | (Some(&Value::ListCons(head, tail)), Former::ListCons(h, t)) => h == CoreNode::Value(head) && t == CoreNode::Value(tail),
         | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) => actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
@@ -139,7 +140,7 @@ impl<'arena> CoreSource<'arena>
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
         (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. }) | None,
-Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
+Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::ListNil), Former::ListNil) | (Some(&Value::Unit), Former::Unit) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
@@ -172,6 +173,7 @@ Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
             | Value::Record(_)
             | Value::Hole(_)
             | Value::Mark { .. } => Former::Unreadable,
+            | Value::Reify(_) => Former::Reify,
             | Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
@@ -185,6 +187,10 @@ Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
             | Value::Variable { zone, index } => Former::Variable { zone, index },
             | Value::Constant(constant) => self.named(constant, Former::Constant),
             | Value::Unit => Former::Unit,
+            | Value::ListNil => Former::ListNil,
+            | Value::ListCons(head, tail) => {
+                Former::ListCons(CoreNode::Value(head), CoreNode::Value(tail))
+            },
             | Value::Literal(ref literal) => Former::Literal(literal),
             | Value::Pair(first, second) => {
                 Former::Pair(CoreNode::Value(first), CoreNode::Value(second))
@@ -227,6 +233,7 @@ Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
+        | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
         (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown) | None,
 Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
@@ -235,6 +242,7 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
         | (Some(&ValueType::Product(first, second)), Former::Product(actual_first, actual_second))
         | (Some(&ValueType::Sum(first, second)), Former::Sum(actual_first, actual_second)) =>
             actual_first == CoreNode::ValueType(first) && actual_second == CoreNode::ValueType(second),
+        | (Some(&ValueType::List(element)), Former::List(actual)) => actual == CoreNode::ValueType(element),
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
@@ -260,11 +268,15 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
             | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
                 Former::Unreadable
             },
+            | ValueType::Stack { input, output } => {
+                Former::Stack(CoreNode::CompType(input), CoreNode::CompType(output))
+            },
             | ValueType::PathUniverse(source, target) => {
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
             | ValueType::Base(base) => Former::BaseType(base),
             | ValueType::Unit => Former::UnitType,
+            | ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             | ValueType::Product(first, second) => {
                 Former::Product(CoreNode::ValueType(first), CoreNode::ValueType(second))
             },
@@ -305,8 +317,10 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
+        | (Some(&CompType::With(first, second)), Former::With(a, b)) => a == CoreNode::CompType(first) && b == CoreNode::CompType(second),
         | (Some(&CompType::Unknown) | None, Former::Unreadable) => true,
-        | (Some(&CompType::Returner(result)), Former::Returner(actual)) => actual == CoreNode::ValueType(result),
+        | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
+        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful,
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
@@ -324,7 +338,23 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
         };
         match *comp_type {
             | CompType::Unknown => Former::Unreadable,
-            | CompType::Returner(result) => Former::Returner(CoreNode::ValueType(result)),
+            | CompType::With(first, second) => {
+                Former::With(CoreNode::CompType(first), CoreNode::CompType(second))
+            },
+            | CompType::Returner {
+                result,
+                ref effects,
+            } => {
+                if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                    Former::Returner(CoreNode::ValueType(result))
+                }
+                else {
+                    Former::EffectfulReturner {
+                        result: CoreNode::ValueType(result),
+                        effects,
+                    }
+                }
+            },
             | CompType::Arrow { domain, codomain } => Former::Arrow {
                 domain: CoreNode::ValueType(domain),
                 codomain: CoreNode::CompType(codomain),
@@ -376,13 +406,15 @@ impl Source for CoreSource<'_>
         | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
             | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+            | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::UnitType | Former::Product(..)
+            | Former::Stack(..) | Former::List(_)
             | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
             | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Unreadable),
-        | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::Arrow { .. } | Former::Pi { .. }
-            | Former::ComputationElement(_) | Former::Unreadable),
+        | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
+            | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
     })]
     #[inline]
     fn read(
@@ -398,12 +430,20 @@ impl Source for CoreSource<'_>
                     | Computation::Primitive { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..)
                     | Computation::Lambda(_)
                     | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)
                     | Computation::Force(_)
+                    | Computation::ListFold { .. }
                     | Computation::Case { .. }),
                 ) => Former::Computation,
                 | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {

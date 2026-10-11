@@ -977,7 +977,8 @@ impl<'run> Walk<'run>
                     Local::Disagree
                 },
             ),
-            | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Ok(Local::Agree),
+            | (DomainValue::Unit { .. }, DomainValue::Unit { .. })
+            | (DomainValue::ListNil { .. }, DomainValue::ListNil { .. }) => Ok(Local::Agree),
             | (
                 DomainValue::Literal { literal: first, .. },
                 DomainValue::Literal {
@@ -996,6 +997,18 @@ impl<'run> Walk<'run>
                     Local::Disagree
                 })
             },
+            | (
+                DomainValue::ListCons {
+                    first: left_first,
+                    second: left_second,
+                    ..
+                },
+                DomainValue::ListCons {
+                    first: right_first,
+                    second: right_second,
+                    ..
+                },
+            )
             | (
                 DomainValue::Pair {
                     first: left_first,
@@ -1144,6 +1157,8 @@ impl<'run> Walk<'run>
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Lift { .. }
@@ -1409,6 +1424,21 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Closures(left_body, right_body));
                 },
                 | (
+                    Elimination::ListFold {
+                        on_nil: ln,
+                        on_cons: lc,
+                        ..
+                    },
+                    Elimination::ListFold {
+                        on_nil: rn,
+                        on_cons: rc,
+                        ..
+                    },
+                ) => {
+                    queued.push(Goal::Closures(ln, rn));
+                    queued.push(Goal::Closures(lc, rc));
+                },
+                | (
                     Elimination::Case {
                         on_left: left_on_left,
                         on_right: left_on_right,
@@ -1430,6 +1460,7 @@ impl<'run> Walk<'run>
                     | Elimination::Force
                     | Elimination::Bind(_)
                     | Elimination::Case { .. }
+                    | Elimination::ListFold { .. }
                     | Elimination::StaticApply(_)
                     | Elimination::Fixpoint(_),
                     _,

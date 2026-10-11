@@ -178,8 +178,10 @@ pub fn render_consumer(
 
 /// One pending piece of output.
 #[derive(Clone, Debug)]
-enum Piece
+enum Piece<'arena>
 {
+    /// An arena-owned name, escaped directly into the output without copying.
+    Name(&'arena str),
     /// Fixed text.
     Text(Token),
     /// Computed text.
@@ -225,15 +227,21 @@ macro_rules! text {
     ensures: |ref ret| fixed.is_none_or(|text| ret == text)
         && owned_length.is_none_or(|length| ret.len() == length) && (!elided || ret == "…"),
 )]
-fn render(
-    arena: &CommandArena,
-    root: Piece,
+fn render<'arena>(
+    arena: &'arena CommandArena,
+    root: Piece<'arena>,
 ) -> String
 {
     let mut out = String::new();
     let mut pending = alloc::vec![root];
     while let Some(piece) = pending.pop() {
         let mut expansion = match piece {
+            | Piece::Name(name) => {
+                out.push('"');
+                out.extend(name.escape_debug());
+                out.push('"');
+                continue;
+            },
             | Piece::Text(Token(fixed)) => {
                 out.push_str(fixed);
                 continue;
@@ -262,8 +270,8 @@ fn render(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a present cut has its two sides at `depth`, delimited by angle
-///   brackets and its polarity bar; an absent cut is a dangling marker.
+/// - ensures: every command renders its own instruction and ordered children;
+///   an absent command is a dangling marker.
 /// - provides: command syntax before recursive child expansion.
 /// - panics: none.
 ///
@@ -279,33 +287,108 @@ fn render(
         producer == p && consumer == c && pd == depth && cd == depth
             && bar == match polarity { Polarity::Positive => " |+ ", Polarity::Negative => " |− " },
     | (None, &[Piece::Text(Token("<dangling>"))]) => true,
+    | (Some(&CommandNode::Perform { payload, continuation, .. }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, under) if found == payload && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::Handle { subject, on_return, ref clauses, continuation, .. }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, _) => Some(id), _ => None }).eq([subject, on_return].into_iter().chain(clauses.iter().map(|clause| clause.body))) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::Resume { stack, body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Producer(found, _) if found == stack)) && pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
+    | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
 })]
 fn command(
     arena: &CommandArena,
     id: CommandId,
     depth: RenderDepth,
-) -> Vec<Piece>
+) -> Vec<Piece<'_>>
 {
-    let Some(&CommandNode::Cut {
-        polarity,
-        producer,
-        consumer,
-    }) = arena.command(id)
+    let Some(node) = arena.command(id)
     else {
         return alloc::vec![text!("<dangling>")];
     };
-    let bar = match polarity {
-        | Polarity::Positive => " |+ ",
-        | Polarity::Negative => " |− ",
-    };
-    alloc::vec![
-        text!("⟨"),
-        Piece::Producer(producer, depth),
-        Piece::Text(Token(bar)),
-        Piece::Consumer(consumer, depth),
-        text!("⟩"),
-    ]
+    match *node {
+        | CommandNode::Cut {
+            polarity,
+            producer,
+            consumer,
+        } => alloc::vec![
+            text!("⟨"),
+            Piece::Producer(producer, depth),
+            Piece::Text(Token(match polarity {
+                | Polarity::Positive => " |+ ",
+                | Polarity::Negative => " |− ",
+            })),
+            Piece::Consumer(consumer, depth),
+            text!("⟩"),
+        ],
+        | CommandNode::Perform {
+            ref signature,
+            ref operation,
+            payload,
+            continuation,
+        } => alloc::vec![
+            text!("perform "),
+            Piece::Name(signature.name().as_ref()),
+            text!("."),
+            Piece::Name(operation.as_ref()),
+            text!("("),
+            Piece::Producer(payload, depth),
+            text!("; "),
+            Piece::Consumer(continuation, depth),
+            text!(")")
+        ],
+        | CommandNode::Handle {
+            ref signature,
+            subject,
+            on_return,
+            ref clauses,
+            continuation,
+        } => {
+            let mut pieces = Vec::with_capacity(clauses.len().saturating_mul(4).saturating_add(8));
+            pieces.extend([
+                text!("handle "),
+                Piece::Name(signature.name().as_ref()),
+                text!(" { "),
+                Piece::Command(subject, depth),
+                text!(" | return(x; α) ⇒ "),
+                Piece::Command(on_return, depth),
+            ]);
+            for clause in clauses.iter() {
+                pieces.extend([
+                    text!(" | "),
+                    Piece::Name(clause.operation.as_ref()),
+                    text!("(payload, k; α) ⇒ "),
+                    Piece::Command(clause.body, depth),
+                ]);
+            }
+            pieces.extend([text!(" }; "), Piece::Consumer(continuation, depth)]);
+            pieces
+        },
+        | CommandNode::Resume {
+            stack,
+            body,
+            continuation,
+        } => alloc::vec![
+            text!("resume("),
+            Piece::Producer(stack, depth),
+            text!("; "),
+            Piece::Command(body, depth),
+            text!("; "),
+            Piece::Consumer(continuation, depth),
+            text!(")")
+        ],
+        | CommandNode::Reset { body, continuation } => alloc::vec![
+            text!("reset("),
+            Piece::Command(body, depth),
+            text!("; "),
+            Piece::Consumer(continuation, depth),
+            text!(")")
+        ],
+        | CommandNode::Shift { body, continuation } => alloc::vec![
+            text!("shift(k; "),
+            Piece::Command(body, depth),
+            text!("; "),
+            Piece::Consumer(continuation, depth),
+            text!(")")
+        ],
+    }
 }
 
 /// The pieces of a producer.
@@ -331,10 +414,11 @@ fn command(
 /// - witness: `pretty::tests::literal_spelling_preserves_fraction_and_escaped_content`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
-    | Piece::Text(_) | Piece::Owned(_) => true,
+    | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,
 }) && match arena.producer(id) {
     | None => matches!(ret.as_slice(), &[Piece::Text(Token("<dangling>"))]),
     | Some(node) => match *node {
+        | ProducerNode::Reify(_) => matches!(ret.first(), Some(Piece::Text(Token("reify [")))) && matches!(ret.last(), Some(Piece::Text(Token("]")))),
         | ProducerNode::Primitive { primitive, .. } => matches!(ret.first(), Some(Piece::Text(Token(name))) if *name == primitive.name().as_ref()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
@@ -353,13 +437,38 @@ fn producer(
     arena: &CommandArena,
     id: ProducerId,
     depth: RenderDepth,
-) -> Vec<Piece>
+) -> Vec<Piece<'_>>
 {
     let Some(node) = arena.producer(id)
     else {
         return alloc::vec![text!("<dangling>")];
     };
     match *node {
+        | ProducerNode::Reify(ref frames) => {
+            let mut pieces = Vec::with_capacity(frames.len().saturating_mul(4).saturating_add(2));
+            pieces.push(text!("reify ["));
+            for (index, frame) in frames.iter().enumerate() {
+                if index > 0 {
+                    pieces.push(text!("; "));
+                }
+                match *frame {
+                    | gandr_core_term::control::StackFrame::Apply(value) => {
+                        pieces.extend([text!("apply("), Piece::Producer(value, depth), text!(")")]);
+                    },
+                    | gandr_core_term::control::StackFrame::Bind(body) => {
+                        pieces.extend([text!("bind(x; α) ⇒ "), Piece::Command(body, depth)]);
+                    },
+                    | gandr_core_term::control::StackFrame::Project(Side::Left) => {
+                        pieces.push(text!("project-left"));
+                    },
+                    | gandr_core_term::control::StackFrame::Project(Side::Right) => {
+                        pieces.push(text!("project-right"));
+                    },
+                }
+            }
+            pieces.push(text!("]"));
+            pieces
+        },
         | ProducerNode::Primitive {
             primitive,
             arguments,
@@ -415,6 +524,8 @@ fn producer(
                 pieces.push(Piece::Text(Token(match arm.destructor {
                     | DestructorTag::Apply => "apply(x; α) ⇒ ",
                     | DestructorTag::Force => "force(α) ⇒ ",
+                    | DestructorTag::Project(Side::Left) => "project-left(α) ⇒ ",
+                    | DestructorTag::Project(Side::Right) => "project-right(α) ⇒ ",
                 })));
                 pieces.push(Piece::Command(arm.body, depth));
             }
@@ -447,15 +558,16 @@ fn producer(
 /// - witness: `pretty::tests::depth_limits_and_dangling_nodes_are_distinct`
 #[spec(ensures: |ref ret| ret.iter().all(|piece| match *piece {
     | Piece::Command(_, under) | Piece::Producer(_, under) | Piece::Consumer(_, under) => under == depth,
-    | Piece::Text(_) | Piece::Owned(_) => true,
+    | Piece::Text(_) | Piece::Owned(_) | Piece::Name(_) => true,
 }) && match arena.consumer(id) {
     | None => matches!(ret.as_slice(), &[Piece::Text(Token("<dangling>"))]),
     | Some(node) => match *node {
         | ConsumerNode::Covariable(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ConsumerNode::Top => matches!(ret.as_slice(), &[Piece::Text(Token("★"))]),
+        | ConsumerNode::ListFold { on_nil, on_cons, continuation, .. } => ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq([on_nil, on_cons]) && ret.iter().any(|piece| matches!(*piece, Piece::Consumer(found, _) if found == continuation)),
         | ConsumerNode::MuTilde { body } => matches!(ret.as_slice(), &[Piece::Text(Token("μ̃x. ")), Piece::Command(found, _)] if body == found),
         | ConsumerNode::Destructor { tag, .. } => matches!(ret.first(), Some(&Piece::Text(Token(name)))
-            if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force" }),
+            if name == match tag { DestructorTag::Apply => "apply", DestructorTag::Force => "force", DestructorTag::Project(Side::Left) => "project-left", DestructorTag::Project(Side::Right) => "project-right" }),
         | ConsumerNode::Case { ref arms } => matches!(ret.first(), Some(&Piece::Text(Token("case {"))))
             && matches!(ret.last(), Some(&Piece::Text(Token("}"))))
             && ret.iter().filter_map(|piece| match *piece { Piece::Command(body, _) => Some(body), _ => None }).eq(arms.iter().map(|arm| arm.body)),
@@ -468,7 +580,7 @@ fn consumer(
     arena: &CommandArena,
     id: ConsumerId,
     depth: RenderDepth,
-) -> Vec<Piece>
+) -> Vec<Piece<'_>>
 {
     let Some(node) = arena.consumer(id)
     else {
@@ -479,6 +591,19 @@ fn consumer(
             alloc::vec![Piece::Owned(alloc::format!("α{}", u32::from(index)))]
         },
         | ConsumerNode::MuTilde { body } => alloc::vec![text!("μ̃x. "), Piece::Command(body, depth)],
+        | ConsumerNode::ListFold {
+            on_nil,
+            on_cons,
+            continuation,
+            ..
+        } => alloc::vec![
+            text!("fold {nil ⇒ "),
+            Piece::Command(on_nil, depth),
+            text!(" | cons(head, result) ⇒ "),
+            Piece::Command(on_cons, depth),
+            text!("}; "),
+            Piece::Consumer(continuation, depth)
+        ],
         | ConsumerNode::Destructor {
             tag,
             ref producers,
@@ -487,6 +612,8 @@ fn consumer(
             let name = match tag {
                 | DestructorTag::Apply => Token("apply"),
                 | DestructorTag::Force => Token("force"),
+                | DestructorTag::Project(Side::Left) => Token("project-left"),
+                | DestructorTag::Project(Side::Right) => Token("project-right"),
             };
             applied(name, producers, consumers, depth)
         },
@@ -549,7 +676,7 @@ fn applied(
     producers: &[ProducerId],
     consumers: &[ConsumerId],
     depth: RenderDepth,
-) -> Vec<Piece>
+) -> Vec<Piece<'static>>
 {
     let mut pieces = alloc::vec![Piece::Text(name), text!("(")];
     for (position, &child) in producers.iter().enumerate() {
@@ -593,6 +720,8 @@ fn applied(
 #[spec(ensures: |ret| match *tag {
     | ConstructorTag::Unit => matches!(ret.0.as_bytes(), b"unit"),
     | ConstructorTag::Pair => matches!(ret.0.as_bytes(), b"pair"),
+    | ConstructorTag::ListNil => matches!(ret.0.as_bytes(), b"nil"),
+    | ConstructorTag::ListCons => matches!(ret.0.as_bytes(), b"cons"),
     | ConstructorTag::Injection(Side::Left) => matches!(ret.0.as_bytes(), b"inl"),
     | ConstructorTag::Injection(Side::Right) => matches!(ret.0.as_bytes(), b"inr"),
     | ConstructorTag::Lift(_) => matches!(ret.0.as_bytes(), b"lift"),
@@ -603,6 +732,8 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
     match *tag {
         | ConstructorTag::Unit => Token("unit"),
         | ConstructorTag::Pair => Token("pair"),
+        | ConstructorTag::ListNil => Token("nil"),
+        | ConstructorTag::ListCons => Token("cons"),
         | ConstructorTag::Injection(Side::Left) => Token("inl"),
         | ConstructorTag::Injection(Side::Right) => Token("inr"),
         | ConstructorTag::Lift(_) => Token("lift"),
@@ -631,6 +762,8 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
 #[spec(ensures: |ref ret| match (tag, ret) {
     | (&ConstructorTag::Unit, &Piece::Text(Token(text))) => text == "() ⇒ ",
     | (&ConstructorTag::Pair, &Piece::Text(Token(text))) => text == "pair(x, x) ⇒ ",
+    | (&ConstructorTag::ListNil, &Piece::Text(Token(text))) => text == "nil ⇒ ",
+    | (&ConstructorTag::ListCons, &Piece::Text(Token(text))) => text == "cons(x, x) ⇒ ",
     | (&ConstructorTag::Injection(Side::Left), &Piece::Text(Token(text))) => text == "inl(x) ⇒ ",
     | (&ConstructorTag::Injection(Side::Right), &Piece::Text(Token(text))) => text == "inr(x) ⇒ ",
     | (&ConstructorTag::Lift(_), &Piece::Text(Token(text))) => text == "lift(x) ⇒ ",
@@ -639,11 +772,13 @@ const fn constructor_name(tag: &ConstructorTag) -> Token
             && text.matches('x').count() == usize::from(arity),
     | _ => false,
 })]
-fn pattern(tag: &ConstructorTag) -> Piece
+fn pattern(tag: &ConstructorTag) -> Piece<'static>
 {
     match *tag {
         | ConstructorTag::Unit => text!("() ⇒ "),
         | ConstructorTag::Pair => text!("pair(x, x) ⇒ "),
+        | ConstructorTag::ListNil => text!("nil ⇒ "),
+        | ConstructorTag::ListCons => text!("cons(x, x) ⇒ "),
         | ConstructorTag::Injection(Side::Left) => text!("inl(x) ⇒ "),
         | ConstructorTag::Injection(Side::Right) => text!("inr(x) ⇒ "),
         | ConstructorTag::Lift(_) => text!("lift(x) ⇒ "),

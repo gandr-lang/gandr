@@ -102,16 +102,31 @@ impl Source for ContentTable<'_>
 &ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
 &ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
 &ContentNode::UnknownType | &ContentNode::UnknownComputationType) | None, Former::Unreadable) |
+(Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
+&ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
 &ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
 (Some(&ContentNode::Unit), Former::Unit) |
+(Some(&ContentNode::ListNil), Former::ListNil) |
 (Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
 (Some(&ContentNode::UnitType), Former::UnitType) |
 (Some(&ContentNode::TypeLift { .. }), Former::TypeLift) => true,
+        (Some(&ContentNode::Stack { input: a, output: b }), Former::Stack(c, d))
+        | (Some(&ContentNode::WithType(a, b)), Former::With(c, d)) | (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
+        | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
+        | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
+        | (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
+        | (Some(&ContentNode::ListCons(a, b)), Former::ListCons(c, d))
+        | (Some(&ContentNode::Product(a, b)), Former::Product(c, d))
+        | (Some(&ContentNode::Sum(a, b)), Former::Sum(c, d))
+        | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
+        | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
+        | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
+        | (Some(&ContentNode::StaticPi { domain: a, codomain: b }), Former::StaticPi { domain: c, codomain: d }) => a == c && b == d,
         (Some(&ContentNode::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         (Some(&ContentNode::Constant(Reference::Item { ref key, .. })), Former::Constant(name))
@@ -119,27 +134,18 @@ impl Source for ContentTable<'_>
             name.as_ref().as_bytes() == key.as_ref(),
         (Some(content), Former::Literal(actual)) =>
             matches!(*content, ContentNode::Literal(ref literal) if literal == actual),
-        (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
-        | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
-        | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
-        | (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
-        | (Some(&ContentNode::Product(a, b)), Former::Product(c, d))
-        | (Some(&ContentNode::Sum(a, b)), Former::Sum(c, d))
-        | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
-        | (Some(&ContentNode::Arrow { domain: a, codomain: b }), Former::Arrow { domain: c, codomain: d })
-        | (Some(&ContentNode::Pi { domain: a, codomain: b }), Former::Pi { domain: c, codomain: d })
-        | (Some(&ContentNode::StaticPi { domain: a, codomain: b }), Former::StaticPi { domain: c, codomain: d }) =>
-            a == c && b == d,
         (Some(&ContentNode::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
             side == actual_side && body == actual_body,
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
         | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
+        | (Some(&ContentNode::List(a)), Former::List(b))
         | (Some(&ContentNode::ThunkType(a)), Former::ThunkType(b))
         | (Some(&ContentNode::Element { code: a, .. }), Former::Element(b))
-        | (Some(&ContentNode::Returner(a)), Former::Returner(b))
         | (Some(&ContentNode::ComputationElement { code: a, .. }), Former::ComputationElement(b))
         | (Some(&ContentNode::StaticLambda(a)), Former::StaticLambda(b)) => a == b,
+        (Some(&ContentNode::Returner { result, ref effects }), Former::Returner(actual)) => result == actual && effects.signatures().len() == 0,
+        (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
         (Some(&ContentNode::Base(a)), Former::BaseType(b)) => a == b,
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
@@ -165,16 +171,27 @@ impl Source for ContentTable<'_>
             | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) => {
                 Former::Computation
             },
+            | ContentNode::Reify(_) => Former::Reify,
+            | ContentNode::Stack { input, output } => Former::Stack(input, output),
+            | ContentNode::WithType(first, second) => Former::With(first, second),
             | ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
             | ContentNode::Primitive(..)
+            | ContentNode::Perform { .. }
+            | ContentNode::Handle { .. }
+            | ContentNode::Resume(..)
+            | ContentNode::Reset(_)
+            | ContentNode::Shift(_)
+            | ContentNode::With(..)
+            | ContentNode::Project(..)
             | ContentNode::Transport(..)
             | ContentNode::Lambda(_)
             | ContentNode::Application(..)
             | ContentNode::Return(_)
             | ContentNode::Bind(..)
             | ContentNode::Force(_)
+            | ContentNode::ListFold { .. }
             | ContentNode::Case { .. }
             | ContentNode::Fixpoint { .. } => Former::Computation,
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
@@ -186,6 +203,8 @@ impl Source for ContentTable<'_>
             | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             | ContentNode::Constant(ref reference) => named(reference, Former::Constant),
             | ContentNode::Unit => Former::Unit,
+            | ContentNode::ListNil => Former::ListNil,
+            | ContentNode::ListCons(head, tail) => Former::ListCons(head, tail),
             | ContentNode::Literal(ref literal) => Former::Literal(literal),
             | ContentNode::Pair(first, second) => Former::Pair(first, second),
             | ContentNode::Injection(side, body) => Former::Injection(side, body),
@@ -197,12 +216,23 @@ impl Source for ContentTable<'_>
             | ContentNode::UnitType => Former::UnitType,
             | ContentNode::Product(first, second) => Former::Product(first, second),
             | ContentNode::Sum(first, second) => Former::Sum(first, second),
+            | ContentNode::List(element) => Former::List(element),
             | ContentNode::ThunkType(body) => Former::ThunkType(body),
             | ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
             | ContentNode::TypeLift { .. } => Former::TypeLift,
             | ContentNode::Element { code, .. } => Former::Element(code),
             | ContentNode::Abstract(ref reference) => named(reference, Former::Abstract),
-            | ContentNode::Returner(result) => Former::Returner(result),
+            | ContentNode::Returner {
+                result,
+                ref effects,
+            } => {
+                if effects.signatures().len() == 0 {
+                    Former::Returner(result)
+                }
+                else {
+                    Former::EffectfulReturner { result, effects }
+                }
+            },
             | ContentNode::Arrow { domain, codomain } => Former::Arrow { domain, codomain },
             | ContentNode::Pi { domain, codomain } => Former::Pi { domain, codomain },
             | ContentNode::ComputationElement { code, .. } => Former::ComputationElement(code),
@@ -387,7 +417,10 @@ mod tests
         assert_eq!(
             spelled(&[
                 ContentNode::ThunkType(n1),
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 integer.clone(),
             ]),
             faithful("+U (-F Integer)".into())
@@ -400,7 +433,10 @@ mod tests
                     codomain: n3,
                 },
                 integer,
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
             ]),
             faithful("+U (Integer -> -F Integer)".into())
         );
@@ -425,14 +461,26 @@ mod tests
         let [_, n1, n2, n3, n4, n5, ..] = indices();
         let integer = ContentNode::Base(BaseType::Integer);
         assert_eq!(
-            spelled(&[ContentNode::Returner(n1), integer.clone()]),
+            spelled(&[
+                ContentNode::Returner {
+                    result: n1,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
+                integer.clone()
+            ]),
             faithful("-F Integer".into())
         );
         assert_eq!(
             spelled(&[
-                ContentNode::Returner(n1),
+                ContentNode::Returner {
+                    result: n1,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 ContentNode::ThunkType(n2),
-                ContentNode::Returner(n3),
+                ContentNode::Returner {
+                    result: n3,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 ContentNode::UnitType,
             ]),
             faithful("-F (+U (-F Unit))".into())
@@ -449,7 +497,10 @@ mod tests
                     codomain: n4,
                 },
                 ContentNode::Base(BaseType::String),
-                ContentNode::Returner(n5),
+                ContentNode::Returner {
+                    result: n5,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 ContentNode::UnitType,
             ]),
             faithful("Integer -> String -> -F Unit".into())
@@ -462,7 +513,10 @@ mod tests
                 },
                 ContentNode::ThunkType(n3),
                 integer,
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
             ]),
             faithful("+U (-F Integer) -> -F Integer".into())
         );
@@ -483,8 +537,14 @@ mod tests
         );
         assert_eq!(
             spelled(&[
-                ContentNode::Returner(n1),
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n1,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 integer.clone(),
             ]),
             approximate("-F ?".into())
@@ -495,7 +555,10 @@ mod tests
                     domain: n1,
                     codomain: n1,
                 },
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 integer,
             ]),
             approximate("? -> -F Integer".into())
@@ -530,7 +593,10 @@ mod tests
         assert_eq!(
             spelled(&[
                 ContentNode::ThunkType(n1),
-                ContentNode::Returner(n2),
+                ContentNode::Returner {
+                    result: n2,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
                 ContentNode::Base(BaseType::Numeric),
             ]),
             approximate("+U (-F ?)".into())
@@ -550,7 +616,10 @@ mod tests
                 codomain: n3,
             },
             ContentNode::Base(BaseType::String),
-            ContentNode::Returner(n4),
+            ContentNode::Returner {
+                result: n4,
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            },
             ContentNode::UnitType,
         ];
         let spelling = spell(&nodes, n0).expect("a transcript type lays out");

@@ -63,8 +63,22 @@ use crate::il::ProducerNode;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FocusOrigin
 {
+    /// An operation request with its inline interface.
+    Perform,
+    /// A deep handler with explicit return and operation clauses.
+    Handle,
+    /// A first-class stack resumption.
+    Resume,
+    /// A delimited answer context.
+    Reset,
+    /// A delimited continuation capture.
+    Shift,
+    /// A lazy pair of computations.
+    With,
     /// `return v`: the cut of the value against the continuation.
     Return,
+    /// A pure native List fold.
+    ListFold,
     /// `force v`: the cut of the thunk against a force frame.
     Force,
     /// `fix x. M`: the cut of the recursive thunk against a force frame.
@@ -474,6 +488,26 @@ where
 #[derive(Clone, Debug)]
 enum Task
 {
+    /// Assemble a literal stack after translating its operands and bind bodies.
+    Reify(ValueId),
+    /// Assemble an effect or control instruction after its children.
+    Control
+    {
+        /// The source node carrying interface and clause metadata.
+        source: ComputationId,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
+    /// Assemble a native fold after its list and two branches.
+    ListFold
+    {
+        /// Portable element annotation.
+        element: gandr_core_term::ValueTypeId,
+        /// Portable result annotation.
+        result: gandr_core_term::ValueTypeId,
+        /// The caller's return point.
+        continuation: ConsumerId,
+    },
     /// Complete a saturated native operation after translating its operands.
     Primitive
     {
@@ -496,6 +530,8 @@ enum Task
     },
     /// Pop two producers and mint their pair.
     Pair,
+    /// Pop head and tail producers and mint their native cell.
+    ListCons,
     /// Pop one producer and mint its injection.
     Injection(Side),
     /// Pop one producer and mint its lift.
@@ -661,11 +697,24 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     #[spec(
         requires: match &task {
+            | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
+                Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
+                    && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
+                _ => true,
+            }),
+            | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
+                Computation::Perform { .. } => !self.producers.is_empty(),
+                Computation::Handle { ref clauses, .. } => self.commands.len() >= clauses.len().saturating_add(2),
+                Computation::Resume(..) => !self.producers.is_empty() && !self.commands.is_empty(),
+                Computation::Reset(_) | Computation::Shift(_) => !self.commands.is_empty(),
+                Computation::With(..) => self.commands.len() >= 2,
+                _ => true,
+            }),
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
-            | &Task::Pair => self.producers.len() >= 2,
+            | &Task::Pair | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
             | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
-            | &Task::Case => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::Case | &Task::ListFold { .. } => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
@@ -679,6 +728,11 @@ impl<'run> Focusing<'run>
     ) -> Result<(), FocusRefusal>
     {
         match task {
+            | Task::Reify(source) => self.complete_reify(source),
+            | Task::Control {
+                source,
+                continuation,
+            } => self.complete_control(source, continuation),
             | Task::Primitive {
                 primitive,
                 arguments,
@@ -712,6 +766,11 @@ impl<'run> Focusing<'run>
                 let second = self.pop_producer()?;
                 let first = self.pop_producer()?;
                 self.constructor(ConstructorTag::Pair, &[first, second])
+            },
+            | Task::ListCons => {
+                let tail = self.pop_producer()?;
+                let head = self.pop_producer()?;
+                self.constructor(ConstructorTag::ListCons, &[head, tail])
             },
             | Task::Injection(side) => {
                 let body = self.pop_producer()?;
@@ -751,6 +810,23 @@ impl<'run> Focusing<'run>
             } => {
                 let producer = self.pop_producer()?;
                 self.cut(origin, polarity, producer, consumer)
+            },
+            | Task::ListFold {
+                element,
+                result,
+                continuation,
+            } => {
+                let list = self.pop_producer()?;
+                let on_cons = self.pop_command()?;
+                let on_nil = self.pop_command()?;
+                let consumer = self.arena.mint_consumer(ConsumerNode::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                    continuation,
+                })?;
+                self.cut(FocusOrigin::ListFold, Polarity::Positive, list, consumer)
             },
             | Task::Apply { head, continuation } => {
                 let argument = self.pop_producer()?;
@@ -837,6 +913,209 @@ impl<'run> Focusing<'run>
         }
     }
 
+    /// Assemble a flat literal stack; each bind body owns its own return
+    /// binder.
+    ///
+    /// # Specification
+    /// - ensures: frame order and names are preserved, with no later frame
+    ///   entering an earlier bind frame's value scope.
+    /// - fails: missing child results, malformed source, or refused allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed apply, bind and projection frames distinguish
+    ///   order and accidental scope nesting.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err() || self.producers.last().is_some_and(|id|
+        matches!((self.core.value(source), self.arena.producer(*id)), (Some(Value::Reify(source)), Some(ProducerNode::Reify(frames))) if source.len() == frames.len())))]
+    fn complete_reify(
+        &mut self,
+        source: ValueId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let node = core
+            .value(source)
+            .ok_or(FocusRefusal::TranslationInvariant)?;
+        let Value::Reify(ref source) = *node
+        else {
+            return Err(FocusRefusal::TranslationInvariant);
+        };
+        let mut frames = Vec::with_capacity(source.len());
+        for frame in source.iter().rev() {
+            frames.push(match *frame {
+                | gandr_core_term::control::StackFrame::Apply(_) => {
+                    gandr_core_term::control::StackFrame::Apply(self.pop_producer()?)
+                },
+                | gandr_core_term::control::StackFrame::Bind(_) => {
+                    gandr_core_term::control::StackFrame::Bind(self.pop_command()?)
+                },
+                | gandr_core_term::control::StackFrame::Project(side) => {
+                    gandr_core_term::control::StackFrame::Project(side)
+                },
+            });
+        }
+        frames.reverse();
+        let producer = self
+            .arena
+            .mint_producer(ProducerNode::Reify(frames.into()))?;
+        self.producers.push(producer);
+        Ok(())
+    }
+
+    /// Relocate an inline interface into the focused arena's annotation graph.
+    ///
+    /// # Specification
+    /// - ensures: operation names survive and every type edge belongs to the
+    ///   focused annotation arena, even when source handles contain free codes.
+    /// - fails: a dangling source annotation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — displaced target arenas and dependent payload types
+    ///   expose copied foreign handles and omitted signature edges.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|found|
+        found.name() == signature.name() && found.types().all(|id| self.arena.annotations().value_type(id).is_some())))]
+    fn signature(
+        &mut self,
+        signature: &gandr_core_term::effect::EffectSig,
+    ) -> Result<gandr_core_term::effect::EffectSig, FocusRefusal>
+    {
+        let mut annotations =
+            gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut());
+        Ok(
+            signature.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |id| {
+                annotations
+                    .value_type(id)
+                    .map_err(|gandr_core_term::ImportFault| MintRefusal::DanglingAnnotation(id))
+            })?,
+        )
+    }
+
+    /// Assemble control children and record the instruction's source origin.
+    ///
+    /// # Specification
+    /// - ensures: bodies retain their fresh return binder; operation clauses
+    ///   retain source order and bind payload then resumption.
+    /// - fails: missing child results, malformed source or refused allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — independent unfocusing distinguishes missing
+    ///   children, swapped clauses, lost annotations and the two lazy
+    ///   projections.
+    /// - witness: `tests::focus_properties::hand_built_control_cases_cover_every_former`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.commands.last().is_some_and(|id| self.arena.command(*id).is_some() && self.provenance.origin(*id).is_some()))]
+    fn complete_control(
+        &mut self,
+        source: ComputationId,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let node = core
+            .computation(source)
+            .ok_or(FocusRefusal::DanglingComputation(source))?;
+        let (node, origin) = match *node {
+            | Computation::Perform {
+                ref signature,
+                ref operation,
+                ..
+            } => {
+                let signature = self.signature(signature)?;
+                let payload = self.pop_producer()?;
+                (
+                    crate::il::CommandNode::Perform {
+                        signature,
+                        operation: operation.clone(),
+                        payload,
+                        continuation,
+                    },
+                    FocusOrigin::Perform,
+                )
+            },
+            | Computation::Handle {
+                ref signature,
+                ref clauses,
+                ..
+            } => {
+                let signature = self.signature(signature)?;
+                let mut translated = Vec::with_capacity(clauses.len());
+                for clause in clauses.iter().rev() {
+                    translated.push(gandr_core_term::control::EffectClause {
+                        operation: clause.operation.clone(),
+                        body: self.pop_command()?,
+                    });
+                }
+                translated.reverse();
+                let on_return = self.pop_command()?;
+                let subject = self.pop_command()?;
+                (
+                    crate::il::CommandNode::Handle {
+                        signature,
+                        subject,
+                        on_return,
+                        clauses: translated.into(),
+                        continuation,
+                    },
+                    FocusOrigin::Handle,
+                )
+            },
+            | Computation::Resume(..) => {
+                let body = self.pop_command()?;
+                let stack = self.pop_producer()?;
+                (
+                    crate::il::CommandNode::Resume {
+                        stack,
+                        body,
+                        continuation,
+                    },
+                    FocusOrigin::Resume,
+                )
+            },
+            | Computation::Reset(_) => (
+                crate::il::CommandNode::Reset {
+                    body: self.pop_command()?,
+                    continuation,
+                },
+                FocusOrigin::Reset,
+            ),
+            | Computation::Shift(_) => (
+                crate::il::CommandNode::Shift {
+                    body: self.pop_command()?,
+                    continuation,
+                },
+                FocusOrigin::Shift,
+            ),
+            | Computation::With(..) => {
+                let right = self.pop_command()?;
+                let left = self.pop_command()?;
+                let producer = self.arena.mint_producer(ProducerNode::Cocase {
+                    arms: alloc::boxed::Box::from([
+                        CopatternArm {
+                            destructor: DestructorTag::Project(Side::Left),
+                            body: left,
+                        },
+                        CopatternArm {
+                            destructor: DestructorTag::Project(Side::Right),
+                            body: right,
+                        },
+                    ]),
+                })?;
+                return self.cut(
+                    FocusOrigin::With,
+                    Polarity::Negative,
+                    producer,
+                    continuation,
+                );
+            },
+            | _ => return Err(FocusRefusal::TranslationInvariant),
+        };
+        let command = self.arena.mint_command(node)?;
+        self.provenance.record(command, origin);
+        self.commands.push(command);
+        Ok(())
+    }
+
     /// Translate one value node, or schedule its children.
     ///
     /// # Specification
@@ -894,6 +1173,36 @@ impl<'run> Focusing<'run>
                 for &field in fields.iter().rev() {
                     self.tasks.push(Task::Value(field));
                 }
+                return Ok(());
+            },
+            | Value::Reify(ref frames) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Reify(id));
+                for frame in frames.iter().rev() {
+                    match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            self.tasks.push(Task::Value(value));
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            self.tasks.push(Task::Computation {
+                                computation: body,
+                                continuation: return_point,
+                            });
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => {},
+                    }
+                }
+                return Ok(());
+            },
+            | Value::ListNil => ProducerNode::Constructor {
+                tag: ConstructorTag::ListNil,
+                producers: alloc::boxed::Box::from([]),
+                consumers: alloc::boxed::Box::from([]),
+            },
+            | Value::ListCons(head, tail) => {
+                self.tasks.push(Task::ListCons);
+                self.tasks.push(Task::Value(tail));
+                self.tasks.push(Task::Value(head));
                 return Ok(());
             },
             | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
@@ -1016,6 +1325,125 @@ impl<'run> Focusing<'run>
                         continuation: return_point,
                     });
                 }
+            },
+            | Computation::Perform { payload, .. } => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Value(payload));
+            },
+            | Computation::Handle {
+                subject,
+                on_return,
+                ref clauses,
+                ..
+            } => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for clause in clauses.iter().rev() {
+                    self.tasks.push(Task::Computation {
+                        computation: clause.body,
+                        continuation: return_point,
+                    });
+                }
+                self.tasks.push(Task::Computation {
+                    computation: on_return,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: subject,
+                    continuation: return_point,
+                });
+            },
+            | Computation::Resume(stack, body) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Value(stack));
+            },
+            | Computation::Reset(body) | Computation::Shift(body) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
+            },
+            | Computation::With(left, right) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: right,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: left,
+                    continuation: return_point,
+                });
+            },
+            | Computation::Project(side, subject) => {
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Project(side),
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Computation {
+                    computation: subject,
+                    continuation: frame,
+                });
+            },
+            | Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => {
+                let mut annotations =
+                    gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut());
+                let element =
+                    annotations
+                        .value_type(element)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            MintRefusal::DanglingAnnotation(element)
+                        })?;
+                let result =
+                    annotations
+                        .value_type(result)
+                        .map_err(|gandr_core_term::ImportFault| {
+                            MintRefusal::DanglingAnnotation(result)
+                        })?;
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::ListFold {
+                    element,
+                    result,
+                    continuation,
+                });
+                self.tasks.push(Task::Value(list));
+                self.tasks.push(Task::Computation {
+                    computation: on_cons,
+                    continuation: return_point,
+                });
+                self.tasks.push(Task::Computation {
+                    computation: on_nil,
+                    continuation: return_point,
+                });
             },
             | Computation::Primitive {
                 primitive,
@@ -1166,7 +1594,8 @@ impl<'run> Focusing<'run>
             | ConsumerNode::Destructor { tag, .. } => tag.polarity(),
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Case { .. }
-            | ConsumerNode::DataCase { .. } => Polarity::Positive,
+            | ConsumerNode::DataCase { .. }
+            | ConsumerNode::ListFold { .. } => Polarity::Positive,
         };
         self.tasks.push(Task::Name {
             origin,

@@ -1438,7 +1438,10 @@ fn collect_reachable(
                 | Some(&Value::Constant(index)) => {
                     let _fresh = found.insert(index);
                 },
-                | Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => {},
+                | Some(
+                    &Value::ListNil | &Value::Variable(_) | &Value::Unit | &Value::Literal(_),
+                )
+                | None => {},
                 | Some(&Value::PathEquiv {
                     path_type,
                     forward,
@@ -1461,6 +1464,7 @@ fn collect_reachable(
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::Pair(first, second)
+                    | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
                     pending.push(AnyNode::Value(first));
@@ -1485,6 +1489,21 @@ fn collect_reachable(
                 ),
                 | Some(&Computation::RecordProjection(record, _)) => {
                     pending.extend(core::iter::once(AnyNode::Value(record)));
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.extend([
+                        AnyNode::ValueType(element),
+                        AnyNode::ValueType(result),
+                        AnyNode::Value(list),
+                        AnyNode::Computation(on_nil),
+                        AnyNode::Computation(on_cons),
+                    ]);
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push(AnyNode::Value(path));

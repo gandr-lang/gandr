@@ -917,6 +917,16 @@ enum Advance
     Cycle,
 }
 
+/// Number of fresh variables a computation closure binds.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Opening
+{
+    /// A lambda or ordinary elimination branch.
+    One,
+    /// A List fold cell branch.
+    Two,
+}
+
 /// A channel: one evaluation goals demand.
 enum Channel<'run>
 {
@@ -1040,8 +1050,8 @@ struct Scheduler<'run, M>
     bodies: Vec<BodyChannel>,
     /// One unfolding channel per neutral.
     unfoldings: BTreeMap<NeutralId, ProcessId>,
-    /// One opening channel per closure and binder level.
-    openings: BTreeMap<(CompClosureId, BinderLevel), ProcessId>,
+    /// One opening channel per closure, binder level and arity.
+    openings: BTreeMap<(CompClosureId, BinderLevel, Opening), ProcessId>,
     /// One entering channel per closure.
     entries: BTreeMap<CompClosureId, ProcessId>,
     /// One fresh variable per binder level, from the floor.
@@ -1336,7 +1346,7 @@ where
     /// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
     #[spec(
         ensures: |ret| (ret.as_ref().is_ok_and(|id| self.processes.get(id.0).is_some()) || ret.is_err())
-            && (!matches!(sides, SupportSides::Opened(_, _))
+            && (!matches!(sides, SupportSides::Opened(_, _) | SupportSides::OpenedTwice(_, _))
             || u32::from(level) != u32::MAX || ret.is_err())
     )]
     fn start_fresh(
@@ -1372,10 +1382,18 @@ where
                 chain: Chain::default(),
                 next: Next::Classify,
             },
+            | SupportSides::OpenedTwice(left, right) => Goal {
+                left: Slot::Waiting(self.open_channel(left, level, Opening::Two)?),
+                right: Slot::Waiting(self.open_channel(right, level, Opening::Two)?),
+                depth: deeper(deeper(level)?)?,
+                frozen: Frozen::default(),
+                chain: Chain::default(),
+                next: Next::Classify,
+            },
             | SupportSides::Opened(left, right) => {
                 let deeper = deeper(level)?;
-                let left = self.open_channel(left, level)?;
-                let right = self.open_channel(right, level)?;
+                let left = self.open_channel(left, level, Opening::One)?;
+                let right = self.open_channel(right, level, Opening::One)?;
                 Goal {
                     left: Slot::Waiting(left),
                     right: Slot::Waiting(right),
@@ -2507,6 +2525,10 @@ where
                     let right = self.fixpoint_body(right)?;
                     (SupportSides::Opened(left, right), goal.depth)
                 },
+                | Subgoal::Entered(left, right) => (SupportSides::Closed(left, right), goal.depth),
+                | Subgoal::OpenedTwice(left, right) => {
+                    (SupportSides::OpenedTwice(left, right), goal.depth)
+                },
             };
             let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
@@ -2911,6 +2933,8 @@ where
                 | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Lift { .. }
                 | DomainValue::Code { .. }
@@ -2991,7 +3015,7 @@ where
             | Some(_) => return Err(ConversionFault::MachineInvariant),
             | None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
         };
-        let channel = self.open_channel(body, goal.depth)?;
+        let channel = self.open_channel(body, goal.depth, Opening::One)?;
         Self::set_side(goal, lambda_side, Slot::Waiting(channel));
         self.depend(id, channel)?;
         goal.depth = opened_depth;
@@ -3681,8 +3705,8 @@ where
         Ok(channel)
     }
 
-    /// The channel giving a closure's body opened under the fresh variable at
-    /// `level`, minted once per closure and level.
+    /// The channel opening a closure at `level` under `arity` fresh variables,
+    /// minted once per closure, level and arity.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -3706,7 +3730,7 @@ where
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
     #[spec(
         captures: [entries = self.openings.len(), processes = self.processes.len()],
-        ensures: |ret| ret.as_ref().map_or(true, |channel| self.openings.get(&(closure, level)) == Some(channel)
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.openings.get(&(closure, level, arity)) == Some(channel)
             && self.processes.get(channel.0).is_some()
             && if self.openings.len() == entries { self.processes.len() == processes }
                 else { self.openings.len() == entries.saturating_add(1) && self.processes.len() == processes.saturating_add(1) })
@@ -3715,26 +3739,26 @@ where
         &mut self,
         closure: CompClosureId,
         level: BinderLevel,
+        arity: Opening,
     ) -> Result<ProcessId, ConversionFault>
     {
-        if let Some(&channel) = self.openings.get(&(closure, level)) {
+        if let Some(&channel) = self.openings.get(&(closure, level, arity)) {
             return Ok(channel);
         }
         let variable = self.variable(level)?;
-        let evaluation = Evaluation::enter(
-            self.definitions,
-            self.domain,
-            closure,
-            Bound::Variable(variable),
-        )
-        .map_err(ConversionFault::Evaluation)?;
+        let bound = match arity {
+            | Opening::One => Bound::Variable(variable),
+            | Opening::Two => Bound::Variables(variable, self.variable(deeper(level)?)?),
+        };
+        let evaluation = Evaluation::enter(self.definitions, self.domain, closure, bound)
+            .map_err(ConversionFault::Evaluation)?;
         let share = self.share_at(DefinitionHeight::default());
         let channel = self.start(
             Work::Channel(Channel::Running(evaluation)),
             Outcome::Pending,
             share,
         )?;
-        self.openings.insert((closure, level), channel);
+        self.openings.insert((closure, level, arity), channel);
         Ok(channel)
     }
 
@@ -4519,10 +4543,11 @@ mod tests
     /// The children of the core node `node`, left to right.
     ///
     /// # Specification
-    /// - requires: `node` resolves in `core`.
+    /// - requires: `node` resolves in the pure fixture language of `core`.
     /// - ensures: each child the former names, in the order erasure mints them.
     /// - provides: the one reading of a core former the lifting walks share.
-    /// - panics: when `node` does not resolve, which the requirement excludes.
+    /// - panics: when the node is unresolved or outside the pure fixture
+    ///   language.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — resolved term formers are observed through lifted
@@ -4538,17 +4563,20 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
+          Value::Reify(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
-          Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
+          Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
+          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
           Value::Thunk(body) => ret.as_slice() == [CoreTerm::Computation(body)],
-          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
-         }),
+          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
           Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [CoreTerm::Computation(body)],
@@ -4573,10 +4601,12 @@ mod tests
                 | Value::Record(ref fields) => {
                     fields.values().copied().map(CoreTerm::Value).collect()
                 },
+                | Value::Reify(_) => panic!("the pure fixture language has no reified stacks"),
                 | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Unit
+                | Value::ListNil
                 | Value::Literal(_)
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
@@ -4587,6 +4617,7 @@ mod tests
                 } => Vec::from([CoreTerm::Value(forward), CoreTerm::Value(backward)]),
                 | Value::PathProduct(first, second)
                 | Value::Pair(first, second)
+                | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
@@ -4611,6 +4642,25 @@ mod tests
                     | Computation::RecordProjection(record, _) => {
                         Vec::from([CoreTerm::Value(record)])
                     },
+                    | Computation::Perform { .. }
+                    | Computation::Handle { .. }
+                    | Computation::Resume(..)
+                    | Computation::Reset(_)
+                    | Computation::Shift(_)
+                    | Computation::With(..)
+                    | Computation::Project(..) => {
+                        panic!("the pure fixture language has no runtime control formers")
+                    },
+                    | Computation::ListFold {
+                        list,
+                        on_nil,
+                        on_cons,
+                        ..
+                    } => Vec::from([
+                        CoreTerm::Value(list),
+                        CoreTerm::Computation(on_nil),
+                        CoreTerm::Computation(on_cons),
+                    ]),
                     | Computation::Primitive { arguments, .. } => {
                         arguments.iter().copied().map(CoreTerm::Value).collect()
                     },
@@ -4732,7 +4782,14 @@ mod tests
                                         }
                                         Value::Record(fields)
                                     },
+                                    | Value::Reify(_) => {
+                                        panic!("the pure fixture language has no reified stacks")
+                                    },
                                     | value @ Value::Primitive { .. } => value,
+                                    | Value::ListNil => Value::ListNil,
+                                    | Value::ListCons(first, second) => {
+                                        Value::ListCons(value(first), value(second))
+                                    },
                                     | Value::PathRefl(code) => Value::PathRefl(value(code)),
                                     | Value::PathProduct(first, second) => {
                                         Value::PathProduct(value(first), value(second))
@@ -4802,6 +4859,28 @@ mod tests
                                 },
                                 | Computation::RecordProjection(record, ref label) => {
                                     Computation::RecordProjection(value(record), label.clone())
+                                },
+                                | Computation::Perform { .. }
+                                | Computation::Handle { .. }
+                                | Computation::Resume(..)
+                                | Computation::Reset(_)
+                                | Computation::Shift(_)
+                                | Computation::With(..)
+                                | Computation::Project(..) => panic!(
+                                    "the pure fixture language has no runtime control formers"
+                                ),
+                                | Computation::ListFold {
+                                    element,
+                                    result,
+                                    list,
+                                    on_nil,
+                                    on_cons,
+                                } => Computation::ListFold {
+                                    element,
+                                    result,
+                                    list: value(list),
+                                    on_nil: computation(on_nil),
+                                    on_cons: computation(on_cons),
                                 },
                                 | Computation::Primitive {
                                     primitive,
@@ -4889,17 +4968,20 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
+          Value::Reify(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
-          Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
+          Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
+          Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
           Value::Thunk(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
-          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
-         }),
+          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
           Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
@@ -5125,6 +5207,9 @@ mod tests
                     let made = match node {
                         | CoreTerm::Value(id) => {
                             let graft = match *core.value(id).expect("a reached value resolves") {
+                                | Value::Reify(_) => {
+                                    panic!("the pure fixture language has no reified stacks")
+                                },
                                 | Value::Primitive { .. } => {
                                     panic!("the duplication fixtures carry no native operation")
                                 },
@@ -5148,15 +5233,15 @@ mod tests
                                 | Value::PathRefl(_)
                                 | Value::Constructor { .. }
                                 | Value::Record(_)
+                                | Value::ListNil
+                                | Value::ListCons(..)
                                 | Value::PathProduct(..)
                                 | Value::PathEquiv { .. }
                                 | Value::Quote(_)
                                 | Value::QuoteComputation(_)
                                 | Value::StaticLambda(_)
                                 | Value::StaticApplication(..) => {
-                                    panic!(
-                                        "the duplication fixtures carry no quote, operator or path"
-                                    )
+                                    panic!("the duplication fixture uses only the CBPV fragment")
                                 },
                                 | Value::Hole(_) | Value::Mark { .. } => {
                                     panic!("the duplication fixtures carry no hole or mark")
@@ -5177,11 +5262,20 @@ mod tests
                                 | Computation::RecordProjection(..) => {
                                     panic!("native eliminators are outside the duplication fixture")
                                 },
+                                | Computation::Perform { .. }
+                                | Computation::Handle { .. }
+                                | Computation::Resume(..)
+                                | Computation::Reset(_)
+                                | Computation::Shift(_)
+                                | Computation::With(..)
+                                | Computation::Project(..) => panic!(
+                                    "the pure fixture language has no runtime control formers"
+                                ),
                                 | Computation::Primitive { .. } => {
                                     panic!("the duplication fixtures carry no native operation")
                                 },
-                                | Computation::Transport(..) => {
-                                    panic!("the duplication fixtures carry no transport")
+                                | Computation::Transport(..) | Computation::ListFold { .. } => {
+                                    panic!("the duplication fixture uses only the CBPV fragment")
                                 },
                                 | Computation::Fixpoint { .. } => {
                                     panic!("the duplication fixtures carry no fixpoint")
@@ -5435,12 +5529,13 @@ mod tests
         /// The nodes `node` is built from.
         ///
         /// # Specification
-        /// - requires: an untranslated node resolves in the run's source arena.
+        /// - requires: an untranslated node resolves in the pure fixture
+        ///   language.
         /// - ensures: no children for a completed copy; otherwise the source
         ///   node's immediate children in constructor order, including quoted
         ///   types.
         /// - provides: the edges followed by the postorder translator.
-        /// - panics: when an untranslated source node does not resolve.
+        /// - panics: when a source node is unresolved or outside that language.
         ///
         /// # Adequacy
         /// - hypothesis: L3 — an untranslated resolved node contributes its
@@ -5457,19 +5552,22 @@ mod tests
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
+          Value::Reify(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
-              Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
+              Value::ListCons(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
+              Value::ListNil | Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
               Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [Node::Value(body)],
               Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
-              Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
-             }),
+              }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) => ret.as_slice() == [Node::Value(record)],
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+              Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
               Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [Node::Computation(body)],
@@ -5482,15 +5580,17 @@ mod tests
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
+              ValueType::Stack { .. } => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
               ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
-              ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
+              ValueType::List(inner) | ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
               ValueType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
               ValueType::Base(_) | ValueType::Unit | ValueType::Universe{..} | ValueType::Abstract(_) | ValueType::Unknown => ret.is_empty(),
              }),
              Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
-              CompType::Returner(result) => ret.as_slice() == [Node::ValueType(result)],
+              CompType::With(..) => false,
+              CompType::Returner { result, ref effects } => effects.purity() == gandr_core_term::effect::Purity::Pure && ret.as_slice() == [Node::ValueType(result)],
               CompType::Arrow{domain,codomain} | CompType::Pi{domain,codomain} => ret.as_slice() == [Node::ValueType(domain),Node::CompType(codomain)],
               CompType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
               CompType::Unknown => ret.is_empty(),
@@ -5519,6 +5619,9 @@ mod tests
                         | Value::Record(ref fields) => {
                             fields.values().copied().map(Node::Value).collect()
                         },
+                        | Value::Reify(_) => {
+                            panic!("the pure fixture language has no reified stacks")
+                        },
                         | Value::PathRefl(code) => Vec::from([Node::Value(code)]),
                         | Value::PathEquiv {
                             path_type,
@@ -5532,6 +5635,7 @@ mod tests
                         ]),
                         | Value::PathProduct(first, second)
                         | Value::Pair(first, second)
+                        | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
@@ -5546,6 +5650,7 @@ mod tests
                         | Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
+                        | Value::ListNil
                         | Value::Literal(_)
                         | Value::Hole(_) => Vec::new(),
                     }
@@ -5566,6 +5671,28 @@ mod tests
                         | Computation::RecordProjection(ref record, _) => {
                             Vec::from([Node::Value(*record)])
                         },
+                        | Computation::Perform { .. }
+                        | Computation::Handle { .. }
+                        | Computation::Resume(..)
+                        | Computation::Reset(_)
+                        | Computation::Shift(_)
+                        | Computation::With(..)
+                        | Computation::Project(..) => {
+                            panic!("the pure fixture language has no runtime control formers")
+                        },
+                        | Computation::ListFold {
+                            element,
+                            result,
+                            list,
+                            on_nil,
+                            on_cons,
+                        } => Vec::from([
+                            Node::ValueType(element),
+                            Node::ValueType(result),
+                            Node::Value(list),
+                            Node::Computation(on_nil),
+                            Node::Computation(on_cons),
+                        ]),
                         | Computation::Primitive { ref arguments, .. } => {
                             arguments.iter().copied().map(Node::Value).collect()
                         },
@@ -5609,6 +5736,7 @@ mod tests
                         | ValueType::Record(ref fields) => {
                             fields.values().copied().map(Node::ValueType).collect()
                         },
+                        | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         | ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
@@ -5619,7 +5747,9 @@ mod tests
                             codomain: second,
                         } => Vec::from([Node::ValueType(first), Node::ValueType(second)]),
                         | ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
-                        | ValueType::Lift { inner, .. } => Vec::from([Node::ValueType(inner)]),
+                        | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                            Vec::from([Node::ValueType(inner)])
+                        },
                         | ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
                         | ValueType::Base(_)
                         | ValueType::Unit
@@ -5630,7 +5760,18 @@ mod tests
                 },
                 | Node::CompType(comp_type) => {
                     match *core.comp_type(comp_type).expect("a fixture type resolves") {
-                        | CompType::Returner(result) => Vec::from([Node::ValueType(result)]),
+                        | CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                        | CompType::Returner {
+                            result,
+                            ref effects,
+                        } => {
+                            assert_eq!(
+                                effects.purity(),
+                                gandr_core_term::effect::Purity::Pure,
+                                "kernel replay fixtures are pure"
+                            );
+                            Vec::from([Node::ValueType(result)])
+                        },
                         | CompType::Arrow { domain, codomain }
                         | CompType::Pi { domain, codomain } => {
                             Vec::from([Node::ValueType(domain), Node::CompType(codomain)])
@@ -5709,6 +5850,9 @@ mod tests
                                 .collect();
                             self.arena.value_record(fields)
                         },
+                        | Value::Reify(_) => {
+                            panic!("the pure fixture language has no reified stacks")
+                        },
                         | Value::Primitive { .. } => panic!("the kernel has no native operation"),
                         | Value::Variable {
                             zone: Zone::Intuitionistic,
@@ -5721,6 +5865,11 @@ mod tests
                         },
                         | Value::Constant(constant) => self.arena.value_constant(constant),
                         | Value::Unit => self.arena.value_unit(),
+                        | Value::ListNil => self.arena.value_list_nil(),
+                        | Value::ListCons(first, second) => {
+                            let (first, second) = (value(self, first), value(self, second));
+                            self.arena.value_list_cons(first, second)
+                        },
                         | Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
                         | Value::PathRefl(code) => {
                             let code = value(self, code);
@@ -5807,6 +5956,32 @@ mod tests
                             self.arena
                                 .computation_record_projection(record, label.clone())
                         },
+                        | Computation::Perform { .. }
+                        | Computation::Handle { .. }
+                        | Computation::Resume(..)
+                        | Computation::Reset(_)
+                        | Computation::Shift(_)
+                        | Computation::With(..)
+                        | Computation::Project(..) => {
+                            panic!("the pure fixture language has no runtime control formers")
+                        },
+                        | Computation::ListFold {
+                            element,
+                            result,
+                            list,
+                            on_nil,
+                            on_cons,
+                        } => {
+                            let element = *self.value_types.get(&element).expect("children first");
+                            let result = *self.value_types.get(&result).expect("children first");
+                            let (list, on_nil, on_cons) = (
+                                value(self, list),
+                                computation(self, on_nil),
+                                computation(self, on_cons),
+                            );
+                            self.arena
+                                .computation_list_fold(element, result, list, on_nil, on_cons)
+                        },
                         | Computation::Primitive { .. } => {
                             panic!("the kernel has no native operation")
                         },
@@ -5879,12 +6054,17 @@ mod tests
                                 .collect();
                             self.arena.value_type_record(fields)
                         },
+                        | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
                         | ValueType::PathUniverse(source, target) => {
                             let (source, target) = (value(self, source), value(self, target));
                             self.arena.value_type_path_universe(source, target)
                         },
                         | ValueType::Base(base) => self.arena.value_type_base(base),
                         | ValueType::Unit => self.arena.value_type_unit(),
+                        | ValueType::List(inner) => {
+                            let inner = value_type(self, inner);
+                            self.arena.value_type_list(inner)
+                        },
                         | ValueType::Product(first, second) => {
                             let (first, second) =
                                 (value_type(self, first), value_type(self, second));
@@ -5935,7 +6115,16 @@ mod tests
                         *kernel.comp_types.get(&id).expect("children first")
                     };
                     let copy = match *core.comp_type(id).expect("a fixture type resolves") {
-                        | CompType::Returner(result) => {
+                        | CompType::With(..) => panic!("the kernel has no lazy computation pair"),
+                        | CompType::Returner {
+                            result,
+                            ref effects,
+                        } => {
+                            assert_eq!(
+                                effects.purity(),
+                                gandr_core_term::effect::Purity::Pure,
+                                "kernel replay fixtures are pure"
+                            );
                             let result = value_type(self, result);
                             self.arena.comp_type_returner(result)
                         },
@@ -6363,6 +6552,58 @@ mod tests
     }
 
     #[test]
+    fn neutral_list_fold_conversion_replays_both_branch_scopes()
+    {
+        let mut core = CoreArena::new();
+        let unit_type = core.value_type_unit();
+        let boolean = core.value_type_sum(unit_type, unit_type);
+        let unit = core.value_unit();
+        let yes = core.value_injection(gandr_kernel_term::Side::Left, unit);
+        let no = core.value_injection(gandr_kernel_term::Side::Right, unit);
+        let named_yes = core.value_constant(Name::Zero.constant());
+        let list = innermost(&mut core);
+        let head = core.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            gandr_kernel_term::DeBruijnIndex::from(1_u32),
+        );
+        let result = innermost(&mut core);
+        let on_nil = core.computation_return(named_yes);
+        let same_nil = core.computation_return(yes);
+        let other_nil = core.computation_return(no);
+        let on_cons = core.computation_return(head);
+        let other_cons = core.computation_return(result);
+        let under_bind = core.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            gandr_kernel_term::DeBruijnIndex::from(2_u32),
+        );
+        let bound = core.computation_return(unit);
+        let body = core.computation_return(under_bind);
+        let same_cons = core.computation_bind(bound, body);
+        let fold = core.computation_list_fold(boolean, boolean, list, on_nil, on_cons);
+        let left = core.computation_lambda(fold);
+        let cases = [
+            (same_nil, same_cons, MachineVerdict::Convertible),
+            (other_nil, same_cons, MachineVerdict::NotConvertible),
+            (same_nil, other_cons, MachineVerdict::NotConvertible),
+        ]
+        .map(|(nil, cons, expected)| {
+            let fold = core.computation_list_fold(boolean, boolean, list, nil, cons);
+            (core.computation_lambda(fold), expected)
+        });
+        let world = World::new(core, &[(Name::Zero, yes)]);
+        for (right, expected) in cases {
+            let sides = Sides::Computations(left, right);
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(expected, verdict);
+            assert_eq!(
+                certified(expected),
+                world.replayed(sides, verdict, &decisions)
+            );
+        }
+    }
+
+    #[test]
+
     fn a_code_constant_unfolds_to_its_quote()
     {
         let mut core = CoreArena::new();
@@ -8231,7 +8472,7 @@ mod tests
         for level in [0_u32, 1_u32, 0_u32] {
             let level = crate::BinderLevel::from(level);
             let channel = scheduler
-                .open_channel(body, level)
+                .open_channel(body, level, super::Opening::One)
                 .expect("the closure opens at this level");
             if scheduler.outcome(channel) == Ok(super::Outcome::Pending) {
                 assert_eq!(Ok(super::Turn::Done), scheduler.turn(channel));

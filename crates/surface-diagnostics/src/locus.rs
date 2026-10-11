@@ -375,6 +375,13 @@ fn checked(
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
+        | CheckRefusal::DependentStack { at, synthesised } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
+        | CheckRefusal::EffectSignatureConflict { at, .. } => {
+            (spanned(origins.computation(at)), UNNAMED)
+        },
         | CheckRefusal::TypeMismatch(Mismatch::Value {
             at,
             synthesised,
@@ -419,7 +426,11 @@ fn checked(
         },
         | CheckRefusal::NotSynthesisable {
             form:
-                CheckingForm::Injection(at) | CheckingForm::Thunk(at) | CheckingForm::StaticLambda(at),
+                CheckingForm::Reify(at)
+                | CheckingForm::List(at)
+                | CheckingForm::Injection(at)
+                | CheckingForm::Thunk(at)
+                | CheckingForm::StaticLambda(at),
         }
         | CheckRefusal::PathCode(at)
         | CheckRefusal::UnknownConstant { at, .. }
@@ -430,9 +441,16 @@ fn checked(
         | CheckRefusal::StaticClassifierExpected { found, .. } => {
             (spanned(origins.value_type(found)), UNNAMED)
         },
+        | CheckRefusal::UnknownOperation { at }
+        | CheckRefusal::HandlerCoverage { at }
+        | CheckRefusal::ShiftWithoutReset { at }
         | CheckRefusal::NotSynthesisable {
             form:
-                CheckingForm::Case(at)
+                CheckingForm::Handle(at)
+                | CheckingForm::Reset(at)
+                | CheckingForm::Shift(at)
+                | CheckingForm::With(at)
+                | CheckingForm::Case(at)
                 | CheckingForm::Lambda(at)
                 | CheckingForm::Return(at)
                 | CheckingForm::Fixpoint(at),
@@ -633,6 +651,11 @@ impl fmt::Display for Checked
             CheckRefusal::NonExhaustiveDataCase(_) => f.write_str("the data case must cover every constructor exactly once"),
             CheckRefusal::AbsentRecordField(_) => f.write_str("the record type has no such field"),
             CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
+            | CheckRefusal::UnknownOperation { .. } => f.write_str("the operation is absent from its inline interface"),
+            | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),
+            | CheckRefusal::ShiftWithoutReset { .. } => f.write_str("shift requires an enclosing reset answer type"),
+            | CheckRefusal::DependentStack { .. } => f.write_str("the stack frame's result type mentions its discharged value binder"),
+            | CheckRefusal::EffectSignatureConflict { .. } => f.write_str("two accumulated effect rows disagree on the operation types of a shared interface"),
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
@@ -644,7 +667,13 @@ impl fmt::Display for Checked
                 f,
                 "{} stands where a type must be synthesised",
                 match form {
+                    | CheckingForm::Reify(_) => "a stack literal",
+                    | CheckingForm::Handle(_) => "a handler",
+                    | CheckingForm::Reset(_) => "a reset",
+                    | CheckingForm::Shift(_) => "a shift",
+                    | CheckingForm::With(_) => "a lazy pair",
                     | CheckingForm::Injection(_) => "an injection",
+                    | CheckingForm::List(_) => "a List introduction",
                     | CheckingForm::Case(_) => "a case",
                     | CheckingForm::Thunk(_) => "a thunk",
                     | CheckingForm::Lambda(_) => "a lambda",
@@ -779,8 +808,11 @@ impl fmt::Display for Shape
         f.write_str(match self.0 {
             | ExpectedShape::Data => "a nominal datatype",
             | ExpectedShape::Record => "a record type",
+            | ExpectedShape::Stack => "a stack type from input to output computation",
+            | ExpectedShape::With => "a lazy pair of computation types",
             | ExpectedShape::PathUniverse => "a universe-path classifier `Path_U a b`",
             | ExpectedShape::Sum => "a sum type `A + B`",
+            | ExpectedShape::List => "a List type `List A`",
             | ExpectedShape::Thunk => "a thunk type `+U C`",
             | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",
@@ -821,6 +853,15 @@ impl fmt::Display for Former
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
+            | UnadmittedFormer::Reify => "a stack literal at the pure kernel boundary",
+            | UnadmittedFormer::Stack => "a stack classifier at the pure kernel boundary",
+            | UnadmittedFormer::Perform => "an effect request at the pure kernel boundary",
+            | UnadmittedFormer::Handle => "an effect handler at the pure kernel boundary",
+            | UnadmittedFormer::Resume => "a resumption at the pure kernel boundary",
+            | UnadmittedFormer::Reset => "an answer delimiter at the pure kernel boundary",
+            | UnadmittedFormer::Shift => "a continuation capture at the pure kernel boundary",
+            | UnadmittedFormer::With => "a lazy pair at the pure kernel boundary",
+            | UnadmittedFormer::Project => "a lazy-pair projection at the pure kernel boundary",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
             | UnadmittedFormer::NumericLiteral => "a numeric literal",
 
@@ -831,6 +872,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::SortParameter => "a universe over a sort parameter",
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
             | UnadmittedFormer::StaticLambda => "a type operator",
+            | UnadmittedFormer::EffectRow => "a nonempty effect row at the pure kernel boundary",
         })
     }
 }

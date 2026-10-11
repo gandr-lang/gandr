@@ -2932,7 +2932,7 @@ impl Erasure<'_>
         ensures: |ret| match ret {
          Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
          && self.core.comp_type(id).is_some_and(|actual| match *graft {
-            CompTypeGraft::Returner(_) => matches!(*actual, gandr_core_term::CompType::Returner(result) if children[0] == Some(CoreId::ValueType(result))),
+            CompTypeGraft::Returner(_) => matches!(*actual, gandr_core_term::CompType::Returner { result, ref effects } if effects.purity() == gandr_core_term::effect::Purity::Pure && children[0] == Some(CoreId::ValueType(result))),
             CompTypeGraft::Arrow{..} => matches!(*actual, gandr_core_term::CompType::Arrow{domain,codomain} if children[1] == Some(CoreId::ValueType(domain)) && children[0] == Some(CoreId::CompType(codomain))),
             CompTypeGraft::Pi{..} => matches!(*actual, gandr_core_term::CompType::Pi{domain,codomain} if children[1] == Some(CoreId::ValueType(domain)) && children[0] == Some(CoreId::CompType(codomain))),
             CompTypeGraft::Element{ref target,..} => matches!(*actual, gandr_core_term::CompType::Element{code,target:ref actual} if target == actual && children[0] == Some(CoreId::Value(code))),

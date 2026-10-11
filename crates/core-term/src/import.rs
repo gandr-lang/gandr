@@ -1,0 +1,681 @@
+//! Graph-preserving imports of type annotations into a different core arena.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use anodized::spec;
+
+use crate::CompType;
+use crate::CompTypeId;
+use crate::Computation;
+use crate::ComputationId;
+use crate::CoreArena;
+use crate::Value;
+use crate::ValueId;
+use crate::ValueType;
+use crate::ValueTypeId;
+
+/// An annotation graph contains an unresolved child.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ImportFault;
+
+/// A family-tagged handle in either arena.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Node
+{
+    /// A value handle.
+    Value(ValueId),
+    /// A computation handle.
+    Computation(ComputationId),
+    /// A value-type handle.
+    ValueType(ValueTypeId),
+    /// A computation-type handle.
+    CompType(CompTypeId),
+}
+
+/// One owned node whose child handles can be relocated.
+#[derive(Debug)]
+enum Image
+{
+    /// A value node.
+    Value(Value),
+    /// A computation node.
+    Computation(Computation),
+    /// A value-type node.
+    ValueType(ValueType),
+    /// A computation-type node.
+    CompType(CompType),
+}
+
+/// A mutable, family-tagged child handle.
+enum Edge<'node>
+{
+    /// A value child.
+    Value(&'node mut ValueId),
+    /// A computation child.
+    Computation(&'node mut ComputationId),
+    /// A value-type child.
+    ValueType(&'node mut ValueTypeId),
+    /// A computation-type child.
+    CompType(&'node mut CompTypeId),
+}
+
+impl Edge<'_>
+{
+    /// Read the child before relocation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn node(&self) -> Node
+    {
+        match *self {
+            | Self::Value(ref id) => Node::Value(**id),
+            | Self::Computation(ref id) => Node::Computation(**id),
+            | Self::ValueType(ref id) => Node::ValueType(**id),
+            | Self::CompType(ref id) => Node::CompType(**id),
+        }
+    }
+
+    /// Replace a child with the imported handle of the same family.
+    ///
+    /// # Specification
+    /// - ensures: success replaces this edge by the given handle.
+    /// - fails: a different handle family leaves the edge unchanged.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — annotation imports preserve type-to-value-to-type
+    ///   edges.
+    /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
+    #[spec(ensures: |ret| ret.is_err() || self.node() == image)]
+    fn replace(
+        &mut self,
+        image: Node,
+    ) -> Result<(), ImportFault>
+    {
+        match (&mut *self, image) {
+            | (&mut Self::Value(ref mut id), Node::Value(image)) => **id = image,
+            | (&mut Self::Computation(ref mut id), Node::Computation(image)) => **id = image,
+            | (&mut Self::ValueType(ref mut id), Node::ValueType(image)) => **id = image,
+            | (&mut Self::CompType(ref mut id), Node::CompType(image)) => **id = image,
+            | _ => return Err(ImportFault),
+        }
+        Ok(())
+    }
+}
+
+impl Image
+{
+    /// Borrow all immediate children without a per-node allocation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edges(&mut self) -> [Option<Edge<'_>>; 5]
+    {
+        use Edge::CompType as CT;
+        use Edge::Computation as C;
+        use Edge::Value as V;
+        use Edge::ValueType as VT;
+        match *self {
+            | Self::Value(Value::Constructor {
+                ref mut datatype, ..
+            }) => [Some(VT(datatype)), None, None, None, None],
+            | Self::Computation(Computation::DataCase {
+                ref mut scrutinee,
+                ref mut motive,
+                ..
+            }) => [Some(V(scrutinee)), Some(CT(motive)), None, None, None],
+            | Self::Computation(Computation::RecordProjection(ref mut record, _)) => {
+                [Some(V(record)), None, None, None, None]
+            },
+            | Self::Value(Value::Record(_))
+            | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
+                [None, None, None, None, None]
+            },
+            | Self::Value(
+                Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Unit
+                | Value::Literal(_)
+                | Value::ListNil
+                | Value::Reify(_)
+                | Value::Hole(_),
+            )
+            | Self::Computation(Computation::Hole(_))
+            | Self::ValueType(
+                ValueType::Base(_)
+                | ValueType::Unit
+                | ValueType::Universe { .. }
+                | ValueType::Abstract(_)
+                | ValueType::Unknown,
+            )
+            | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
+            | Self::ValueType(ValueType::Stack {
+                input: ref mut first,
+                output: ref mut second,
+            })
+            | Self::CompType(CompType::With(ref mut first, ref mut second)) => {
+                [Some(CT(first)), Some(CT(second)), None, None, None]
+            },
+            | Self::Computation(
+                Computation::Handle {
+                    subject: ref mut first,
+                    on_return: ref mut second,
+                    ..
+                }
+                | Computation::With(ref mut first, ref mut second)
+                | Computation::Bind(ref mut first, ref mut second),
+            ) => [Some(C(first)), Some(C(second)), None, None, None],
+            | Self::Computation(Computation::Resume(ref mut stack, ref mut body)) => {
+                [Some(V(stack)), Some(C(body)), None, None, None]
+            },
+            | Self::Value(Value::Primitive { ref mut body, .. } | Value::Thunk(ref mut body))
+            | Self::Computation(
+                Computation::Lambda(ref mut body)
+                | Computation::Fixpoint { ref mut body, .. }
+                | Computation::Reset(ref mut body)
+                | Computation::Shift(ref mut body)
+                | Computation::Project(_, ref mut body)
+                | Computation::Mark { ref mut body, .. },
+            ) => [Some(C(body)), None, None, None, None],
+            | Self::Value(
+                Value::PathRefl(ref mut body)
+                | Value::Injection(_, ref mut body)
+                | Value::Lift { ref mut body, .. }
+                | Value::StaticLambda(ref mut body)
+                | Value::Mark { ref mut body, .. },
+            )
+            | Self::Computation(
+                Computation::Return(ref mut body)
+                | Computation::Force(ref mut body)
+                | Computation::Perform {
+                    payload: ref mut body,
+                    ..
+                },
+            )
+            | Self::ValueType(ValueType::Element {
+                code: ref mut body, ..
+            })
+            | Self::CompType(CompType::Element {
+                code: ref mut body, ..
+            }) => [Some(V(body)), None, None, None, None],
+            | Self::Value(
+                Value::Pair(ref mut first, ref mut second)
+                | Value::PathProduct(ref mut first, ref mut second)
+                | Value::ListCons(ref mut first, ref mut second)
+                | Value::StaticApplication(ref mut first, ref mut second),
+            )
+            | Self::Computation(Computation::Transport(ref mut first, ref mut second))
+            | Self::ValueType(ValueType::PathUniverse(ref mut first, ref mut second)) => {
+                [Some(V(first)), Some(V(second)), None, None, None]
+            },
+            | Self::Value(Value::PathEquiv {
+                ref mut path_type,
+                ref mut forward,
+                ref mut backward,
+                ..
+            }) => [
+                Some(VT(path_type)),
+                Some(V(forward)),
+                Some(V(backward)),
+                None,
+                None,
+            ],
+            | Self::Value(Value::Quote(ref mut ty))
+            | Self::ValueType(
+                ValueType::List(ref mut ty)
+                | ValueType::Lift {
+                    inner: ref mut ty, ..
+                },
+            )
+            | Self::CompType(CompType::Returner {
+                result: ref mut ty, ..
+            }) => [Some(VT(ty)), None, None, None, None],
+            | Self::Value(Value::QuoteComputation(ref mut ty))
+            | Self::ValueType(ValueType::Thunk(ref mut ty)) => {
+                [Some(CT(ty)), None, None, None, None]
+            },
+            | Self::Computation(Computation::Primitive {
+                ref mut arguments, ..
+            }) => match *arguments {
+                | crate::primitive::Arguments::Unary(ref mut value) => {
+                    [Some(V(value)), None, None, None, None]
+                },
+                | crate::primitive::Arguments::Binary([ref mut first, ref mut second]) => {
+                    [Some(V(first)), Some(V(second)), None, None, None]
+                },
+            },
+            | Self::Computation(Computation::Application(ref mut head, ref mut argument)) => {
+                [Some(C(head)), Some(V(argument)), None, None, None]
+            },
+            | Self::Computation(Computation::Case {
+                ref mut scrutinee,
+                ref mut on_left,
+                ref mut on_right,
+            }) => [
+                Some(V(scrutinee)),
+                Some(C(on_left)),
+                Some(C(on_right)),
+                None,
+                None,
+            ],
+            | Self::Computation(Computation::ListFold {
+                ref mut element,
+                ref mut result,
+                ref mut list,
+                ref mut on_nil,
+                ref mut on_cons,
+            }) => [
+                Some(VT(element)),
+                Some(VT(result)),
+                Some(V(list)),
+                Some(C(on_nil)),
+                Some(C(on_cons)),
+            ],
+            | Self::ValueType(
+                ValueType::Product(ref mut first, ref mut second)
+                | ValueType::Sum(ref mut first, ref mut second)
+                | ValueType::StaticPi {
+                    domain: ref mut first,
+                    codomain: ref mut second,
+                },
+            ) => [Some(VT(first)), Some(VT(second)), None, None, None],
+            | Self::CompType(
+                CompType::Arrow {
+                    ref mut domain,
+                    ref mut codomain,
+                }
+                | CompType::Pi {
+                    ref mut domain,
+                    ref mut codomain,
+                },
+            ) => [Some(VT(domain)), Some(CT(codomain)), None, None, None],
+        }
+    }
+}
+
+/// One iterative postorder step.
+#[derive(Debug)]
+enum Task
+{
+    /// Import a node unless it already has an image.
+    Open(Node),
+    /// Relocate a node after its children have images.
+    Close(Node, Image),
+}
+
+/// Imports reachable annotations, preserving sharing between successive roots.
+///
+/// No source handle escapes into the destination. Binder indices, constants,
+/// literal payloads and replay evidence are preserved; only arena ids change.
+/// Source and destination must therefore use the same declaration and binder
+/// context. Dropping this importer or either arena is independent of term
+/// depth.
+#[derive(Debug)]
+pub struct TypeImporter<'source, 'target>
+{
+    /// The source annotation arena.
+    source: &'source CoreArena,
+    /// The receiving annotation arena.
+    target: &'target mut CoreArena,
+    /// Imported nodes, shared by every requested root.
+    images: BTreeMap<Node, Node>,
+    /// The explicit postorder stack.
+    pending: Vec<Task>,
+}
+
+impl<'source, 'target> TypeImporter<'source, 'target>
+{
+    /// Start an import session between distinct arenas.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    #[inline]
+    pub fn new(
+        source: &'source CoreArena,
+        target: &'target mut CoreArena,
+    ) -> Self
+    {
+        Self {
+            source,
+            target,
+            images: BTreeMap::new(),
+            pending: Vec::new(),
+        }
+    }
+
+    /// Copy a reachable value-type graph, retaining previous imported nodes.
+    ///
+    /// # Specification
+    /// - requires: the same binder and declaration context in both arenas.
+    /// - ensures: success returns a target-owned type with the source graph's
+    ///   syntax and sharing; unrelated source nodes are not copied.
+    /// - fails: an unresolved source edge or an inconsistent family image.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `ImportFault` for an unresolved source edge. Already imported
+    /// children remain reusable after a refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shared dependent annotation imported into a
+    ///   nonempty arena must preserve its variable and must not retain source
+    ///   handles.
+    /// - witness: `import::tests::dependent_annotations_preserve_sharing_across_arenas`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id| self.target.value_type(id).is_some()))]
+    #[inline]
+    pub fn value_type(
+        &mut self,
+        root: ValueTypeId,
+    ) -> Result<ValueTypeId, ImportFault>
+    {
+        self.pending.clear();
+        self.pending.push(Task::Open(Node::ValueType(root)));
+        while let Some(task) = self.pending.pop() {
+            match task {
+                | Task::Open(node) => {
+                    if self.images.contains_key(&node) {
+                        continue;
+                    }
+                    let mut image = match node {
+                        | Node::Value(id) => self.source.value(id).cloned().map(Image::Value),
+                        | Node::Computation(id) => {
+                            self.source.computation(id).cloned().map(Image::Computation)
+                        },
+                        | Node::ValueType(id) => {
+                            self.source.value_type(id).cloned().map(Image::ValueType)
+                        },
+                        | Node::CompType(id) => {
+                            self.source.comp_type(id).cloned().map(Image::CompType)
+                        },
+                    }
+                    .ok_or(ImportFault)?;
+                    let children = image.edges().map(|edge| edge.map(|edge| edge.node()));
+                    self.pending.push(Task::Close(node, image));
+                    if let Node::CompType(id) = node
+                        && let Some(ty) = self.source.comp_type(id)
+                        && let CompType::Returner { ref effects, .. } = *ty
+                    {
+                        self.pending.extend(
+                            effects
+                                .types()
+                                .rev()
+                                .map(|ty| Task::Open(Node::ValueType(ty))),
+                        );
+                    }
+                    match node {
+                        | Node::Value(id) => {
+                            let value = self.source.value(id).ok_or(ImportFault)?;
+                            match *value {
+                                | Value::Constructor { ref fields, .. } => self.pending.extend(
+                                    fields
+                                        .iter()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                ),
+                                | Value::Record(ref fields) => self.pending.extend(
+                                    fields
+                                        .values()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                ),
+                                | Value::Reify(ref frames) => {
+                                    self.pending.extend(frames.iter().rev().filter_map(|frame| {
+                                        match *frame {
+                                            | crate::control::StackFrame::Apply(value) => {
+                                                Some(Task::Open(Node::Value(value)))
+                                            },
+                                            | crate::control::StackFrame::Bind(body) => {
+                                                Some(Task::Open(Node::Computation(body)))
+                                            },
+                                            | crate::control::StackFrame::Project(_) => None,
+                                        }
+                                    }));
+                                },
+                                | _ => {},
+                            }
+                        },
+                        | Node::Computation(id) => {
+                            let computation = self.source.computation(id).ok_or(ImportFault)?;
+                            match *computation {
+                                | Computation::DataCase { ref branches, .. } => {
+                                    self.pending.extend(
+                                        branches
+                                            .iter()
+                                            .rev()
+                                            .map(|&body| Task::Open(Node::Computation(body))),
+                                    );
+                                },
+                                | Computation::Perform { ref signature, .. } => {
+                                    self.pending.extend(
+                                        signature
+                                            .types()
+                                            .rev()
+                                            .map(|ty| Task::Open(Node::ValueType(ty))),
+                                    );
+                                },
+                                | Computation::Handle {
+                                    ref signature,
+                                    ref clauses,
+                                    ..
+                                } => {
+                                    self.pending.extend(
+                                        signature
+                                            .types()
+                                            .rev()
+                                            .map(|ty| Task::Open(Node::ValueType(ty))),
+                                    );
+                                    self.pending.extend(
+                                        clauses.iter().rev().map(|clause| {
+                                            Task::Open(Node::Computation(clause.body))
+                                        }),
+                                    );
+                                },
+                                | _ => {},
+                            }
+                        },
+                        | Node::ValueType(id) => {
+                            let ty = self.source.value_type(id).ok_or(ImportFault)?;
+                            match *ty {
+                                | ValueType::Data { ref arguments, .. } => self.pending.extend(
+                                    arguments
+                                        .iter()
+                                        .rev()
+                                        .map(|&value| Task::Open(Node::Value(value))),
+                                ),
+                                | ValueType::Record(ref fields) => self.pending.extend(
+                                    fields
+                                        .values()
+                                        .rev()
+                                        .map(|&ty| Task::Open(Node::ValueType(ty))),
+                                ),
+                                | _ => {},
+                            }
+                        },
+                        | Node::CompType(_) => {},
+                    }
+                    self.pending
+                        .extend(children.into_iter().flatten().rev().map(Task::Open));
+                },
+                | Task::Close(node, mut image) => {
+                    for mut edge in image.edges().into_iter().flatten() {
+                        let image = *self.images.get(&edge.node()).ok_or(ImportFault)?;
+                        edge.replace(image)?;
+                    }
+                    if let Image::CompType(CompType::Returner {
+                        ref mut effects, ..
+                    }) = image
+                    {
+                        *effects =
+                            effects.try_map_types(crate::effect::TypeOrder::Forward, |ty| {
+                                match self.images.get(&Node::ValueType(ty)) {
+                                    | Some(&Node::ValueType(image)) => Ok(image),
+                                    | _ => Err(ImportFault),
+                                }
+                            })?;
+                    }
+                    let map_type = |ty| match self.images.get(&Node::ValueType(ty)) {
+                        | Some(&Node::ValueType(mapped)) => Ok(mapped),
+                        | _ => Err(ImportFault),
+                    };
+                    let map_value = |value| match self.images.get(&Node::Value(value)) {
+                        | Some(&Node::Value(mapped)) => Ok(mapped),
+                        | _ => Err(ImportFault),
+                    };
+                    let map_computation = |body| match self.images.get(&Node::Computation(body)) {
+                        | Some(&Node::Computation(mapped)) => Ok(mapped),
+                        | _ => Err(ImportFault),
+                    };
+                    match image {
+                        | Image::Value(Value::Constructor { ref mut fields, .. })
+                        | Image::ValueType(ValueType::Data {
+                            arguments: ref mut fields,
+                            ..
+                        }) => {
+                            for value in fields {
+                                *value = map_value(*value)?;
+                            }
+                        },
+                        | Image::Value(Value::Record(ref mut fields)) => {
+                            for value in fields.values_mut() {
+                                *value = map_value(*value)?;
+                            }
+                        },
+                        | Image::ValueType(ValueType::Record(ref mut fields)) => {
+                            for ty in fields.values_mut() {
+                                *ty = map_type(*ty)?;
+                            }
+                        },
+                        | Image::Computation(Computation::DataCase {
+                            ref mut branches, ..
+                        }) => {
+                            for body in branches {
+                                *body = map_computation(*body)?;
+                            }
+                        },
+                        | Image::Value(Value::Reify(ref mut frames)) => {
+                            for index in 0 .. frames.len() {
+                                let original = *frames.get(index).ok_or(ImportFault)?;
+                                let mapped = match original {
+                                    | crate::control::StackFrame::Apply(value) => {
+                                        match self.images.get(&Node::Value(value)) {
+                                            | Some(&Node::Value(mapped)) => {
+                                                crate::control::StackFrame::Apply(mapped)
+                                            },
+                                            | _ => return Err(ImportFault),
+                                        }
+                                    },
+                                    | crate::control::StackFrame::Bind(body) => {
+                                        match self.images.get(&Node::Computation(body)) {
+                                            | Some(&Node::Computation(mapped)) => {
+                                                crate::control::StackFrame::Bind(mapped)
+                                            },
+                                            | _ => return Err(ImportFault),
+                                        }
+                                    },
+                                    | crate::control::StackFrame::Project(side) => {
+                                        crate::control::StackFrame::Project(side)
+                                    },
+                                };
+                                if mapped != original {
+                                    *alloc::sync::Arc::make_mut(frames)
+                                        .get_mut(index)
+                                        .ok_or(ImportFault)? = mapped;
+                                }
+                            }
+                        },
+                        | Image::Computation(Computation::Perform {
+                            ref mut signature, ..
+                        }) => {
+                            *signature = signature
+                                .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
+                        },
+                        | Image::Computation(Computation::Handle {
+                            ref mut signature,
+                            ref mut clauses,
+                            ..
+                        }) => {
+                            *signature = signature
+                                .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
+                            for index in 0 .. clauses.len() {
+                                let body = clauses.get(index).ok_or(ImportFault)?.body;
+                                let Some(&Node::Computation(mapped)) =
+                                    self.images.get(&Node::Computation(body))
+                                else {
+                                    return Err(ImportFault);
+                                };
+                                if mapped != body {
+                                    alloc::sync::Arc::make_mut(clauses)
+                                        .get_mut(index)
+                                        .ok_or(ImportFault)?
+                                        .body = mapped;
+                                }
+                            }
+                        },
+                        | _ => {},
+                    }
+                    let copied = match image {
+                        | Image::Value(value) => Node::Value(self.target.alloc_value(value)),
+                        | Image::Computation(comp) => {
+                            Node::Computation(self.target.alloc_computation(comp))
+                        },
+                        | Image::ValueType(ty) => Node::ValueType(self.target.alloc_value_type(ty)),
+                        | Image::CompType(ty) => Node::CompType(self.target.alloc_comp_type(ty)),
+                    };
+                    let _previous = self.images.insert(node, copied);
+                },
+            }
+        }
+        match self.images.get(&Node::ValueType(root)) {
+            | Some(&Node::ValueType(image)) => Ok(image),
+            | _ => Err(ImportFault),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::*;
+
+    #[test]
+    fn dependent_annotations_preserve_sharing_across_arenas()
+    {
+        let mut source = CoreArena::new();
+        let variable =
+            source.value_variable(crate::Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let dependent = source.value_type_element(variable, Level::zero());
+        let list = source.value_type_list(dependent);
+        let pair = source.value_type_product(list, list);
+        let mut target = CoreArena::new();
+        let unit = target.value_type_unit();
+        let _occupied = target.value_quote(unit);
+        let mut importer = TypeImporter::new(&source, &mut target);
+        let copied = importer.value_type(pair).expect("source graph resolves");
+        let list_image = importer.value_type(list).expect("shared child is imported");
+        assert_eq!(
+            importer.target.value_type(copied),
+            Some(&ValueType::Product(list_image, list_image))
+        );
+        let ValueType::List(element) = *importer.target.value_type(list_image).expect("list")
+        else {
+            panic!("native list");
+        };
+        let ValueType::Element { code, .. } =
+            *importer.target.value_type(element).expect("element")
+        else {
+            panic!("dependent element");
+        };
+        assert_eq!(
+            importer.target.value(code),
+            Some(&Value::Variable {
+                zone: crate::Zone::Intuitionistic,
+                index: DeBruijnIndex::from(1_u32)
+            })
+        );
+        assert_eq!(importer.target.value(variable), Some(&Value::Quote(unit)));
+    }
+}

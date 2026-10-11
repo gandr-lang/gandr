@@ -161,12 +161,14 @@ enum Kind
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
     | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::UnitType | Former::Product(..)
+        | Former::Stack(..) | Former::List(_)
         | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..)),
-    | Kind::CompType => matches!(*former, Former::Returner(_) | Former::Arrow { .. }
-        | Former::Pi { .. } | Former::ComputationElement(_)),
+    | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
+        | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
         | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+        | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..)),
     | Kind::Computation => matches!(*former, Former::Computation),
@@ -175,11 +177,13 @@ enum Kind
 const fn kind<Node>(former: &Former<'_, Node>) -> Kind
 {
     match *former {
+        | Former::Stack(..)
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::UnitType
         | Former::Product(..)
         | Former::Sum(..)
+        | Former::List(_)
         | Former::ThunkType(_)
         | Former::Universe { .. }
         | Former::TypeLift
@@ -187,6 +191,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Abstract(_)
         | Former::StaticPi { .. } => Kind::ValueType,
         | Former::Returner(_)
+        | Former::With(..)
+        | Former::EffectfulReturner { .. }
         | Former::Arrow { .. }
         | Former::Pi { .. }
         | Former::ComputationElement(_) => Kind::CompType,
@@ -198,8 +204,11 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Unit
         | Former::Literal(_)
         | Former::Pair(..)
+        | Former::ListNil
+        | Former::ListCons(..)
         | Former::Injection(..)
         | Former::Thunk
+        | Former::Reify
         | Former::ValueLift
         | Former::Quote(_)
         | Former::QuoteComputation(_)
@@ -335,15 +344,17 @@ enum Children<Node>
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match *former {
+    | Former::Stack(..) | Former::With(..) => matches!(ret,
+        Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
     | Former::Product(..) | Former::Sum(..) | Former::StaticPi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Pair(..) | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Pair(..) | Former::StaticApplication(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
-    | Former::Returner(_) | Former::Quote(_) => matches!(ret,
+    | Former::List(_) | Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Quote(_) => matches!(ret,
         Children::One(Slot { admits: Admits::ValueType, .. })),
     | Former::PathRefl(_) | Former::Element(_) | Former::ComputationElement(_) | Former::Injection(..) | Former::StaticLambda(_) => matches!(ret,
         Children::One(Slot { admits: Admits::Value, .. })),
@@ -355,6 +366,10 @@ where
 {
     let slot = |node: Node, admits: Admits| Slot { node, admits };
     match *former {
+        | Former::Stack(first, second) | Former::With(first, second) => Children::Two(
+            slot(first, Admits::CompType),
+            slot(second, Admits::CompType),
+        ),
         | Former::Product(first, second)
         | Former::Sum(first, second)
         | Former::StaticPi {
@@ -372,15 +387,17 @@ where
         | Former::PathProduct(first, second)
         | Former::PathEquiv(first, second)
         | Former::Pair(first, second)
+        | Former::ListCons(first, second)
         | Former::StaticApplication(first, second) => {
             Children::Two(slot(first, Admits::Value), slot(second, Admits::Value))
         },
         | Former::ThunkType(child) | Former::QuoteComputation(child) => {
             Children::One(slot(child, Admits::CompType))
         },
-        | Former::Returner(child) | Former::Quote(child) => {
-            Children::One(slot(child, Admits::ValueType))
-        },
+        | Former::List(child)
+        | Former::Returner(child)
+        | Former::EffectfulReturner { result: child, .. }
+        | Former::Quote(child) => Children::One(slot(child, Admits::ValueType)),
         | Former::PathRefl(child)
         | Former::Element(child)
         | Former::ComputationElement(child)
@@ -394,8 +411,10 @@ where
         | Former::Variable { .. }
         | Former::Constant(_)
         | Former::Unit
+        | Former::ListNil
         | Former::Literal(_)
         | Former::Thunk
+        | Former::Reify
         | Former::ValueLift
         | Former::Computation
         | Former::Unreadable => Children::None,
@@ -467,6 +486,8 @@ struct Piece
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Prefix
 {
+    /// The native list former.
+    List,
     /// The suspension `+U C`.
     Thunk,
     /// The returner `-F A`.
@@ -559,6 +580,10 @@ impl Infix
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Bracket
 {
+    /// A stack classifier with ordered computation endpoints.
+    Stack,
+    /// A lazy pair classifier.
+    With,
     /// A native path classifier.
     PathUniverse,
     /// Native reflexivity.
@@ -569,6 +594,8 @@ enum Bracket
     PathProduct,
     /// A pair `(a, b)`.
     Pair,
+    /// A native cell, `cons(head, tail)`.
+    ListCons,
     /// A left injection `Inl(v)`.
     Left,
     /// A right injection `Inr(v)`.
@@ -581,6 +608,8 @@ enum Join
 {
     /// A bridge over one operand.
     Prefix(Prefix),
+    /// A returner prefixed by the rendered effect names.
+    EffectReturner(DocId),
     /// An infix former over two operands.
     Infix(Infix),
     /// An arrow over its domain and codomain.
@@ -1422,6 +1451,7 @@ impl Walk<'_, '_, '_>
             | Former::BaseType(BaseType::String) => return self.atom(Glyphs("String")),
             | Former::UnitType => return self.atom(Glyphs("Unit")),
             | Former::Unit => return self.atom(Glyphs("()")),
+            | Former::ListNil => return self.approximate(Glyphs("nil")),
             | Former::Abstract(name) | Former::Constant(name) => return self.name(name),
             | Former::Literal(value) => {
                 let spelled = literal(value);
@@ -1441,6 +1471,15 @@ impl Walk<'_, '_, '_>
                 return self.variable(OpenBinders(index));
             },
             | Former::Thunk => return self.approximate(Glyphs("<thunk>")),
+            | Former::Reify => return self.approximate(Glyphs("<stack>")),
+            | Former::Stack(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::Stack))
+            },
+            | Former::With(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::With))
+            },
             | Former::BaseType(BaseType::Numeric)
             | Former::TypeLift
             | Former::ValueLift
@@ -1467,12 +1506,23 @@ impl Walk<'_, '_, '_>
             },
             | Former::Product(..) => Some(Join::Infix(Infix::Product)),
             | Former::Sum(..) => Some(Join::Infix(Infix::Sum)),
+            | Former::List(_) => Some(Join::Prefix(Prefix::List)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
+            | Former::EffectfulReturner { effects, .. } => {
+                let annotation = alloc::format!("-F^{effects:?} ");
+                let head = self.leaf(Glyphs(&annotation))?;
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::EffectReturner(head))
+            },
             | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
             | Former::Pi { .. } => Some(Join::Pi),
             | Former::StaticLambda(_) => Some(Join::StaticLambda),
             | Former::Pair(..) => Some(Join::Bracket(Bracket::Pair)),
+            | Former::ListCons(..) => {
+                self.fidelity = Fidelity::Approximate;
+                Some(Join::Bracket(Bracket::ListCons))
+            },
             | Former::Injection(Side::Left, _) => Some(Join::Bracket(Bracket::Left)),
             | Former::Injection(Side::Right, _) => Some(Join::Bracket(Bracket::Right)),
             | Former::StaticApplication(operator, argument) => {
@@ -1679,14 +1729,14 @@ impl Walk<'_, '_, '_>
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right | Bracket::PathRefl) => Some(1_usize),
-            Join::Infix(_) | Join::Arrow | Join::Pi | Join::Bracket(Bracket::Pair | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
+            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right | Bracket::PathRefl) => Some(1_usize),
+            Join::Infix(_) | Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::Pair | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) => Binding::Prefix,
+                    Join::Prefix(_) | Join::EffectReturner(_) => Binding::Prefix,
                     Join::Infix(Infix::Product) => Binding::Product,
                     Join::Infix(Infix::Sum) => Binding::Sum,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
@@ -1702,12 +1752,18 @@ impl Walk<'_, '_, '_>
     ) -> Result<(), PresentationError>
     {
         let (doc, binding) = match join {
+            | Join::EffectReturner(head) => {
+                let operand = self.pop()?;
+                let operand = self.bare_up_to(operand, Binding::Atom)?;
+                (self.builder.concat(head, operand)?, Binding::Prefix)
+            },
             | Join::Prefix(prefix) => {
                 let operand = self.pop()?;
                 let operand = self.bare_up_to(operand, Binding::Atom)?;
                 let head = self.leaf(match prefix {
                     | Prefix::Thunk => Glyphs("+U "),
                     | Prefix::Returner => Glyphs("-F "),
+                    | Prefix::List => Glyphs("List "),
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
@@ -1777,15 +1833,21 @@ impl Walk<'_, '_, '_>
                 let mut items = Vec::new();
                 match bracket {
                     | Bracket::PathUniverse
+                    | Bracket::Stack
+                    | Bracket::With
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
+                    | Bracket::ListCons
                     | Bracket::Pair => {
                         let second = self.pop()?;
                         let first = self.pop()?;
                         let opener = self.leaf(Glyphs(match bracket {
+                            | Bracket::Stack => "Stack(",
+                            | Bracket::With => "With(",
                             | Bracket::PathUniverse => "Path_U(",
                             | Bracket::PathEquiv => "equiv(",
                             | Bracket::PathProduct => "pathProduct(",
+                            | Bracket::ListCons => "cons(",
                             | Bracket::Pair
                             | Bracket::PathRefl
                             | Bracket::Left
@@ -1802,6 +1864,9 @@ impl Walk<'_, '_, '_>
                             | Bracket::Left => "Inl(",
                             | Bracket::Right
                             | Bracket::Pair
+                            | Bracket::ListCons
+                            | Bracket::Stack
+                            | Bracket::With
                             | Bracket::PathUniverse
                             | Bracket::PathEquiv
                             | Bracket::PathProduct => "Inr(",

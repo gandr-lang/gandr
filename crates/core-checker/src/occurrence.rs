@@ -24,6 +24,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::StackFrame;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -384,6 +385,13 @@ fn worst(
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), thunked(reach)));
                 },
+                | Some(&ValueType::List(element)) => {
+                    pending.push((AnyNode::ValueType(element), nest(reach)));
+                },
+                | Some(&ValueType::Stack { input, output }) => {
+                    pending.push((AnyNode::CompType(input), Reach::Domain));
+                    pending.push((AnyNode::CompType(output), nest(reach)));
+                },
                 | Some(
                     &(ValueType::Base(_)
                     | ValueType::Unit
@@ -407,7 +415,10 @@ fn worst(
                     pending.push((AnyNode::ValueType(domain), Reach::Domain));
                     pending.push((AnyNode::CompType(rest), codomain(reach, Binding::Binds)));
                 },
-                | Some(&CompType::Returner(result)) => {
+                | Some(&CompType::Returner {
+                    result,
+                    ref effects,
+                }) => {
                     let inner = match reach {
                         | Reach::Chain { depth } => Reach::Head {
                             depth,
@@ -417,6 +428,15 @@ fn worst(
                         | Reach::Head { .. } | Reach::Domain | Reach::Nested | Reach::Term => reach,
                     };
                     pending.push((AnyNode::ValueType(result), inner));
+                    pending.extend(
+                        effects
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), nest(reach))),
+                    );
+                },
+                | Some(&CompType::With(first, second)) => {
+                    pending.push((AnyNode::CompType(first), nest(reach)));
+                    pending.push((AnyNode::CompType(second), nest(reach)));
                 },
                 | Some(&CompType::Element { code, .. }) => {
                     pending.push((AnyNode::Value(code), term(reach)));
@@ -456,10 +476,24 @@ fn worst(
                 | Some(
                     &(Value::PathProduct(first, second)
                     | Value::Pair(first, second)
+                    | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), reach));
                     pending.push((AnyNode::Value(second), reach));
+                },
+                | Some(&Value::Reify(ref frames)) => {
+                    for frame in frames.iter() {
+                        match *frame {
+                            | StackFrame::Apply(value) => {
+                                pending.push((AnyNode::Value(value), reach));
+                            },
+                            | StackFrame::Bind(body) => {
+                                pending.push((AnyNode::Computation(body), reach));
+                            },
+                            | StackFrame::Project(_) => {},
+                        }
+                    }
                 },
                 | Some(
                     &(Value::PathRefl(body)
@@ -479,6 +513,7 @@ fn worst(
                     &(Value::Primitive { .. }
                     | Value::Variable { .. }
                     | Value::Unit
+                    | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_)),
                 )
@@ -515,9 +550,64 @@ fn worst(
                 | Some(
                     &(Computation::Lambda(body)
                     | Computation::Fixpoint { body, .. }
-                    | Computation::Mark { body, .. }),
+                    | Computation::Mark { body, .. }
+                    | Computation::Reset(body)
+                    | Computation::Shift(body)
+                    | Computation::Project(_, body)),
                 ) => {
                     pending.push((AnyNode::Computation(body), reach));
+                },
+                | Some(&Computation::With(first, second)) => {
+                    pending.push((AnyNode::Computation(first), reach));
+                    pending.push((AnyNode::Computation(second), reach));
+                },
+                | Some(&Computation::Resume(stack, body)) => {
+                    pending.push((AnyNode::Value(stack), reach));
+                    pending.push((AnyNode::Computation(body), reach));
+                },
+                | Some(&Computation::Perform {
+                    ref signature,
+                    payload,
+                    ..
+                }) => {
+                    pending.push((AnyNode::Value(payload), reach));
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), reach)),
+                    );
+                },
+                | Some(&Computation::Handle {
+                    ref signature,
+                    subject,
+                    on_return,
+                    ref clauses,
+                }) => {
+                    pending.push((AnyNode::Computation(subject), reach));
+                    pending.push((AnyNode::Computation(on_return), reach));
+                    pending.extend(
+                        clauses
+                            .iter()
+                            .map(|clause| (AnyNode::Computation(clause.body), reach)),
+                    );
+                    pending.extend(
+                        signature
+                            .types()
+                            .map(|operation| (AnyNode::ValueType(operation), reach)),
+                    );
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => {
+                    pending.push((AnyNode::ValueType(element), reach));
+                    pending.push((AnyNode::ValueType(result), reach));
+                    pending.push((AnyNode::Value(list), reach));
+                    pending.push((AnyNode::Computation(on_nil), reach));
+                    pending.push((AnyNode::Computation(on_cons), reach));
                 },
                 | Some(&Computation::Application(head, argument)) => {
                     pending.push((AnyNode::Computation(head), reach));

@@ -16,13 +16,14 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Fixpoints](#fixpoints)
 - [Unfocusing is the left inverse](#unfocusing-is-the-left-inverse)
 - [The typed-IL check](#the-typed-il-check)
-- [The machine runs over marks, not copies](#the-machine-runs-over-marks-not-copies)
+- [Ordinary continuations are marks](#ordinary-continuations-are-marks)
 - [Readback refuses rather than approximates](#readback-refuses-rather-than-approximates)
 - [The bridge from cells](#the-bridge-from-cells)
 - [The differential against normalisation by evaluation](#the-differential-against-normalisation-by-evaluation)
 - [The polarity is the cell substrate's](#the-polarity-is-the-cell-substrates)
 - [Two regions](#two-regions)
 - [The store owns the cell protocol](#the-store-owns-the-cell-protocol)
+- [Effects and delimited control](#effects-and-delimited-control)
 - [Deferred rows](#deferred-rows)
 - [License](#license)
 <!-- tocstop -->
@@ -31,7 +32,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 **What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks. `Machine` is that environment machine for the pure fragment: it runs a command to a value under a step budget, unfolding constants from `Definitions`, and reads the value back as a core term.
 
-**Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit, as a cut whose two sides say what is sent where. That is the form an abstract machine steps without a search for the next redex, the form a cell rule from the rewriting stack already speaks, and the form whose frames an effect handler will later need to walk. Fixing the IL and the store first fixes the contract every later piece — focusing, the machine, the bridge from cells — is written against. The first consumer is the run verb `gandr run`, which lowers, checks, focuses and runs a source on the machine.
+**Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The abstract machine steps that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
 
 **How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. The store's heap values are immutable and shared by address; a thunk's memo cell is the only mutable state, and the store itself enforces its three-state protocol. Frames carry fresh serials, so a continuation mark over a frame that has since been popped is refused as stale rather than resumed into another continuation.
 
@@ -54,6 +55,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `Frame`, `ContinuationMark` and `Store::shrink_to`: the walkable frame region, marks refused once stale, and the decline of every forcing a shrink abandons. Witness: `store::tests::frames_shrink_to_a_mark`.
 - `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms that hold no code and no record, every image well formed and closed, every covariable the innermost one, a code, a record and a record projection refused by name, and a refused translation leaving the arena and the table at their marks. A datatype's constructors, its nominal match and the fixpoint focus. Witnesses: `tests::focus_properties::focusing_is_total_on_generated_computations`, `tests::focus_properties::hand_built_cases_cover_every_former`, `tests::focus_properties::top_level_value_focuses_against_top`, `focus::tests::focusing_mints_no_name`, `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`, `focus::tests::a_code_is_refused_by_name`, `focus::tests::a_record_or_its_projection_is_refused_by_name`.
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark. Witnesses: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`, `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`, `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`, `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`.
+- Native `ListNil` and `ListCons` constructors and a `ListFold` consumer. Folding preserves cell order and outer scope; each branch has its own return covariable, and the cell branch binds head then folded result. The command arena owns imported type annotations, includes them in rollback, and unfocusing closes their ambient variables rather than copying foreign ids. Witnesses: `machine::tests::native_list_fold_preserves_order_and_outer_scope`, `unfocus::tests::closing_fold_annotations_substitutes_captured_codes`.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, and the free variables and covariables of a command. Witnesses: `check::tests::terminal_cut_is_wellformed`, `check::tests::scope_tracks_binders`, `check::tests::dangling_reference_is_rejected`, `check::tests::non_value_argument_is_rejected`, `check::tests::polarity_mismatch_is_rejected`, `check::tests::constructor_arity_is_checked`, `check::tests::constructor_consumer_arity_is_checked`, `check::tests::destructor_consumer_arity_is_checked`, `check::tests::consumer_arity_follows_the_head_not_a_constant`, `check::tests::a_head_answered_twice_is_rejected`.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices. Witnesses: `pretty::tests::renders_terminal_cut`, `pretty::tests::renders_lambda_cocase`, `pretty::tests::renders_structural_heads`, `pretty::tests::renders_datatype_heads_nominal_matches_and_recursive_thunks`.
 - `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves; a nominal match runs the branch of its value's ordinal over the fields, and a recursive thunk runs with itself bound. Witnesses: `machine::tests::ret_is_a_terminal_value`, `machine::tests::bind_threads_a_value`, `machine::tests::force_runs_a_thunk_body`, `machine::tests::case_selects_the_matching_arm`, `machine::tests::data_case_selects_arm_returns_three`, `machine::tests::data_case_on_non_ctor_is_stuck`, `machine::tests::a_recursive_thunk_computes_through_its_own_binding`, `machine::tests::application_binds_the_argument`, `machine::tests::a_shared_thunk_is_forced_once`, `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`, `machine::tests::the_step_budget_bounds_a_run`.
@@ -164,11 +166,11 @@ Focusing translates a computation `M` under a continuation `c` into a command, `
 
 A tail is a covariable or `★`. A bind and a case open a producer binder, and a continuation that is not a tail — a frame, a `μ̃` — carries producers whose indices would have to shift under it; so such a continuation is named once with a `μ`, at the polarity of what it observes, and the binder sees only the tail `α0`. A nominal match opens no binder of its own: each branch is a thunk of the function over the fields the core writes, and the match's continuation `c` is carried once, beside the branches, so it is neither shifted nor named. Every continuation that crosses a binder is then a tail, nothing is shifted or copied, every focused covariable is index `0`, and two focusings of one term build identical arenas. A core value is never a `μ`, so every frame argument and constructor field of an image is a value. `Provenance` records, for each command focusing creates, the core former it was created for. A refused translation truncates the arena and the provenance table to the marks it took on entry.
 
-The earlier implementation of this design passed the continuation under the binder unchanged, `𝓕⟦x ← M; N⟧α = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α)` for any `α`, which named covariables make sound and indices do not. The alternatives were that rule with a shift of the continuation's producers under every binder, which copies a frame subtree per binder it crosses, and named covariables, which the section above rejects. The cost of the choice is one extra cut and one bound mark for a bind or case that is not in tail position. It reverses if a measured run shows that cut to matter, at which point a shift memoised per frame becomes the cheaper rule.
+Passing a continuation unchanged under a binder is sound for named covariables but not for indexed producer operands. Shifting its producers under every binder would copy a frame subtree at each crossing. Naming it once instead costs one extra cut and one bound mark for a non-tail bind or case. Revisit if measurement shows that cut costs more than a shift memoized per frame.
 
 ## A code has no producer
 
-A quote `⌜A⌝` or `⌜C⌝` is a value of a universe, and the IL carries no types: no producer can stand for the type a code names, so focusing refuses a code by name with `FocusRefusal::Code`, the arena and the table left at their marks. A static lambda and a static application build codes, so focusing refuses them under the same name. A code is an ordinary argument in the core term, so a polymorphic function instantiated at one has no image here yet either. The alternatives were a producer leaf holding a reference into the core arena, which ties the IL to an arena it otherwise never reads, and erasing a code to the unit value, which the readback could not tell from a unit and the differential would accept unread. The choice reverses with the run verb, which runs instantiated programs: the IL then gains a code leaf over a type vocabulary of its own, or erases codes on a typed path that keeps their readback.
+A quote is a runtime value of a universe, but the IL has no producer for that value. Its owned annotation arena carries types for List folds and effect interfaces, not executable code values. Focusing therefore refuses quotes and static code operators with `FocusRefusal::Code` and restores its marks. Keeping a foreign core-arena reference would tie the runtime to that arena; erasing a code to unit would corrupt readback. Revisit only when code values have a runtime representation that preserves their meaning.
 
 ## Native universe paths
 
@@ -194,7 +196,7 @@ The walk is a loop over an explicit task stack, and its one implementation serve
 
 The arena is acyclic by construction, so the walk is a loop with no depth limit. The earlier implementation of this design recursed with a depth guard against cyclic input, checked a cut's polarity on the producer side alone, and admitted a head answered twice. The alternative was a full two-sided type check, which needs the source types the IL does not carry; the check covers what is decidable from a command alone. The choice reverses if the IL comes to carry types.
 
-## The machine runs over marks, not copies
+## Ordinary continuations are marks
 
 `Machine::run` is a loop over one control state — run a cut, deliver a value to a consumer, return a value to a mark, pop the top frame — each iteration one transition against the caller's `StepCount`:
 
@@ -209,19 +211,19 @@ deliver c_i(v̄) datacase(b̄; c)                     load c, push apply(v_j) fo
 
 Loading a consumer pushes the frames it denotes: a chain of destructor frames over a covariable or `★` first shrinks the region to that base, and one over a `μ̃` or a match pushes onto the current top. A covariable binds the mark of the continuation it names, so returning through it is a shrink to that mark, and a mark whose frame has since been popped and replaced is refused as stale by the store. Forcing a thunk follows its cell: a forced cell returns its cached value, an opened one pushes an update frame under the body's return point, a re-entrant one runs the body inline; a recursive thunk does the same with itself bound innermost. A `μ` against a `μ̃` at a negative cut is suspended and bound, the call-by-name side of the critical pair; everywhere else the `μ` runs first. Producers evaluate within a transition — a constructor over its evaluated fields, a thunk or a recursive thunk with a fresh cell, a copattern object or a `μ` closed over the environment — and a constant unfolds its definition once per machine, a cycle among definitions stopping the run as `Stuck::CyclicConstant`.
 
-The earlier implementation of this design kept the same walkable frame stack, but a covariable captured a copy of a slice of it, values were reference-counted trees, and the step budget was one shared constant. Here a covariable is a mark into the one region, values and environments are addresses into the append-only heap, and the budget is the caller's. The alternatives were the copied slices, which cost a copy per capture and give every captured continuation its own frames to keep consistent, and continuations as heap closures, which the section on the two regions rejects. The choice reverses when a multi-shot continuation, which a mark into one region cannot resume twice, enters the language with effects and control.
+Ordinary covariables use marks into the one frame region; values and environments use shared heap addresses, and the caller supplies the step budget. First-class capture copies only the delimited frame segment into an immutable heap stack. Copying every ordinary continuation would add work where no capture occurs; opaque continuation closures would prevent structural handler dispatch. Revisit that split only if measured capture workloads justify another shared frame representation.
 
 ## Readback refuses rather than approximates
 
 `Machine::read_back` reads a positive terminal as `return v` and a copattern object as the function it is; a literal reads as itself, a constructed value over its fields — a datatype's constructor at the unknown value type — an opaque constant as the constant, and a thunk, a recursive thunk or a function as its suspended command decoded by the unfocusing walk with its captured environment's readbacks substituted. Values are read in increasing address order, since every value the machine allocates names only earlier ones, so the readback is a loop. A value with no core reading — a suspended `μ`, a copattern object standing as a value — is refused by name with the core arena at its mark.
 
-The earlier implementation of this design fell back to a placeholder of the right kind when its readback failed, so a differential could pass on a value it had not read. The alternative was that fallback, rejected because a readback that cannot fail makes a differential that cannot fail. The choice does not reverse.
+A placeholder of the right kind is not a readback: it could let a differential pass on a value it never observed. Unsupported readings therefore return a named refusal and restore the destination arena. This boundary does not reverse merely to make an observation succeed.
 
 ## The bridge from cells
 
-A cell's patterns name constructors by symbol, because the rewriting stack ranges over declared data the IL's `ConstructorTag` does not name; a `ConstructorResolver` the caller supplies says which symbols are which tags. `reify_command` lowers a ground `⟨p |ε c⟩` node for node over it: a constructor application to a constructor producer at the arity its tag declares, `★` to `★`, and a return-side frame `K⁻(c)` to its definiens `μ̃x. ⟨K(x0) |+ c⟩`, so a reified command runs on the machine like a focused one. An operation frame is the opaque boundary of the host and fusion fragment and has no IL node; it, a metavariable, an unresolved symbol and an arity mismatch are refused by name, and a refused reification leaves the arena at its mark.
+A cell pattern names constructors by symbol; the caller supplies a `ConstructorResolver` from those symbols to IL tags. `reify_command` lowers a ground cut and expands a return-side constructor frame to its binding-and-rewrapping command. Cell operation frames carry no inline typed interface, so they remain `OperationFrame` refusals; they are not core effect requests. Metavariables, unresolved constructors and arity mismatches are also named refusals, with the arena restored to its entry mark.
 
-The bridge lives here rather than with the cells, because the core tier depends on the theory tier and not the other way. The earlier implementation of this design kept it with the cells, answered `None` for every refusal, named each frame's binder from a counter, and shipped a resolver for the constructors it had. The alternative was a resolver built into this crate, which would fix a symbol table the declared-data route has yet to define. The choice reverses when that route gives constructors names the cells and the IL share, at which point the resolver is derived rather than supplied.
+The bridge lives here because the core tier depends on the theory tier, not conversely. A built-in resolver would fix a symbol table that belongs to the producer. Revisit when constructor names have a shared declaration protocol, so the resolver can be derived rather than supplied.
 
 ## The differential against normalisation by evaluation
 
@@ -241,7 +243,21 @@ The alternatives were continuations as heap-allocated closures, which makes ever
 
 ## The store owns the cell protocol
 
-A memo cell's only transitions are `Unforced → InProgress` by `Store::begin_force`, `InProgress → Forced` by `Store::write_back` and `InProgress → Unforced` by `Store::decline`; the store refuses any other write with `StoreFault::CellNotInProgress` and leaves the cell as it was. The earlier implementation of this design left legality to the machine's force protocol over a permissive cell. Enforcing it here makes the four conditions of the memo-cell suite properties of the store under any trace rather than only under the traces one machine produces, and the suite generates arbitrary traces accordingly. The alternative was the permissive cell, which is one check cheaper per transition. The choice reverses if a measured run shows the check to matter, which a three-state comparison is unlikely to.
+A memo cell moves from `Unforced` to `InProgress` through `Store::begin_force`, then to `Forced` through `Store::write_back` or back to `Unforced` through `Store::decline`. Every other write returns `StoreFault::CellNotInProgress` without changing the cell. The store enforces the protocol under arbitrary traces, not merely those one machine currently produces. Removing that check is justified only by measured cost and a replacement API that makes illegal transitions unrepresentable.
+
+## Effects and delimited control
+
+Effect requests carry an inline signature, an operation name and a live payload. The nearest delimiter decides dispatch: a matching handler captures its own frame and the intervening continuation; a nonmatching handler or a reset offers the request to the host rather than searching an outer handler. Matching uses both interface and operation names, so unrelated interfaces cannot intercept each other's equally named operations. A shift captures through the nearest reachable reset; a handler is a barrier, not a reset.
+
+Captured stacks are immutable frame slices over shared heap addresses. Resume copies the frames onto the ambient continuation, making capture multishot and deep handling explicit. Local returns inside delimiters fall through the reinstalled stack instead of retaining stale absolute marks. Memo updates crossed by capture or a host offer are declined: effectful forcing cannot cache a context-dependent reply. Pure forcing retains its existing cell protocol.
+
+`Machine::run_with_host` offers only unclaimed operations. `HostValues` permits inspection, allocation and structural readback without exposing continuation mutation. A reply resumes the original stack once, `Abort` terminates without resuming, and `Decline` retains `Stuck::PerformNoHandler` at the request. The adapter owns external effects, reply typing and policy; the machine performs no host I/O itself. Shared heap replies preserve thunk and continuation identity without refocusing a copied source term.
+
+Literal stacks retain independent frame scopes and read back exactly; captured delimiter frames have no literal-stack spelling and return `ReadbackRefusal::NonLiteralStack`, never an invented value. Lazy pairs use two projection copatterns and evaluate only the selected branch.
+
+**Choice.** Qualified interface-and-operation dispatch prevents equal operation names from crossing distinct interfaces. The alternative, operation-name-only matching, cannot preserve inline interface identity. Multi-shot captures keep immutable frame sequences and shared heap addresses rather than cloning payload values. Revisit multiplicity only if the type system makes resumptions explicitly one-shot; revisit unqualified dispatch only with globally unique operation identities.
+
+Witnesses: `machine::tests::hand_built_effect_cases_agree`, `machine::tests::hand_built_shift_cases_agree`, the eight `host_seam_*` tests, `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`, `machine::tests::the_assert_handler_runs_combinator_assertions`, `machine::tests::the_assert_handler_reports_a_failure`, `machine::tests::a_mock_exec_handler_replaces_a_real_command`, and `machine::tests::literal_stacks_close_flat_frame_scopes_and_resume_in_order`. These directed outcomes cover runtime control independently of the pure NBE oracle, which refuses effect and control instructions by former.
 
 ## Deferred rows
 
@@ -254,7 +270,7 @@ The six scalar native witnesses below exercise the ordinary thunk, force, applic
 - `native_boolean_and_returns_false`
 - `a_forced_prelude_name_resolves_to_its_builtin`
 
-The deferred floor contains **60 witnesses**. A native core former does not imply a command-IL reader: record operations remain outside focusing, and image preparation does not provide an execution host. Sized arithmetic and gradual-hole blame are not the arbitrary-precision integer and typed-refusal contract of the native table.
+The deferred floor contains **46 witnesses**. Native List introduction and its pure fold, effect handling, delimited control and host operation offers are exercised here; the List rows below wait on the higher-order primitives over list and record values. A native core former does not imply a command-IL reader: record operations remain outside focusing, and image preparation does not provide an execution host. Sized arithmetic and gradual-hole blame are not the arbitrary-precision integer and typed-refusal contract of the native table.
 
 | Deferred witness | Missing former or reader |
 | ---------------- | ------------------------ |
@@ -294,20 +310,6 @@ The deferred floor contains **60 witnesses**. A native core former does not impl
 | `fold_and_quantifiers_are_correct_at_moderate_scale` | list and record values, and the higher-order primitives over them |
 | `hand_built_higher_order_native_cases_agree` | list and record values, and the higher-order primitives over them |
 | `hand_built_higher_order_prelude_case_agrees` | list and record values, and the higher-order primitives over them |
-| `handler_resumption_under_projection_uses_the_ambient_continuation_once` | effect operations, handlers, delimited control and the host seam |
-| `hand_built_effect_cases_agree` | effect operations, handlers, delimited control and the host seam |
-| `hand_built_shift_cases_agree` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_resumes_a_single_unhandled_perform` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_decline_blames_perform_no_handler` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_offers_deep_re_entry_in_order` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_offers_across_a_non_matching_handler` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_never_consulted_for_a_claimed_perform` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_reply_flows_into_subsequent_computation` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_first_order_payloads_read_back_identically` | effect operations, handlers, delimited control and the host seam |
-| `host_seam_higher_order_payload_reads_back_exactly` | effect operations, handlers, delimited control and the host seam |
-| `the_assert_handler_runs_combinator_assertions` | effect operations, handlers, delimited control and the host seam |
-| `the_assert_handler_reports_a_failure` | effect operations, handlers, delimited control and the host seam |
-| `a_mock_exec_handler_replaces_a_real_command` | effect operations, handlers, delimited control and the host seam |
 | `hand_built_identity_cases_agree` | identity types |
 | `sigma_split_evaluates_to_first_component` | Σ and the dependent eliminators beyond Π |
 | `dependent_split_over_prod_evaluates_type_erased` | Σ and the dependent eliminators beyond Π |

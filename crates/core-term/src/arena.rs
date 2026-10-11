@@ -519,7 +519,7 @@ impl CoreArena
             && self.values.last().is_some_and(|node| core::mem::discriminant(node) == kind),
     )]
     #[inline]
-    fn alloc_value(
+    pub(crate) fn alloc_value(
         &mut self,
         value: Value,
     ) -> ValueId
@@ -553,7 +553,7 @@ impl CoreArena
             && self.computations.last().is_some_and(|node| core::mem::discriminant(node) == kind),
     )]
     #[inline]
-    fn alloc_computation(
+    pub(crate) fn alloc_computation(
         &mut self,
         computation: Computation,
     ) -> ComputationId
@@ -618,7 +618,7 @@ impl CoreArena
             && self.value_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
     )]
     #[inline]
-    fn alloc_value_type(
+    pub(crate) fn alloc_value_type(
         &mut self,
         value_type: ValueType,
     ) -> ValueTypeId
@@ -652,7 +652,7 @@ impl CoreArena
             && self.comp_types.last().is_some_and(|node| core::mem::discriminant(node) == kind),
     )]
     #[inline]
-    fn alloc_comp_type(
+    pub(crate) fn alloc_comp_type(
         &mut self,
         comp_type: CompType,
     ) -> CompTypeId
@@ -1388,14 +1388,35 @@ impl CoreArena
     ///   injection sides distinguish swapped or dropped children and confused
     ///   formers. Readback observes the minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner(result)))]
+    #[spec(ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: crate::effect::EffectRow::EMPTY }))]
     #[inline]
     pub fn comp_type_returner(
         &mut self,
         result: ValueTypeId,
     ) -> CompTypeId
     {
-        self.alloc_comp_type(CompType::Returner(result))
+        self.comp_type_returner_with_effects(result, crate::effect::EffectRow::EMPTY)
+    }
+
+    /// Mint a returner with its closed set of permitted effect interfaces.
+    ///
+    /// # Specification
+    /// - requires: the result and every operation type belong to this arena.
+    /// - ensures: preserves the result type and the complete effect row.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested thunk signatures retain row types
+    ///   independently of the ids at which their equal children were allocated.
+    /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
+    #[spec(captures: expected = effects.clone(), ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: expected.clone() }))]
+    #[inline]
+    pub fn comp_type_returner_with_effects(
+        &mut self,
+        result: ValueTypeId,
+        effects: crate::effect::EffectRow,
+    ) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Returner { result, effects })
     }
 
     /// Mint an arrow type over an already-allocated domain and codomain.
@@ -1763,6 +1784,66 @@ impl CoreArena
     {
         self.alloc_comp_type(CompType::Unknown)
     }
+
+    /// Mint a native List type over an existing element type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_list(
+        &mut self,
+        element: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::List(element))
+    }
+
+    /// Mint the empty native list.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_list_nil(&mut self) -> ValueId
+    {
+        self.alloc_value(Value::ListNil)
+    }
+
+    /// Mint a native list cell.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_list_cons(
+        &mut self,
+        head: ValueId,
+        tail: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::ListCons(head, tail))
+    }
+
+    /// Mint a pure right fold; the cell branch binds head then folded result.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_list_fold(
+        &mut self,
+        element: ValueTypeId,
+        result: ValueTypeId,
+        list: ValueId,
+        on_nil: ComputationId,
+        on_cons: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::ListFold {
+            element,
+            result,
+            list,
+            on_nil,
+            on_cons,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -2101,7 +2182,10 @@ mod tests
             arena.computation(kept_comp)
         );
         assert_eq!(
-            Some(&CompType::Returner(kept_type)),
+            Some(&CompType::Returner {
+                result: kept_type,
+                effects: crate::effect::EffectRow::EMPTY
+            }),
             arena.comp_type(kept_comp_type)
         );
         assert_eq!(None, arena.value(dropped_value));
@@ -2240,7 +2324,10 @@ mod tests
             assert_eq!(Some(&node), arena.value_type(id));
         }
         let comp_types = [
-            (arena.comp_type_returner(domain), CompType::Returner(domain)),
+            (arena.comp_type_returner(domain), CompType::Returner {
+                result: domain,
+                effects: crate::effect::EffectRow::EMPTY,
+            }),
             (arena.comp_type_arrow(domain, result), CompType::Arrow {
                 domain,
                 codomain: result,

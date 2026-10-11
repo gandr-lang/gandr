@@ -664,6 +664,8 @@ impl Walker<'_, '_, '_>
             | Some(&ValueType::Unknown) => Ok(Kind::Unknown),
             | Some(
                 &(ValueType::Record(_)
+                | ValueType::List(_)
+                | ValueType::Stack { .. }
                 | ValueType::PathUniverse(..)
                 | ValueType::Thunk(_)
                 | ValueType::Universe { .. }

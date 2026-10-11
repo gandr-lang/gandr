@@ -795,6 +795,7 @@ impl LooseDepths
                         | Value::Variable(_)
                         | Value::Constant(_)
                         | Value::Unit
+                        | Value::ListNil
                         | Value::Literal(_) => {},
                         | Value::PathEquiv {
                             path_type,
@@ -817,6 +818,7 @@ impl LooseDepths
                         | Value::PathRefl(code) => tasks.push(ReachTask::OpenValue(code)),
                         | Value::PathProduct(first, second)
                         | Value::Pair(first, second)
+                        | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second) => {
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
@@ -857,6 +859,21 @@ impl LooseDepths
                         },
                         | Computation::RecordProjection(record, _) => {
                             tasks.push(ReachTask::OpenValue(record));
+                        },
+                        | Computation::ListFold {
+                            element,
+                            result,
+                            list,
+                            on_nil,
+                            on_cons,
+                        } => {
+                            tasks.extend([
+                                ReachTask::OpenValueType(element),
+                                ReachTask::OpenValueType(result),
+                                ReachTask::OpenValue(list),
+                                ReachTask::OpenComp(on_nil),
+                                ReachTask::OpenComp(on_cons),
+                            ]);
                         },
                         | Computation::Transport(path, value) => {
                             tasks.push(ReachTask::OpenValue(path));
@@ -1250,11 +1267,11 @@ ValueType::Element { code, .. } => self.cached_value(code),
 Value::Constructor { datatype, ref fields, .. } => fields.iter().fold(self.cached_value_type(datatype), |depth, id| depth.join(self.cached_value(*id))),
 Value::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::Variable(index) => LooseDepth(u32::from(index).saturating_add(1)),
-Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
+Value::ListNil | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type, payload_paths, .. } => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
 Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
-Value::PathProduct(a, b) | Value::Pair(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
+Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::Pair(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
 Value::QuoteComputation(ty) => self.cached_comp_type(ty),
@@ -1289,7 +1306,9 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                     arith::Int::from(1_u32),
                 )))
             },
-            | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
+            | Value::ListNil | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
+                LooseDepth(0)
+            },
             | Value::PathEquiv {
                 path_type,
                 forward,
@@ -1309,6 +1328,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             | Value::PathRefl(code) => self.cached_value(code),
             | Value::PathProduct(first, second)
             | Value::Pair(first, second)
+            | Value::ListCons(first, second)
             | Value::StaticApplication(first, second) => {
                 self.cached_value(first).join(self.cached_value(second))
             },
@@ -1351,6 +1371,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
         Some(&Computation::RecordProjection(record, _)) => self.cached_value(record),
         None => LooseDepth::WIDEST,
+        Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
         Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
@@ -1379,6 +1400,18 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 |depth, id| depth.join(self.cached_comp(*id)),
             ),
             | Computation::RecordProjection(record, _) => self.cached_value(record),
+            | Computation::ListFold {
+                element,
+                result,
+                list,
+                on_nil,
+                on_cons,
+            } => self
+                .cached_value_type(element)
+                .join(self.cached_value_type(result))
+                .join(self.cached_value(list))
+                .join(self.cached_comp(on_nil))
+                .join(self.cached_comp(on_cons).under_binder().under_binder()),
             | Computation::Transport(path, value) => {
                 self.cached_value(path).join(self.cached_value(value))
             },

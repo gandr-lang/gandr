@@ -984,7 +984,7 @@ fn a_match_takes_its_answer_from_the_function_result()
         arena.value(scrutinee),
         Some(&Value::Variable { index, .. }) if index == gandr_kernel_term::DeBruijnIndex::from(0_u32)
     ));
-    let Some(&gandr_core_term::CompType::Returner(answer)) = arena.comp_type(motive)
+    let Some(&gandr_core_term::CompType::Returner { result: answer, .. }) = arena.comp_type(motive)
     else {
         panic!("the motive is the function's result");
     };

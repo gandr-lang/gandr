@@ -7,6 +7,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::control::ControlFormer;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal as CoreLiteral;
@@ -34,6 +35,13 @@ pub enum Form
     DataCase,
     /// Named record projection.
     RecordProjection,
+    /// An effect or continuation former belongs to the control runtime, not
+    /// this image.
+    Control(gandr_core_term::control::ControlFormer),
+    /// A native List introduction.
+    List,
+    /// A pure List fold.
+    ListFold,
     /// A native function or operation.
     Primitive,
     /// Function introduction.
@@ -92,6 +100,18 @@ impl core::fmt::Display for Form
             | Self::Record => "a structural record",
             | Self::DataCase => "a nominal case",
             | Self::RecordProjection => "a record projection",
+            | Self::Control(former) => match former {
+                | ControlFormer::Reify => "a stack literal",
+                | ControlFormer::Perform => "a perform",
+                | ControlFormer::Handle => "a handler",
+                | ControlFormer::Resume => "a resumption",
+                | ControlFormer::Reset => "a reset",
+                | ControlFormer::Shift => "a shift",
+                | ControlFormer::With => "a lazy pair",
+                | ControlFormer::Project => "a lazy projection",
+            },
+            | Self::List => "a native List introduction",
+            | Self::ListFold => "a native List fold",
             | Self::Primitive => "a native primitive",
             | Self::Lambda => "an abstraction",
             | Self::Application => "an application",
@@ -296,6 +316,44 @@ pub fn lower_computation(
                     | Computation::RecordProjection(..) => {
                         return Err(LowerError::OutsideSlice(Form::RecordProjection));
                     },
+                    | Computation::Perform { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Perform,
+                        )));
+                    },
+                    | Computation::Handle { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Handle,
+                        )));
+                    },
+                    | Computation::Resume(..) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Resume,
+                        )));
+                    },
+                    | Computation::Reset(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Reset,
+                        )));
+                    },
+                    | Computation::Shift(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Shift,
+                        )));
+                    },
+                    | Computation::With(..) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::With,
+                        )));
+                    },
+                    | Computation::Project(..) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Project,
+                        )));
+                    },
+                    | Computation::ListFold { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::ListFold));
+                    },
                     | Computation::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },
@@ -345,6 +403,14 @@ pub fn lower_computation(
                         return Err(LowerError::OutsideSlice(Form::Constructor));
                     },
                     | Value::Record(_) => return Err(LowerError::OutsideSlice(Form::Record)),
+                    | Value::Reify(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Control(
+                            gandr_core_term::control::ControlFormer::Reify,
+                        )));
+                    },
+                    | Value::ListNil | Value::ListCons(..) => {
+                        return Err(LowerError::OutsideSlice(Form::List));
+                    },
                     | Value::Primitive { .. } => {
                         return Err(LowerError::OutsideSlice(Form::Primitive));
                     },

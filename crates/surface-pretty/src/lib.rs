@@ -22,8 +22,9 @@
 //! `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`,
 //! `(x : A) -> C`, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`; `()`,
 //! literals, `(a, b)`, `Inl(v)`, `Inr(v)`. A former the surface does not write
-//! — a lift, the numeric atom, a variable past every binder — is written `?`,
-//! and the presentation is then [`Fidelity::Approximate`]. A page the
+//! — a lift, the numeric atom, a variable past every binder — is written `?`.
+//! Effectful returners display their interface names as diagnostic notation.
+//! Both are [`Fidelity::Approximate`], not round-trippable source. A page the
 //! one-line spelling fits selects it unchanged.
 //!
 //! # Totality

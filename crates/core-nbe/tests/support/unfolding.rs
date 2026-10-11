@@ -118,41 +118,50 @@ pub struct Unfolded(pub u64);
         };
         if opaque { return ret.0 == 1; }
         let minimum = match root {
-            CoreNode::Value(id) => match erased.value(id) { Some(matched_native_node) => match *matched_native_node {
-Value::Constructor {ref fields,..} => 2_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
-Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
-Value::PathEquiv { .. } => 4,
-Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) |
-Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
-Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
-Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
-},
-None => return false,
-},
-            CoreNode::Computation(id) => match erased.computation(id) { Some(matched_native_node) => match *matched_native_node {
-Computation::DataCase {ref branches,..} => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
-Computation::Hole(_) => 1,
-Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
-Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
-Computation::Case { .. } => 4,
-},
-None => return false,
-},
-            CoreNode::ValueType(id) => match erased.value_type(id) { Some(matched_native_node) => match *matched_native_node {
-ValueType::Data {ref arguments,..} => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
-ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
-ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. } => 3,
-ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
-},
-None => return false,
-},
-            CoreNode::CompType(id) => match erased.comp_type(id) {
-                Some(&(CompType::Returner(_) | CompType::Element { .. })) => 2,
-                Some(&(CompType::Arrow { .. } | CompType::Pi { .. })) => 3,
-                Some(&CompType::Unknown) => 1,
-                None => return false,
+            CoreNode::Value(id) => {
+                let Some(node) = erased.value(id) else { return false; };
+                match *node {
+                    Value::Constructor { ref fields, .. } => 2_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+                    Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+                    Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
+                    Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
+                    Value::ListCons(..) | Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
+                    Value::PathEquiv { .. } => 4,
+                    Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
+                }
+            },
+            CoreNode::Computation(id) => {
+                let Some(node) = erased.computation(id) else { return false; };
+                match *node {
+                    Computation::DataCase { ref branches, .. } => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
+                    Computation::Perform { ref signature, .. } => 2_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
+                    Computation::Handle { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
+                    Computation::Resume(..) | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
+                    Computation::RecordProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
+                    Computation::Hole(_) => 1,
+                    Computation::ListFold { .. } => 6,
+                    Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
+                    Computation::Case { .. } => 4,
+                }
+            },
+            CoreNode::ValueType(id) => {
+                let Some(node) = erased.value_type(id) else { return false; };
+                match *node {
+                    ValueType::Data { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
+                    ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+                    ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
+                    ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::Product(_, _) | ValueType::Sum(_, _) | ValueType::StaticPi { .. } => 3,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
+                }
+            },
+            CoreNode::CompType(id) => {
+                let Some(node) = erased.comp_type(id) else { return false; };
+                match *node {
+                    CompType::Returner { ref effects, .. } => 2_u64.checked_add(u64::try_from(effects.types().count()).expect("walkable row arity fits the counter")).expect("walkable row arity fits the counter"),
+                    CompType::Element { .. } => 2,
+                    CompType::With(..) | CompType::Arrow { .. } | CompType::Pi { .. } => 3,
+                    CompType::Unknown => 1,
+                }
             },
         };
         if minimum == 1 { ret.0 == 1 } else { ret.0 >= minimum }
@@ -192,6 +201,17 @@ pub fn unfolded(
                 | Value::Record(ref fields) => {
                     pending.extend(fields.values().copied().map(CoreNode::Value));
                 },
+                | Value::Reify(ref frames) => {
+                    pending.extend(frames.iter().filter_map(|frame| match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            Some(CoreNode::Value(value))
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            Some(CoreNode::Computation(body))
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                    }));
+                },
                 | Value::PathEquiv {
                     path_type,
                     forward,
@@ -206,10 +226,12 @@ pub fn unfolded(
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Unit
+                | Value::ListNil
                 | Value::Literal(_)
                 | Value::Hole(_) => {},
                 | Value::PathProduct(first, second)
                 | Value::Pair(first, second)
+                | Value::ListCons(first, second)
                 | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
@@ -241,15 +263,60 @@ pub fn unfolded(
                     | Computation::RecordProjection(record, _) => {
                         pending.push(CoreNode::Value(record));
                     },
+                    | Computation::Perform {
+                        payload,
+                        ref signature,
+                        ..
+                    } => {
+                        pending.push(CoreNode::Value(payload));
+                        pending.extend(signature.types().map(CoreNode::ValueType));
+                    },
+                    | Computation::Handle {
+                        subject,
+                        on_return,
+                        ref signature,
+                        ref clauses,
+                    } => {
+                        pending.extend([
+                            CoreNode::Computation(subject),
+                            CoreNode::Computation(on_return),
+                        ]);
+                        pending.extend(signature.types().map(CoreNode::ValueType));
+                        pending.extend(
+                            clauses
+                                .iter()
+                                .map(|clause| CoreNode::Computation(clause.body)),
+                        );
+                    },
+                    | Computation::Resume(stack, body) => {
+                        pending.extend([CoreNode::Value(stack), CoreNode::Computation(body)]);
+                    },
+                    | Computation::With(first, second) => pending
+                        .extend([CoreNode::Computation(first), CoreNode::Computation(second)]),
+                    | Computation::Reset(body)
+                    | Computation::Shift(body)
+                    | Computation::Project(_, body)
+                    | Computation::Lambda(body) => pending.push(CoreNode::Computation(body)),
+                    | Computation::ListFold {
+                        element,
+                        result,
+                        list,
+                        on_nil,
+                        on_cons,
+                    } => pending.extend([
+                        CoreNode::ValueType(element),
+                        CoreNode::ValueType(result),
+                        CoreNode::Value(list),
+                        CoreNode::Computation(on_nil),
+                        CoreNode::Computation(on_cons),
+                    ]),
                     | Computation::Primitive { arguments, .. } => {
                         pending.extend(arguments.iter().copied().map(CoreNode::Value));
                     },
                     | Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },
-                    | Computation::Lambda(body)
-                    | Computation::Mark { body, .. }
-                    | Computation::Fixpoint { body, .. } => {
+                    | Computation::Mark { body, .. } | Computation::Fixpoint { body, .. } => {
                         pending.push(CoreNode::Computation(body));
                     },
                     | Computation::Hole(_) => {},
@@ -286,6 +353,9 @@ pub fn unfolded(
                     | ValueType::Record(ref fields) => {
                         pending.extend(fields.values().copied().map(CoreNode::ValueType));
                     },
+                    | ValueType::Stack { input, output } => {
+                        pending.extend([CoreNode::CompType(input), CoreNode::CompType(output)]);
+                    },
                     | ValueType::PathUniverse(source, target) => {
                         pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
                     },
@@ -304,7 +374,9 @@ pub fn unfolded(
                         pending.push(CoreNode::ValueType(second));
                     },
                     | ValueType::Thunk(body) => pending.push(CoreNode::CompType(body)),
-                    | ValueType::Lift { inner, .. } => pending.push(CoreNode::ValueType(inner)),
+                    | ValueType::List(inner) | ValueType::Lift { inner, .. } => {
+                        pending.push(CoreNode::ValueType(inner));
+                    },
                     | ValueType::Element { code, .. } => pending.push(CoreNode::Value(code)),
                 }
             },
@@ -313,7 +385,16 @@ pub fn unfolded(
                     .comp_type(id)
                     .expect("an erased computation type resolves")
                 {
-                    | CompType::Returner(result) => pending.push(CoreNode::ValueType(result)),
+                    | CompType::With(first, second) => {
+                        pending.extend([CoreNode::CompType(first), CoreNode::CompType(second)]);
+                    },
+                    | CompType::Returner {
+                        result,
+                        ref effects,
+                    } => {
+                        pending.push(CoreNode::ValueType(result));
+                        pending.extend(effects.types().map(CoreNode::ValueType));
+                    },
                     | CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
                         pending.push(CoreNode::ValueType(domain));
                         pending.push(CoreNode::CompType(codomain));

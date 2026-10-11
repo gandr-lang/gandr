@@ -658,6 +658,7 @@ impl<'source> Program<'source>
             | Some(
                 &(HeapValue::Literal(_)
                 | HeapValue::Constructed { .. }
+                | HeapValue::Stack { .. }
                 | HeapValue::Closure { .. }
                 | HeapValue::Opaque(_)),
             )
@@ -837,9 +838,12 @@ impl<'source> Program<'source>
             | Outcome::Stuck(stuck) => {
                 let observed = match stuck {
                     | Stuck::Unobservable { value, .. }
+                    | Stuck::ResumedNonStack { value, .. }
                     | Stuck::Unmatched { value, .. }
                     | Stuck::NonScalar(value) => machine.store().value(value),
                     | Stuck::UnboundVariable { .. }
+                    | Stuck::PerformNoHandler(_)
+                    | Stuck::ShiftNoReset(_)
                     | Stuck::Primitive(_)
                     | Stuck::UnboundCovariable(_)
                     | Stuck::UndefinedConstant(_)
@@ -853,6 +857,7 @@ impl<'source> Program<'source>
                     | Some(
                         &(HeapValue::Literal(_)
                         | HeapValue::Constructed { .. }
+                        | HeapValue::Stack { .. }
                         | HeapValue::Thunk { .. }
                         | HeapValue::Fixpoint { .. }
                         | HeapValue::Closure { .. }),
@@ -882,7 +887,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match machine.store().value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. })) | None =>
+        Some(&(HeapValue::Stack { .. } | HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. })) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -898,7 +903,8 @@ impl<'source> Program<'source>
                     pending.extend(fields.iter().rev().copied());
                 },
                 | Some(
-                    &(HeapValue::Literal(_)
+                    &(HeapValue::Stack { .. }
+                    | HeapValue::Literal(_)
                     | HeapValue::Thunk { .. }
                     | HeapValue::Fixpoint { .. }
                     | HeapValue::Closure { .. }),
@@ -989,11 +995,15 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
     #[spec(ensures: |ref ret| match core.computation(read) {
         Some(&Computation::Lambda(_)) => ret.0 == "<fun>",
+        Some(&Computation::With(..)) => ret.0 == "<with>",
         Some(&Computation::Return(value)) => match core.value(value) {
             Some(&Value::Constructor {..}) => ret.0.starts_with("ctor[") && ret.0.ends_with(')'),
             Some(&Value::Record(_)) => ret.0.starts_with("#{") && ret.0.ends_with('}'),
+            Some(&Value::Reify(_)) => ret.0 == "<stack>",
             Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
             Some(&Value::Unit) => ret.0 == "()",
+            Some(&Value::ListNil) => ret.0 == "nil",
+            Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
             Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret.0 == "<path>",
             Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
@@ -1025,7 +1035,8 @@ impl<'source> Program<'source>
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
+Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
 None => ret.0 == "<computation>",
     })]
@@ -1039,14 +1050,22 @@ None => ret.0 == "<computation>",
         let mut pending = match core.computation(read) {
             | Some(&Computation::Return(value)) => Vec::from([Piece::Value(value)]),
             | Some(&Computation::Lambda(_)) => Vec::from([Piece::Text("<fun>")]),
+            | Some(&Computation::With(..)) => Vec::from([Piece::Text("<with>")]),
             | Some(
                 &Computation::Primitive { .. }
                 | &(Computation::Transport(..)
                 | Computation::Application(..)
+                | Computation::Perform { .. }
+                | Computation::Handle { .. }
+                | Computation::Resume(..)
+                | Computation::Reset(_)
+                | Computation::Shift(_)
+                | Computation::Project(..)
                 | Computation::Bind(..)
                 | Computation::Force(_)
                 | Computation::DataCase { .. }
                 | Computation::RecordProjection(..)
+                | Computation::ListFold { .. }
                 | Computation::Case { .. }
                 | Computation::Hole(_)
                 | Computation::Mark { .. }
@@ -1094,6 +1113,7 @@ None => ret.0 == "<computation>",
                         pending.push(Piece::Field(label));
                     }
                 },
+                | Some(&Value::Reify(_)) => spelled.push_str("<stack>"),
                 | Some(&Value::Primitive { primitive, .. }) => {
                     spelled.push_str(primitive.name().as_ref());
                 },
@@ -1122,6 +1142,14 @@ None => ret.0 == "<computation>",
                     spelled.push('"');
                 },
                 | Some(&Value::Unit) => spelled.push_str("()"),
+                | Some(&Value::ListNil) => spelled.push_str("nil"),
+                | Some(&Value::ListCons(head, tail)) => pending.extend([
+                    Piece::Text(")"),
+                    Piece::Value(tail),
+                    Piece::Text(", "),
+                    Piece::Value(head),
+                    Piece::Text("cons("),
+                ]),
                 | Some(&Value::Pair(first, second)) => pending.extend([
                     Piece::Text(")"),
                     Piece::Value(second),
@@ -1214,13 +1242,14 @@ enum Piece<'core>
 #[spec(ensures: |ref ret| match core.value(body) {
     Some(&Value::Constant(constant)) => ret.iter().copied().eq([constant]),
     Some(&Value::Primitive { .. } |
-&(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
+&(Value::ListNil | Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
 Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
-&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } |
-Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } |
-Value::Thunk(_) | Value::Mark { .. })) => true,
+&Value::Reify(_) |
+&(Value::ListCons(..) | Value::PathRefl(_) | Value::PathProduct(..) |
+Value::PathEquiv { .. } | Value::Pair(..) | Value::Injection(..) |
+Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
 fn references(
     core: &CoreArena,
@@ -1247,6 +1276,18 @@ fn references(
                 | Some(&Value::Record(ref fields)) => {
                     pending.extend(fields.values().copied().map(Node::Value));
                 },
+                | Some(&Value::Reify(ref frames)) => {
+                    pending.extend(frames.iter().filter_map(|frame| match *frame {
+                        | gandr_core_term::control::StackFrame::Apply(value) => {
+                            Some(Node::Value(value))
+                        },
+                        | gandr_core_term::control::StackFrame::Bind(body) => {
+                            Some(Node::Computation(body))
+                        },
+                        | gandr_core_term::control::StackFrame::Project(_) => None,
+                    }));
+                },
+
                 | Some(&Value::Constant(constant)) => referred.push(constant),
                 | Some(
                     &(Value::PathProduct(first, second)
@@ -1255,6 +1296,7 @@ fn references(
                         backward: second,
                         ..
                     }
+                    | Value::ListCons(first, second)
                     | Value::Pair(first, second)),
                 ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
@@ -1272,6 +1314,7 @@ fn references(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
                     | Value::Unit
+                    | Value::ListNil
                     | Value::Literal(_)
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)
@@ -1293,6 +1336,38 @@ fn references(
                 | Some(&Computation::RecordProjection(record, _)) => {
                     pending.push(Node::Value(record));
                 },
+                | Some(&Computation::Perform { payload, .. }) => pending.push(Node::Value(payload)),
+                | Some(&Computation::Handle {
+                    subject,
+                    on_return,
+                    ref clauses,
+                    ..
+                }) => {
+                    pending.extend([Node::Computation(subject), Node::Computation(on_return)]);
+                    pending.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
+                },
+                | Some(&Computation::Resume(value, body)) => {
+                    pending.extend([Node::Value(value), Node::Computation(body)]);
+                },
+                | Some(
+                    &(Computation::Reset(body)
+                    | Computation::Shift(body)
+                    | Computation::Project(_, body)),
+                ) => pending.push(Node::Computation(body)),
+                | Some(&Computation::With(first, second)) => {
+                    pending.extend([Node::Computation(first), Node::Computation(second)]);
+                },
+
+                | Some(&Computation::ListFold {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => pending.extend([
+                    Node::Value(list),
+                    Node::Computation(on_nil),
+                    Node::Computation(on_cons),
+                ]),
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     pending.extend(arguments.iter().copied().map(Node::Value));
                 },

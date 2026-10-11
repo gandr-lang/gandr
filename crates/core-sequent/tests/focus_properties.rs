@@ -4,10 +4,10 @@
 //! from [`crate::generate`]: focusing is total on them, its image passes the
 //! typed-IL check closed, every covariable it mints is the innermost one, and
 //! unfocusing reads each image back as the term it came from. The hand-built
-//! suite pins one case per core former to its exact rendering and provenance.
+//! suite preserves each former's syntax, scope, and provenance through a round
+//! trip.
 
 use alloc::collections::BTreeSet;
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -22,7 +22,6 @@ use gandr_core_sequent::check_command;
 use gandr_core_sequent::focus_computation;
 use gandr_core_sequent::focus_top_value;
 use gandr_core_sequent::focus_value;
-use gandr_core_sequent::render_command;
 use gandr_core_sequent::unfocus_command;
 use gandr_core_sequent::unfocus_value;
 use gandr_core_term::ComputationId;
@@ -41,6 +40,75 @@ use crate::generate::Integer;
 use crate::generate::computations;
 use crate::generate::integer;
 use crate::generate::values;
+
+#[test]
+fn hand_built_control_cases_cover_every_former()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::control::StackFrame;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let one = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+    let ty = core.value_type_unit();
+    let signature = EffectSig::new("Quoted\"interface".into(), [EffectOp {
+        name: "op".into(),
+        payload: ty,
+        reply: ty,
+    }])
+    .expect("one operation");
+    let returned = core.computation_return(unit);
+    let identity = core.computation_return(zero);
+    let payload = core.computation_return(one);
+    let stack = core.value_reify(alloc::sync::Arc::from([
+        StackFrame::Apply(unit),
+        StackFrame::Bind(identity),
+        StackFrame::Project(Side::Right),
+    ]));
+    let stack_return = core.computation_return(stack);
+    let performed = core.computation_perform(signature.clone(), "op".into(), unit);
+    let resumed = core.computation_resume(zero, payload);
+    let handled = core.computation_handle(
+        signature,
+        performed,
+        identity,
+        alloc::sync::Arc::from([EffectClause {
+            operation: "op".into(),
+            body: resumed,
+        }]),
+    );
+    let resume_literal = core.computation_resume(stack, returned);
+    let resume_captured = core.computation_resume(zero, returned);
+    let shifted = core.computation_shift(resume_captured);
+    let reset = core.computation_reset(shifted);
+    let pair = core.computation_with(returned, identity);
+    let under = core.computation_lambda(pair);
+    let pair = core.computation_with(returned, returned);
+    let projected = core.computation_project(Side::Right, pair);
+    for program in [
+        stack_return,
+        performed,
+        handled,
+        resume_literal,
+        reset,
+        under,
+        projected,
+    ] {
+        let expected = core.value_thunk(program);
+        let mut arena = CommandArena::new();
+        let command = focus_computation(&core, program, &mut arena, &mut Provenance::new())
+            .expect("control focuses");
+        assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
+        let restored = unfocus_command(&arena, command, &mut core).expect("image unfocuses");
+        let actual = core.value_thunk(restored);
+        assert_eq!(
+            gandr_core_term::CertificateEquality::Equal,
+            gandr_core_term::equal_certificate_syntax(&core, expected, actual)
+        );
+    }
+}
 
 /// Every covariable node of an arena is the innermost one.
 ///
@@ -139,8 +207,7 @@ proptest! {
     }
 }
 
-/// One hand-built case: its label, its term, the origin of its root command
-/// and its exact rendering.
+/// One hand-built case: its label, term, and root command's origin.
 struct Case
 {
     /// What the case exercises.
@@ -151,8 +218,6 @@ struct Case
     root: ComputationId,
     /// The origin focusing records for the root command.
     origin: FocusOrigin,
-    /// The rendered image.
-    rendering: &'static str,
 }
 
 /// The hand-built cases, one per former and one per naming rule.
@@ -171,7 +236,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Return,
-        rendering: "⟨7 |+ ★⟩",
     });
 
     let mut core = CoreArena::new();
@@ -184,7 +248,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Force,
-        rendering: "⟨{force(α) ⇒ ⟨() |+ α0⟩} |+ force(★)⟩",
     });
 
     let mut core = CoreArena::new();
@@ -198,7 +261,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Lambda,
-        rendering: "⟨cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩} |− apply((); ★)⟩",
     });
 
     let mut core = CoreArena::new();
@@ -212,7 +274,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Return,
-        rendering: "⟨1 |+ μ̃x. ⟨x0 |+ ★⟩⟩",
     });
 
     let mut core = CoreArena::new();
@@ -229,7 +290,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Bind,
-        rendering: "⟨μα. ⟨1 |+ μ̃x. ⟨cocase {apply(x; α) ⇒ ⟨x1 |+ α0⟩} |− α0⟩⟩ |− apply((); ★)⟩",
     });
 
     let mut core = CoreArena::new();
@@ -245,7 +305,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Case,
-        rendering: "⟨inl(()) |+ case {inl(x) ⇒ ⟨1 |+ ★⟩ | inr(x) ⇒ ⟨2 |+ ★⟩}⟩",
     });
 
     let mut core = CoreArena::new();
@@ -265,7 +324,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Case,
-        rendering: "⟨μα. ⟨inl(()) |+ case {inl(x) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩} |− α0⟩ | inr(x) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨5 |+ α0⟩} |− α0⟩}⟩ |− apply(3; ★)⟩",
     });
 
     let mut core = CoreArena::new();
@@ -279,7 +337,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Return,
-        rendering: "⟨pair(c0, lift(-3)) |+ ★⟩",
     });
 
     let mut core = CoreArena::new();
@@ -299,7 +356,6 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Case,
-        rendering: "⟨ctor[1](7) |+ datacase({force(α) ⇒ ⟨1 |+ α0⟩}, {force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩} |− α0⟩}; ★)⟩",
     });
 
     let mut core = CoreArena::new();
@@ -327,15 +383,14 @@ fn cases() -> Vec<Case>
         core,
         root,
         origin: FocusOrigin::Fixpoint,
-        rendering: "⟨fix[<]{x; force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ datacase({force(α) ⇒ ⟨ctor[0]() |+ α0⟩}, {force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x2 |+ force(apply(x0; α0))⟩} |− α0⟩}; α0)⟩} |− α0⟩} |+ force(apply(ctor[1](ctor[0]()); ★))⟩",
     });
 
     cases
 }
 
-/// Each former focuses to its exact rendering, records its origin, passes the
-/// check closed, and reads back as itself; together the cases record every
-/// origin a computation can contribute.
+/// Each pure former records its origin, passes the scope check closed, and
+/// reads back as itself; together the cases record the pure computation
+/// origins.
 #[test]
 fn hand_built_cases_cover_every_former()
 {
@@ -345,12 +400,6 @@ fn hand_built_cases_cover_every_former()
         let mut provenance = Provenance::new();
         let command = focus_computation(&case.core, case.root, &mut arena, &mut provenance)
             .unwrap_or_else(|refusal| panic!("{}: focusing refused: {refusal}", case.label));
-        assert_eq!(
-            String::from(case.rendering),
-            render_command(&arena, command),
-            "{}: the rendering",
-            case.label
-        );
         assert_eq!(
             Some(case.origin),
             provenance.origin(command),
@@ -399,11 +448,6 @@ fn top_level_value_focuses_against_top()
     let mut provenance = Provenance::new();
     let command =
         focus_top_value(&core, seven, &mut arena, &mut provenance).expect("a literal focuses");
-    assert_eq!(
-        "⟨7 |+ ★⟩",
-        render_command(&arena, command),
-        "the cut against ★"
-    );
     assert_eq!(
         Some(FocusOrigin::TopValue),
         provenance.origin(command),

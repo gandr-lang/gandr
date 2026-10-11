@@ -71,6 +71,7 @@ fn children(
                 AnyNode::Computation(on_left),
                 AnyNode::Computation(on_right),
             ],
+            | Computation::ListFold { .. }
             | Computation::Absurd(_)
             | Computation::Transport(..)
             | Computation::DataCase { .. }
@@ -159,6 +160,7 @@ fn translate(
                         computations[&on_left],
                         computations[&on_right],
                     ),
+                    | Computation::ListFold { .. }
                     | Computation::Absurd(_)
                     | Computation::Transport(..)
                     | Computation::DataCase { .. }

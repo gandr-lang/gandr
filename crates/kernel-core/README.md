@@ -26,6 +26,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
   - [Function identity and funext](#function-identity-and-funext)
   - [Native fibres and admission](#native-fibres-and-admission)
 - [Guarded higher fields](#guarded-higher-fields)
+- [Native List former](#native-list-former)
 - [Recursive code observations](#recursive-code-observations)
 - [Session code identities](#session-code-identities)
 - [Sharing and persistence](#sharing-and-persistence)
@@ -47,8 +48,9 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration` and `AxiomReport`. The arena is truncated on both verdicts: to content-end on success, to the declaration's content-start on rejection, clamped at the admission floor.
-- **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free. Node reads borrow arena storage; frames retain child ids and levels needed by synthesized types, without cloning literal payloads merely to dispatch a rule.
+- **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional; List fold carries its element and result annotations so the eliminator synthesizes. Node reads borrow arena storage; frames retain child ids and levels needed by synthesized types, without cloning literal payloads merely to dispatch a rule.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
+- **Native List.** Nil and cons check against the existing List former; its pure annotated fold synthesizes and reduces through ordinary conversion replay ([rules](#native-list-former)).
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, unfolding only what `Unfoldings` defines and stopping at a `ReplayBudget`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, whose `ReplayRefusal` names the `TracePosition` that did not replay.
 - **Guarded admission.** `admission`: `Schema::check`, `Schema::bind`, `Schema::substitute` and `Substitution::admit` over a `Proposal`, with a caller-owned `Row` buffer per worker; a row allocates nothing once its buffer is sized, and refusals are named by `Refusal` ([docs/admission.md](docs/admission.md)).
@@ -352,7 +354,7 @@ Universal introductions cover closed functions with first-order arguments and na
 
 Computed fibres lower to native Unit, Empty, Product and universe-path types. Empty forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the fold’s closed vocabulary. As an ordinary native leaf it remains a legitimate bounded-alias target.
 
-The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty, List codes and universe paths; no receipt admits element-relation, higher-field or function-identity programs or guarded list inhabitants.
+The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty, finite Lists with nil, cons and pure fold, and universe paths; no receipt admits element-relation, higher-field or function-identity programs or guarded list inhabitants.
 
 **Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would couple the rule language to persistent declarations before its dependent substitution laws are checked. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
 
@@ -385,9 +387,13 @@ The negation and case-inlined triple-negation certificates satisfy all four fiel
 
 **Mutation scope.** The higher-field module and its native-evidence projection: removed guards, uncharged redirects, early depth success, forged fibre evidence, dropped product coordinates, wrong square boundaries, substituted translator outputs and omitted round-trip coherence. The witnesses target these boundaries without claiming a mutation campaign or metatheorem about infinite coherence.
 
+## Native List former
+
+`List A` is a built-in finite former beside nominal data and records; its introductions and pure right fold participate in ordinary checking, readmission, encoding, substitution and normalization, and are not a Sum encoding. The [native List page](docs/native-list.md) states its typing and computation rules, the binder order of the cell branch, the decision with its reversal, and its witnesses.
+
 ## Recursive code observations
 
-`ValueType::List(A)` is the finite, strictly positive code `μX. Unit + A × X`, at A’s universe level. Wire tag `0x50` carries its element type; `0x51` is reserved and refused. Structural code conversion compares the finite element code, without unfolding a recursive value. The code survives ordinary encoding, decoding, substitution and content-support traversal.
+The [native List former](#native-list-former) represents the finite, strictly positive code `μX. Unit + A × X`, at A’s universe level, without unfolding a recursive type graph. The guarded observation language below is separate from its native nil, cons and pure fold.
 
 `identity_recursion::recursive` reuses `higher_field::Codata`. Each `Guard` exposes `inl ()` for Nil or `inr head` for Cons, with the Cons recursive coordinate in its tail edge. `Redirect` exposes no constructor. A Nil never reads its tail. `Relation::observe_lists` uses the same fold’s element relation, returns Unit only after both finite spines end, and returns Empty at the first differing head or constructor. Neither verdict validates an unobserved tail.
 
@@ -397,7 +403,7 @@ One shared `ReplayBudget` counts both graphs’ Guard and Redirect visits. A con
 
 `Refusal` retains the existing `NonProductive` verdict for constructor-free cycles and `DepthBound` for exhausted observations, together with completed depth and visited instructions. A productive infinite spine still returns `DepthBound`: productivity does not establish a finite equality decision. No new uncertified-stratum error or recursive conversion rule is introduced.
 
-**Choice.** A native finite List code plus borrowed guarded inhabitants keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions or persisted inhabitants require their own constructor, substitution and persistence rules; this surface supports the List fixed point and first-order element observations.
+**Choice.** A native finite List former plus borrowed guarded observations keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions require their own constructor, substitution and persistence rules; this observation surface supports the List fixed point and first-order element observations.
 
 **Mutation scope.** Recursive witnesses distinguish swapped constructor branches, dropped heads, eager tail reads, missing instruction charges, false productivity, truncated coverage, corrupt transport dialogues and finite-depth success on infinite input. No mutation campaign or infinite-coherence theorem is claimed.
 

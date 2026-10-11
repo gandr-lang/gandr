@@ -259,6 +259,14 @@ pub enum RefusalName
     CrossBlockReference,
     /// A fixpoint's structural-descent claim does not replay.
     DescentNotReplayed,
+    /// An operation absent from its interface.
+    UnknownOperation,
+    /// Handler clauses do not cover their interface exactly.
+    HandlerCoverage,
+    /// A capture without an answer delimiter.
+    ShiftWithoutReset,
+    /// A stack frame's result depends on its discharged binder.
+    DependentStack,
     /// A native path endpoint is not a closed first-order code.
     PathCode,
     /// A term name no binder or earlier declaration answers.
@@ -343,6 +351,8 @@ pub enum RefusalName
     StaticClassifierExpected,
     /// An expectation the strict root refuses.
     ExpectationOutsideFixtureRoot,
+    /// Two rows disagree on the operation types of a shared interface.
+    EffectSignatureConflict,
 }
 
 impl RefusalName
@@ -362,7 +372,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 57_usize] = [
+    pub const VOCABULARY: [Self; 62_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -420,6 +430,11 @@ impl RefusalName
         Self::StaticLambdaArgument,
         Self::StaticClassifierExpected,
         Self::ExpectationOutsideFixtureRoot,
+        Self::EffectSignatureConflict,
+        Self::UnknownOperation,
+        Self::HandlerCoverage,
+        Self::ShiftWithoutReset,
+        Self::DependentStack,
     ];
 
     /// The name as a `refuses` payload spells it: the name of the variant it
@@ -486,6 +501,9 @@ impl RefusalName
         | (Self::NonUniformOccurrence, b"NonUniformOccurrence")
         | (Self::CrossBlockReference, b"CrossBlockReference")
         | (Self::DescentNotReplayed, b"DescentNotReplayed")
+        | (Self::EffectSignatureConflict, b"EffectSignatureConflict")
+        | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
+        | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
     )
 },
     )]
@@ -509,6 +527,11 @@ impl RefusalName
             | Self::NonUniformOccurrence => "NonUniformOccurrence",
             | Self::CrossBlockReference => "CrossBlockReference",
             | Self::DescentNotReplayed => "DescentNotReplayed",
+            | Self::UnknownOperation => "UnknownOperation",
+            | Self::HandlerCoverage => "HandlerCoverage",
+            | Self::ShiftWithoutReset => "ShiftWithoutReset",
+            | Self::DependentStack => "DependentStack",
+            | Self::EffectSignatureConflict => "EffectSignatureConflict",
             | Self::UnresolvedName => "UnresolvedName",
             | Self::UnresolvedTypeHead => "UnresolvedTypeHead",
             | Self::DuplicateSignature => "DuplicateSignature",
@@ -752,6 +775,11 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::DescentNotReplayed { .. }), RefusalName::DescentNotReplayed) |
         (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
         RefusalName::ExpectationOutsideFixtureRoot)
+        | (Self::Checking(CheckRefusal::EffectSignatureConflict { .. }), RefusalName::EffectSignatureConflict)
+        | (Self::Checking(CheckRefusal::UnknownOperation { .. }), RefusalName::UnknownOperation)
+        | (Self::Checking(CheckRefusal::HandlerCoverage { .. }), RefusalName::HandlerCoverage)
+        | (Self::Checking(CheckRefusal::ShiftWithoutReset { .. }), RefusalName::ShiftWithoutReset)
+        | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
     )
 },
     )]
@@ -931,6 +959,11 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
         | (CheckRefusal::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
         | (CheckRefusal::DescentNotReplayed { .. }, RefusalName::DescentNotReplayed)
+        | (CheckRefusal::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
+        | (CheckRefusal::UnknownOperation { .. }, RefusalName::UnknownOperation)
+        | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
+        | (CheckRefusal::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
+        | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
     )
 },
 )]
@@ -946,6 +979,11 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
         | CheckRefusal::AbsentRecordField(_) => RefusalName::AbsentRecordField,
         | CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,
+        | CheckRefusal::UnknownOperation { .. } => RefusalName::UnknownOperation,
+        | CheckRefusal::HandlerCoverage { .. } => RefusalName::HandlerCoverage,
+        | CheckRefusal::ShiftWithoutReset { .. } => RefusalName::ShiftWithoutReset,
+        | CheckRefusal::DependentStack { .. } => RefusalName::DependentStack,
+        | CheckRefusal::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
         | CheckRefusal::PathCode(_) => RefusalName::PathCode,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,

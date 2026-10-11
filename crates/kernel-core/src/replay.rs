@@ -859,6 +859,9 @@ enum Elimination
     Bind(ComputationId),
     /// A case into these two branches.
     Case(ComputationId, ComputationId),
+    /// A native List fold's branches; checked element and result annotations
+    /// erase.
+    ListFold(ComputationId, ComputationId),
     /// A static application to this code: the one value elimination.
     StaticApply(ValueId),
     /// A fixpoint applied to the neutral head; the arena node is the
@@ -1502,6 +1505,8 @@ where
                 | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
+                | Value::ListNil
+                | Value::ListCons(..)
                 | Value::Injection(..)
                 | Value::Lift { .. }
                 | Value::Quote(_)
@@ -1791,9 +1796,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
  else if (matched_left_value.is_none()) || (matched_right_value.is_none()) { ret == Err(unreadable()) }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
- else if matched_left_value.is_some_and(|node| matches!(*node, Value::Unit)) && matched_right_value.is_some_and(|node| matches!(*node, Value::Unit)) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
+ else if matches!((matched_left_value, matched_right_value), (Some(&Value::Unit), Some(&Value::Unit)) | (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ Value::Literal(_) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let ref other @ Value::Literal(_) = *matched_right_node { ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })) }
- else if let Some(matched_left_node) = matched_left_value && let Value::Pair(one_first, one_second) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Pair(other_first, other_second) = *matched_right_node { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]) }
+ else if let (Some(&Value::Pair(one_first, one_second)), Some(&Value::Pair(other_first, other_second))) | (Some(&Value::ListCons(one_first, one_second)), Some(&Value::ListCons(other_first, other_second))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]) }
  else if let Some(matched_left_node) = matched_left_value && let Value::Injection(one_side, one_body) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Injection(other_side, other_body) = *matched_right_node && (one_side == other_side) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
  else if let Some(matched_left_node) = matched_left_value && let Value::Lift { target: ref one_target, body: one_body } = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Lift { target: ref other_target, body: other_body } = *matched_right_node && (one_target == other_target) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
  else if (matched_left_value.is_some_and(|node| matches!(*node, Value::Quote(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::Quote(_)))) || (matched_left_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_))) && matched_right_value.is_some_and(|node| matches!(*node, Value::QuoteComputation(_)))) { matches!(ret, Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable))) }
@@ -1884,10 +1889,16 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Expect::NotConvertible
                 },
             ),
-            | (&Value::Unit, &Value::Unit) => Structure::Leaf(Expect::Convertible),
+            | (&Value::Unit, &Value::Unit) | (&Value::ListNil, &Value::ListNil) => {
+                Structure::Leaf(Expect::Convertible)
+            },
             | (&Value::Literal(_), &Value::Literal(_)) if one == other => {
                 Structure::Leaf(Expect::Convertible)
             },
+            | (
+                &Value::ListCons(left_first, left_second),
+                &Value::ListCons(right_first, right_second),
+            )
             | (&Value::Pair(left_first, left_second), &Value::Pair(right_first, right_second)) => {
                 Structure::of(Vec::from([
                     Premise::values(left_first, right_first),
@@ -1942,6 +1953,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
+                | Value::ListNil
+                | Value::ListCons(..)
                 | Value::Injection(..)
                 | Value::Thunk(_)
                 | Value::Lift { .. }
@@ -2072,6 +2085,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     | Some(
                         &(Value::Unit
                         | Value::Literal(_)
+                        | Value::ListNil
                         | Value::Variable(_)
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
@@ -2079,7 +2093,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::PathEquiv { .. }),
                     ) => {},
                     | Some(
-                        &(Value::Pair(first, second) | Value::StaticApplication(first, second)),
+                        &(Value::ListCons(first, second)
+                        | Value::Pair(first, second)
+                        | Value::StaticApplication(first, second)),
                     ) => {
                         work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
                     },
@@ -2114,6 +2130,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Computation::RecordProjection(..)
                         | Computation::Lambda(_)
                         | Computation::Fixpoint { .. }
+                        | Computation::ListFold { .. }
                         | Computation::Bind(..)
                         | Computation::Case { .. }),
                     )
@@ -2240,6 +2257,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     Computation::Case { on_left, on_right, .. } => spine.as_slice() == [Elimination::Case(on_left, on_right)],
                     Computation::DataCase { .. } => spine.as_slice() == [Elimination::DataCase(computation)],
                     Computation::RecordProjection(..) => spine.as_slice() == [Elimination::RecordProjection(computation)],
+                    Computation::ListFold { on_nil, on_cons, .. } => spine.as_slice() == [Elimination::ListFold(on_nil, on_cons)],
                     _ => false,
                 },
                 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
@@ -2289,6 +2307,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::Unit
                         | Value::Literal(_)
                         | Value::Pair(..)
+                        | Value::ListNil
+                        | Value::ListCons(..)
                         | Value::Injection(..)
                         | Value::Lift { .. }
                         | Value::Quote(_)
@@ -2310,6 +2330,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Some(&Computation::RecordProjection(record, _)) => {
                     spine.push(Elimination::RecordProjection(focus));
                     break self.value_head(record, frozen, side)?;
+                },
+                | Some(&Computation::ListFold {
+                    list,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    spine.push(Elimination::ListFold(on_nil, on_cons));
+                    break self.value_head(list, frozen, side)?;
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
@@ -2420,6 +2449,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
+                | Value::ListNil
+                | Value::ListCons(..)
                 | Value::Injection(..)
                 | Value::Thunk(_)
                 | Value::Lift { .. }
@@ -2544,6 +2575,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     break self
                         .arena
                         .computation_record_projection(body, label.clone());
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    on_nil,
+                    on_cons,
+                    ..
+                }) => {
+                    break self
+                        .arena
+                        .computation_list_fold(element, result, body, on_nil, on_cons);
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
@@ -2718,6 +2760,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `recursive_data::recursive_data::a_partial_fixpoint_declines_at_its_gate`
     /// - witness: `path_universe::tests::transport_computes`
     /// - witness: `path_universe::tests::refl_collapses`
+    /// - witness: `replay::tests::native_list_fold_reduces_without_capturing_outer_variables`
     #[spec(
         captures: before = self.spent,
         ensures: |ret| match term {
@@ -2784,6 +2827,34 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Some(_) => break,
                         | None => return Err(unreadable()),
                     }
+                },
+                | Some(&Computation::ListFold {
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                    on_cons,
+                }) => match self.arena.value(list) {
+                    | Some(&Value::ListNil) => {
+                        focus = on_nil;
+                        progress = Progress::Reduced;
+                    },
+                    | Some(&Value::ListCons(head, tail)) => {
+                        let branch = crate::rewrite::substitute_fold_head(
+                            self.arena,
+                            &mut self.table,
+                            &mut self.memo,
+                            on_cons,
+                            head,
+                        );
+                        frames.push(Frame::Bind(branch));
+                        focus = self
+                            .arena
+                            .computation_list_fold(element, result, tail, on_nil, on_cons);
+                        progress = Progress::Reduced;
+                    },
+                    | Some(_) => break,
+                    | None => return Err(unreadable()),
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     match crate::path_universe::beta(self.arena, crate::path_universe::Transport {
@@ -3213,7 +3284,9 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
 },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
                 (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => pending.next() == Some(&Premise::computations(one, other)),
-                (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) => pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
+                (Elimination::ListFold(one_left, one_right), Elimination::ListFold(other_left, other_right)) |
+                (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) =>
+                    pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
                 _ => false,
             });
             ordered && pending.next().is_none()
@@ -3310,6 +3383,7 @@ fn spines(
             | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
                 premises.push(Premise::computations(a, b));
             },
+            | (Elimination::ListFold(a, b), Elimination::ListFold(c, d))
             | (Elimination::Case(a, b), Elimination::Case(c, d)) => {
                 premises.extend([Premise::computations(a, c), Premise::computations(b, d)]);
             },
@@ -3323,6 +3397,7 @@ fn spines(
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
                 | Elimination::Case(..)
+                | Elimination::ListFold(..)
                 | Elimination::StaticApply(_)
                 | Elimination::Fixpoint(_),
                 _,
@@ -3401,6 +3476,53 @@ mod tests
     const FORCE: ConversionDecision<ReplayNode> = ConversionDecision::Force {
         thunk: ReplayNode::Other,
     };
+
+    #[test]
+    fn native_list_fold_reduces_without_capturing_outer_variables()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let list_type = arena.value_type_list(unit_type);
+        let nil = arena.value_list_nil();
+        let outer = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let tail = arena.value_list_cons(second, nil);
+        let list = arena.value_list_cons(outer, tail);
+        let head = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let folded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let cell = arena.value_list_cons(head, folded);
+        let on_cons = arena.computation_return(cell);
+        let on_nil = arena.computation_return(nil);
+        for input in [nil, list] {
+            let fold = arena.computation_list_fold(unit_type, list_type, input, on_nil, on_cons);
+            let expected = arena.computation_return(input);
+            assert_eq!(
+                run(
+                    &mut arena,
+                    &Unfoldings::default(),
+                    ReplaySides::Computations(fold, expected),
+                    EngineClaim::Convertible,
+                    &[]
+                ),
+                KernelVerdict::Convertible
+            );
+        }
+        let unit = arena.value_unit();
+        let on_nil = arena.computation_return(unit);
+        let on_cons = arena.computation_return(head);
+        let fold = arena.computation_list_fold(unit_type, unit_type, list, on_nil, on_cons);
+        let expected = arena.computation_return(outer);
+        assert_eq!(
+            run(
+                &mut arena,
+                &Unfoldings::default(),
+                ReplaySides::Computations(fold, expected),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+    }
 
     #[test]
     fn a_compared_pair_closes_on_alpha_equality_or_rigid_separation()

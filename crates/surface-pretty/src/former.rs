@@ -104,6 +104,16 @@ impl Borrow<str> for Name<'_>
 #[derive(Clone, Copy, Debug)]
 pub enum Former<'source, Node>
 {
+    /// A flat first-class stack, opaque in value-only presentations.
+    Reify,
+    /// A stack's ordered input and output computation types.
+    Stack(Node, Node),
+    /// A lazy pair's two computation types.
+    With(Node, Node),
+    /// The empty native list.
+    ListNil,
+    /// A native cell with its head and tail.
+    ListCons(Node, Node),
     /// A native universe-path classifier over two quoted codes.
     PathUniverse(Node, Node),
     /// Reflexivity at a quoted code.
@@ -147,6 +157,15 @@ pub enum Former<'source, Node>
     },
     /// The returner `-F A` of a value type.
     Returner(Node),
+    /// A returner with a diagnostic row annotation, not a surface grammar form.
+    EffectfulReturner
+    {
+        /// The value returned.
+        result: Node,
+        /// The canonical effect names, independent of the source's type
+        /// handles.
+        effects: &'source dyn core::fmt::Debug,
+    },
     /// The arrow `A -> C`, whose codomain binds nothing.
     Arrow
     {
@@ -166,6 +185,8 @@ pub enum Former<'source, Node>
     },
     /// The computation type a code denotes; the code is a value.
     ComputationElement(Node),
+    /// A finite-list type.
+    List(Node),
     /// A bound variable.
     Variable
     {

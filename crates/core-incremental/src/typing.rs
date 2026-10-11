@@ -87,6 +87,18 @@ pub enum Site
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
+    /// A literal stack.
+    Reify(Site),
+    /// A deep handler.
+    Handle(Site),
+    /// An answer delimiter.
+    Reset(Site),
+    /// A continuation capture.
+    Shift(Site),
+    /// A lazy pair.
+    With(Site),
+    /// A native List introduction.
+    List(Site),
     /// A sum injection.
     Injection(Site),
     /// A sum case.
@@ -162,6 +174,32 @@ pub enum Refusal
         at: Site,
         /// The required record classifier.
         expected: TypeContent,
+    },
+    /// An operation absent from its inline interface.
+    UnknownOperation
+    {
+        /// The request.
+        at: Site,
+    },
+    /// A handler's clauses do not cover its interface exactly.
+    HandlerCoverage
+    {
+        /// The handler.
+        at: Site,
+    },
+    /// A capture has no enclosing answer delimiter.
+    ShiftWithoutReset
+    {
+        /// The capture.
+        at: Site,
+    },
+    /// A stack frame's result depends on its discharged value binder.
+    DependentStack
+    {
+        /// The stack literal.
+        at: Site,
+        /// The escaping computation type.
+        synthesised: TypeContent,
     },
     /// A native path endpoint is not a closed first-order code.
     PathCode(Site),
@@ -329,6 +367,16 @@ pub enum Refusal
         at: Site,
         /// The rule of the descent walk that failed.
         reason: DescentRefusal,
+    },
+    /// Two accumulated rows assign different operation types to one interface.
+    EffectSignatureConflict
+    {
+        /// The bind that combines the rows.
+        at: Site,
+        /// The first returner type.
+        first: TypeContent,
+        /// The conflicting returner type.
+        second: TypeContent,
     },
 }
 
@@ -568,6 +616,11 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::NonExhaustiveDataCase(at) = matched_left_value && let Refusal::NonExhaustiveDataCase(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::AbsentRecordField(at) = matched_left_value && let Refusal::AbsentRecordField(projected) = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::MissingRecordField {at,expected} = matched_left_value && let Refusal::MissingRecordField {at:projected,expected:ref stored} = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
+ else if let CheckRefusal::DependentStack { at, synthesised } = matched_left_value && let Refusal::DependentStack { at: projected, synthesised: ref actual } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *actual == self.type_node(TypeNode::Computation(synthesised)) }
+ else if let CheckRefusal::EffectSignatureConflict { at, first, second } = matched_left_value && let Refusal::EffectSignatureConflict { at: projected, first: ref actual_first, second: ref actual_second } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *actual_first == self.type_node(TypeNode::Computation(first)) && *actual_second == self.type_node(TypeNode::Computation(second)) }
+ else if let CheckRefusal::UnknownOperation { at } = matched_left_value && let Refusal::UnknownOperation { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::HandlerCoverage { at } = matched_left_value && let Refusal::HandlerCoverage { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::ShiftWithoutReset { at } = matched_left_value && let Refusal::ShiftWithoutReset { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -583,11 +636,17 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             } = *matched_right_value { projected == self.term_site(at) && wanted == returned }
  else if let CheckRefusal::NotSynthesisable { form } = matched_left_value && let Refusal::NotSynthesisable { form: projected } = *matched_right_value { match (form, projected) {
             | (CheckingForm::Injection(id), Form::Injection(at))
+            | (CheckingForm::List(id), Form::List(at))
+            | (CheckingForm::Reify(id), Form::Reify(at))
             | (CheckingForm::Thunk(id), Form::Thunk(at))
             | (CheckingForm::StaticLambda(id), Form::StaticLambda(at)) => {
                 at == self.site(ArenaNode::Value(id))
             },
             | (CheckingForm::Case(id), Form::Case(at))
+            | (CheckingForm::Handle(id), Form::Handle(at))
+            | (CheckingForm::Reset(id), Form::Reset(at))
+            | (CheckingForm::Shift(id), Form::Shift(at))
+            | (CheckingForm::With(id), Form::With(at))
             | (CheckingForm::Lambda(id), Form::Lambda(at))
             | (CheckingForm::Return(id), Form::Return(at))
             | (CheckingForm::Fixpoint(id), Form::Fixpoint(at)) => {
@@ -700,6 +759,26 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 at: self.site(ArenaNode::Value(at)),
                 expected: self.value_type(expected),
             },
+            | CheckRefusal::UnknownOperation { at } => Refusal::UnknownOperation {
+                at: self.site(ArenaNode::Computation(at)),
+            },
+            | CheckRefusal::HandlerCoverage { at } => Refusal::HandlerCoverage {
+                at: self.site(ArenaNode::Computation(at)),
+            },
+            | CheckRefusal::ShiftWithoutReset { at } => Refusal::ShiftWithoutReset {
+                at: self.site(ArenaNode::Computation(at)),
+            },
+            | CheckRefusal::DependentStack { at, synthesised } => Refusal::DependentStack {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.type_node(TypeNode::Computation(synthesised)),
+            },
+            | CheckRefusal::EffectSignatureConflict { at, first, second } => {
+                Refusal::EffectSignatureConflict {
+                    at: self.site(ArenaNode::Computation(at)),
+                    first: self.type_node(TypeNode::Computation(first)),
+                    second: self.type_node(TypeNode::Computation(second)),
+                }
+            },
             | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
@@ -726,6 +805,14 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             | CheckRefusal::NotSynthesisable { form } => Refusal::NotSynthesisable {
                 form: match form {
+                    | CheckingForm::Reify(id) => Form::Reify(self.site(ArenaNode::Value(id))),
+                    | CheckingForm::Handle(id) => {
+                        Form::Handle(self.site(ArenaNode::Computation(id)))
+                    },
+                    | CheckingForm::Reset(id) => Form::Reset(self.site(ArenaNode::Computation(id))),
+                    | CheckingForm::Shift(id) => Form::Shift(self.site(ArenaNode::Computation(id))),
+                    | CheckingForm::With(id) => Form::With(self.site(ArenaNode::Computation(id))),
+                    | CheckingForm::List(id) => Form::List(self.site(ArenaNode::Value(id))),
                     | CheckingForm::Injection(id) => {
                         Form::Injection(self.site(ArenaNode::Value(id)))
                     },
@@ -1244,7 +1331,10 @@ mod tests
         let unit_content = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
         let returner_content = || {
             TypeContent::from_nodes(vec![
-                ContentNode::Returner(NodeIndex::from(1_usize)),
+                ContentNode::Returner {
+                    result: NodeIndex::from(1_usize),
+                    effects: gandr_core_term::effect::EffectRow::EMPTY,
+                },
                 ContentNode::UnitType,
             ])
         };
@@ -1279,7 +1369,10 @@ mod tests
                     at: computation_site,
                     synthesised: returner_content(),
                     expected: TypeContent::from_nodes(vec![
-                        ContentNode::Returner(NodeIndex::from(1_usize)),
+                        ContentNode::Returner {
+                            result: NodeIndex::from(1_usize),
+                            effects: gandr_core_term::effect::EffectRow::EMPTY,
+                        },
                         ContentNode::Base(BaseType::Integer),
                     ]),
                 },

@@ -773,9 +773,10 @@ fn lowering_handles_numeric_and_binding_boundaries()
             gandr_core_incremental::ContentNode::Thunk(gandr_core_incremental::NodeIndex::from(
                 3_usize,
             )),
-            gandr_core_incremental::ContentNode::Returner(gandr_core_incremental::NodeIndex::from(
-                4_usize,
-            )),
+            gandr_core_incremental::ContentNode::Returner {
+                result: gandr_core_incremental::NodeIndex::from(4_usize),
+                effects: gandr_core_term::effect::EffectRow::EMPTY,
+            },
             gandr_core_incremental::ContentNode::Return(gandr_core_incremental::NodeIndex::from(
                 5_usize,
             )),

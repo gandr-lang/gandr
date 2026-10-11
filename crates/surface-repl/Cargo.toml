@@ -40,8 +40,6 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 rustyline.workspace = true
 
-# The renderer's cases and the loop's build content tables over base-type
-# atoms.
 [dev-dependencies]
 gandr-kernel-term.workspace = true
 

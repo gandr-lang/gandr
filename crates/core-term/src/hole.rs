@@ -489,7 +489,7 @@ pub fn matched_returner(
         return Maybe::Present(arena.value_type_unknown());
     }
     match arena.comp_type(subject) {
-        | Some(&CompType::Returner(result)) => Maybe::Present(result),
+        | Some(&CompType::Returner { result, .. }) => Maybe::Present(result),
         | Some(_) => mismatched(),
         | None => dangling(),
     }
@@ -551,6 +551,114 @@ pub fn matched_function(
     }
 }
 
+/// Match a value type against the native List former: `A ▸ List A₁`.
+///
+/// # Specification
+/// - requires: `subject` is read at its weak head.
+/// - ensures: the element type of a List; a freshly minted unknown value type
+///   when `subject` is unknown.
+/// - provides: what a nil and a cons check against.
+/// - fails: [`matching::Absent::Mismatched`] for another known former,
+///   [`matching::Absent::Dangling`] for an id naming no node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_thunk`], over the List former.
+/// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
+/// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(element) => arena.value_type(element).is_some(),
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn matched_list(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+) -> Maybe<ValueTypeId, matching::Absent>
+{
+    if value_type_knowledge(arena, subject) == Knowledge::Unknown {
+        return Maybe::Present(arena.value_type_unknown());
+    }
+    match arena.value_type(subject) {
+        | Some(&ValueType::List(element)) => Maybe::Present(element),
+        | Some(_) => mismatched(),
+        | None => dangling(),
+    }
+}
+
+/// Match a value type against the first-class stack: `A ▸ Stack C₁ C₂`.
+///
+/// # Specification
+/// - requires: `subject` is read at its weak head.
+/// - ensures: the input and output computation types of a stack; two freshly
+///   minted unknown computation types when `subject` is unknown.
+/// - provides: what a stack literal checks its frames against and what a
+///   resumption feeds.
+/// - fails: [`matching::Absent::Mismatched`] for another known former,
+///   [`matching::Absent::Dangling`] for an id naming no node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_thunk`], over the stack former.
+/// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
+/// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present((input, output)) => arena.comp_type(input).is_some() && arena.comp_type(output).is_some(),
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn matched_stack(
+    arena: &mut CoreArena,
+    subject: ValueTypeId,
+) -> Maybe<(CompTypeId, CompTypeId), matching::Absent>
+{
+    if value_type_knowledge(arena, subject) == Knowledge::Unknown {
+        let unknown = arena.comp_type_unknown();
+        return Maybe::Present((unknown, unknown));
+    }
+    match arena.value_type(subject) {
+        | Some(&ValueType::Stack { input, output }) => Maybe::Present((input, output)),
+        | Some(_) => mismatched(),
+        | None => dangling(),
+    }
+}
+
+/// Match a computation type against the lazy pair: `C ▸ C₁ & C₂`.
+///
+/// # Specification
+/// - requires: `subject` is read at its weak head.
+/// - ensures: both components of a lazy pair, left first; two freshly minted
+///   unknown computation types when `subject` is unknown.
+/// - provides: what a projection selects.
+/// - fails: [`matching::Absent::Mismatched`] for another known former,
+///   [`matching::Absent::Dangling`] for an id naming no node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`matched_thunk`], over the lazy pair.
+/// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
+/// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present((first, second)) => arena.comp_type(first).is_some() && arena.comp_type(second).is_some(),
+    | Maybe::Absent(_) => true,
+})]
+#[inline]
+pub fn matched_with(
+    arena: &mut CoreArena,
+    subject: CompTypeId,
+) -> Maybe<(CompTypeId, CompTypeId), matching::Absent>
+{
+    if comp_type_knowledge(arena, subject) == Knowledge::Unknown {
+        let unknown = arena.comp_type_unknown();
+        return Maybe::Present((unknown, unknown));
+    }
+    match arena.comp_type(subject) {
+        | Some(&CompType::With(first, second)) => Maybe::Present((first, second)),
+        | Some(_) => mismatched(),
+        | None => dangling(),
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -566,11 +674,14 @@ mod tests
     use super::MarkIndex;
     use super::comp_type_knowledge;
     use super::matched_function;
+    use super::matched_list;
     use super::matched_product;
     use super::matched_returner;
+    use super::matched_stack;
     use super::matched_static_pi;
     use super::matched_sum;
     use super::matched_thunk;
+    use super::matched_with;
     use super::matching;
     use super::value_type_knowledge;
     use crate::arena::CoreArena;
@@ -644,6 +755,17 @@ mod tests
                 assert_eq!(arena.value_type(first), Some(&ValueType::Unknown));
                 assert_eq!(arena.value_type(second), Some(&ValueType::Unknown));
             }
+            let Maybe::Present(element) = matched_list(&mut arena, subject)
+            else {
+                panic!("the unknown type matches a List");
+            };
+            assert_eq!(arena.value_type(element), Some(&ValueType::Unknown));
+            let Maybe::Present((input, output)) = matched_stack(&mut arena, subject)
+            else {
+                panic!("the unknown type matches a stack");
+            };
+            assert_eq!(arena.comp_type(input), Some(&CompType::Unknown));
+            assert_eq!(arena.comp_type(output), Some(&CompType::Unknown));
         }
         let unknown = arena.comp_type_unknown();
         let Maybe::Present(result) = matched_returner(&mut arena, unknown)
@@ -664,6 +786,12 @@ mod tests
             Some(&CompType::Unknown)
         );
         assert_eq!(function.scope(), CodomainScope::Ambient);
+        let Maybe::Present((first, second)) = matched_with(&mut arena, unknown)
+        else {
+            panic!("the unknown type matches a lazy pair");
+        };
+        assert_eq!(arena.comp_type(first), Some(&CompType::Unknown));
+        assert_eq!(arena.comp_type(second), Some(&CompType::Unknown));
     }
 
     #[test]
@@ -680,6 +808,9 @@ mod tests
         let static_pi = arena.value_type_static_pi(universe, universe);
         let arrow = arena.comp_type_arrow(atom, returner);
         let pi = arena.comp_type_pi(text, returner);
+        let list = arena.value_type_list(atom);
+        let stack = arena.value_type_stack(returner, arrow);
+        let with = arena.comp_type_with(returner, arrow);
         assert_eq!(matched_thunk(&mut arena, thunk), Maybe::Present(returner));
         assert_eq!(
             matched_product(&mut arena, product),
@@ -691,6 +822,15 @@ mod tests
             Maybe::Present((universe, universe))
         );
         assert_eq!(matched_returner(&mut arena, returner), Maybe::Present(atom));
+        assert_eq!(matched_list(&mut arena, list), Maybe::Present(atom));
+        assert_eq!(
+            matched_stack(&mut arena, stack),
+            Maybe::Present((returner, arrow))
+        );
+        assert_eq!(
+            matched_with(&mut arena, with),
+            Maybe::Present((returner, arrow))
+        );
         let Maybe::Present(ambient) = matched_function(&mut arena, arrow)
         else {
             panic!("an arrow matches a function");
@@ -723,6 +863,9 @@ mod tests
             matched_function(&mut arena, returner),
             Maybe::Absent(mismatched)
         );
+        assert_eq!(matched_list(&mut arena, product), Maybe::Absent(mismatched));
+        assert_eq!(matched_stack(&mut arena, list), Maybe::Absent(mismatched));
+        assert_eq!(matched_with(&mut arena, arrow), Maybe::Absent(mismatched));
         assert_eq!(
             matched_thunk(&mut CoreArena::new(), thunk),
             Maybe::Absent(matching::Absent::Dangling)

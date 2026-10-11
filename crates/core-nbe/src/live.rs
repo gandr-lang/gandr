@@ -393,7 +393,9 @@ pub fn match_pattern(
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Code { .. }
-                | DomainValue::StaticLambda { .. },
+                | DomainValue::StaticLambda { .. }
+                | DomainValue::ListNil { .. }
+                | DomainValue::ListCons { .. },
             ) => return Err(MatchFault::Mismatched),
         };
         status = status.and(local);

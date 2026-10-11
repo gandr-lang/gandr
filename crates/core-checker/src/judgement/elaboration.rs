@@ -385,7 +385,7 @@ impl Machine<'_, '_>
     #[spec(
         captures: before = self.anchors.len(),
         ensures: self.anchors.len() == before.saturating_add(usize::from(
-            self.marking == Marking::Total && !matches!(goal, Goal::Form(_)),
+            self.marking == Marking::Total && !matches!(goal, Goal::Form(_) | Goal::Stack { .. }),
         )),
     )]
     pub(super) fn anchor(
@@ -403,7 +403,7 @@ impl Machine<'_, '_>
                     native: self.native_types.len(),
                 });
             },
-            | (Marking::Strict, _) | (Marking::Total, Goal::Form(_)) => {},
+            | (Marking::Strict, _) | (Marking::Total, Goal::Form(_) | Goal::Stack { .. }) => {},
         }
     }
 
@@ -492,7 +492,7 @@ impl Machine<'_, '_>
             | Goal::Computation { term, .. } => {
                 (TermId::Computation(term), TermNode::Computation(term))
             },
-            | Goal::Form(_) => return Err(CheckRefusal::MachineInvariant),
+            | Goal::Form(_) | Goal::Stack { .. } => return Err(CheckRefusal::MachineInvariant),
         };
         self.marks.push(MarkEntry { at, refusal });
         let unsynthesisable = matches!(refusal, CheckRefusal::NotSynthesisable { .. });
@@ -537,7 +537,7 @@ impl Machine<'_, '_>
                     Ok(Step::Ascend(Produced::CompType(unknown)))
                 }
             },
-            | Goal::Form(_) => Err(CheckRefusal::MachineInvariant),
+            | Goal::Form(_) | Goal::Stack { .. } => Err(CheckRefusal::MachineInvariant),
         }
     }
 }

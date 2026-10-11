@@ -607,6 +607,10 @@ enum Task
     ProductTransport,
     /// Assemble a pair from its two components.
     Pair,
+    /// Assemble a native list cell.
+    ListCons,
+    /// Assemble a native fold from its annotations, list and branches.
+    ListFold,
     /// Assemble a sum injection.
     Inject
     {
@@ -698,8 +702,14 @@ enum Task
     Product,
     /// Assemble a sum type from the two types on the stack.
     Sum,
+    /// Assemble a native List type from its element type.
+    ListType,
     /// Assemble a thunk type from the computation type on the stack.
     ThunkType,
+    /// Assemble a stack type from its input and output computation types.
+    StackType,
+    /// Assemble a lazy computation pair from its component types.
+    WithType,
     /// Assemble a type lift over the level the domain holds.
     LiftType
     {
@@ -718,8 +728,12 @@ enum Task
         /// The held level.
         target: LiftTarget,
     },
-    /// Assemble a returner type from the value type on the stack.
-    Returner,
+    /// Assemble the result and operation types of the source returner's row.
+    Returner
+    {
+        /// The source classifier whose inline effect row is being rebuilt.
+        source: CompTypeId,
+    },
     /// Assemble an arrow from the two types on the stacks.
     Arrow,
     /// Assemble a dependent arrow from the two types on the stacks.
@@ -1321,6 +1335,70 @@ fn open(
     Ok((whnf, deeper))
 }
 
+/// Open a List cell branch under head then folded-result binders.
+///
+/// # Specification
+/// - requires: the closure and its captured environment resolve.
+/// - ensures: the branch is evaluated with two distinct fresh variables and
+///   returned at the twice-extended binder depth.
+/// - fails: existing domain, binder-ceiling and evaluation faults.
+/// - panics: none.
+///
+/// # Errors
+/// Returns domain, binder-ceiling or evaluation faults unchanged.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a neutral fold retaining both binders and an outer
+///   capture distinguishes the opening order and the ambient depth.
+/// - witness: `readback::tests::native_lists_and_folds_read_back_without_sum_encoding`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|pair|
+    binders.opened(Zone::Intuitionistic).and_then(|once| once.opened(Zone::Intuitionistic)) == Some(pair.1)
+        && domain.computation(pair.0).is_some()) || ret.is_err())]
+fn open_list_branch(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    closure: CompClosureId,
+    binders: OpenBinders,
+) -> Result<(DomainCompId, OpenBinders), ReadbackFault>
+{
+    let held = domain
+        .comp_closure(closure)
+        .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+    let body = held.body();
+    let mut environment = held.environment().clone();
+    let mut deeper = binders;
+    let zone = Zone::Intuitionistic;
+    for _ in 0_u32 .. 2_u32 {
+        let level = deeper.fresh(zone);
+        deeper = deeper
+            .opened(zone)
+            .ok_or(ReadbackFault::BinderCeiling { zone })?;
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Variable { zone, level },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .map_err(ReadbackFault::Domain)?;
+        let bound = domain
+            .value_neutral(neutral, TermFace::Reduced)
+            .map_err(ReadbackFault::Domain)?;
+        environment.extend(zone, bound);
+    }
+    let (whnf, remaining) = crate::eval::eval_body_within(
+        core,
+        domain,
+        machine.definitions,
+        machine.fuel,
+        body,
+        environment,
+    )
+    .map_err(ReadbackFault::Eval)?;
+    machine.fuel = remaining;
+    Ok((whnf, deeper))
+}
+
 /// Open a static lambda under one fresh intuitionistic binder.
 ///
 /// # Specification
@@ -1862,7 +1940,7 @@ fn run(
     captures: [entry_fuel = u32::from(machine.fuel), entry_tasks = machine.tasks.len(),
         entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_value_types = machine.value_types.len(), entry_comp_types = machine.comp_types.len()],
     ensures: |ret| u32::from(machine.fuel) <= entry_fuel && ret != Err(ReadbackFault::OutOfFuel) && (ret.is_err() || match task {
-        | Task::PathProduct | Task::Pair | Task::StaticApply => machine.tasks.len() == entry_tasks
+        | Task::ListCons | Task::PathProduct | Task::Pair | Task::StaticApply => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
@@ -1915,6 +1993,12 @@ fn run(
             && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::ListFold => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1) == Some(machine.values.len())
+            && entry_comps.checked_sub(1) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(2) == Some(machine.value_types.len())
+            && entry_comp_types == machine.comp_types.len()
+            && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(gandr_core_term::Computation::ListFold { .. }))),
         | Task::Quote => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|id| core.value(*id).is_some())
@@ -1933,13 +2017,23 @@ fn run(
             && entry_value_types.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::StackType => machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values && machine.comps.len() == entry_comps
+            && machine.value_types.len() == entry_value_types.saturating_add(1)
+            && entry_comp_types.checked_sub(2) == Some(machine.comp_types.len())
+            && machine.value_types.last().is_some_and(|&id| matches!(core.value_type(id), Some(ValueType::Stack { .. }))),
+        | Task::WithType => machine.tasks.len() == entry_tasks
+            && machine.values.len() == entry_values && machine.comps.len() == entry_comps
+            && machine.value_types.len() == entry_value_types
+            && entry_comp_types.checked_sub(1) == Some(machine.comp_types.len())
+            && machine.comp_types.last().is_some_and(|&id| matches!(core.comp_type(id), Some(CompType::With(..)))),
         | Task::ThunkType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
             && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
-        | Task::LiftType { .. } => machine.tasks.len() == entry_tasks
+        | Task::ListType | Task::LiftType { .. } => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
@@ -1957,10 +2051,10 @@ fn run(
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
-        | Task::Returner => machine.tasks.len() == entry_tasks
+        | Task::Returner { source } => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
-            && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && core.comp_type(source).is_some_and(|node| match *node { CompType::Returner { ref effects, .. } => entry_value_types.checked_sub(1_usize.saturating_add(effects.types().count())) == Some(machine.value_types.len()), _ => false })
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
@@ -2012,6 +2106,25 @@ fn step(
 ) -> Result<(), ReadbackFault>
 {
     match task {
+        | Task::StackType => {
+            let output = machine.pop_comp_type()?;
+            let input = machine.pop_comp_type()?;
+            machine
+                .value_types
+                .push(core.value_type_stack(input, output));
+            Ok(())
+        },
+        | Task::WithType => {
+            let second = machine.pop_comp_type()?;
+            let first = machine.pop_comp_type()?;
+            machine.comp_types.push(core.comp_type_with(first, second));
+            Ok(())
+        },
+        | Task::ListType => {
+            let element = machine.pop_value_type()?;
+            machine.value_types.push(core.value_type_list(element));
+            Ok(())
+        },
         | Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
         | Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
         | Task::Constructor { tag, fields } => {
@@ -2156,6 +2269,23 @@ fn step(
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
             machine.values.push(core.value_pair(first, second));
+            Ok(())
+        },
+        | Task::ListCons => {
+            let tail = machine.pop_value()?;
+            let head = machine.pop_value()?;
+            machine.values.push(core.value_list_cons(head, tail));
+            Ok(())
+        },
+        | Task::ListFold => {
+            let on_cons = machine.pop_comp()?;
+            let on_nil = machine.pop_comp()?;
+            let result = machine.pop_value_type()?;
+            let element = machine.pop_value_type()?;
+            let list = machine.pop_value()?;
+            machine
+                .comps
+                .push(core.computation_list_fold(element, result, list, on_nil, on_cons));
             Ok(())
         },
         | Task::Inject { side } => {
@@ -2315,9 +2445,22 @@ fn step(
             machine.comp_types.push(core.comp_type_element(code, level));
             Ok(())
         },
-        | Task::Returner => {
+        | Task::Returner { source } => {
+            let source = core
+                .comp_type(source)
+                .ok_or(ReadbackFault::MachineInvariant)?;
+            let CompType::Returner { ref effects, .. } = *source
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let effects = effects
+                .try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
+                    machine.pop_value_type()
+                })?;
             let result = machine.pop_value_type()?;
-            machine.comp_types.push(core.comp_type_returner(result));
+            machine
+                .comp_types
+                .push(core.comp_type_returner_with_effects(result, effects));
             Ok(())
         },
         | Task::Arrow => {
@@ -2538,6 +2681,8 @@ fn held_level(
     ensures: |ret| machine.fuel == entry_fuel && if core.value_type(quoted).is_none() {
         ret == Err(ReadbackFault::MachineInvariant) && machine.tasks.len() == entry_tasks && machine.value_types.len() == entry_results
     } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
+        ValueType::Stack { input, output } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StackType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == input && *second == output && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
+        ValueType::List(element) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ListType, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == element && *child_frame == frame && *child_binders == binders),
 ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Product(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
 ValueType::Sum(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
@@ -2575,6 +2720,25 @@ fn step_quoted_value_type(
         binders,
     };
     match *node {
+        | ValueType::Stack { input, output } => {
+            machine.tasks.extend([
+                Task::StackType,
+                Task::QuotedCompType {
+                    quoted: output,
+                    frame,
+                    binders,
+                },
+                Task::QuotedCompType {
+                    quoted: input,
+                    frame,
+                    binders,
+                },
+            ]);
+        },
+        | ValueType::List(element) => {
+            machine.tasks.push(Task::ListType);
+            machine.tasks.push(at(element));
+        },
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
@@ -2673,7 +2837,10 @@ fn step_quoted_value_type(
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_frames = machine.frames.len(), entry_fuel = machine.fuel],
     ensures: |ret| machine.fuel == entry_fuel && (ret.is_err() || machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.comp_type(quoted) {
-        | Some(&CompType::Returner(result)) => matches!(new_tasks, [Task::Returner, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == result && *child_frame == frame && *child_binders == binders),
+        | Some(&CompType::With(left, right)) => matches!(new_tasks, [Task::WithType, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedCompType { quoted: first, frame: first_frame, binders: first_binders }] if *first == left && *second == right && *first_frame == frame && *second_frame == frame && *first_binders == binders && *second_binders == binders),
+        | Some(&CompType::Returner { result, ref effects }) => new_tasks.first() == Some(&Task::Returner { source: quoted })
+            && new_tasks.len() == effects.types().count().saturating_add(2)
+            && new_tasks.iter().skip(1).zip(effects.types().rev().chain(core::iter::once(result))).all(|(task, child)| matches!(task, Task::QuotedValueType { quoted, frame: child_frame, binders: child_binders } if *quoted == child && *child_frame == frame && *child_binders == binders)),
         | Some(&CompType::Arrow { domain: from, codomain }) => matches!(new_tasks, [Task::Arrow, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && *second_frame == frame && *second_binders == binders),
         | Some(&CompType::Element { code, ref target }) => matches!(new_tasks, [Task::CompElement { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
         | Some(&CompType::Pi { domain: from, codomain }) => matches!(new_tasks, [Task::Pi, Task::QuotedCompType { quoted: second, frame: inside, binders: deeper }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && Some(*deeper) == binders.opened(Zone::Intuitionistic) && inside.0 == entry_frames && machine.frames.len() == entry_frames.saturating_add(1_usize)
@@ -2702,8 +2869,30 @@ fn step_quoted_comp_type(
         .ok_or(ReadbackFault::MachineInvariant)?;
     match node {
         | CompType::Unknown => machine.comp_types.push(quoted),
-        | CompType::Returner(result) => {
-            machine.tasks.push(Task::Returner);
+        | CompType::With(first, second) => {
+            machine.tasks.extend([
+                Task::WithType,
+                Task::QuotedCompType {
+                    quoted: second,
+                    frame,
+                    binders,
+                },
+                Task::QuotedCompType {
+                    quoted: first,
+                    frame,
+                    binders,
+                },
+            ]);
+        },
+        | CompType::Returner { result, effects } => {
+            machine.tasks.push(Task::Returner { source: quoted });
+            machine
+                .tasks
+                .extend(effects.types().rev().map(|quoted| Task::QuotedValueType {
+                    quoted,
+                    frame,
+                    binders,
+                }));
             machine.tasks.push(Task::QuotedValueType {
                 quoted: result,
                 frame,
@@ -2878,6 +3067,22 @@ fn step_value(
             for &value in fields.iter().rev() {
                 machine.tasks.push(Task::Value { value, binders });
             }
+            Ok(())
+        },
+        | DomainValue::ListNil { .. } => {
+            machine.values.push(core.value_list_nil());
+            Ok(())
+        },
+        | DomainValue::ListCons { first, second, .. } => {
+            machine.tasks.push(Task::ListCons);
+            machine.tasks.push(Task::Value {
+                value: second,
+                binders,
+            });
+            machine.tasks.push(Task::Value {
+                value: first,
+                binders,
+            });
             Ok(())
         },
         | DomainValue::PathCertificate { certificate, .. } => {
@@ -3269,6 +3474,7 @@ fn step_neutral(
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
+                        | Elimination::ListFold { .. }
                         | Elimination::Case { .. }
                         | Elimination::DataCase(_)
                         | Elimination::RecordProjection(_)
@@ -3521,6 +3727,41 @@ fn step_spine(
             });
             Ok(())
         },
+        | Elimination::ListFold {
+            element,
+            result,
+            on_nil,
+            on_cons,
+        } => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let closure = domain
+                .comp_closure(on_nil)
+                .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+            let frame = machine.hold_frame(closure.environment().clone());
+            let empty = enter(core, domain, machine, on_nil, Entry::Bare)?;
+            let (cell, deeper) = open_list_branch(core, domain, machine, on_cons, binders)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::ListFold);
+            machine.tasks.push(Task::Comp {
+                comp: cell,
+                binders: deeper,
+            });
+            machine.tasks.push(Task::Comp {
+                comp: empty,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: result,
+                frame,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: element,
+                frame,
+                binders,
+            });
+            Ok(())
+        },
         | Elimination::Transport(value) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
@@ -3631,6 +3872,7 @@ mod tests
     use gandr_core_term::ValueType;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
@@ -4188,6 +4430,128 @@ mod tests
             "with the substituted child spliced by the id it denotes and the untouched child \
              by its own — in that order, so the assembly frame did not swap its operands"
         );
+    }
+
+    #[test]
+    fn native_lists_and_folds_read_back_without_sum_encoding()
+    {
+        let mut core = CoreArena::new();
+        let element = core.value_type_unit();
+        let result = core.value_type_list(element);
+        let nil = core.value_list_nil();
+        let first = core.value_constant(ConstantIndex::from(0_usize));
+        let second = core.value_constant(ConstantIndex::from(1_usize));
+        let tail = core.value_list_cons(second, nil);
+        let list = core.value_list_cons(first, tail);
+        let head = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let folded = core.value_variable(Zone::Intuitionistic, innermost());
+        let cell = core.value_list_cons(head, folded);
+        let on_nil = core.computation_return(nil);
+        let on_cons = core.computation_return(cell);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        for mode in [ReadbackMode::ZeroUnfold, ReadbackMode::Unfolding] {
+            let mut domain = DomainArena::new();
+            let empty = core.computation_list_fold(element, result, nil, on_nil, on_cons);
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), empty)
+                .expect("empty fold evaluates");
+            let read = readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                mode,
+                ample(),
+                evaluated,
+            )
+            .expect("empty fold reads back");
+            assert!(
+                matches!(core.computation(read), Some(&Computation::Return(value)) if matches!(core.value(value), Some(Value::ListNil)))
+            );
+            let full = core.computation_list_fold(element, result, list, on_nil, on_cons);
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), full)
+                .expect("cell fold evaluates");
+            let read = readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                mode,
+                ample(),
+                evaluated,
+            )
+            .expect("cell fold reads back");
+            let Some(&Computation::Return(value)) = core.computation(read)
+            else {
+                panic!("fold returns a list");
+            };
+            let Some(&Value::ListCons(first, tail)) = core.value(value)
+            else {
+                panic!("first native cell");
+            };
+            let Some(&Value::ListCons(second, nil)) = core.value(tail)
+            else {
+                panic!("second native cell");
+            };
+            assert_eq!(
+                core.value(first),
+                Some(&Value::Constant(ConstantIndex::from(0_usize)))
+            );
+            assert_eq!(
+                core.value(second),
+                Some(&Value::Constant(ConstantIndex::from(1_usize)))
+            );
+            assert_eq!(core.value(nil), Some(&Value::ListNil));
+
+            let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+            let tail = core.value_list_cons(outer, folded);
+            let cell = core.value_list_cons(head, tail);
+            let captured_cons = core.computation_return(cell);
+            let stuck = core.computation_list_fold(element, result, first, on_nil, captured_cons);
+            let function = core.computation_lambda(stuck);
+            let unit = core.value_unit();
+            let applied = core.computation_application(function, unit);
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), applied)
+                .expect("neutral fold captures outer argument");
+            let read = readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                mode,
+                ample(),
+                evaluated,
+            )
+            .expect("neutral fold reads both local binders");
+            let Some(&Computation::ListFold { on_cons, .. }) = core.computation(read)
+            else {
+                panic!("native fold remains neutral");
+            };
+            let Some(&Computation::Return(cell)) = core.computation(on_cons)
+            else {
+                panic!("cell branch returns");
+            };
+            let Some(&Value::ListCons(head, tail)) = core.value(cell)
+            else {
+                panic!("cell retains head");
+            };
+            let Some(&Value::ListCons(captured, folded)) = core.value(tail)
+            else {
+                panic!("cell retains capture and folded tail");
+            };
+            assert_eq!(
+                core.value(head),
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(1_u32)
+                })
+            );
+            assert_eq!(
+                core.value(folded),
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: innermost()
+                })
+            );
+            assert_eq!(core.value(captured), Some(&Value::Unit));
+        }
     }
 
     #[test]
@@ -5637,6 +6001,132 @@ mod tests
     }
 
     #[test]
+    fn effect_operation_types_read_back_in_their_captured_scope()
+    {
+        use gandr_core_term::effect::EffectName;
+        use gandr_core_term::effect::EffectOp;
+        use gandr_core_term::effect::EffectRow;
+        use gandr_core_term::effect::EffectSig;
+        use gandr_core_term::effect::OperationName;
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let string = core.value_type_base(BaseType::String);
+        let variable = core.value_variable(Zone::Intuitionistic, innermost());
+        let parameter = core.value_type_element(variable, Level::zero());
+        let list = core.value_type_list(parameter);
+        let signature = EffectSig::new(EffectName::from("State"), alloc::vec![
+            EffectOp {
+                name: OperationName::from("put"),
+                payload: list,
+                reply: integer
+            },
+            EffectOp {
+                name: OperationName::from("get"),
+                payload: unit,
+                reply: list
+            },
+        ])
+        .unwrap();
+        let result = core.comp_type_returner_with_effects(string, EffectRow::singleton(signature));
+        let quote = core.value_quote_computation(result);
+        let lambda = core.value_static_lambda(quote);
+        let argument = core.value_quote(unit);
+        let applied = core.value_static_application(lambda, argument);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), applied).unwrap();
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .unwrap();
+        let Some(&Value::QuoteComputation(read)) = core.value(read)
+        else {
+            panic!("expected a computation code")
+        };
+        let Some(&CompType::Returner {
+            result,
+            ref effects,
+        }) = core.comp_type(read)
+        else {
+            panic!("expected a returner")
+        };
+        assert_eq!(
+            core.value_type(result),
+            Some(&ValueType::Base(BaseType::String))
+        );
+        let signature = effects.signatures().next().unwrap();
+        assert_eq!(signature.name().as_ref(), "State");
+        let operations: alloc::vec::Vec<_> = signature.operations().collect();
+        assert_eq!(operations[0].name.as_ref(), "get");
+        assert_eq!(
+            core.value_type(operations[0].payload),
+            Some(&ValueType::Unit)
+        );
+        assert_eq!(operations[1].name.as_ref(), "put");
+        assert_eq!(
+            core.value_type(operations[1].reply),
+            Some(&ValueType::Base(BaseType::Integer))
+        );
+        for list in [operations[0].reply, operations[1].payload] {
+            let Some(&ValueType::List(element)) = core.value_type(list)
+            else {
+                panic!("the operation retains its List former")
+            };
+            assert_eq!(core.value_type(element), Some(&ValueType::Unit));
+        }
+    }
+
+    #[test]
+    fn control_type_codes_read_back_their_captured_scope()
+    {
+        use gandr_core_term::CertificateEquality;
+        use gandr_core_term::equal_certificate_syntax;
+        let mut core = CoreArena::new();
+        let parameter = core.value_variable(Zone::Intuitionistic, innermost());
+        let decoded = core.value_type_element(parameter, Level::zero());
+        let list = core.value_type_list(decoded);
+        let input = core.comp_type_returner(list);
+        let unit = core.value_type_unit();
+        let returned_unit = core.comp_type_returner(unit);
+        let output = core.comp_type_with(returned_unit, input);
+        let stack = core.value_type_stack(input, output);
+        let quote = core.value_quote(stack);
+        let lambda = core.value_static_lambda(quote);
+        let string = core.value_type_base(BaseType::String);
+        let argument = core.value_quote(string);
+        let applied = core.value_static_application(lambda, argument);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), applied).unwrap();
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .unwrap();
+        let closed_list = core.value_type_list(string);
+        let closed_input = core.comp_type_returner(closed_list);
+        let closed_output = core.comp_type_with(returned_unit, closed_input);
+        let closed_stack = core.value_type_stack(closed_input, closed_output);
+        let expected = core.value_quote(closed_stack);
+        assert_eq!(
+            equal_certificate_syntax(&core, read, expected),
+            CertificateEquality::Equal
+        );
+    }
+
+    #[test]
     fn an_opened_closure_reports_the_evaluations_own_fault()
     {
         let mut core = CoreArena::new();
@@ -5850,7 +6340,13 @@ mod tests
         else {
             panic!("the thunk former is retained");
         };
-        assert_eq!(Some(&CompType::Returner(unit)), core.comp_type(body));
+        assert_eq!(
+            Some(&CompType::Returner {
+                result: unit,
+                effects: gandr_core_term::effect::EffectRow::EMPTY
+            }),
+            core.comp_type(body)
+        );
 
         let source = core.value_quote_computation(result);
         let read = rebuild(&mut core, source);
@@ -5858,7 +6354,13 @@ mod tests
         else {
             panic!("the quoted computation type retains its polarity");
         };
-        assert_eq!(Some(&CompType::Returner(unit)), core.comp_type(quoted));
+        assert_eq!(
+            Some(&CompType::Returner {
+                result: unit,
+                effects: gandr_core_term::effect::EffectRow::EMPTY
+            }),
+            core.comp_type(quoted)
+        );
 
         let constant = ConstantIndex::from(0_usize);
         let reference = core.value_constant(constant);

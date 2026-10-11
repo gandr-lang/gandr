@@ -247,6 +247,7 @@ fn machine_stop(
             | Some(&ConsumerNode::DataCase { .. }) => Stop::UnmatchedConstructor,
             | Some(
                 &(ConsumerNode::Case { .. }
+                | ConsumerNode::ListFold { .. }
                 | ConsumerNode::Covariable(_)
                 | ConsumerNode::MuTilde { .. }
                 | ConsumerNode::Destructor { .. }
@@ -256,6 +257,13 @@ fn machine_stop(
         },
         | Stuck::UnboundVariable { .. } => Stop::UnboundVariable,
         | Stuck::UnboundCovariable(_)
+        | Stuck::PerformNoHandler(_)
+        | Stuck::ShiftNoReset(_)
+        | Stuck::ResumedNonStack { .. }
+        | Stuck::Unobservable {
+            head: DestructorTag::Project(_),
+            ..
+        }
         | Stuck::Primitive(_)
         | Stuck::NonScalar(_)
         | Stuck::UndefinedConstant(_)
@@ -364,6 +372,8 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::TransportedNonPath
         | EvalFault::ProjectedNonRecord
         | EvalFault::AbsentRecordField
+        | EvalFault::RuntimeControl(_)
+        | EvalFault::FoldedNonList
         | EvalFault::NativePrimitive(_)
         | EvalFault::OutOfFuel
         | EvalFault::DanglingTerm
