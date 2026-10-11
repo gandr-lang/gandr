@@ -11,6 +11,7 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 - [Output the driver cannot write is a fault](#output-the-driver-cannot-write-is-a-fault)
 - [Tests: the floor and the deferred rows](#tests-the-floor-and-the-deferred-rows)
 - [Optional tracing](#optional-tracing)
+- [The global allocator](#the-global-allocator)
 - [License](#license)
 
 <!-- tocstop -->
@@ -128,7 +129,7 @@ verdict: readmitted
 
 ## Tests: the floor and the deferred rows
 
-Driver routing, rendering and nontrivial test helpers carry executable predicates and bounded adequacy arguments. Exit-code domains are checked on each call; the width witness compares every byte of both streams, and the exit, of a run at several thread counts with the serial run's. No nontrivial item has an executable exemption. The predicates do not observe opaque output streams: the CLI witnesses observe exit status, protocol framing, diagnostic identity and location, stream separation, and value multiplicity instead of incidental English wording or a copy of the producer's formatter.
+Driver routing, rendering and nontrivial test helpers carry executable predicates and bounded adequacy arguments. Exit-code domains are checked on each call; the width witness compares every byte of both streams, and the exit, of a run at several thread counts with the serial run's. The global allocator's items are the one executable exemption ([the global allocator](#the-global-allocator)). The predicates do not observe opaque output streams: the CLI witnesses observe exit status, protocol framing, diagnostic identity and location, stream separation, and value multiplicity instead of incidental English wording or a copy of the producer's formatter.
 
 `scratch_ownership_keeps_simultaneous_cases_independent` runs two same-name sources in separate roots, removes one root and checks that the other still behaves independently. `a_failed_diagnostic_stream_stops_later_output` closes the diagnostic reader and verifies that neither a later summary nor a script value is emitted after that first write fails. Closed standard output covers status, check, run, help, capabilities, batch REPL and TUI smoke; a literal `-` is checked both absent and present in an owned directory.
 
@@ -145,6 +146,23 @@ Build with `cargo build -p gandr-lang --features tracing` to report driver and d
 Argument parsing runs before subscriber installation, so help, version and argument errors retain their ordinary output. A scoped, thread-local subscriber reports dispatch-span completion and successful output flushing, then restores the prior subscriber when the invocation ends. Libraries install no subscriber. Standard-output write and flush errors remain faults rather than successful-completion events. Tracing diagnostics may precede a fault’s `gandr:` line on stderr; stdout and exit codes are unchanged.
 
 The output backend is [`tracing-subscriber`](https://docs.rs/tracing-subscriber/0.3.23/tracing_subscriber/fmt/index.html) 0.3.23 with only `fmt` and its required registry/std support. ANSI formatting, the log bridge, filter parsing, JSON and time integrations stay off. This release includes the [ANSI-input escaping fix](https://rustsec.org/advisories/RUSTSEC-2025-0055); the current events contain fixed messages and no user payloads. A global subscriber was rejected because the invocation need not own process-wide diagnostics; an environment filter adds parsing machinery for no current CLI option. Revisit those choices when the driver gains a consumer requiring them, or the selected version needs a security or maintenance replacement.
+
+## The global allocator
+
+`cargo build -p gandr-lang --features malloc-zone` installs, on macOS, a global allocator over one private malloc zone (`malloc_create_zone`) in place of the default zone; without the feature, and on every other target, the process keeps the system allocator. Both zones are the system's xzone malloc; the default zone alone runs per-thread caches, which `check`'s fork pays for on every block its workers allocate and the calling thread frees. The feature adds no dependency and about 1.2 KB of binary. Its module is the tree's one use of `unsafe`, and its items are the one executable exemption: a predicate evaluated inside the allocator could panic, and a panic must not unwind out of it. `allocator::tests` allocates, clears, grows and shrinks blocks at alignments from 1 byte to 16 KiB through it.
+
+Measured on an Apple M3 Max, macOS 26.7.1, hyperfine medians of three runs of 25 at a 1-minute load of 4.5–5.6, every stream byte-identical:
+
+| `gandr` | system | zone | system, `MallocNanoZone=0` | mimalloc 0.1.52 |
+| ------- | -----: | ---: | -------------------------: | --------------: |
+| `check` corpus, default width | 15.81 ms | 14.23 ms | 12.37 ms | 13.70 ms |
+| `check --jobs 1` | 65.53 ms | 64.63 ms | 64.09 ms | 60.01 ms |
+| `check --jobs 12` | 14.28 ms | 12.45 ms | 12.56 ms | 12.33 ms |
+| `stage double:0..32` | 9.28 ms | 6.66 ms | 6.83 ms | 6.67 ms |
+| `stage pow:0..32` | 6.67 ms | 4.83 ms | 4.82 ms | 5.08 ms |
+| peak RSS, `check` default / `--jobs 1` | 9.50 / 7.33 MiB | 10.42 / 8.23 MiB | 9.52 / 7.28 MiB | 17.08 / 6.98 MiB |
+
+The feature is off by default because it missed the kill line set before it was measured: `check` at the default width under 12 ms with the serial run within 3% and peak RSS within 10%. The default-width wall fell 10% rather than to 12 ms, and the serial run's peak RSS rose 12%. mimalloc, jemalloc and snmalloc were the alternatives: each reached a similar wall at 1.8–2.2× the peak RSS and a C or C++ build, and none moved the Linux wall. Turn the feature on by default when a measurement on a quiet host meets that line; take a crate instead if a Linux measurement shows the system allocator costing a wall a crate removes.
 
 ## License
 

@@ -37,6 +37,10 @@ tracing-subscriber = { workspace = true, optional = true }
 
 [features]
 default = []
+# On macOS, serve every allocation from one private malloc zone rather than
+# the default zone; off, and on every other target, the system allocator.
+# Off by default: it missed its kill line. README § The global allocator.
+malloc-zone = []
 # Hosted stderr diagnostics; the dispatcher receives instrumentation only.
 tracing = ["dep:tracing", "dep:tracing-subscriber", "gandr-surface-dispatcher/tracing", "tracing/std"]
 
