@@ -17,6 +17,14 @@
 //! another type, is the judgement's question — it is answered through the
 //! normaliser's conversion with a certificate — and never a view's.
 //!
+//! # The unknown type is a view of its own
+//!
+//! The unknown type a hole or a mark synthesises, and the decode of a code
+//! that is itself a hole or a mark, are both viewed as
+//! [`ValueTypeView::Unknown`] or [`CompTypeView::Unknown`]: a rule reading a
+//! type through a view meets the unknown once, under one name, whichever
+//! spelling stands in the arena.
+//!
 //! # A refusal only a view can give
 //!
 //! A view refuses for two reasons and no others, so its refusal is its own
@@ -31,6 +39,9 @@ use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::hole::Knowledge;
+use gandr_core_term::hole::comp_type_knowledge;
+use gandr_core_term::hole::value_type_knowledge;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::GroundSort;
@@ -151,6 +162,8 @@ pub enum ValueTypeView<'arena>
         /// The classifier of what it builds.
         codomain: ValueTypeId,
     },
+    /// The unknown type: a hole's or a mark's, or the decode of one.
+    Unknown,
 }
 
 /// A computation type the fragment admits, with its children.
@@ -185,6 +198,9 @@ pub enum CompTypeView<'arena>
         /// The level of the universe the code inhabits.
         target: &'arena Level,
     },
+    /// The unknown computation type: a hole's or a mark's, or the decode of
+    /// one.
+    Unknown,
 }
 
 /// Read a value-type node as the fragment admits it.
@@ -195,6 +211,8 @@ pub enum CompTypeView<'arena>
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the unit type, a thunk type, a universe of a ground sort, a lift, a
 ///   decode, an eager product or a static Pi; the children are the node's own.
+///   The unknown type, and a decode whose code is a hole or a mark, view as
+///   [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -211,10 +229,13 @@ pub enum CompTypeView<'arena>
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the per-former table, separated
 ///   by one node of every value-type former of the core vocabulary, each
-///   asserted to view or to refuse with its exact former, plus a dangling id.
+///   asserted to view or to refuse with its exact former, plus a dangling id;
+///   the unknown type and a decode of a hole against a decode of a variable
+///   separate the two readings of a decode.
 /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::abstract_sort_raises_the_exact_variant`
 /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
+/// - witness: `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`
 #[spec(ensures: |ret| match ret {
     | Ok(ValueTypeView::Data { declaration, arguments }) => matches!(arena.value_type(value_type), Some(ValueType::Data { declaration: actual, arguments: args }) if *actual == declaration && args == arguments),
     | Ok(ValueTypeView::Record(fields)) => matches!(arena.value_type(value_type), Some(ValueType::Record(actual)) if actual == fields),
@@ -227,8 +248,10 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Product(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::Product(left, right)) if *left == first && *right == second),
     | Ok(ValueTypeView::Universe { sort, level }) => matches!(arena.value_type(value_type), Some(ValueType::Universe { sort: Sort::Ground(found), level: found_level }) if *found == sort && found_level == level),
     | Ok(ValueTypeView::Lift { inner, target }) => matches!(arena.value_type(value_type), Some(ValueType::Lift { inner: found, target: found_target }) if *found == inner && found_target == target),
-    | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target),
+    | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target)
+        && value_type_knowledge(arena, value_type) == Knowledge::Known,
     | Ok(ValueTypeView::StaticPi { domain, codomain }) => matches!(arena.value_type(value_type), Some(ValueType::StaticPi { domain: found_domain, codomain: found_codomain }) if *found_domain == domain && *found_codomain == codomain),
+    | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
     | Err(FragmentRefusal::OutOfFragment { at, former }) => at == CoreNode::Type(TypeNode::Value(value_type))
         && matches!((arena.value_type(value_type), former),
@@ -276,11 +299,17 @@ pub fn value_type_view(
             ..
         } => Err(unadmitted(UnadmittedFormer::SortParameter)),
         | ValueType::Lift { inner, ref target } => Ok(ValueTypeView::Lift { inner, target }),
-        | ValueType::Element { code, ref target } => Ok(ValueTypeView::Element { code, target }),
+        | ValueType::Element { code, ref target } => {
+            match value_type_knowledge(arena, value_type) {
+                | Knowledge::Known => Ok(ValueTypeView::Element { code, target }),
+                | Knowledge::Unknown => Ok(ValueTypeView::Unknown),
+            }
+        },
         | ValueType::Abstract(_) => Err(unadmitted(UnadmittedFormer::Abstract)),
         | ValueType::StaticPi { domain, codomain } => {
             Ok(ValueTypeView::StaticPi { domain, codomain })
         },
+        | ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }
 }
 
@@ -290,6 +319,8 @@ pub fn value_type_view(
 /// - requires: nothing — a dangling id is admissible input and refused.
 /// - ensures: the node's view for every computation former: a returner, an
 ///   arrow, a dependent arrow and a decode; the children are the node's own.
+///   The unknown type, and a decode whose code is a hole or a mark, view as
+///   [`CompTypeView::Unknown`].
 /// - provides: the one decision of which computation types the judgement and
 ///   the bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
@@ -300,16 +331,20 @@ pub fn value_type_view(
 /// - [`FragmentRefusal::DanglingNode`] — the id does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the four-former table, separated
-///   by one node of each former viewed with its own children.
+/// - hypothesis: L3 — the decision surface is the five-former table, separated
+///   by one node of each former viewed with its own children, and the unknown
+///   type against a decode of a hole and a decode of a variable.
 /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
 /// - witness: `view::tests::both_views_refuse_ids_missing_from_their_arena`
+/// - witness: `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`
 #[spec(ensures: |ret| match (arena.comp_type(comp_type), ret) {
     | (Some(&CompType::Returner(inner)), Ok(CompTypeView::Returner(held))) => inner == held,
     | (Some(&CompType::Arrow { domain, codomain }), Ok(CompTypeView::Arrow { domain: found_domain, codomain: found_codomain }))
     | (Some(&CompType::Pi { domain, codomain }), Ok(CompTypeView::Pi { domain: found_domain, codomain: found_codomain })) => domain == found_domain && codomain == found_codomain,
-    | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target,
+    | (Some(&CompType::Element { code, ref target }), Ok(CompTypeView::Element { code: found, target: found_target })) => code == found && target == found_target
+        && comp_type_knowledge(arena, comp_type) == Knowledge::Known,
+    | (Some(&(CompType::Element { .. } | CompType::Unknown)), Ok(CompTypeView::Unknown)) => comp_type_knowledge(arena, comp_type) == Knowledge::Unknown,
     | (None, Err(FragmentRefusal::DanglingNode { node })) => node == CoreNode::Type(TypeNode::Computation(comp_type)),
     | _ => false,
 })]
@@ -327,7 +362,11 @@ pub fn comp_type_view(
         | CompType::Returner(result) => Ok(CompTypeView::Returner(result)),
         | CompType::Arrow { domain, codomain } => Ok(CompTypeView::Arrow { domain, codomain }),
         | CompType::Pi { domain, codomain } => Ok(CompTypeView::Pi { domain, codomain }),
-        | CompType::Element { code, ref target } => Ok(CompTypeView::Element { code, target }),
+        | CompType::Element { code, ref target } => match comp_type_knowledge(arena, comp_type) {
+            | Knowledge::Known => Ok(CompTypeView::Element { code, target }),
+            | Knowledge::Unknown => Ok(CompTypeView::Unknown),
+        },
+        | CompType::Unknown => Ok(CompTypeView::Unknown),
     }
 }
 
@@ -335,12 +374,54 @@ pub fn comp_type_view(
 mod tests
 {
     use gandr_core_term::CoreArena;
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::DeBruijnIndex;
 
+    use super::CompTypeView;
     use super::FragmentRefusal;
+    use super::ValueTypeView;
     use super::comp_type_view;
     use super::value_type_view;
     use crate::refusal::CoreNode;
     use crate::refusal::TypeNode;
+
+    #[test]
+    fn the_unknown_type_and_the_decode_of_a_hole_view_alike()
+    {
+        let mut arena = CoreArena::new();
+        let hole = arena.value_hole(HoleId::from(0_u32));
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let unknown = arena.value_type_unknown();
+        let decoded_hole = arena.value_type_element(hole, Level::zero());
+        let decoded_variable = arena.value_type_element(variable, Level::zero());
+        let unknown_computation = arena.comp_type_unknown();
+        let decoded_hole_computation = arena.comp_type_element(hole, Level::zero());
+        let decoded_variable_computation = arena.comp_type_element(variable, Level::zero());
+        assert_eq!(value_type_view(&arena, unknown), Ok(ValueTypeView::Unknown));
+        assert_eq!(
+            value_type_view(&arena, decoded_hole),
+            Ok(ValueTypeView::Unknown),
+            "the decode of a hole is the unknown type"
+        );
+        assert!(
+            matches!(value_type_view(&arena, decoded_variable), Ok(ValueTypeView::Element { code, .. }) if code == variable),
+            "the decode of a variable stays a decode"
+        );
+        assert_eq!(
+            comp_type_view(&arena, unknown_computation),
+            Ok(CompTypeView::Unknown)
+        );
+        assert_eq!(
+            comp_type_view(&arena, decoded_hole_computation),
+            Ok(CompTypeView::Unknown)
+        );
+        assert!(matches!(
+            comp_type_view(&arena, decoded_variable_computation),
+            Ok(CompTypeView::Element { code, .. }) if code == variable
+        ));
+    }
 
     #[test]
     fn both_views_refuse_ids_missing_from_their_arena()

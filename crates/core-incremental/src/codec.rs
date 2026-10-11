@@ -36,6 +36,8 @@ use gandr_core_term::BinderDepth;
 use gandr_core_term::Sort as TypeSort;
 use gandr_core_term::SortParameter;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::MarkIndex;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelOffset;
@@ -1364,6 +1366,15 @@ where
             write_index(writer, head)?;
             write_index(writer, argument)?;
         },
+        | ContentNode::Hole(hole) => {
+            writer.tag(Tag(0x0E));
+            writer.word(Word(u64::from(u32::from(hole))));
+        },
+        | ContentNode::ValueMark { mark, body } => {
+            writer.tag(Tag(0x0F));
+            writer.word(Word(u64::from(u32::from(mark))));
+            write_index(writer, body)?;
+        },
         | ContentNode::Lambda(body) => {
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
@@ -1395,6 +1406,15 @@ where
             write_index(writer, scrutinee)?;
             write_index(writer, on_left)?;
             write_index(writer, on_right)?;
+        },
+        | ContentNode::ComputationHole(hole) => {
+            writer.tag(Tag(0x17));
+            writer.word(Word(u64::from(u32::from(hole))));
+        },
+        | ContentNode::ComputationMark { mark, body } => {
+            writer.tag(Tag(0x18));
+            writer.word(Word(u64::from(u32::from(mark))));
+            write_index(writer, body)?;
         },
         | ContentNode::Base(base) => {
             writer.tag(Tag(0x20));
@@ -1463,6 +1483,7 @@ where
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
         },
+        | ContentNode::UnknownType => writer.tag(Tag(0x2C)),
         | ContentNode::Returner(result) => {
             writer.tag(Tag(0x30));
             write_index(writer, result)?;
@@ -1482,6 +1503,7 @@ where
             write_index(writer, code)?;
             write_level(writer, target)?;
         },
+        | ContentNode::UnknownComputationType => writer.tag(Tag(0x34)),
         | ContentNode::Unresolved(sort) => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
                 sort,
@@ -1761,12 +1783,16 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
                     | ContentNode::QuoteComputation(_) => tag == 0x0A,
                     | ContentNode::StaticLambda(_) => tag == 0x0B,
                     | ContentNode::StaticApplication(..) => tag == 0x0C,
+                    | ContentNode::Hole(_) => tag == 0x0E,
+                    | ContentNode::ValueMark { .. } => tag == 0x0F,
                     | ContentNode::Lambda(_) => tag == 0x10,
                     | ContentNode::Application(..) => tag == 0x11,
                     | ContentNode::Return(_) => tag == 0x12,
                     | ContentNode::Bind(..) => tag == 0x13,
                     | ContentNode::Force(_) => tag == 0x14,
                     | ContentNode::Case { .. } => tag == 0x15,
+                    | ContentNode::ComputationHole(_) => tag == 0x17,
+                    | ContentNode::ComputationMark { .. } => tag == 0x18,
                     | ContentNode::Base(_) => tag == 0x20,
                     | ContentNode::UnitType => tag == 0x21,
                     | ContentNode::Product(..) => tag == 0x22,
@@ -1788,10 +1814,12 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
                         ..
                     } => tag == 0x2A,
                     | ContentNode::StaticPi { .. } => tag == 0x2B,
+                    | ContentNode::UnknownType => tag == 0x2C,
                     | ContentNode::Returner(_) => tag == 0x30,
                     | ContentNode::Arrow { .. } => tag == 0x31,
                     | ContentNode::Pi { .. } => tag == 0x32,
                     | ContentNode::ComputationElement { .. } => tag == 0x33,
+                    | ContentNode::UnknownComputationType => tag == 0x34,
                     | ContentNode::Unresolved(_) => false,
                 })
         },
@@ -1907,6 +1935,12 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let argument = read_index(reader)?;
             ContentNode::StaticApplication(head, argument)
         },
+        | 0x0E => ContentNode::Hole(read_hole(reader)?),
+        | 0x0F => {
+            let mark = read_mark(reader)?;
+            let body = read_index(reader)?;
+            ContentNode::ValueMark { mark, body }
+        },
         | 0x10 => {
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
@@ -1938,6 +1972,12 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 on_left,
                 on_right,
             }
+        },
+        | 0x17 => ContentNode::ComputationHole(read_hole(reader)?),
+        | 0x18 => {
+            let mark = read_mark(reader)?;
+            let body = read_index(reader)?;
+            ContentNode::ComputationMark { mark, body }
         },
         | 0x20 => {
             let base = reader.tag()?;
@@ -2005,6 +2045,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let codomain = read_index(reader)?;
             ContentNode::StaticPi { domain, codomain }
         },
+        | 0x2C => ContentNode::UnknownType,
         | 0x30 => {
             let result = read_index(reader)?;
             ContentNode::Returner(result)
@@ -2024,6 +2065,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let target = read_level(reader)?;
             ContentNode::ComputationElement { code, target }
         },
+        | 0x34 => ContentNode::UnknownComputationType,
         | 0x40 => ContentNode::PathUniverse(read_index(reader)?, read_index(reader)?),
         | 0x41 => ContentNode::PathRefl(read_index(reader)?),
         | 0x42 => {
@@ -2058,6 +2100,60 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
+}
+
+/// Read a hole's name, a word that must fit a `u32`.
+///
+/// # Specification
+/// - ensures: the name the word carries.
+/// - fails: [`CodecError::Corrupt`] for a word past the `u32` ceiling; the
+///   reader's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value hole and a computation hole round-trip through a
+///   table.
+/// - witness: `codec::tests::holes_marks_and_the_unknown_types_round_trip`
+#[spec(ensures: |ret| match ret {
+    | Ok(_) => true,
+    | Err(error) => matches!(error, CodecError::Corrupt | CodecError::NonCanonical),
+})]
+fn read_hole(reader: &mut Reader<'_>) -> Result<HoleId, CodecError>
+{
+    let word = reader.word()?;
+    u32::try_from(word.0)
+        .map(HoleId::from)
+        .map_err(|_overflow| CodecError::Corrupt)
+}
+
+/// Read a mark's index, a word that must fit a `u32`.
+///
+/// # Specification
+/// - ensures: the index the word carries.
+/// - fails: [`CodecError::Corrupt`] for a word past the `u32` ceiling; the
+///   reader's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value mark and a computation mark round-trip through a
+///   table.
+/// - witness: `codec::tests::holes_marks_and_the_unknown_types_round_trip`
+#[spec(ensures: |ret| match ret {
+    | Ok(_) => true,
+    | Err(error) => matches!(error, CodecError::Corrupt | CodecError::NonCanonical),
+})]
+fn read_mark(reader: &mut Reader<'_>) -> Result<MarkIndex, CodecError>
+{
+    let word = reader.word()?;
+    u32::try_from(word.0)
+        .map(MarkIndex::from)
+        .map_err(|_overflow| CodecError::Corrupt)
 }
 
 /// Write a table.
@@ -4276,6 +4372,61 @@ mod tests
             cursor: 0,
         };
         assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
+    }
+
+    #[test]
+    fn holes_marks_and_the_unknown_types_round_trip()
+    {
+        use gandr_core_term::hole::HoleId;
+        use gandr_core_term::hole::MarkIndex;
+        let nodes = [
+            ContentNode::Hole(HoleId::from(0x0102_0304_u32)),
+            ContentNode::ValueMark {
+                mark: MarkIndex::from(7_u32),
+                body: NodeIndex::from(3_usize),
+            },
+            ContentNode::ComputationHole(HoleId::from(u32::MAX)),
+            ContentNode::ComputationMark {
+                mark: MarkIndex::from(0_u32),
+                body: NodeIndex::from(1_usize),
+            },
+            ContentNode::UnknownType,
+            ContentNode::UnknownComputationType,
+        ];
+        let mut tags = BTreeSet::new();
+        for node in nodes {
+            let mut bytes = CheckpointBytes::default();
+            super::write_node(&mut Writer { sink: &mut bytes }, &node).unwrap();
+            assert!(
+                tags.insert(bytes.as_ref().first().copied()),
+                "each former has its own tag: {node:?}"
+            );
+            let mut reader = Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            };
+            assert_eq!(
+                super::read_node(&mut reader),
+                Ok(node),
+                "the node reads back"
+            );
+            assert_eq!(reader.finish(), Ok(()), "and nothing is left over");
+        }
+        let mut bytes = CheckpointBytes::default();
+        super::write_node(
+            &mut Writer { sink: &mut bytes },
+            &ContentNode::Hole(HoleId::from(9_u32)),
+        )
+        .unwrap();
+        let truncated = bytes.as_ref().get(.. 3).unwrap();
+        let mut reader = Reader {
+            bytes: truncated,
+            cursor: 0,
+        };
+        assert!(
+            super::read_node(&mut reader).is_err(),
+            "a hole's name cut short does not decode"
+        );
     }
 
     use super::Answer;

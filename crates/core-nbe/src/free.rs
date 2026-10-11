@@ -761,7 +761,9 @@ Err(_) => false,
                     | Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::Unit
-                    | Value::Literal(_) => [None, None, None],
+                    | Value::Literal(_)
+                    | Value::Hole(_) => [None, None, None],
+                    | Value::Mark { body, .. } => one(value(body), Lowering::NONE),
                     | Value::PathEquiv {
                         path_type,
                         forward,
@@ -833,6 +835,8 @@ Err(_) => false,
                         Some((computation(on_left), Lowering::ONE)),
                         Some((computation(on_right), Lowering::ONE)),
                     ],
+                    | Computation::Hole(_) => [None, None, None],
+                    | Computation::Mark { body, .. } => one(computation(body), Lowering::NONE),
                 }
             },
             | Reached::ValueType(id) => {
@@ -852,7 +856,8 @@ Err(_) => false,
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }
-                    | ValueType::Abstract(_) => [None, None, None],
+                    | ValueType::Abstract(_)
+                    | ValueType::Unknown => [None, None, None],
                     | ValueType::Product(first, second)
                     | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
@@ -885,6 +890,7 @@ Err(_) => false,
                         Lowering::ONE,
                     ),
                     | CompType::Element { code, .. } => one(value(code), Lowering::NONE),
+                    | CompType::Unknown => [None, None, None],
                 }
             },
         };

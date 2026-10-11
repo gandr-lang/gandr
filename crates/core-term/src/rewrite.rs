@@ -34,6 +34,14 @@
 //!
 //! Only the intuitionistic zone is rewritten. No former binds into the linear
 //! zone, so a linear index counts no binder these rewrites cross and stands.
+//!
+//! Three rewrites serve the hole surface rather than binding. A fill replaces
+//! every hole of one name by its filling, which is written in the hole's own
+//! context and so is carried unchanged. A wrap puts the marks an elaboration
+//! recorded around the nodes they name. An environment substitution replaces
+//! every free index at once by the entry an evaluation environment holds for
+//! it, which is how a suspended body is read back in the context it is
+//! displayed in.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -48,6 +56,9 @@ use crate::arena::ComputationId;
 use crate::arena::CoreArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
+use crate::hole::HoleId;
+use crate::hole::MarkIndex;
+use crate::hole::TermId;
 use crate::syntax::CompType;
 use crate::syntax::Computation;
 use crate::syntax::Value;
@@ -183,6 +194,14 @@ enum Rewrite
     /// Lower every index outside the depth, recording a mention of the index
     /// the depth names.
     Lower,
+    /// Replace every hole of the name, in the filling's family, by the filling.
+    Fill(HoleId, Node),
+    /// Wrap every node the engine's sites name in the mark it names.
+    Wrap,
+    /// Replace every index outside the depth that counts into the engine's
+    /// environment by its entry, and lower every index past the environment by
+    /// the environment's length.
+    Environment,
 }
 
 /// Whether a lowering met the binder it lowers out of.
@@ -231,6 +250,11 @@ struct Engine<'arena>
     results: Vec<Node>,
     /// Whether a lowering met its binder.
     mention: Mention,
+    /// The nodes a wrap marks, each with its mark.
+    sites: BTreeMap<Node, MarkIndex>,
+    /// The entries an environment substitution replaces free indices by,
+    /// innermost first.
+    environment: Vec<ValueId>,
 }
 
 impl<'arena> Engine<'arena>
@@ -247,6 +271,8 @@ impl<'arena> Engine<'arena>
             tasks: Vec::new(),
             results: Vec::new(),
             mention: Mention::Absent,
+            sites: BTreeMap::new(),
+            environment: Vec::new(),
         }
     }
 
@@ -288,6 +314,7 @@ impl<'arena> Engine<'arena>
                 | Task::Open(node, depth, step) => self.open(node, depth, step),
                 | Task::Close(node, depth, step) => {
                     let rewritten = self.close(node);
+                    let rewritten = self.wrapped(node, rewritten, step);
                     let _previous = self.memo.insert((node, depth, step), rewritten);
                     self.results.push(rewritten);
                 },
@@ -340,6 +367,23 @@ impl<'arena> Engine<'arena>
             self.results.push(done);
             return;
         }
+        if let Rewrite::Fill(hole, filling) = rewrite
+            && match node {
+                | Node::Value(id) => {
+                    matches!(filling, Node::Value(_))
+                        && self.arena.value(id) == Some(&Value::Hole(hole))
+                },
+                | Node::Computation(id) => {
+                    matches!(filling, Node::Computation(_))
+                        && self.arena.computation(id) == Some(&Computation::Hole(hole))
+                },
+                | Node::ValueType(_) | Node::CompType(_) => false,
+            }
+        {
+            let _previous = self.memo.insert((node, depth, rewrite), filling);
+            self.results.push(filling);
+            return;
+        }
         if let Node::Value(id) = node
             && let Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
@@ -348,10 +392,9 @@ impl<'arena> Engine<'arena>
         {
             match self.occurrence(id, index, depth, rewrite) {
                 | Occurrence::Answered(rewritten) => {
-                    let _previous = self
-                        .memo
-                        .insert((node, depth, rewrite), Node::Value(rewritten));
-                    self.results.push(Node::Value(rewritten));
+                    let rewritten = self.wrapped(node, Node::Value(rewritten), rewrite);
+                    let _previous = self.memo.insert((node, depth, rewrite), rewritten);
+                    self.results.push(rewritten);
                 },
                 | Occurrence::Carried(replacement, under) => {
                     self.tasks.push(Task::Record(node, depth, rewrite));
@@ -368,29 +411,73 @@ impl<'arena> Engine<'arena>
         self.push_children(node, depth, rewrite);
     }
 
+    /// The mark a wrap puts around `node`'s rewritten form, if its sites name
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: `rewritten` is `node`'s rewritten form, in its family.
+    /// - ensures: under a wrap, a fresh mark over `rewritten` when the sites
+    ///   name `node` and it is a term; `rewritten` itself otherwise.
+    /// - provides: the one point a wrap differs from a congruence.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked leaf, a marked variable, a marked compound
+    ///   whose child is marked too, and an unmarked sibling separate wrapping,
+    ///   nesting and the identity on unnamed nodes.
+    /// - witness: `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`
+    #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&rewritten))]
+    fn wrapped(
+        &mut self,
+        node: Node,
+        rewritten: Node,
+        rewrite: Rewrite,
+    ) -> Node
+    {
+        if rewrite != Rewrite::Wrap {
+            return rewritten;
+        }
+        let Some(&mark) = self.sites.get(&node)
+        else {
+            return rewritten;
+        };
+        match rewritten {
+            | Node::Value(id) => Node::Value(self.arena.value_mark(mark, id)),
+            | Node::Computation(id) => Node::Computation(self.arena.computation_mark(mark, id)),
+            | Node::ValueType(_) | Node::CompType(_) => rewritten,
+        }
+    }
+
     /// The rewritten form of one intuitionistic occurrence.
     ///
-    /// **This is the only place the three rewrites differ.** A shift raises
+    /// **This is the only place the binding rewrites differ.** A shift raises
     /// an index at or past the depth and spares one inside it; a substitution
     /// spares an index inside the depth, replaces the one the depth names and
     /// lowers every one past it; a lowering does the same with no
-    /// replacement, recording that the named index occurred.
+    /// replacement, recording that the named index occurred; an environment
+    /// substitution replaces every index past the depth by the entry it counts
+    /// to, and lowers one past the environment by its length. A fill and a
+    /// wrap leave every occurrence as it stands.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach the
     ///   occurrence `id` at `index`.
     /// - ensures: the rule above; a substitution's replacement at a positive
     ///   depth is answered as a carry, to be shifted by the depth.
-    /// - provides: the whole variable rule of the three rewrites.
+    /// - provides: the whole variable rule of the rewrites.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — indices below, at and above depths zero and one
-    ///   separate all three rewrite rules; a zero shift, a saturating shift and
-    ///   an open replacement distinguish identity, clamping and capture
-    ///   avoidance.
+    ///   separate all three binding rewrite rules; a zero shift, a saturating
+    ///   shift and an open replacement distinguish identity, clamping and
+    ///   capture avoidance. An environment of two entries read at depths zero
+    ///   and one separates an inner index, each entry and an index past the
+    ///   environment.
     /// - witness: `rewrite::tests::occurrence_rules_separate_depth_boundaries`
+    /// - witness: `rewrite::tests::an_environment_substitution_replaces_every_free_index`
     #[spec(
         captures: mentioned = self.mention,
         ensures: |ret| match rewrite {
@@ -418,6 +505,9 @@ impl<'arena> Engine<'arena>
                         Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                             if u32::from(*actual).checked_add(1) == Some(u32::from(index)))),
             },
+            | Rewrite::Fill(..) | Rewrite::Wrap => self.mention == mentioned && ret == Occurrence::Answered(id),
+            | Rewrite::Environment => self.mention == mentioned
+                && (u32::from(index) >= depth.0 || ret == Occurrence::Answered(id)),
         },
     )]
     fn occurrence(
@@ -461,6 +551,41 @@ impl<'arena> Engine<'arena>
                     Occurrence::Answered(id)
                 },
                 | core::cmp::Ordering::Greater => Occurrence::Answered(self.lowered(position)),
+            },
+            | Rewrite::Fill(..) | Rewrite::Wrap => Occurrence::Answered(id),
+            | Rewrite::Environment => {
+                if position < depth {
+                    return Occurrence::Answered(id);
+                }
+                // reason: position is at or past depth, so the difference is
+                // the index counted from the environment's innermost entry.
+                let counted = u32::from(arith::saturating_sub(
+                    arith::Int::from(position.0),
+                    arith::Int::from(depth.0),
+                ));
+                let entry = usize::try_from(counted)
+                    .ok()
+                    .and_then(|counted| self.environment.get(counted).copied());
+                match entry {
+                    | Some(replacement) if depth == Binders::NONE => {
+                        Occurrence::Answered(replacement)
+                    },
+                    | Some(replacement) => Occurrence::Carried(replacement, depth),
+                    | None => {
+                        // reason: an index past the environment counts out of
+                        // it; the environment's length is far below the u32
+                        // ceiling, and a saturating step keeps the walk total.
+                        let length = u32::try_from(self.environment.len()).unwrap_or(u32::MAX);
+                        let lowered = u32::from(arith::saturating_sub(
+                            arith::Int::from(position.0),
+                            arith::Int::from(length),
+                        ));
+                        Occurrence::Answered(
+                            self.arena
+                                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(lowered)),
+                        )
+                    },
+                }
             },
         }
     }
@@ -529,27 +654,28 @@ impl<'arena> Engine<'arena>
         | Node::Value(id) => self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0_usize,
+Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 }),
         | Node::Computation(id) => self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) => 1,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
+Computation::Hole(_) => 0_usize,
 }),
         | Node::ValueType(id) => self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 0_usize,
+ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
-            | None => 0_usize,
+            | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
             | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
         },
@@ -592,7 +718,8 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     | &Value::Variable { .. }
                     | &Value::Constant(_)
                     | &Value::Unit
-                    | &Value::Literal(_),
+                    | &Value::Literal(_)
+                    | &Value::Hole(_),
                 )
                 | None => {},
                 | Some(&Value::PathEquiv {
@@ -606,7 +733,10 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     self.tasks.push(open(Node::ValueType(path_type), depth));
                 },
                 | Some(
-                    &Value::PathRefl(body) | &Value::Injection(_, body) | &Value::Lift { body, .. },
+                    &Value::PathRefl(body)
+                    | &Value::Injection(_, body)
+                    | &Value::Lift { body, .. }
+                    | &Value::Mark { body, .. },
                 ) => self.tasks.push(open(Node::Value(body), depth)),
                 | Some(
                     &Value::PathProduct(first, second)
@@ -654,7 +784,10 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                 | Some(&Computation::RecordProjection(record, _)) => {
                     self.tasks.push(open(Node::Value(record), depth));
                 },
-                | None => {},
+                | None | Some(&Computation::Hole(_)) => {},
+                | Some(&Computation::Mark { body, .. }) => {
+                    self.tasks.push(open(Node::Computation(body), depth));
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     self.tasks.push(open(Node::Value(value), depth));
                     self.tasks.push(open(Node::Value(path), depth));
@@ -703,7 +836,8 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }
-                    | ValueType::Abstract(_) => {},
+                    | ValueType::Abstract(_)
+                    | ValueType::Unknown => {},
                     | ValueType::Product(first, second)
                     | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
@@ -730,7 +864,7 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                 | None => {},
             },
             | Node::CompType(id) => match self.arena.comp_type(id) {
-                | None => {},
+                | None | Some(&CompType::Unknown) => {},
                 | Some(&CompType::Returner(result)) => {
                     self.tasks.push(open(Node::ValueType(result), depth));
                 },
@@ -952,10 +1086,10 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
         captures: [ready = self.results.len(), children = self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
-Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0_usize,
+Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => 0_usize,
 Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::PathEquiv { .. } => 3,
-Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) => 1,
+Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::PathRefl(_) | Value::Mark { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value(id).is_some_and(|original| self.arena.value(ret).is_some_and(|rewritten|
@@ -1061,7 +1195,17 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Unit
-            | Value::Literal(_) => id,
+            | Value::Literal(_)
+            | Value::Hole(_) => id,
+            | Value::Mark { mark, body } => {
+                let rewritten = Self::value(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.value_mark(mark, rewritten)
+                }
+            },
             | Value::Pair(first, second) => {
                 let rewritten_second = Self::value(&mut self.results, second);
                 let rewritten_first = Self::value(&mut self.results, first);
@@ -1159,9 +1303,10 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
         captures: [ready = self.results.len(), children = self.arena.computation(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) => 1,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 Computation::Case { .. } => 3,
+Computation::Hole(_) => 0_usize,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.computation(id).is_some_and(|original| self.arena.computation(ret).is_some_and(|rewritten|
@@ -1314,6 +1459,16 @@ Computation::Case { .. } => 3,
                     )
                 }
             },
+            | Computation::Hole(_) => id,
+            | Computation::Mark { mark, body } => {
+                let rewritten = Self::computation(&mut self.results, body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.computation_mark(mark, rewritten)
+                }
+            },
         }
     }
 
@@ -1336,7 +1491,7 @@ Computation::Case { .. } => 3,
         captures: [ready = self.results.len(), children = self.arena.value_type(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 0_usize,
+ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 0_usize,
 ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
 })],
@@ -1403,7 +1558,8 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
             | ValueType::Base(_)
             | ValueType::Unit
             | ValueType::Universe { .. }
-            | ValueType::Abstract(_) => id,
+            | ValueType::Abstract(_)
+            | ValueType::Unknown => id,
             | ValueType::Product(first, second) => {
                 let rewritten_second = Self::value_type(&mut self.results, second);
                 let rewritten_first = Self::value_type(&mut self.results, first);
@@ -1483,7 +1639,7 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     #[spec(
         captures: [ready = self.results.len(), children = match self.arena.comp_type(id) {
-            | None => 0_usize,
+            | None | Some(&CompType::Unknown) => 0_usize,
             | Some(&CompType::Returner(_) | &CompType::Element { .. }) => 1,
             | Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
         }],
@@ -1541,6 +1697,7 @@ ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 1,
                     self.arena.comp_type_element(rewritten, target)
                 }
             },
+            | CompType::Unknown => id,
         }
     }
 }
@@ -1839,9 +1996,155 @@ pub fn shift_comp_type_under(
         | Node::Computation(_) | Node::ValueType(_) | Node::Value(_) => subject,
     }
 }
+
+/// The engine node a term id names.
+///
+/// # Specification
+/// trivial.
+const fn term_node(term: TermId) -> Node
+{
+    match term {
+        | TermId::Value(id) => Node::Value(id),
+        | TermId::Computation(id) => Node::Computation(id),
+    }
+}
+
+/// The term id an engine result names, in `subject`'s family.
+///
+/// # Specification
+/// trivial.
+const fn node_term(
+    node: Node,
+    subject: TermId,
+) -> TermId
+{
+    match (node, subject) {
+        | (Node::Value(id), TermId::Value(_)) => TermId::Value(id),
+        | (Node::Computation(id), TermId::Computation(_)) => TermId::Computation(id),
+        | (Node::Value(_) | Node::Computation(_) | Node::ValueType(_) | Node::CompType(_), _) => {
+            subject
+        },
+    }
+}
+
+/// Fill every hole named `hole` in `subject` by `filling`.
+///
+/// # Specification
+/// - requires: `subject` and `filling` are live in `arena`, and `filling` is
+///   written in the context the holes of the name stand in.
+/// - ensures: `subject` with every hole of the name in `filling`'s family
+///   replaced by `filling` itself, not carried under the binders it stands
+///   beneath; a hole of the other family or of another name stands; `subject`
+///   itself when it holds no such hole, in the same family.
+/// - provides: the syntactic half of filling: a program, or a suspended body,
+///   read with the hole written.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole under a binder, a hole of another name, a
+///   computation hole of the same name and a hole-free subterm separate the
+///   filled position, the name check, the family check and identity reuse.
+/// - witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`
+#[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&subject))]
+#[inline]
+#[must_use]
+pub fn fill_hole(
+    arena: &mut CoreArena,
+    subject: TermId,
+    hole: HoleId,
+    filling: TermId,
+) -> TermId
+{
+    let filled = Engine::new(arena).run(
+        term_node(subject),
+        Binders::NONE,
+        Rewrite::Fill(hole, term_node(filling)),
+    );
+    node_term(filled, subject)
+}
+
+/// Wrap every term `sites` names, within `subject`, in its mark.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena`.
+/// - ensures: `subject` rebuilt with every named term — wherever it is reached,
+///   types' codes included — wrapped in the mark `sites` gives it, its own
+///   children wrapped first; `subject` itself when `sites` names nothing it
+///   reaches.
+/// - provides: the marked elaboration a total judgement answers, built once
+///   from the marks it recorded.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a marked leaf, a marked variable, a marked compound whose
+///   child is marked too, and an unmarked sibling separate wrapping, nesting
+///   and the identity on unnamed nodes.
+/// - witness: `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`
+#[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&subject))]
+#[inline]
+#[must_use]
+pub fn wrap_marks(
+    arena: &mut CoreArena,
+    subject: TermId,
+    sites: &BTreeMap<TermId, MarkIndex>,
+) -> TermId
+{
+    let mut engine = Engine::new(arena);
+    engine.sites = sites
+        .iter()
+        .map(|(&site, &mark)| (term_node(site), mark))
+        .collect();
+    let wrapped = engine.run(term_node(subject), Binders::NONE, Rewrite::Wrap);
+    node_term(wrapped, subject)
+}
+
+/// Replace every free intuitionistic index of `subject` by the environment
+/// entry it counts to.
+///
+/// # Specification
+/// - requires: `subject` is live in `arena` and scoped in a context whose
+///   innermost `environment.len()` binders the entries stand for, innermost
+///   first; each entry is a value of `arena` in the context the result is read
+///   in.
+/// - ensures: `subject` with an index counting to entry `i` replaced by that
+///   entry carried under the binders it stands beneath, and an index counting
+///   past the environment lowered by its length; `subject` itself when the
+///   environment is empty.
+/// - provides: the substitution a suspended body — a hole's or a mark's closure
+///   — is read back through, all at once rather than one binder at a time.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an environment of two entries read at depths zero and one
+///   separates an inner index, each entry, an entry carried under a binder and
+///   an index past the environment.
+/// - witness: `rewrite::tests::an_environment_substitution_replaces_every_free_index`
+#[spec(captures: entry = arena.watermark(), ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&subject)
+    && (!environment.is_empty() || (ret == subject && arena.watermark() == entry)))]
+#[inline]
+#[must_use]
+pub fn substitute_environment(
+    arena: &mut CoreArena,
+    subject: TermId,
+    environment: &[ValueId],
+) -> TermId
+{
+    if environment.is_empty() {
+        return subject;
+    }
+    let mut engine = Engine::new(arena);
+    engine.environment = environment.to_vec();
+    let substituted = engine.run(term_node(subject), Binders::NONE, Rewrite::Environment);
+    node_term(substituted, subject)
+}
+
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -1853,17 +2156,24 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::Binders;
+    use super::fill_hole;
     use super::instantiate_comp_type;
     use super::instantiate_value;
     use super::shift_comp_type;
     use super::shift_value_type;
     use super::strengthen_comp_type;
     use super::strengthening;
+    use super::substitute_environment;
+    use super::wrap_marks;
     use crate::arena::CompTypeId;
     use crate::arena::CoreArena;
     use crate::arena::ValueId;
     use crate::arena::ValueTypeId;
+    use crate::hole::HoleId;
+    use crate::hole::MarkIndex;
+    use crate::hole::TermId;
     use crate::syntax::CompType;
+    use crate::syntax::Computation;
     use crate::syntax::Value;
     use crate::syntax::ValueType;
     use crate::syntax::Zone;
@@ -2086,7 +2396,7 @@ mod tests
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
             | Some(&CompType::Pi { .. }) => Token::Pi,
             | Some(&CompType::Element { .. }) => Token::CompElement,
-            | None => Token::Other,
+            | Some(&CompType::Unknown) | None => Token::Other,
         },
         | Visit::ValueType(id) => match arena.value_type(id) {
             | Some(&ValueType::Base(base)) => Token::Base(base),
@@ -2096,7 +2406,7 @@ mod tests
             Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unit |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi {
-.. }) | None => Token::Other,
+.. } | &ValueType::Unknown) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
@@ -2109,7 +2419,7 @@ mod tests
             Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Unit | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_)
 | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) |
-&Value::PathEquiv { .. }) | None => Token::Other,
+&Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
     }))]
     fn spelling_of(
@@ -2140,7 +2450,7 @@ mod tests
                         tokens.push(Token::CompElement);
                         pending.push(Visit::Value(code));
                     },
-                    | None => tokens.push(Token::Other),
+                    | Some(&CompType::Unknown) | None => tokens.push(Token::Other),
                 },
                 | Visit::ValueType(id) => match arena.value_type(id) {
                     | Some(&ValueType::Base(base)) => tokens.push(Token::Base(base)),
@@ -3394,5 +3704,194 @@ mod tests
             strengthen_comp_type(&mut arena, linear_type)
         );
         assert_eq!(mark, arena.watermark());
+    }
+
+    #[test]
+    fn a_fill_replaces_exactly_the_named_holes()
+    {
+        let mut arena = CoreArena::new();
+        let named = arena.value_hole(HoleId::from(1_u32));
+        let other = arena.value_hole(HoleId::from(2_u32));
+        let computation_named = arena.computation_hole(HoleId::from(1_u32));
+        let pair = arena.value_pair(named, other);
+        let returned = arena.computation_return(pair);
+        let subject = arena.computation_bind(computation_named, returned);
+        let filling = variable(&mut arena, DeBruijnIndex::from(0_u32));
+        let TermId::Computation(filled) = fill_hole(
+            &mut arena,
+            TermId::Computation(subject),
+            HoleId::from(1_u32),
+            TermId::Value(filling),
+        )
+        else {
+            panic!("a fill keeps the subject's family");
+        };
+        let Some(&Computation::Bind(bound, body)) = arena.computation(filled)
+        else {
+            panic!("a filled bind");
+        };
+        assert_eq!(
+            bound, computation_named,
+            "a hole of the other family stands"
+        );
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("a filled return");
+        };
+        assert_eq!(
+            arena.value(value),
+            Some(&Value::Pair(filling, other)),
+            "the named hole takes the filling uncarried, and another name stands"
+        );
+        let unit = arena.value_unit();
+        let mark = arena.watermark();
+        assert_eq!(
+            fill_hole(
+                &mut arena,
+                TermId::Value(unit),
+                HoleId::from(1_u32),
+                TermId::Value(filling)
+            ),
+            TermId::Value(unit)
+        );
+        assert_eq!(mark, arena.watermark(), "a hole-free subject mints nothing");
+    }
+
+    #[test]
+    fn a_wrap_marks_exactly_the_named_nodes()
+    {
+        let mut arena = CoreArena::new();
+        let occurrence = variable(&mut arena, DeBruijnIndex::from(0_u32));
+        let unit = arena.value_unit();
+        let pair = arena.value_pair(occurrence, unit);
+        let returned = arena.computation_return(pair);
+        let sites = BTreeMap::from([
+            (TermId::Value(occurrence), MarkIndex::from(0_u32)),
+            (TermId::Value(pair), MarkIndex::from(1_u32)),
+            (TermId::Computation(returned), MarkIndex::from(2_u32)),
+        ]);
+        let TermId::Computation(wrapped) =
+            wrap_marks(&mut arena, TermId::Computation(returned), &sites)
+        else {
+            panic!("a wrap keeps the subject's family");
+        };
+        let Some(&Computation::Mark { mark, body }) = arena.computation(wrapped)
+        else {
+            panic!("the named computation is marked");
+        };
+        assert_eq!(mark, MarkIndex::from(2_u32));
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("the mark wraps the rebuilt return");
+        };
+        let Some(&Value::Mark { mark, body }) = arena.value(value)
+        else {
+            panic!("the named pair is marked");
+        };
+        assert_eq!(mark, MarkIndex::from(1_u32));
+        let Some(&Value::Pair(first, second)) = arena.value(body)
+        else {
+            panic!("the mark wraps the rebuilt pair");
+        };
+        assert_eq!(second, unit, "an unnamed sibling stands");
+        assert_eq!(
+            arena.value(first),
+            Some(&Value::Mark {
+                mark: MarkIndex::from(0_u32),
+                body: occurrence,
+            }),
+            "a named variable is marked in place"
+        );
+        let mark = arena.watermark();
+        assert_eq!(
+            wrap_marks(&mut arena, TermId::Value(unit), &sites),
+            TermId::Value(unit)
+        );
+        assert_eq!(mark, arena.watermark(), "an unnamed subject mints nothing");
+    }
+
+    #[test]
+    fn an_environment_substitution_replaces_every_free_index()
+    {
+        let mut arena = CoreArena::new();
+        let entries = [
+            arena.value_constant(ConstantIndex::from(5_usize)),
+            variable(&mut arena, DeBruijnIndex::from(0_u32)),
+        ];
+        let [zero, one, two, three] =
+            [0_u32, 1, 2, 3].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+        let top = arena.value_pair(zero, one);
+        let TermId::Value(at_top) =
+            substitute_environment(&mut arena, TermId::Value(top), &entries)
+        else {
+            panic!("a substitution keeps the subject's family");
+        };
+        assert_eq!(
+            arena.value(at_top),
+            Some(&Value::Pair(entries[0], entries[1]))
+        );
+        let inner = arena.value_pair(zero, one);
+        let outer = arena.value_pair(two, three);
+        let both = arena.value_pair(inner, outer);
+        let returned = arena.computation_return(both);
+        let lambda = arena.computation_lambda(returned);
+        let TermId::Computation(substituted) =
+            substitute_environment(&mut arena, TermId::Computation(lambda), &entries)
+        else {
+            panic!("a substitution keeps the subject's family");
+        };
+        let Some(&Computation::Lambda(body)) = arena.computation(substituted)
+        else {
+            panic!("a substituted lambda");
+        };
+        let Some(&Computation::Return(value)) = arena.computation(body)
+        else {
+            panic!("a substituted return");
+        };
+        let Some(&Value::Pair(inner, outer)) = arena.value(value)
+        else {
+            panic!("a substituted pair");
+        };
+        let index_of = |arena: &CoreArena, id| match arena.value(id) {
+            | Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            }) => Some(u32::from(index)),
+            | Some(_) | None => None,
+        };
+        let Some(&Value::Pair(bound, first_entry)) = arena.value(inner)
+        else {
+            panic!("the inner pair");
+        };
+        assert_eq!(
+            index_of(&arena, bound),
+            Some(0),
+            "the lambda's own index stands"
+        );
+        assert_eq!(first_entry, entries[0], "a closed entry is placed as it is");
+        let Some(&Value::Pair(second_entry, past)) = arena.value(outer)
+        else {
+            panic!("the outer pair");
+        };
+        assert_eq!(
+            index_of(&arena, second_entry),
+            Some(1),
+            "an open entry is carried under the binder"
+        );
+        assert_eq!(
+            index_of(&arena, past),
+            Some(1),
+            "an index past the environment is lowered by its length"
+        );
+        let mark = arena.watermark();
+        assert_eq!(
+            substitute_environment(&mut arena, TermId::Computation(lambda), &[]),
+            TermId::Computation(lambda)
+        );
+        assert_eq!(
+            mark,
+            arena.watermark(),
+            "an empty environment mints nothing"
+        );
     }
 }

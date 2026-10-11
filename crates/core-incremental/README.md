@@ -39,13 +39,13 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 ## Provided features
 
 - **The item seam.** `Program`, `Item`, `ItemKey`, `Reference`, `ItemSource`: items keyed by the front end, admission positions checked once (`ProgramError`), and every position read as the `Reference` — key and occurrence — it resolves to.
-- **Content.** `ItemContent`, `TypeContent`, `ContentNode`, `Opacity`: an item's or a type's nodes as one table numbered by discovery, free of arena ids; `TypeContent::of_value_type` reads a type, and a table holding an id its arena does not resolve is opaque.
+- **Content.** `ItemContent`, `TypeContent`, `ContentNode`, `Opacity`: an item's or a type's nodes as one table numbered by discovery, free of arena ids; `TypeContent::of_value_type` reads a type, and a table holding an id its arena does not resolve is opaque. Term holes, marks and the unknown types are content like any former, and round-trip through the checkpoint codec under tags of their own. Witness: `codec::tests::holes_marks_and_the_unknown_types_round_trip`.
 - **The conservative footprint.** `footprint_of` and `Footprint`: every reference an item mentions, those in type positions apart, its opacity and whether its body is a hole.
-- **Validated resume.** `check_program`, `resume`, `resume_from`, `Resume`, `Checkpoints`, `ItemCheckpoint`, `Answered`, `Answer`, `Adoption`, `ResumeCensus`, and `project`, which turns a verdict of the checker's own batch entry into the `Typing` this crate records, so a caller can compare the two.
+- **Validated resume.** `check_program`, `resume`, `resume_from`, `Resume`, `Checkpoints`, `ItemCheckpoint`, `Answered`, `Answer`, `Adoption`, `ResumeCensus`, and `project`, which turns a verdict of the checker's own batch entry into the `Typing` this crate records, so a caller can compare the two. Filling a term hole is a body edit: the filled item is judged, and an item is rejudged only when an answer it consulted changed — a reader of a declared type is adopted, a reader of the unknown type an unsigned hole synthesised is not. Witness: `tests::incremental::filling_a_hole_rejudges_only_what_its_support_mentions`.
 - **Item identity.** `ItemHandle` and `Resume::compare`: a handle per item that survives edits elsewhere and compares in constant time.
 - **Checkpoints and stores.** `encode_checkpoints`, `decode_checkpoints`, `CheckpointBytes`, `UnsupportedPersistence`, `address_of`, `persist`, `restore`, `CheckpointStore`, `MemoryCheckpointStore`, `FileCheckpointStore`, `CheckpointObserver`, `BackendArtifact`, `CheckpointAddress`, `CheckpointStoreError`.
 - **The session.** `IncrementalSession` and `SessionError`: one call per revision that resumes, persists and keeps the latest resume for streaming.
-- **The synthesis stream.** `SynthesisStream`, `SynthesisEvent`, `Liveness`, `MatchOrigin`, `BranchStatus`.
+- **The synthesis stream.** `SynthesisStream`, `SynthesisEvent`, `Liveness`, `MatchOrigin`; branch verdicts are `gandr_core_term::pattern::BranchStatus`, the vocabulary live matching and coverage answer in.
 
 ## Expected features
 

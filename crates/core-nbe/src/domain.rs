@@ -40,6 +40,15 @@
 //! **Module forms enter as neutrals and cost nothing.** A module reference is a
 //! rigid head like any other opaque constant; no arm anywhere replaces it by a
 //! representation, and no eliminator is written for it here.
+//!
+//! **A hole is a neutral head, and so is a mark.** Evaluation reaching a typed
+//! hole stops there with the hole at the head, suspended with the environment
+//! it was met in: that environment is what a later fill reads its filling in,
+//! and the eliminations that could not fire stack on the spine as they would
+//! on any stuck head. A mark stands the same way over the subterm it wraps,
+//! which is never evaluated: its body is the part of the program no judgement
+//! accepted. Both read as indeterminate rather than rigid, because what they
+//! stand for is not yet decided.
 
 use alloc::vec::Vec;
 
@@ -47,6 +56,8 @@ use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::MarkIndex;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::GlobalIndex;
@@ -191,6 +202,37 @@ pub enum NeutralHead
     /// A module form. It enters as a neutral and costs nothing: no eliminator
     /// is written for it, and no arm replaces it by a representation.
     Module(ConstantIndex),
+    /// A typed hole, suspended in the environment it was met in.
+    Hole
+    {
+        /// The hole's name, which a fill finds it by.
+        hole: HoleId,
+        /// The hole itself, closed over the environment its filling is read
+        /// in.
+        closure: Suspended,
+    },
+    /// A marked term, suspended unevaluated in the environment it was met in.
+    Mark
+    {
+        /// The mark-table entry the mark names.
+        mark: MarkIndex,
+        /// The mark itself, closed over the environment its body reads.
+        closure: Suspended,
+    },
+}
+
+/// A hole or a mark held with its environment: what a hole-headed or a
+/// mark-headed neutral stands on.
+///
+/// The closure's body is the hole or mark node itself, not its contents, so a
+/// readback reads the node whole and a fill finds the name it carries.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Suspended
+{
+    /// In value position.
+    Value(ValueClosureId),
+    /// In computation position.
+    Computation(CompClosureId),
 }
 
 /// One elimination stacked on a neutral head.
