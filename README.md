@@ -31,6 +31,8 @@ cargo build-dist    # the shipped binary: fat LTO, size-optimized std
 
 `cargo build --release` is the everyday optimized build; `cargo build-dist` (`.cargo/config.toml`) is the whole-program one. `cargo nextest run --workspace` runs the tests; `mise run check:tests-enforcing` runs them again with every specification checked at runtime.
 
+The Clippy wall runs in both plain and enforcing modes locally and in CI. `mise run check:clippy-enforcing` covers cfg-gated runtime sentinels under the enforcing test profile in `target/enforcing`; CI restores the enforcing test artifacts before linting.
+
 CI builds every target under `profile.test`, which inherits size-optimized `release` without debuginfo and explicitly keeps debug assertions and overflow checks. `NEXTEST_PROFILE=ci mise run check:tests` uses that build; `NEXTEST_PROFILE=ci-enforcing mise run check:tests-enforcing` keeps its checked artifacts in `target/enforcing` and its report separate. The corpus uses the same Cargo profile. `release` and the aggressive, uncached `dist` profile remain separate.
 
 Nextest starts the measured heavy tail first in both its default and CI profiles. JUnit reports retain individual test durations for both plain and enforcing runs. Generated tests share immutable grammar and rewrite-rule fixtures within each test process. Session fixtures borrow the shared `common::GRAMMAR` directly; `common::grammar()` returns an owned clone for session constructors and lowering adapters. Membership checks borrow each immutable table view once, retaining the complete mold census and first-invalid-id checks. Test domains, case counts, assertions and timeout budgets remain unchanged.
