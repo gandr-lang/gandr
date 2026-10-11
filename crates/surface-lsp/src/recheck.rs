@@ -1,11 +1,15 @@
 //! The document recheck: every open document holds a session, each
-//! synchronisation submits the document's text to it, and every token request
-//! highlights the text from scratch through the grammar's role table.
+//! synchronisation judges the document's text in it and then admits it, and
+//! every token request highlights the text from scratch through the grammar's
+//! role table.
 //!
 //! The grammar and its role table are built once per process and shared. A
 //! document's session keeps its forms between synchronisations, so a change
 //! molds only the forms it touched; its report is the dispatcher's
 //! composition of the whole text, which is what `gandr check` prints for it.
+//! The diagnostics are read off the judgement, before the kernel is offered
+//! the revision; [`admit`] runs the admission afterwards and names a kernel
+//! disagreement, should it find one, as the diagnostic that replaces them.
 
 use core::fmt;
 use core::time::Duration;
@@ -22,6 +26,7 @@ use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::Report;
 use gandr_surface_diagnostics::entries;
+use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
@@ -35,6 +40,7 @@ use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::FormCensus;
 use gandr_surface_session::Session;
+use gandr_surface_session::SessionFault;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -132,14 +138,16 @@ pub fn open(uri: &DocumentUri) -> DocumentSession
 }
 
 /// What one synchronisation cost: the forms its parse molded, the items the
-/// incremental checker judged, and the wall of the recheck.
+/// incremental checker judged, the wall of the recheck and, once it ran, the
+/// wall of the admission after it.
 ///
 /// # Specification
-/// - requires: constructed by [`recheck`].
-/// - ensures: names the census and the wall of one recheck.
+/// - requires: constructed by [`recheck`], its admission's wall added by
+///   [`admit`].
+/// - ensures: names the census and the walls of one synchronisation.
 /// - panics: none.
-/// - executable: none — this data type has no call boundary; the recheck
-///   carries the executable clauses.
+/// - executable: none — this data type has no call boundary; the recheck and
+///   the admission carry the executable clauses.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an editor-shaped transcript over two thousand forms reads
@@ -154,8 +162,10 @@ pub struct Timing
     /// What the incremental checker judged, when the revision was not
     /// refused whole.
     judged: Maybe<ResumeCensus, judged::Absent>,
-    /// The recheck's wall.
+    /// The recheck's wall: from the text to its diagnostics.
     wall: Duration,
+    /// The admission's wall: from the diagnostics to the kernel artifact.
+    admitted: Maybe<Duration, admitted::Absent>,
 }
 
 quenchant_shape::reason_enum! {
@@ -173,6 +183,21 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a timing carries no admission wall.
+    pub mod admitted {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The admission has not run yet.
+            Pending,
+            /// There was nothing to admit: the revision was refused whole or
+            /// never judged.
+            Unadmitted,
+        }
+    }
+}
+
 impl fmt::Display for Timing
 {
     /// Writes the forms molded, the items judged and the wall, one line.
@@ -180,7 +205,8 @@ impl fmt::Display for Timing
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `<molded>/<forms> forms molded, <judged>/<items> items
-    ///   judged, <wall> ms`, the judgement replaced by why none was made.
+    ///   judged, <wall> ms`, the judgement replaced by why none was made, then
+    ///   `, admitted in <wall> ms` when the admission ran.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither its written bytes nor
     ///   its sink's failure state.
@@ -211,7 +237,17 @@ impl fmt::Display for Timing
             | Maybe::Absent(judged::Absent::RefusedWhole) => f.write_str("refused whole")?,
             | Maybe::Absent(judged::Absent::Unchecked) => f.write_str("unchecked")?,
         }
-        write!(f, ", {:.1} ms", self.wall.as_secs_f64() * 1_000.0)
+        write!(f, ", {:.1} ms", self.wall.as_secs_f64() * 1_000.0_f64)?;
+        match self.admitted {
+            | Maybe::Present(wall) => {
+                write!(
+                    f,
+                    ", admitted in {:.1} ms",
+                    wall.as_secs_f64() * 1_000.0_f64
+                )
+            },
+            | Maybe::Absent(admitted::Absent::Pending | admitted::Absent::Unadmitted) => Ok(()),
+        }
     }
 }
 
@@ -225,22 +261,22 @@ pub struct Rechecked
     pub timing: Timing,
 }
 
-/// Submit `text`, the document at `uri`, to its `session`, and read its
-/// diagnostics off the submission.
+/// Judge `text`, the document at `uri`, in its `session`, and read its
+/// diagnostics off the judgement.
 ///
 /// # Specification
 /// - requires: `session` was opened for `uri`; any text is admissible input.
-/// - ensures: the text is submitted once, and each entry `gandr check --goals`
-///   prints for the submission's step becomes one diagnostic, in the order
+/// - ensures: the text is judged once, and each entry `gandr check --goals`
+///   prints for the judgement's step becomes one diagnostic, in the order
 ///   printed: a report at the range its span projects to, with the refusal's
 ///   vocabulary name as its code, its title as its message, each context locus
 ///   as a related location carrying its label, and the severity of a goal as
 ///   information and of every other report as an error; a report the renderer
 ///   leaves unlocated, and a ledger line, at the document's origin. A fault
 ///   that keeps the document from composing, and a grammar that did not build,
-///   is one error at the origin naming it. The timing carries the submission's
+///   is one error at the origin naming it. The timing carries the judgement's
 ///   form census, the incremental checker's census, and the wall of the whole
-///   recheck.
+///   recheck; its admission is pending when the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -276,6 +312,7 @@ pub fn recheck(
             forms: FormCensus::default(),
             judged: Maybe::Absent(judged::Absent::Unchecked),
             wall: started.elapsed(),
+            admitted: Maybe::Absent(admitted::Absent::Unadmitted),
         },
     };
     let session = match *session {
@@ -286,14 +323,20 @@ pub fn recheck(
             )));
         },
     };
-    let submission = match session.submit(text) {
+    let submission = match session.judge(text) {
         | Ok(submission) => submission,
         | Err(fault) => return unchecked(Diagnostic::at_origin(fault.to_string())),
     };
     let forms = submission.forms();
-    let judged = match submission.resumed() {
-        | Maybe::Present(resumed) => Maybe::Present(resumed.census()),
-        | Maybe::Absent(_) => Maybe::Absent(judged::Absent::RefusedWhole),
+    let (judged, admission) = match submission.resumed() {
+        | Maybe::Present(resumed) => (
+            Maybe::Present(resumed.census()),
+            Maybe::Absent(admitted::Absent::Pending),
+        ),
+        | Maybe::Absent(_) => (
+            Maybe::Absent(judged::Absent::RefusedWhole),
+            Maybe::Absent(admitted::Absent::Unadmitted),
+        ),
     };
     let path = uri.path();
     let index = LineIndex::new(text.as_ref().into());
@@ -310,6 +353,91 @@ pub fn recheck(
             forms,
             judged,
             wall: started.elapsed(),
+            admitted: admission,
+        },
+    }
+}
+
+/// What admitting a rechecked document produced: the diagnostic replacing the
+/// published ones when the kernel disagreed, and the synchronisation's timing
+/// with the admission's wall.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Admitted
+{
+    /// The diagnostic to publish in place of the recheck's, when the
+    /// admission found a disagreement.
+    pub fault: Maybe<Diagnostic, agreed::Absent>,
+    /// The synchronisation's timing.
+    pub timing: Timing,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an admission publishes nothing.
+    pub mod agreed {
+        /// The reason nothing is published.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The kernel re-derived every acceptance, or there was nothing to
+            /// admit: the diagnostics already published stand.
+            Agreed,
+        }
+    }
+}
+
+/// Run the admission the document's latest recheck left in its `session`.
+///
+/// # Specification
+/// - requires: `timing` is the timing of the recheck that judged the session's
+///   latest revision.
+/// - ensures: when the recheck left an admission pending, it runs, and the
+///   timing carries its wall; a kernel disagreement is one error at the origin
+///   naming the fault `submit` would have reported, to publish in place of the
+///   recheck's diagnostics. Otherwise nothing runs and the timing is returned
+///   as it was.
+/// - provides: the second half of every synchronisation, run after its
+///   diagnostics are published.
+/// - fails: never; a disagreement is a diagnostic.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a synchronisation's timing line carries the admission's
+///   wall after the recheck's, and a refused document's carries none.
+/// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+/// - witness: `recheck::tests::an_admission_follows_the_published_diagnostics`
+#[spec(ensures: |ret| ret.timing.forms == timing.forms && ret.timing.judged == timing.judged
+    && ret.timing.wall == timing.wall
+    && match timing.admitted {
+        Maybe::Absent(admitted::Absent::Pending) => matches!(ret.timing.admitted, Maybe::Present(_)),
+        Maybe::Present(_) | Maybe::Absent(admitted::Absent::Unadmitted) =>
+            ret.timing.admitted == timing.admitted && matches!(ret.fault, Maybe::Absent(_)),
+    })]
+#[must_use]
+pub fn admit(
+    session: &mut DocumentSession,
+    timing: Timing,
+) -> Admitted
+{
+    let unchanged = Admitted {
+        fault: Maybe::Absent(agreed::Absent::Agreed),
+        timing,
+    };
+    let (&mut Ok(ref mut session), Maybe::Absent(admitted::Absent::Pending)) =
+        (session, timing.admitted)
+    else {
+        return unchanged;
+    };
+    let started = Instant::now();
+    let fault = match session.admit() {
+        | Ok(_) => Maybe::Absent(agreed::Absent::Agreed),
+        | Err(disagreement) => Maybe::Present(Diagnostic::at_origin(
+            SessionFault::Compose(ComposeFault::Readmission(disagreement)).to_string(),
+        )),
+    };
+    Admitted {
+        fault,
+        timing: Timing {
+            admitted: Maybe::Present(started.elapsed()),
+            ..timing
         },
     }
 }
@@ -433,7 +561,10 @@ fn diagnostic(
 mod tests
 {
     use gandr_surface_syntax::SourceText;
+    use quenchant_shape::shape::Maybe;
 
+    use super::admit;
+    use super::admitted;
     use super::highlight;
     use super::open;
     use super::recheck;
@@ -580,5 +711,54 @@ mod tests
             Vec::new(),
             "a pending source refused as a whole stands as its root expects"
         );
+    }
+
+    #[test]
+    fn an_admission_follows_the_published_diagnostics()
+    {
+        let uri = DocumentUri::from("file:///strict/admitted.gandr");
+        let mut session = open(&uri);
+        let rechecked = recheck(
+            &uri,
+            &mut session,
+            SourceText::from("def a : Integer ;\ndef a = 1 ;\n"),
+        );
+        assert_eq!(rechecked.diagnostics, Vec::new());
+        assert_eq!(
+            rechecked.timing.admitted,
+            Maybe::Absent(admitted::Absent::Pending),
+            "the diagnostics exist before the kernel is offered the revision"
+        );
+        let admission = admit(&mut session, rechecked.timing);
+        assert!(
+            matches!(admission.fault, Maybe::Absent(_)),
+            "the kernel agrees"
+        );
+        assert!(matches!(admission.timing.admitted, Maybe::Present(_)));
+        assert_eq!(
+            (
+                admission.timing.forms,
+                admission.timing.judged,
+                admission.timing.wall
+            ),
+            (
+                rechecked.timing.forms,
+                rechecked.timing.judged,
+                rechecked.timing.wall
+            ),
+            "the admission adds its wall and keeps the recheck's"
+        );
+        assert_eq!(
+            admit(&mut session, admission.timing).timing,
+            admission.timing,
+            "an admitted synchronisation is not admitted again"
+        );
+        let refused = recheck(&uri, &mut session, SourceText::from("ret 3\n"));
+        assert_eq!(
+            refused.timing.admitted,
+            Maybe::Absent(admitted::Absent::Unadmitted),
+            "a revision refused whole leaves nothing to admit"
+        );
+        assert_eq!(admit(&mut session, refused.timing).timing, refused.timing);
     }
 }

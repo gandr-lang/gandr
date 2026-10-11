@@ -9,6 +9,12 @@
 //! ends it the same way. A notification is never answered: one whose
 //! parameters the server cannot read is dropped, and `$/` notifications and
 //! every other unknown one are ignored, as the protocol admits.
+//!
+//! A synchronisation publishes its diagnostics off the document's judgement,
+//! then [`Server::admit`] runs the kernel admission the judgement left and
+//! [`serve`] logs the timing line carrying both walls: an editor reads the
+//! reports before the kernel has re-derived them, and a disagreement the
+//! admission finds is published in their place.
 
 use alloc::collections::BTreeMap;
 use core::fmt;
@@ -35,6 +41,7 @@ use crate::protocol::RangeParams;
 use crate::protocol::SemanticTokens;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
+use crate::recheck::admit;
 use crate::recheck::highlight;
 use crate::recheck::open;
 use crate::recheck::recheck;
@@ -227,13 +234,13 @@ impl Server
     /// - ensures: a request is answered exactly once, under its own identifier,
     ///   as the lifecycle and the method decide; a notification is never
     ///   answered, and a document synchronisation publishes the document's
-    ///   diagnostics off its session's submission of the whole text and logs
-    ///   one timing line — opening and changing it publish its diagnostics at
-    ///   its new version, closing it publishes none and forgets it. A body that
-    ///   is not a message is answered with the error the protocol owes it.
-    ///   `exit` ends the session.
-    /// - provides: the whole of the server's behaviour; [`serve`] only moves
-    ///   bytes.
+    ///   diagnostics off its session's judgement of the whole text and logs one
+    ///   timing line, its admission left for [`Server::admit`] — opening and
+    ///   changing it publish its diagnostics at its new version, closing it
+    ///   publishes none and forgets it. A body that is not a message is
+    ///   answered with the error the protocol owes it. `exit` ends the session.
+    /// - provides: the whole of the server's behaviour but the admission
+    ///   [`Server::admit`] runs after it; [`serve`] only moves bytes.
     /// - fails: never; every refusal is a message to the client.
     /// - panics: none.
     ///
@@ -298,6 +305,62 @@ impl Server
             | Phase::ShuttingDown => Served::Clean,
             | Phase::Waiting | Phase::Running => Served::Abrupt,
         }
+    }
+
+    /// Run the kernel admission each synchronisation logged in `log` left, its
+    /// diagnostics already published, and return what to publish in their
+    /// place.
+    ///
+    /// # Specification
+    /// - requires: `log` is the log of the outcome [`Server::handle`] returned
+    ///   last, its messages already written.
+    /// - ensures: each line naming a held document at its held version runs the
+    ///   admission that document's session holds, as [`admit`] states, and
+    ///   carries its wall; a kernel disagreement adds one diagnostic
+    ///   notification at the line's URI and version whose one diagnostic names
+    ///   it. Every other line is left as it was.
+    /// - provides: the second half of every synchronisation; [`serve`] writes
+    ///   what it returns, then logs the lines.
+    /// - fails: never; a disagreement is a diagnostic.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a change's logged line gains the admission's wall and
+    ///   publishes nothing more when the kernel agrees; a line naming a closed
+    ///   document is left as it was.
+    /// - witness: `server::tests::an_admission_follows_its_synchronisation`
+    /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
+    #[spec(ensures: |ret| ret.len() <= log.len() && ret.iter().all(|message| matches!(*message,
+        Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
+            if params.diagnostics.len() == 1 && log.iter().any(|logged|
+                logged.uri == params.uri && Some(logged.version) == params.version))))]
+    #[inline]
+    #[must_use]
+    pub fn admit(
+        &mut self,
+        log: &mut [Logged],
+    ) -> Vec<Outgoing>
+    {
+        let mut corrections = Vec::new();
+        for logged in &mut *log {
+            let Some(document) = self
+                .documents
+                .get_mut(&logged.uri)
+                .filter(|document| document.version == logged.version)
+            else {
+                continue;
+            };
+            let admitted = admit(&mut document.session, logged.timing);
+            logged.timing = admitted.timing;
+            if let Maybe::Present(fault) = admitted.fault {
+                corrections.push(publish(PublishParams {
+                    uri: logged.uri.clone(),
+                    version: Some(logged.version),
+                    diagnostics: vec![fault],
+                }));
+            }
+        }
+        corrections
     }
 
     /// The response to the request `id` calling `method` with `params`.
@@ -601,8 +664,9 @@ fn apply(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one diagnostic notification naming the supplied URI and held
-///   version, with the diagnostics the document's session reports for its whole
-///   text, and one log line naming the same URI and version.
+///   version, with the diagnostics the document's session judges for its whole
+///   text, and one log line naming the same URI and version, its admission
+///   pending when the judgement left one.
 /// - provides: the publication shared by open and change notifications.
 /// - fails: never.
 /// - panics: none.
@@ -650,11 +714,13 @@ fn synchronised(
 /// - requires: nothing of the streams; `input` carries the client's frames,
 ///   `output` takes the server's, and `log` takes the operator's lines.
 /// - ensures: each frame read is handled by one [`Server`], and every message
-///   it produces is written as one frame, in order, and every line it logs is
-///   written to `log` with a line terminator, before the next frame is read;
-///   the session ends at `exit` or at a stream closed at a frame boundary, as
-///   [`Server::closed`] states. A line `log` refuses is dropped: the log is the
-///   operator's, and the protocol never depends on it.
+///   it produces is written as one frame, in order; then the admissions its
+///   synchronisations left run, as [`Server::admit`] states, each correction
+///   written as one frame, and every line logged is written to `log` with a
+///   line terminator, before the next frame is read; the session ends at `exit`
+///   or at a stream closed at a frame boundary, as [`Server::closed`] states. A
+///   line `log` refuses is dropped: the log is the operator's, and the protocol
+///   never depends on it.
 /// - provides: the language server over any pair of streams and a log: the
 ///   driver's standard input, output and error, or memory.
 /// - fails: the first [`TransportFault`] of either protocol stream, and
@@ -693,8 +759,12 @@ where
         else {
             return Ok(server.closed());
         };
-        let outcome = server.handle(&body);
+        let mut outcome = server.handle(&body);
         for message in &outcome.messages {
+            let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
+            write_frame(output, &Body::from(encoded))?;
+        }
+        for message in &server.admit(&mut outcome.log) {
             let encoded = serde_json::to_vec(message).map_err(TransportFault::Encode)?;
             write_frame(output, &Body::from(encoded))?;
         }
@@ -1198,6 +1268,53 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":9,"result":null}]"#)),
             "a closed document has no tokens"
         );
+    }
+
+    #[test]
+    fn an_admission_follows_its_synchronisation()
+    {
+        let mut server = server_over_the_known_document();
+        let body = Body::from(
+            br#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{
+                "textDocument":{"uri":"file:///tmp/example.gandr","version":2},
+                "contentChanges":[{"text":"def g : Integer ;\ndef g = 1 ;\n"}]}}"#
+                .to_vec(),
+        );
+        let mut outcome = server.handle(&body);
+        let [ref published] = *outcome.log.as_slice()
+        else {
+            panic!("one timing line per synchronisation");
+        };
+        assert!(
+            !published.to_string().contains("admitted"),
+            "the diagnostics are published before the admission: {published}"
+        );
+        assert_eq!(
+            server.admit(&mut outcome.log),
+            Vec::new(),
+            "the kernel agrees, so nothing replaces the published diagnostics"
+        );
+        let [ref admitted] = *outcome.log.as_slice()
+        else {
+            panic!("the admission keeps the line");
+        };
+        assert!(
+            admitted.to_string().contains(", admitted in "),
+            "the logged line carries the admission's wall: {admitted}"
+        );
+        let closed = Body::from(
+            br#"{"jsonrpc":"2.0","method":"textDocument/didClose",
+                "params":{"textDocument":{"uri":"file:///tmp/example.gandr"}}}"#
+                .to_vec(),
+        );
+        let _cleared = server.handle(&closed);
+        let mut stale = server.handle(&body).log;
+        assert_eq!(
+            stale,
+            Vec::new(),
+            "a change to a closed document logs nothing"
+        );
+        assert_eq!(server.admit(&mut stale), Vec::new());
     }
 
     #[test]

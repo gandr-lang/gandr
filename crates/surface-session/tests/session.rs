@@ -27,6 +27,8 @@ use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::DottedName;
 use gandr_surface_lowering::namespace::NamePath;
+use gandr_surface_session::admission;
+use gandr_surface_session::admitted;
 use gandr_surface_session::evaluation;
 use gandr_surface_session::import;
 use gandr_surface_session::resumed;
@@ -500,6 +502,66 @@ fn failed_submission_retains_latest_synthesis()
         after.collect::<Vec<SynthesisEvent>>(),
         before,
         "every prior event and adoption is kept"
+    );
+}
+
+#[test]
+fn a_judged_revision_reports_before_its_admission()
+{
+    let text = gandr_surface_syntax::SourceText::from("def a : Integer ; def a = 1 ; def b = a ;");
+    let mut submitted = session(SourceRoot::Strict);
+    let whole = submitted.submit(text).expect("submits");
+    let mut judging = session(SourceRoot::Strict);
+    let judged = judging.judge(text).expect("judges");
+    assert_eq!(
+        judged.kernel(),
+        Maybe::Absent(admitted::Absent::Pending),
+        "a judged revision has committed no kernel checkpoint"
+    );
+    let Composed::Settled {
+        kernel: Maybe::Absent(_),
+        ..
+    } = *judged.composed()
+    else {
+        panic!("a judged revision settles before the kernel exports anything");
+    };
+    assert_eq!(
+        (rows(judged.composed()), judged.standing()),
+        (rows(whole.composed()), whole.standing()),
+        "the judgement reports what the submission reports"
+    );
+    let Ok(Maybe::Present(admission)) = judging.admit()
+    else {
+        panic!("the judgement left its admission");
+    };
+    let Composed::Settled {
+        kernel: Maybe::Present(ref kernel),
+        ..
+    } = *whole.composed()
+    else {
+        panic!("the submission carries its kernel artifact");
+    };
+    assert_eq!(
+        (admission.kernel(), Maybe::Present(admission.checkpoint())),
+        (kernel, whole.kernel()),
+        "the admission exports and commits what the submission did"
+    );
+    assert!(
+        matches!(judging.admit(), Ok(Maybe::Absent(admission::Absent::Idle))),
+        "an admission runs once"
+    );
+    let _superseded = judging.judge(text).expect("judges again");
+    let refused = judging
+        .judge(gandr_surface_syntax::SourceText::from("ret 3"))
+        .expect("judges");
+    assert_eq!(
+        refused.kernel(),
+        Maybe::Absent(admitted::Absent::RefusedWhole)
+    );
+    assert!(
+        matches!(judging.admit(), Ok(Maybe::Absent(admission::Absent::Idle))),
+        "a later judgement drops the admission an earlier one left, and a refused revision \
+         leaves none"
     );
 }
 

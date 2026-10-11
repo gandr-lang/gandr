@@ -415,7 +415,10 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
         backend(),
     );
     let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
-    let Composed::Settled { ref kernel, .. } = *written.composed()
+    let Composed::Settled {
+        kernel: Maybe::Present(ref kernel),
+        ..
+    } = *written.composed()
     else {
         panic!("the revision settles");
     };
@@ -498,7 +501,10 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
         backend(),
     );
     let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
-    let Composed::Settled { ref kernel, .. } = *written.composed()
+    let Composed::Settled {
+        kernel: Maybe::Present(ref kernel),
+        ..
+    } = *written.composed()
     else {
         panic!("the revision settles");
     };
@@ -635,7 +641,10 @@ fn a_kernel_store_failure_preserves_resume_and_edit_state()
     assert!(
         matches!(first.resumed(), Maybe::Present(resumed) if resumed.persistence() == Persistence::Stored)
     );
-    let Composed::Settled { ref kernel, .. } = *first.composed()
+    let Composed::Settled {
+        kernel: Maybe::Present(ref kernel),
+        ..
+    } = *first.composed()
     else {
         panic!("the accepted revision settles");
     };

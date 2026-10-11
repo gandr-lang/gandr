@@ -8,13 +8,15 @@
 //! The module is the session tests' generated module, and the edits their
 //! script, applied in order: a change, an insertion, a deletion, a move, a
 //! merge, a split, and a top-level return inserted and deleted again. Each
-//! timing row is one edit at one root and one width: the incremental column is
-//! the median wall of submitting the edited revision to a session holding the
-//! revision before it, the whole column that of a fresh session's first
-//! submission of the edited revision, and the check column that of the
-//! dispatcher's composition of it, the path `gandr check` takes. The molded
-//! column is the incremental submission's forms molded of the revision's
-//! forms.
+//! timing row is one edit at one root and one width, each column a median
+//! wall over the edited revision: the judged column is judging it in a session
+//! holding the revision before it — the interactive path, from the text to
+//! everything a face renders — and the admitted column is admitting it after
+//! that judgement, the kernel's readmission, export and commit; the whole
+//! column is a fresh session's first submission of it, and the check column
+//! the dispatcher's composition of it, the path `gandr check` takes. The
+//! molded column is the judgement's forms molded of the revision's forms, and
+//! the share column the judged wall as a share of the whole.
 //!
 //! The memory rows are heap bytes still allocated when each measured scope
 //! closes, counted on the calling thread at one thread's width, so every
@@ -44,6 +46,7 @@ use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
@@ -315,8 +318,9 @@ fn whole(
 /// - requires: nothing.
 /// - ensures: one Markdown row for the first submission and one per scripted
 ///   edit, each naming the root, the width, the edit, the forms molded of the
-///   revision's forms, and the incremental, whole and check medians; the
-///   incremental session ends holding the script's last revision.
+///   revision's forms, the judged, admitted, whole and check medians and the
+///   judged median's share of the whole; the incremental session ends holding
+///   the script's last revision, admitted.
 /// - fails: a submission's or a composition's fault, and a refused write.
 /// - panics: none.
 /// - executable: none — the rows go to a writer the signature cannot read back.
@@ -354,7 +358,7 @@ fn rows(
         .forms();
     writeln!(
         out,
-        "| {root} | {threads} | first | {}/{} | — | {:.2} | — |",
+        "| {root} | {threads} | first | {}/{} | — | — | {:.2} | — | — |",
         usize::from(census.molded()),
         usize::from(census.forms()),
         first.as_secs_f64() * 1_000.0_f64,
@@ -363,7 +367,7 @@ fn rows(
         generated.edit(&edit);
         let edited = generated.text();
         let mut census = None;
-        let incremental = timed(
+        let judged = timed(
             repeats,
             &mut session,
             |session| {
@@ -374,10 +378,29 @@ fn rows(
             },
             |session| {
                 let submitted = session
-                    .submit(SourceText::from(edited.as_str()))
+                    .judge(SourceText::from(edited.as_str()))
                     .map_err(|fault| fault.to_string())?;
                 census = Some(submitted.forms());
                 Ok(())
+            },
+        )?;
+        let admitted = timed(
+            repeats,
+            &mut session,
+            |session| {
+                session
+                    .submit(SourceText::from(previous.as_str()))
+                    .map_err(|fault| fault.to_string())?;
+                session
+                    .judge(SourceText::from(edited.as_str()))
+                    .map(drop)
+                    .map_err(|fault| fault.to_string().into())
+            },
+            |session| {
+                session
+                    .admit()
+                    .map(drop)
+                    .map_err(|fault| ComposeFault::Readmission(fault).to_string().into())
             },
         )?;
         let whole = whole(
@@ -405,12 +428,14 @@ fn rows(
         let census = census.ok_or(Failure::Unmeasured)?;
         writeln!(
             out,
-            "| {root} | {threads} | {edit} | {}/{} | {:.2} | {:.2} | {:.2} |",
+            "| {root} | {threads} | {edit} | {}/{} | {:.2} | {:.2} | {:.2} | {:.2} | {:.1} % |",
             usize::from(census.molded()),
             usize::from(census.forms()),
-            incremental.as_secs_f64() * 1_000.0_f64,
+            judged.as_secs_f64() * 1_000.0_f64,
+            admitted.as_secs_f64() * 1_000.0_f64,
             whole.as_secs_f64() * 1_000.0_f64,
             check.as_secs_f64() * 1_000.0_f64,
+            judged.as_secs_f64() / whole.as_secs_f64() * 100.0_f64,
         )?;
         previous = edited;
     }
@@ -576,9 +601,9 @@ fn main() -> Result<(), Failure>
     let mut out = io::stdout().lock();
     writeln!(
         out,
-        "| root | threads | edit | molded | incremental ms | whole ms | check ms |"
+        "| root | threads | edit | molded | judged ms | admitted ms | whole ms | check ms | judged/whole |"
     )?;
-    writeln!(out, "|---|---:|---|---:|---:|---:|---:|")?;
+    writeln!(out, "|---|---:|---|---:|---:|---:|---:|---:|---:|")?;
     for root in [SourceRoot::Strict, SourceRoot::Fixture] {
         for width in [
             Width::Threads(Threads::from(NonZeroUsize::MIN)),

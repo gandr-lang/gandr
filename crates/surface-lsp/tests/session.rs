@@ -997,6 +997,12 @@ mod session
             (1_usize ..= 8_usize).contains(&changed_census.molded),
             "the edit molds the form it changed and the forms reading it: {changed}"
         );
+        assert!(
+            [opened, changed]
+                .iter()
+                .all(|line| line.contains(" ms, admitted in ")),
+            "each synchronisation logs its recheck's wall, then its admission's: {log:?}"
+        );
     }
 
     #[test]

@@ -873,7 +873,7 @@ def broken = missing ;"#,
             .expect("the verdicts are the module's"),
             exercised: Exercised::default(),
             unstatable: Vec::new(),
-            kernel,
+            kernel: quenchant_shape::shape::Maybe::Present(kernel),
             origins: module.into_origins(),
             program,
         };

@@ -19,7 +19,7 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Session;
-use gandr_surface_session::resumed;
+use gandr_surface_session::admitted;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::GRAMMAR;
@@ -75,7 +75,10 @@ fn every_source_submits_as_the_walk_composes_it()
         };
         match (submission.composed(), submission.kernel()) {
             | (
-                &Composed::Settled { ref kernel, .. },
+                &Composed::Settled {
+                    kernel: Maybe::Present(ref kernel),
+                    ..
+                },
                 Maybe::Present(&KernelCheckpoint::Stored(ref manifest)),
             ) => assert_eq!(
                 Ok(decode(kernel.as_image()).expect("the kernel's own export decodes")),
@@ -83,7 +86,7 @@ fn every_source_submits_as_the_walk_composes_it()
                 "{}: the kernel checkpoint reads back as the export",
                 path.display()
             ),
-            | (&Composed::Refused(_), Maybe::Absent(resumed::Absent::RefusedWhole)) => {},
+            | (&Composed::Refused(_), Maybe::Absent(admitted::Absent::RefusedWhole)) => {},
             | (_, checkpoint) => panic!(
                 "{}: the kernel checkpoint does not match the composition: {checkpoint:?}",
                 path.display()
