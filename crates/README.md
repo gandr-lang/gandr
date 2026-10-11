@@ -68,10 +68,11 @@ crates/
 ├── surface-lsp/                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
 ├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
-└── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
+├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
+└── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
 
-`workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
+The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
 ## Universe identity boundaries
 

@@ -10,21 +10,23 @@ failure-output = "immediate"
 slow-timeout = { period = "30s", terminate-after = 4 }
 
 # Start the hosted heavy tail first; the ci profile inherits these overrides.
-# Priorities change scheduling only, never cases, domains or timeouts.
+# Priorities change scheduling only, never cases, domains or timeouts. The
+# tables are the reviewed output of `mise run ci:timing`, which proposes each
+# test's level from the enforcing lane's recent merge-queue durations.
 [[profile.default.overrides]]
-filter = "test(=session::corpus_tokens_cover_the_highlighted_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=acceptance::corpus_files_cold_parse_within_p99_latency_budget) or test(=parse::tests::arbitrary_source_parses_by_form_as_whole)"
+filter = "test(=corpus::every_width_composes_the_corpus_alike) or test(=parse::tests::arbitrary_source_parses_by_form_as_whole) or test(=session::corpus_tokens_cover_the_highlighted_bytes)"
 priority = 100
 
 [[profile.default.overrides]]
-filter = "test(=corpus::every_source_submits_as_the_walk_composes_it) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds) or test(=session::every_corpus_report_is_published_where_the_walk_renders_it) or test(=cli::every_width_prints_the_serial_run) or test(=parse::tests::form_split_parses_as_the_whole_source)"
+filter = "test(=cli::every_width_prints_the_serial_run) or test(=corpus::every_source_submits_as_the_walk_composes_it) or test(=forms::every_corpus_edit_script_submits_as_the_walk_composes_it) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds) or test(=parse::tests::form_split_parses_as_the_whole_source) or test(=session::every_corpus_report_is_published_where_the_walk_renders_it)"
 priority = 90
 
 [[profile.default.overrides]]
-filter = "test(corpus) or test(=highlight::spans_partition_the_tile_bytes) or test(=acceptance::minimization_prefers_clean_readings)"
+filter = "test(=acceptance::corpus_molds_to_zero_obligations) or test(=acceptance::corpus_parses_totally) or test(=acceptance::minimization_prefers_clean_readings) or test(=corpus::a_run_lowers_each_source_once) or test(=corpus::every_corpus_source_is_registered) or test(=corpus::focusing_is_total_on_the_model_corpus) or test(=corpus::focusing_is_total_on_the_pathological_corpus) or test(=corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus) or test(=corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus) or test(=corpus::the_fixture_root_settles_every_fixture) or test(=corpus::the_two_roots_exercise_every_row) or test(=forms::a_large_module_edit_script_submits_as_the_walk_composes_it) or test(=forms::every_generated_edit_submits_as_the_walk_composes_it) or test(=highlight::corpus_roles_match_the_golden) or test(=highlight::spans_partition_the_tile_bytes) or test(=incremental::incremental_equals_from_scratch) or test(=kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest) or test(=parse::tests::a_parked_unit_joins_as_the_unit_it_parked) or test(=parse::tests::an_equal_identity_molds_an_equal_unit) or test(=parse::tests::corpus_parses_totally) or test(=tests::a_small_module_measures_every_edit_class)"
 priority = 80
 
 [[profile.default.overrides]]
-filter = "test(=defects::items_visited_for_a_head_edit_grow_linearly) or test(=differential::fused_equals_two_step) or test(=deep_derivation::a_deep_derivation_is_ordered_normalized_and_dropped_on_a_small_stack) or test(=walk::walk_lengths_respect_the_chain_cap) or test(=sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over) or test(=teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack) or test(=forms::a_large_module_edit_script_submits_as_the_walk_composes_it) or test(=forms::every_generated_edit_submits_as_the_walk_composes_it) or test(=parse::tests::hostile_edits_reuse_only_equal_units) or test(=parse::tests::a_parked_unit_joins_as_the_unit_it_parked) or test(=parse::tests::an_equal_identity_molds_an_equal_unit)"
+filter = "test(=parse::tests::hostile_edits_reuse_only_equal_units)"
 priority = 70
 
 [profile.ci]

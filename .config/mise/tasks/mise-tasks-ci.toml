@@ -166,6 +166,18 @@ for entry in "$publish/"*; do
 done
 '''
 
+# Test priorities come from measured queue runs, never from memory: the tool
+# stores each run's JUnit reports under target/test-timing, prints every test
+# that has or would have a priority, and generates the overrides a reviewer
+# commits to .config/nextest.toml (crates/workflow-test-timing/README.md).
+["ci:timing"]
+description = "Propose nextest priorities from recent merge-queue test timings"
+usage = '''
+flag "--runs <runs>" help="how many of the latest successful queue runs to read" default="5"
+flag "--offline" help="report on the stored runs without invoking gh"
+'''
+run = "cargo run --locked --quiet --package gandr-workflow-test-timing -- --runs {{usage.runs}}{% if usage.offline %} --offline{% endif %}"
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 ["pr:land"]
