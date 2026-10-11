@@ -55,6 +55,15 @@ use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_repl::Ended;
 
+mod allocator;
+
+/// The process's global allocator: the private malloc zone of
+/// [`allocator::zone::Zone`] on macOS under `malloc-zone`, the system
+/// allocator otherwise.
+#[cfg(all(feature = "malloc-zone", target_os = "macos"))]
+#[global_allocator]
+static ALLOCATOR: allocator::zone::Zone = allocator::zone::Zone;
+
 /// The exit code of a run with an unsettled declaration.
 const UNSETTLED: u8 = 1;
 
