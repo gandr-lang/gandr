@@ -28,6 +28,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_syntax::SourceFragment;
 
+use crate::mold::TokenIndex;
+
 /// The lexical class of one maximal lexeme.
 ///
 /// The class is the labeler's whole output vocabulary; the molder maps each
@@ -803,73 +805,189 @@ const PRIME_UTF8: [u8; 3] = [0xe2, 0x80, 0xb2];
     && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
 pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 {
-    let source = AsRef::<str>::as_ref(&src);
-    let source_bytes = SourceBytes::from(source.as_bytes());
+    let source_bytes = SourceBytes::from(AsRef::<str>::as_ref(&src).as_bytes());
     let mut tokens = Vec::new();
+    let mut mode = LabelMode::default();
     let mut pos = ByteOffset::ZERO;
-    let len = source_bytes.len();
-    // Track whether the cursor sits between a `"` and its closing `"`, so string
-    // content lexes as fragments/escapes (the tree-sitter string sub-grammar).
-    let mut in_string = false;
-    // Track `#!{` / `$!{` shell-block nesting so the interior lexes in the shell
-    // word class (context-aware lexing, tree-sitter `_shell_block_start`).
-    let mut shell_depth = 0_u32;
-    // Track whether the cursor sits between a shell `'` and its closing `'`, so
-    // the single-quoted interior lexes as one opaque `single_quoted_content` run
-    // (tree-sitter `single_quoted_string`), never split on interior spaces.
-    let mut shell_single = false;
-    // A one-shot flag: the token immediately after a shell `$` (that a name
-    // follows) is the `variable_name` of a `variable_expansion`, not a shell
-    // word (tree-sitter `variable_expansion` = `$` `variable_name`).
-    let mut shell_var = false;
-    // Track whether the cursor sits inside a shell braced parameter expansion
-    // `${name}`: the interior lexes as a `variable_name`
-    // parameter and the matching `}` closes the brace WITHOUT touching
-    // `shell_depth` (it is not the shell block's closer). This is a shell-native
-    // brace, DISTINCT from the string-interpolation `${ E }` (`interp_stack`):
-    // a shell parameter name is not a host expression, so the interior stays a
-    // `variable_name`, not host-expression tokens. A `bool` (not a depth stack)
-    // suffices for `${name}`, whose interior has no nested braces (the
-    // `${name:-word}` / `${#name}` operator forms are not scanned yet).
-    let mut shell_brace = false;
-    // Track whether the cursor sits inside a shell double-quoted string
-    // `"…"`: the interior lexes as `double_string_fragment`
-    // runs, `\.` escapes, and `$name` / `${name}` expansions (tree-sitter
-    // `double_quoted_string`), so a quoted argument with interior spaces is ONE
-    // string rather than juxtaposed shell words. The `$` / `${` dispatch rides
-    // the existing shell-depth conditions below (this mode is entered only at
-    // `shell_depth > 0`), and a `'` inside is an ordinary fragment byte, not a
-    // single-quote opener. Distinct from the host string mode (`in_string`),
-    // which never lexes shell expansions.
-    let mut shell_double = false;
-    // String-interpolation frames: each `"… ${` opens an interpolation whose
-    // interior lexes as ordinary host-expression tokens (the string-segment
-    // mode). The stack entry is that interpolation's `{`-brace depth (the
-    // opening `${` counts as one); a `}` that returns the depth to zero closes
-    // the interpolation and resumes the containing string. A stack (not a
-    // counter) so a nested string inside an interpolation — `"${ f("${x}") }"`
-    // — is handled to arbitrary depth. Only `{`-suffixed openers at this mode
-    // level (`{`, `#{`) push depth; `#!{` / `$!{` switch to shell mode, which
-    // owns its own `}` accounting.
-    let mut interp_stack: Vec<u32> = Vec::new();
-    while pos < len {
+    while pos < source_bytes.len() {
+        let (token, next) = mode.step(source_bytes, pos);
+        tokens.push(token);
+        pos = next;
+    }
+    tokens
+}
+
+/// How far past the end of a token any scanner's decision about it reads,
+/// short of a line break, rounded well up.
+///
+/// The furthest bounded reads are a bridge's prime check, a number's
+/// primitive suffix and a character literal's closing quote, each under eight
+/// bytes past the token. The one unbounded read, a shell start's dialect run,
+/// stops at the first byte no dialect word holds, a line break among them.
+const RELABEL_MARGIN: usize = 64;
+
+/// Where the labeler stands between two tokens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Standing
+{
+    /// No string, shell block or interpolation open: where a source begins.
+    Ground,
+    /// Within a string, a shell block, a shell quote or expansion, or an
+    /// interpolation.
+    Within,
+}
+
+/// Whether one of the labeler's lexical modes is open.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Toggle
+{
+    /// Not open: the position every mode begins in.
+    #[default]
+    Closed,
+    /// Open until the token that closes it.
+    Open,
+}
+
+impl Toggle
+{
+    /// The other position.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn flipped(self) -> Self
+    {
+        match self {
+            | Self::Closed => Self::Open,
+            | Self::Open => Self::Closed,
+        }
+    }
+}
+
+/// The lexical modes the labeler tracks between tokens, each opened and
+/// closed by a token it labeled.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the default is ground, the mode every source begins in.
+/// - panics: none.
+/// - executable: none — this state carrier has no call boundary; its step
+///   carries the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact token classes and spans for every lexical mode
+///   distinguish a mode opened or closed by the wrong token.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+/// - witness: `label::tests::string_interpolation_nests_braces_and_strings`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct LabelMode
+{
+    /// Whether the cursor sits between a `"` and its closing `"`, so string
+    /// content lexes as fragments and escapes (the tree-sitter string
+    /// sub-grammar).
+    in_string: Toggle,
+    /// The `#!{` / `$!{` shell-block nesting, so the interior lexes in the
+    /// shell word class (context-aware lexing, tree-sitter
+    /// `_shell_block_start`).
+    shell_depth: u32,
+    /// Whether the cursor sits between a shell `'` and its closing `'`, so
+    /// the single-quoted interior lexes as one opaque `single_quoted_content`
+    /// run (tree-sitter `single_quoted_string`), never split on interior
+    /// spaces.
+    shell_single: Toggle,
+    /// A one-shot flag: the token immediately after a shell `$` that a name
+    /// follows is the `variable_name` of a `variable_expansion`, not a shell
+    /// word (tree-sitter `variable_expansion` = `$` `variable_name`).
+    shell_var: Toggle,
+    /// Whether the cursor sits inside a shell braced parameter expansion
+    /// `${name}`: the interior lexes as a `variable_name` parameter and the
+    /// matching `}` closes the brace without touching `shell_depth` (it is
+    /// not the shell block's closer). A shell-native brace, distinct from
+    /// the string-interpolation `${ E }` (`interp_stack`): a shell parameter
+    /// name is not a host expression. A flag rather than a depth suffices for
+    /// `${name}`, whose interior has no nested braces (the `${name:-word}` /
+    /// `${#name}` operator forms are not scanned yet).
+    shell_brace: Toggle,
+    /// Whether the cursor sits inside a shell double-quoted string `"…"`: the
+    /// interior lexes as `double_string_fragment` runs, `\.` escapes, and
+    /// `$name` / `${name}` expansions (tree-sitter `double_quoted_string`),
+    /// so a quoted argument with interior spaces is one string rather than
+    /// juxtaposed shell words. Entered only at `shell_depth > 0`; a `'`
+    /// inside is an ordinary fragment byte. Distinct from the host string
+    /// mode (`in_string`), which never lexes shell expansions.
+    shell_double: Toggle,
+    /// String-interpolation frames: each `"… ${` opens an interpolation whose
+    /// interior lexes as ordinary host-expression tokens. The entry is that
+    /// interpolation's `{`-brace depth (the opening `${` counts as one); a `}`
+    /// that returns the depth to zero closes the interpolation and resumes
+    /// the containing string. A stack, so a nested string inside an
+    /// interpolation — `"${ f("${x}") }"` — is handled to any depth. Only
+    /// `{`-suffixed openers at this level (`{`, `#{`) push depth; `#!{` /
+    /// `$!{` switch to shell mode, which owns its own `}` accounting.
+    interp_stack: Vec<u32>,
+}
+
+impl LabelMode
+{
+    /// Where the labeler stands in this mode.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(&self) -> Standing
+    {
+        if self.in_string == Toggle::Open
+            || self.shell_depth > 0
+            || self.shell_single == Toggle::Open
+            || self.shell_var == Toggle::Open
+            || self.shell_brace == Toggle::Open
+            || self.shell_double == Toggle::Open
+            || !self.interp_stack.is_empty()
+        {
+            Standing::Within
+        }
+        else {
+            Standing::Ground
+        }
+    }
+
+    /// Label the token at `pos` and step the mode past it.
+    ///
+    /// # Specification
+    /// - requires: `pos` is a byte of `source_bytes`.
+    /// - ensures: the token starting at `pos` in this mode and the cursor just
+    ///   past it, strictly beyond `pos`; the mode is the one the token leaves.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact token classes and spans for every lexical mode
+    ///   distinguish wrong dispatch and a mode the wrong token opens or closes;
+    ///   every relabeled source resumes this step mid-source.
+    /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+    /// - witness: `label::tests::span_tiling_is_total_and_gapless`
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    #[spec(requires: pos < source_bytes.len(), ensures: |ret| ret.1 > pos)]
+    fn step(
+        &mut self,
+        source_bytes: SourceBytes<'_>,
+        pos: ByteOffset,
+    ) -> (Token, ByteOffset)
+    {
         let start = pos;
-        let scan = if in_string {
+        let scan = if self.in_string == Toggle::Open {
             scan_string_interior(source_bytes, pos)
         }
-        else if shell_single {
+        else if self.shell_single == Toggle::Open {
             scan_single_quoted_interior(source_bytes, pos)
         }
-        else if shell_var {
+        else if self.shell_var == Toggle::Open {
             scan_variable_name(source_bytes, pos)
         }
-        else if shell_brace {
+        else if self.shell_brace == Toggle::Open {
             scan_braced_shell_interior(source_bytes, pos)
         }
-        else if shell_double {
+        else if self.shell_double == Toggle::Open {
             scan_shell_double_interior(source_bytes, pos)
         }
-        else if shell_depth > 0 {
+        else if self.shell_depth > 0 {
             scan_shell_interior(source_bytes, pos)
         }
         else {
@@ -877,7 +995,7 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
         };
         let lexeme = scan.lexeme;
         // The variable-name state lasts exactly one token after its `$`.
-        shell_var = false;
+        self.shell_var = Toggle::Closed;
         // Defensive: scanning always advances; never emit a zero-width token.
         let next = if scan.next > start {
             scan.next
@@ -886,92 +1004,343 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
             start.advance(ByteWidth::ONE)
         };
         if matches!(lexeme, Lexeme::Quote) {
-            in_string = !in_string;
+            self.in_string = self.in_string.flipped();
         }
         else if matches!(lexeme, Lexeme::Punct) {
-            // Track shell-block depth by the opener/closer punctuation.
-            let text = source_bytes
-                .span(start, next)
-                .unwrap_or_else(SourceBytes::empty);
-            if bool::from(text.equals(BytePattern(b"${"))) && in_string {
-                // A `"… ${` opens a string interpolation: leave string mode and
-                // lex the interior as ordinary host-expression tokens until the
-                // matching `}`. The opening brace counts, so the frame depth is 1.
-                in_string = false;
-                interp_stack.push(1);
-            }
-            else if bool::from(text.equals(BytePattern(b"${"))) && shell_depth > 0 {
-                // A shell `${` opens a braced parameter expansion: the interior
-                // lexes as a `variable_name` parameter and the matching `}`
-                // closes the brace (not the shell block). DISTINCT from the
-                // string-interpolation `${` above — the shell interior is a
-                // shell parameter name, never a host expression.
-                shell_brace = true;
-            }
-            else if bool::from(text.equals(BytePattern(b"}"))) && shell_brace {
-                // The braced parameter expansion's closer: end the brace mode
-                // and resume shell lexing WITHOUT decrementing `shell_depth`
-                // (this `}` is the parameter's, not the shell block's).
-                shell_brace = false;
-            }
-            else if bool::from(text.equals(BytePattern(b"\""))) && shell_depth > 0 {
-                // A shell `"` opens or closes a double-quoted string: the
-                // interior lexes as fragments / escapes / expansions (never a
-                // nested block or the shell block's closer).
-                shell_double = !shell_double;
-            }
-            else if bool::from(text.equals(BytePattern(b"'"))) && shell_depth > 0 {
-                // A shell `'` opens or closes a single-quoted string; the
-                // interior between them is lexed opaquely, so it cannot start a
-                // nested block or close the shell block.
-                shell_single = !shell_single;
-            }
-            else if bool::from(text.equals(BytePattern(b"$")))
-                && shell_depth > 0
-                && source_bytes
-                    .byte(next)
-                    .is_some_and(|byte| bool::from(byte.is_var_name_start()))
-            {
-                // A bare shell `$name`: the following word is the variable name
-                // (`$( … )` host escapes and `$!{ … }` substitutions do not set
-                // this — their next byte is not a name start).
-                shell_var = true;
-            }
-            else if bool::from(is_shell_open(text)) {
-                shell_depth = shell_depth.saturating_add(1);
-            }
-            else if bool::from(text.equals(BytePattern(b"}"))) && shell_depth > 0 {
-                shell_depth = shell_depth.saturating_sub(1);
-            }
-            else if shell_depth == 0
-                && let Some(depth) = interp_stack.last_mut()
-            {
-                // Inside an interpolation's host-expression interior (shell mode
-                // owns its own brace accounting, so it is excluded). A `{`- or
-                // `#{`-opened form deepens this frame; a `}` that empties it
-                // closes the interpolation and resumes the containing string.
-                if bool::from(text.equals(BytePattern(b"{")))
-                    || bool::from(text.equals(BytePattern(b"#{")))
-                {
-                    *depth = depth.saturating_add(1);
-                }
-                else if bool::from(text.equals(BytePattern(b"}"))) {
-                    *depth = depth.saturating_sub(1);
-                    if *depth == 0 {
-                        interp_stack.pop();
-                        in_string = true;
-                    }
-                }
-            }
+            self.track_punct(source_bytes, start, next);
         }
-        tokens.push(Token {
+        let token = Token {
             lexeme,
             start: u32::try_from(usize::from(start)).unwrap_or(u32::MAX),
             end: u32::try_from(usize::from(next)).unwrap_or(u32::MAX),
-        });
-        pos = next;
+        };
+        (token, next)
     }
-    tokens
+
+    /// Open or close the mode the punctuation at `start .. next` names.
+    ///
+    /// # Specification
+    /// - requires: `start .. next` is a punctuation token of `source_bytes`.
+    /// - ensures: a string-interpolation `${` leaves the string and pushes a
+    ///   frame; a shell `${` opens a braced parameter and its `}` closes it; a
+    ///   shell `"` or `'` toggles its quote; a shell `$` before a name marks
+    ///   the name; a shell start deepens the block and a `}` in a block closes
+    ///   one; inside an interpolation, `{` and `#{` deepen the frame and a `}`
+    ///   that empties it resumes the string.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interpolations nesting strings, braced shell
+    ///   parameters, shell quotes and nested shell blocks expose every
+    ///   transition through exact token streams.
+    /// - witness: `label::tests::string_interpolation_nests_braces_and_strings`
+    /// - witness: `label::tests::shell_braced_parameter_lexes_distinctly_from_interpolation`
+    /// - witness: `label::tests::shell_single_and_double_quotes_do_not_cross`
+    /// - witness: `label::tests::shell_braced_parameters_nest_and_juxtapose`
+    #[spec(requires: start < next && next <= source_bytes.len())]
+    fn track_punct(
+        &mut self,
+        source_bytes: SourceBytes<'_>,
+        start: ByteOffset,
+        next: ByteOffset,
+    )
+    {
+        let text = source_bytes
+            .span(start, next)
+            .unwrap_or_else(SourceBytes::empty);
+        if bool::from(text.equals(BytePattern(b"${"))) && self.in_string == Toggle::Open {
+            // A `"… ${` opens a string interpolation: leave string mode and
+            // lex the interior as ordinary host-expression tokens until the
+            // matching `}`. The opening brace counts, so the frame depth is 1.
+            self.in_string = Toggle::Closed;
+            self.interp_stack.push(1);
+        }
+        else if bool::from(text.equals(BytePattern(b"${"))) && self.shell_depth > 0 {
+            // A shell `${` opens a braced parameter expansion: the interior
+            // lexes as a `variable_name` parameter and the matching `}`
+            // closes the brace (not the shell block). Distinct from the
+            // string-interpolation `${` above — the shell interior is a
+            // shell parameter name, never a host expression.
+            self.shell_brace = Toggle::Open;
+        }
+        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_brace == Toggle::Open {
+            // The braced parameter expansion's closer: end the brace mode
+            // and resume shell lexing without decrementing `shell_depth`
+            // (this `}` is the parameter's, not the shell block's).
+            self.shell_brace = Toggle::Closed;
+        }
+        else if bool::from(text.equals(BytePattern(b"\""))) && self.shell_depth > 0 {
+            // A shell `"` opens or closes a double-quoted string: the
+            // interior lexes as fragments / escapes / expansions (never a
+            // nested block or the shell block's closer).
+            self.shell_double = self.shell_double.flipped();
+        }
+        else if bool::from(text.equals(BytePattern(b"'"))) && self.shell_depth > 0 {
+            // A shell `'` opens or closes a single-quoted string; the
+            // interior between them is lexed opaquely, so it cannot start a
+            // nested block or close the shell block.
+            self.shell_single = self.shell_single.flipped();
+        }
+        else if bool::from(text.equals(BytePattern(b"$")))
+            && self.shell_depth > 0
+            && source_bytes
+                .byte(next)
+                .is_some_and(|byte| bool::from(byte.is_var_name_start()))
+        {
+            // A bare shell `$name`: the following word is the variable name
+            // (`$( … )` host escapes and `$!{ … }` substitutions do not set
+            // this — their next byte is not a name start).
+            self.shell_var = Toggle::Open;
+        }
+        else if bool::from(is_shell_open(text)) {
+            self.shell_depth = self.shell_depth.saturating_add(1);
+        }
+        else if bool::from(text.equals(BytePattern(b"}"))) && self.shell_depth > 0 {
+            self.shell_depth = self.shell_depth.saturating_sub(1);
+        }
+        else if self.shell_depth == 0
+            && let Some(depth) = self.interp_stack.last_mut()
+        {
+            // Inside an interpolation's host-expression interior (shell mode
+            // owns its own brace accounting, so it is excluded). A `{`- or
+            // `#{`-opened form deepens this frame; a `}` that empties it
+            // closes the interpolation and resumes the containing string.
+            if bool::from(text.equals(BytePattern(b"{")))
+                || bool::from(text.equals(BytePattern(b"#{")))
+            {
+                *depth = depth.saturating_add(1);
+            }
+            else if bool::from(text.equals(BytePattern(b"}"))) {
+                *depth = depth.saturating_sub(1);
+                if *depth == 0 {
+                    self.interp_stack.pop();
+                    self.in_string = Toggle::Open;
+                }
+            }
+        }
+    }
+}
+
+/// A source's tokens, with the tokens before which the labeler stood within
+/// a mode, so an edit of the source relabels only around itself
+/// ([`relabel`](Self::relabel)).
+///
+/// # Specification
+/// - requires: constructed by [`new`](Self::new) or [`relabel`](Self::relabel).
+/// - ensures: the tokens are [`label`]'s; every token index before which the
+///   labeler stood off ground is listed, ascending, and no other.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructors
+///   carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hostile sources edited at arbitrary byte ranges relabel
+///   to the labeling of the edited source, standings included.
+/// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Labeling
+{
+    /// The tokens, as [`label`] returns them.
+    tokens: Vec<Token>,
+    /// The tokens before which the labeler stood within a mode, ascending.
+    within: Vec<TokenIndex>,
+}
+
+impl Labeling
+{
+    /// Label `src` from its start.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`label`]'s tokens of `src`, with the tokens before which the
+    ///   labeler stood within a mode.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relabel witness compares every relabeling with
+    ///   this one, standings included.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.tokens == label(src))]
+    pub fn new(src: SourceFragment<'_>) -> Self
+    {
+        let source_bytes = SourceBytes::from(AsRef::<str>::as_ref(&src).as_bytes());
+        let mut labeling = Self::default();
+        let mut mode = LabelMode::default();
+        let mut pos = ByteOffset::ZERO;
+        while pos < source_bytes.len() {
+            if mode.standing() == Standing::Within {
+                labeling
+                    .within
+                    .push(TokenIndex::from(labeling.tokens.len()));
+            }
+            let (token, next) = mode.step(source_bytes, pos);
+            labeling.tokens.push(token);
+            pos = next;
+        }
+        labeling
+    }
+
+    /// The tokens.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tokens(&self) -> &[Token]
+    {
+        &self.tokens
+    }
+
+    /// Relabel `after`, an edit of `before`, from this labeling of `before`,
+    /// scanning only around the edit.
+    ///
+    /// The scan restarts at the last token boundary at ground that lies on a
+    /// line before the edit's and at least [`RELABEL_MARGIN`] bytes before
+    /// it. No scanner's decision about a token reads further past it than
+    /// that margin, or past a line break, so every token before the restart
+    /// is a token of `after`. The scan stops at the first boundary inside the
+    /// unedited suffix where it stands at ground over a boundary the old
+    /// labeling stood at ground on: the labeler reads the same bytes from
+    /// there in the same mode and never reads behind its cursor, so the old
+    /// tokens past it are the new ones, shifted.
+    ///
+    /// # Specification
+    /// - requires: this is the labeling of `before`.
+    /// - ensures: the labeling of `after`, as [`new`](Self::new) labels it.
+    /// - panics: none.
+    /// - economy: scans from the restart to the resynchronizing boundary; the
+    ///   tokens past it are shifted in place.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — hostile sources replaced at arbitrary byte ranges by
+    ///   hostile text, edits inside strings, shell blocks, interpolations,
+    ///   comments, numbers and a long dialect run among them, relabel to the
+    ///   labeling of the edited source; a restart inside the margin or on the
+    ///   edit's line, a restart off ground, or a resync short of the suffix
+    ///   changes a token.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
+    #[inline]
+    #[must_use]
+    #[spec(requires: self == Self::new(before), ensures: |ret| ret.eq(&Self::new(after)))]
+    pub fn relabel(
+        self,
+        before: SourceFragment<'_>,
+        after: SourceFragment<'_>,
+    ) -> Self
+    {
+        let old = AsRef::<str>::as_ref(&before).as_bytes();
+        let new = AsRef::<str>::as_ref(&after).as_bytes();
+        let prefix = old
+            .iter()
+            .zip(new)
+            .take_while(|&(left, right)| left == right)
+            .count();
+        let room = old.len().min(new.len()).saturating_sub(prefix);
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|&(left, right)| left == right)
+            .count();
+        let Self {
+            mut tokens,
+            mut within,
+        } = self;
+        // The restart: the last boundary at ground at or before both the
+        // margin and the line break before the edit.
+        let bound = old
+            .get(.. prefix)
+            .and_then(|head| head.iter().rposition(|&byte| byte == b'\n'))
+            .map_or(0, |line_break| {
+                line_break.min(prefix.saturating_sub(RELABEL_MARGIN))
+            });
+        let mut restart = tokens.partition_point(|token| {
+            usize::try_from(token.start).is_ok_and(|start| start <= bound)
+        });
+        restart = restart.saturating_sub(1);
+        while restart > 0 && within.binary_search(&TokenIndex::from(restart)).is_ok() {
+            restart = restart.saturating_sub(1);
+        }
+        let resume = tokens.get(restart).map_or(0, |token| {
+            usize::try_from(token.start).unwrap_or(usize::MAX)
+        });
+        // Old offsets past the edit sit `old_tail` bytes before the end of
+        // `before`, new ones `new_tail` before the end of `after`.
+        let old_tail = old.len().saturating_sub(suffix);
+        let new_tail = new.len().saturating_sub(suffix);
+        let source_bytes = SourceBytes::from(new);
+        let mut fresh: Vec<Token> = Vec::new();
+        let mut fresh_within: Vec<TokenIndex> = Vec::new();
+        let mut mode = LabelMode::default();
+        let mut pos = ByteOffset::from(resume);
+        let mut resync = tokens.len();
+        while pos < source_bytes.len() {
+            let standing = mode.standing();
+            if standing == Standing::Ground
+                && let Some(old_pos) = usize::from(pos)
+                    .checked_sub(new_tail)
+                    .map(|past| past.saturating_add(old_tail))
+                && let Ok(found) = tokens
+                    .get(restart ..)
+                    .unwrap_or_default()
+                    .binary_search_by_key(&old_pos, |token| {
+                        usize::try_from(token.start).unwrap_or(usize::MAX)
+                    })
+            {
+                let at = restart.saturating_add(found);
+                if within.binary_search(&TokenIndex::from(at)).is_err() {
+                    resync = at;
+                    break;
+                }
+            }
+            if standing == Standing::Within {
+                fresh_within.push(TokenIndex::from(restart.saturating_add(fresh.len())));
+            }
+            let (token, next) = mode.step(source_bytes, pos);
+            fresh.push(token);
+            pos = next;
+        }
+        // Shift the kept tail by the edit's change in length, then splice.
+        let grown = new.len() >= old.len();
+        let change = u32::try_from(new.len().abs_diff(old.len())).unwrap_or(u32::MAX);
+        let shift = |offset: u32| {
+            if grown {
+                offset.saturating_add(change)
+            }
+            else {
+                offset.saturating_sub(change)
+            }
+        };
+        for token in tokens.get_mut(resync ..).unwrap_or_default() {
+            token.start = shift(token.start);
+            token.end = shift(token.end);
+        }
+        let fresh_count = fresh.len();
+        drop(tokens.splice(restart .. resync, fresh));
+        let kept_tail = within.partition_point(|&index| index < TokenIndex::from(resync));
+        let kept_head = within.partition_point(|&index| index < TokenIndex::from(restart));
+        let tail: Vec<TokenIndex> = within
+            .get(kept_tail ..)
+            .unwrap_or_default()
+            .iter()
+            .map(|&index| {
+                TokenIndex::from(
+                    usize::from(index)
+                        .saturating_sub(resync)
+                        .saturating_add(restart)
+                        .saturating_add(fresh_count),
+                )
+            })
+            .collect();
+        within.truncate(kept_head);
+        within.extend(fresh_within);
+        within.extend(tail);
+        Self { tokens, within }
+    }
 }
 /// Scan one lexeme of string interior: a closing quote, an escape, an
 /// interpolation opener `${`, or a fragment run up to the next `"` / `\` /
@@ -2363,13 +2732,19 @@ fn utf8_width(lead: SourceByte) -> ByteWidth
 mod tests
 {
     use alloc::borrow::ToOwned as _;
+    use alloc::format;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::ops::Range;
 
     use anodized::spec;
     use gandr_surface_syntax::SourceFragment;
+    use proptest::prelude::*;
 
+    use super::ByteOffset;
+    use super::ByteWidth;
+    use super::Labeling;
     use super::Lexeme;
     use super::Token;
     use super::label;
@@ -3712,6 +4087,171 @@ mod tests
             (Lexeme::Punct, ";".to_owned()),
             (Lexeme::Punct, "}".to_owned()),
         ]);
+    }
+
+    /// Replace `before`'s bytes in `cut`, its start widened back and its end
+    /// forward to character boundaries, with `replacement`.
+    ///
+    /// # Specification
+    /// - requires: nothing; offsets past the end clamp to it, and an end before
+    ///   the start cuts nothing.
+    /// - ensures: `before` with the widened range replaced.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the relabel witnesses edit at every boundary of their
+    ///   sources; a range split inside a character would not be a source.
+    /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
+    #[spec(ensures: |ret| ret.contains(replacement.as_ref()))]
+    fn spliced(
+        before: SourceFragment<'_>,
+        cut: Range<ByteOffset>,
+        replacement: SourceFragment<'_>,
+    ) -> String
+    {
+        let text: &str = before.as_ref();
+        let mut from = usize::from(cut.start).min(text.len());
+        while !text.is_char_boundary(from) {
+            from = from.saturating_sub(1);
+        }
+        let mut to = usize::from(cut.end).max(from).min(text.len());
+        while !text.is_char_boundary(to) {
+            to = to.saturating_add(1);
+        }
+        let mut after = text.get(.. from).unwrap_or_default().to_owned();
+        after.push_str(replacement.as_ref());
+        after.push_str(text.get(to ..).unwrap_or_default());
+        after
+    }
+
+    /// The bytes from `start` for `length` bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn cut(
+        start: ByteOffset,
+        length: ByteWidth,
+    ) -> Range<ByteOffset>
+    {
+        start .. start.advance(length)
+    }
+
+    /// Relabel `after` from the labeling of `before`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn relabeled(
+        before: SourceFragment<'_>,
+        after: SourceFragment<'_>,
+    ) -> Labeling
+    {
+        Labeling::new(before).relabel(before, after)
+    }
+
+    #[test]
+    fn a_relabel_restarts_before_what_a_token_read()
+    {
+        // A dialect run reads to the end of its line, far past the margin; a
+        // newline run reads the byte after it; a string, a shell block, an
+        // interpolation and a block comment hold their modes across lines.
+        let dialect = "a".repeat(96);
+        let before = format!(
+            "def x = 1;\ndef y = \"s ${{ f(\"${{x}}\") }} t\";\n#!{dialect} ;\n\n\n\
+             def z = #!{{ echo \"$HOME ${{X}}\" 'q' 2>&1; }};\n/* a /* b */\n*/ def w = '\\n';\n\
+             def v = 1.5e+3u32 +U x′y -->;\n"
+        );
+        for replacement in [
+            "", "{", "\n", "\"", "x", "*/", "/*", "'", "#!", "}", "${", "#!{",
+        ] {
+            let mut start = 0_usize;
+            while start <= before.len() {
+                for length in [0_usize, 1, 3] {
+                    let after = spliced(
+                        SourceFragment::from(before.as_str()),
+                        cut(ByteOffset::from(start), ByteWidth::from(length)),
+                        SourceFragment::from(replacement),
+                    );
+                    assert_eq!(
+                        relabeled(
+                            SourceFragment::from(before.as_str()),
+                            SourceFragment::from(after.as_str())
+                        ),
+                        Labeling::new(SourceFragment::from(after.as_str())),
+                        "{replacement:?} over {length} bytes at {start}"
+                    );
+                }
+                start = start.saturating_add(1);
+            }
+        }
+    }
+
+    /// Hostile text for an edit: fragments that open and close every lexical
+    /// mode, cut anywhere, and byte soup.
+    ///
+    /// # Specification
+    /// - ensures: samples UTF-8 byte-soup renderings and whole or cut
+    ///   fragments, including empty text.
+    /// - executable: none — the opaque Strategy exposes a generated value only
+    ///   through a random value tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the relabel witness edits sources joined from these
+    ///   at random ranges; sampling does not exhaust the lexical modes'
+    ///   interleavings.
+    /// - witness: `label::tests::an_edit_relabels_as_the_edited_source_labels`
+    fn lexical_text() -> impl Strategy<Value = String>
+    {
+        let fragments = vec![
+            "def x = 1;\n",
+            "\"a ${ f(\"${x}\") } b\"",
+            "#!{ echo \"$HOME ${X}\" 'q' [ a ] 2>&1; }",
+            "/* c /* n */ */",
+            "// line\n",
+            "'\\n' 'x' '",
+            "1.5e+3u32 .5 x.f",
+            "#!bash{ ls }",
+            "#!aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(",
+            "x′y +U -F +Unit",
+            "\n\n\n",
+            "\t \u{a0}\u{200b}",
+            "$!{ x }",
+            "NAME=\"v w\"",
+        ];
+        prop_oneof![
+            prop::collection::vec(any::<u8>(), 0 .. 24)
+                .prop_map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+            (prop::sample::select(fragments), 0_usize .. 96).prop_map(|(fragment, cut)| {
+                let mut end = cut.min(fragment.len());
+                while !fragment.is_char_boundary(end) {
+                    end = end.saturating_sub(1);
+                }
+                fragment.get(.. end).unwrap_or(fragment).to_owned()
+            }),
+        ]
+    }
+
+    proptest! {
+        // Each enforced relabel labels both revisions whole again.
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(anodized_panic) { 128 } else { 1000 }))]
+
+        #[test]
+        fn an_edit_relabels_as_the_edited_source_labels(
+            parts in prop::collection::vec(lexical_text(), 1 .. 16),
+            replacement in lexical_text(),
+            start in any::<prop::sample::Index>(),
+            length in 0_usize .. 80,
+        ) {
+            let before = parts.concat();
+            let after = spliced(
+                SourceFragment::from(before.as_str()),
+                cut(ByteOffset::from(start.index(before.len().saturating_add(1))), ByteWidth::from(length)),
+                SourceFragment::from(replacement.as_str()),
+            );
+            prop_assert_eq!(
+                relabeled(SourceFragment::from(before.as_str()), SourceFragment::from(after.as_str())),
+                Labeling::new(SourceFragment::from(after.as_str()))
+            );
+        }
     }
     /// The non-space classes and their texts, in order.
     ///

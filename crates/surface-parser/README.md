@@ -11,6 +11,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Completion obligations in place of error recovery](#completion-obligations-in-place-of-error-recovery)
 - [Completion obligations are not typing obligations](#completion-obligations-are-not-typing-obligations)
 - [Label, mold, meld](#label-mold-meld)
+  - [An edit is relabeled around itself](#an-edit-is-relabeled-around-itself)
 - [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
@@ -45,6 +46,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 ## Provided features
 
 - `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
+- `Labeling`: a source's tokens with where the labeler stood within a mode, and `Labeling::relabel`, the labeling of an edit made from the unedited source's by scanning only around the edit. Witnesses: `label::tests::an_edit_relabels_as_the_edited_source_labels`, `label::tests::a_relabel_restarts_before_what_a_token_read`.
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `TokenIndex`, `TokenRun`, `Molder::mold_run` and `Molder::form_runs`: a stream molded run by run, each run reading past its end as lookahead, and the runs a stream splits into at its predicted top-level declaration boundaries. Witnesses: `mold::tests::runs_mold_as_the_whole_stream`, `parse::tests::a_source_splits_before_each_declaration_head`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
@@ -110,6 +112,13 @@ In a shell braced parameter, non-name scalars remain whole shell-word tokens. UT
 The molder's candidates for a token are the union of the grammar's molds for each label the token could carry, visited in ascending `MoldId` order. The pre-filter drops every candidate the slope head cannot admit — a closer with no matching open form, an operator with no left operand — and most tokens are left with one, taken without a dry-run. The survivors are dry-run in a `Mark` / `rollback_to` transaction and ranked by their obligation delta, then form continuation, then sort compatibility, then the completion cost `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles the families whose openers tie and diverge only at a later tile. Nothing process-dependent reaches the choice, so molding is a function of the token stream.
 
 The melder follows the paper's push rules. Shift pushes a tile whose precedence the head yields to; Reduce closes the head operator or form when the incoming tile takes precedence; Degrout completes an incomparable pair with grout and an `AmbiguousPrec` obligation. Grout is comparable to everything and sits at the bottom of the precedence order, which is what makes every push conclude.
+
+### An edit is relabeled around itself
+
+The labeler carries a little state between tokens — inside a string, a shell block, a shell quote or a parameter expansion, an interpolation — and the lexemes it scans read ahead of themselves: a word looks for a prime, a number for its suffix, a character literal for its closing quote, a shell start along its dialect word for the brace. `Labeling` keeps a source's tokens and the tokens before which the labeler stood within a mode, and `Labeling::relabel` labels an edit of the source from them. It restarts at the last token boundary at ground on an earlier line than the edit and at least 64 bytes before it: no scanner reads further past its token than eight bytes save along a dialect word, which stops at a line break, so every token before the restart is a token of the edited source. It stops at the first boundary inside the unedited suffix where it stands at ground over a boundary the old labeling stood at ground on: the labeler never reads behind its cursor, so from there it reads the same bytes in the same mode, and the old tokens are the new ones, shifted. An edit therefore scans from the earlier of the line break before it and the margin, through the edit, to the first common ground boundary in the suffix.
+
+- Alternatives: keeping the full mode at every token boundary would let the scan restart at the edit itself, at a mode per token; restarting at a form boundary would rest on the molder's prediction of where forms begin, which a string or an interpolation can contradict; a scanner that recorded how far each scan read would make the margin exact, at a write per byte read.
+- Reversal: a scanner that reads more than the margin past its token, or past a line break, widens the margin or the restart rule with it, and the exhaustive witness over every edit position of its source says which.
 
 ## The molder's search stops at its least key
 
