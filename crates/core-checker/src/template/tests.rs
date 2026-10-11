@@ -109,6 +109,7 @@ fn a_template_is_emitted_only_below_its_expansion_factor()
                 | Production::WorkBoundExceeded { .. } => {
                     panic!("the original gate has no memoized allowance")
                 },
+                | Production::SchemaWorkBound { .. } => {},
                 | Production::Go(_) => {
                     let size = usize::from(cost.template_size);
                     assert!(size < plain.checked_div(size).unwrap());
@@ -377,7 +378,9 @@ fn a_poisoned_inheritance_entry_is_caught_at_admission()
                 reason: TemplateRefusal::NotInherited { key, .. },
                 ..
             } => cache.record(key, InheritanceVerdict::Inherited),
-            | result @ (Production::Plain { .. } | Production::WorkBoundExceeded { .. }) => {
+            | result @ (Production::Plain { .. }
+            | Production::WorkBoundExceeded { .. }
+            | Production::SchemaWorkBound { .. }) => {
                 panic!("unexpected refusal: {result:?}")
             },
         }
@@ -1453,7 +1456,8 @@ fn assert_same_production(
 )
 {
     match (actual, expected) {
-        | (&Production::Go(_), &Production::Go(_)) => {},
+        | (&Production::Go(_), &Production::Go(_))
+        | (&Production::SchemaWorkBound { .. }, &Production::SchemaWorkBound { .. }) => {},
         | (
             &Production::WorkBoundExceeded { bound, .. },
             &Production::WorkBoundExceeded {
@@ -2357,6 +2361,53 @@ fn a_work_bound_family_admits_its_template_subfamily()
         }
     }
     assert_eq!(partial, 1);
+}
+#[test]
+fn schema_work_is_bounded_before_producer_inheritance()
+{
+    for (edition, bounded) in [
+        (POWER_TO_EIGHT, 0),
+        (DOUBLE_TO_EIGHT, 0),
+        (staged(Body::Double, Natural(0), Natural(9), TWO_THREE), 0),
+        (staged(Body::Double, Natural(0), Natural(10), TWO_THREE), 0),
+        (staged(Body::Double, Natural(0), Natural(11), TWO_THREE), 1),
+        (staged(Body::Double, Natural(0), Natural(12), TWO_THREE), 1),
+        (staged(Body::Triple, Natural(0), Natural(8), TWO_THREE), 0),
+        (staged(Body::Double, Natural(0), Natural(32), TWO_THREE), 2),
+        (staged(Body::Power, Natural(0), Natural(32), TWO_THREE), 1),
+    ] {
+        let (arena, certificates) = normalized(edition);
+        let mut refused = 0_usize;
+        for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
+            let Analysis::Candidate(candidate) = analyze(&arena, &family.members).unwrap()
+            else {
+                continue;
+            };
+            if candidate.prices().memoized.is_err() {
+                continue;
+            }
+            let proposal = candidate.admission_candidate().unwrap().proposal;
+            let expected =
+                gandr_kernel_core::admission::Schema::check(proposal, &mut Budget(usize::MAX));
+            let mut cache = InheritanceCache::new();
+            let mut budget = Budget(1_000_000);
+            let actual = candidate
+                .produce(PriceGate::Memoized, &mut cache, &mut budget)
+                .unwrap();
+            match expected {
+                | Err(Refusal::SchemaWorkBound) => {
+                    assert!(matches!(actual, Production::SchemaWorkBound { .. }));
+                    assert_eq!(budget.0, 1_000_000);
+                    assert_eq!(usize::from(cache.checked()), 0);
+                    assert_eq!(usize::from(cache.hits()), 0);
+                    assert_eq!(usize::from(actual.cost().triples_checked), 0);
+                    refused = refused.checked_add(1).unwrap();
+                },
+                | Ok(_) | Err(_) => assert!(!matches!(actual, Production::SchemaWorkBound { .. })),
+            }
+        }
+        assert_eq!(refused, bounded);
+    }
 }
 
 /// Analyze a family with every member generalized, none read from a row: the

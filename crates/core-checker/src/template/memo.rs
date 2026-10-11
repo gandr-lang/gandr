@@ -1117,8 +1117,31 @@ impl Memo
         let production = candidate.produce(gate, cache, budget)?;
         spent.producing = since(clock, begun);
         slot.controls.producing = Estimate::Measured(spent.producing);
-        let template = match production {
-            | Production::Go(template) => template,
+        let refusal = match production {
+            | Production::Go(template) => {
+                let begun = clock.now();
+                let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
+                let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
+                spent.admitting = spent.admitting.saturating_add(since(clock, begun));
+                match judged {
+                    | Judged::Admitted(schema) => {
+                        let begun = clock.now();
+                        let held = template.compacted()?;
+                        spent.drafting = spent.drafting.saturating_add(since(clock, begun));
+                        slot.held = Held::Template(held);
+                        return Ok(FamilyReport {
+                            admission: FamilyAdmission::Admitted {
+                                schema,
+                                origin: Origin::Produced,
+                            },
+                            drafting,
+                            spent,
+                        });
+                    },
+                    | Judged::Refused(refusal) => refusal,
+                }
+            },
+            | Production::SchemaWorkBound { .. } => Refusal::SchemaWorkBound,
             | Production::Plain { reason, .. } => {
                 slot.held = Held::Vacant;
                 return Ok(FamilyReport {
@@ -1134,27 +1157,6 @@ impl Memo
                     spent,
                 });
             },
-        };
-        let begun = clock.now();
-        let choices: Vec<&[Choice]> = admission.rows.iter().map(Vec::as_slice).collect();
-        let judged = judge(arena, members, admission.proposal, &choices, row, budget)?;
-        spent.admitting = spent.admitting.saturating_add(since(clock, begun));
-        let refusal = match judged {
-            | Judged::Admitted(schema) => {
-                let begun = clock.now();
-                let held = template.compacted()?;
-                spent.drafting = spent.drafting.saturating_add(since(clock, begun));
-                slot.held = Held::Template(held);
-                return Ok(FamilyReport {
-                    admission: FamilyAdmission::Admitted {
-                        schema,
-                        origin: Origin::Produced,
-                    },
-                    drafting,
-                    spent,
-                });
-            },
-            | Judged::Refused(refusal) => refusal,
         };
         let refused = FamilyReport {
             admission: FamilyAdmission::Refused(refusal),
