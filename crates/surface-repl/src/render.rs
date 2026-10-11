@@ -77,8 +77,8 @@ impl Source for ContentTable<'_>
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
     ///   indices; every computation former as [`Former::Computation`]; an
-    ///   unresolved node, and an index past the table, as
-    ///   [`Former::Unreadable`].
+    ///   unresolved node, a hole, a mark, the unknown type, and an index past
+    ///   the table, as [`Former::Unreadable`].
     /// Native data and record syntax is outside this source adapter's fragment.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
@@ -99,7 +99,9 @@ impl Source for ContentTable<'_>
         (Some(&ContentNode::PrimitiveValue(primitive)), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         (Some(&ContentNode::Data { .. } | &ContentNode::RecordType(_) |
 &ContentNode::Constructor { .. } | &ContentNode::Record(_) |
-&ContentNode::Unresolved(_)) | None, Former::Unreadable) |
+&ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
+&ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
+&ContentNode::UnknownType | &ContentNode::UnknownComputationType) | None, Former::Unreadable) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
@@ -212,7 +214,13 @@ impl Source for ContentTable<'_>
             | ContentNode::RecordType(_)
             | ContentNode::Constructor { .. }
             | ContentNode::Record(_)
-            | ContentNode::Unresolved(_) => Former::Unreadable,
+            | ContentNode::Unresolved(_)
+            | ContentNode::Hole(_)
+            | ContentNode::ValueMark { .. }
+            | ContentNode::ComputationHole(_)
+            | ContentNode::ComputationMark { .. }
+            | ContentNode::UnknownType
+            | ContentNode::UnknownComputationType => Former::Unreadable,
         }
     }
 }

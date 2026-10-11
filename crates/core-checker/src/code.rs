@@ -543,7 +543,9 @@ impl CodeDefinitions
             | Value::Lift { .. }
             | Value::Quote(_)
             | Value::QuoteComputation(_)
-            | Value::StaticApplication(..) => return rigid,
+            | Value::StaticApplication(..)
+            | Value::Hole(_)
+            | Value::Mark { .. } => return rigid,
         };
         let mut consumed = 0_usize;
         while let Value::StaticLambda(inner) = read(core, reduct)? {
@@ -767,7 +769,8 @@ pub fn loose_reach(
                     }
                     | Value::Constant(_)
                     | Value::Unit
-                    | Value::Literal(_) => {},
+                    | Value::Literal(_)
+                    | Value::Hole(_) => {},
                     | Value::PathProduct(first, second)
                     | Value::Pair(first, second)
                     | Value::StaticApplication(first, second) => {
@@ -776,7 +779,8 @@ pub fn loose_reach(
                     },
                     | Value::PathRefl(body)
                     | Value::Injection(_, body)
-                    | Value::Lift { body, .. } => {
+                    | Value::Lift { body, .. }
+                    | Value::Mark { body, .. } => {
                         work.push((CoreNode::Term(TermNode::Value(body)), depth));
                     },
                     | Value::StaticLambda(body) => {
@@ -845,6 +849,10 @@ pub fn loose_reach(
                         work.push((CoreNode::Term(TermNode::Computation(on_left)), under));
                         work.push((CoreNode::Term(TermNode::Computation(on_right)), under));
                     },
+                    | Computation::Hole(_) => {},
+                    | Computation::Mark { body, .. } => {
+                        work.push((CoreNode::Term(TermNode::Computation(body)), depth));
+                    },
                 }
             },
             | CoreNode::Type(TypeNode::Value(at)) => {
@@ -866,7 +874,8 @@ pub fn loose_reach(
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }
-                    | ValueType::Abstract(_) => {},
+                    | ValueType::Abstract(_)
+                    | ValueType::Unknown => {},
                     | ValueType::Product(first, second)
                     | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
@@ -903,6 +912,7 @@ pub fn loose_reach(
                     | CompType::Element { code, .. } => {
                         work.push((CoreNode::Term(TermNode::Value(code)), depth));
                     },
+                    | CompType::Unknown => {},
                 }
             },
         }

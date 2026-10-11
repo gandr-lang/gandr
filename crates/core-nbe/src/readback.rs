@@ -62,14 +62,24 @@
 //!
 //! # One arena is read, one is written, and the faults say which
 //!
-//! Readback resolves domain ids constantly and reads **no** core node: it mints
-//! into the core arena and splices ids the domain already holds. So a
-//! domain-arena miss arrives as [`ReadbackFault::Domain`] carrying the domain's
-//! own refusal, and the only way a core-arena miss can arise is inside an
-//! evaluation the readback drives — opening a closure or forcing a lowered
-//! body — where it arrives as [`ReadbackFault::Eval`] carrying
-//! [`EvalFault::DanglingTerm`]. Neither is translated into the other's
-//! vocabulary.
+//! Readback resolves domain ids constantly and reads **no** core node but a
+//! mark's body: it mints into the core arena and splices ids the domain
+//! already holds. So a domain-arena miss arrives as [`ReadbackFault::Domain`]
+//! carrying the domain's own refusal, and the only way a core-arena miss can
+//! arise is inside an evaluation the readback drives — opening a closure or
+//! forcing a lowered body — where it arrives as [`ReadbackFault::Eval`]
+//! carrying [`EvalFault::DanglingTerm`]. Neither is translated into the
+//! other's vocabulary.
+//!
+//! # A hole reads back as itself, a mark through its environment
+//!
+//! A hole-headed neutral reads back as the hole it stands on, with its spine
+//! folded over it as any neutral's is. A hole names no variable, so the term is
+//! well scoped wherever it is spliced; the environment the hole was met in
+//! stays with the domain node, which is where a fill reads it. A mark's body
+//! was never evaluated, so it is read back by substitution rather than by
+//! evaluation: each environment entry is read back at the binders open where
+//! the mark stands, and the mark's body takes them all at once.
 //!
 //! # Fuel, because readback drives evaluation
 //!
@@ -93,6 +103,9 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_core_term::hole::TermId;
+use gandr_core_term::substitute_environment;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
@@ -106,6 +119,7 @@ use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
 use crate::arena::ValueClosureId;
 use crate::closure::Environment;
+use crate::closure::EnvironmentDepth;
 use crate::domain::BinderLevel;
 use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
@@ -114,6 +128,7 @@ use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
+use crate::domain::Suspended;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::eval::Definitions;
@@ -708,6 +723,53 @@ enum Task
     Pi,
     /// Assemble a static Pi from the two value types on the stack.
     StaticPi,
+    /// Read back the hole or the mark a neutral stands on.
+    Suspended
+    {
+        /// The hole or the mark, closed over its environment.
+        closure: Suspended,
+        /// Which of the two it is.
+        kind: SuspendedKind,
+        /// The binders open where it stands.
+        binders: OpenBinders,
+    },
+    /// Substitute the read-back environment entries on the value stack into a
+    /// mark's body or a hole's filling.
+    Substitute
+    {
+        /// The mark's body or the filling.
+        body: TermId,
+        /// How many entries the stack holds for it, innermost index first
+        /// from the bottom.
+        count: EnvironmentDepth,
+    },
+}
+
+/// Which suspended head a [`Task::Suspended`] reads.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum SuspendedKind
+{
+    /// A hole: read back as itself, or as its filling when the run writes it.
+    Hole(HoleId),
+    /// A mark: read back through its environment.
+    Mark,
+}
+
+/// The hole a readback writes as it reads, if any.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Writing
+{
+    /// Every hole reads back as itself.
+    Nothing,
+    /// Every hole of the name, in the filling's family, reads back as the
+    /// filling read through the hole's environment.
+    Fill
+    {
+        /// The hole written.
+        hole: HoleId,
+        /// What it is written with, in the context the hole stands in.
+        filling: TermId,
+    },
 }
 
 /// An environment a quoted type is read in, by its position in the machine's
@@ -740,6 +802,8 @@ struct Machine<'run>
     mode: ReadbackMode,
     /// Steps left, shared with every evaluation this run drives.
     fuel: Fuel,
+    /// The hole this run writes as it reads, if any.
+    writing: Writing,
 }
 
 impl<'run> Machine<'run>
@@ -768,7 +832,7 @@ impl<'run> Machine<'run>
     #[spec(
         ensures: |ret| ret.tasks.is_empty() && ret.values.is_empty() && ret.comps.is_empty()
             && ret.value_types.is_empty() && ret.comp_types.is_empty() && ret.frames.is_empty()
-            && ret.mode == mode && ret.fuel == fuel
+            && ret.mode == mode && ret.fuel == fuel && ret.writing == Writing::Nothing
             && core::ptr::eq(core::ptr::from_ref(ret.definitions.bodies()), core::ptr::from_ref(definitions.bodies())),
     )]
     fn new(
@@ -787,6 +851,7 @@ impl<'run> Machine<'run>
             definitions,
             mode,
             fuel,
+            writing: Writing::Nothing,
         }
     }
 
@@ -1347,11 +1412,14 @@ fn open_static(
 /// - provides: the head half of reading a neutral back, and the only site the
 ///   level-to-index conversion is reached from.
 /// - fails: [`ReadbackFault::LevelOutOfScope`] naming the zone and the level
-///   when the level counts at or past the binders open in its zone.
+///   when the level counts at or past the binders open in its zone, and
+///   [`ReadbackFault::MachineInvariant`] for a hole or a mark head, which is
+///   read through its closure by [`step_suspended`] and never reaches here.
 /// - panics: none.
 ///
 /// # Errors
 /// - [`ReadbackFault::LevelOutOfScope`] — the level names no open binder.
+/// - [`ReadbackFault::MachineInvariant`] — the head is a hole or a mark.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the three-arm head match plus the
@@ -1383,6 +1451,7 @@ fn open_static(
             })
         })
     },
+    | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => ret == Err(ReadbackFault::MachineInvariant),
 })]
 fn head_term(
     core: &mut CoreArena,
@@ -1400,6 +1469,9 @@ fn head_term(
         },
         | NeutralHead::Constant(constant) | NeutralHead::Module(constant) => {
             Ok(core.value_constant(constant))
+        },
+        | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => {
+            Err(ReadbackFault::MachineInvariant)
         },
     }
 }
@@ -1648,6 +1720,64 @@ fn read_comp_under(
     machine.pop_comp()
 }
 
+/// Read a closed result back with every hole of one name written, reporting
+/// the budget the run did not spend.
+///
+/// # Specification
+/// - requires: `result` resolves in `domain` and stands under no binder;
+///   `filling` is live in `core` and written in the context the holes of the
+///   name stand in; the source-face precondition of [`readback_value`].
+/// - ensures: on success the term [`ReadbackMode::ZeroUnfold`] reads `result`
+///   back as, except that every hole-headed neutral of the name whose family is
+///   the filling's reads back as the filling, its free indices replaced by the
+///   read-back entries of the hole's environment; paired with the fuel left
+///   over. A hole kept inside a retained source face stands: that face was
+///   evaluated in no environment, so the caller fills it syntactically.
+/// - provides: the substitution half of filling a result: the hole closures
+///   written, everything else read back as it stands.
+/// - fails: every variant of [`ReadbackFault`].
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`ReadbackFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole whose environment binds the variable its filling
+///   reads, a hole of another name, and a hole in a computation position
+///   separate the substituted filling, the name check and the family.
+/// - witness: `live::tests::filling_resumes_where_the_hole_stood`
+/// - witness: `live::tests::a_fill_leaves_other_holes_standing`
+/// - witness: `live::tests::a_computation_hole_keeps_the_eliminations_that_could_not_fire`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(term, remaining)| u32::from(remaining) <= u32::from(fuel) && match (term, result) {
+    (TermId::Value(id), Glued::Value(_)) => core.value(id).is_some(),
+    (TermId::Computation(id), Glued::Computation(_)) => core.computation(id).is_some(),
+    (TermId::Value(_), Glued::Computation(_)) | (TermId::Computation(_), Glued::Value(_)) => false,
+}))]
+pub fn read_written(
+    core: &mut CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    result: Glued,
+    hole: HoleId,
+    filling: TermId,
+) -> Result<(TermId, Fuel), ReadbackFault>
+{
+    let mut machine = Machine::new(definitions, ReadbackMode::ZeroUnfold, fuel);
+    machine.writing = Writing::Fill { hole, filling };
+    let binders = OpenBinders::none();
+    machine.tasks.push(match result {
+        | Glued::Value(value) => Task::Value { value, binders },
+        | Glued::Computation(comp) => Task::Comp { comp, binders },
+    });
+    run(core, domain, &mut machine)?;
+    let read = match result {
+        | Glued::Value(_) => TermId::Value(machine.pop_value()?),
+        | Glued::Computation(_) => TermId::Computation(machine.pop_comp()?),
+    };
+    Ok((read, machine.fuel))
+}
+
 /// Drive the machine until its task stack empties or its fuel runs out.
 ///
 /// # Specification
@@ -1860,7 +1990,15 @@ fn run(
             && machine.comps.len() == entry_comps.saturating_add(1)
             && machine.comps.last().is_some_and(|&id| matches!(core.computation(id), Some(Computation::RecordProjection(_, actual)) if actual == label))),
         | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
-        | Task::QuotedCompType { .. } | Task::QuotedCode { .. } => true,
+        | Task::QuotedCompType { .. } | Task::QuotedCode { .. } | Task::Suspended { .. } => true,
+        | Task::Substitute { body, count } => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(usize::from(count)).is_some_and(|left| match body {
+                | TermId::Value(_) => machine.values.len() == left.saturating_add(1_usize)
+                    && machine.values.last().is_some_and(|&id| core.value(id).is_some()),
+                | TermId::Computation(_) => machine.values.len() == left
+                    && machine.comps.len() == entry_comps.saturating_add(1_usize)
+                    && machine.comps.last().is_some_and(|&id| core.computation(id).is_some()),
+            }),
     }),
 )]
 fn step(
@@ -2196,7 +2334,130 @@ fn step(
                 .push(core.value_type_static_pi(domain_type, codomain));
             Ok(())
         },
+        | Task::Suspended {
+            closure,
+            kind,
+            binders,
+        } => step_suspended(domain, machine, closure, kind, binders),
+        | Task::Substitute { body, count } => {
+            let mut environment = Vec::with_capacity(usize::from(count));
+            for _ in 0_usize .. usize::from(count) {
+                environment.push(machine.pop_value()?);
+            }
+            environment.reverse();
+            match substitute_environment(core, body, &environment) {
+                | TermId::Value(value) => machine.values.push(value),
+                | TermId::Computation(comp) => machine.comps.push(comp),
+            }
+            Ok(())
+        },
     }
+}
+
+/// Read back the hole or the mark a neutral stands on.
+///
+/// # Specification
+/// - requires: `closure` holds the hole or the mark itself as its source body,
+///   as evaluation suspends one; a filling the run writes is written in the
+///   context the hole stands in.
+/// - ensures: a hole the run does not write, and a mark or a written hole
+///   closed over an environment with no intuitionistic entry, push their term —
+///   the hole, the mark, or the filling — on the stack of their position; a
+///   mark or a written hole over a non-empty environment queues one
+///   substitution, then one readback per entry, outermost first, so the
+///   innermost is read first. A hole is written when the run writes its name
+///   and the filling's family is the hole's.
+/// - provides: the head half of reading a hole-headed or mark-headed neutral,
+///   and the substitution half of filling one.
+/// - fails: [`ReadbackFault::Domain`] when the closure does not resolve, and
+///   [`ReadbackFault::MachineInvariant`] when its body is not source syntax.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole under a binder read as itself, the same hole
+///   written with a filling that reads the bound variable, a hole of another
+///   name left standing, a mark met in the empty environment and a mark whose
+///   body reads a bound variable separate the spliced term, the written one,
+///   the name check and the unsubstituted and substituted marks.
+/// - witness: `live::tests::a_hole_evaluates_to_a_neutral_carrying_its_environment`
+/// - witness: `live::tests::a_mark_reads_back_through_its_environment`
+/// - witness: `live::tests::filling_resumes_where_the_hole_stood`
+/// - witness: `live::tests::a_fill_leaves_other_holes_standing`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_values = machine.values.len(), entry_comps = machine.comps.len()],
+    ensures: |ret| ret.is_err()
+        || machine.tasks.len() > entry_tasks
+        || machine.values.len().saturating_add(machine.comps.len()) == entry_values.saturating_add(entry_comps).saturating_add(1_usize),
+)]
+fn step_suspended(
+    domain: &DomainArena,
+    machine: &mut Machine<'_>,
+    closure: Suspended,
+    kind: SuspendedKind,
+    binders: OpenBinders,
+) -> Result<(), ReadbackFault>
+{
+    let dangling = ReadbackFault::Domain(DomainFault::Dangling);
+    let (body, environment) = match closure {
+        | Suspended::Value(id) => {
+            let held = domain.value_closure(id).ok_or(dangling)?;
+            let crate::ValueBody::Source(body) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            (TermId::Value(body), held.environment())
+        },
+        | Suspended::Computation(id) => {
+            let held = domain.comp_closure(id).ok_or(dangling)?;
+            let crate::CompBody::Source(body) = held.body()
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            (TermId::Computation(body), held.environment())
+        },
+    };
+    let count = environment.depth(Zone::Intuitionistic);
+    let body = match (kind, machine.writing, body) {
+        | (
+            SuspendedKind::Hole(named),
+            Writing::Fill {
+                hole,
+                filling: filling @ TermId::Value(_),
+            },
+            TermId::Value(_),
+        )
+        | (
+            SuspendedKind::Hole(named),
+            Writing::Fill {
+                hole,
+                filling: filling @ TermId::Computation(_),
+            },
+            TermId::Computation(_),
+        ) if named == hole => filling,
+        | (SuspendedKind::Hole(_), Writing::Nothing | Writing::Fill { .. }, own) => {
+            match own {
+                | TermId::Value(value) => machine.values.push(value),
+                | TermId::Computation(comp) => machine.comps.push(comp),
+            }
+            return Ok(());
+        },
+        | (SuspendedKind::Mark, Writing::Nothing | Writing::Fill { .. }, own) => own,
+    };
+    if usize::from(count) == 0_usize {
+        match body {
+            | TermId::Value(value) => machine.values.push(value),
+            | TermId::Computation(comp) => machine.comps.push(comp),
+        }
+        return Ok(());
+    }
+    machine.tasks.push(Task::Substitute { body, count });
+    for &value in environment.bindings(Zone::Intuitionistic) {
+        machine.tasks.push(Task::Value { value, binders });
+    }
+    Ok(())
 }
 
 /// The level a held lift target names.
@@ -2267,7 +2528,7 @@ fn held_level(
     ensures: |ret| machine.fuel == entry_fuel && if core.value_type(quoted).is_none() {
         ret == Err(ReadbackFault::MachineInvariant) && machine.tasks.len() == entry_tasks && machine.value_types.len() == entry_results
     } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) { Some(matched_native_node) => match *matched_native_node {
-ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Product(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
 ValueType::Sum(first, second) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
 ValueType::StaticPi { domain: first, codomain: second } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
@@ -2308,7 +2569,8 @@ fn step_quoted_value_type(
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Universe { .. }
-        | ValueType::Abstract(_) => {
+        | ValueType::Abstract(_)
+        | ValueType::Unknown => {
             machine.value_types.push(quoted);
         },
         | ValueType::Data { ref arguments, .. } => {
@@ -2411,6 +2673,7 @@ fn step_quoted_value_type(
             && extended.bindings(Zone::Intuitionistic).get(.. usize::from(ambient.depth(Zone::Intuitionistic))) == Some(ambient.bindings(Zone::Intuitionistic))
             && extended.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).and_then(|value| domain.value(value)).is_some_and(|node|
                 matches!(node, DomainValue::Neutral { neutral, .. } if domain.neutral(*neutral).is_some_and(|held| held.head() == NeutralHead::Variable { zone: Zone::Intuitionistic, level: binders.fresh(Zone::Intuitionistic) })))) ),
+        | Some(&CompType::Unknown) => new_tasks.is_empty() && machine.comp_types.last() == Some(&quoted),
         | None => false,
     })),
 )]
@@ -2428,6 +2691,7 @@ fn step_quoted_comp_type(
         .cloned()
         .ok_or(ReadbackFault::MachineInvariant)?;
     match node {
+        | CompType::Unknown => machine.comp_types.push(quoted),
         | CompType::Returner(result) => {
             machine.tasks.push(Task::Returner);
             machine.tasks.push(Task::QuotedValueType {
@@ -2871,22 +3135,24 @@ fn force_body(
 ///   is the polarity of the position it stands in; a forced unfolding names a
 ///   glued form standing in the same scope, which for a definition body is the
 ///   empty one, because the chain admits no definition with a free occurrence.
-/// - ensures: under a mode that spends nothing, the head is read as a value
-///   term and the fold starts at value polarity. Under the spending mode, an
-///   unforced unfolding is forced first; a forced unfolding then replaces the
-///   head by the glued form it was forced to and the fold starts at that form's
-///   polarity — which is the reading the unfolding face carries: the face names
-///   the **head's** body, so the neutral's own value is that body with this
-///   spine re-applied. A value body meets the spine's leading static
-///   applications by beta, and the fold resumes past them.
+/// - ensures: under a mode that spends nothing, a variable, declaration or
+///   module head is read as a value term and the fold starts at value polarity,
+///   while a hole or a mark head queues its own reading and the fold starts at
+///   the polarity of the position the hole or the mark stood in. Under the
+///   spending mode, an unforced unfolding is forced first; a forced unfolding
+///   then replaces the head by the glued form it was forced to and the fold
+///   starts at that form's polarity — which is the reading the unfolding face
+///   carries: the face names the **head's** body, so the neutral's own value is
+///   that body with this spine re-applied. A value body meets the spine's
+///   leading static applications by beta, and the fold resumes past them.
 /// - provides: the one site the unfolding face is **spent**, and the site the
 ///   zero-unfold mode is defined by not spending it. Both modes read the face —
 ///   the read is one match on a `Copy` field and the mode's own arm is what
 ///   declines to act on it — and only the spending mode forces one. The clause
 ///   states the queued fold and, under the mode that spends nothing, the head
-///   pushed as one value term; the polarity the fold starts at rides in the
-///   queued task rather than in any stack state, and the witnesses below carry
-///   it.
+///   pushed as one value term unless it is suspended; the polarity the fold
+///   starts at rides in the queued task rather than in any stack state, and the
+///   witnesses below carry it.
 /// - fails: [`ReadbackFault::Domain`] when the neutral does not resolve,
 ///   whatever forcing an unforced body refuses —
 ///   [`ReadbackFault::UnloweredBody`] among it — and whatever reading the head
@@ -2904,15 +3170,18 @@ fn force_body(
 /// - witness: `readback::tests::the_unfolding_mode_spends_a_body_already_forced`
 /// - witness: `readback::tests::a_spine_that_misses_its_polarity_is_refused`
 /// - witness: `readback::tests::an_unfolded_operator_reads_back_reduced`
+/// - witness: `live::tests::a_computation_hole_keeps_the_eliminations_that_could_not_fire`
 #[spec(
     captures: [
         entry_values = machine.values.len(),
         entry_tasks = machine.tasks.len(),
+        suspended = domain.neutral(neutral).is_some_and(|held| matches!(held.head(), NeutralHead::Hole { .. } | NeutralHead::Mark { .. })),
     ],
     ensures: |ret| [
         ret.is_err() || machine.tasks.len() > entry_tasks,
         ret.is_err()
             || machine.mode != ReadbackMode::ZeroUnfold
+            || suspended
             || machine.values.len() == entry_values.saturating_add(1_usize),
     ],
 )]
@@ -2989,7 +3258,28 @@ fn step_neutral(
         | None | Some(Glued::Computation(_)) => (spent, SpineOffset::innermost()),
     };
     let polarity = match spent {
-        | None | Some(Glued::Value(_)) => Polarity::Value,
+        | None => match head {
+            | NeutralHead::Hole {
+                closure: Suspended::Computation(_),
+                ..
+            }
+            | NeutralHead::Mark {
+                closure: Suspended::Computation(_),
+                ..
+            } => Polarity::Computation,
+            | NeutralHead::Hole {
+                closure: Suspended::Value(_),
+                ..
+            }
+            | NeutralHead::Mark {
+                closure: Suspended::Value(_),
+                ..
+            }
+            | NeutralHead::Variable { .. }
+            | NeutralHead::Constant(_)
+            | NeutralHead::Module(_) => Polarity::Value,
+        },
+        | Some(Glued::Value(_)) => Polarity::Value,
         | Some(Glued::Computation(_)) => Polarity::Computation,
     };
     machine.tasks.push(Task::Spine(SpineStep {
@@ -3000,9 +3290,21 @@ fn step_neutral(
         binders,
     }));
     match spent {
-        | None => {
-            let term = head_term(core, head, binders)?;
-            machine.values.push(term);
+        | None => match head {
+            | NeutralHead::Hole { hole, closure } => machine.tasks.push(Task::Suspended {
+                closure,
+                kind: SuspendedKind::Hole(hole),
+                binders,
+            }),
+            | NeutralHead::Mark { closure, .. } => machine.tasks.push(Task::Suspended {
+                closure,
+                kind: SuspendedKind::Mark,
+                binders,
+            }),
+            | NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_) => {
+                let term = head_term(core, head, binders)?;
+                machine.values.push(term);
+            },
         },
         | Some(Glued::Value(value)) => machine.tasks.push(Task::Value { value, binders }),
         | Some(Glued::Computation(comp)) => machine.tasks.push(Task::Comp { comp, binders }),

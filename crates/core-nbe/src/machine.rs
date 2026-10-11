@@ -371,6 +371,9 @@ pub enum DeclineReason
     /// operator that η could relate it to: telling them apart needs reduction
     /// or expansion inside a type, which this rung does not perform.
     UndecidedCodes,
+    /// A side stands on a typed hole or a mark: a fill may still make the two
+    /// agree or differ, so no verdict is the machine's to give.
+    Indeterminate,
 }
 
 /// What the machine found.
@@ -1883,7 +1886,7 @@ where
                     || (process.outcome == Outcome::Pending && match reason {
                         DeclineReason::Budget => self.spent_overflowed || self.spent.0 > self.settings.budget.0,
                         DeclineReason::Cycle => self.queue.is_empty() && matches!(M::ACTIVITY, MemoActivity::Active),
-                        DeclineReason::UndecidedCodes => false,
+                        DeclineReason::UndecidedCodes | DeclineReason::Indeterminate => false,
                     })),
             Err(_) => true,
         }
@@ -2361,7 +2364,7 @@ where
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))
                         .map(|node| match node.head() {
                             NeutralHead::Constant(constant) => self.definitions.height(constant),
-                            NeutralHead::Variable { .. } | NeutralHead::Module(_) => DefinitionHeight::default(),
+                            NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => DefinitionHeight::default(),
                         }))
             };
             ret == height(pair.0).and_then(|left| height(pair.1).map(|right| left.max(right)))
@@ -2671,7 +2674,7 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))
             .and_then(|held| match held.head() {
                 NeutralHead::Constant(constant) => Ok(constant),
-                NeutralHead::Variable { .. } | NeutralHead::Module(_) => Err(ConversionFault::MachineInvariant),
+                NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => Err(ConversionFault::MachineInvariant),
             })
     )]
     fn head_constant(
@@ -2685,9 +2688,10 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         match held.head() {
             | NeutralHead::Constant(constant) => Ok(constant),
-            | NeutralHead::Variable { .. } | NeutralHead::Module(_) => {
-                Err(ConversionFault::MachineInvariant)
-            },
+            | NeutralHead::Variable { .. }
+            | NeutralHead::Module(_)
+            | NeutralHead::Hole { .. }
+            | NeutralHead::Mark { .. } => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -3600,7 +3604,10 @@ where
         let bare = held.spine().is_empty();
         let height = match held.head() {
             | NeutralHead::Constant(constant) => self.definitions.height(constant),
-            | NeutralHead::Variable { .. } | NeutralHead::Module(_) => {
+            | NeutralHead::Variable { .. }
+            | NeutralHead::Module(_)
+            | NeutralHead::Hole { .. }
+            | NeutralHead::Mark { .. } => {
                 return Err(ConversionFault::MachineInvariant);
             },
         };
@@ -4497,20 +4504,21 @@ mod tests
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
           Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
-          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
+          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
           Value::Thunk(body) => ret.as_slice() == [CoreTerm::Computation(body)],
-          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
-          Computation::Lambda(body) => ret.as_slice() == [CoreTerm::Computation(body)],
+          Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [CoreTerm::Computation(body)],
           Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [CoreTerm::Value(value)],
           Computation::Bind(bound,body) => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
           Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [CoreTerm::Value(scrutinee),CoreTerm::Computation(on_left),CoreTerm::Computation(on_right)],
+          Computation::Hole(_) => ret.is_empty(),
          }),
         }
     )]
@@ -4533,7 +4541,8 @@ mod tests
                 | Value::Unit
                 | Value::Literal(_)
                 | Value::Quote(_)
-                | Value::QuoteComputation(_) => Vec::new(),
+                | Value::QuoteComputation(_)
+                | Value::Hole(_) => Vec::new(),
                 | Value::PathRefl(code) => Vec::from([CoreTerm::Value(code)]),
                 | Value::PathEquiv {
                     forward, backward, ..
@@ -4543,10 +4552,10 @@ mod tests
                 | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
-                | Value::StaticLambda(body) => Vec::from([CoreTerm::Value(body)]),
-                | Value::Injection(_, body) | Value::Lift { body, .. } => {
-                    Vec::from([CoreTerm::Value(body)])
-                },
+                | Value::StaticLambda(body)
+                | Value::Injection(_, body)
+                | Value::Lift { body, .. }
+                | Value::Mark { body, .. } => Vec::from([CoreTerm::Value(body)]),
                 | Value::Thunk(body) => Vec::from([CoreTerm::Computation(body)]),
             },
             | CoreTerm::Computation(id) => {
@@ -4570,7 +4579,10 @@ mod tests
                     | Computation::Transport(path, value) => {
                         Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
                     },
-                    | Computation::Lambda(body) => Vec::from([CoreTerm::Computation(body)]),
+                    | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                        Vec::from([CoreTerm::Computation(body)])
+                    },
+                    | Computation::Hole(_) => Vec::new(),
                     | Computation::Application(head, argument) => {
                         Vec::from([CoreTerm::Computation(head), CoreTerm::Value(argument)])
                     },
@@ -4711,12 +4723,17 @@ mod tests
                                         target,
                                         body: value(body),
                                     },
+                                    | Value::Mark { mark, body } => Value::Mark {
+                                        mark,
+                                        body: value(body),
+                                    },
                                     | leaf @ (Value::Variable { .. }
                                     | Value::Constant(_)
                                     | Value::Unit
                                     | Value::Literal(_)
                                     | Value::Quote(_)
-                                    | Value::QuoteComputation(_)) => leaf,
+                                    | Value::QuoteComputation(_)
+                                    | Value::Hole(_)) => leaf,
                                 };
                             match values.iter().find(|entry| entry.0 == key) {
                                 | Some(&(_, representative)) => representative,
@@ -4783,6 +4800,11 @@ mod tests
                                     on_left: computation(on_left),
                                     on_right: computation(on_right),
                                 },
+                                | Computation::Mark { mark, body } => Computation::Mark {
+                                    mark,
+                                    body: computation(body),
+                                },
+                                | Computation::Hole(hole) => Computation::Hole(hole),
                             };
                             match computations.iter().find(|entry| entry.0 == key) {
                                 | Some(&(_, representative)) => representative,
@@ -4825,20 +4847,21 @@ mod tests
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
           Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
-          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
+          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
           Value::Thunk(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
-          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Hole(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
-          Computation::Lambda(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
+          Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
           Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [canon[&CoreTerm::Value(value)]],
           Computation::Bind(bound,body) => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
           Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [canon[&CoreTerm::Value(scrutinee)],canon[&CoreTerm::Computation(on_left)],canon[&CoreTerm::Computation(on_right)]],
+          Computation::Hole(_) => ret.is_empty(),
          }),
         }
     )]
@@ -5089,6 +5112,9 @@ mod tests
                                         "the duplication fixtures carry no quote, operator or path"
                                     )
                                 },
+                                | Value::Hole(_) | Value::Mark { .. } => {
+                                    panic!("the duplication fixtures carry no hole or mark")
+                                },
                             };
                             OverlayId::Value(
                                 overlay
@@ -5110,6 +5136,9 @@ mod tests
                                 },
                                 | Computation::Transport(..) => {
                                     panic!("the duplication fixtures carry no transport")
+                                },
+                                | Computation::Hole(_) | Computation::Mark { .. } => {
+                                    panic!("the duplication fixtures carry no hole or mark")
                                 },
                                 | Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
                                 | Computation::Application(..) => {
@@ -5383,22 +5412,23 @@ mod tests
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
               Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
-              Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [Node::Value(body)],
+              Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} | Value::Mark{body,..} => ret.as_slice() == [Node::Value(body)],
               Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
-              Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+              Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Hole(_) => ret.is_empty(),
              }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) => ret.as_slice() == [Node::Value(record)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
-              Computation::Lambda(body) => ret.as_slice() == [Node::Computation(body)],
+              Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [Node::Computation(body)],
               Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
               Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [Node::Value(value)],
               Computation::Bind(bound,body) => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
               Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [Node::Value(scrutinee),Node::Computation(on_left),Node::Computation(on_right)],
+              Computation::Hole(_) => ret.is_empty(),
              }),
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
@@ -5408,12 +5438,13 @@ mod tests
               ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
               ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
               ValueType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
-              ValueType::Base(_) | ValueType::Unit | ValueType::Universe{..} | ValueType::Abstract(_) => ret.is_empty(),
+              ValueType::Base(_) | ValueType::Unit | ValueType::Universe{..} | ValueType::Abstract(_) | ValueType::Unknown => ret.is_empty(),
              }),
              Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
               CompType::Returner(result) => ret.as_slice() == [Node::ValueType(result)],
               CompType::Arrow{domain,codomain} | CompType::Pi{domain,codomain} => ret.as_slice() == [Node::ValueType(domain),Node::CompType(codomain)],
               CompType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
+              CompType::Unknown => ret.is_empty(),
              }),
             } }
         )]
@@ -5455,10 +5486,10 @@ mod tests
                         | Value::StaticApplication(first, second) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
-                        | Value::StaticLambda(body) => Vec::from([Node::Value(body)]),
-                        | Value::Injection(_, body) | Value::Lift { body, .. } => {
-                            Vec::from([Node::Value(body)])
-                        },
+                        | Value::StaticLambda(body)
+                        | Value::Injection(_, body)
+                        | Value::Lift { body, .. }
+                        | Value::Mark { body, .. } => Vec::from([Node::Value(body)]),
                         | Value::Thunk(body) => Vec::from([Node::Computation(body)]),
                         | Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
                         | Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
@@ -5466,7 +5497,8 @@ mod tests
                         | Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
-                        | Value::Literal(_) => Vec::new(),
+                        | Value::Literal(_)
+                        | Value::Hole(_) => Vec::new(),
                     }
                 },
                 | Node::Computation(computation) => {
@@ -5491,7 +5523,10 @@ mod tests
                         | Computation::Transport(path, value) => {
                             Vec::from([Node::Value(path), Node::Value(value)])
                         },
-                        | Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
+                        | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                            Vec::from([Node::Computation(body)])
+                        },
+                        | Computation::Hole(_) => Vec::new(),
                         | Computation::Application(head, argument) => {
                             Vec::from([Node::Computation(head), Node::Value(argument)])
                         },
@@ -5538,7 +5573,8 @@ mod tests
                         | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Universe { .. }
-                        | ValueType::Abstract(_) => Vec::new(),
+                        | ValueType::Abstract(_)
+                        | ValueType::Unknown => Vec::new(),
                     }
                 },
                 | Node::CompType(comp_type) => {
@@ -5549,6 +5585,7 @@ mod tests
                             Vec::from([Node::ValueType(domain), Node::CompType(codomain)])
                         },
                         | CompType::Element { code, .. } => Vec::from([Node::Value(code)]),
+                        | CompType::Unknown => Vec::new(),
                     }
                 },
             }
@@ -5689,6 +5726,9 @@ mod tests
                         | Value::StaticLambda(_) => {
                             panic!("the kernel has no static lambda: a replay fixture lifts it")
                         },
+                        | Value::Hole(_) | Value::Mark { .. } => {
+                            panic!("the kernel admits no hole or mark: a replay fixture has none")
+                        },
                     };
                     self.values.insert(id, copy);
                 },
@@ -5752,6 +5792,9 @@ mod tests
                             let (on_left, on_right) =
                                 (computation(self, on_left), computation(self, on_right));
                             self.arena.computation_case(scrutinee, on_left, on_right)
+                        },
+                        | Computation::Hole(_) | Computation::Mark { .. } => {
+                            panic!("the kernel admits no hole or mark: a replay fixture has none")
                         },
                     };
                     self.computations.insert(id, copy);
@@ -5823,6 +5866,9 @@ mod tests
                                 (value_type(self, domain), value_type(self, codomain));
                             self.arena.value_type_static_pi(domain, codomain)
                         },
+                        | ValueType::Unknown => {
+                            panic!("the kernel has no unknown type: a replay fixture has none")
+                        },
                     };
                     self.value_types.insert(id, copy);
                 },
@@ -5851,6 +5897,9 @@ mod tests
                         | CompType::Element { code, ref target } => {
                             let code = value(self, code);
                             self.arena.comp_type_element(code, target.clone())
+                        },
+                        | CompType::Unknown => {
+                            panic!("the kernel has no unknown type: a replay fixture has none")
                         },
                     };
                     self.comp_types.insert(id, copy);

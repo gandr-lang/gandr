@@ -968,10 +968,10 @@ impl<'source> Program<'source>
     /// - requires: the reachable core graph is finite and acyclic; missing ids
     ///   are permitted and have explicit placeholder spellings.
     /// - ensures: literals retain signs, decimal components and escaped text;
-    ///   unit, functions, suspensions and codes have their declared spellings.
-    ///   Pairs and injections preserve field order and nesting, lifts are
-    ///   erased, and constants retain known names or the unknown-constant
-    ///   placeholder.
+    ///   unit, functions, suspensions, codes and holes have their declared
+    ///   spellings. Pairs and injections preserve field order and nesting,
+    ///   lifts and marks are erased, and constants retain known names or the
+    ///   unknown-constant placeholder.
     /// - fails: unsupported computation heads and missing nodes are spelled,
     ///   not dereferenced or silently omitted.
     /// - panics: none.
@@ -1015,12 +1015,14 @@ impl<'source> Program<'source>
             },
             Some(&Value::Pair(..)) => ret.0.starts_with('(') && ret.0.ends_with(')'),
             Some(&Value::Injection(side, _)) => ret.0.starts_with(match side { Side::Left => "inl(", Side::Right => "inr(" }) && ret.0.ends_with(')'),
-            Some(&Value::Lift { .. }) => true,
+            Some(&(Value::Lift { .. } | Value::Mark { .. })) => true,
+            Some(&Value::Hole(_)) => ret.0 == "?",
             None => ret.0 == "<dangling>",
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) |
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
+| Computation::Hole(_) | Computation::Mark { .. })) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1041,7 +1043,9 @@ None => ret.0 == "<computation>",
                 | Computation::Force(_)
                 | Computation::DataCase { .. }
                 | Computation::RecordProjection(..)
-                | Computation::Case { .. }),
+                | Computation::Case { .. }
+                | Computation::Hole(_)
+                | Computation::Mark { .. }),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
@@ -1128,7 +1132,10 @@ None => ret.0 == "<computation>",
                         | Side::Right => "inr(",
                     }),
                 ]),
-                | Some(&Value::Lift { body, .. }) => pending.push(Piece::Value(body)),
+                | Some(&(Value::Lift { body, .. } | Value::Mark { body, .. })) => {
+                    pending.push(Piece::Value(body));
+                },
+                | Some(&Value::Hole(_)) => spelled.push('?'),
                 | Some(&Value::Thunk(_)) => spelled.push_str("<thunk>"),
                 | Some(
                     &(Value::Quote(_)
@@ -1186,8 +1193,9 @@ enum Piece<'core>
 /// - requires: the reachable term graph is finite and acyclic; missing ids are
 ///   ignored rather than followed.
 /// - ensures: one index per reference occurrence, preserving multiplicity;
-///   quoted types and static code do not contribute references. A constant root
-///   contributes only itself and an atomic non-reference root contributes none.
+///   quoted types and static code do not contribute references, and neither
+///   does a hole. A constant root contributes only itself and an atomic
+///   non-reference root contributes none.
 /// - fails: never.
 /// - panics: none.
 /// - intension: traversal uses an explicit worklist without recursion.
@@ -1203,11 +1211,11 @@ enum Piece<'core>
     Some(&Value::Primitive { .. } |
 &(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
-Value::StaticApplication(..))) | None => ret.is_empty(),
+Value::StaticApplication(..) | Value::Hole(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } |
 Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } |
-Value::Thunk(_))) => true,
+Value::Thunk(_) | Value::Mark { .. })) => true,
 })]
 fn references(
     core: &CoreArena,
@@ -1249,7 +1257,8 @@ fn references(
                 | Some(
                     &(Value::PathRefl(inner)
                     | Value::Injection(_, inner)
-                    | Value::Lift { body: inner, .. }),
+                    | Value::Lift { body: inner, .. }
+                    | Value::Mark { body: inner, .. }),
                 ) => {
                     pending.push(Node::Value(inner));
                 },
@@ -1262,7 +1271,8 @@ fn references(
                     | Value::Quote(_)
                     | Value::QuoteComputation(_)
                     | Value::StaticLambda(_)
-                    | Value::StaticApplication(..)),
+                    | Value::StaticApplication(..)
+                    | Value::Hole(_)),
                 )
                 | None => {},
             },
@@ -1303,7 +1313,8 @@ fn references(
                     Node::Computation(on_left),
                     Node::Computation(on_right),
                 ]),
-                | None => {},
+                | Some(&Computation::Mark { body, .. }) => pending.push(Node::Computation(body)),
+                | Some(&Computation::Hole(_)) | None => {},
             },
         }
     }

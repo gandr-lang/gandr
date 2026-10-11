@@ -40,6 +40,8 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 
 use crate::classifier::Sort;
+use crate::hole::HoleId;
+use crate::hole::MarkIndex;
 use crate::syntax::CompType;
 use crate::syntax::Computation;
 use crate::syntax::Value;
@@ -1534,6 +1536,103 @@ impl CoreArena
     {
         self.alloc_computation(Computation::Transport(path, value))
     }
+
+    /// Mint a typed hole in value position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_hole(
+        &mut self,
+        hole: HoleId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Hole(hole))
+    }
+
+    /// Mint a marked value over an already-allocated body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena.
+    /// - ensures: appends the mark and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two marks over unequal bodies and indices distinguish
+    ///   a dropped index, a swapped body and a confused former.
+    /// - witness: `arena::tests::a_mark_keeps_its_index_and_its_body`
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::Mark { mark, body }))]
+    #[inline]
+    pub fn value_mark(
+        &mut self,
+        mark: MarkIndex,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Mark { mark, body })
+    }
+
+    /// Mint a typed hole in computation position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_hole(
+        &mut self,
+        hole: HoleId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Hole(hole))
+    }
+
+    /// Mint a marked computation over an already-allocated body.
+    ///
+    /// # Specification
+    /// - requires: `body` names a computation node already allocated in this
+    ///   arena.
+    /// - ensures: appends the mark and returns a fresh id strictly above
+    ///   `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two marks over unequal bodies and indices distinguish
+    ///   a dropped index, a swapped body and a confused former.
+    /// - witness: `arena::tests::a_mark_keeps_its_index_and_its_body`
+    #[spec(ensures: |ret| self.computation(ret) == Some(&Computation::Mark { mark, body }))]
+    #[inline]
+    pub fn computation_mark(
+        &mut self,
+        mark: MarkIndex,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Mark { mark, body })
+    }
+
+    /// Mint the unknown value type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_unknown(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Unknown)
+    }
+
+    /// Mint the unknown computation type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn comp_type_unknown(&mut self) -> CompTypeId
+    {
+        self.alloc_comp_type(CompType::Unknown)
+    }
 }
 
 #[cfg(test)]
@@ -1960,5 +2059,49 @@ mod tests
             assert!(id > result);
             assert_eq!(Some(&node), arena.comp_type(id));
         }
+    }
+
+    #[test]
+    fn a_mark_keeps_its_index_and_its_body()
+    {
+        let mut arena = CoreArena::new();
+        let first = arena.value_hole(crate::hole::HoleId::from(4_u32));
+        let second = arena.value_unit();
+        let marked_first = arena.value_mark(crate::hole::MarkIndex::from(0_u32), first);
+        let marked_second = arena.value_mark(crate::hole::MarkIndex::from(1_u32), second);
+        assert!(marked_first > first && marked_second > second);
+        assert_eq!(
+            arena.value(marked_first),
+            Some(&Value::Mark {
+                mark: crate::hole::MarkIndex::from(0_u32),
+                body: first,
+            })
+        );
+        assert_eq!(
+            arena.value(marked_second),
+            Some(&Value::Mark {
+                mark: crate::hole::MarkIndex::from(1_u32),
+                body: second,
+            })
+        );
+        let left = arena.computation_hole(crate::hole::HoleId::from(4_u32));
+        let right = arena.computation_return(second);
+        let marked_left = arena.computation_mark(crate::hole::MarkIndex::from(2_u32), left);
+        let marked_right = arena.computation_mark(crate::hole::MarkIndex::from(3_u32), right);
+        assert!(marked_left > left && marked_right > right);
+        assert_eq!(
+            arena.computation(marked_left),
+            Some(&crate::Computation::Mark {
+                mark: crate::hole::MarkIndex::from(2_u32),
+                body: left,
+            })
+        );
+        assert_eq!(
+            arena.computation(marked_right),
+            Some(&crate::Computation::Mark {
+                mark: crate::hole::MarkIndex::from(3_u32),
+                body: right,
+            })
+        );
     }
 }

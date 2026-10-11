@@ -2636,6 +2636,10 @@ fn read(
                 Value::StaticApplication(..) => {
                     matches!(ret, ContentNode::StaticApplication(..))
                 }
+                Value::Hole(hole) => ret == ContentNode::Hole(hole),
+                Value::Mark { mark, .. } => {
+                    matches!(ret, ContentNode::ValueMark { mark: found, .. } if found == mark)
+                }
             },
         )
 },
@@ -2709,6 +2713,11 @@ where
             let head = child(Root::Value(head));
             ContentNode::StaticApplication(head, child(Root::Value(argument)))
         },
+        | Some(&Value::Hole(hole)) => ContentNode::Hole(hole),
+        | Some(&Value::Mark { mark, body }) => ContentNode::ValueMark {
+            mark,
+            body: child(Root::Value(body)),
+        },
         | None => ContentNode::Unresolved(Sort::Value),
     }
 }
@@ -2754,6 +2763,10 @@ where
                 Computation::Bind(..) => matches!(ret, ContentNode::Bind(..)),
                 Computation::Force(..) => matches!(ret, ContentNode::Force(..)),
                 Computation::Case { .. } => matches!(ret, ContentNode::Case { .. }),
+                Computation::Hole(hole) => ret == ContentNode::ComputationHole(hole),
+                Computation::Mark { mark, .. } => {
+                    matches!(ret, ContentNode::ComputationMark { mark: found, .. } if found == mark)
+                }
             },
         )
 },
@@ -2822,6 +2835,11 @@ where
                 on_left,
                 on_right: child(Root::Computation(on_right)),
             }
+        },
+        | Some(&Computation::Hole(hole)) => ContentNode::ComputationHole(hole),
+        | Some(&Computation::Mark { mark, body }) => ContentNode::ComputationMark {
+            mark,
+            body: child(Root::Computation(body)),
         },
         | None => ContentNode::Unresolved(Sort::Computation),
     }
@@ -2896,6 +2914,7 @@ where
                     )
                 }
                 ValueType::StaticPi { .. } => matches!(ret, ContentNode::StaticPi { .. }),
+                ValueType::Unknown => ret == ContentNode::UnknownType,
             },
         )
 },
@@ -2960,6 +2979,7 @@ where
                 codomain: child(Root::ValueType(codomain)),
             }
         },
+        | Some(&ValueType::Unknown) => ContentNode::UnknownType,
         | None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
@@ -3002,6 +3022,7 @@ where
                         if found == target
                     )
                 }
+                CompType::Unknown => ret == ContentNode::UnknownComputationType,
             },
         )
 },
@@ -3036,6 +3057,7 @@ where
             code: child(Root::Value(code)),
             target: target.clone(),
         },
+        | Some(&CompType::Unknown) => ContentNode::UnknownComputationType,
         | None => ContentNode::Unresolved(Sort::CompType),
     }
 }

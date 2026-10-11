@@ -126,6 +126,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
@@ -137,7 +138,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&Value::Constant(index)), Former::Unreadable) => usize::from(index) >= self.names.len(),
-        (Some(&Value::Constructor { .. } | &Value::Record(_)) | None,
+        (Some(&Value::Constructor { .. } | &Value::Record(_) | &Value::Hole(_) | &Value::Mark { .. }) | None,
 Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
 (Some(&Value::Thunk(_)), Former::Thunk) |
 (Some(&Value::Lift { .. }), Former::ValueLift) => true,
@@ -165,8 +166,12 @@ Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
             return Former::Unreadable;
         };
         match *value {
-            // The source grammar has no native data or record reader.
-            | Value::Constructor { .. } | Value::Record(_) => Former::Unreadable,
+            // The source grammar has no native data or record reader, and a
+            // hole or a mark is displayed by the session, not spelled here.
+            | Value::Constructor { .. }
+            | Value::Record(_)
+            | Value::Hole(_)
+            | Value::Mark { .. } => Former::Unreadable,
             | Value::Primitive { primitive, .. } => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
@@ -218,11 +223,12 @@ Former::Unreadable) | (Some(&Value::Unit), Former::Unit) |
     /// - witness: `goldens::tests::universes_spell_their_sort_and_level`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
-        (Some(&ValueType::Data { .. } | &ValueType::Record(_)) | None,
+        (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown) | None,
 Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
@@ -251,7 +257,9 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
         };
         match *value_type {
             // These classifiers have no spelling in the source grammar.
-            | ValueType::Data { .. } | ValueType::Record(_) => Former::Unreadable,
+            | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
+                Former::Unreadable
+            },
             | ValueType::PathUniverse(source, target) => {
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
@@ -295,8 +303,9 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `goldens::tests::dependent_function_type_breaks_before_codomain`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     #[spec(ensures: |ret| match (self.arena.comp_type(id), ret) {
-        | (None, Former::Unreadable) => true,
+        | (Some(&CompType::Unknown) | None, Former::Unreadable) => true,
         | (Some(&CompType::Returner(result)), Former::Returner(actual)) => actual == CoreNode::ValueType(result),
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
@@ -314,6 +323,7 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
             return Former::Unreadable;
         };
         match *comp_type {
+            | CompType::Unknown => Former::Unreadable,
             | CompType::Returner(result) => Former::Returner(CoreNode::ValueType(result)),
             | CompType::Arrow { domain, codomain } => Former::Arrow {
                 domain: CoreNode::ValueType(domain),
@@ -337,8 +347,9 @@ impl Source for CoreSource<'_>
     /// # Specification
     /// - requires: nothing; an id from another arena reads as whatever this
     ///   arena holds at it, or as unreadable.
-    /// - ensures: as [`Source::read`]; every held computation reads as
-    ///   [`Former::Computation`], and a missing handle as unreadable.
+    /// - ensures: as [`Source::read`]; every held computation but a hole or a
+    ///   mark reads as [`Former::Computation`], and a hole, a mark or a missing
+    ///   handle as unreadable.
     /// - provides: the printer's reading of the core arena.
     /// - fails: never.
     /// - panics: none.
@@ -352,11 +363,14 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
+    /// - witness: `core_source::tests::holes_marks_and_the_unknown_type_read_as_unreadable`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match node {
-        | CoreNode::Computation(id) => matches!((self.arena.computation(id).is_some(), ret),
-            (true, Former::Computation) | (false, Former::Unreadable)),
+        | CoreNode::Computation(id) => match self.arena.computation(id) {
+            | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => matches!(ret, Former::Unreadable),
+            | Some(_) => matches!(ret, Former::Computation),
+        },
         | CoreNode::Value(id) if self.arena.value(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::ValueType(id) if self.arena.value_type(id).is_none() => matches!(ret, Former::Unreadable),
         | CoreNode::CompType(id) if self.arena.comp_type(id).is_none() => matches!(ret, Former::Unreadable),
@@ -391,7 +405,9 @@ impl Source for CoreSource<'_>
                     | Computation::Force(_)
                     | Computation::Case { .. }),
                 ) => Former::Computation,
-                | None => Former::Unreadable,
+                | Some(&(Computation::Hole(_) | Computation::Mark { .. })) | None => {
+                    Former::Unreadable
+                },
             },
             | CoreNode::ValueType(id) => self.value_type(id),
             | CoreNode::CompType(id) => self.comp_type(id),
@@ -481,6 +497,39 @@ mod tests
         assert!(matches!(
             source.read(CoreNode::ValueType(abstract_type)),
             Former::Unreadable
+        ));
+    }
+
+    /// A hole, a mark and the unknown type have no source spelling; their
+    /// neighbours keep theirs.
+    #[test]
+    fn holes_marks_and_the_unknown_type_read_as_unreadable()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let hole = arena.value_hole(gandr_core_term::hole::HoleId::from(0_u32));
+        let marked = arena.value_mark(gandr_core_term::hole::MarkIndex::from(0_u32), unit);
+        let returned = arena.computation_return(unit);
+        let computation_hole = arena.computation_hole(gandr_core_term::hole::HoleId::from(1_u32));
+        let computation_mark =
+            arena.computation_mark(gandr_core_term::hole::MarkIndex::from(1_u32), returned);
+        let unknown = arena.value_type_unknown();
+        let unknown_computation = arena.comp_type_unknown();
+        let source = CoreSource::new(&arena, &[]);
+        for node in [
+            CoreNode::Value(hole),
+            CoreNode::Value(marked),
+            CoreNode::Computation(computation_hole),
+            CoreNode::Computation(computation_mark),
+            CoreNode::ValueType(unknown),
+            CoreNode::CompType(unknown_computation),
+        ] {
+            assert!(matches!(source.read(node), Former::Unreadable), "{node:?}");
+        }
+        assert!(matches!(source.read(CoreNode::Value(unit)), Former::Unit));
+        assert!(matches!(
+            source.read(CoreNode::Computation(returned)),
+            Former::Computation
         ));
     }
 }

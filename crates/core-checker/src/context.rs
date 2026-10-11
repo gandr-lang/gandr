@@ -939,7 +939,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Lift { .. }
                     | ValueTypeView::Element { .. }
                     | ValueTypeView::Product(..)
-                    | ValueTypeView::StaticPi { .. } => Ok(otherwise.clone()),
+                    | ValueTypeView::StaticPi { .. }
+                    | ValueTypeView::Unknown => Ok(otherwise.clone()),
                 },
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
@@ -957,7 +958,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::Thunk(_)
             | Value::Lift { .. }
             | Value::StaticLambda(_)
-            | Value::StaticApplication(..) => Ok(otherwise.clone()),
+            | Value::StaticApplication(..)
+            | Value::Hole(_)
+            | Value::Mark { .. } => Ok(otherwise.clone()),
         }
     }
 

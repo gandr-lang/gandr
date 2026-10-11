@@ -113,6 +113,7 @@ use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
+use crate::domain::Suspended;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
 use crate::free::CoreTerm;
@@ -2713,7 +2714,88 @@ fn step_value(
             machine.tasks.push(Task::Value { term: head, env });
             Ok(())
         },
+        // A hole or a mark stops evaluation: it stands as a neutral head,
+        // suspended whole over the environment it was met in, which is what a
+        // fill reads its filling in and what a mark's body is read back
+        // through.
+        | Value::Hole(hole) => {
+            let (closure, face) = suspend_value(domain, machine, term, env)?;
+            let head = NeutralHead::Hole { hole, closure };
+            stand_value(domain, machine, head, face)
+        },
+        | Value::Mark { mark, .. } => {
+            let (closure, face) = suspend_value(domain, machine, term, env)?;
+            let head = NeutralHead::Mark { mark, closure };
+            stand_value(domain, machine, head, face)
+        },
     }
+}
+
+/// Close the hole or mark `term` over the environment `env` names.
+///
+/// # Specification
+/// - requires: `env` names an environment this machine holds.
+/// - ensures: a fresh value closure over `term` and that environment, and the
+///   face the neutral standing on it carries: `term`'s own when the environment
+///   is empty, reduced otherwise.
+/// - provides: the suspension a hole or a mark in value position stands on.
+/// - fails: [`EvalFault::MachineInvariant`] when `env` names no environment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EvalFault::MachineInvariant`] — `env` names no environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a hole met under no binder and under one separate the
+///   kept face from the reduced one, and the closure's environment from an
+///   empty one.
+/// - witness: `live::tests::a_hole_evaluates_to_a_neutral_carrying_its_environment`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(closure, _)| matches!(closure, Suspended::Value(id) if domain.value_closure(id).is_some())))]
+fn suspend_value(
+    domain: &mut DomainArena,
+    machine: &Machine<'_>,
+    term: ValueId,
+    env: EnvId,
+) -> Result<(Suspended, TermFace), EvalFault>
+{
+    let captured = machine.capture(env)?;
+    let closed = capture_keeps_source(&captured);
+    let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);
+    Ok((Suspended::Value(closure), composite_face(closed, term)))
+}
+
+/// Stand a fresh neutral over `head`, with no elimination, in value position.
+///
+/// # Specification
+/// - requires: `head` cannot unfold.
+/// - ensures: one value pushed: a neutral over `head`, an empty spine and a
+///   rigid unfolding face, carrying `face`.
+/// - provides: the value a hole or a mark evaluates to.
+/// - fails: [`EvalFault::Domain`] carrying the arena's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EvalFault::Domain`] — the arena refused the neutral.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`suspend_value`].
+/// - witness: `live::tests::a_hole_evaluates_to_a_neutral_carrying_its_environment`
+#[spec(captures: entry = machine.values.len(), ensures: |ret| ret.is_err() || machine.values.len() == entry.saturating_add(1_usize))]
+fn stand_value(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    head: NeutralHead,
+    face: TermFace,
+) -> Result<(), EvalFault>
+{
+    let neutral = domain
+        .neutral_node(head, Vec::new(), Unfolding::Rigid)
+        .map_err(EvalFault::Domain)?;
+    let stood = domain
+        .value_neutral(neutral, face)
+        .map_err(EvalFault::Domain)?;
+    machine.values.push(stood);
+    Ok(())
 }
 
 /// Perform one computation task: evaluate a core computation node one layer
@@ -2829,7 +2911,84 @@ fn step_comp(
             });
             Ok(())
         },
+        | Computation::Hole(hole) => {
+            let (closure, face) = suspend_comp(domain, machine, term, env)?;
+            stand_comp(domain, machine, NeutralHead::Hole { hole, closure }, face)
+        },
+        | Computation::Mark { mark, .. } => {
+            let (closure, face) = suspend_comp(domain, machine, term, env)?;
+            stand_comp(domain, machine, NeutralHead::Mark { mark, closure }, face)
+        },
     }
+}
+
+/// Close the hole or mark `term` over the environment `env` names, in
+/// computation position.
+///
+/// # Specification
+/// - requires: `env` names an environment this machine holds.
+/// - ensures: a fresh computation closure over `term` and that environment, and
+///   the face the neutral standing on it carries: `term`'s own when the
+///   environment is empty, reduced otherwise.
+/// - provides: the suspension a hole or a mark in computation position stands
+///   on.
+/// - fails: [`EvalFault::MachineInvariant`] when `env` names no environment.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EvalFault::MachineInvariant`] — `env` names no environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computation hole applied to an argument stands with the
+///   application on its spine.
+/// - witness: `live::tests::a_computation_hole_keeps_the_eliminations_that_could_not_fire`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(closure, _)| matches!(closure, Suspended::Computation(id) if domain.comp_closure(id).is_some())))]
+fn suspend_comp(
+    domain: &mut DomainArena,
+    machine: &Machine<'_>,
+    term: ComputationId,
+    env: EnvId,
+) -> Result<(Suspended, CompTermFace), EvalFault>
+{
+    let captured = machine.capture(env)?;
+    let closed = capture_keeps_source(&captured);
+    let closure = domain.comp_closure_node(term, captured);
+    Ok((
+        Suspended::Computation(closure),
+        composite_comp_face(closed, term),
+    ))
+}
+
+/// Stand a fresh neutral over `head`, with no elimination, in computation
+/// position.
+///
+/// # Specification
+/// - requires: `head` cannot unfold and is held in computation position.
+/// - ensures: one computation pushed: a neutral over `head`, an empty spine and
+///   a rigid unfolding face, carrying `face`.
+/// - provides: the weak head a computation hole or mark evaluates to.
+/// - fails: [`EvalFault::Domain`] carrying the arena's refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EvalFault::Domain`] — the arena refused the neutral.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`suspend_comp`].
+/// - witness: `live::tests::a_computation_hole_keeps_the_eliminations_that_could_not_fire`
+#[spec(captures: entry = machine.comps.len(), ensures: |ret| ret.is_err() || machine.comps.len() == entry.saturating_add(1_usize))]
+fn stand_comp(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    head: NeutralHead,
+    face: CompTermFace,
+) -> Result<(), EvalFault>
+{
+    let neutral = domain
+        .neutral_node(head, Vec::new(), Unfolding::Rigid)
+        .map_err(EvalFault::Domain)?;
+    machine.comps.push(domain.comp_neutral(neutral, face));
+    Ok(())
 }
 
 /// Run the thunk the value on the stack holds, or get stuck on it.

@@ -89,6 +89,20 @@
 //! assumption in the artifact's audit that the ledger never owed. A later
 //! declaration reading it is [`Refusal::Withheld`], located at the reference.
 //!
+//! # A term hole is refused where it stands, and a mark is erased
+//!
+//! The kernel admits no incomplete term. A term hole the judgement accepted
+//! is [`Refusal::Hole`], located at the hole's node and, through the
+//! [`Readmitted`] row it stands on, at the declaration's origin; the unknown
+//! type, which only an incomplete elaboration mints, is [`Refusal::Unknown`].
+//! Both are user absences: the author has a hole left to fill, and filling it
+//! is what lets the declaration cross. A mark is erased to the term it marks,
+//! as Hazelnut's mark erasure recovers the unmarked program (Omar et al.,
+//! POPL 2017, doi:10.1145/3009837.3009900): the kernel re-derives what was
+//! marked, so a mark can never make it accept what it would refuse. The
+//! kernel's own input invariant is unchanged; it never sees a hole, a mark or
+//! the unknown type.
+//!
 //! # The audit exposes source and runtime assumptions
 //!
 //! The kernel's audit names every axiom a declaration transitively rests on.
@@ -129,6 +143,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::AxiomReport;
@@ -307,6 +322,20 @@ pub enum Refusal
     /// machine's own pushes are the only source of frames; reported rather
     /// than asserted.
     MachineInvariant,
+    /// A term hole: the kernel admits no incomplete term.
+    Hole
+    {
+        /// The hole's node.
+        at: CoreNode,
+        /// The hole.
+        hole: HoleId,
+    },
+    /// The unknown type, which only an incomplete elaboration mints.
+    Unknown
+    {
+        /// The type's node.
+        at: CoreNode,
+    },
 }
 
 impl Refusal
@@ -321,7 +350,8 @@ impl Refusal
     ///   fragment is unrepresentable; a linear variable, a dangling id, a
     ///   cyclic node, a declined certificate and a machine invariant are engine
     ///   faults, because a judged term from the judged arena holds none of them
-    ///   and an unfolding holds by definition; nothing is a user absence.
+    ///   and an unfolding holds by definition; a term hole and the unknown type
+    ///   are user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -333,11 +363,13 @@ impl Refusal
     ///   kernel receipt or becoming an obligation.
     /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
     /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
         | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
+        | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
     })]
     #[inline]
     #[must_use]
@@ -351,6 +383,7 @@ impl Refusal
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
             | Self::MachineInvariant => FailureClass::EngineFault,
+            | Self::Hole { .. } | Self::Unknown { .. } => FailureClass::UserAbsence,
         }
     }
 }
@@ -1625,6 +1658,19 @@ enum Frame
         /// The code.
         at: ValueId,
     },
+    /// A marked value, awaiting the image of the value it marks, which is its
+    /// own: a mark is erased.
+    UnmarkedValue
+    {
+        /// The mark.
+        at: ValueId,
+    },
+    /// A marked computation, awaiting the image of the computation it marks.
+    UnmarkedComputation
+    {
+        /// The mark.
+        at: ComputationId,
+    },
     /// A force, awaiting its value.
     Force
     {
@@ -2745,6 +2791,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let position = self.abstraction(at)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
+            | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            | Value::Mark { body, .. } => (
+                Frame::UnmarkedValue { at },
+                CoreNode::Term(TermNode::Value(body)),
+            ),
             | Value::StaticApplication(head, argument) => {
                 if self.mode == Mode::Normalizing
                     && let Maybe::Present(reduct) = self.step(at)?
@@ -2916,6 +2967,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 TermNode::Value(scrutinee),
             ),
+            | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            | Computation::Mark { body, .. } => (
+                Frame::UnmarkedComputation { at },
+                TermNode::Computation(body),
+            ),
         };
         self.memo().computations.insert(at, Image::Open);
         self.frames.push(frame);
@@ -2995,10 +3051,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::TypeLift { at },
                 CoreNode::Type(TypeNode::Value(inner)),
             ),
-            | ValueTypeView::Element {
-                code,
-                target: level,
-            } => {
+            | ValueTypeView::Element { .. } | ValueTypeView::Unknown => {
+                let Some(&gandr_core_term::ValueType::Element {
+                    code,
+                    target: ref level,
+                }) = self.arena.value_type(at)
+                else {
+                    return Err(Refusal::Unknown {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                    });
+                };
                 let level = level.clone();
                 self.memo().value_types.insert(at, Image::Open);
                 self.frames.push(Frame::Decoded {
@@ -3067,10 +3129,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 (Frame::ArrowDomain { at, codomain }, domain)
             },
             | CompTypeView::Pi { domain, codomain } => (Frame::PiDomain { at, codomain }, domain),
-            | CompTypeView::Element {
-                code,
-                target: level,
-            } => {
+            | CompTypeView::Element { .. } | CompTypeView::Unknown => {
+                let Some(&gandr_core_term::CompType::Element {
+                    code,
+                    target: ref level,
+                }) = self.arena.comp_type(at)
+                else {
+                    return Err(Refusal::Unknown {
+                        at: CoreNode::Type(TypeNode::Computation(at)),
+                    });
+                };
                 let level = level.clone();
                 self.memo().comp_types.insert(at, Image::Open);
                 self.frames.push(Frame::Decoded {
@@ -3178,6 +3246,16 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | (Value::StaticApplication(..), _) => {
                     self.frames.push(Frame::DecodeOf { level, sort });
                     return Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))));
+                },
+                | (Value::Hole(hole), _) => {
+                    return Err(Refusal::Hole {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        hole,
+                    });
+                },
+                | (Value::Mark { body, .. }, _) => {
+                    code = body;
+                    continue;
                 },
                 | (Value::Quote(_), GroundSort::Computation)
                 | (Value::QuoteComputation(_), GroundSort::Value)
@@ -3513,7 +3591,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::PiCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_pi(domain, codomain)))
             },
-            | (Frame::Reduced { at }, AnyNode::Value(reduct)) => Ok(self.erased_value(at, reduct)),
+            | (Frame::Reduced { at } | Frame::UnmarkedValue { at }, AnyNode::Value(reduct)) => {
+                Ok(self.erased_value(at, reduct))
+            },
+            | (Frame::UnmarkedComputation { at }, AnyNode::Computation(unmarked)) => {
+                Ok(self.erased_computation(at, unmarked))
+            },
             | (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::StaticArgument { at, head });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
@@ -3552,7 +3635,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::ApplicationHead { .. }
                 | Frame::Lambda { .. }
                 | Frame::BindBound { .. }
-                | Frame::BindBody { .. },
+                | Frame::BindBody { .. }
+                | Frame::UnmarkedComputation { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -3582,6 +3666,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::NativeFirst { .. }
                 | Frame::Return { .. }
                 | Frame::Reduced { .. }
+                | Frame::UnmarkedValue { .. }
                 | Frame::StaticHead { .. }
                 | Frame::StaticArgument { .. }
                 | Frame::PairFirst { .. }
@@ -4361,8 +4446,8 @@ mod tests
     {
         // def hole ;
         //
-        // The core vocabulary has no unknown type, so the hole is the whole of
-        // this class.
+        // A declaration hole with no signature has no type to assume; a term
+        // hole written as a body is the other member of the class.
         let mut arena = CoreArena::new();
         let (_, readmission) = judge_and_readmit(&mut arena, &[declaration(At(0), UNSIGNED, HOLE)]);
         let [ref hole] = *readmission.readmitted()
@@ -5051,6 +5136,89 @@ mod tests
             readmission.audit().axioms(),
             [ConstantIndex::from(2_usize), ConstantIndex::from(3_usize)],
             "only the two signed holes are axioms"
+        );
+    }
+
+    #[test]
+    fn a_hole_is_refused_where_it_stands_and_its_filling_is_admitted()
+    {
+        use gandr_core_term::fill_hole;
+        use gandr_core_term::hole::HoleId;
+        use gandr_core_term::hole::MarkIndex;
+        use gandr_core_term::hole::TermId;
+
+        // def holed  : Integer × Integer = (?h, 0) ;
+        // def filled : Integer × Integer = (0, 0) ;   the same, ?h := 0
+        // def kept   : Integer = mark 0 ;            a mark around a good body
+        // def hidden : Integer = mark "" ;           a mark around a bad body
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let product = arena.value_type_product(integer, integer);
+        let zero = arena.value_literal(integer_literal());
+        let text = arena.value_literal(text_literal());
+        let hole = HoleId::from(0_u32);
+        let standing = arena.value_hole(hole);
+        let holed = arena.value_pair(standing, zero);
+        let TermId::Value(filled) =
+            fill_hole(&mut arena, TermId::Value(holed), hole, TermId::Value(zero))
+        else {
+            panic!("a value fills to a value");
+        };
+        let kept = arena.value_mark(MarkIndex::from(0_u32), zero);
+        let hidden = arena.value_mark(MarkIndex::from(1_u32), text);
+        let module = [
+            declaration(At(0), Maybe::Present(product), Maybe::Present(holed)),
+            declaration(At(1), Maybe::Present(product), Maybe::Present(filled)),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(kept)),
+            declaration(At(3), Maybe::Present(integer), Maybe::Present(hidden)),
+        ];
+        let (report, readmission) = judge_and_readmit(&mut arena, &module);
+        assert!(
+            report
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+            "the judgement accepts all four: a hole and a mark check against any type"
+        );
+        let [
+            ref holed_entry,
+            ref filled_entry,
+            ref kept_entry,
+            ref hidden_entry,
+        ] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        let refusal = Refusal::Hole {
+            at: CoreNode::Term(TermNode::Value(standing)),
+            hole,
+        };
+        assert_eq!(
+            holed_entry.outcome(),
+            &Outcome::Refused(refusal),
+            "the kernel is never offered a hole; the refusal names it where it stands"
+        );
+        assert_eq!(
+            refusal.classify(),
+            FailureClass::UserAbsence,
+            "an unfilled hole is the author's absence"
+        );
+        assert!(
+            matches!(*filled_entry.outcome(), Outcome::Defined { .. }),
+            "the same declaration with the hole filled is admitted"
+        );
+        assert!(
+            matches!(*kept_entry.outcome(), Outcome::Defined { .. }),
+            "a mark is erased to its body, which the kernel re-derives"
+        );
+        assert!(
+            matches!(*hidden_entry.outcome(), Outcome::Rejected(_)),
+            "a mark never makes the kernel accept the body it wraps"
+        );
+        assert_eq!(
+            readmission.audit().axioms(),
+            [],
+            "a refused hole is no axiom"
         );
     }
 

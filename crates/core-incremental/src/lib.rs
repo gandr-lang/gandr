@@ -164,7 +164,6 @@ pub use crate::region::naming;
 pub use crate::session::IncrementalSession;
 pub use crate::session::SessionError;
 pub use crate::session::submitted;
-pub use crate::stream::BranchStatus;
 pub use crate::stream::Liveness;
 pub use crate::stream::MatchOrigin;
 pub use crate::stream::SynthesisEvent;

@@ -38,6 +38,7 @@ use gandr_core_incremental::footprint_of;
 use gandr_core_incremental::project;
 use gandr_core_incremental::resume;
 use gandr_core_term::CoreArena;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -72,6 +73,9 @@ pub enum Body
     Thunk(u64),
     /// A hole.
     Hole,
+    /// A term hole `?` standing as the body, named by its statement's
+    /// position.
+    TermHole,
 }
 
 /// A statement's ascription.
@@ -281,6 +285,9 @@ pub fn lower(statements: &[Stmt]) -> Program
                 Maybe::Present(arena.value_thunk(returned))
             },
             | Body::Hole => Maybe::Absent(body::Absent::Hole),
+            | Body::TermHole => Maybe::Present(arena.value_hole(HoleId::from(
+                u32::try_from(position).expect("a fixture position fits a hole name"),
+            ))),
         };
         items.push(Item::new(
             ItemKey::from(statement.name.as_str()),

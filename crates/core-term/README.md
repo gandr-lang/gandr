@@ -9,6 +9,8 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
+- [Typed holes, marks and the unknown type](#typed-holes-marks-and-the-unknown-type)
+- [Patterns with holes](#patterns-with-holes)
 - [Native prelude](#native-prelude)
 - [Native runtime assumptions](#native-runtime-assumptions)
 - [Nominal data and structural records](#nominal-data-and-structural-records)
@@ -41,6 +43,11 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §6.4's hash-consed subterm DAG, whose entry index the definition chain carries as an arena-independent name for a body.
 - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV's two levelled universe towers, and no kind layer above them.
 - Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot, Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the sort separated from the level and quantified over, which `Sort::Parameter` leaves room for.
+- Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A. Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus." _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — the hole and mark formers, the unknown type and the matched-type operations.
+- Cyrus Omar, Ian Voysey, Ravi Chugh and Matthew A. Hammer. "Live Functional Programming with Typed Holes." _Proceedings of the ACM on Programming Languages_ 3 (POPL), 2019. <https://doi.org/10.1145/3290327> — filling as substitution of the hole by its fill, the syntactic half `fill_hole` provides.
+- Yongwei Yuan et al. "Live Pattern Matching with Typed Holes." _Proceedings of the ACM on Programming Languages_ 7 (OOPSLA1), 2023. <https://doi.org/10.1145/3586048> — the pattern hole and the three answers a branch can get.
+- Eric Zhao et al. "Total Type Error Localization and Recovery with Holes." _Proceedings of the ACM on Programming Languages_ 8 (POPL), 2024. <https://doi.org/10.1145/3632910> — the mark former as the place an error stands, and `wrap_marks` as the elaboration's last step.
+- Luc Maranget. "Warnings for pattern matching." _Journal of Functional Programming_ 17(3) (2007). <https://doi.org/10.1017/S0956796807006223> — the coverage questions the pattern table is read for, answered in `gandr-core-checker`.
 
 ## Provided features
 
@@ -52,6 +59,10 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
 - `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
 - `FailureClass`: `UserAbsence`, `Unrepresentable`, `MalformedSource` and `EngineFault`, the classes a lowering refusal and a checking refusal are each classified into by their own crate's classifier.
+- `Value::Hole`, `Value::Mark`, `Computation::Hole`, `Computation::Mark`, `ValueType::Unknown` and `CompType::Unknown`, with `hole::HoleId`, `hole::MarkIndex` and `hole::TermId`: the elaborator's hole surface. Witness: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`.
+- `hole::matched_thunk`, `matched_product`, `matched_sum`, `matched_static_pi`, `matched_returner` and `matched_function`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown. Witnesses: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`, `hole::tests::a_known_type_matches_only_its_own_former`, `hole::tests::the_decode_of_a_hole_is_unknown_and_of_a_variable_is_not`.
+- `fill_hole`, `wrap_marks` and `substitute_environment`: filling by name, marking by node, and closing a suspended body over its environment. Witnesses: `rewrite::tests::a_fill_replaces_exactly_the_named_holes`, `rewrite::tests::a_wrap_marks_exactly_the_named_nodes`, `rewrite::tests::an_environment_substitution_replaces_every_free_index`.
+- `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers. Witnesses: `pattern::tests::a_pattern_names_its_parts_in_order`, `pattern::tests::a_conjunction_refutes_first_and_doubts_second`.
 
 ## Expected features
 
@@ -123,6 +134,18 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ## Kernel alphabet and core grammar
 
 Levels, base types, literals, sum sides, de Bruijn indices, admission positions and subterm-table entry indices come from `gandr-kernel-strata` and `gandr-kernel-term`. The two languages therefore agree on what a literal or a level is, and erasing a core term to a kernel term remaps ids without translating payloads; the erasure itself is not in this crate. The node enums, the arena and the context are this crate's own, so an elaboration-only former enters the core grammar without widening the closed vocabulary the kernel represents.
+
+## Typed holes, marks and the unknown type
+
+`Value::Hole` and `Computation::Hole` are holes the author left in a body, named by a `HoleId`; `Value::Mark` and `Computation::Mark` wrap a term an elaboration found ill-typed, naming the entry of its mark table by a `MarkIndex`. `ValueType::Unknown` and `CompType::Unknown` are the types a hole and a mark have when nothing hands them one (Hazelnut, POPL 2017). All six are elaboration-only: the kernel's closed vocabulary has none of them, so the bridge that erases a core term refuses a hole and the unknown type and erases a mark to its body.
+
+A rule that demands a former of a type reads it through the matched-type operations in `hole`: a known type answers its former's components or that it has another former, and the unknown type answers its former with unknown components, so an introduction checks against the unknown type and an elimination of a term of the unknown type goes on. A decode of a hole or a mark is the unknown type too, read through `value_type_knowledge` and `comp_type_knowledge`, without minting a node. A matched dependent arrow reports whether its codomain stands under the argument's binder, so the checker shifts only what the scoping requires.
+
+`fill_hole` replaces every hole of a name by its fill, written in the context the hole stands in, so a fill is a substitution of syntax rather than of a value under binders (Live Functional Programming with Typed Holes, POPL 2019); `wrap_marks` wraps each named node once, which is how a total elaboration returns its marked term (Zhao et al., POPL 2024). Both run on the binder machines' heap task stack and reuse every subterm they do not change. The alternative was a hole carrying its expected type, which ties the term to one elaboration; the type is the judgement's answer, and the hole is only its name.
+
+## Patterns with holes
+
+The core calculus eliminates by case, data case and projection, and has no match. `pattern::Patterns` is the vocabulary a match's arms are written in — wildcard, binder, unit, literal, pair, injection, constructor and the pattern hole — minted part before whole into a flat table, so every walk is a loop over ids. A pattern hole is neither a wildcard nor an absurd pattern: a fill may make it either, so a question about a match with one has an answer only when every filling gives the same one (Yuan et al., OOPSLA 2023). `BranchStatus` is that answer for one branch: satisfied, refuted, or possibly. Live matching in `gandr-core-nbe` and coverage (Maranget, JFP 2007) in `gandr-core-checker` read the same table. A core match former becomes worth its kernel translation once a consumer needs nested patterns to survive into the core term rather than being compiled away.
 
 ## Native prelude
 
