@@ -21,6 +21,8 @@
 //!   fault, a terminal face asked for without a terminal, or a script that
 //!   never reached the machine.
 
+use core::num::NonZeroUsize;
+use core::ops::ControlFlow;
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -41,12 +43,13 @@ use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_repl::Ended;
-use quenchant_shape::shape::Maybe;
 
 /// The exit code of a run with an unsettled declaration.
 const UNSETTLED: u8 = 1;
@@ -90,6 +93,9 @@ enum Command
         /// rather than failing the run.
         #[arg(long)]
         goals: bool,
+        /// The threads the sources are parsed and lowered on.
+        #[command(flatten)]
+        jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -100,6 +106,9 @@ enum Command
     /// Exits as `check` does.
     Test
     {
+        /// The threads the sources are parsed and lowered on.
+        #[command(flatten)]
+        jobs: Jobs,
         /// Source files, and directories searched for `.gandr` sources.
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -147,6 +156,34 @@ enum Command
         /// The source file to run.
         path: PathBuf,
     },
+}
+
+/// The threads `check` and `test` parse and lower their sources on.
+#[derive(Debug, clap::Args)]
+#[repr(transparent)]
+struct Jobs
+{
+    /// Parse and lower the sources on this many threads; 1 walks them one at
+    /// a time. Defaults to the host's physical performance cores. The output
+    /// is the same at every count.
+    #[arg(long, short = 'j', env = "GANDR_JOBS", value_name = "THREADS")]
+    jobs: Option<NonZeroUsize>,
+}
+
+impl From<Jobs> for Width
+{
+    /// The width `jobs` asks for: its count, or the host's physical
+    /// performance cores when none was given.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(jobs: Jobs) -> Self
+    {
+        jobs.jobs.map_or(Self::PerformanceCores, |threads| {
+            Self::Threads(Threads::from(threads))
+        })
+    }
 }
 
 /// Which face of the read-evaluate loop to run.
@@ -229,11 +266,15 @@ fn main() -> ExitCode
     let _span = tracing::info_span!("driver").entered();
     let invocation = match cli.command {
         | None => Invocation::Status,
-        | Some(Command::Check { goals, paths }) => Invocation::Check {
+        | Some(Command::Check { goals, jobs, paths }) => Invocation::Check {
             goals: if goals { Goals::Reported } else { Goals::Gated },
             paths,
+            width: Width::from(jobs),
         },
-        | Some(Command::Test { paths }) => Invocation::Test { paths },
+        | Some(Command::Test { jobs, paths }) => Invocation::Test {
+            paths,
+            width: Width::from(jobs),
+        },
         | Some(Command::Run { path }) => Invocation::Run { path },
         | Some(Command::Lsp {
             capabilities: false,
@@ -526,22 +567,27 @@ fn render(
             writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
             Ok(ExitCode::SUCCESS)
         },
-        | Outcome::Run { verb, walk } => run(verb, walk, stdout, stderr),
+        | Outcome::Run { verb, walk, width } => run(verb, walk, width, stdout, stderr),
         | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
     }
 }
 
-/// Walk `walk` under `verb`, printing each step, then the report and the
-/// verdict.
+/// Visit `walk` at `width` under `verb`, printing each step, then the report
+/// and the verdict.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: consumes the walk, writing source reports and ledger entries to
-///   standard output and path faults to standard error, then the final report
-///   and verdict. The exit is zero for settled, one for unsettled and two for
-///   faulted, as the walk's final report decides under the offered verb.
+/// - ensures: consumes the walk, writing each step in walk order: each entry
+///   `gandr-surface-diagnostics` renders of a source step under `verb` to
+///   standard output — a report as a plain snippet followed by an empty line, a
+///   ledger line as itself — and each fault as one `gandr: <path>: <fault>`
+///   line to standard error; then the final report and verdict. The exit is
+///   zero for settled, one for unsettled and two for faulted, as the walk's
+///   final report decides under the offered verb. Every byte written and the
+///   exit are the same at every width.
 /// - provides: ordered rendering and severity aggregation for check and test.
-/// - fails: the first write error, without attempting subsequent entries.
+/// - fails: the first write error, without visiting or writing anything after
+///   it.
 /// - panics: none.
 ///
 /// # Errors
@@ -551,40 +597,50 @@ fn render(
 /// - hypothesis: L2/L3 — mixed settled, refused and unreadable paths and
 ///   fixture/pending roots expose continuation, stream separation and fault
 ///   precedence. Missing sources, reordered severity or wrong ledger selection
-///   changes exact counts and statuses. Arbitrary filesystems are excluded.
+///   changes exact counts and statuses. The corpus and a faulting path list
+///   print byte-identical streams and exits at one thread and several, set by
+///   flag and by environment. Arbitrary filesystems are excluded.
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit| *exit == match walk.report().verdict(verb) {
-    RunVerdict::Settled => ExitCode::SUCCESS,
-    RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
-    RunVerdict::Faulted => ExitCode::from(FAULTED),
-}))]
+/// - witness: `cli::cli::every_width_prints_the_serial_run`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED)))]
 fn run(
     verb: Verb,
-    mut walk: Walk,
+    walk: Walk,
+    width: Width,
     stdout: &mut dyn std::io::Write,
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    while let Maybe::Present(step) = walk.step() {
+    let visited = walk.visit(width, |step| {
         match step {
             | Step::Source { .. } => {
                 for entry in entries(&step, verb) {
-                    match entry {
+                    let written = match entry {
                         | Entry::Report(report) => {
-                            writeln!(stdout, "{}\n", report.render(RenderStyle::Plain))?;
+                            writeln!(stdout, "{}\n", report.render(RenderStyle::Plain))
                         },
-                        | Entry::Line(line) => writeln!(stdout, "{line}")?,
+                        | Entry::Line(line) => writeln!(stdout, "{line}"),
+                    };
+                    if let Err(error) = written {
+                        return ControlFlow::Break(error);
                     }
                 }
             },
             | Step::Fault { path, fault } => {
-                writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+                if let Err(error) = writeln!(stderr, "gandr: {}: {fault}", path.display()) {
+                    return ControlFlow::Break(error);
+                }
             },
         }
-    }
-    let report = walk.report();
+        ControlFlow::Continue(())
+    });
+    let report = match visited {
+        | ControlFlow::Continue(report) => report,
+        | ControlFlow::Break(error) => return Err(error),
+    };
     let verdict = report.verdict(verb);
     writeln!(stdout, "{report}")?;
     writeln!(stdout, "verdict: {verdict}")?;

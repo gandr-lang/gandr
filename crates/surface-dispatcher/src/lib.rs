@@ -9,10 +9,19 @@
 //! # Routing performs no I/O; the walk is the verb's
 //!
 //! [`dispatch`] reads no file and writes nothing. The `check` and `test` verbs
-//! route to a [`Walk`] over the paths they were given, and the walk's I/O —
-//! listing a directory, reading a source — happens one source at a time, as
-//! the driver advances it with [`Walk::step`]. The `run` verb routes to a
-//! [`Script`], which reads its one source when the driver runs it.
+//! route to a [`Walk`] over the paths they were given and the [`Width`] to
+//! visit it at, and the walk's I/O — listing a directory, reading a source —
+//! happens as the driver advances it with [`Walk::step`] or hands it a
+//! visitor with [`Walk::visit`]. The `run` verb routes to a [`Script`], which
+//! reads its one source when the driver runs it.
+//!
+//! # Sources fork; judgement keeps walk order
+//!
+//! At a width above one, [`Walk::visit`] parses and lowers the sources on a
+//! pool of scoped threads, largest source first, and judges, settles and
+//! reports them in walk order on the calling thread, so every count, verdict
+//! and diagnostic is the serial walk's at every width. [`Width::SERIAL`] is
+//! that serial walk, and the reference every wider one is tested against.
 //!
 //! # One composition serves both verbs
 //!
@@ -50,6 +59,8 @@
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 
+extern crate alloc;
+
 mod compose;
 mod evaluate;
 mod exercised;
@@ -57,6 +68,7 @@ mod report;
 mod root;
 mod script;
 mod walk;
+mod width;
 
 use std::path::PathBuf;
 
@@ -101,6 +113,8 @@ pub use crate::walk::Standing;
 pub use crate::walk::Step;
 pub use crate::walk::Walk;
 pub use crate::walk::walk_step;
+pub use crate::width::Threads;
+pub use crate::width::Width;
 
 /// One understood driver invocation, ready to route.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,12 +130,16 @@ pub enum Invocation
         goals: Goals,
         /// The sources and directories of sources to check, in order.
         paths: Vec<PathBuf>,
+        /// The threads the sources are parsed and lowered on.
+        width: Width,
     },
     /// `test`: the same pass as `check`, reporting every fixture.
     Test
     {
         /// The sources and directories of sources to test, in order.
         paths: Vec<PathBuf>,
+        /// The threads the sources are parsed and lowered on.
+        width: Width,
     },
     /// `run`: run the program the source at `path` holds.
     Run
@@ -149,6 +167,8 @@ pub enum Outcome
         verb: Verb,
         /// The walk, not yet started.
         walk: Walk,
+        /// The width to visit the walk at.
+        width: Width,
     },
     /// A source file to run as a program, not yet read.
     Script(Script),
@@ -197,11 +217,11 @@ impl core::fmt::Display for StatusReport
 /// - ensures: each variant maps to exactly one [`Outcome`] variant: a bare
 ///   invocation to the status report, `check` to a walk run under
 ///   [`Verb::Check`] with the same goals setting, and `test` to a walk run
-///   under [`Verb::Test`], each walk over the invocation's paths in order;
-///   `run` to a [`Script`] of its path. Routing performs no I/O of its own: a
-///   walk or a script reads nothing until it is advanced, and building the
-///   grammar it parses with is computation. The optional `tracing` feature
-///   reports a span to the caller's subscriber.
+///   under [`Verb::Test`], each walk over the invocation's paths in order at
+///   the invocation's width; `run` to a [`Script`] of its path. Routing
+///   performs no I/O of its own: a walk or a script reads nothing until it is
+///   advanced, and building the grammar it parses with is computation. The
+///   optional `tracing` feature reports a span to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
@@ -222,14 +242,14 @@ impl core::fmt::Display for StatusReport
     captures: [
         status = matches!(invocation, Invocation::Status),
         verb = match &invocation {
-            &Invocation::Check { goals, .. } => Some(Verb::Check(goals)),
-            &Invocation::Test { .. } => Some(Verb::Test),
+            &Invocation::Check { goals, width, .. } => Some((Verb::Check(goals), width)),
+            &Invocation::Test { width, .. } => Some((Verb::Test, width)),
             &Invocation::Status | &Invocation::Run { .. } => None,
         },
     ],
     ensures: |ref ret| match *ret {
         Outcome::Status(_) => status,
-        Outcome::Run { verb: routed, .. } => Some(routed) == verb,
+        Outcome::Run { verb: routed, width, .. } => Some((routed, width)) == verb,
         Outcome::Script(_) => !status && verb.is_none(),
     },
 )]
@@ -237,13 +257,19 @@ pub fn dispatch(invocation: Invocation) -> Outcome
 {
     match invocation {
         | Invocation::Status => Outcome::Status(StatusReport),
-        | Invocation::Check { goals, paths } => Outcome::Run {
+        | Invocation::Check {
+            goals,
+            paths,
+            width,
+        } => Outcome::Run {
             verb: Verb::Check(goals),
             walk: Walk::new(paths),
+            width,
         },
-        | Invocation::Test { paths } => Outcome::Run {
+        | Invocation::Test { paths, width } => Outcome::Run {
             verb: Verb::Test,
             walk: Walk::new(paths),
+            width,
         },
         | Invocation::Run { path } => Outcome::Script(Script::new(path)),
     }
@@ -263,7 +289,9 @@ mod tests
     use super::ScriptRun;
     use super::StatusReport;
     use super::Step;
+    use super::Threads;
     use super::Verb;
+    use super::Width;
     use super::dispatch;
 
     /// The first fault a walk over `paths` reports, which names the first path
@@ -309,19 +337,27 @@ mod tests
         assert!(!rendered.contains(['\n', '\r']));
     }
 
-    /// `check` keeps its goals setting and its paths' order.
+    /// `check` keeps its goals setting, its width and its paths' order.
     #[test]
     fn check_routes_to_a_walk_under_the_check_verb()
     {
-        for goals in [Goals::Gated, Goals::Reported] {
+        let three = Width::Threads(Threads::from(
+            core::num::NonZeroUsize::MIN.saturating_add(2),
+        ));
+        for (goals, width) in [(Goals::Gated, Width::SERIAL), (Goals::Reported, three)] {
             let paths = vec![
                 PathBuf::from("no/such/first.gandr"),
                 PathBuf::from("no/such/second.gandr"),
             ];
-            let outcome = dispatch(Invocation::Check { goals, paths });
+            let outcome = dispatch(Invocation::Check {
+                goals,
+                paths,
+                width,
+            });
             assert!(
-                matches!(outcome, Outcome::Run { verb: Verb::Check(routed), .. } if routed == goals),
-                "check routes under its own goals setting"
+                matches!(outcome, Outcome::Run { verb: Verb::Check(routed), width: routed_width, .. }
+                    if routed == goals && routed_width == width),
+                "check routes under its own goals setting and width"
             );
             assert_eq!(
                 first_fault_path(outcome),
@@ -331,19 +367,21 @@ mod tests
         }
     }
 
-    /// `test` routes to a walk under the test verb.
+    /// `test` routes to a walk under the test verb, at its width.
     #[test]
     fn the_test_verb_routes_to_a_walk()
     {
         let outcome = dispatch(Invocation::Test {
             paths: vec![PathBuf::from("no/such/only.gandr")],
+            width: Width::PerformanceCores,
         });
         assert!(
             matches!(outcome, Outcome::Run {
                 verb: Verb::Test,
+                width: Width::PerformanceCores,
                 ..
             }),
-            "test routes under the test verb"
+            "test routes under the test verb at its width"
         );
         assert_eq!(
             first_fault_path(outcome),

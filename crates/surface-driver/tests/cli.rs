@@ -504,13 +504,72 @@ mod cli
     }
 
     #[test]
+    fn every_width_prints_the_serial_run()
+    {
+        let scratch = Scratch::new(Path::new("widths"));
+        let settled = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
+        let broken = scratch.file(
+            Path::new("broken.gandr"),
+            Text::from("def broken = missing ;\n"),
+        );
+        let empty = scratch.0.join("empty");
+        std::fs::create_dir_all(&empty).expect("the empty directory is created");
+        let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus");
+        let runs = [
+            vec![
+                PathBuf::from("test"),
+                corpus.join("strict"),
+                corpus.join("fixture"),
+            ],
+            vec![
+                PathBuf::from("check"),
+                settled,
+                scratch.0.join("absent.gandr"),
+                broken,
+                empty,
+                scratch.0.clone(),
+            ],
+        ];
+        for arguments in runs {
+            let at = |jobs: &[&str], environment: Option<&str>| {
+                let mut command = gandr(&arguments);
+                command.args(jobs);
+                match environment {
+                    | Some(threads) => command.env("GANDR_JOBS", threads),
+                    | None => command.env_remove("GANDR_JOBS"),
+                };
+                ran(command)
+            };
+            let serial = at(&["--jobs", "1"], None);
+            assert!(
+                stdout(&serial).contains("verdict: "),
+                "{arguments:?}: {}",
+                stderr(&serial)
+            );
+            for (label, wider) in [
+                ("--jobs 4", at(&["--jobs", "4"], None)),
+                ("GANDR_JOBS=3", at(&[], Some("3"))),
+                ("the host's width", at(&[], None)),
+            ] {
+                assert_eq!(
+                    (code(&wider), stdout(&wider), stderr(&wider)),
+                    (code(&serial), stdout(&serial), stderr(&serial)),
+                    "{arguments:?} at {label} prints the serial run"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_malformed_invocation_exits_two()
     {
-        for arguments in [&["check"][..], &["test"], &["frobnicate"], &[
-            "check",
-            "--unknown",
-            "a.gandr",
-        ]] {
+        for arguments in [
+            &["check"][..],
+            &["test"],
+            &["frobnicate"],
+            &["check", "--unknown", "a.gandr"],
+            &["check", "--jobs", "0", "a.gandr"],
+        ] {
             let output = ran(gandr(arguments));
             assert_eq!(code(&output), Code(2_i32), "{arguments:?}");
             assert!(

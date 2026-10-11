@@ -30,6 +30,11 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 tracing = { workspace = true, optional = true }
 
+# The default width counts the host's physical performance cores; Linux reads
+# them from sysfs with std alone.
+[target.'cfg(target_os = "macos")'.dependencies]
+sysctl.workspace = true
+
 [features]
 default = []
 # Invocation boundary diagnostics through the caller-owned subscriber.

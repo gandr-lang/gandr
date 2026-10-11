@@ -14,6 +14,9 @@ extern crate alloc;
 mod corpus
 {
     use alloc::collections::BTreeSet;
+    use core::convert::Infallible;
+    use core::num::NonZeroUsize;
+    use core::ops::ControlFlow;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -29,8 +32,10 @@ mod corpus
     use gandr_surface_dispatcher::RunReport;
     use gandr_surface_dispatcher::RunVerdict;
     use gandr_surface_dispatcher::Step;
+    use gandr_surface_dispatcher::Threads;
     use gandr_surface_dispatcher::Verb;
     use gandr_surface_dispatcher::Walk;
+    use gandr_surface_dispatcher::Width;
     use quenchant_shape::shape::Maybe;
 
     /// The corpus directory `name`, under the corpus crate.
@@ -184,6 +189,70 @@ mod corpus
             usize::from(report.sources().read()),
             "one lowering per source read"
         );
+    }
+
+    /// A wider visit over both roots hands over, step by step, exactly what
+    /// the serial walk yields, and answers the serial walk's report.
+    #[test]
+    fn every_width_composes_the_corpus_alike()
+    {
+        let paths = vec![root(Path::new("strict")), root(Path::new("fixture"))];
+        for width in [
+            Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1))),
+            Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(6))),
+            Width::PerformanceCores,
+        ] {
+            let mut serial = Walk::new(paths.clone());
+            let visited =
+                Walk::new(paths.clone()).visit(width, |step| -> ControlFlow<Infallible> {
+                    let Maybe::Present(expected) = serial.step()
+                    else {
+                        panic!("the serial walk ended first at {width:?}");
+                    };
+                    match (step, expected) {
+                        | (
+                            Step::Source {
+                                path,
+                                root,
+                                text,
+                                composed,
+                                standing,
+                            },
+                            Step::Source {
+                                path: serial_path,
+                                root: serial_root,
+                                text: serial_text,
+                                composed: serial_composed,
+                                standing: serial_standing,
+                            },
+                        ) => {
+                            assert_eq!(
+                                (path, root, text, standing),
+                                (serial_path, serial_root, serial_text, serial_standing),
+                                "the visit at {width:?} reaches the serial walk's source"
+                            );
+                            assert!(
+                                composed == serial_composed,
+                                "{} composes alike at {width:?}",
+                                path.display()
+                            );
+                        },
+                        | (Step::Fault { path, fault }, _) | (_, Step::Fault { path, fault }) => {
+                            panic!("{}: {fault}", path.display());
+                        },
+                    }
+                    ControlFlow::Continue(())
+                });
+            assert!(
+                matches!(serial.step(), Maybe::Absent(_)),
+                "the visit at {width:?} hands over every source"
+            );
+            assert_eq!(
+                visited,
+                ControlFlow::Continue(serial.report()),
+                "the visit at {width:?} counts the serial walk's report"
+            );
+        }
     }
 
     /// Every non-directory `.gandr` entry under `corpus`, with directory
