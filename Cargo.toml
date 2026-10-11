@@ -225,6 +225,7 @@ path = "crates/core-incremental"
 # - core-checker
 # - core-sequent (dev)
 # - kernel-core (dev)
+# - surface-dispatcher
 # - surface-pretty (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
@@ -741,6 +742,18 @@ default-features = false
 version = "0.30.2"
 default-features = false
 features = ["crossterm"]
+
+# The work-stealing pool a staged program's checks fork onto: the dispatcher
+# builds one per `gandr stage` invocation at the driver's width, and the
+# checker's forked stages nest a join of two forked halves inside it. The
+# choice, its alternatives and its reversal are in the consumer's README.
+# features:
+# - none: the pool, `scope` and `join` need no optional feature.
+# consumers:
+# - surface-dispatcher
+[workspace.dependencies.rayon]
+version = "1.12.0"
+default-features = false
 
 # Per-worker observer queues without an asynchronous runtime.
 # features:
