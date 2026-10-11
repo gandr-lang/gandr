@@ -17,6 +17,14 @@ run = "cargo fmt --all --check"
 description = "The clippy half of the lint wall"
 run = "cargo clippy --workspace --all-targets --locked"
 
+# Runtime sentinels exist only with enforcement enabled. Lint them under the
+# same profile, flags and target directory as the cached enforcing test build.
+["check:clippy-enforcing"]
+description = "The clippy wall with specification enforcement"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+run = "cargo clippy --workspace --all-targets --locked --profile test -- --deny warnings"
+
 # The compiler-plugin half of the lint wall, from the pinned Git policy
 # source: specification presence, adequacy grammar, nominal signature
 # boundaries, transparent layout, recursion and ownership cycles. The opt-in
