@@ -189,7 +189,7 @@ pub struct Template
 #[derive(Clone, Debug)]
 pub enum Production
 {
-    /// The family passed both price and inheritance.
+    /// The family passed price, schema allowance and producer inheritance.
     Go(Template),
     /// The candidate exhausted its advertised per-check work allowance.
     WorkBoundExceeded
@@ -198,6 +198,12 @@ pub enum Production
         cost: FamilyCostReport,
         /// Maximum kernel fuel spent on this check.
         bound: NodeCount,
+    },
+    /// The canonical proposal exhausts the kernel's schema-work allowance.
+    SchemaWorkBound
+    {
+        /// Measurements before any producer inheritance lookup or replay.
+        cost: FamilyCostReport,
     },
     /// The family stays plain, with the measured price and exact refusal.
     Plain
@@ -221,7 +227,9 @@ impl Production
     {
         match *self {
             | Self::Go(ref template) => template.cost,
-            | Self::Plain { cost, .. } | Self::WorkBoundExceeded { cost, .. } => cost,
+            | Self::Plain { cost, .. }
+            | Self::WorkBoundExceeded { cost, .. }
+            | Self::SchemaWorkBound { cost } => cost,
         }
     }
 }
@@ -1225,14 +1233,15 @@ impl Candidate
         self.entries.iter().map(|entry| entry.point)
     }
 
-    /// Apply one selected price, then discharge inheritance before emission.
+    /// Apply price and schema allowance before producer inheritance.
     ///
     /// # Specification
-    /// - ensures: Go passes the selected strict price and has inherited every
-    ///   distinct triple. Memoized checks spend at most c each.
+    /// - ensures: Go passes the selected strict price and the kernel's schema
+    ///   allowance, and has inherited every distinct triple. Memoized producer
+    ///   checks spend at most c each. A schema-work refusal touches neither the
+    ///   inheritance cache nor the caller's producer-replay budget.
     /// - fails: caller budget exhaustion or malformed syntax; an insufficient
-    ///   price-derived work allowance declines the candidate without caching a
-    ///   lie.
+    ///   schema or price-derived work allowance declines without caching a lie.
     /// - panics: none.
     ///
     /// # Errors
@@ -1243,7 +1252,8 @@ impl Candidate
     ///   check distinguish a price from unchecked admission or unbounded work.
     /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
     /// - witness: `template::tests::memoized_checks_respect_the_priced_allowance`
-    #[spec(captures: [available = budget.0], ensures: |output|
+    /// - witness: `template::tests::schema_work_is_bounded_before_producer_inheritance`
+    #[spec(captures: [available = budget.0, checked = cache.checked(), hits = cache.hits()], ensures: |output|
         budget.0 <= available && output.as_ref().ok().is_none_or(|production| match *production {
             Production::Go(ref template) => {
                 let s = usize::from(template.cost.template_size);
@@ -1258,6 +1268,8 @@ impl Candidate
             },
             Production::WorkBoundExceeded { bound, cost } => gate == PriceGate::Memoized
                 && bound == cost.template_size,
+            Production::SchemaWorkBound { .. } => budget.0 == available
+                && cache.checked() == checked && cache.hits() == hits,
             Production::Plain { .. } => true,
         }))]
     #[inline]
@@ -1291,6 +1303,21 @@ impl Candidate
                 },
                 cost,
             });
+        }
+        // The kernel itself meters this probe under its proposal-sized cap.
+        // Only its allowance verdict belongs here: semantic refusals and
+        // admission authority remain with the independent consumer check.
+        // This work is separate from the caller-funded inheritance replays.
+        let ordered = entries
+            .iter()
+            .map(Entry::ordered)
+            .collect::<Result<Vec<_>, _>>()?;
+        let proposal = graph.admission_proposal(sides, rule, &ordered)?;
+        if matches!(
+            gandr_kernel_core::admission::Schema::check(proposal, &mut Budget(usize::MAX)),
+            Err(gandr_kernel_core::admission::Refusal::SchemaWorkBound)
+        ) {
+            return Ok(Production::SchemaWorkBound { cost });
         }
         let peak_address = graph.address(peak)?;
         let join_address = graph.address(join)?;

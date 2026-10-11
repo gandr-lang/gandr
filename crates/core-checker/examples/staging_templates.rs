@@ -829,6 +829,7 @@ fn main() -> Result<(), ObservationError>
                 let verdict = match *production {
                     | Production::Go(_) => "pays",
                     | Production::WorkBoundExceeded { .. } => "no-pay:check-bound",
+                    | Production::SchemaWorkBound { .. } => "no-pay:schema-bound",
                     | Production::Plain { reason, .. } => match reason {
                         | gandr_theory_deep_inference::TemplateRefusal::DoesNotPay { .. } => {
                             "no-pay:price"
