@@ -24,7 +24,7 @@ def parenthesized : Integer -> (?);
 @[ refuses("OutOfFragment") ]
 def session_receive : ? Integer . end;
 
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def term_hole = ?;
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def named_term_hole = ?goal;
