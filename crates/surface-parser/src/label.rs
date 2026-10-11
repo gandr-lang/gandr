@@ -1132,9 +1132,9 @@ fn scan_braced_shell_interior(
         ScanResult::new(Lexeme::VariableName, cursor)
     }
     else {
-        // A stray byte inside the braces (not a name char, not `}`): emit one
-        // shell-word byte and stay in brace mode, keeping the scan total.
-        ScanResult::new(Lexeme::ShellWord, pos.advance(ByteWidth::ONE))
+        // Preserve the complete scalar so token spans remain UTF-8 boundaries.
+        let width = bytes.byte(pos).map_or(ByteWidth::ONE, utf8_width);
+        ScanResult::new(Lexeme::ShellWord, pos.advance(width))
     }
 }
 
