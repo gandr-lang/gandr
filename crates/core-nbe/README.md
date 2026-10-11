@@ -228,9 +228,7 @@ A refuted decomposition records `NegativeSubgoal` with the position of the first
 
 ## Native data and records
 
-Constructors and records retain ordered lazy field closures in flat arena spans. Projection demands only the selected field; data case selects exactly its tag's branch and supplies only that constructor's fields. A neutral head retains the elimination until unfolding exposes its constructor or record. Readback reconstructs every native child and classifier. Arena truncation restores the field-span watermark as well as the node tables.
-
-`eval::tests::native_records_and_cases_compute` distinguishes all five constructor arguments, selected module components and poisoned unselected thunks. `eval::tests::native_cases_reapply_when_head_unfolds` covers delayed elimination; `machine::tests::native_records_cases_and_traces_agree` checks independently replayed native comparisons. Pure NBE supports these programmatic forms; the command IL has no native data/record compiler yet. The structural index-conversion boundary and deferred readers are in the [checker floor](../core-checker/README.md#data-and-record-floor).
+Constructors and records keep lazy field closures, a case or projection demands only what it selects, and `fix x. M` is its own weak head until an application at a canonical argument or a bind unfolds it once; evaluation unfolds a partial fixpoint as readily as a structurally descending one and leaves the difference to the kernel's replay. The [native data page](docs/native-data.md) states each rule, readback, comparison and the fixpoint decision with its alternatives, reversal and witnesses.
 
 ## Codes
 
