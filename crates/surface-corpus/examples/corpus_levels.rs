@@ -2,8 +2,10 @@
 //! lowered, checked, readmitted and committed as records — serial and
 //! forked. Re-cut from the whole-system scaffold without its kernel probes
 //! (the per-declaration snapshot re-check and the speculation probe need
-//! kernel APIs absent on `main`). `PROGRAM` forks by source. The variant
-//! for the parser before the form split.
+//! kernel APIs absent on `main`). `PROGRAM` forks by source; with
+//! `GANDR_FORMS=1` the program also forks by top-level form: every form
+//! unit of every source molded longest first, then each source joined and
+//! carried through the rest of the check, longest first.
 #![allow(
     warnings,
     unused,
@@ -17,6 +19,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -247,6 +250,95 @@ fn sweep(
     out
 }
 
+/// The corpus checked forked by form: label and predict every source, mold
+/// every unit longest first, then join and check each source, longest
+/// first. Returns the digests in file order.
+fn by_form(
+    pbg: &Pbg,
+    texts: &[(PathBuf, String)],
+    by_bytes: &[usize],
+) -> Vec<String>
+{
+    use gandr_surface_parser::FormSplit;
+    use gandr_surface_parser::FormUnit;
+    let next = AtomicUsize::new(0);
+    let splits: Vec<Mutex<Option<FormSplit<'_>>>> =
+        texts.iter().map(|_| Mutex::new(None)).collect();
+    rayon::broadcast(|_| {
+        let molder = Molder::new(pbg);
+        loop {
+            let k = next.fetch_add(1, Ordering::Relaxed);
+            let Some(&i) = by_bytes.get(k)
+            else {
+                break;
+            };
+            *splits[i].lock().unwrap() = Some(FormSplit::new(
+                &molder,
+                SourceText::from(texts[i].1.as_str()),
+            ));
+        }
+    });
+    let splits: Vec<FormSplit<'_>> = splits
+        .into_iter()
+        .map(|s| s.into_inner().unwrap().unwrap())
+        .collect();
+    let mut units: Vec<(usize, usize, usize)> = Vec::new();
+    for (i, split) in splits.iter().enumerate() {
+        for (j, run) in split.runs().iter().enumerate() {
+            units.push((usize::from(run.end()) - usize::from(run.start()), i, j));
+        }
+    }
+    units.sort_by(|a, b| b.cmp(a));
+    let slots: Vec<Vec<Mutex<Option<FormUnit<'_>>>>> = splits
+        .iter()
+        .map(|split| split.runs().iter().map(|_| Mutex::new(None)).collect())
+        .collect();
+    let next = AtomicUsize::new(0);
+    rayon::broadcast(|_| {
+        let mut molder = Molder::new(pbg);
+        loop {
+            let k = next.fetch_add(1, Ordering::Relaxed);
+            let Some(&(_, i, j)) = units.get(k)
+            else {
+                break;
+            };
+            let run = splits[i].runs()[j];
+            *slots[i][j].lock().unwrap() = Some(splits[i].mold(&mut molder, run));
+        }
+    });
+    let slots: Vec<Mutex<Vec<Mutex<Option<FormUnit<'_>>>>>> =
+        slots.into_iter().map(Mutex::new).collect();
+    let digests: Vec<Mutex<String>> = texts.iter().map(|_| Mutex::new(String::new())).collect();
+    let next = AtomicUsize::new(0);
+    rayon::broadcast(|_| {
+        let mut molder = Molder::new(pbg);
+        loop {
+            let k = next.fetch_add(1, Ordering::Relaxed);
+            let Some(&i) = by_bytes.get(k)
+            else {
+                break;
+            };
+            let units: Vec<FormUnit<'_>> = std::mem::take(&mut *slots[i].lock().unwrap())
+                .into_iter()
+                .map(|slot| slot.into_inner().unwrap().unwrap())
+                .collect();
+            let mut out = Swept::default();
+            match splits[i].join(&mut molder, units) {
+                | Ok(joined) => {
+                    let tree = joined.into_result().into_tree();
+                    check_tree(pbg, &tree, &mut out);
+                },
+                | Err(_) => out.digest = "parse-refused".into(),
+            }
+            *digests[i].lock().unwrap() = out.digest;
+        }
+    });
+    digests
+        .into_iter()
+        .map(|d| d.into_inner().unwrap())
+        .collect()
+}
+
 fn median(samples: &mut Vec<Duration>) -> Duration
 {
     samples.sort();
@@ -376,17 +468,21 @@ fn main()
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(12);
+    let forms = std::env::var("GANDR_FORMS").is_ok();
     for width in widths {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(width.max(1))
             .build()
             .unwrap();
-        let orders: Vec<(&str, &Vec<usize>)> = if width == 0 {
+        let mut orders: Vec<(&str, &Vec<usize>)> = if width == 0 {
             vec![("serial", &by_file)]
         }
         else {
             vec![("queue-bytes", &by_bytes), ("queue-cost", &by_cost)]
         };
+        if forms && width > 0 {
+            orders.push(("forms", &by_bytes));
+        }
         for (order_name, order) in orders {
             let mut walls = Vec::new();
             let mut cpus = Duration::ZERO;
@@ -401,6 +497,9 @@ fn main()
                             .iter()
                             .map(|(_, text)| sweep(&pbg, text).digest)
                             .collect()
+                    }
+                    else if order_name == "forms" {
+                        by_form(&pbg, &texts, order)
                     }
                     else {
                         let next = AtomicUsize::new(0);

@@ -24,6 +24,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use gandr_surface_grammar::built_in;
+use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::MeldState;
 use gandr_surface_parser::Molder;
 use gandr_surface_parser::label;
@@ -175,6 +176,128 @@ fn main()
                 }
             }
             fs::write(&args[2], out).unwrap();
+        },
+        | Some("forms") => {
+            // Exploration: the whole parse's top-level form starts, the token
+            // that opens each, and whether molding each form's tokens from a
+            // fresh state reproduces the whole parse's forms.
+            let mut paths = Vec::new();
+            walk(&root.join("strict"), &mut paths);
+            walk(&root.join("fixture"), &mut paths);
+            let variants = args.get(2).is_some_and(|s| s == "variants");
+            let mut sources: Vec<(String, String)> = Vec::new();
+            for path in &paths {
+                let text = fs::read_to_string(path).unwrap();
+                let name = path.strip_prefix(root).unwrap().display().to_string();
+                if variants {
+                    let tokens = label(SourceFragment::from(text.as_str()));
+                    let significant: Vec<_> = tokens
+                        .iter()
+                        .filter(|t| !matches!(t.lexeme, gandr_surface_parser::Lexeme::Space))
+                        .copied()
+                        .collect();
+                    for k in 1 ..= 8 {
+                        let Some(token) = significant.get(significant.len() * k / 9)
+                        else {
+                            continue;
+                        };
+                        sources.push((
+                            format!("{name}#cut{k}"),
+                            text[.. token.start as usize].to_owned(),
+                        ));
+                        sources.push((
+                            format!("{name}#drop{k}"),
+                            format!(
+                                "{}{}",
+                                &text[.. token.start as usize],
+                                &text[token.end as usize ..]
+                            ),
+                        ));
+                    }
+                }
+                sources.push((name, text));
+            }
+            let mut agree = 0;
+            let mut seams: std::collections::BTreeMap<String, usize> = Default::default();
+            let mut real = 0_usize;
+            let mut predicted_real = 0_usize;
+            for (name, text) in &sources {
+                let source = SourceText::from(text.as_str());
+                let whole = parse(&pbg, source).unwrap();
+                let mut molder = Molder::new(&pbg);
+                let split = FormSplit::new(&molder, source);
+                let units: Vec<_> = split
+                    .runs()
+                    .iter()
+                    .map(|&run| split.mold(&mut molder, run))
+                    .collect();
+                let joined = split.join(&mut molder, units).unwrap();
+                let ok = *joined.result() == whole;
+                agree += usize::from(ok);
+                if !ok {
+                    println!("DISAGREE,{name},runs={}", split.runs().len());
+                }
+                for (seam, run) in joined.seams().iter().zip(split.runs()) {
+                    *seams.entry(format!("{seam:?}")).or_default() += 1;
+                    if !matches!(seam, gandr_surface_parser::UnitSeam::Joined)
+                        && !name.contains('#')
+                    {
+                        println!("BROKEN,{name},{seam:?},{:?}", run);
+                    }
+                    {
+                        let toks = label(SourceFragment::from(text.as_str()));
+                        let Some(&head) = toks.get(usize::from(run.start()))
+                        else {
+                            continue;
+                        };
+                        let previous = toks[.. usize::from(run.start())]
+                            .iter()
+                            .rev()
+                            .find(|t| !matches!(t.lexeme, gandr_surface_parser::Lexeme::Space));
+                        let previous =
+                            previous.map_or("", |t| &text[t.start as usize .. t.end as usize]);
+                        *seams
+                            .entry(format!(
+                                "HEAD {} {:?} after {:?}",
+                                if matches!(seam, gandr_surface_parser::UnitSeam::Joined) {
+                                    "joined"
+                                }
+                                else {
+                                    "broken"
+                                },
+                                &text[head.start as usize .. head.end as usize],
+                                previous
+                            ))
+                            .or_default() += 1;
+                    }
+                }
+                // Real top-level form starts against the predicted run starts.
+                let tree = whole.tree();
+                let tokens = label(SourceFragment::from(text.as_str()));
+                let starts: std::collections::BTreeSet<usize> = tree
+                    .children(tree.root())
+                    .filter_map(|c| tree.node(c))
+                    .filter(|n| n.label() != gandr_surface_syntax::NodeLabel::Space)
+                    .map(|n| usize::from(n.span().start()))
+                    .filter(|&s| s != 0)
+                    .collect();
+                real += starts.len();
+                predicted_real += split
+                    .runs()
+                    .iter()
+                    .skip(1)
+                    .filter(|run| {
+                        starts.contains(&(tokens[usize::from(run.start())].start as usize))
+                    })
+                    .count();
+            }
+            println!(
+                "FORMSUM,sources={},agree={agree},real_boundaries={real},predicted_real={predicted_real}",
+                sources.len()
+            );
+            for (seam, count) in seams {
+                println!("SEAM,{seam},{count}");
+            }
         },
         | Some("allocs") => {
             COUNTING.store(true, std::sync::atomic::Ordering::Relaxed);
