@@ -1,5 +1,6 @@
 //! The fixture value, its codec, and the helpers the area suites share.
 
+use anodized::spec;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
@@ -74,7 +75,7 @@ pub enum Node
 ///   unfinished and multiple-root lists; codec goldens bind preorder to bytes.
 /// - witness: `tests::common::fixture_refinements_reject_invalid_roots`
 /// - witness: `tests::common::fixture_edits_preserve_preorder`
-#[anodized::spec(maintains: self.0.iter().try_fold(1_usize, |owed, node| {
+#[spec(maintains: self.0.iter().try_fold(1_usize, |owed, node| {
     let remaining = owed.checked_sub(1_usize)?;
     match *node {
         Node::Pair => remaining.checked_add(2_usize),
@@ -101,7 +102,7 @@ impl Fixture
     ///   depths zero through eight used by the locality witnesses.
     /// - witness: `tests::common::fixture_edits_preserve_preorder`
     /// - witness: `tests::common::fixture_refinements_reject_invalid_roots`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+    #[spec(requires: anodized::types::Spec::predicate(self),
         ensures: |ret| ret.0 == self.0.len().div_ceil(2_usize))]
     pub fn leaves(&self) -> LeafCount
     {
@@ -134,7 +135,7 @@ impl CanonicalValue for Fixture
     ///   additionally exercise nested closing through real flat and DAG codecs.
     /// - witness: `tests::common::fixture_edits_preserve_preorder`
     /// - witness: `tests::flat::a_flat_form_round_trips`
-    #[anodized::spec(requires: anodized::types::Spec::predicate(self))]
+    #[spec(requires: anodized::types::Spec::predicate(self))]
     fn emit_tokens<Sink>(
         &self,
         sink: &mut Sink,
@@ -201,7 +202,7 @@ impl CanonicalValue for Fixture
 /// - witness: `tests::common::record_observers_preserve_nested_seams`
 /// - witness: `tests::common::fixture_edits_preserve_preorder`
 /// - witness: `tests::flat::a_truncated_flat_form_is_refused`
-#[anodized::spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
+#[spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
         && reader.spent() > spent))]
 pub fn decode_observed<Observe>(
@@ -267,7 +268,7 @@ where
 /// - hypothesis: L3 a leaf under two pointer-only chunks preserves the fixture
 ///   while recording depth two rather than the final depth zero.
 /// - witness: `tests::common::record_observers_preserve_nested_seams`
-#[anodized::spec(maintains: anodized::types::Spec::predicate(&self.value))]
+#[spec(maintains: anodized::types::Spec::predicate(&self.value))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Probed
 {
@@ -309,7 +310,7 @@ impl CanonicalValue for Probed
     /// - hypothesis: L3 two nested seams reach depth two but finish at zero;
     ///   the observed maximum must survive the return to the outer source.
     /// - witness: `tests::common::record_observers_preserve_nested_seams`
-    #[anodized::spec(captures: depth = reader.seam_depth(),
+    #[spec(captures: depth = reader.seam_depth(),
         ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|value|
             anodized::types::Spec::predicate(value) && value.deepest >= depth))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
@@ -360,7 +361,7 @@ impl CanonicalValue for Embedding
     ///   generated histories, with zero through six prior values.
     /// - witness: `tests::common::fixture_edits_preserve_preorder`
     /// - witness: `tests::flat::a_child_record_is_refused_in_a_flat_form`
-    #[anodized::spec(requires: match self.0 {
+    #[spec(requires: match self.0 {
         Inner::Pointer(_) => true,
         Inner::Value(ref value) => anodized::types::Spec::predicate(value),
     })]
@@ -395,7 +396,7 @@ impl CanonicalValue for Embedding
     /// - hypothesis: L3 literal inline embedding bytes recover the exact child;
     ///   replacing the outer tag refuses before decoding the child.
     /// - witness: `tests::common::fixture_edits_preserve_preorder`
-    #[anodized::spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
+    #[spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
         || ret.as_ref().is_ok_and(|value| reader.spent() > spent && match value.0 {
             Inner::Value(ref fixture) => anodized::types::Spec::predicate(fixture),
             Inner::Pointer(_) => false,
@@ -455,7 +456,7 @@ impl CanonicalValue for Script
     ///   empty script without replaying observable sink effects.
     /// - witness: `tests::common::fixture_edits_preserve_preorder`
     /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
-    #[anodized::spec(ensures: |ret| !self.0.is_empty() || ret.is_ok())]
+    #[spec(ensures: |ret| !self.0.is_empty() || ret.is_ok())]
     fn emit_tokens<Sink>(
         &self,
         sink: &mut Sink,
@@ -500,7 +501,7 @@ impl CanonicalValue for Script
 /// - hypothesis: L3 depths zero through eight cover leaf and branching shapes;
 ///   fixed-seed replay and a neighbouring seed distinguish ignored seed input.
 /// - witness: `tests::common::fixture_refinements_reject_invalid_roots`
-#[anodized::spec(requires: depth.0 < usize::BITS,
+#[spec(requires: depth.0 < usize::BITS,
     ensures: |ret| anodized::types::Spec::predicate(&ret)
         && Some(ret.leaves().0) == 1_usize.checked_shl(depth.0))]
 pub fn balanced(
@@ -547,7 +548,7 @@ pub fn balanced(
 /// - hypothesis: L3 pairing a leaf on the left and a pair on the right yields
 ///   literal asymmetric codec bytes, distinguishing swapped children.
 /// - witness: `tests::common::fixture_edits_preserve_preorder`
-#[anodized::spec(requires: anodized::types::Spec::predicate(left)
+#[spec(requires: anodized::types::Spec::predicate(left)
     && anodized::types::Spec::predicate(right),
     ensures: |ret| anodized::types::Spec::predicate(&ret)
         && ret.0.iter().eq(core::iter::once(&Node::Pair)
@@ -577,7 +578,7 @@ pub fn pair(
 /// - hypothesis: L3 first, middle and last leaves of an asymmetric tree have
 ///   distinct words; exact edited fixtures distinguish node and leaf indexing.
 /// - witness: `tests::common::fixture_edits_preserve_preorder`
-#[anodized::spec(requires: anodized::types::Spec::predicate(value)
+#[spec(requires: anodized::types::Spec::predicate(value)
     && index.0 < value.leaves().0, ensures: |ret| {
         let mut leaf = 0_usize;
         ret.0.len() == value.0.len()
@@ -658,7 +659,7 @@ pub enum Scanned
 /// - hypothesis: L3 one literal body contains every record kind, a binary
 ///   payload, a nonzero child digest and an asymmetric multibyte offset.
 /// - witness: `tests::common::the_reference_scanner_covers_each_wire_record`
-#[anodized::spec(ensures: |ret| ret.iter().try_fold(<&[u8]>::from(body),
+#[spec(ensures: |ret| ret.iter().try_fold(<&[u8]>::from(body),
     |remaining, record| {
         let (&kind, after) = remaining.split_first()?;
         match (*record, kind) {
@@ -736,7 +737,7 @@ pub fn scan(body: TokenBody<'_>) -> Vec<Scanned>
 /// - hypothesis: L3 a literal leaf through two nested pointer-only chunks
 ///   yields exactly three distinct position/depth observations.
 /// - witness: `tests::common::record_observers_preserve_nested_seams`
-#[anodized::spec(maintains: anodized::types::Spec::predicate(&self.value)
+#[spec(maintains: anodized::types::Spec::predicate(&self.value)
     && self.value.0.iter().try_fold(0_usize, |count, node| {
         count.checked_add(match *node {
             Node::Leaf(_) => 3_usize,
@@ -784,7 +785,7 @@ impl CanonicalValue for ObservedFixture
     /// - hypothesis: L3 two nested seams reset the final position to one and
     ///   depth to zero after leaf positions one and two at depth two.
     /// - witness: `tests::common::record_observers_preserve_nested_seams`
-    #[anodized::spec(ensures: |ret| ret.is_err()
+    #[spec(ensures: |ret| ret.is_err()
         || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
             && value.records.last() == Some(&(reader.position(), reader.seam_depth()))))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>

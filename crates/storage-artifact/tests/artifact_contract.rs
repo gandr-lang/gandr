@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod artifact_contract
 {
+    use anodized::spec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::AdmissionMark;
     use gandr_kernel_term::ConstantIndex;
@@ -95,7 +96,7 @@ mod artifact_contract
     ///   term shape.
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    #[anodized::spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
+    #[spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
             decoded.declarations().len() == kinds.len()))]
     fn artifact_of(kinds: &[Kind]) -> EncodedArtifact
     {
@@ -160,7 +161,7 @@ mod artifact_contract
     ///   structural decodability rather than full term-shape equivalence.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    #[anodized::spec(ensures: |ret| decode(ret.as_image())
+    #[spec(ensures: |ret| decode(ret.as_image())
         .is_ok_and(|decoded| decoded.declarations().len() == 4))]
     fn shared_artifact() -> EncodedArtifact
     {
@@ -188,7 +189,7 @@ mod artifact_contract
     ///   distinguishes truncated cycles and malformed output within decoder
     ///   budgets, not every permutation of the four declaration kinds.
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    #[anodized::spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
+    #[spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
             decoded.declarations().len() == count.0))]
     fn long_artifact(count: Count) -> EncodedArtifact
     {
@@ -225,7 +226,7 @@ mod artifact_contract
     ///   helper.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let mut offset = ret.header().as_ref().len();
         artifact.as_ref().starts_with(ret.header().as_ref())
             && ret.records().iter().all(|record| {
@@ -265,7 +266,7 @@ mod artifact_contract
     ///   helper's domain.
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
     /// - witness: `artifact_contract::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
-    #[anodized::spec(ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
+    #[spec(ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
         && usize::try_from(u64::from(ret.0.record_count())).ok()
             == Some(set.records().len().saturating_add(1))
         && ret.1.load(ret.0.root_node()).is_ok())]
@@ -300,7 +301,7 @@ mod artifact_contract
     ///   distinguishes losing the stored root from the intended key refusal;
     ///   arbitrary record-plane refusal paths are outside this helper's domain.
     /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
-    #[anodized::spec(
+    #[spec(
         requires: records.iter().zip(records.iter().skip(1))
             .all(|(previous, next)| previous.key() < next.key()),
         ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
@@ -339,7 +340,7 @@ mod artifact_contract
     ///   to 47 generated declarations, not the full integer domain.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-    #[anodized::spec(ensures: |ret| usize::try_from(u64::from(ret)).ok() == Some(count.0))]
+    #[spec(ensures: |ret| usize::try_from(u64::from(ret)).ok() == Some(count.0))]
     fn record_count(count: Count) -> RecordCount
     {
         RecordCount(u64::try_from(count.0).expect("a count fits sixty-four bits"))

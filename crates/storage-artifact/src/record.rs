@@ -33,6 +33,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SegmentLayout;
@@ -74,7 +75,7 @@ impl From<ConstantIndex> for AdmissionKey
     ///   numeric/lexicographic agreement. It distinguishes reversed bytes,
     ///   shortened keys and narrowed indices, without exhausting index pairs.
     /// - witness: `record::tests::admission_keys_preserve_numeric_order_across_byte_carries`
-    #[anodized::spec(ensures: |ret| ret.0.iter().fold(0_u64, |value, &byte|
+    #[spec(ensures: |ret| ret.0.iter().fold(0_u64, |value, &byte|
         value.wrapping_shl(8) | u64::from(byte))
         == u64::try_from(usize::from(index)).unwrap_or(u64::MAX))]
     #[inline]
@@ -187,7 +188,7 @@ impl ReassembledArtifact
 ///   distinguish byte order from the constructor's own implementation.
 /// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
 /// - witness: `record::tests::admission_keys_preserve_numeric_order_across_byte_carries`
-#[anodized::spec(maintains: self.key.0.iter().rev().copied().eq(
+#[spec(maintains: self.key.0.iter().rev().copied().eq(
     u64::try_from(usize::from(self.index)).unwrap_or(u64::MAX).to_le_bytes()))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArtifactRecord
@@ -221,7 +222,7 @@ impl ArtifactRecord
     ///   not exhaust arbitrary malformed segment contents.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-    #[anodized::spec(ensures: |ret| ret.index == index
+    #[spec(ensures: |ret| ret.index == index
         && ret.key == AdmissionKey::from(index)
         && ret.segment.as_ref() == segment.0)]
     #[inline]
@@ -291,7 +292,7 @@ impl ArtifactRecord
 ///   duplicate positions before sorting.
 /// - witness: `record::tests::record_refinements_bind_keys_and_sorted_unique_sets`
 /// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
-#[anodized::spec(maintains: {
+#[spec(maintains: {
     let mut previous = None;
     self.records.iter().all(|record| {
         let ordered = previous.is_none_or(|key| key < record.key);
@@ -339,7 +340,7 @@ impl ArtifactRecordSet
     ///   Those valid-image witnesses do not establish every decoder refusal.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(ref set) => {
             let mut offset = set.header.len();
             image.as_ref().starts_with(set.header.as_ref())
@@ -415,7 +416,7 @@ impl ArtifactRecordSet
     /// - witness: `record::tests::from_records_sorts_any_permutation_canonically`
     /// - witness: `record::tests::a_duplicate_admission_key_is_rejected`
     /// - witness: `artifact_contract::artifact_contract::a_permuted_build_order_yields_the_same_identity`
-    #[anodized::spec(
+    #[spec(
         captures: count = records.len(),
         ensures: |ret| match ret {
             Ok(ref set) => set.header.as_ref() == header.0
@@ -481,7 +482,7 @@ impl ArtifactRecordSet
     ///   malformed key lengths or all later failure positions.
     /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
-    #[anodized::spec(
+    #[spec(
         requires: stored.iter().zip(stored.iter().skip(1))
             .all(|(previous, next)| previous.key() < next.key()),
         ensures: |ret| match ret {
@@ -588,7 +589,7 @@ impl ArtifactRecordSet
     ///   they do not exhaust record-tree shapes or allocation behaviour.
     /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
     /// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
-    #[anodized::spec(ensures: |ret| ret.len() == self.records.len().saturating_add(1)
+    #[spec(ensures: |ret| ret.len() == self.records.len().saturating_add(1)
         && ret.first().is_some_and(|header| header.key().as_ref() == HEADER_KEY
             && header.value().as_ref() == self.header.as_ref())
         && ret.iter().skip(1).zip(&self.records).all(|(view, record)|
@@ -626,7 +627,7 @@ impl ArtifactRecordSet
     ///   validate arbitrary bytes admitted by the unchecked record constructor.
     /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let mut offset = self.header.len();
         ret.0.starts_with(self.header.as_ref())
             && self.records.iter().all(|record| {
@@ -684,7 +685,7 @@ impl ArtifactRecordSet
     ///   It distinguishes conflating valid bytes with valid cuts; later cuts
     ///   and differing record/layout counts are not sampled by this witness.
     /// - witness: `artifact_contract::artifact_contract::records_cut_off_a_segment_boundary_are_refused`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let ends = layout.declaration_ends();
         let first = if self.header.len() == usize::from(layout.header_end()) {
             let mut end = self.header.len();
