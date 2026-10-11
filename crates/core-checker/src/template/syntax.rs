@@ -302,6 +302,30 @@ impl Graph
         Ok(())
     }
 
+    /// Resolve one classifier of this graph's vocabulary.
+    ///
+    /// # Specification
+    /// - ensures: returns the classifier at the supplied coordinate.
+    /// - fails: Unbalanced for an absent coordinate.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `StageError::Unbalanced`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — drafted binder payloads are compared through it and
+    ///   the kernel then checks every drafted member's sides exactly, so a
+    ///   wrong classifier refuses a member on the corpus.
+    /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+    #[spec(ensures: |output| output == self.types.get(&id).copied().ok_or(StageError::Unbalanced))]
+    pub(super) fn ty(
+        &self,
+        id: TypeId,
+    ) -> Result<Type, StageError>
+    {
+        self.types.get(&id).copied().ok_or(StageError::Unbalanced)
+    }
+
     /// Resolve a checked pattern coordinate.
     ///
     /// # Specification

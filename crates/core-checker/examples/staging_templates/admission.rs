@@ -336,10 +336,9 @@ pub fn run(output: &mut io::BufWriter<io::StdoutLock<'_>>) -> Result<(), super::
         for (index, family) in families.iter().enumerate() {
             let arena = input.arena.clone();
             let members = family.members.clone();
-            let analysis = analyze(&arena, family.program, &members)?;
+            let analysis = analyze(&arena, &members)?;
             let production = produce(
                 &arena,
-                family.program,
                 &members,
                 PriceGate::Memoized,
                 &mut InheritanceCache::new(),

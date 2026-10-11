@@ -44,14 +44,40 @@
 //! arithmetic inference or normalizing the kernel would change the
 //! specification. Revisit the single relation only with a separately specified
 //! producer rule whose instances ordinary replay can still check.
+//!
+//! `template::Memo` carries each harvest key's last template from program to
+//! program. A family whose key holds one is drafted from it before the
+//! producer runs: its members are walked against the template in their own
+//! arena, the skeleton is rebased when a member disagrees inside a binder, new
+//! bodies become arms, and the arms are numbered by first selection, so the
+//! drafted schema is the one a fresh run would propose. The kernel judges the
+//! draft as it judges the producer's proposal; a draft it refuses, or one the
+//! walk or the price withdraws, sends the family to the producer. A controller
+//! weighs each key's draft and producer times and drafts only while that pays.
 
 mod admission;
+mod draft;
 mod harvest;
 mod image;
+mod memo;
 mod syntax;
+pub use draft::ArmCount;
+pub use draft::DraftKind;
+pub use draft::Miss;
+pub use draft::RepairCount;
+pub use draft::Unfit;
 pub use harvest::Family;
 pub use harvest::harvest;
 pub use image::plain_image;
+pub use memo::Clock;
+pub use memo::Decline;
+pub use memo::Drafting;
+pub use memo::FamilyAdmission;
+pub use memo::FamilyReport;
+pub use memo::Memo;
+pub use memo::Origin;
+pub use memo::Spent;
+pub use memo::Unheld;
 #[cfg(test)]
 mod tests;
 
@@ -123,7 +149,8 @@ struct Entry
 {
     /// Nominal variable at every occurrence of this column.
     point: EntryIndex,
-    /// One nominal guard per exact body.
+    /// One nominal guard per exact body, numbered by the body's first
+    /// occurrence in member order.
     arms: BTreeMap<Id, GuardId>,
 }
 
@@ -266,8 +293,6 @@ pub struct Candidate
     sides: [Id; 2],
     /// The common local rule.
     rule: Rule,
-    /// Producer namespace within this run.
-    program: ProgramId,
     /// Node accounting before checks or admissions.
     cost: FamilyCostReport,
     /// Cold-cache obligation count, determined by distinct arm groups.
@@ -379,14 +404,13 @@ impl Generalizer
             let head = nodes.first().ok_or(StageError::Unbalanced)?.head;
             if !nodes.iter().all(|node| node.head == head) {
                 let point = EntryIndex::from(self.entries.len());
-                let arms = column
-                    .iter()
-                    .copied()
-                    .collect::<BTreeSet<_>>()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(guard, id)| (id, GuardId::from(guard)))
-                    .collect();
+                // Guards follow first occurrence in member order, so a
+                // schema's arm order is a function of its members alone.
+                let mut arms = BTreeMap::new();
+                for id in &column {
+                    let next = GuardId::from(arms.len());
+                    arms.entry(*id).or_insert(next);
+                }
                 let id = self.graph.intern(Node {
                     head: Head::Point(point),
                     children: Children([None; 3]),
@@ -1011,7 +1035,6 @@ fn generalize_rest(
 #[inline]
 pub fn analyze(
     arena: &Arena,
-    program: ProgramId,
     family: &[Step],
 ) -> Result<Analysis, StageError>
 {
@@ -1054,7 +1077,7 @@ pub fn analyze(
         },
         | _ => generalize_all(arena, family)?,
     };
-    conclude(generalization, program, first.rule, cost)
+    conclude(generalization, first.rule, cost)
 }
 
 /// Size a family's generalization and price it as a candidate, refusing a
@@ -1064,7 +1087,7 @@ pub fn analyze(
 /// - requires: `cost` counts the generalized family's members.
 /// - ensures: charges `F`, `s`, `F / s` and the distinct triples; refuses
 ///   exactly when a point lies outside the peak, with every size, and otherwise
-///   yields the candidate under `program` and `rule`.
+///   yields the candidate under `rule`.
 /// - fails: Overflow when the distinct triples are unrepresentable; Unbalanced
 ///   for a malformed graph edge.
 /// - panics: none.
@@ -1086,7 +1109,6 @@ pub fn analyze(
 }))]
 fn conclude(
     generalization: Generalization,
-    program: ProgramId,
     rule: Rule,
     mut cost: FamilyCostReport,
 ) -> Result<Analysis, StageError>
@@ -1140,7 +1162,6 @@ fn conclude(
         arms,
         sides,
         rule,
-        program,
         cost,
         triples,
     }))
@@ -1254,7 +1275,6 @@ impl Candidate
             arms,
             sides,
             rule,
-            program,
             mut cost,
             triples: _,
         } = self;
@@ -1275,7 +1295,6 @@ impl Candidate
         let peak_address = graph.address(peak)?;
         let join_address = graph.address(join)?;
         let region = TemplateAddress::of(&(
-            program,
             core::mem::discriminant(&rule),
             graph.vocabulary_address(),
             peak_address,
@@ -1404,14 +1423,13 @@ impl Candidate
 #[inline]
 pub fn produce(
     arena: &Arena,
-    program: ProgramId,
     family: &[Step],
     gate: PriceGate,
     cache: &mut InheritanceCache,
     budget: &mut Budget,
 ) -> Result<Production, StageError>
 {
-    match analyze(arena, program, family)? {
+    match analyze(arena, family)? {
         | Analysis::Candidate(candidate) => candidate.produce(gate, cache, budget),
         | Analysis::Refused { reason, cost } => Ok(Production::Plain { reason, cost }),
     }
