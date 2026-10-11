@@ -123,6 +123,7 @@ Value::Constructor {ref fields,..} => 2_u64.saturating_add(u64::try_from(fields.
 Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
 Value::PathEquiv { .. } => 4,
 Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) |
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 Value::Unit | Value::Literal(_) | Value::Hole(_) => 1,
 Value::PathProduct(..) | Value::Pair(_, _) | Value::StaticApplication(_, _) => 3,
 Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
@@ -131,7 +132,7 @@ None => return false,
 },
             CoreNode::Computation(id) => match erased.computation(id) { Some(matched_native_node) => match *matched_native_node {
 Computation::DataCase {ref branches,..} => 3_u64.saturating_add(u64::try_from(branches.len()).unwrap_or(u64::MAX)),
-Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
+Computation::RecordProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
 Computation::Hole(_) => 1,
 Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
 Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
@@ -247,7 +248,9 @@ pub fn unfolded(
                     | Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },
-                    | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                    | Computation::Lambda(body)
+                    | Computation::Mark { body, .. }
+                    | Computation::Fixpoint { body, .. } => {
                         pending.push(CoreNode::Computation(body));
                     },
                     | Computation::Hole(_) => {},

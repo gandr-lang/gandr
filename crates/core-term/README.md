@@ -51,7 +51,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
+- `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to`.
@@ -180,7 +180,9 @@ A `DataSignature` owns a parameter telescope, constructor field lists in tag ord
 
 Record types and values use ordered field maps. Labels identify fields, not offsets, and `RecordProjection` is a computation returning the selected value. All native children participate in syntax equality, rewriting and ownership; arities are not limited to three.
 
-**Choice.** Dedicated native forms rather than abstract atoms or a structural sum/product encoding. Typed code parameters and value indices share term-valued slots; the checker keeps every slot invariant. **Reversal.** Recursive signatures and certified definitional index conversion require their own formation and evidence readers. The current checker/kernel boundary and the named [parity floor](../core-checker/README.md#data-and-record-floor) are recorded together.
+**Choice.** Dedicated native forms rather than abstract atoms or a structural sum/product encoding. Typed code parameters and value indices share term-valued slots; the checker keeps every slot invariant. **Reversal.** Certified definitional index conversion requires its own evidence reader. The current checker/kernel boundary and the named [parity floor](../core-checker/README.md#data-and-record-floor) are recorded together.
+
+A field may name its own declaration's family: the syntax is an ordinary `ValueType::Data` at the declaration's own position, and whether that occurrence is admissible is the checker's question, not the arena's. `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands under one intuitionistic binder, the self thunk, so binder rewrites, shifts and substitutions treat it as they treat a lambda. `FixpointEvidence` is the kernel's own, `Partial` or `StructuralDescent`; the arena records the claim and grants nothing, and syntax equality distinguishes the two claims.
 
 ## Native universe paths
 

@@ -75,6 +75,7 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -431,6 +432,10 @@ pub enum ReplayDecline
     EngineDeclined,
     /// The replay's step budget ran out.
     Budget,
+    /// A fixpoint without termination evidence stood at its unfolding gate:
+    /// conversion never unfolds a partial fixpoint, so it neither converts
+    /// nor refutes.
+    PartialFixpoint,
     /// The trace did not replay.
     Refused(ReplayRefusal),
 }
@@ -455,6 +460,7 @@ pub enum ReplayDecline
 /// | Path disagreement | `Refused(Contradicted { at })`, `Refused(Exhausted)`, `Refused(Leftover { at })` |
 /// | No dialogue | `EngineDeclined` |
 /// | Budget | `Budget` |
+/// | Partial recursion | `PartialFixpoint` |
 /// | Certified negative | `NotConvertible`: an element, never a refusal |
 ///
 /// Refused reasons are [`ReplayRefusal`] variants inside
@@ -542,7 +548,7 @@ pub enum KernelVerdict
         (EngineClaim::Declined, _) | (_, KernelVerdict::Declined(ReplayDecline::EngineDeclined)) => false,
         (EngineClaim::Convertible, KernelVerdict::Convertible)
         | (EngineClaim::NotConvertible, KernelVerdict::NotConvertible)
-        | (_, KernelVerdict::Declined(ReplayDecline::Refused(_))) => budget.0 > 0,
+        | (_, KernelVerdict::Declined(ReplayDecline::Refused(_) | ReplayDecline::PartialFixpoint)) => budget.0 > 0,
         (_, KernelVerdict::Declined(ReplayDecline::Budget)) => true,
         _ => false,
     },
@@ -590,6 +596,7 @@ where
             | Expect::NotConvertible => KernelVerdict::NotConvertible,
         },
         | Err(Stop::Budget) => KernelVerdict::Declined(ReplayDecline::Budget),
+        | Err(Stop::PartialFixpoint) => KernelVerdict::Declined(ReplayDecline::PartialFixpoint),
         | Err(Stop::Refused(refusal)) => KernelVerdict::Declined(ReplayDecline::Refused(refusal)),
     }
 }
@@ -600,6 +607,8 @@ enum Stop
 {
     /// The step budget ran out.
     Budget,
+    /// A partial fixpoint stood at its unfolding gate.
+    PartialFixpoint,
     /// The trace did not replay.
     Refused(ReplayRefusal),
 }
@@ -852,6 +861,9 @@ enum Elimination
     Case(ComputationId, ComputationId),
     /// A static application to this code: the one value elimination.
     StaticApply(ValueId),
+    /// A fixpoint applied to the neutral head; the arena node is the
+    /// fixpoint itself, compared as a computation.
+    Fixpoint(ComputationId),
 }
 
 /// A side's shape in weak head form.
@@ -864,6 +876,8 @@ enum Shape
     Thunk(ComputationId),
     /// A lambda over this body.
     Lambda(ComputationId),
+    /// A fixpoint over this body, standing at no gate.
+    Fixpoint(ComputationId),
     /// A returner of this value.
     Return(ValueId),
     /// A head under its spine, innermost elimination first; a value's spine
@@ -982,6 +996,20 @@ enum Frame
     Bind(ComputationId),
 }
 
+/// What stands at a fixpoint's unfolding gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Gate
+{
+    /// An application to a constructor: the `<` direction at data.
+    Constructor,
+    /// An application to another canonical value.
+    Canonical,
+    /// A bind observing the fixpoint's result: the `>` direction.
+    Observed,
+    /// No elimination, or an application to a neutral value.
+    Shut,
+}
+
 /// Whether a weak head walk reduced anything.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Progress
@@ -1081,7 +1109,7 @@ where
         Ok(()) => self.trace.size_hint() == (0, Some(0)),
         Err(Stop::Refused(ReplayRefusal::Leftover { at })) => at.0 == self.position && self.trace.size_hint().0 > 0,
         Err(Stop::Budget) => self.spent >= self.budget,
-        Err(Stop::Refused(_)) => true,
+        Err(Stop::Refused(_) | Stop::PartialFixpoint) => true,
     })]
     fn drive(
         &mut self,
@@ -1679,7 +1707,7 @@ where
     /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     #[spec(ensures: |ret| match (left, right) {
         (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
-        (&Shape::Lambda(one), &Shape::Lambda(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::Lambda(one), &Shape::Lambda(other)) | (&Shape::Fixpoint(one), &Shape::Fixpoint(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
         (&Shape::Former, &Shape::Former) => true,
         (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
             Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
@@ -1707,7 +1735,8 @@ where
             | (&Shape::Return(left_value), &Shape::Return(right_value)) => {
                 Structure::of(Vec::from([Premise::values(left_value, right_value)]))
             },
-            | (&Shape::Lambda(left_body), &Shape::Lambda(right_body)) => {
+            | (&Shape::Lambda(left_body), &Shape::Lambda(right_body))
+            | (&Shape::Fixpoint(left_body), &Shape::Fixpoint(right_body)) => {
                 Structure::of(Vec::from([Premise::computations(left_body, right_body)]))
             },
             | (
@@ -1718,6 +1747,7 @@ where
                 &(Shape::Former
                 | Shape::Thunk(_)
                 | Shape::Lambda(_)
+                | Shape::Fixpoint(_)
                 | Shape::Return(_)
                 | Shape::Neutral(..)),
                 _,
@@ -2083,6 +2113,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Computation::DataCase { .. }
                         | Computation::RecordProjection(..)
                         | Computation::Lambda(_)
+                        | Computation::Fixpoint { .. }
                         | Computation::Bind(..)
                         | Computation::Case { .. }),
                     )
@@ -2194,10 +2225,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
             Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
+            Some(&Computation::Fixpoint { body, .. }) => ret == Ok(Shape::Fixpoint(body)),
             Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
             Some(node) => match ret {
                 Ok(Shape::Neutral(_, ref spine)) => match *node {
-                    Computation::Application(_, argument) => spine.last() == Some(&Elimination::Apply(argument)),
+                    Computation::Application(head, argument) => spine.last() == Some(&Elimination::Apply(argument))
+                        || (matches!(self.arena.computation(head), Some(&Computation::Fixpoint { .. })) && spine.last() == Some(&Elimination::Fixpoint(head))),
                     Computation::Bind(_, body) => spine.last() == Some(&Elimination::Bind(body)),
                     Computation::Force(_) => spine.as_slice() == [Elimination::Force],
                     Computation::Absurd(_) => spine.as_slice() == [Elimination::Absurd],
@@ -2288,6 +2321,20 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 },
                 | Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
+                },
+                | Some(&Computation::Fixpoint { body, .. }) if spine.is_empty() => {
+                    return Ok(Shape::Fixpoint(body));
+                },
+                // A fixpoint applied to a neutral argument is stuck on that
+                // argument's head: the application directly over it becomes the
+                // fixpoint's elimination, and the argument's head the neutral's.
+                | Some(&Computation::Fixpoint { .. }) => {
+                    let Some(Elimination::Apply(argument)) = spine.pop()
+                    else {
+                        return Err(unreadable());
+                    };
+                    spine.push(Elimination::Fixpoint(focus));
+                    break self.value_head(argument, frozen, side)?;
                 },
                 | Some(&Computation::Return(value)) if spine.is_empty() => {
                     return Ok(Shape::Return(value));
@@ -2521,6 +2568,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 }) => {
                     break self.arena.computation_case(body, on_left, on_right);
                 },
+                // A stuck fixpoint's head is its argument: the constant
+                // unfolds in the application directly over the fixpoint.
+                | Some(&Computation::Fixpoint { .. }) => {
+                    let Some(Frame::Apply(_)) = frames.pop()
+                    else {
+                        return Err(unreadable());
+                    };
+                    break self.arena.computation_application(focus, body);
+                },
                 | Some(&(Computation::Lambda(_) | Computation::Return(_))) | None => {
                     return Err(unreadable());
                 },
@@ -2628,17 +2684,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a value unchanged; a computation reduced by β, a forced
-    ///   thunk, a returner met by a bind and an injection met by a case until
-    ///   none fires at its head, and the original id when none fired at all.
+    ///   thunk, a returner met by a bind, an injection met by a case, and a
+    ///   fixpoint carrying replayed structural-descent evidence applied to a
+    ///   constructor, until none fires at its head, and the original id when
+    ///   none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
+    ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
+    ///   its gate — applied to a canonical argument or under a bind;
     ///   [`ReplayRefusal::Unreadable`] on a dangling computation or a value
     ///   inspected by its reduction; a value root itself is left for shape
     ///   checking.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`Stop::Budget`] or [`Stop::Refused`].
+    /// [`Stop::Budget`], [`Stop::PartialFixpoint`] or [`Stop::Refused`].
     ///
     /// # Termination
     /// - reason: the `loop` below, which takes one step per iteration, and the
@@ -2654,6 +2714,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
     /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    /// - witness: `recursive_data::recursive_data::a_fixpoint_computes_at_a_constructor_and_replays`
+    /// - witness: `recursive_data::recursive_data::a_partial_fixpoint_declines_at_its_gate`
     /// - witness: `path_universe::tests::transport_computes`
     /// - witness: `path_universe::tests::refl_collapses`
     #[spec(
@@ -2663,7 +2725,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             Term::Computation(_) => match ret {
                 Ok(Term::Computation(computation)) => self.spent > before && self.spent <= self.budget && self.arena.computation(computation).is_some(),
                 Err(Stop::Budget) => self.spent >= self.budget,
-                Err(Stop::Refused(_)) => true,
+                Err(Stop::Refused(_) | Stop::PartialFixpoint) => true,
                 Ok(Term::Value(_)) => false,
             },
         },
@@ -2776,6 +2838,44 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         progress = Progress::Reduced;
                     },
                     | Some(&Frame::Bind(_)) | None => break,
+                },
+                // A fixpoint unfolds at its gate: applied to a canonical
+                // argument, the `<` direction, or under a bind observing its
+                // result, the `>` direction. Conversion unfolds only a
+                // fixpoint whose structural-descent evidence replayed, and
+                // only at a constructor; at a partial fixpoint's gate it
+                // declines rather than refutes.
+                | Some(&Computation::Fixpoint { body, evidence }) => {
+                    let gate = match frames.last() {
+                        | Some(&Frame::Apply(argument)) => match self.arena.value(argument) {
+                            | Some(&Value::Constructor { .. }) => Gate::Constructor,
+                            | Some(
+                                &(Value::Variable(_)
+                                | Value::Constant(_)
+                                | Value::StaticApplication(..)),
+                            ) => Gate::Shut,
+                            | Some(_) => Gate::Canonical,
+                            | None => return Err(unreadable()),
+                        },
+                        | Some(&Frame::Bind(_)) => Gate::Observed,
+                        | None => Gate::Shut,
+                    };
+                    match (evidence, gate) {
+                        | (FixpointEvidence::StructuralDescent, Gate::Constructor) => {
+                            let recursive = self.arena.value_thunk(focus);
+                            focus = self.instantiate(body, recursive);
+                            progress = Progress::Reduced;
+                        },
+                        | (
+                            FixpointEvidence::Partial,
+                            Gate::Constructor | Gate::Canonical | Gate::Observed,
+                        ) => return Err(Stop::PartialFixpoint),
+                        | (
+                            FixpointEvidence::StructuralDescent,
+                            Gate::Canonical | Gate::Observed | Gate::Shut,
+                        )
+                        | (FixpointEvidence::Partial, Gate::Shut) => break,
+                    }
                 },
                 | Some(&Computation::Return(value)) => match frames.last() {
                     | Some(&Frame::Bind(body)) => {
@@ -3057,6 +3157,7 @@ fn rule(
             &(Shape::Former
             | Shape::Thunk(_)
             | Shape::Lambda(_)
+            | Shape::Fixpoint(_)
             | Shape::Return(_)
             | Shape::Neutral(..)),
             _,
@@ -3111,7 +3212,7 @@ if let Some(matched_left_node) = matched_left_value && let Computation::DataCase
  else { false }
 },
                 (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
-                (Elimination::Bind(one), Elimination::Bind(other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::Bind(one), Elimination::Bind(other)) | (Elimination::Fixpoint(one), Elimination::Fixpoint(other)) => pending.next() == Some(&Premise::computations(one, other)),
                 (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) => pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
                 _ => false,
             });
@@ -3205,7 +3306,8 @@ fn spines(
             | (Elimination::StaticApply(a), Elimination::StaticApply(b)) => {
                 premises.push(Premise::values(a, b));
             },
-            | (Elimination::Bind(a), Elimination::Bind(b)) => {
+            | (Elimination::Bind(a), Elimination::Bind(b))
+            | (Elimination::Fixpoint(a), Elimination::Fixpoint(b)) => {
                 premises.push(Premise::computations(a, b));
             },
             | (Elimination::Case(a, b), Elimination::Case(c, d)) => {
@@ -3221,7 +3323,8 @@ fn spines(
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
                 | Elimination::Case(..)
-                | Elimination::StaticApply(_),
+                | Elimination::StaticApply(_)
+                | Elimination::Fixpoint(_),
                 _,
             ) => return Ok(Structure::Leaf(Expect::NotConvertible)),
         }

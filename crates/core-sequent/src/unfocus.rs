@@ -2,13 +2,16 @@
 //! focuses, and a producer back as its core value.
 //!
 //! A command `⟨p |ε c⟩` decodes as a head read from `p` — a `μ`'s body, a
-//! copattern object's function, or a value — and a spine read from `c`: an
-//! application frame applies, `μ̃` binds, a force frame forces, a match cases,
-//! and the current return point ends the spine. The current return point is
-//! `★` at the root and covariable `0` under a `μ`, a thunk or a copattern
-//! arm; any other covariable escapes the computation and is refused. Every
-//! command focusing builds decodes, and `𝓕⁻¹ ∘ 𝓕` is the identity on core
-//! terms; IL outside that image is refused by name.
+//! copattern object's function, a recursive thunk forced, or a value — and a
+//! spine read from `c`: an application frame applies, `μ̃` binds, a force
+//! frame forces, a match cases, and the current return point ends the spine.
+//! The current return point is `★` at the root and covariable `0` under a
+//! `μ`, a thunk, a recursive thunk or a copattern arm; any other covariable
+//! escapes the computation and is refused. Every command focusing builds
+//! decodes, and `𝓕⁻¹ ∘ 𝓕` is the identity on core terms up to the types
+//! focusing erases: a datatype constructor reads back at the unknown value
+//! type and a nominal case at the unknown motive. IL outside that image is
+//! refused by name.
 //!
 //! The walk can close a term as it goes: a producer variable counting past
 //! the decoded root's own binders is replaced by the closed core value the
@@ -30,6 +33,8 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 
+use crate::boundary::NodeCount;
+use crate::boundary::ProducerArity;
 use crate::il::CommandArena;
 use crate::il::CommandId;
 use crate::il::CommandNode;
@@ -274,6 +279,9 @@ pub enum Root
     Value(ProducerId),
     /// A thunk's suspended command, read as the thunk.
     ThunkBody(CommandId),
+    /// A recursive thunk's suspended command, read as the thunk of the
+    /// fixpoint it suspends.
+    FixpointBody(CommandId, gandr_kernel_term::FixpointEvidence),
     /// A copattern object of one `apply` arm, read as the function it is.
     Function(ProducerId),
 }
@@ -371,8 +379,18 @@ enum Task
     Injection(Side),
     /// Pop one value and build its lift.
     Lift(Level),
+    /// Pop a datatype constructor's field values and build it.
+    Native
+    {
+        /// The constructor's ordinal.
+        tag: gandr_kernel_term::ConstructorTag,
+        /// Its field count.
+        arity: ProducerArity,
+    },
     /// Pop one computation and build its thunk.
     Thunk,
+    /// Pop one computation and build the fixpoint over it.
+    Fixpoint(gandr_kernel_term::FixpointEvidence),
     /// Pop one value and build its return.
     Return,
     /// Pop one value and build its force.
@@ -386,6 +404,8 @@ enum Task
     Bind,
     /// Pop the right and left branches and the scrutinee and build the case.
     Case,
+    /// Pop the branches and the scrutinee and build the nominal case.
+    DataCase(NodeCount),
 }
 
 /// The state of one decoding.
@@ -449,6 +469,14 @@ impl Unfocusing<'_>
                 self.tasks
                     .push(Task::Command(body, Depth::ROOT.under_covariable()));
             },
+            | Root::FixpointBody(body, evidence) => {
+                self.tasks.push(Task::Thunk);
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Command(
+                    body,
+                    Depth::ROOT.under_producer().under_covariable(),
+                ));
+            },
             | Root::Function(producer) => self.function_head(producer, Depth::ROOT)?,
         }
         while let Some(task) = self.tasks.pop() {
@@ -487,10 +515,12 @@ impl Unfocusing<'_>
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::Pair => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
-            | &Task::Thunk | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
+            | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
             | &Task::Application => !self.values.is_empty() && !self.computations.is_empty(),
             | &Task::Bind => self.computations.len() >= 2,
             | &Task::Case => !self.values.is_empty() && self.computations.len() >= 2,
+            | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
+            | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
             | &Task::Value(..) | &Task::Command(..) => true,
         },
         ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
@@ -537,10 +567,28 @@ impl Unfocusing<'_>
                 self.values.push(lift);
                 Ok(())
             },
+            | Task::Native { tag, arity } => {
+                let start = self
+                    .values
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let fields: Vec<ValueId> = self.values.drain(start ..).collect();
+                let datatype = self.core.value_type_unknown();
+                let constructed = self.core.value_constructor(datatype, tag, fields);
+                self.values.push(constructed);
+                Ok(())
+            },
             | Task::Thunk => {
                 let body = self.pop_computation()?;
                 let thunk = self.core.value_thunk(body);
                 self.values.push(thunk);
+                Ok(())
+            },
+            | Task::Fixpoint(evidence) => {
+                let body = self.pop_computation()?;
+                let fixpoint = self.core.computation_fixpoint(body, evidence);
+                self.computations.push(fixpoint);
                 Ok(())
             },
             | Task::Return => {
@@ -580,6 +628,19 @@ impl Unfocusing<'_>
                 let on_left = self.pop_computation()?;
                 let scrutinee = self.pop_value()?;
                 let cased = self.core.computation_case(scrutinee, on_left, on_right);
+                self.computations.push(cased);
+                Ok(())
+            },
+            | Task::DataCase(count) => {
+                let start = self
+                    .computations
+                    .len()
+                    .checked_sub(usize::from(count))
+                    .ok_or(UnfocusRefusal::DecodeInvariant)?;
+                let branches: Vec<ComputationId> = self.computations.drain(start ..).collect();
+                let scrutinee = self.pop_value()?;
+                let motive = self.core.comp_type_unknown();
+                let cased = self.core.computation_data_case(scrutinee, motive, branches);
                 self.computations.push(cased);
                 Ok(())
             },
@@ -658,6 +719,13 @@ impl Unfocusing<'_>
                         self.tasks.push(Task::Value(body, depth));
                         return Ok(());
                     },
+                    | (&ConstructorTag::Data { tag, arity }, fields) => {
+                        self.tasks.push(Task::Native { tag, arity });
+                        for &field in fields.iter().rev() {
+                            self.tasks.push(Task::Value(field, depth));
+                        }
+                        return Ok(());
+                    },
                     | _ => return Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
                 }
             },
@@ -668,6 +736,7 @@ impl Unfocusing<'_>
                 return Ok(());
             },
             | ProducerNode::Primitive { .. }
+            | ProducerNode::Fixpoint { .. }
             | ProducerNode::Cocase { .. }
             | ProducerNode::Mu { .. } => {
                 return Err(UnfocusRefusal::ProducerOutsideTheImage(id));
@@ -802,6 +871,31 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Spine(consumer, depth));
                 return self.function_head(producer, depth);
             },
+            | ProducerNode::Fixpoint { body, evidence } => {
+                let observer = self
+                    .arena
+                    .consumer(consumer)
+                    .ok_or(UnfocusRefusal::DanglingConsumer(consumer))?;
+                let ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    ref producers,
+                    ref consumers,
+                } = *observer
+                else {
+                    return Err(UnfocusRefusal::ProducerOutsideTheImage(producer));
+                };
+                let (&[], &[then]) = (producers.as_ref(), consumers.as_ref())
+                else {
+                    return Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer));
+                };
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Command(
+                    body,
+                    depth.under_producer().under_covariable(),
+                ));
+                return Ok(());
+            },
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
@@ -840,6 +934,23 @@ impl Unfocusing<'_>
                     .push(Task::Command(right.body, depth.under_producer()));
                 self.tasks
                     .push(Task::Command(left.body, depth.under_producer()));
+            },
+            | ConsumerNode::DataCase { ref branches, then } => {
+                self.tasks.push(Task::Spine(then, depth));
+                self.tasks
+                    .push(Task::DataCase(NodeCount::from(branches.len())));
+                for &branch in branches.iter().rev() {
+                    let node = self
+                        .arena
+                        .producer(branch)
+                        .ok_or(UnfocusRefusal::DanglingProducer(branch))?;
+                    let ProducerNode::Thunk { body } = *node
+                    else {
+                        return Err(UnfocusRefusal::ProducerOutsideTheImage(branch));
+                    };
+                    self.tasks
+                        .push(Task::Command(body, depth.under_covariable()));
+                }
             },
             | ConsumerNode::Covariable(_)
             | ConsumerNode::Top
@@ -943,7 +1054,7 @@ impl Unfocusing<'_>
             | Some(&ConsumerNode::Top) => if depth.covariables == 0 {
                 ret.is_ok() && self.tasks.len() == work
             } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
-            | Some(&ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. }) =>
+            | Some(&ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. } | &ConsumerNode::DataCase { .. }) =>
                 ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
             | Some(&ConsumerNode::Destructor { ref producers, ref consumers, .. })
                 if producers.len() != 1 || consumers.len() != 1 => ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
@@ -1000,7 +1111,8 @@ impl Unfocusing<'_>
                 tag: DestructorTag::Force,
                 ..
             }
-            | ConsumerNode::Case { .. } => Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. } => Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
         }
     }
 

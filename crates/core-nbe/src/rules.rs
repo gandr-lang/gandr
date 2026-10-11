@@ -190,6 +190,11 @@ pub enum Subgoal
         /// The constructor ordinal selecting one branch from each case.
         tag: gandr_core_term::ConstructorTag,
     },
+    /// Two fixpoints, each its own source closed over its environment,
+    /// compared as weak heads: a stuck fixpoint's place in a spine.
+    Fixpoints(CompClosureId, CompClosureId),
+    /// The bodies of two fixpoints, opened under one fresh self variable.
+    FixpointBodies(CompClosureId, CompClosureId),
 }
 
 /// A forced rule with one premise.
@@ -402,6 +407,38 @@ pub fn case_source<'core>(
     Ok((*motive, branches))
 }
 
+/// Resolve the body a fixpoint capture closes over.
+///
+/// # Specification
+/// - requires: nothing; stale and ill-shaped captures are refused.
+/// - ensures: returns the source fixpoint's body, scoped under its self binder.
+/// - fails: a dangling closure or a body that is not a source fixpoint.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two stuck fixpoints compare by their bodies opened under
+///   one self variable, and the trace replays.
+/// - witness: `machine::tests::stuck_fixpoints_compare_by_their_bodies`
+#[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)))]
+pub fn fixpoint_source(
+    core: &CoreArena,
+    domain: &DomainArena,
+    closure: CompClosureId,
+) -> Result<gandr_core_term::ComputationId, ConversionFault>
+{
+    let closure = domain
+        .comp_closure(closure)
+        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+    let crate::closure::CompBody::Source(source) = closure.body()
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    let Some(&gandr_core_term::Computation::Fixpoint { body, .. }) = core.computation(source)
+    else {
+        return Err(ConversionFault::MachineInvariant);
+    };
+    Ok(body)
+}
 /// Read the exact source label of a native projection.
 ///
 /// # Specification
@@ -554,9 +591,9 @@ pub enum Spines
 /// - ensures: [`Spines::Agree`] when the spines have one length and one
 ///   elimination kind at every position: application and transport arguments as
 ///   value pairs, a bind's continuations as an opened pair, a case's branches
-///   as two opened pairs left first, and a force as nothing, in spine order
-///   innermost first; [`Spines::Disagree`] when a length or a kind differs. The
-///   heads are not compared.
+///   as two opened pairs left first, a stuck fixpoint as its two fixpoints, and
+///   a force as nothing, in spine order innermost first; [`Spines::Disagree`]
+///   when a length or a kind differs. The heads are not compared.
 /// - provides: the premises of `var-1` and `const`, in the order a recorded
 ///   subgoal position counts.
 /// - fails: [`ConversionFault::Domain`] when a neutral does not resolve.
@@ -645,6 +682,9 @@ pub fn spine_subgoals(
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
                 subgoals.push(Subgoal::Opened(left_body, right_body));
             },
+            | (Elimination::Fixpoint(left_fixpoint), Elimination::Fixpoint(right_fixpoint)) => {
+                subgoals.push(Subgoal::Fixpoints(left_fixpoint, right_fixpoint));
+            },
             | (
                 Elimination::Case {
                     on_left: left_on_left,
@@ -667,7 +707,8 @@ pub fn spine_subgoals(
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }
-                | Elimination::StaticApply(_),
+                | Elimination::StaticApply(_)
+                | Elimination::Fixpoint(_),
                 _,
             ) => return Ok(Spines::Disagree),
         }
@@ -1014,7 +1055,8 @@ fn value_neutrality(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Neutrality::Neutral`] with the head as [`head`] reads it for a
-///   neutral computation; [`Neutrality::Former`] for a lambda or a returner.
+///   neutral computation; [`Neutrality::Former`] for a lambda, a returner or a
+///   fixpoint.
 /// - provides: the neutral projection the constant arms match on.
 /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
 /// - panics: none.
@@ -1047,7 +1089,9 @@ fn comp_neutrality(
             let read = head(domain, frozen, side, neutral)?;
             Neutrality::Neutral(neutral, read)
         },
-        | DomainComp::Lambda { .. } | DomainComp::Return { .. } => Neutrality::Former,
+        | DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Fixpoint { .. } => {
+            Neutrality::Former
+        },
     })
 }
 
@@ -1488,7 +1532,10 @@ fn plan_comps(
         | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => Lambda::Left,
         | (DomainComp::Neutral { .. }, DomainComp::Lambda { .. }) => Lambda::Right,
         | (
-            DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Neutral { .. },
+            DomainComp::Lambda { .. }
+            | DomainComp::Return { .. }
+            | DomainComp::Neutral { .. }
+            | DomainComp::Fixpoint { .. },
             _,
         ) => Lambda::Neither,
     };
@@ -1516,6 +1563,21 @@ fn plan_comps(
                 value: right_value, ..
             },
         ) => Plan::Decompose(Vec::from([Subgoal::Values(left_value, right_value)])),
+        // Congruence only: two fixpoints compare by their bodies under one
+        // self variable, whatever claims they carry.
+        | (
+            DomainComp::Fixpoint {
+                recursive: left_recursive,
+                ..
+            },
+            DomainComp::Fixpoint {
+                recursive: right_recursive,
+                ..
+            },
+        ) => Plan::Decompose(Vec::from([Subgoal::FixpointBodies(
+            left_recursive,
+            right_recursive,
+        )])),
         | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
             Plan::Step(Step::Eta(ConversionSide::Right))
         },
@@ -1533,7 +1595,10 @@ fn plan_comps(
             },
         ) => return plan_rigid(core, domain, left_neutral, right_neutral),
         | (
-            DomainComp::Lambda { .. } | DomainComp::Return { .. } | DomainComp::Neutral { .. },
+            DomainComp::Lambda { .. }
+            | DomainComp::Return { .. }
+            | DomainComp::Neutral { .. }
+            | DomainComp::Fixpoint { .. },
             _,
         ) => Plan::Leaf(Settled::NotConvertible),
     };

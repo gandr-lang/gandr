@@ -108,6 +108,8 @@ pub enum CheckingForm
     Lambda(ComputationId),
     /// A return.
     Return(ComputationId),
+    /// A fixpoint: its type is the type it is checked at.
+    Fixpoint(ComputationId),
     /// A hole: the body of the declaration at this admission position, which
     /// no definition supplies.
     Hole(ConstantIndex),
@@ -441,6 +443,34 @@ pub enum CheckRefusal
         /// The child that classifies no codes.
         found: ValueTypeId,
     },
+    /// A data declaration's own family occurs under a function's domain.
+    NegativeOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family occurs inside another former or
+    /// another family's arguments.
+    NestedOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family occurs inside a term a type reads, or
+    /// in its own parameter telescope.
+    IndexOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family is applied to arguments other than its
+    /// parameter variables in telescope order.
+    NonUniformOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration names an admission position after its own: a
+    /// reference outside its block.
+    CrossBlockReference
+    {
+        /// The parameter or field that names it.
+        site: gandr_kernel_term::OccurrenceSite,
+        /// The later position.
+        index: ConstantIndex,
+    },
+    /// A fixpoint's structural-descent claim does not replay.
+    DescentNotReplayed
+    {
+        /// The fixpoint.
+        at: ComputationId,
+        /// The first reason the descent walk met.
+        reason: gandr_kernel_term::DescentRefusal,
+    },
 }
 
 impl CheckRefusal
@@ -454,12 +484,14 @@ impl CheckRefusal
     ///   mismatch, a shape mismatch, a checking-only form in synthesis
     ///   position, an unknown constant, a sort mismatch, a level mismatch, a
     ///   dependent bind, a family at the wrong arity or with an argument at the
-    ///   wrong classifier, a static lambda at a dynamic parameter and a static
-    ///   Pi over a type that classifies no codes are malformed source; a former
-    ///   outside the fragment is unrepresentable; an unbound index, an
-    ///   exhausted allowance, a dangling id, an admission out of order, a
-    ///   machine invariant and an undecided unfolding are engine faults;
-    ///   nothing is a user absence.
+    ///   wrong classifier, a static lambda at a dynamic parameter, a static Pi
+    ///   over a type that classifies no codes, an occurrence of a data
+    ///   declaration's own family outside a strictly positive, uniform field, a
+    ///   reference past its block and a descent claim that does not replay are
+    ///   malformed source; a former outside the fragment is unrepresentable; an
+    ///   unbound index, an exhausted allowance, a dangling id, an admission out
+    ///   of order, a machine invariant and an undecided unfolding are engine
+    ///   faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -489,7 +521,8 @@ impl CheckRefusal
         | Self::FamilyArity { .. }
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
-        | Self::StaticClassifierExpected { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::StaticClassifierExpected { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::DescentNotReplayed { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -516,7 +549,13 @@ impl CheckRefusal
             | Self::FamilyArity { .. }
             | Self::FamilyArgumentClassifier { .. }
             | Self::StaticLambdaArgument { .. }
-            | Self::StaticClassifierExpected { .. } => FailureClass::MalformedSource,
+            | Self::StaticClassifierExpected { .. }
+            | Self::NegativeOccurrence(_)
+            | Self::NestedOccurrence(_)
+            | Self::IndexOccurrence(_)
+            | Self::NonUniformOccurrence(_)
+            | Self::CrossBlockReference { .. }
+            | Self::DescentNotReplayed { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }

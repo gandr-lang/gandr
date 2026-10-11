@@ -4,15 +4,18 @@
 //! ```text
 //! 𝓥⟦x⟧            = x                       𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}
 //! 𝓥⟦()⟧, 𝓥⟦(v, w)⟧, 𝓥⟦inj v⟧, 𝓥⟦lift v⟧    = the constructor over the images
+//! 𝓥⟦c_i(v̄)⟧        = ctor[i](𝓥⟦v̄⟧)            the datatype erased
 //!
 //! 𝓕⟦return v⟧c    = ⟨𝓥⟦v⟧ |+ c⟩
 //! 𝓕⟦force v⟧c     = ⟨𝓥⟦v⟧ |+ force(c)⟩
 //! 𝓕⟦M v⟧c         = 𝓕⟦M⟧(apply(𝓥⟦v⟧; c))
 //! 𝓕⟦λ. M⟧c        = ⟨cocase {apply(x; α) ⇒ 𝓕⟦M⟧α} |− c⟩
+//! 𝓕⟦fix x. M⟧c    = ⟨fix{x; force(α) ⇒ 𝓕⟦M⟧α} |+ force(c)⟩
 //! 𝓕⟦x ← M; N⟧c    = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧c)                       c a tail
 //!                 = ⟨μα. 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α) |ε c⟩              otherwise
 //! 𝓕⟦case v {l, r}⟧c = ⟨𝓥⟦v⟧ |+ case {inl(x) ⇒ 𝓕⟦l⟧c, inr(x) ⇒ 𝓕⟦r⟧c}⟩   c a tail
 //!                 = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩     otherwise
+//! 𝓕⟦case v [C] of {b̄}⟧c = ⟨𝓥⟦v⟧ |+ datacase(𝓥⟦thunk b̄⟧; c)⟩   the motive erased
 //! ```
 //!
 //! A tail is a covariable or `★`. A continuation that is not a tail is never
@@ -41,6 +44,7 @@ use gandr_kernel_term::Side;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::NodeCount;
+use crate::boundary::ProducerArity;
 use crate::il::CommandArena;
 use crate::il::CommandId;
 use crate::il::ConstructorTag;
@@ -63,6 +67,8 @@ pub enum FocusOrigin
     Return,
     /// `force v`: the cut of the thunk against a force frame.
     Force,
+    /// `fix x. M`: the cut of the recursive thunk against a force frame.
+    Fixpoint,
     /// `λ. M`: the cut of the copattern object against the continuation.
     Lambda,
     /// `case v {…}`: the cut of the scrutinee against the match, or the cut
@@ -199,10 +205,10 @@ pub enum FocusRefusal
 {
     /// Native universe transport has no command-IL destructor.
     UniverseTransport(ComputationId),
-    /// Native data and record values have no command-IL producer form.
-    NativeValue(ValueId),
-    /// Native data case and record projection have no command-IL destructor.
-    NativeElimination(ComputationId),
+    /// A structural record has no command-IL producer form.
+    Record(ValueId),
+    /// A record projection has no command-IL destructor.
+    RecordProjection(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -241,11 +247,9 @@ impl fmt::Display for FocusRefusal
             | Self::UniverseTransport(_) => {
                 f.write_str("universe transport has no command-IL destructor")
             },
-            | Self::NativeValue(_) => {
-                f.write_str("native data and records have no command-IL producer")
-            },
-            | Self::NativeElimination(_) => {
-                f.write_str("native data and record elimination has no command-IL destructor")
+            | Self::Record(_) => f.write_str("a record has no command-IL producer"),
+            | Self::RecordProjection(_) => {
+                f.write_str("a record projection has no command-IL destructor")
             },
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
@@ -496,8 +500,18 @@ enum Task
     Injection(Side),
     /// Pop one producer and mint its lift.
     Lift(Level),
+    /// Pop a datatype constructor's fields and mint it.
+    Native
+    {
+        /// The constructor's ordinal.
+        tag: gandr_kernel_term::ConstructorTag,
+        /// Its field count.
+        arity: ProducerArity,
+    },
     /// Pop one command and mint the thunk suspending it.
     Thunk,
+    /// Pop one command and mint the recursive thunk suspending it.
+    Fixpoint(gandr_kernel_term::FixpointEvidence),
     /// Pop one producer and mint its cut against `consumer`.
     Cut
     {
@@ -532,6 +546,15 @@ enum Task
     /// Pop the arms' commands and the scrutinee's producer, and mint the cut
     /// of the scrutinee against the match.
     Case,
+    /// Pop the branches' thunks and the scrutinee's producer, and mint the
+    /// cut of the scrutinee against the nominal match.
+    DataCase
+    {
+        /// The number of branches.
+        branches: NodeCount,
+        /// The continuation every branch returns to.
+        continuation: ConsumerId,
+    },
     /// Pop one command and mint `⟨μα. command |polarity continuation⟩`.
     Name
     {
@@ -641,8 +664,10 @@ impl<'run> Focusing<'run>
             | &Task::Primitive { arguments, .. } => self.producers.len() >= arguments.len(),
             | &Task::Pair => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
-            | &Task::Thunk | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
+            | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::Case => !self.producers.is_empty() && self.commands.len() >= 2,
+            | &Task::Native { arity, .. } => self.producers.len() >= usize::from(arity),
+            | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
             | &Task::Value(_) | &Task::Computation { .. } => true,
         },
         ensures: |ret| ret.is_err() || (self.producers.last().is_none_or(|id| self.arena.producer(*id).is_some())
@@ -696,9 +721,26 @@ impl<'run> Focusing<'run>
                 let body = self.pop_producer()?;
                 self.constructor(ConstructorTag::Lift(level), &[body])
             },
+            | Task::Native { tag, arity } => {
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(arity))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let fields: Vec<ProducerId> = self.producers.drain(start ..).collect();
+                self.constructor(ConstructorTag::Data { tag, arity }, &fields)
+            },
             | Task::Thunk => {
                 let body = self.pop_command()?;
                 let thunk = self.arena.mint_producer(ProducerNode::Thunk { body })?;
+                self.producers.push(thunk);
+                Ok(())
+            },
+            | Task::Fixpoint(evidence) => {
+                let body = self.pop_command()?;
+                let thunk = self
+                    .arena
+                    .mint_producer(ProducerNode::Fixpoint { body, evidence })?;
                 self.producers.push(thunk);
                 Ok(())
             },
@@ -765,6 +807,24 @@ impl<'run> Focusing<'run>
                 })?;
                 self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
             },
+            | Task::DataCase {
+                branches,
+                continuation,
+            } => {
+                let scrutinee = self.pop_producer()?;
+                let start = self
+                    .producers
+                    .len()
+                    .checked_sub(usize::from(branches))
+                    .ok_or(FocusRefusal::TranslationInvariant)?;
+                let thunks: alloc::boxed::Box<[ProducerId]> =
+                    self.producers.drain(start ..).collect();
+                let matcher = self.arena.mint_consumer(ConsumerNode::DataCase {
+                    branches: thunks,
+                    then: continuation,
+                })?;
+                self.cut(FocusOrigin::Case, Polarity::Positive, scrutinee, matcher)
+            },
             | Task::Name {
                 origin,
                 polarity,
@@ -786,6 +846,7 @@ impl<'run> Focusing<'run>
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
     ///   quote of either sort, a static lambda or a static application,
+    ///   [`FocusRefusal::Record`] for a structural record,
     ///   [`FocusRefusal::IncompleteValue`] for a hole or a mark, or a refused
     ///   mint.
     /// - panics: none.
@@ -801,6 +862,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::a_record_or_its_projection_is_refused_by_name`
     /// - witness: `focus::tests::a_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
@@ -810,6 +872,7 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
             | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
+            | Some(&Value::Record(_)) => ret == Err(FocusRefusal::Record(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work || self.producers.len() > results,
         },
     )]
@@ -820,8 +883,18 @@ impl<'run> Focusing<'run>
     {
         let node = self.core.value(id).ok_or(FocusRefusal::DanglingValue(id))?;
         let leaf = match *node {
-            | Value::Constructor { .. } | Value::Record(_) => {
-                return Err(FocusRefusal::NativeValue(id));
+            | Value::Record(_) => return Err(FocusRefusal::Record(id)),
+            | Value::Constructor {
+                tag, ref fields, ..
+            } => {
+                self.tasks.push(Task::Native {
+                    tag,
+                    arity: ProducerArity::from(fields.len()),
+                });
+                for &field in fields.iter().rev() {
+                    self.tasks.push(Task::Value(field));
+                }
+                return Ok(());
             },
             | Value::Variable { zone, index } => ProducerNode::Variable { zone, index },
             | Value::Constant(constant) => ProducerNode::Constant(constant),
@@ -882,8 +955,10 @@ impl<'run> Focusing<'run>
     ///   continuation that is not a tail is placed under no binder.
     /// - provides: the `𝓕` rows.
     /// - fails: [`FocusRefusal::DanglingComputation`],
-    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark, or a
-    ///   refused mint.
+    ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
+    ///   [`FocusRefusal::RecordProjection`] for a record projection,
+    ///   [`FocusRefusal::UniverseTransport`] for a transport, or a refused
+    ///   mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -897,6 +972,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `focus::tests::a_record_or_its_projection_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_or_a_mark_is_refused_by_name`
     #[spec(
@@ -904,6 +980,7 @@ impl<'run> Focusing<'run>
         ensures: |ret| match self.core.computation(id) {
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
+            | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -918,8 +995,27 @@ impl<'run> Focusing<'run>
             .computation(id)
             .ok_or(FocusRefusal::DanglingComputation(id))?;
         match *node {
-            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
-                return Err(FocusRefusal::NativeElimination(id));
+            | Computation::RecordProjection(..) => {
+                return Err(FocusRefusal::RecordProjection(id));
+            },
+            | Computation::DataCase {
+                scrutinee,
+                ref branches,
+                ..
+            } => {
+                self.tasks.push(Task::DataCase {
+                    branches: NodeCount::from(branches.len()),
+                    continuation,
+                });
+                self.tasks.push(Task::Value(scrutinee));
+                for &branch in branches.iter().rev() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Thunk);
+                    self.tasks.push(Task::Computation {
+                        computation: branch,
+                        continuation: return_point,
+                    });
+                }
             },
             | Computation::Primitive {
                 primitive,
@@ -937,6 +1033,24 @@ impl<'run> Focusing<'run>
             | Computation::Transport(..) => return Err(FocusRefusal::UniverseTransport(id)),
             | Computation::Hole(_) | Computation::Mark { .. } => {
                 return Err(FocusRefusal::IncompleteComputation(id));
+            },
+            | Computation::Fixpoint { body, evidence } => {
+                let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: alloc::boxed::Box::from([]),
+                    consumers: alloc::boxed::Box::from([continuation]),
+                })?;
+                self.tasks.push(Task::Cut {
+                    origin: FocusOrigin::Fixpoint,
+                    polarity: Polarity::Positive,
+                    consumer: frame,
+                });
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Fixpoint(evidence));
+                self.tasks.push(Task::Computation {
+                    computation: body,
+                    continuation: return_point,
+                });
             },
             | Computation::Return(value) => {
                 self.tasks.push(Task::Cut {
@@ -1050,7 +1164,9 @@ impl<'run> Focusing<'run>
         {
             | ConsumerNode::Covariable(_) | ConsumerNode::Top => return Ok(continuation),
             | ConsumerNode::Destructor { tag, .. } => tag.polarity(),
-            | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => Polarity::Positive,
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Case { .. }
+            | ConsumerNode::DataCase { .. } => Polarity::Positive,
         };
         self.tasks.push(Task::Name {
             origin,
@@ -1435,6 +1551,33 @@ mod tests
                 Err(FocusRefusal::IncompleteComputation(incomplete)),
                 "the computation is refused by name"
             );
+        }
+    }
+
+    /// A structural record and its projection have no command-IL image: each
+    /// is refused by name and the arena is left at its mark.
+    #[test]
+    fn a_record_or_its_projection_is_refused_by_name()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let label = gandr_kernel_term::FieldLabel::from(alloc::string::String::from("a"));
+        let record = core.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
+        let returned = core.computation_return(record);
+        let projected = core.computation_record_projection(record, label);
+        for (term, refusal) in [
+            (returned, FocusRefusal::Record(record)),
+            (projected, FocusRefusal::RecordProjection(projected)),
+        ] {
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            let mark = arena.watermark();
+            assert_eq!(
+                focus_computation(&core, term, &mut arena, &mut provenance),
+                Err(refusal),
+                "the record former is refused by name"
+            );
+            assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
         }
     }
 

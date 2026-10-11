@@ -77,6 +77,9 @@ fn children(
             | Computation::RecordProjection(..) => {
                 panic!("native elimination is outside the forward-translator fixture")
             },
+            | Computation::Fixpoint { .. } => {
+                panic!("recursion is outside the forward-translator fixture")
+            },
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no fixture type node"),
     }
@@ -161,6 +164,9 @@ fn translate(
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..) => {
                         panic!("native elimination is outside the forward-translator fixture")
+                    },
+                    | Computation::Fixpoint { .. } => {
+                        panic!("recursion is outside the forward-translator fixture")
                     },
                 };
                 computations.insert(id, computation);

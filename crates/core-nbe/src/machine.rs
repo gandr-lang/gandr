@@ -2499,6 +2499,14 @@ where
                     let right = self.case_branch(right, tag)?;
                     (SupportSides::Closed(left, right), goal.depth)
                 },
+                | Subgoal::Fixpoints(left, right) => {
+                    (SupportSides::Closed(left, right), goal.depth)
+                },
+                | Subgoal::FixpointBodies(left, right) => {
+                    let left = self.fixpoint_body(left)?;
+                    let right = self.fixpoint_body(right)?;
+                    (SupportSides::Opened(left, right), goal.depth)
+                },
             };
             let child = self.start_fresh(sides, depth)?;
             let outcome = self.depend(id, child)?;
@@ -2585,6 +2593,36 @@ where
         let closure = self
             .domain
             .comp_closure(case)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let environment = closure.environment().clone();
+        Ok(self.domain.comp_closure_node(body, environment))
+    }
+
+    /// Capture a fixpoint's body over the fixpoint's own environment, to be
+    /// opened under a fresh self variable.
+    ///
+    /// # Specification
+    /// - requires: nothing; a capture over anything but a source fixpoint is
+    ///   refused.
+    /// - ensures: returns the body over the capture's environment, with no
+    ///   binding added.
+    /// - fails: dangling or malformed fixpoint captures.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two fixpoints whose bodies differ only in a bound
+    ///   name are one, and two that call themselves differently are not.
+    /// - witness: `machine::tests::stuck_fixpoints_compare_by_their_bodies`
+    #[spec(ensures:|ret| ret.is_err() || ret.as_ref().is_ok_and(|closure| self.domain.comp_closure(*closure).is_some()))]
+    fn fixpoint_body(
+        &mut self,
+        recursive: CompClosureId,
+    ) -> Result<CompClosureId, ConversionFault>
+    {
+        let body = crate::rules::fixpoint_source(self.core, self.domain, recursive)?;
+        let closure = self
+            .domain
+            .comp_closure(recursive)
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
         let environment = closure.environment().clone();
         Ok(self.domain.comp_closure_node(body, environment))
@@ -4513,7 +4551,7 @@ mod tests
           Computation::RecordProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
-          Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [CoreTerm::Computation(body)],
+          Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [CoreTerm::Computation(body)],
           Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [CoreTerm::Value(value)],
           Computation::Bind(bound,body) => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
@@ -4579,7 +4617,9 @@ mod tests
                     | Computation::Transport(path, value) => {
                         Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
                     },
-                    | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                    | Computation::Lambda(body)
+                    | Computation::Mark { body, .. }
+                    | Computation::Fixpoint { body, .. } => {
                         Vec::from([CoreTerm::Computation(body)])
                     },
                     | Computation::Hole(_) => Vec::new(),
@@ -4781,6 +4821,12 @@ mod tests
                                 | Computation::Lambda(body) => {
                                     Computation::Lambda(computation(body))
                                 },
+                                | Computation::Fixpoint { body, evidence } => {
+                                    Computation::Fixpoint {
+                                        body: computation(body),
+                                        evidence,
+                                    }
+                                },
                                 | Computation::Application(head, argument) => {
                                     Computation::Application(computation(head), value(argument))
                                 },
@@ -4856,7 +4902,7 @@ mod tests
           Computation::RecordProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
-          Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
+          Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
           Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
           Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [canon[&CoreTerm::Value(value)]],
           Computation::Bind(bound,body) => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
@@ -5136,6 +5182,9 @@ mod tests
                                 },
                                 | Computation::Transport(..) => {
                                     panic!("the duplication fixtures carry no transport")
+                                },
+                                | Computation::Fixpoint { .. } => {
+                                    panic!("the duplication fixtures carry no fixpoint")
                                 },
                                 | Computation::Hole(_) | Computation::Mark { .. } => {
                                     panic!("the duplication fixtures carry no hole or mark")
@@ -5423,7 +5472,7 @@ mod tests
               Computation::RecordProjection(record,_) => ret.as_slice() == [Node::Value(record)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
-              Computation::Lambda(body) | Computation::Mark{body,..} => ret.as_slice() == [Node::Computation(body)],
+              Computation::Lambda(body) | Computation::Mark{body,..} | Computation::Fixpoint { body, .. } => ret.as_slice() == [Node::Computation(body)],
               Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
               Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [Node::Value(value)],
               Computation::Bind(bound,body) => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
@@ -5523,7 +5572,9 @@ mod tests
                         | Computation::Transport(path, value) => {
                             Vec::from([Node::Value(path), Node::Value(value)])
                         },
-                        | Computation::Lambda(body) | Computation::Mark { body, .. } => {
+                        | Computation::Lambda(body)
+                        | Computation::Mark { body, .. }
+                        | Computation::Fixpoint { body, .. } => {
                             Vec::from([Node::Computation(body)])
                         },
                         | Computation::Hole(_) => Vec::new(),
@@ -5766,6 +5817,10 @@ mod tests
                         | Computation::Lambda(body) => {
                             let body = computation(self, body);
                             self.arena.computation_lambda(body)
+                        },
+                        | Computation::Fixpoint { body, evidence } => {
+                            let body = computation(self, body);
+                            self.arena.computation_fixpoint(body, evidence)
                         },
                         | Computation::Application(head, argument) => {
                             let (head, argument) = (computation(self, head), value(self, argument));
@@ -6489,6 +6544,62 @@ mod tests
             "a rigid head cannot unfold, so η is the one rule, and the expanded pair closes \
              structurally: {decisions:?}"
         );
+    }
+
+    #[test]
+    fn stuck_fixpoints_compare_by_their_bodies()
+    {
+        // `(fix rec. λx. return x) R` for a rigid `R`, written twice, once
+        // with each evidence, and `(fix rec. λx. return ()) R`.
+        let mut core = CoreArena::new();
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let stuck = |core: &mut CoreArena, returned, evidence| {
+            let produced = core.computation_return(returned);
+            let body = core.computation_lambda(produced);
+            let fixpoint = core.computation_fixpoint(body, evidence);
+            core.computation_application(fixpoint, rigid)
+        };
+        let occurrence = innermost(&mut core);
+        let unit = core.value_unit();
+        let descending = stuck(
+            &mut core,
+            occurrence,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let partial = stuck(
+            &mut core,
+            occurrence,
+            gandr_kernel_term::FixpointEvidence::Partial,
+        );
+        let constant = stuck(
+            &mut core,
+            unit,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let world = World::new(core, &[]);
+
+        for (sides, expected) in [
+            (
+                Sides::Computations(descending, partial),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(descending, constant),
+                MachineVerdict::NotConvertible,
+            ),
+        ] {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                expected, verdict,
+                "a fixpoint at a neutral argument stands, and two compare by their bodies \
+                 opened under one self variable, whatever their evidence: {decisions:?}"
+            );
+            assert_eq!(
+                certified(verdict),
+                world.replayed(sides, verdict, &decisions),
+                "and the kernel replays the comparison: {decisions:?}"
+            );
+        }
     }
 
     #[test]

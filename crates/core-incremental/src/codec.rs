@@ -44,13 +44,19 @@ use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::DescentRefusal;
+use gandr_kernel_term::FieldPosition;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
+use gandr_kernel_term::OccurrenceSite;
+use gandr_kernel_term::ParameterPosition;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
@@ -77,9 +83,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x05";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x06";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x03";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x04";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1416,6 +1422,11 @@ where
             writer.word(Word(u64::from(u32::from(mark))));
             write_index(writer, body)?;
         },
+        | ContentNode::Fixpoint { body, evidence } => {
+            writer.tag(Tag(0x19));
+            write_listed(writer, &EVIDENCES, &evidence)?;
+            write_index(writer, body)?;
+        },
         | ContentNode::Base(base) => {
             writer.tag(Tag(0x20));
             writer.tag(match base {
@@ -1793,6 +1804,7 @@ fn read_data_content(reader: &mut Reader<'_>) -> Result<crate::content::DataCont
                     | ContentNode::Case { .. } => tag == 0x15,
                     | ContentNode::ComputationHole(_) => tag == 0x17,
                     | ContentNode::ComputationMark { .. } => tag == 0x18,
+                    | ContentNode::Fixpoint { .. } => tag == 0x19,
                     | ContentNode::Base(_) => tag == 0x20,
                     | ContentNode::UnitType => tag == 0x21,
                     | ContentNode::Product(..) => tag == 0x22,
@@ -1978,6 +1990,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let mark = read_mark(reader)?;
             let body = read_index(reader)?;
             ContentNode::ComputationMark { mark, body }
+        },
+        | 0x19 => {
+            let evidence = read_listed(reader, &EVIDENCES)?;
+            let body = read_index(reader)?;
+            ContentNode::Fixpoint { body, evidence }
         },
         | 0x20 => {
             let base = reader.tag()?;
@@ -2968,6 +2985,93 @@ const SHAPES: [ExpectedShape; 9] = [
     ExpectedShape::Record,
 ];
 
+/// The termination evidence a fixpoint carries, in stable wire order.
+const EVIDENCES: [FixpointEvidence; 2] = [
+    FixpointEvidence::Partial,
+    FixpointEvidence::StructuralDescent,
+];
+
+/// The rules of the descent walk a claim fails, in stable wire order.
+const DESCENT_REFUSALS: [DescentRefusal; 5] = [
+    DescentRefusal::NotOverData,
+    DescentRefusal::NotCaseOnArgument,
+    DescentRefusal::BranchNotOverFields,
+    DescentRefusal::UnguardedSelfReference,
+    DescentRefusal::NonDescendingCall,
+];
+
+/// Write the parameter or field an occurrence refusal names.
+///
+/// # Specification
+/// - ensures: a parameter writes tag 0 and its position; a field writes tag 1,
+///   its constructor's tag and its position.
+/// - fails: [`CodecError::Unrepresentable`] for a count no word holds.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field and a telescope site round-trip through a
+///   persisted refused declaration.
+/// - witness: `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
+#[spec(ensures: |ret| ret.is_ok() || ret == Err(CodecError::Unrepresentable))]
+fn write_occurrence_site<Out>(
+    writer: &mut Writer<'_, Out>,
+    site: OccurrenceSite,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match site {
+        | OccurrenceSite::Parameter(position) => {
+            writer.tag(Tag(0));
+            writer.count(Count(usize::from(position)))?;
+        },
+        | OccurrenceSite::Field { tag, field } => {
+            writer.tag(Tag(1));
+            writer.count(Count(usize::from(tag)))?;
+            writer.count(Count(usize::from(field)))?;
+        },
+    }
+    Ok(())
+}
+
+/// Read the parameter or field an occurrence refusal names.
+///
+/// # Specification
+/// - ensures: the inverse of [`write_occurrence_site`].
+/// - fails: [`CodecError::Corrupt`] for an unknown site tag, or the reader's
+///   own refusal.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a field and a telescope site round-trip through a
+///   persisted refused declaration.
+/// - witness: `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
+#[spec(captures: before = reader.cursor, ensures: |ret| ret.is_err() || reader.cursor > before)]
+fn read_occurrence_site(reader: &mut Reader<'_>) -> Result<OccurrenceSite, CodecError>
+{
+    let tag = reader.tag()?;
+    match tag.0 {
+        | 0 => Ok(OccurrenceSite::Parameter(ParameterPosition::from(
+            reader.count()?.0,
+        ))),
+        | 1 => {
+            let constructor = ConstructorTag::from(reader.count()?.0);
+            let field = FieldPosition::from(reader.count()?.0);
+            Ok(OccurrenceSite::Field {
+                tag: constructor,
+                field,
+            })
+        },
+        | _ => Err(CodecError::Corrupt),
+    }
+}
+
 /// Write the position of `wanted` in `table` as a tag.
 ///
 /// # Specification
@@ -3208,6 +3312,10 @@ where
                     writer.tag(Tag(4));
                     write_site(writer, site)?;
                 },
+                | Form::Fixpoint(site) => {
+                    writer.tag(Tag(7));
+                    write_site(writer, site)?;
+                },
             }
         },
         | Refusal::UnknownConstant { at, ref constant } => {
@@ -3310,6 +3418,32 @@ where
             write_site(writer, at)?;
             write_type(writer, found)?;
         },
+        | Refusal::NegativeOccurrence(site) => {
+            writer.tag(Tag(28));
+            write_occurrence_site(writer, site)?;
+        },
+        | Refusal::NestedOccurrence(site) => {
+            writer.tag(Tag(29));
+            write_occurrence_site(writer, site)?;
+        },
+        | Refusal::IndexOccurrence(site) => {
+            writer.tag(Tag(30));
+            write_occurrence_site(writer, site)?;
+        },
+        | Refusal::NonUniformOccurrence(site) => {
+            writer.tag(Tag(31));
+            write_occurrence_site(writer, site)?;
+        },
+        | Refusal::CrossBlockReference { site, ref index } => {
+            writer.tag(Tag(32));
+            write_occurrence_site(writer, site)?;
+            write_reference(writer, index)?;
+        },
+        | Refusal::DescentNotReplayed { at, reason } => {
+            writer.tag(Tag(33));
+            write_site(writer, at)?;
+            write_listed(writer, &DESCENT_REFUSALS, &reason)?;
+        },
     }
     Ok(())
 }
@@ -3410,6 +3544,12 @@ where
                     | Refusal::StaticLambdaArgument { .. } => 16,
                     | Refusal::StaticClassifierExpected { .. } => 17,
                     | Refusal::PathCode(_) => 18,
+                    | Refusal::NegativeOccurrence(_) => 28,
+                    | Refusal::NestedOccurrence(_) => 29,
+                    | Refusal::IndexOccurrence(_) => 30,
+                    | Refusal::NonUniformOccurrence(_) => 31,
+                    | Refusal::CrossBlockReference { .. } => 32,
+                    | Refusal::DescentNotReplayed { .. } => 33,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -3479,6 +3619,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                 },
                 | 5 => Form::Injection(read_site(reader)?),
                 | 6 => Form::Case(read_site(reader)?),
+                | 7 => Form::Fixpoint(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -3584,6 +3725,20 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             Refusal::StaticClassifierExpected { at, found }
         },
         | 18 => Refusal::PathCode(read_site(reader)?),
+        | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
+        | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
+        | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
+        | 31 => Refusal::NonUniformOccurrence(read_occurrence_site(reader)?),
+        | 32 => {
+            let site = read_occurrence_site(reader)?;
+            let index = read_reference(reader)?;
+            Refusal::CrossBlockReference { site, index }
+        },
+        | 33 => {
+            let at = read_site(reader)?;
+            let reason = read_listed(reader, &DESCENT_REFUSALS)?;
+            Refusal::DescentNotReplayed { at, reason }
+        },
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(refusal)
@@ -4720,7 +4875,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 6, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -4730,14 +4885,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 4;
+        *wrong_version.get_mut(7).expect("version byte") = 5;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x03\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x04\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -4880,7 +5035,7 @@ mod tests
             );
         }
 
-        for (prefix, consumed) in [(&[2, 7][..], 2), (&[5, 1, 2][..], 3)] {
+        for (prefix, consumed) in [(&[2, 8][..], 2), (&[5, 1, 2][..], 3)] {
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(&[0; 16]);
             let mut reader = Reader {

@@ -35,6 +35,7 @@ pub(super) struct ParameterPrefix(
 );
 
 /// A declaration's borrowed constructor table and telescope.
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Signature<'signature>
 {
     /// Classifiers scoped under their preceding parameters.
@@ -80,6 +81,45 @@ pub(super) fn signature(
             kind: *kind,
         }),
         | _ => Err(KernelError::NotADataType { index }),
+    }
+}
+
+/// Resolve a nominal head through the block being admitted, then the
+/// admitted prefix.
+///
+/// # Specification
+/// - requires: entries is the immutable admitted prefix.
+/// - ensures: a head naming the block's own position borrows the block's
+///   signature; any other head resolves as [`signature`] does.
+/// - provides: self reference inside one block — the family is in scope at its
+///   own position while its fields form, and nowhere else.
+/// - fails: a non-data or unadmitted position outside the block.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `NotADataType` for a position that names neither the block nor
+/// admitted data.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Nat`'s `succ` field and `List A`'s `cons` tail form
+///   through the block; the same head in a definition after admission resolves
+///   through the prefix.
+/// - witness: `recursive_data::recursive_data::recursive_blocks_are_admitted`
+#[spec(ensures: |ret| ret.is_ok() == (matches!(judgement.block, super::Block::Inside { position, .. } if position == index)
+    || matches!(judgement.entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. }))))]
+pub(super) fn resolve<'session>(
+    judgement: super::Judgement<'session>,
+    index: ConstantIndex,
+) -> Result<Signature<'session>, KernelError>
+{
+    match judgement.block {
+        | super::Block::Inside {
+            position,
+            signature: own,
+        } if position == index => Ok(own),
+        | super::Block::Inside { .. } | super::Block::Outside => {
+            signature(judgement.entries, index)
+        },
     }
 }
 

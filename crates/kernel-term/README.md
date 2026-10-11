@@ -150,7 +150,9 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 These six nodes use counted arities where their children vary. Canonical encoding includes counts, labels and every child, including empty records and nullary constructors. Decoding rejects malformed ordering, lengths and child families; it does not grant typing authority. Ordinary kernel admission checks the reconstructed declaration. `native_formers::native_formers::native_declarations_and_eliminators_survive_canonical_decode` in kernel-core exercises that complete path.
 
-**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so the format remains version 2. **Reversal.** A changed framing or reassigned meaning requires a version change; recursive signatures and conversion evidence need explicit new readers.
+A recursive declaration needs no new framing: a field naming its own family is an ordinary nominal application whose declaration index is the declaration's own position. Admission, not the reader, decides whether that occurrence is strictly positive and uniform. The fixpoint `0x63` carries one evidence byte, `0` for a partial fixpoint and `1` for a structural-descent claim, then one computation child: its body under the self binder. Any other evidence byte is refused as an unknown tag at the evidence site. The byte records a claim that kernel admission replays; decoding it grants nothing. `encode::tests::entry_goldens_pin_every_former_and_child_position` and `decode::tests::decoded_entries_preserve_every_former_and_child_position` pin both bytes.
+
+**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so the format remains version 2. **Reversal.** A changed framing or reassigned meaning requires a version change; mutual blocks, indexed families and further conversion evidence need explicit new readers.
 
 ## Tag numbering and versioning
 
@@ -189,9 +191,10 @@ The original `0x00–0x1F` meanings are frozen, including static operators at `0
 | `0x60` | Record value, ordered labels and value children | Admitted |
 | `0x61` | Data case, scrutinee, motive and counted branches | Admitted |
 | `0x62` | Record projection, label and value child | Admitted |
-| `0x63–0xFF` | Unassigned | Refused |
+| `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
+| `0x64–0xFF` | Unassigned | Refused |
 
-The admitted domain is sparse: the greatest assigned native byte is `0x62`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
+The admitted domain is sparse: the greatest assigned native byte is `0x63`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 

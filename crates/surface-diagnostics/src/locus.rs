@@ -21,6 +21,8 @@ use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_kernel_term::DescentRefusal;
+use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Surviving;
@@ -338,6 +340,9 @@ impl Annotations
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_)
+            | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_)
+            | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_)
+            | CheckRefusal::CrossBlockReference { .. }
             | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::AdmissionOrder { .. }
             | CheckRefusal::MachineInvariant => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label: Label::Class(class),
@@ -363,9 +368,6 @@ fn checked(
         ]),
         | CheckRefusal::UnknownConstructor { at, .. } | CheckRefusal::ConstructorArity(at) => {
             (spanned(origins.value(at)), UNNAMED)
-        },
-        | CheckRefusal::NonExhaustiveDataCase(at) | CheckRefusal::AbsentRecordField(at) => {
-            (spanned(origins.computation(at)), UNNAMED)
         },
         | CheckRefusal::MissingRecordField { at, expected } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
@@ -427,11 +429,23 @@ fn checked(
             (spanned(origins.value_type(found)), UNNAMED)
         },
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Case(at) | CheckingForm::Lambda(at) | CheckingForm::Return(at),
-        } => (spanned(origins.computation(at)), UNNAMED),
+            form:
+                CheckingForm::Case(at)
+                | CheckingForm::Lambda(at)
+                | CheckingForm::Return(at)
+                | CheckingForm::Fixpoint(at),
+        }
+        | CheckRefusal::DescentNotReplayed { at, .. }
+        | CheckRefusal::NonExhaustiveDataCase(at)
+        | CheckRefusal::AbsentRecordField(at) => (spanned(origins.computation(at)), UNNAMED),
         | CheckRefusal::OutOfFragment { at: core, .. }
         | CheckRefusal::DanglingNode { node: core } => (node(origins, core), UNNAMED),
         | CheckRefusal::NotADataType(_)
+        | CheckRefusal::NegativeOccurrence(_)
+        | CheckRefusal::NestedOccurrence(_)
+        | CheckRefusal::IndexOccurrence(_)
+        | CheckRefusal::NonUniformOccurrence(_)
+        | CheckRefusal::CrossBlockReference { .. }
         | CheckRefusal::NotSynthesisable {
             form: CheckingForm::Hole(_),
         }
@@ -635,6 +649,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Return(_) => "a return",
                     | CheckingForm::Hole(_) => "a hole",
                     | CheckingForm::StaticLambda(_) => "a type operator",
+                    | CheckingForm::Fixpoint(_) => "a fixpoint",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -695,6 +710,37 @@ impl fmt::Display for Checked
             | CheckRefusal::StaticClassifierExpected { .. } => f.write_str(
                 "a type operator's classifier stands over a type that classifies no codes: \
                  neither a universe nor another such classifier",
+            ),
+            | CheckRefusal::NegativeOccurrence(site) => write!(
+                f,
+                "the declared type occurs under a function's domain in {}",
+                Site(site)
+            ),
+            | CheckRefusal::NestedOccurrence(site) => write!(
+                f,
+                "the declared type occurs inside another type former in {}",
+                Site(site)
+            ),
+            | CheckRefusal::IndexOccurrence(site) => write!(
+                f,
+                "the declared type occurs inside a term a type reads in {}",
+                Site(site)
+            ),
+            | CheckRefusal::NonUniformOccurrence(site) => write!(
+                f,
+                "the declared type is applied to other arguments than its parameters in {}",
+                Site(site)
+            ),
+            | CheckRefusal::CrossBlockReference { site, index } => write!(
+                f,
+                "{} names declaration {}, which follows this one",
+                Site(site),
+                usize::from(index)
+            ),
+            | CheckRefusal::DescentNotReplayed { reason, .. } => write!(
+                f,
+                "the fixpoint's structural-descent claim does not replay: {}",
+                Descent(reason)
             ),
         }
     }
@@ -787,6 +833,95 @@ impl fmt::Display for Former
     }
 }
 
+/// The parameter or field a data declaration's occurrence stands in, as prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Site(OccurrenceSite);
+
+impl fmt::Display for Site
+{
+    /// Writes the site by its ordinals.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the parameter's position, or the field's position and
+    ///   its constructor's tag.
+    /// - provides: the place an occurrence refusal names.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field and a parameter site title their ordinals in
+    ///   order, and each recursion refusal titles a distinct subject.
+    /// - witness: `locus::tests::recursion_titles_name_their_site_and_rule`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            | OccurrenceSite::Parameter(position) => {
+                write!(f, "parameter {}", usize::from(position))
+            },
+            | OccurrenceSite::Field { tag, field } => write!(
+                f,
+                "field {} of constructor {}",
+                usize::from(field),
+                usize::from(tag)
+            ),
+        }
+    }
+}
+
+/// The rule of the descent walk a claim failed, as prose.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Descent(DescentRefusal);
+
+impl fmt::Display for Descent
+{
+    /// Writes the failed rule.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes what the descent walk did not find.
+    /// - provides: the reason a descent refusal names.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no written text or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each failed rule titles a distinct subject.
+    /// - witness: `locus::tests::recursion_titles_name_their_site_and_rule`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match self.0 {
+            | DescentRefusal::NotOverData => "its type is not a function out of a datatype",
+            | DescentRefusal::NotCaseOnArgument => {
+                "its body is not a case on its argument with one branch per constructor"
+            },
+            | DescentRefusal::BranchNotOverFields => {
+                "a branch does not bind exactly its constructor's fields"
+            },
+            | DescentRefusal::UnguardedSelfReference => {
+                "the recursive name stands other than at the head of a call"
+            },
+            | DescentRefusal::NonDescendingCall => {
+                "a recursive call's argument is neither a field of the scrutinised constructor \
+                 nor a function field's result"
+            },
+        })
+    }
+}
+
 /// Source-location boundaries and semantic formatter payloads.
 #[cfg(test)]
 mod tests
@@ -799,6 +934,11 @@ mod tests
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
     use gandr_core_term::CoreArena;
+    use gandr_kernel_term::ConstructorTag;
+    use gandr_kernel_term::DescentRefusal;
+    use gandr_kernel_term::FieldPosition;
+    use gandr_kernel_term::OccurrenceSite;
+    use gandr_kernel_term::ParameterPosition;
     use gandr_surface_corpus::Refusal;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::Origin;
@@ -1093,5 +1233,69 @@ mod tests
                 "semantic payload order, without node ids: {title}"
             );
         }
+    }
+
+    #[test]
+    fn recursion_titles_name_their_site_and_rule()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        let field = OccurrenceSite::Field {
+            tag: ConstructorTag::from(3_usize),
+            field: FieldPosition::from(5_usize),
+        };
+        let parameter = OccurrenceSite::Parameter(ParameterPosition::from(2_usize));
+        let titles: Vec<String> = [
+            CheckRefusal::NegativeOccurrence(field),
+            CheckRefusal::NestedOccurrence(field),
+            CheckRefusal::IndexOccurrence(parameter),
+            CheckRefusal::NonUniformOccurrence(field),
+            CheckRefusal::CrossBlockReference {
+                site: field,
+                index: 9_usize.into(),
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: returned,
+                reason: DescentRefusal::NotOverData,
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: returned,
+                reason: DescentRefusal::NotCaseOnArgument,
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: returned,
+                reason: DescentRefusal::BranchNotOverFields,
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: returned,
+                reason: DescentRefusal::UnguardedSelfReference,
+            },
+            CheckRefusal::DescentNotReplayed {
+                at: returned,
+                reason: DescentRefusal::NonDescendingCall,
+            },
+        ]
+        .map(|refusal| Checked(refusal).to_string())
+        .into();
+        for (index, title) in titles.iter().enumerate() {
+            for earlier in &titles[.. index] {
+                assert_ne!(earlier, title, "each subject stays distinguishable");
+            }
+        }
+        let ordinals = |title: &str| -> Vec<usize> {
+            title
+                .split(|character: char| !character.is_ascii_digit())
+                .filter_map(|digits| digits.parse::<usize>().ok())
+                .collect()
+        };
+        assert_eq!(ordinals(&titles[0]), [5_usize, 3_usize], "field, then tag");
+        assert_eq!(ordinals(&titles[2]), [2_usize], "the parameter");
+        assert_eq!(
+            ordinals(&titles[4]),
+            [5_usize, 3_usize, 9_usize],
+            "the site, then the later declaration"
+        );
+        assert!(ordinals(&titles[5]).is_empty(), "no node id: {}", titles[5]);
     }
 }

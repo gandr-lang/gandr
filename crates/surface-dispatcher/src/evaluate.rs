@@ -645,7 +645,7 @@ impl<'source> Program<'source>
             | Err(evaluation) => return evaluation,
         };
         let terminal = match machine.store().value(terminal) {
-            | Some(&HeapValue::Thunk { .. }) => {
+            | Some(&(HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. })) => {
                 let forced = match machine.run(forced, budget) {
                     | Ok(outcome) => outcome,
                     | Err(fault) => return Evaluation::Unfinished(Unfinished::Fault(fault)),
@@ -854,6 +854,7 @@ impl<'source> Program<'source>
                         &(HeapValue::Literal(_)
                         | HeapValue::Constructed { .. }
                         | HeapValue::Thunk { .. }
+                        | HeapValue::Fixpoint { .. }
                         | HeapValue::Closure { .. }),
                     )
                     | None => Err(Evaluation::Stuck(stuck)),
@@ -881,7 +882,7 @@ impl<'source> Program<'source>
     #[spec(ensures: |ret| match machine.store().value(value) {
         Some(&HeapValue::Opaque(constant)) => ret == Maybe::Present(constant),
         Some(&HeapValue::Constructed { .. }) => true,
-        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Closure { .. })) | None =>
+        Some(&(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Fixpoint { .. } | HeapValue::Closure { .. })) | None =>
             matches!(ret, Maybe::Absent(carried::Absent::Carried)),
     })]
     fn opaque_within(
@@ -897,7 +898,10 @@ impl<'source> Program<'source>
                     pending.extend(fields.iter().rev().copied());
                 },
                 | Some(
-                    &(HeapValue::Literal(_) | HeapValue::Thunk { .. } | HeapValue::Closure { .. }),
+                    &(HeapValue::Literal(_)
+                    | HeapValue::Thunk { .. }
+                    | HeapValue::Fixpoint { .. }
+                    | HeapValue::Closure { .. }),
                 )
                 | None => {},
             }
@@ -1022,7 +1026,7 @@ impl<'source> Program<'source>
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
 Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
-| Computation::Hole(_) | Computation::Mark { .. })) |
+| Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
 None => ret.0 == "<computation>",
     })]
     fn spell(
@@ -1045,7 +1049,8 @@ None => ret.0 == "<computation>",
                 | Computation::RecordProjection(..)
                 | Computation::Case { .. }
                 | Computation::Hole(_)
-                | Computation::Mark { .. }),
+                | Computation::Mark { .. }
+                | Computation::Fixpoint { .. }),
             )
             | None => Vec::from([Piece::Text("<computation>")]),
         };
@@ -1313,7 +1318,9 @@ fn references(
                     Node::Computation(on_left),
                     Node::Computation(on_right),
                 ]),
-                | Some(&Computation::Mark { body, .. }) => pending.push(Node::Computation(body)),
+                | Some(&(Computation::Mark { body, .. } | Computation::Fixpoint { body, .. })) => {
+                    pending.push(Node::Computation(body));
+                },
                 | Some(&Computation::Hole(_)) | None => {},
             },
         }

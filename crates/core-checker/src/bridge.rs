@@ -1104,9 +1104,13 @@ where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let base = ConstantIndex::from(environment.entries().len().saturating_add(1));
+    let next = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let erased = {
         let mut erasure = Erasure::new(arena, source, positions, base);
+        if let Offer::Data(_) = offer {
+            erasure = erasure.crossing_block(constant, next);
+        }
         erasure
             .offer(staging.arena(), offer)
             .map_err(|refusal| (refusal, Vec::new()))
@@ -1699,6 +1703,14 @@ enum Frame
         /// The lambda.
         at: ComputationId,
     },
+    /// A fixpoint, awaiting its body's computation.
+    Fixpoint
+    {
+        /// The fixpoint.
+        at: ComputationId,
+        /// The claim it carries across unchanged.
+        evidence: gandr_kernel_term::FixpointEvidence,
+    },
     /// A return, awaiting its value.
     Return
     {
@@ -1940,6 +1952,26 @@ struct Erasure<'source, 'positions>
     pending: Vec<(ConstantIndex, ValueId, u32)>,
     /// The replay's entry at each operator position whose body is erased.
     bodies: BTreeMap<ConstantIndex, Unfoldable>,
+    /// The data declaration whose own signature this erasure crosses.
+    block: Block,
+}
+
+/// The data declaration whose signature an erasure crosses: its fields name
+/// it at the kernel position it is about to take, which no crossed
+/// declaration holds yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Block
+{
+    /// No data declaration is crossing.
+    Closed,
+    /// The data declaration at `source` is crossing to `kernel`.
+    Open
+    {
+        /// Its module position.
+        source: ConstantIndex,
+        /// The kernel position it will take.
+        kernel: ConstantIndex,
+    },
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -1970,7 +2002,23 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             operators: BTreeMap::new(),
             pending: Vec::new(),
             bodies: BTreeMap::new(),
+            block: Block::Closed,
         }
+    }
+
+    /// The same erasure, crossing the data declaration at `source` to the
+    /// kernel position `kernel`, so its fields' self references resolve.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn crossing_block(
+        mut self,
+        source: ConstantIndex,
+        kernel: ConstantIndex,
+    ) -> Self
+    {
+        self.block = Block::Open { source, kernel };
+        self
     }
 
     /// The images the current mode minted.
@@ -2946,6 +2994,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 (Frame::TransportPath { at, value }, TermNode::Value(path))
             },
             | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
+            | Computation::Fixpoint { body, evidence } => (
+                Frame::Fixpoint { at, evidence },
+                TermNode::Computation(body),
+            ),
             | Computation::Application(head, argument) => (
                 Frame::ApplicationHead { at, argument },
                 TermNode::Computation(head),
@@ -3534,6 +3586,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::Lambda { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_computation(at, target.computation_lambda(body)))
             },
+            | (Frame::Fixpoint { at, evidence }, AnyNode::Computation(body)) => {
+                Ok(self.erased_computation(at, target.computation_fixpoint(body, evidence)))
+            },
             | (Frame::Return { at }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_return(value)))
             },
@@ -3634,6 +3689,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Thunk { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::Lambda { .. }
+                | Frame::Fixpoint { .. }
                 | Frame::BindBound { .. }
                 | Frame::BindBody { .. }
                 | Frame::UnmarkedComputation { .. },

@@ -862,7 +862,9 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
                         },
-                        | Computation::Lambda(body) => tasks.push(ReachTask::OpenComp(body)),
+                        | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
+                            tasks.push(ReachTask::OpenComp(body));
+                        },
                         | Computation::Application(head, argument) => {
                             tasks.push(ReachTask::OpenComp(head));
                             tasks.push(ReachTask::OpenValue(argument));
@@ -1350,7 +1352,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         Some(&Computation::RecordProjection(record, _)) => self.cached_value(record),
         None => LooseDepth::WIDEST,
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
-        Some(&Computation::Lambda(body)) => self.cached_comp(body).under_binder(),
+        Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
         Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) => self.cached_value(value),
         Some(&Computation::Bind(bound, body)) => self.cached_comp(bound).join(self.cached_comp(body).under_binder()),
@@ -1380,7 +1382,9 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             | Computation::Transport(path, value) => {
                 self.cached_value(path).join(self.cached_value(value))
             },
-            | Computation::Lambda(body) => self.cached_comp(body).under_binder(),
+            | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
+                self.cached_comp(body).under_binder()
+            },
             | Computation::Application(head, argument) => {
                 self.cached_comp(head).join(self.cached_value(argument))
             },

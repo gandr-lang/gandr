@@ -399,6 +399,7 @@ impl Source for CoreSource<'_>
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
                     | Computation::Lambda(_)
+                    | Computation::Fixpoint { .. }
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)

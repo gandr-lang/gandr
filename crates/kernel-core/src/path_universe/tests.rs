@@ -157,6 +157,9 @@ fn children(
             | Computation::Absurd(_) => {
                 panic!("empty elimination is outside the path fixture fragment")
             },
+            | Computation::Fixpoint { .. } => {
+                panic!("recursion is outside the path fixture fragment")
+            },
             | Computation::Transport(a, b) => vec![V(a), V(b)],
             | Computation::Lambda(a) => vec![M(a)],
             | Computation::Application(a, b) => vec![M(a), V(b)],
@@ -480,6 +483,9 @@ fn translate(
                     },
                     | Computation::Absurd(_) => {
                         panic!("empty elimination is outside the path fixture fragment")
+                    },
+                    | Computation::Fixpoint { .. } => {
+                        panic!("recursion is outside the path fixture fragment")
                     },
                     | Computation::Transport(path, value) => {
                         core.computation_transport(values[&path], values[&value])

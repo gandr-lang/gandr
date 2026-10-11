@@ -816,7 +816,9 @@ Err(_) => false,
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },
-                    | Computation::Lambda(body) => one(computation(body), Lowering::ONE),
+                    | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
+                        one(computation(body), Lowering::ONE)
+                    },
                     | Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
                     },

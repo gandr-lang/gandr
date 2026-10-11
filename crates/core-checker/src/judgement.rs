@@ -134,6 +134,7 @@ use gandr_core_term::shift_comp_type;
 use gandr_core_term::shift_value_type;
 use gandr_core_term::strengthen_comp_type;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
@@ -1658,8 +1659,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: a force awaits its value's synthesised type; an application
     ///   awaits its head's; a bind awaits its bound computation's; a hole and a
     ///   mark have the unknown computation type, minted, and ascend.
-    /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a return;
-    ///   [`CheckRefusal::OutOfFragment`] for a case.
+    /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda, a return or a
+    ///   fixpoint; [`CheckRefusal::OutOfFragment`] for a case.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — force, application and bind expose their synthesised
@@ -1759,6 +1760,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Return(term),
             }),
+            | Computation::Fixpoint { .. } => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Fixpoint(term),
+            }),
             | Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Synthesise))
             },
@@ -1782,11 +1786,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   it stands; a return's value checks against the result it matches as a
     ///   returner; a bind awaits its bound computation's synthesised type, then
     ///   checks its body against `expected` shifted past its binder; a hole and
-    ///   a mark check against any type at once; a synthesising computation
-    ///   synthesises, then crosses the computation bridge to `expected`.
+    ///   a mark check against any type at once; a fixpoint opens a binder of `U
+    ///   expected` and checks its body against `expected` shifted past it,
+    ///   after its structural-descent claim, when it makes one, replays; a
+    ///   synthesising computation synthesises, then crosses the computation
+    ///   bridge to `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow
     ///   or a return against no returner; [`CheckRefusal::OutOfFragment`] for a
-    ///   case.
+    ///   case; [`CheckRefusal::DescentNotReplayed`] for a descent claim the
+    ///   walk refuses.
     ///
     /// # Judgement
     /// - expected: `expected`
@@ -1799,6 +1807,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
+    /// - witness: `recursive_data::recursive_data::a_fixpoint_checks_at_every_computation_type`
+    /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
     #[spec(
         captures: before = self.frames.len(),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= before)
@@ -1826,6 +1836,23 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Value {
                     term: value,
                     direction: Direction::Check(result),
+                }))
+            },
+            | Computation::Fixpoint { body, evidence } => {
+                match evidence {
+                    | FixpointEvidence::StructuralDescent => {
+                        crate::descent::replay(self.context, term, expected, body)?;
+                    },
+                    | FixpointEvidence::Partial => {},
+                }
+                let arena = self.context.arena_mut();
+                let recursive = arena.value_type_thunk(expected);
+                let scoped = shift_comp_type(arena, expected, Binders::from(1_u32));
+                self.context.binders().open(Zone::Intuitionistic, recursive);
+                self.frames.push(Frame::LambdaBody);
+                Ok(Step::Descend(Goal::Computation {
+                    term: body,
+                    direction: Direction::Check(scoped),
                 }))
             },
             | Computation::Primitive { .. }
@@ -4562,6 +4589,7 @@ mod tests
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Return(term) }),
                         "a return does not synthesise"
                     ),
+                    | Computation::Fixpoint { .. } => prop_assert!(false, "the free recipe mints no fixpoint"),
                     | Computation::Primitive { .. } | Computation::Force(_) | Computation::Application(..) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();

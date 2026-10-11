@@ -623,6 +623,9 @@ enum Task
     Thunk,
     /// Assemble a lambda from the computation term on the stack.
     Lambda,
+    /// Assemble a fixpoint, with its source's claim, from the computation
+    /// term on the stack.
+    Fixpoint(gandr_kernel_term::FixpointEvidence),
     /// Assemble a static lambda from the value term on the stack.
     StaticLambda,
     /// Assemble a returner from the value term on the stack.
@@ -1877,7 +1880,7 @@ fn run(
             && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
             && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
             && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
-        | Task::Lambda => machine.tasks.len() == entry_tasks
+        | Task::Lambda | Task::Fixpoint(_) => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
             && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
             && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
@@ -2178,6 +2181,13 @@ fn step(
         | Task::Lambda => {
             let body = machine.pop_comp()?;
             machine.comps.push(core.computation_lambda(body));
+            Ok(())
+        },
+        | Task::Fixpoint(evidence) => {
+            let body = machine.pop_comp()?;
+            machine
+                .comps
+                .push(core.computation_fixpoint(body, evidence));
             Ok(())
         },
         | Task::StaticLambda => {
@@ -3001,7 +3011,8 @@ fn step_value(
 /// # Specification
 /// - requires: `binders` counts the binders `comp` stands under.
 /// - ensures: a retained face pushes the source id; a lambda opens its closure
-///   and pushes the body's task under one more binder; a returner pushes its
+///   and pushes the body's task under one more binder; a fixpoint opens its
+///   body under a fresh self variable the same way; a returner pushes its
 ///   value's task; a stuck head starts the spine fold.
 /// - provides: the computation half of the transition relation. The clause
 ///   states that a success pushes at least one computation result or task and
@@ -3014,10 +3025,11 @@ fn step_value(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the face choice ahead of the
-///   three-arm match, separated by a retained face, a lambda, a returner and a
-///   stuck head.
+///   four-arm match, separated by a retained face, a lambda, a fixpoint, a
+///   returner and a stuck head.
 /// - witness: `readback::tests::an_unreduced_weak_head_reads_back_as_its_own_source`
 /// - witness: `readback::tests::a_lambda_reads_back_with_its_binder_as_an_index`
+/// - witness: `readback::tests::a_fixpoint_reads_back_with_its_self_binder`
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
 #[spec(
     captures: [
@@ -3069,6 +3081,31 @@ fn step_comp(
             Polarity::Computation,
             binders,
         ),
+        | DomainComp::Fixpoint { recursive, .. } => {
+            let (source, environment) = {
+                let held = domain
+                    .comp_closure(recursive)
+                    .ok_or(ReadbackFault::Domain(DomainFault::Dangling))?;
+                let crate::CompBody::Source(source) = held.body()
+                else {
+                    return Err(ReadbackFault::MachineInvariant);
+                };
+                (source, held.environment().clone())
+            };
+            let Some(&Computation::Fixpoint { body, evidence }) = core.computation(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let closed = domain.comp_closure_node(body, environment);
+            let (whnf, deeper) =
+                open(core, domain, machine, closed, binders, Zone::Intuitionistic)?;
+            machine.tasks.push(Task::Fixpoint(evidence));
+            machine.tasks.push(Task::Comp {
+                comp: whnf,
+                binders: deeper,
+            });
+            Ok(())
+        },
     }
 }
 
@@ -3234,7 +3271,8 @@ fn step_neutral(
                         | Elimination::Bind(_)
                         | Elimination::Case { .. }
                         | Elimination::DataCase(_)
-                        | Elimination::RecordProjection(_) => None,
+                        | Elimination::RecordProjection(_)
+                        | Elimination::Fixpoint(_) => None,
                     })
                     .collect()
             };
@@ -3400,6 +3438,19 @@ fn step_spine(
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::RecordProjection(source));
+            Ok(())
+        },
+        // The fold holds the stuck argument; the fixpoint reads back as
+        // itself and is applied to it.
+        | Elimination::Fixpoint(recursive) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            let fixpoint = domain.comp_fixpoint(recursive, CompTermFace::Reduced);
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::Apply);
+            machine.tasks.push(Task::Comp {
+                comp: fixpoint,
+                binders,
+            });
             Ok(())
         },
         | Elimination::DataCase(closure) => {
@@ -4396,6 +4447,72 @@ mod tests
             core.value(produced),
             "the binder was opened at a level and the occurrence came back as the index \
              counting the other way"
+        );
+    }
+
+    #[test]
+    fn a_fixpoint_reads_back_with_its_self_binder()
+    {
+        // `(λy. fix rec. λx. return ⟨rec, y⟩) ()`: the fixpoint captures the
+        // argument, and its self binder reads back past the inner lambda's.
+        let mut core = CoreArena::new();
+        let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let captured = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let pair = core.value_pair(recursive, captured);
+        let returned = core.computation_return(pair);
+        let inner = core.computation_lambda(returned);
+        let partial = gandr_kernel_term::FixpointEvidence::Partial;
+        let fixpoint = core.computation_fixpoint(inner, partial);
+        let outer = core.computation_lambda(fixpoint);
+        let unit = core.value_unit();
+        let applied = core.computation_application(outer, unit);
+        let expected_pair = core.value_pair(recursive, unit);
+        let expected_return = core.computation_return(expected_pair);
+        let expected_inner = core.computation_lambda(expected_return);
+        let expected = core.computation_fixpoint(expected_inner, partial);
+        let mislabelled = core.computation_fixpoint(
+            expected_inner,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), applied)
+            .expect("the redex fires and leaves the fixpoint inert");
+        assert!(
+            matches!(
+                domain.computation(evaluated),
+                Some(&DomainComp::Fixpoint {
+                    face: CompTermFace::Reduced,
+                    ..
+                })
+            ),
+            "the fixpoint captured a binding, so it no longer denotes its source"
+        );
+        let read = readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the rebuilding mode opens the self binder");
+        let read = core.value_thunk(read);
+        let expected = core.value_thunk(expected);
+        let mislabelled = core.value_thunk(mislabelled);
+        assert_eq!(
+            gandr_core_term::CertificateEquality::Equal,
+            gandr_core_term::equal_certificate_syntax(&core, read, expected),
+            "the self occurrence comes back as the index past the inner binder and the \
+             captured argument as itself"
+        );
+        assert_eq!(
+            gandr_core_term::CertificateEquality::Different,
+            gandr_core_term::equal_certificate_syntax(&core, read, mislabelled),
+            "and the evidence survives the round trip"
         );
     }
 

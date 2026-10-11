@@ -282,7 +282,7 @@ pub fn check_declaration(
     }
     let (signature, body) = match *(declaration.content()) {
         | crate::DeclarationContent::Data(ref signature) => {
-            return match crate::former::form_signature(context, signature) {
+            return match crate::former::form_signature(context, constant, signature) {
                 | Ok(()) => {
                     context.record_data(constant, alloc::sync::Arc::clone(signature));
                     Verdict::Data

@@ -148,6 +148,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TableEntryCount;
@@ -287,11 +288,12 @@ fn comp_shape_mismatch(
     }
 }
 
-/// The two read-only inputs every judgement of one declaration stands on: the
-/// environment's admission log and this declaration's admitted level context.
+/// The read-only inputs every judgement of one declaration stands on: the
+/// environment's admission log, this declaration's admitted level context,
+/// and the block a data declaration's own fields may name.
 ///
 /// Grouped because they travel together through both machines and are constant
-/// for the whole of one check, which is also why neither is in a memo key.
+/// for the whole of one check, which is also why none is in a memo key.
 #[derive(Clone, Copy, Debug)]
 pub struct Judgement<'session>
 {
@@ -300,11 +302,31 @@ pub struct Judgement<'session>
     entries: &'session [AdmittedDeclaration],
     /// This declaration's admitted level context.
     levels: &'session LevelContext,
+    /// The block in scope at its own position, while a data declaration's
+    /// fields form.
+    block: Block<'session>,
+}
+
+/// The data block a judgement may name at its own admission position.
+#[derive(Clone, Copy, Debug)]
+enum Block<'session>
+{
+    /// No block: every nominal head names an admitted declaration.
+    Outside,
+    /// A data declaration being admitted at `position`, its signature in
+    /// scope for its own fields.
+    Inside
+    {
+        /// The position the declaration takes.
+        position: ConstantIndex,
+        /// The declaration's own telescope and constructor table.
+        signature: former::Signature<'session>,
+    },
 }
 
 impl<'session> Judgement<'session>
 {
-    /// Pair an admission log with a level context.
+    /// Pair an admission log with a level context, outside any block.
     ///
     /// # Specification
     /// trivial.
@@ -315,7 +337,32 @@ impl<'session> Judgement<'session>
         levels: &'session LevelContext,
     ) -> Self
     {
-        Self { entries, levels }
+        Self {
+            entries,
+            levels,
+            block: Block::Outside,
+        }
+    }
+
+    /// The same judgement with a data block in scope at its own position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    const fn within_block(
+        self,
+        position: ConstantIndex,
+        signature: former::Signature<'session>,
+    ) -> Self
+    {
+        Self {
+            block: Block::Inside {
+                position,
+                signature,
+            },
+            ..self
+        }
     }
 }
 
@@ -561,7 +608,7 @@ where
                             declaration,
                             ref arguments,
                         } => {
-                            let signature = former::signature(judgement.entries, declaration)?;
+                            let signature = former::resolve(judgement, declaration)?;
                             if signature.parameters.len() != arguments.len() {
                                 return Err(KernelError::DataArgumentArity);
                             }
@@ -1970,6 +2017,11 @@ where
                             form: NonInferableForm::Lambda,
                         });
                     },
+                    | Computation::Fixpoint { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::Fixpoint,
+                        });
+                    },
                 },
                 | Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
                     | Computation::Absurd(value) => {
@@ -2003,6 +2055,26 @@ where
                                 expected,
                             ));
                         },
+                    },
+                    // A fixpoint checks at any computation type: its body is
+                    // checked with the self thunk as the innermost slot, against
+                    // the classifier weakened past that slot. Progress is the
+                    // unfolding rule's gate, not a typing condition. A
+                    // structural-descent claim is replayed first, by one walk
+                    // over the body.
+                    | Computation::Fixpoint { body, evidence } => {
+                        match evidence {
+                            | FixpointEvidence::Partial => {},
+                            | FixpointEvidence::StructuralDescent => {
+                                descent::replay(arena, judgement, expected, body)?;
+                            },
+                        }
+                        let recursive = arena.value_type_thunk(expected);
+                        let scoped = weakened(arena, session, expected);
+                        context.push(recursive);
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::CheckComp(body, scoped);
+                        continue 'expand;
                     },
                     | Computation::Return(value) => match arena.comp_type(expected) {
                         | Some(&CompType::Returner(result)) => {
@@ -2663,8 +2735,9 @@ pub fn check_declaration(
 ///   [`KernelError::CodeObligationCeiling`]. A live memo can avoid repeated
 ///   obligations that exhaust the null memo's occurrence budget. Each counter
 ///   is monotone, and the initial formation goal charges at least one
-///   type-plane event, subject to saturation. The arena's original prefix
-///   remains available on either verdict.
+///   type-plane event, subject to saturation, unless a data declaration's
+///   occurrence walk refuses it before formation starts. The arena's original
+///   prefix remains available on either verdict.
 /// - provides: both memo policies through one function. Per-goal accounting,
 ///   memo provenance and typing agreement still require their event history or
 ///   differential witnesses, not a second check inside a return predicate.
@@ -2684,12 +2757,13 @@ pub fn check_declaration(
 /// - witness: `acceptance::acceptance::a_poisoned_term_entry_turns_a_refusal_into_an_acceptance`
 /// - witness: `acceptance::acceptance::a_poisoned_type_entry_turns_admission_into_a_universe_refusal`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `recursive_data::recursive_data::occurrences_are_refused_by_name`
 #[spec(captures: [entry_mark = arena.watermark(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
     entry_type_expanded = u64::from(census.plane_expansions(SupportPlane::Type)),
     entry_type_recalled = u64::from(census.plane_recalls(SupportPlane::Type))],
-    ensures: entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
+    ensures: |ret| entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark && {
         let term_expanded = u64::from(census.plane_expansions(SupportPlane::Term));
         let term_recalled = u64::from(census.plane_recalls(SupportPlane::Term));
         let type_expanded = u64::from(census.plane_expansions(SupportPlane::Type));
@@ -2698,8 +2772,13 @@ pub fn check_declaration(
             && term_recalled >= entry_term_recalled
             && type_expanded >= entry_type_expanded
             && type_recalled >= entry_type_recalled
-            && type_expanded.saturating_add(type_recalled)
-                >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64)
+            && (matches!(ret, Err(KernelError::CrossBlockReference { .. }
+                    | KernelError::NegativeOccurrence(_)
+                    | KernelError::IndexOccurrence(_)
+                    | KernelError::NestedOccurrence(_)
+                    | KernelError::NonUniformOccurrence(_)))
+                || type_expanded.saturating_add(type_recalled)
+                    >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(1_u64))
     })]
 #[inline]
 pub fn check_declaration_with_memo<M>(
@@ -2715,7 +2794,28 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let declared = declaration.declared_id();
-    let judgement = Judgement::new(entries, levels);
+    // A data declaration's own position names its block while it is checked:
+    // the occurrence walk refuses every non-strictly-positive or non-uniform
+    // self occurrence by name first, and formation then reads the self
+    // occurrence through the block's own signature.
+    let judgement = match *declaration.content() {
+        | DeclarationContent::Data {
+            kind,
+            ref parameters,
+            ref constructors,
+        } => {
+            let position = ConstantIndex::from(entries.len());
+            occurrence::occurrences(arena, position, parameters, constructors)?;
+            Judgement::new(entries, levels).within_block(position, former::Signature {
+                parameters,
+                constructors,
+                kind,
+            })
+        },
+        | DeclarationContent::Def { .. }
+        | DeclarationContent::Axiom { .. }
+        | DeclarationContent::AbstractType { .. } => Judgement::new(entries, levels),
+    };
     let mut owed: Vec<CodeObligation> = Vec::new();
     let _level = type_level(
         arena,
@@ -2956,7 +3056,7 @@ where
                 else {
                     return Err(KernelError::ArenaFault);
                 };
-                let signature = former::signature(judgement.entries, *declaration)?;
+                let signature = former::resolve(judgement, *declaration)?;
                 if signature.parameters.len() != arguments.len() {
                     return Err(KernelError::DataArgumentArity);
                 }
@@ -4644,4 +4744,6 @@ mod tests
     }
 }
 
+mod descent;
 mod former;
+mod occurrence;

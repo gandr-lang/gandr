@@ -106,7 +106,7 @@ impl Source for ContentTable<'_>
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
-&ContentNode::Case { .. }), Former::Computation) |
+&ContentNode::Case { .. } | &ContentNode::Fixpoint { .. }), Former::Computation) |
 (Some(&ContentNode::Unit), Former::Unit) |
 (Some(&ContentNode::Thunk(_)), Former::Thunk) |
 (Some(&ContentNode::ValueLift { .. }), Former::ValueLift) |
@@ -175,7 +175,8 @@ impl Source for ContentTable<'_>
             | ContentNode::Return(_)
             | ContentNode::Bind(..)
             | ContentNode::Force(_)
-            | ContentNode::Case { .. } => Former::Computation,
+            | ContentNode::Case { .. }
+            | ContentNode::Fixpoint { .. } => Former::Computation,
             | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             | ContentNode::PathRefl(code) => Former::PathRefl(code),
             | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),

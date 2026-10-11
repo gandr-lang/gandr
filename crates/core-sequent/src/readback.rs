@@ -1,12 +1,13 @@
 //! Readback: a heap value of the L machine read back as a core term.
 //!
 //! A positive value reads back as the core value it is: a literal as
-//! itself, a constructed value over its fields' readbacks, an opaque constant
-//! as the constant, and a thunk as its suspended command decoded back by the
-//! unfocusing walk and closed over its environment's readbacks. A run's
-//! terminal reads back as a computation: `return v` for a positive value, and
-//! the function itself for a copattern object, closed the same way. A
-//! suspended `μ` has no core reading.
+//! itself, a constructed value over its fields' readbacks — a datatype's
+//! constructor at the unknown value type, since the IL carries no types — an
+//! opaque constant as the constant, and a thunk or a recursive thunk as its
+//! suspended command decoded back by the unfocusing walk and closed over its
+//! environment's readbacks. A run's terminal reads back as a computation:
+//! `return v` for a positive value, and the function itself for a copattern
+//! object, closed the same way. A suspended `μ` has no core reading.
 //!
 //! Values are read in increasing address order. Every value the machine
 //! allocates names only values allocated before it, so each value's
@@ -327,11 +328,13 @@ impl<'run> Reading<'run>
     /// - hypothesis: L3 — shared, distinct fields and all first-order heads are
     ///   observed in the resulting core graph; a forward dependency is refused
     ///   at its exact address and malformed arity is refused after reading
-    ///   dependencies. L2 — suspended bodies compare with normal forms.
+    ///   dependencies. L2 — suspended bodies, datatype constructors and
+    ///   recursive thunks compare with normal forms.
     /// - witness: `readback::tests::shared_fields_preserve_their_order`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
+    /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
     #[spec(
         requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| ret.is_err() || self.read.iter().all(|(held, read)|
@@ -354,7 +357,8 @@ impl<'run> Reading<'run>
                 | HeapValue::Constructed { ref fields, .. } => {
                     pending.extend(fields.iter().copied());
                 },
-                | HeapValue::Thunk { environment, .. } => {
+                | HeapValue::Thunk { environment, .. }
+                | HeapValue::Fixpoint { environment, .. } => {
                     pending.extend(store.bound_values(environment));
                 },
                 | HeapValue::Closure { .. } => return Err(ReadbackRefusal::Unreadable(id)),
@@ -383,12 +387,15 @@ impl<'run> Reading<'run>
     /// # Adequacy
     /// - hypothesis: L3 — exact literal, opaque, unit, pair, injection and lift
     ///   nodes distinguish changed payloads, head tags and field order; invalid
-    ///   arity and a dependency read too early have exact refusals. L2 — thunk
-    ///   readings compare with the independent normaliser.
+    ///   arity and a dependency read too early have exact refusals. L2 — thunk,
+    ///   recursive-thunk and datatype-constructor readings compare with the
+    ///   independent normaliser.
     /// - witness: `readback::tests::shared_fields_preserve_their_order`
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `readback::tests::forward_dependencies_are_refused_before_reading_the_parent`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
+    /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
+    /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
     #[spec(
         requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| match ret {
@@ -404,9 +411,14 @@ impl<'run> Reading<'run>
                         if side == found && self.read.get(&body) == Some(&value)),
                     | (&ConstructorTag::Lift(ref level), &[body]) => matches!(*node, gandr_core_term::Value::Lift { ref target, body: value }
                         if target == level && self.read.get(&body) == Some(&value)),
+                    | (&ConstructorTag::Data { tag, arity }, fields) => fields.len() == usize::from(arity)
+                        && matches!(*node, gandr_core_term::Value::Constructor { tag: found, fields: ref values, .. }
+                            if found == tag && fields.iter().map(|field| self.read.get(field)).eq(values.iter().map(Some))),
                     | _ => false,
                 },
                 | HeapValue::Thunk { .. } => matches!(*node, gandr_core_term::Value::Thunk(_)),
+                | HeapValue::Fixpoint { evidence, .. } => matches!(*node, gandr_core_term::Value::Thunk(body)
+                    if matches!(self.core.computation(body), Some(&gandr_core_term::Computation::Fixpoint { evidence: claimed, .. }) if claimed == evidence)),
                 | HeapValue::Closure { .. } => false,
             }),
         },
@@ -439,6 +451,16 @@ impl<'run> Reading<'run>
                     let body = self.lookup(body)?;
                     Ok(self.core.value_lift(level.clone(), body))
                 },
+                | (&ConstructorTag::Data { tag, arity }, fields)
+                    if fields.len() == usize::from(arity) =>
+                {
+                    let fields = fields
+                        .iter()
+                        .map(|&field| self.lookup(field))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let datatype = self.core.value_type_unknown();
+                    Ok(self.core.value_constructor(datatype, tag, fields))
+                },
                 | _ => Err(ReadbackRefusal::Unreadable(id)),
             },
             | HeapValue::Thunk {
@@ -449,6 +471,26 @@ impl<'run> Reading<'run>
                     .map(|bound| self.lookup(bound))
                     .collect::<Result<Vec<_>, _>>()?;
                 match decode(self.arena, Root::ThunkBody(body), self.core, &closing)? {
+                    | Decoded::Value(thunk) => Ok(thunk),
+                    | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
+                }
+            },
+            | HeapValue::Fixpoint {
+                body,
+                environment,
+                evidence,
+                ..
+            } => {
+                let closing = store
+                    .bound_values(environment)
+                    .map(|bound| self.lookup(bound))
+                    .collect::<Result<Vec<_>, _>>()?;
+                match decode(
+                    self.arena,
+                    Root::FixpointBody(body, evidence),
+                    self.core,
+                    &closing,
+                )? {
                     | Decoded::Value(thunk) => Ok(thunk),
                     | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant.into()),
                 }

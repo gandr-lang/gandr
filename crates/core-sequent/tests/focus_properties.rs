@@ -282,6 +282,54 @@ fn cases() -> Vec<Case>
         rendering: "⟨pair(c0, lift(-3)) |+ ★⟩",
     });
 
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
+    let seven = integer(&mut core, Integer(7));
+    let scrutinee = core.value_constructor(nat, 1_usize.into(), alloc::vec![seven]);
+    let returned_type = core.value_type_unit();
+    let motive = core.comp_type_returner(returned_type);
+    let one = integer(&mut core, Integer(1));
+    let on_zero = core.computation_return(one);
+    let field = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let field_returned = core.computation_return(field);
+    let on_successor = core.computation_lambda(field_returned);
+    let root = core.computation_data_case(scrutinee, motive, alloc::vec![on_zero, on_successor]);
+    cases.push(Case {
+        label: "nominal match on a datatype constructor",
+        core,
+        root,
+        origin: FocusOrigin::Case,
+        rendering: "⟨ctor[1](7) |+ datacase({force(α) ⇒ ⟨1 |+ α0⟩}, {force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ α0⟩} |− α0⟩}; ★)⟩",
+    });
+
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(1_usize), alloc::vec![]);
+    let zero = core.value_constructor(nat, 0_usize.into(), alloc::vec![]);
+    let one = core.value_constructor(nat, 1_usize.into(), alloc::vec![zero]);
+    let returned_type = core.value_type_unit();
+    let motive = core.comp_type_returner(returned_type);
+    let base = core.computation_return(zero);
+    let own = core.value_variable(Zone::Intuitionistic, 2_u32.into());
+    let predecessor = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let recurse = core.computation_force(own);
+    let descent = core.computation_application(recurse, predecessor);
+    let step = core.computation_lambda(descent);
+    let argument = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let matched = core.computation_data_case(argument, motive, alloc::vec![base, step]);
+    let function = core.computation_lambda(matched);
+    let recursive = core.computation_fixpoint(
+        function,
+        gandr_kernel_term::FixpointEvidence::StructuralDescent,
+    );
+    let root = core.computation_application(recursive, one);
+    cases.push(Case {
+        label: "a recursive thunk applied",
+        core,
+        root,
+        origin: FocusOrigin::Fixpoint,
+        rendering: "⟨fix[<]{x; force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x0 |+ datacase({force(α) ⇒ ⟨ctor[0]() |+ α0⟩}, {force(α) ⇒ ⟨cocase {apply(x; α) ⇒ ⟨x2 |+ force(apply(x0; α0))⟩} |− α0⟩}; α0)⟩} |− α0⟩} |+ force(apply(ctor[1](ctor[0]()); ★))⟩",
+    });
+
     cases
 }
 
@@ -330,6 +378,7 @@ fn hand_built_cases_cover_every_former()
         BTreeSet::from([
             FocusOrigin::Return,
             FocusOrigin::Force,
+            FocusOrigin::Fixpoint,
             FocusOrigin::Lambda,
             FocusOrigin::Case,
             FocusOrigin::Bind,

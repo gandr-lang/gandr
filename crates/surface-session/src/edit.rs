@@ -2767,6 +2767,9 @@ where
                 Computation::Mark { mark, .. } => {
                     matches!(ret, ContentNode::ComputationMark { mark: found, .. } if found == mark)
                 }
+                Computation::Fixpoint { evidence, .. } => {
+                    matches!(ret, ContentNode::Fixpoint { evidence: found, .. } if found == evidence)
+                }
             },
         )
 },
@@ -2840,6 +2843,10 @@ where
         | Some(&Computation::Mark { mark, body }) => ContentNode::ComputationMark {
             mark,
             body: child(Root::Computation(body)),
+        },
+        | Some(&Computation::Fixpoint { body, evidence }) => ContentNode::Fixpoint {
+            body: child(Root::Computation(body)),
+            evidence,
         },
         | None => ContentNode::Unresolved(Sort::Computation),
     }

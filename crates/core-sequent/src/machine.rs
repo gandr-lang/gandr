@@ -11,6 +11,8 @@
 //! deliver v ★ ρ         return v to the base of the frame region
 //! deliver v μ̃x.s ρ      run s with x bound to v
 //! deliver v case ρ      run the arm of v's constructor, its fields bound
+//! deliver v datacase(t̄; c) ρ
+//!                       v = K_i(w̄): load c, push apply(w̄), force t_i
 //! deliver v D(ā; c) ρ   load c, observe v by D with the arguments ā
 //! return v m            shrink the frame region to m, then pop
 //! pop v                 the top frame receives v; an empty region halts
@@ -22,15 +24,16 @@
 //! match pushes onto the current region. Observing a thunk by `force` opens
 //! its memo cell: a forced cell returns its cached value, an opened one
 //! pushes an update frame under the body's return point, and a re-entrant one
-//! runs the body inline. Observing a copattern object runs the arm its
-//! destructor selects. A suspended `μ` delivered anywhere but to a `μ̃` runs
-//! against the consumer it meets.
+//! runs the body inline. A recursive thunk follows the same protocol, its
+//! body running with the thunk itself bound innermost. Observing a copattern
+//! object runs the arm its destructor selects. A suspended `μ` delivered
+//! anywhere but to a `μ̃` runs against the consumer it meets.
 //!
 //! Producers evaluate to heap values without a transition: constructors
-//! allocate their evaluated fields, a thunk allocates a fresh cell, a
-//! copattern object or a `μ` closes over the environment, and a constant
-//! unfolds its [`Definition`] once per machine, a cycle among definitions
-//! stopping the run. Every walk is a loop over an explicit stack.
+//! allocate their evaluated fields, a thunk or a recursive thunk allocates a
+//! fresh cell, a copattern object or a `μ` closes over the environment, and a
+//! constant unfolds its [`Definition`] once per machine, a cycle among
+//! definitions stopping the run. Every walk is a loop over an explicit stack.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -728,7 +731,7 @@ impl<'program> Machine<'program>
                     && inner.covalues() == environment.covalues()
                     && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)),
                 | ConsumerNode::Case { .. } => matches!(next, Next::Continue(Control::Run(..))),
-                | ConsumerNode::Destructor { .. } => matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
+                | ConsumerNode::DataCase { .. } | ConsumerNode::Destructor { .. } => matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
             }
         })))]
     fn deliver(
@@ -765,7 +768,9 @@ impl<'program> Machine<'program>
                 let inner = self.store.bind_value(environment, value)?;
                 Ok(Next::Continue(Control::Run(body, inner)))
             },
-            | ConsumerNode::Case { .. } => self.select(value, consumer, environment),
+            | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
+                self.select(value, consumer, environment)
+            },
             | ConsumerNode::Destructor {
                 tag,
                 ref producers,
@@ -883,9 +888,10 @@ impl<'program> Machine<'program>
     ///
     /// # Specification
     /// - requires: the frame region's top is `mark`.
-    /// - ensures: `force` on a thunk follows its cell's protocol; any
-    ///   destructor on a copattern object runs the arm it selects with the
-    ///   arguments and `mark` bound.
+    /// - ensures: `force` on a thunk or a recursive thunk follows its cell's
+    ///   protocol, a recursive thunk's body running with the thunk itself bound
+    ///   innermost; any destructor on a copattern object runs the arm it
+    ///   selects with the arguments and `mark` bound.
     /// - provides: the elimination of the negative values and thunks.
     /// - fails: [`Stuck::Unobservable`] for any other value or a missing arm,
     ///   and the store's faults.
@@ -898,27 +904,34 @@ impl<'program> Machine<'program>
     /// - hypothesis: L3 — first force, reentry and a cached force distinguish
     ///   the three cell states by continuation marks, the unique update frame
     ///   and exact cached address. Abandonment declines the update before a new
-    ///   run. L2 — captured and curried functions compare with normal forms.
+    ///   run. A recursive thunk computes through its own binding and a loop
+    ///   through it re-enters its cell. L2 — captured and curried functions
+    ///   compare with normal forms.
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
+    /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
     #[spec(
         requires: self.store.mark() == mark,
         captures: [forcing = match self.store.value(value) {
             | Some(&HeapValue::Thunk { body, environment, cell }) if head == DestructorTag::Force =>
-                Some((body, environment, cell, self.store.cell(cell))),
+                Some((body, environment, cell, self.store.cell(cell), false)),
+            | Some(&HeapValue::Fixpoint { body, environment, cell, .. }) if head == DestructorTag::Force =>
+                Some((body, environment, cell, self.store.cell(cell), true)),
             | _ => None,
         }],
         ensures: |ref ret| match ret.as_ref().copied() {
             | Err(_) => true,
-            | Ok(next) => if let Some((body, captured, cell, state)) = forcing {
+            | Ok(next) => if let Some((body, captured, cell, state, recursive)) = forcing {
                 match state {
                     | Some(crate::store::MemoState::Forced(cached)) => next == Next::Continue(Control::Return(cached, mark))
                         && self.store.cell(cell) == state && self.store.mark() == mark,
                     | Some(crate::store::MemoState::Unforced | crate::store::MemoState::InProgress) =>
                         matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
-                            && inner.values() == captured.values()
+                            && if recursive {
+                                self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)
+                            } else { inner.values() == captured.values() }
                             && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()))
                         && self.store.cell(cell) == Some(crate::store::MemoState::InProgress)
                         && if state == Some(crate::store::MemoState::Unforced) {
@@ -950,21 +963,43 @@ impl<'program> Machine<'program>
     {
         let unobservable = Stuck::Unobservable { value, head };
         match self.store.value(value) {
-            | Some(&HeapValue::Thunk {
-                body,
-                environment,
-                cell,
-            }) if head == DestructorTag::Force => match self.store.begin_force(cell)? {
-                | ForceEntry::Cached(cached) => Ok(Next::Continue(Control::Return(cached, mark))),
-                | ForceEntry::Opened => {
-                    self.store.push_frame(Frame::Update { cell })?;
-                    let inner = self.store.bind_covalue(environment, self.store.mark())?;
-                    Ok(Next::Continue(Control::Run(body, inner)))
-                },
-                | ForceEntry::Reentrant => {
-                    let inner = self.store.bind_covalue(environment, mark)?;
-                    Ok(Next::Continue(Control::Run(body, inner)))
-                },
+            | Some(
+                &(HeapValue::Thunk {
+                    body,
+                    environment,
+                    cell,
+                }
+                | HeapValue::Fixpoint {
+                    body,
+                    environment,
+                    cell,
+                    ..
+                }),
+            ) if head == DestructorTag::Force => {
+                let recursive =
+                    matches!(self.store.value(value), Some(&HeapValue::Fixpoint { .. }));
+                match self.store.begin_force(cell)? {
+                    | ForceEntry::Cached(cached) => {
+                        Ok(Next::Continue(Control::Return(cached, mark)))
+                    },
+                    | entry @ (ForceEntry::Opened | ForceEntry::Reentrant) => {
+                        let captured = if recursive {
+                            self.store.bind_value(environment, value)?
+                        }
+                        else {
+                            environment
+                        };
+                        let returning = if entry == ForceEntry::Opened {
+                            self.store.push_frame(Frame::Update { cell })?;
+                            self.store.mark()
+                        }
+                        else {
+                            mark
+                        };
+                        let inner = self.store.bind_covalue(captured, returning)?;
+                        Ok(Next::Continue(Control::Run(body, inner)))
+                    },
+                }
             },
             | Some(&HeapValue::Closure {
                 producer,
@@ -994,13 +1029,15 @@ impl<'program> Machine<'program>
         }
     }
 
-    /// Run the arm a match selects for a value, its fields bound left to
-    /// right.
+    /// Run the arm a match selects for a value: a structural match's arm with
+    /// the fields bound left to right, or a nominal match's branch applied to
+    /// them.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the arm of the value's constructor runs under `environment`
-    ///   extended by the value's fields, the last innermost.
+    /// - ensures: for a structural match, the arm of the value's constructor
+    ///   runs under `environment` extended by the value's fields, the last
+    ///   innermost; for a nominal match, as [`Self::branch`].
     /// - provides: the elimination of the constructed values.
     /// - fails: [`Stuck::Unmatched`] for a value that is not constructed or a
     ///   constructor no arm answers; [`Stuck::IllFormedConsumer`] when `arms`
@@ -1018,6 +1055,7 @@ impl<'program> Machine<'program>
     ///   independently in the pure-spine cases.
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `machine::tests::data_case_selects_arm_returns_three`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
     #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
         self.arena.consumer(arms).zip(self.store.value(value)).is_some_and(|(node, held)|
@@ -1029,6 +1067,8 @@ impl<'program> Machine<'program>
                             && fields.iter().rev().enumerate().all(|(position, field)|
                                 u32::try_from(position).is_ok_and(|index|
                                     self.store.lookup_value(inner, DeBruijnIndex::from(index)) == Some(*field))))),
+                | (&ConsumerNode::DataCase { .. }, &HeapValue::Constructed { tag: ConstructorTag::Data { .. }, .. }) =>
+                    matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
                 | _ => false,
             })))]
     fn select(
@@ -1043,9 +1083,15 @@ impl<'program> Machine<'program>
         else {
             return Err(Stuck::IllFormedConsumer(arms).into());
         };
-        let ConsumerNode::Case { arms: ref choices } = *node
-        else {
-            return Err(Stuck::IllFormedConsumer(arms).into());
+        let choices = match *node {
+            | ConsumerNode::Case { arms: ref choices } => choices,
+            | ConsumerNode::DataCase { ref branches, then } => {
+                return self.branch(value, arms, branches, then, environment);
+            },
+            | ConsumerNode::Covariable(_)
+            | ConsumerNode::MuTilde { .. }
+            | ConsumerNode::Destructor { .. }
+            | ConsumerNode::Top => return Err(Stuck::IllFormedConsumer(arms).into()),
         };
         let unmatched = Stuck::Unmatched { value, arms };
         let Some(held) = self.store.value(value)
@@ -1067,6 +1113,75 @@ impl<'program> Machine<'program>
             position = FieldPosition(position.0.saturating_add(1));
         }
         Ok(Next::Continue(Control::Run(arm.body, inner)))
+    }
+
+    /// Force the branch a nominal match selects for a constructed value
+    /// against the application of its fields to the match's continuation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for `K_i(v̄)`, the branch `t_i` is evaluated under
+    ///   `environment`, `then` is loaded, one application frame per field is
+    ///   pushed over it — the first field's on top — and `t_i` is forced
+    ///   against the resulting top.
+    /// - provides: the case-β of a nominal datatype: `case (c_i v̄) of {b̄}` runs
+    ///   `b_i v̄`.
+    /// - fails: [`Stuck::Unmatched`] for a value that is not a datatype's
+    ///   constructor or one whose ordinal names no branch, and the faults of
+    ///   evaluation, loading and forcing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a three-constructor match selects the branch of its
+    ///   value's ordinal and applies two unequal fields in order; a match on a
+    ///   value that is not a datatype's constructor is stuck by name. L2 —
+    ///   recursive definitions over Nat, List and Tree compare with the
+    ///   independent normaliser.
+    /// - witness: `machine::tests::data_case_selects_arm_returns_three`
+    /// - witness: `machine::tests::data_case_on_non_ctor_is_stuck`
+    /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
+    #[spec(ensures: |ref ret| match self.store.value(value) {
+        | Some(&HeapValue::Constructed { tag: ConstructorTag::Data { tag, .. }, .. })
+            if branches.get(usize::from(tag)).is_some() =>
+            ret.is_err() || matches!(ret, Ok(Next::Continue(Control::Run(..) | Control::Return(..)))),
+        | _ => matches!(ret, Err(Stop::Stuck(Stuck::Unmatched { value: found, arms: matcher }))
+            if *found == value && *matcher == case),
+    })]
+    fn branch(
+        &mut self,
+        value: HeapValueId,
+        case: ConsumerId,
+        branches: &[ProducerId],
+        then: ConsumerId,
+        environment: Environment,
+    ) -> Result<Next, Stop>
+    {
+        let selected = match self.store.value(value) {
+            | Some(&HeapValue::Constructed {
+                tag: ConstructorTag::Data { tag, .. },
+                ref fields,
+            }) => branches
+                .get(usize::from(tag))
+                .map(|&branch| (branch, fields.clone())),
+            | Some(_) | None => None,
+        };
+        let Some((branch, fields)) = selected
+        else {
+            return Err(Stuck::Unmatched { value, arms: case }.into());
+        };
+        let function = self.evaluate(branch, environment)?;
+        let _base = self.load(then, environment)?;
+        for &field in fields.iter().rev() {
+            self.store.push_frame(Frame::Destructor {
+                tag: DestructorTag::Apply,
+                arguments: Box::from([field]),
+            })?;
+        }
+        let top = self.store.mark();
+        self.observe(function, DestructorTag::Force, &[], top)
     }
 
     /// The field at `position` of a constructed value, or `None`.
@@ -1118,7 +1233,7 @@ impl<'program> Machine<'program>
             && self.arena.consumer(consumer).is_some_and(|node| match *node {
                 | ConsumerNode::Top => mark == ContinuationMark::BASE,
                 | ConsumerNode::Covariable(index) => self.store.lookup_covalue(environment, index) == Some(mark),
-                | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => usize::from(height).checked_add(1) == Some(usize::from(mark.height())),
+                | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => usize::from(height).checked_add(1) == Some(usize::from(mark.height())),
                 | ConsumerNode::Destructor { .. } => true,
             })),
     )]
@@ -1148,7 +1263,7 @@ impl<'program> Machine<'program>
                     pending.push(Frame::Bind { body, environment });
                     break None;
                 },
-                | ConsumerNode::Case { .. } => {
+                | ConsumerNode::Case { .. } | ConsumerNode::DataCase { .. } => {
                     pending.push(Frame::Case {
                         arms: cursor,
                         environment,
@@ -1218,10 +1333,10 @@ impl<'program> Machine<'program>
     /// # Specification
     /// - requires: no constant unfolding is currently running.
     /// - ensures: a variable reads its binding; a literal and a constructor
-    ///   over its evaluated fields are allocated; a thunk is allocated with a
-    ///   fresh cell; a copattern object or a `μ` closes over `environment`; a
-    ///   constant reads its value, unfolding its definition in the empty
-    ///   environment the first time it is met.
+    ///   over its evaluated fields are allocated; a thunk or a recursive thunk
+    ///   is allocated with a fresh cell; a copattern object or a `μ` closes
+    ///   over `environment`; a constant reads its value, unfolding its
+    ///   definition in the empty environment the first time it is met.
     /// - provides: the value side of a cut.
     /// - fails: an unbound variable, an undefined or cyclic constant, a
     ///   constructor carrying a consumer, and the store's faults; a constant
@@ -1257,6 +1372,8 @@ impl<'program> Machine<'program>
                         && matches!(*held, HeapValue::Constructed { tag: ref found, ref fields } if tag == found && fields.len() == producers.len()),
                     | ProducerNode::Thunk { body } => matches!(*held, HeapValue::Thunk { body: found, environment: captured, cell }
                         if found == body && captured == environment && self.store.cell(cell) == Some(crate::store::MemoState::Unforced)),
+                    | ProducerNode::Fixpoint { body, evidence } => matches!(*held, HeapValue::Fixpoint { body: found, environment: captured, cell, evidence: claimed }
+                        if found == body && captured == environment && claimed == evidence && self.store.cell(cell) == Some(crate::store::MemoState::Unforced)),
                     | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => matches!(*held,
                         HeapValue::Closure { producer, environment: captured } if producer == root && captured == environment),
                 }))),
@@ -1380,6 +1497,15 @@ impl<'program> Machine<'program>
                                 body,
                                 environment,
                                 cell,
+                            })?
+                        },
+                        | ProducerNode::Fixpoint { body, evidence } => {
+                            let cell = self.store.allocate_cell()?;
+                            self.store.allocate(HeapValue::Fixpoint {
+                                body,
+                                environment,
+                                cell,
+                                evidence,
                             })?
                         },
                         | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => {
@@ -1928,6 +2054,134 @@ mod tests
                 "the arm of {side:?}"
             );
         }
+    }
+
+    /// A nominal match over three constructors runs the branch of its
+    /// value's ordinal with the fields applied in order: `ctor[0]()` takes the
+    /// fieldless branch, `ctor[1](5)` returns its field, and `ctor[2](3, 4)`
+    /// returns its first.
+    #[test]
+    fn data_case_selects_arm_returns_three()
+    {
+        for (ordinal, expected) in [
+            (0_usize, "⟨0 |+ ★⟩"),
+            (1_usize, "⟨5 |+ ★⟩"),
+            (2_usize, "⟨3 |+ ★⟩"),
+        ] {
+            let mut core = CoreArena::new();
+            let datatype = core.value_type_unknown();
+            let fields = match ordinal {
+                | 0 => alloc::vec![],
+                | 1 => alloc::vec![integer(&mut core, Digits("5"))],
+                | _ => alloc::vec![
+                    integer(&mut core, Digits("3")),
+                    integer(&mut core, Digits("4"))
+                ],
+            };
+            let scrutinee = core.value_constructor(datatype, ordinal.into(), fields);
+            let zero = integer(&mut core, Digits("0"));
+            let fieldless = core.computation_return(zero);
+            let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            let own_returned = core.computation_return(own);
+            let single = core.computation_lambda(own_returned);
+            let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+            let first_returned = core.computation_return(first);
+            let inner = core.computation_lambda(first_returned);
+            let double = core.computation_lambda(inner);
+            let motive = core.comp_type_unknown();
+            let program = core
+                .computation_data_case(scrutinee, motive, alloc::vec![fieldless, single, double]);
+            assert_eq!(
+                expected,
+                evaluated(&mut core, program),
+                "the branch of ordinal {ordinal}"
+            );
+        }
+    }
+
+    /// A nominal match is stuck by name on a literal, on a structural
+    /// constructor and on an ordinal it has no branch for.
+    #[test]
+    fn data_case_on_non_ctor_is_stuck()
+    {
+        let mut core = CoreArena::new();
+        let five = integer(&mut core, Digits("5"));
+        let unit = core.value_unit();
+        let injected = core.value_injection(Side::Left, unit);
+        let datatype = core.value_type_unknown();
+        let beyond = core.value_constructor(datatype, 1_usize.into(), alloc::vec![five]);
+        let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = core.computation_return(own);
+        let branch = core.computation_lambda(returned);
+        let motive = core.comp_type_unknown();
+        for scrutinee in [five, injected, beyond] {
+            let program = core.computation_data_case(scrutinee, motive, alloc::vec![branch]);
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            let command = focus_computation(&core, program, &mut arena, &mut provenance)
+                .expect("a closed term focuses");
+            let definitions = Definitions::new();
+            let mut machine = Machine::new(&arena, &definitions);
+            let outcome = machine.run(command, budget());
+            assert!(
+                matches!(outcome, Ok(Outcome::Stuck(Stuck::Unmatched { .. }))),
+                "the match is stuck unmatched: {outcome:?}"
+            );
+        }
+    }
+
+    /// `(fix self. λn. case n {zero ⇒ return zero | succ k ⇒ r ← force self k;
+    /// return succ (succ r)}) 2` doubles through its own binding to `4`, and
+    /// `fix self. force self` re-enters its cell until the budget runs out.
+    #[test]
+    fn a_recursive_thunk_computes_through_its_own_binding()
+    {
+        let mut core = CoreArena::new();
+        let nat = core.value_type_unknown();
+        let zero = core.value_constructor(nat, 0_usize.into(), alloc::vec![]);
+        let one = core.value_constructor(nat, 1_usize.into(), alloc::vec![zero]);
+        let two = core.value_constructor(nat, 1_usize.into(), alloc::vec![one]);
+        let base = core.computation_return(zero);
+        let own = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let predecessor = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let recurse = core.computation_force(own);
+        let descent = core.computation_application(recurse, predecessor);
+        let result = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let once = core.value_constructor(nat, 1_usize.into(), alloc::vec![result]);
+        let twice = core.value_constructor(nat, 1_usize.into(), alloc::vec![once]);
+        let rebuilt = core.computation_return(twice);
+        let bound = core.computation_bind(descent, rebuilt);
+        let step = core.computation_lambda(bound);
+        let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let motive = core.comp_type_unknown();
+        let matched = core.computation_data_case(argument, motive, alloc::vec![base, step]);
+        let function = core.computation_lambda(matched);
+        let recursive = core.computation_fixpoint(
+            function,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let program = core.computation_application(recursive, two);
+        assert_eq!(
+            "⟨ctor[1](ctor[1](ctor[1](ctor[1](ctor[0]())))) |+ ★⟩",
+            evaluated(&mut core, program),
+            "two doubled"
+        );
+
+        let itself = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let reentry = core.computation_force(itself);
+        let looping =
+            core.computation_fixpoint(reentry, gandr_kernel_term::FixpointEvidence::Partial);
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let command = focus_computation(&core, looping, &mut arena, &mut provenance)
+            .expect("a closed term focuses");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        assert_eq!(
+            Err(MachineFault::OutOfSteps),
+            machine.run(command, budget()),
+            "the loop re-enters its cell"
+        );
     }
 
     /// `((λ. λ. return x1) 1) 2` binds each argument at its own binder.

@@ -247,6 +247,18 @@ pub enum RefusalName
     AbsentRecordField,
     /// The checker reports `MissingRecordField`.
     MissingRecordField,
+    /// A data declaration's own family occurs under a function's domain.
+    NegativeOccurrence,
+    /// A data declaration's own family occurs inside another former.
+    NestedOccurrence,
+    /// A data declaration's own family occurs inside a term a type reads.
+    IndexOccurrence,
+    /// A data declaration's own family is applied off its parameters.
+    NonUniformOccurrence,
+    /// A data declaration names a position after its own.
+    CrossBlockReference,
+    /// A fixpoint's structural-descent claim does not replay.
+    DescentNotReplayed,
     /// A native path endpoint is not a closed first-order code.
     PathCode,
     /// A term name no binder or earlier declaration answers.
@@ -346,7 +358,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 49_usize] = [
+    pub const VOCABULARY: [Self; 55_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -356,6 +368,12 @@ impl RefusalName
         Self::NonExhaustiveDataCase,
         Self::AbsentRecordField,
         Self::MissingRecordField,
+        Self::NegativeOccurrence,
+        Self::NestedOccurrence,
+        Self::IndexOccurrence,
+        Self::NonUniformOccurrence,
+        Self::CrossBlockReference,
+        Self::DescentNotReplayed,
         Self::PathCode,
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
@@ -454,6 +472,12 @@ impl RefusalName
         | (Self::NonExhaustiveDataCase, b"NonExhaustiveDataCase")
         | (Self::AbsentRecordField, b"AbsentRecordField")
         | (Self::MissingRecordField, b"MissingRecordField")
+        | (Self::NegativeOccurrence, b"NegativeOccurrence")
+        | (Self::NestedOccurrence, b"NestedOccurrence")
+        | (Self::IndexOccurrence, b"IndexOccurrence")
+        | (Self::NonUniformOccurrence, b"NonUniformOccurrence")
+        | (Self::CrossBlockReference, b"CrossBlockReference")
+        | (Self::DescentNotReplayed, b"DescentNotReplayed")
     )
 },
     )]
@@ -471,6 +495,12 @@ impl RefusalName
             | Self::NonExhaustiveDataCase => "NonExhaustiveDataCase",
             | Self::AbsentRecordField => "AbsentRecordField",
             | Self::MissingRecordField => "MissingRecordField",
+            | Self::NegativeOccurrence => "NegativeOccurrence",
+            | Self::NestedOccurrence => "NestedOccurrence",
+            | Self::IndexOccurrence => "IndexOccurrence",
+            | Self::NonUniformOccurrence => "NonUniformOccurrence",
+            | Self::CrossBlockReference => "CrossBlockReference",
+            | Self::DescentNotReplayed => "DescentNotReplayed",
             | Self::UnresolvedName => "UnresolvedName",
             | Self::UnresolvedTypeHead => "UnresolvedTypeHead",
             | Self::DuplicateSignature => "DuplicateSignature",
@@ -862,6 +892,12 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
         | (CheckRefusal::AbsentRecordField(_), RefusalName::AbsentRecordField)
         | (CheckRefusal::MissingRecordField { .. }, RefusalName::MissingRecordField)
+        | (CheckRefusal::NegativeOccurrence(_), RefusalName::NegativeOccurrence)
+        | (CheckRefusal::NestedOccurrence(_), RefusalName::NestedOccurrence)
+        | (CheckRefusal::IndexOccurrence(_), RefusalName::IndexOccurrence)
+        | (CheckRefusal::NonUniformOccurrence(_), RefusalName::NonUniformOccurrence)
+        | (CheckRefusal::CrossBlockReference { .. }, RefusalName::CrossBlockReference)
+        | (CheckRefusal::DescentNotReplayed { .. }, RefusalName::DescentNotReplayed)
     )
 },
 )]
@@ -896,6 +932,12 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::FamilyArgumentClassifier { .. } => RefusalName::FamilyArgumentClassifier,
         | CheckRefusal::StaticLambdaArgument { .. } => RefusalName::StaticLambdaArgument,
         | CheckRefusal::StaticClassifierExpected { .. } => RefusalName::StaticClassifierExpected,
+        | CheckRefusal::NegativeOccurrence(_) => RefusalName::NegativeOccurrence,
+        | CheckRefusal::NestedOccurrence(_) => RefusalName::NestedOccurrence,
+        | CheckRefusal::IndexOccurrence(_) => RefusalName::IndexOccurrence,
+        | CheckRefusal::NonUniformOccurrence(_) => RefusalName::NonUniformOccurrence,
+        | CheckRefusal::CrossBlockReference { .. } => RefusalName::CrossBlockReference,
+        | CheckRefusal::DescentNotReplayed { .. } => RefusalName::DescentNotReplayed,
     }
 }
 

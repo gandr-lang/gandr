@@ -95,6 +95,20 @@ pub enum HeapValue
         /// The memo cell.
         cell: CellId,
     },
+    /// A recursive thunk: a thunk whose forcing binds the thunk itself as its
+    /// body's innermost producer variable, beside the continuation.
+    Fixpoint
+    {
+        /// The suspended command, binding one producer variable and one
+        /// covariable.
+        body: CommandId,
+        /// The captured environment, without the thunk itself.
+        environment: Environment,
+        /// The memo cell.
+        cell: CellId,
+        /// The termination claim the core fixpoint carried.
+        evidence: gandr_kernel_term::FixpointEvidence,
+    },
     /// A negative value: a copattern object or a suspended context capture,
     /// closed over its environment.
     Closure
@@ -273,7 +287,8 @@ pub enum Frame
     /// A pending pattern match.
     Case
     {
-        /// The [`crate::ConsumerNode::Case`] whose arms are tried.
+        /// The [`crate::ConsumerNode::Case`] or
+        /// [`crate::ConsumerNode::DataCase`] the value arriving here meets.
         arms: ConsumerId,
         /// The environment the chosen arm runs under.
         environment: Environment,

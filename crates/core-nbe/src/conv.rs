@@ -1248,16 +1248,46 @@ impl<'run> Walk<'run>
                     .push(Goal::Neutrals(left_neutral, right_neutral, context));
                 Ok(Local::Agree)
             },
+            // Two fixpoints compare by congruence: their own closed source
+            // nodes. A fixpoint never unfolds to meet anything else.
+            | (
+                DomainComp::Fixpoint {
+                    recursive: left_recursive,
+                    ..
+                },
+                DomainComp::Fixpoint {
+                    recursive: right_recursive,
+                    ..
+                },
+            ) => {
+                self.goals
+                    .push(Goal::Closures(left_recursive, right_recursive));
+                Ok(Local::Agree)
+            },
             | (DomainComp::Neutral { .. }, DomainComp::Lambda { .. })
             | (DomainComp::Lambda { .. }, DomainComp::Neutral { .. }) => {
                 Ok(Local::Defer(Deferral::Binder))
             },
-            | (DomainComp::Neutral { neutral, .. }, DomainComp::Return { .. })
-            | (DomainComp::Return { .. }, DomainComp::Neutral { neutral, .. }) => {
-                self.neutral_against_former(neutral)
-            },
-            | (DomainComp::Lambda { .. }, DomainComp::Return { .. })
-            | (DomainComp::Return { .. }, DomainComp::Lambda { .. }) => Ok(Local::Disagree),
+            | (
+                DomainComp::Neutral { neutral, .. },
+                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+            )
+            | (
+                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+                DomainComp::Neutral { neutral, .. },
+            ) => self.neutral_against_former(neutral),
+            | (
+                DomainComp::Lambda { .. },
+                DomainComp::Return { .. } | DomainComp::Fixpoint { .. },
+            )
+            | (
+                DomainComp::Return { .. },
+                DomainComp::Lambda { .. } | DomainComp::Fixpoint { .. },
+            )
+            | (
+                DomainComp::Fixpoint { .. },
+                DomainComp::Lambda { .. } | DomainComp::Return { .. },
+            ) => Ok(Local::Disagree),
         }
     }
 
@@ -1374,7 +1404,8 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Values(left_argument, right_argument, beneath));
                 },
                 | (Elimination::Force, Elimination::Force) => {},
-                | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
+                | (Elimination::Bind(left_body), Elimination::Bind(right_body))
+                | (Elimination::Fixpoint(left_body), Elimination::Fixpoint(right_body)) => {
                     queued.push(Goal::Closures(left_body, right_body));
                 },
                 | (
@@ -1399,7 +1430,8 @@ impl<'run> Walk<'run>
                     | Elimination::Force
                     | Elimination::Bind(_)
                     | Elimination::Case { .. }
-                    | Elimination::StaticApply(_),
+                    | Elimination::StaticApply(_)
+                    | Elimination::Fixpoint(_),
                     _,
                 ) => return Ok(mismatch),
             }

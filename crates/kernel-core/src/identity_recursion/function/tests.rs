@@ -198,6 +198,7 @@ fn children(
             | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                 panic!("no nominal or record eliminator in this fixture")
             },
+            | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
             | Computation::Absurd(_) => panic!("no Empty eliminator in fixtures"),
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
@@ -283,6 +284,7 @@ fn translate(
                     | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")
                     },
+                    | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
                     | Computation::Absurd(_) => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);

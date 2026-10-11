@@ -168,6 +168,11 @@ pub const SIDE_LEFT: WireTag = WireTag(0);
 /// Injection side: the right injection.
 pub const SIDE_RIGHT: WireTag = WireTag(1);
 
+/// Fixpoint evidence: no claim, a partial fixpoint.
+pub const FIXPOINT_PARTIAL: WireTag = WireTag(0);
+/// Fixpoint evidence: a structural-descent claim.
+pub const FIXPOINT_STRUCTURAL_DESCENT: WireTag = WireTag(1);
+
 /// Literal kind: an integer literal.
 pub const LITERAL_INTEGER: WireTag = WireTag(0);
 /// Literal kind: a string literal.
@@ -348,6 +353,8 @@ pub const NODE_V_RECORD: WireTag = WireTag(0x60);
 pub const NODE_C_DATA_CASE: WireTag = WireTag(0x61);
 /// Node tag: named record projection.
 pub const NODE_C_RECORD_PROJECTION: WireTag = WireTag(0x62);
+/// Node tag: a guarded fixpoint, over one computation under its self binder.
+pub const NODE_C_FIXPOINT: WireTag = WireTag(0x63);
 /// Reserved tag for persisted recursive inhabitants; currently refused.
 pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
@@ -531,7 +538,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -583,7 +590,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_RECORD_PROJECTION.0))
+    requires: (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_EMPTY.0 && tag.0 <= NODE_C_TRANSPORT.0) || tag.0 == NODE_VT_LIST.0 || tag.0 == NODE_VT_SESSION.0 || tag.0 == NODE_V_SESSION_PATH.0 || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_VT_UNIT | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_V_UNIT | NODE_VT_ABSTRACT | NODE_VT_EMPTY),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -683,7 +690,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -738,6 +745,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
     unbounded(NODE_V_RECORD, ChildArity::Counted(0)),
     unbounded(NODE_C_DATA_CASE, ChildArity::Counted(2)),
     unbounded(NODE_C_RECORD_PROJECTION, ChildArity::Fixed(1)),
+    unbounded(NODE_C_FIXPOINT, ChildArity::Fixed(1)),
 ];
 
 #[cfg(test)]
@@ -810,6 +818,7 @@ mod tests
                         Some(&crate::Computation::DataCase { .. }) => row.tag == super::NODE_C_DATA_CASE,
                         Some(&crate::Computation::RecordProjection(..)) => row.tag == super::NODE_C_RECORD_PROJECTION,
                         Some(&crate::Computation::Lambda(_)) => row.tag == super::NODE_C_LAMBDA,
+                        Some(&crate::Computation::Fixpoint { .. }) => row.tag == super::NODE_C_FIXPOINT,
                         Some(&crate::Computation::Application(_, _)) => row.tag == super::NODE_C_APPLICATION,
                         Some(&crate::Computation::Return(_)) => row.tag == super::NODE_C_RETURN,
                         Some(&crate::Computation::Bind(_, _)) => row.tag == super::NODE_C_BIND,
@@ -916,6 +925,7 @@ mod tests
             arena.value_record(alloc::collections::BTreeMap::from([(label.clone(), unit)]));
         let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);
         let projection = arena.computation_record_projection(record, label);
+        let fixpoint = arena.computation_fixpoint(lambda, crate::FixpointEvidence::Partial);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -965,6 +975,7 @@ mod tests
             AnyNode::Value(record),
             AnyNode::Computation(data_case),
             AnyNode::Computation(projection),
+            AnyNode::Computation(fixpoint),
         ];
         (arena, nodes)
     }
@@ -1071,7 +1082,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .chain(0x28 ..= 0x2e)
             .chain([0x50, 0x52, 0x5a])
-            .chain(0x5d ..= 0x62)
+            .chain(0x5d ..= 0x63)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);
