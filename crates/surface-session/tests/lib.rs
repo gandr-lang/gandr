@@ -27,4 +27,6 @@ mod incremental;
 #[cfg(test)]
 mod items;
 #[cfg(test)]
+mod live_match;
+#[cfg(test)]
 mod session;

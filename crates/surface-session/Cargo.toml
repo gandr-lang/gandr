@@ -32,6 +32,7 @@ path = "tests/lib.rs"
 anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-incremental.workspace = true
+gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
 gandr-storage-artifact.workspace = true

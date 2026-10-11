@@ -227,6 +227,7 @@ path = "crates/core-incremental"
 # - kernel-core (dev)
 # - surface-dispatcher
 # - surface-pretty (dev)
+# - surface-session
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 

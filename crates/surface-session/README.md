@@ -23,6 +23,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
 - [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
 - [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
+- [Live match checkpoints](#live-match-checkpoints)
 - [Contract evidence and its limits](#contract-evidence-and-its-limits)
 - [Deferred behavioral floor](#deferred-behavioral-floor)
 - [License](#license)
@@ -173,6 +174,16 @@ The prior implementation's goals were holes inside bodies, each with its expecte
 `Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions. A native data declaration is not a runtime value and returns `evaluation::Absent::DataUnrunnable`.
 
 The prior implementation evaluated a top-level expression and reported a definition with its type alone. The fragment has no top-level expression, so the item evaluated is a declaration, and the loop prints a value line under each checked one. The alternative was evaluating nothing until expressions exist, which leaves the loop unable to show a value. The choice reverses when the surface gains a top-level expression: that item is the one evaluated, and a definition returns to its type line alone.
+
+## Live match checkpoints
+
+`MatchCheckpoint::evaluate` retains a closed scrutinee's semantic value, including hole closures. `analyze` reports each arm's `Satisfied`, `Refuted`, or `Possibly` answer using the core live matcher. The first arm not refuted determines selection; a possible arm suspends the match even when a later arm is satisfied. `fill` resumes the retained value through the core live evaluator.
+
+Coverage comes from the checker's `cover` judgement and remains a separate report, including analysis refusals. It enforces no admission policy and makes no claim of index-sensitive exhaustiveness. Coverage enforcement belongs to the admission policy that consumes it.
+
+The checkpoint keeps a semantic domain rather than a source expression: a fill preserves completed reductions and captured environments. Re-evaluating the original source would duplicate completed work; a second matcher would duplicate core semantics. The representation changes when durable semantic checkpoints become available.
+
+The `tests::live_match` suite exercises root and payload holes, ordered selection, coverage refinement, and fill resumption over sums.
 
 ## Contract evidence and its limits
 
