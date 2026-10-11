@@ -118,7 +118,9 @@ impl Branch
     /// - hypothesis: L3 — a call at a field and at a function field's result
     ///   replays; a call at the scrutinee does not.
     /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
-    #[spec(ensures: |ret| ret == Descent::Smaller || ret == Descent::Unrelated)]
+    #[spec(ensures: |ret| ret == Descent::Unrelated
+        || (FIRST_FIELD .. u32::from(self.fields_end)).contains(&u32::from(level))
+        || self.links.iter().any(|link| link.level == level))]
     fn descent(
         &self,
         level: Binders,
@@ -197,7 +199,7 @@ fn variable_level(
 /// - hypothesis: L3 — a function field's hypothesis replays through the bind it
 ///   introduces.
 /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
-#[spec(ensures: |ret| ret == Descent::Smaller || ret == Descent::Unrelated)]
+#[spec(ensures: |ret| ret == Descent::Unrelated || matches!(arena.computation(bound), Some(&Computation::Application(..))))]
 fn forced_field(
     arena: &CoreArena,
     branch: &Branch,

@@ -282,9 +282,12 @@ mod recursive_data
     /// evidence given.
     ///
     /// # Specification
-    /// - requires: `nat` names the admitted `Nat`.
-    /// - ensures: the definition is admitted or refused by the kernel's
-    ///   verdict, unchanged.
+    /// - requires: `nat` names the admitted `Nat`; `Claim::MissingField` and
+    ///   `Claim::Unguarded`, whose branches are ill-typed unless the descent
+    ///   walk refuses them first, are offered only with a structural-descent
+    ///   claim.
+    /// - ensures: admitted exactly when the evidence is partial or the claim
+    ///   descends; otherwise refused as `DescentNotReplayed`.
     /// - panics: none.
     ///
     /// # Errors
@@ -294,7 +297,8 @@ mod recursive_data
     /// - hypothesis: L3 — each claim differs from the descending one in one
     ///   rule of the walk.
     /// - witness: `recursive_data::recursive_data::descent_evidence_replays_or_is_refused_by_name`
-    #[spec(ensures: |ret| ret.is_ok() || ret.is_err())]
+    #[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial || matches!(claim, Claim::Descends))
+        && (ret.is_ok() || matches!(ret, Err(KernelError::DescentNotReplayed(_)))))]
     fn claim(
         environment: &mut Environment,
         nat: ConstantIndex,
@@ -358,7 +362,8 @@ mod recursive_data
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the kernel's verdict, unchanged.
+    /// - ensures: admitted exactly when the evidence is partial; a descent
+    ///   claim is refused as `NotOverData`.
     /// - panics: none.
     ///
     /// # Errors
@@ -368,7 +373,8 @@ mod recursive_data
     /// - hypothesis: L3 — a fixpoint at a non-function type checks as partial
     ///   and refuses a descent claim.
     /// - witness: `recursive_data::recursive_data::descent_evidence_replays_or_is_refused_by_name`
-    #[spec(ensures: |ret| ret.is_ok() || ret.is_err())]
+    #[spec(ensures: |ret| ret.is_ok() == (evidence == FixpointEvidence::Partial)
+        && (ret.is_ok() || matches!(ret, Err(KernelError::DescentNotReplayed(DescentRefusal::NotOverData)))))]
     fn loop_at_unit(
         environment: &mut Environment,
         evidence: FixpointEvidence,

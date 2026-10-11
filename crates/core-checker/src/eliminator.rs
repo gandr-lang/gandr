@@ -98,13 +98,16 @@ enum FieldShape
     Function(CompTypeId),
 }
 
-/// A count of binders, checked against the ceiling.
+/// The number of binders `items` opens, one per item, checked against the
+/// ceiling.
 ///
 /// # Specification
 /// trivial.
-fn count(length: usize) -> Result<u32, DerivationRefusal>
+fn count<T>(items: &[T]) -> Result<Binders, DerivationRefusal>
 {
-    u32::try_from(length).map_err(|_cause| DerivationRefusal::BinderCeiling)
+    u32::try_from(items.len())
+        .map(Binders::from)
+        .map_err(|_cause| DerivationRefusal::BinderCeiling)
 }
 
 /// The sum of two binder counts, checked against the ceiling.
@@ -112,24 +115,59 @@ fn count(length: usize) -> Result<u32, DerivationRefusal>
 /// # Specification
 /// trivial.
 fn plus(
-    left: u32,
-    right: u32,
-) -> Result<u32, DerivationRefusal>
+    left: Binders,
+    right: Binders,
+) -> Result<Binders, DerivationRefusal>
 {
-    left.checked_add(right)
+    u32::from(left)
+        .checked_add(u32::from(right))
+        .map(Binders::from)
         .ok_or(DerivationRefusal::BinderCeiling)
 }
 
-/// The intuitionistic variable at `index`.
+/// `left` binders less `right`, refused below none.
+///
+/// # Specification
+/// trivial.
+fn minus(
+    left: Binders,
+    right: Binders,
+) -> Result<Binders, DerivationRefusal>
+{
+    u32::from(left)
+        .checked_sub(u32::from(right))
+        .map(Binders::from)
+        .ok_or(DerivationRefusal::BinderCeiling)
+}
+
+/// The intuitionistic variable bound `distance` binders out.
 ///
 /// # Specification
 /// trivial.
 fn variable(
     arena: &mut CoreArena,
-    index: u32,
+    distance: Binders,
 ) -> ValueId
 {
-    arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    arena.value_variable(
+        Zone::Intuitionistic,
+        DeBruijnIndex::from(u32::from(distance)),
+    )
+}
+
+/// The variables of the innermost `binders` binders, outermost first.
+///
+/// # Specification
+/// trivial.
+fn variables(
+    arena: &mut CoreArena,
+    binders: Binders,
+) -> Vec<ValueId>
+{
+    (0 .. u32::from(binders))
+        .rev()
+        .map(|distance| variable(arena, Binders::from(distance)))
+        .collect()
 }
 
 /// The shape of one field: how, if at all, it names its family.
@@ -153,7 +191,12 @@ fn variable(
 ///   take the three shapes; a shape misread is a derived eliminator the checker
 ///   refuses, never one it accepts.
 /// - witness: `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`
-#[spec(ensures: |ret| matches!(ret, FieldShape::Plain | FieldShape::Direct | FieldShape::Function(_)))]
+#[spec(ensures: |ret| (ret == FieldShape::Direct)
+    == matches!(arena.value_type(field), Some(&ValueType::Data { declaration, .. }) if declaration == position)
+    && match ret {
+        | FieldShape::Function(chain) => matches!(arena.value_type(field), Some(&ValueType::Thunk(held)) if held == chain),
+        | FieldShape::Plain | FieldShape::Direct => true,
+    })]
 fn shape(
     arena: &CoreArena,
     position: ConstantIndex,
@@ -219,7 +262,7 @@ fn function_hypothesis(
     let shifted = gandr_core_term::shift_comp_type(arena, chain, fields);
     let mut domains: Vec<(ValueTypeId, CompBinding)> = Vec::new();
     let mut focus = shifted;
-    let mut dependent = 0_u32;
+    let mut dependent = Binders::NONE;
     loop {
         match arena.comp_type(focus) {
             | Some(&CompType::Arrow { domain, codomain }) => {
@@ -228,7 +271,7 @@ fn function_hypothesis(
             },
             | Some(&CompType::Pi { domain, codomain }) => {
                 domains.push((domain, CompBinding::Binds));
-                dependent = plus(dependent, 1)?;
+                dependent = plus(dependent, Binders::ONE)?;
                 focus = codomain;
             },
             | Some(&CompType::Returner(_)) => break,
@@ -237,8 +280,8 @@ fn function_hypothesis(
             },
         }
     }
-    let past = plus(u32::from(fields), dependent)?;
-    let mut rebuilt = gandr_core_term::shift_comp_type(arena, closed, Binders::from(past));
+    let past = plus(fields, dependent)?;
+    let mut rebuilt = gandr_core_term::shift_comp_type(arena, closed, past);
     for &(domain, binding) in domains.iter().rev() {
         rebuilt = match binding {
             | CompBinding::Closed => arena.comp_type_arrow(domain, rebuilt),
@@ -265,14 +308,14 @@ enum CompBinding
 fn arity(
     arena: &CoreArena,
     chain: CompTypeId,
-) -> Result<u32, DerivationRefusal>
+) -> Result<Binders, DerivationRefusal>
 {
     let mut focus = chain;
-    let mut domains = 0_u32;
+    let mut domains = Binders::NONE;
     while let Some(&(CompType::Arrow { codomain, .. } | CompType::Pi { codomain, .. })) =
         arena.comp_type(focus)
     {
-        domains = plus(domains, 1)?;
+        domains = plus(domains, Binders::ONE)?;
         focus = codomain;
     }
     Ok(domains)
@@ -314,12 +357,10 @@ pub fn derive(
     motive: CompTypeId,
 ) -> Result<Eliminator, DerivationRefusal>
 {
-    let parameters = count(signature.parameters().len())?;
-    let methods = count(signature.constructors().len())?;
-    let arguments = (0 .. parameters)
-        .rev()
-        .map(|index| variable(arena, index))
-        .collect();
+    let parameters = count(signature.parameters())?;
+    let methods = count(signature.constructors())?;
+    let two = plus(Binders::ONE, Binders::ONE)?;
+    let arguments = variables(arena, parameters);
     let family = arena.value_type_data(position, arguments);
     let mut shapes: Vec<Vec<FieldShape>> = Vec::new();
     let closed = gandr_core_term::strengthen_comp_type(arena, motive);
@@ -341,45 +382,36 @@ pub fn derive(
     // The method types, each under the parameters.
     let mut method_types = Vec::new();
     for ((tag, fields), row) in signature.constructors().iter().enumerate().zip(&shapes) {
-        let width = count(fields.len())?;
-        let shifted_family = gandr_core_term::shift_value_type(arena, family, Binders::from(width));
-        let values = (0 .. width)
-            .rev()
-            .map(|index| variable(arena, index))
-            .collect();
+        let width = count(fields)?;
+        let shifted_family = gandr_core_term::shift_value_type(arena, family, width);
+        let values = variables(arena, width);
         let constructor =
             arena.value_constructor(shifted_family, ConstructorTag::from(tag), values);
-        let lifted = gandr_core_term::shift_comp_type_under(
-            arena,
-            motive,
-            Binders::ONE,
-            Binders::from(width),
-        );
+        let lifted = gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, width);
         let mut ty = gandr_core_term::instantiate_comp_type(arena, lifted, constructor);
-        for (field, found) in row.iter().enumerate().rev() {
+        // Each field's distance from the innermost field binder.
+        let mut after = Binders::NONE;
+        for found in row.iter().rev() {
+            let distance = after;
+            after = plus(after, Binders::ONE)?;
             let hypothesis = match *found {
                 | FieldShape::Plain => continue,
                 | FieldShape::Direct => {
-                    let distance = width
-                        .checked_sub(count(field)?)
-                        .and_then(|rest| rest.checked_sub(1))
-                        .ok_or(DerivationRefusal::BinderCeiling)?;
                     let at = variable(arena, distance);
                     gandr_core_term::instantiate_comp_type(arena, lifted, at)
                 },
                 | FieldShape::Function(chain) => match closed {
-                    | Maybe::Present(motive) => {
-                        function_hypothesis(arena, chain, motive, Binders::from(width))?
-                    },
+                    | Maybe::Present(motive) => function_hypothesis(arena, chain, motive, width)?,
                     | Maybe::Absent(_) => return Err(DerivationRefusal::BinderCeiling),
                 },
             };
             let suspended = arena.value_type_thunk(hypothesis);
             ty = arena.comp_type_arrow(suspended, ty);
         }
-        for (field, &root) in fields.iter().enumerate().rev() {
-            let domain =
-                gandr_core_term::shift_value_type(arena, root, Binders::from(count(field)?));
+        let mut before = width;
+        for &root in fields.iter().rev() {
+            before = minus(before, Binders::ONE)?;
+            let domain = gandr_core_term::shift_value_type(arena, root, before);
             ty = arena.comp_type_pi(domain, ty);
         }
         method_types.push(ty);
@@ -395,36 +427,32 @@ pub fn derive(
     }
     let declared = arena.value_type_thunk(classifier);
     // The body: under the parameters, the methods, `rec` and `x`.
-    let scoped_motive = gandr_core_term::shift_comp_type_under(
-        arena,
-        motive,
-        Binders::ONE,
-        Binders::from(plus(methods, 2)?),
-    );
+    let scoped_motive =
+        gandr_core_term::shift_comp_type_under(arena, motive, Binders::ONE, plus(methods, two)?);
     let mut branches: Vec<ComputationId> = Vec::new();
-    for ((index, fields), row) in signature.constructors().iter().enumerate().zip(&shapes) {
-        let width = count(fields.len())?;
-        let handler = plus(width, 2)
+    let mut preceding = Binders::NONE;
+    for (fields, row) in signature.constructors().iter().zip(&shapes) {
+        let width = count(fields)?;
+        // The handler `m_i`, past the fields, `x`, `rec` and every later
+        // method.
+        let handler = plus(width, two)
             .and_then(|base| plus(base, methods))
-            .and_then(|past| past.checked_sub(1).ok_or(DerivationRefusal::BinderCeiling))
-            .and_then(|last| {
-                last.checked_sub(count(index)?)
-                    .ok_or(DerivationRefusal::BinderCeiling)
-            })?;
+            .and_then(|past| minus(past, Binders::ONE))
+            .and_then(|last| minus(last, preceding))?;
+        preceding = plus(preceding, Binders::ONE)?;
         let handler = variable(arena, handler);
         let mut applied = arena.computation_force(handler);
         let mut hypotheses = Vec::new();
-        for (field, found) in row.iter().enumerate() {
-            let distance = width
-                .checked_sub(count(field)?)
-                .and_then(|rest| rest.checked_sub(1))
-                .ok_or(DerivationRefusal::BinderCeiling)?;
+        let mut remaining = width;
+        for found in row {
+            remaining = minus(remaining, Binders::ONE)?;
+            let distance = remaining;
             let at = variable(arena, distance);
             applied = arena.computation_application(applied, at);
             let hypothesis = match *found {
                 | FieldShape::Plain => continue,
                 | FieldShape::Direct => {
-                    let recursive = variable(arena, plus(width, 1)?);
+                    let recursive = variable(arena, plus(width, Binders::ONE)?);
                     let forced = arena.computation_force(recursive);
                     let call = arena.computation_application(forced, at);
                     arena.value_thunk(call)
@@ -433,16 +461,16 @@ pub fn derive(
                     let domains = arity(arena, chain)?;
                     let field_under = variable(arena, plus(distance, domains)?);
                     let mut run = arena.computation_force(field_under);
-                    for point in (0 .. domains).rev() {
-                        let argument = variable(arena, point);
+                    for point in (0 .. u32::from(domains)).rev() {
+                        let argument = variable(arena, Binders::from(point));
                         run = arena.computation_application(run, argument);
                     }
-                    let recursive = variable(arena, plus(plus(width, domains)?, 2)?);
+                    let recursive = variable(arena, plus(plus(width, domains)?, two)?);
                     let forced = arena.computation_force(recursive);
-                    let result = variable(arena, 0);
+                    let result = variable(arena, Binders::NONE);
                     let call = arena.computation_application(forced, result);
                     let mut body = arena.computation_bind(run, call);
-                    for _point in 0 .. domains {
+                    for _point in 0 .. u32::from(domains) {
                         body = arena.computation_lambda(body);
                     }
                     arena.value_thunk(body)
@@ -454,16 +482,16 @@ pub fn derive(
             applied = arena.computation_application(applied, hypothesis);
         }
         let mut branch = applied;
-        for _field in 0 .. width {
+        for _field in 0 .. u32::from(width) {
             branch = arena.computation_lambda(branch);
         }
         branches.push(branch);
     }
-    let argument = variable(arena, 0);
+    let argument = variable(arena, Binders::NONE);
     let case = arena.computation_data_case(argument, scoped_motive, branches);
     let over_argument = arena.computation_lambda(case);
     let mut body = arena.computation_fixpoint(over_argument, FixpointEvidence::StructuralDescent);
-    for _abstraction in 0 .. plus(methods, parameters)? {
+    for _abstraction in 0 .. u32::from(plus(methods, parameters)?) {
         body = arena.computation_lambda(body);
     }
     Ok(Eliminator {

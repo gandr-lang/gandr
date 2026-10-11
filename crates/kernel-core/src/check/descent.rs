@@ -195,7 +195,7 @@ fn variable_level(
 /// - hypothesis: L3 — a function field's hypothesis replays through the bind it
 ///   introduces.
 /// - witness: `recursive_data::recursive_data::descent_evidence_replays_or_is_refused_by_name`
-#[spec(ensures: |ret| ret == Descent::Smaller || ret == Descent::Unrelated)]
+#[spec(ensures: |ret| ret == Descent::Unrelated || matches!(arena.computation(bound), Some(&Computation::Application(..))))]
 fn forced_field(
     arena: &TermArena,
     branch: &Branch,
