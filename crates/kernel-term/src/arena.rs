@@ -854,7 +854,7 @@ impl TermArena
         requires: match computation {
             Computation::DataCase { scrutinee, motive, ref branches } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::RecordProjection(record, _) => self.value(record).is_some(),
-            Computation::Lambda(body) => self.computation(body).is_some(),
+            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
             Computation::Return(value) | Computation::Force(value) | Computation::Absurd(value) => self.value(value).is_some(),
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
@@ -1450,6 +1450,44 @@ impl TermArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Lambda(body))
+    }
+
+    /// Mint a fixpoint over an already-allocated body, carrying its
+    /// termination claim.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `body`, which the precondition keeps live.
+    /// - provides: the fixpoint node, acyclic by construction; its self binder
+    ///   is positional, so no name is represented.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds all former families with distinguishable
+    ///   children and observes the exact stored nodes and ordered edges; a
+    ///   fixpoint minted as a lambda, over a different body, or with the other
+    ///   claim changes the stored node.
+    /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
+    #[spec(
+        requires: self.computation(body).is_some(), captures: before = self.watermark(),
+        ensures: |ret| self.values.len() == before.values
+                && self.computations.len() == before.computations.saturating_add(1)
+                && self.value_types.len() == before.value_types
+                && self.comp_types.len() == before.comp_types
+                && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
+                && matches!(self.computations.last(), Some(&Computation::Fixpoint { body: actual, evidence: claimed }) if actual == body && claimed == evidence),
+    )]
+    #[inline]
+    pub fn computation_fixpoint(
+        &mut self,
+        body: ComputationId,
+        evidence: crate::FixpointEvidence,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Fixpoint { body, evidence })
     }
 
     /// Mint an application over an already-allocated head and argument.
@@ -2431,7 +2469,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             Some(&Computation::RecordProjection(record, _)) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
-            Some(&Computation::Lambda(body)) => ret.as_slice() == [AnyNode::Computation(body)],
+            Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
             Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) =>
@@ -2541,7 +2579,9 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(path));
                     children.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::Lambda(body)) => children.push(AnyNode::Computation(body)),
+                | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
+                    children.push(AnyNode::Computation(body));
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     children.push(AnyNode::Computation(head));
                     children.push(AnyNode::Value(argument));
@@ -3035,6 +3075,22 @@ mod tests
             (arena.computation_lambda(c1), Computation::Lambda(c1), &[
                 AnyNode::Computation(c1),
             ]),
+            (
+                arena.computation_fixpoint(c0, crate::FixpointEvidence::Partial),
+                Computation::Fixpoint {
+                    body: c0,
+                    evidence: crate::FixpointEvidence::Partial,
+                },
+                &[AnyNode::Computation(c0)],
+            ),
+            (
+                arena.computation_fixpoint(c0, crate::FixpointEvidence::StructuralDescent),
+                Computation::Fixpoint {
+                    body: c0,
+                    evidence: crate::FixpointEvidence::StructuralDescent,
+                },
+                &[AnyNode::Computation(c0)],
+            ),
             (
                 arena.computation_application(c0, v1),
                 Computation::Application(c0, v1),

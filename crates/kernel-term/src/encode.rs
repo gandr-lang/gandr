@@ -761,6 +761,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
+            Some(&Computation::Fixpoint { .. }) => tags::NODE_C_FIXPOINT,
             Some(&Computation::Application(..)) => tags::NODE_C_APPLICATION,
             Some(&Computation::Bind(..)) => tags::NODE_C_BIND,
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
@@ -915,6 +916,10 @@ fn encode_entry(
             },
             | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
             | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
+            | Some(&Computation::Fixpoint { evidence, .. }) => {
+                out.put_tag(tags::NODE_C_FIXPOINT);
+                out.put_tag(evidence_tag(evidence));
+            },
             | Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
             | Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),
             | Some(&Computation::Bind(..)) => out.put_tag(tags::NODE_C_BIND),
@@ -1270,6 +1275,34 @@ fn side_tag(side: Side) -> WireTag
     }
 }
 
+/// The wire tag of a fixpoint's termination claim.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each claim to its frozen tag.
+/// - provides: the total claim-to-tag map, so a claim's byte is decided in one
+///   place rather than at each write site.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes the literal entry bytes of a fixpoint under each
+///   claim; a swapped or dropped claim byte changes the golden.
+/// - witness: `encode::tests::entry_goldens_pin_every_former_and_child_position`
+#[spec(
+    ensures: |ret| ret == match evidence {
+        crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
+        crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+    },
+)]
+#[inline]
+fn evidence_tag(evidence: crate::FixpointEvidence) -> WireTag
+{
+    match evidence {
+        | crate::FixpointEvidence::Partial => tags::FIXPOINT_PARTIAL,
+        | crate::FixpointEvidence::StructuralDescent => tags::FIXPOINT_STRUCTURAL_DESCENT,
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1574,6 +1607,20 @@ mod tests
                 AnyNode::Computation(arena.computation_lambda(c0)),
                 &[first],
                 &[0x11, 3],
+            ),
+            (
+                AnyNode::Computation(
+                    arena.computation_fixpoint(c0, crate::FixpointEvidence::Partial),
+                ),
+                &[first],
+                &[0x63, 0, 3],
+            ),
+            (
+                AnyNode::Computation(
+                    arena.computation_fixpoint(c0, crate::FixpointEvidence::StructuralDescent),
+                ),
+                &[first],
+                &[0x63, 1, 3],
             ),
             (
                 AnyNode::Computation(arena.computation_application(c0, v0)),

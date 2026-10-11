@@ -200,6 +200,8 @@ pub enum TagSite
     Side,
     /// A landmark-constraint relation.
     ConstraintRelation,
+    /// A fixpoint's termination claim.
+    FixpointEvidence,
 }
 
 impl fmt::Display for TagSite
@@ -241,6 +243,7 @@ impl fmt::Display for TagSite
             | Self::LiteralKind => "a literal kind",
             | Self::Side => "an injection side",
             | Self::ConstraintRelation => "a constraint relation",
+            | Self::FixpointEvidence => "a fixpoint evidence claim",
         })
     }
 }

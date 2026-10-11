@@ -326,6 +326,49 @@ pub enum Computation
     },
     /// Transport a value along a universe path.
     Transport(ValueId, ValueId),
+    /// A fixpoint `fix x. M`, checking at any computation type `B` with its
+    /// body scoped under one value binder, the fixpoint's own thunk `U B`.
+    /// It unfolds only at a constructor argument or under an observation of
+    /// its result.
+    Fixpoint
+    {
+        /// The body, under the self binder.
+        body: ComputationId,
+        /// What the fixpoint claims about its own termination.
+        evidence: FixpointEvidence,
+    },
+}
+
+/// What a fixpoint claims about its own termination; the claim participates
+/// in content identity and never in conversion.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FixpointEvidence
+{
+    /// No claim: the fixpoint is partial, and conversion never unfolds it.
+    Partial,
+    /// Structural descent: the body is a lambda whose body is a case on that
+    /// lambda's variable, and every self call's argument is a field of the
+    /// scrutinised constructor or a function field's result.
+    StructuralDescent,
+}
+
+/// Why a fixpoint's structural-descent claim did not replay; each reason is
+/// the first the descent walk meets.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DescentRefusal
+{
+    /// The classifier is not a function out of a nominal data application.
+    NotOverData,
+    /// The body is not a lambda whose body is a case on that lambda's
+    /// variable with one branch per constructor.
+    NotCaseOnArgument,
+    /// A branch does not open exactly its constructor's fields by lambdas.
+    BranchNotOverFields,
+    /// The self reference occurs other than at the head of a call.
+    UnguardedSelfReference,
+    /// A call's argument is neither a field of the scrutinised constructor
+    /// nor a function field's result.
+    NonDescendingCall,
 }
 
 /// Portable round-trip dialogues for closed universe-path translators.
@@ -573,6 +616,85 @@ impl From<ConstructorTag> for usize
     {
         tag.0
     }
+}
+
+/// Position of a field within one constructor's field list.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FieldPosition(usize);
+
+impl From<usize> for FieldPosition
+{
+    /// Preserve the field ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<FieldPosition> for usize
+{
+    /// Read the field ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: FieldPosition) -> Self
+    {
+        position.0
+    }
+}
+
+/// Position of a classifier within one declaration's parameter telescope.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ParameterPosition(usize);
+
+impl From<usize> for ParameterPosition
+{
+    /// Preserve the parameter ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: usize) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<ParameterPosition> for usize
+{
+    /// Read the parameter ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: ParameterPosition) -> Self
+    {
+        position.0
+    }
+}
+
+/// Where a data declaration's occurrence walk found a refused self
+/// occurrence or a reference outside its block.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum OccurrenceSite
+{
+    /// A classifier of the parameter telescope.
+    Parameter(ParameterPosition),
+    /// One field of one constructor.
+    Field
+    {
+        /// The constructor.
+        tag: ConstructorTag,
+        /// The field within it.
+        field: FieldPosition,
+    },
 }
 
 /// An exact UTF-8 record label; ordering is lexical, without normalization.

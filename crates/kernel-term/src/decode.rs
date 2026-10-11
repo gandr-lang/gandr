@@ -2045,6 +2045,12 @@ fn decode_entry(
             let id = table.arena.computation_lambda(body);
             (DecodedNode::Computation(id), Family::Computation)
         },
+        | tags::NODE_C_FIXPOINT => {
+            let evidence = decode_evidence(reader)?;
+            let body = read_computation(reader, table, this, &mut children)?;
+            let id = table.arena.computation_fixpoint(body, evidence);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
         | tags::NODE_C_APPLICATION => {
             let head = read_computation(reader, table, this, &mut children)?;
             let argument = read_value(reader, table, this, &mut children)?;
@@ -2999,6 +3005,41 @@ fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
     }
 }
 
+/// Decode a fixpoint's termination claim.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a fixpoint's evidence byte.
+/// - ensures: on `Ok`, returns the claim the tag named and advances past it.
+/// - provides: the evidence alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the evidence site on any other byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
+///   exact value or named refusal, with empty-input truncation and
+///   consumed-offset checks.
+/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
+#[spec(
+    captures: start = reader.position,
+    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
+        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
+            && match byte { Some(0) => ret.as_ref() == Ok(&crate::FixpointEvidence::Partial), Some(1) => ret.as_ref() == Ok(&crate::FixpointEvidence::StructuralDescent), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::FixpointEvidence, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+)]
+#[inline]
+fn decode_evidence(reader: &mut ByteReader<'_>) -> Result<crate::FixpointEvidence, DecodeError>
+{
+    let tag = reader.next_tag()?;
+    match tag {
+        | tags::FIXPOINT_PARTIAL => Ok(crate::FixpointEvidence::Partial),
+        | tags::FIXPOINT_STRUCTURAL_DESCENT => Ok(crate::FixpointEvidence::StructuralDescent),
+        | other => Err(DecodeError::UnknownTag {
+            site: TagSite::FixpointEvidence,
+            tag: other,
+        }),
+    }
+}
+
 /// Decode a literal, rebuilt through the base-type smart constructors.
 ///
 /// # Specification
@@ -3404,6 +3445,14 @@ mod tests
             assert_eq!(super::decode_side(&mut reader), side);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
+            let evidence = match byte {
+                | 0 => Ok(crate::FixpointEvidence::Partial),
+                | 1 => Ok(crate::FixpointEvidence::StructuralDescent),
+                | _ => Err(unknown(super::TagSite::FixpointEvidence)),
+            };
+            assert_eq!(super::decode_evidence(&mut reader), evidence);
+            assert_eq!(reader.position.0, 1);
+            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let sign = match byte {
                 | 0 => Ok(super::Sign::NonNegative),
                 | 1 => Ok(super::Sign::Negative),
@@ -3452,6 +3501,10 @@ mod tests
         );
         assert_eq!(
             super::decode_side(&mut ByteReader::new(image)),
+            Err(DecodeError::Truncated)
+        );
+        assert_eq!(
+            super::decode_evidence(&mut ByteReader::new(image)),
             Err(DecodeError::Truncated)
         );
         assert_eq!(
@@ -4467,6 +4520,22 @@ mod tests
         }
         let computations: &[(&[u8], crate::term::Computation, &[u32])] = &[
             (&[0x11, 7], crate::term::Computation::Lambda(c1), &[7]),
+            (
+                &[0x63, 0, 7],
+                crate::term::Computation::Fixpoint {
+                    body: c1,
+                    evidence: crate::FixpointEvidence::Partial,
+                },
+                &[7],
+            ),
+            (
+                &[0x63, 1, 7],
+                crate::term::Computation::Fixpoint {
+                    body: c1,
+                    evidence: crate::FixpointEvidence::StructuralDescent,
+                },
+                &[7],
+            ),
             (&[0x29, 5], crate::term::Computation::Absurd(v1), &[5]),
             (
                 &[0x2e, 5, 1],

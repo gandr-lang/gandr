@@ -898,7 +898,11 @@ fn converge(
                         stack.push(ConversionGoal::Value(a, c));
                         stack.push(ConversionGoal::Value(b, d));
                     },
-                    | (&Computation::Lambda(one), &Computation::Lambda(other)) => {
+                    | (&Computation::Lambda(one), &Computation::Lambda(other))
+                    | (
+                        &Computation::Fixpoint { body: one, .. },
+                        &Computation::Fixpoint { body: other, .. },
+                    ) => {
                         stack.push(ConversionGoal::Computation(one, other));
                     },
                     | (
@@ -941,6 +945,7 @@ fn converge(
                         | &Computation::RecordProjection(..)
                         | &Computation::Transport(..)
                         | &Computation::Lambda(_)
+                        | &Computation::Fixpoint { .. }
                         | &Computation::Application(..)
                         | &Computation::Return(_)
                         | &Computation::Absurd(_)

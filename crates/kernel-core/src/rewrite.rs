@@ -170,7 +170,7 @@ impl BinderDepth
     /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
     #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     #[inline]
-    fn deeper(self) -> Self
+    pub(crate) fn deeper(self) -> Self
     {
         // reason: binder depth uses u32::MAX as its conservative ceiling.
         Self(u32::from(arith::saturating_add(
@@ -1305,7 +1305,7 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
             },
-            | Some(&Computation::Lambda(body)) => {
+            | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Computation(body),
                     depth.deeper(),
@@ -1964,6 +1964,15 @@ fn close_computation(
             }
             else {
                 arena.computation_lambda(rewritten)
+            }
+        },
+        | Computation::Fixpoint { body, evidence } => {
+            let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
+            if rewritten == body {
+                id
+            }
+            else {
+                arena.computation_fixpoint(rewritten, evidence)
             }
         },
         | Computation::Application(head, argument) => {

@@ -285,6 +285,8 @@ pub enum NonInferableForm
     Lambda,
     /// Empty elimination carries no result annotation.
     Absurd,
+    /// A fixpoint carries no classifier annotation.
+    Fixpoint,
 }
 
 /// Which polarity the checker machine's produced register was expected to hold.
@@ -496,6 +498,27 @@ pub enum KernelError
     ConstructorArity,
     /// A case does not provide exactly one branch per constructor.
     NonExhaustiveDataCase,
+    /// A data declaration's own family stands under a function's domain.
+    NegativeOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family stands inside another family's
+    /// arguments or under a field-local positive former.
+    NestedOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family stands inside a term a type reads: a
+    /// decode, a quote, a lift, path endpoints, or its parameter telescope.
+    IndexOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration's own family is applied to anything but its
+    /// parameter variables in telescope order.
+    NonUniformOccurrence(gandr_kernel_term::OccurrenceSite),
+    /// A data declaration names a declaration admitted after its own block.
+    CrossBlockReference
+    {
+        /// Where the reference stands.
+        site: gandr_kernel_term::OccurrenceSite,
+        /// The later position it names.
+        index: ConstantIndex,
+    },
+    /// A fixpoint's structural-descent claim did not replay.
+    DescentNotReplayed(gandr_kernel_term::DescentRefusal),
     /// A required record field is absent.
     AbsentRecordField
     {
@@ -726,6 +749,24 @@ impl core::fmt::Display for KernelError
             | Self::ConstructorArity => f.write_str("a constructor had the wrong field arity"),
             | Self::NonExhaustiveDataCase => {
                 f.write_str("a data case did not cover exactly its constructor table")
+            },
+            | Self::NegativeOccurrence(_) => {
+                f.write_str("a data declaration's family stood under a function's domain")
+            },
+            | Self::NestedOccurrence(_) => {
+                f.write_str("a data declaration's family stood nested inside another former")
+            },
+            | Self::IndexOccurrence(_) => {
+                f.write_str("a data declaration's family stood inside a term a type reads")
+            },
+            | Self::NonUniformOccurrence(_) => {
+                f.write_str("a data declaration's family was applied to non-parameter arguments")
+            },
+            | Self::CrossBlockReference { .. } => {
+                f.write_str("a data declaration named a declaration after its own block")
+            },
+            | Self::DescentNotReplayed(_) => {
+                f.write_str("a fixpoint's structural-descent claim did not replay")
             },
             | Self::AbsentRecordField { .. } => f.write_str("a required record field was absent"),
             | Self::Session(ref error) => error.fmt(f),

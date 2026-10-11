@@ -1009,7 +1009,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::DataCase { scrutinee, motive, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
             Computation::RecordProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
-            Computation::Lambda(body) => self.placed.contains_key(&AnyNode::Computation(body)),
+            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
                             && self.placed.contains_key(&AnyNode::Value(argument)),
             Computation::Absurd(value) | Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
@@ -1026,6 +1026,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
             Computation::Absurd(_) => gandr_kernel_term::NODE_C_ABSURD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
+            Computation::Fixpoint { .. } => gandr_kernel_term::NODE_C_FIXPOINT,
             Computation::Application(..) => gandr_kernel_term::NODE_C_APPLICATION,
             Computation::Return(..) => gandr_kernel_term::NODE_C_RETURN,
             Computation::Bind(..) => gandr_kernel_term::NODE_C_BIND,
@@ -1069,6 +1070,18 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             },
             | Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
+                record.put_content(self.content_of(AnyNode::Computation(body)));
+            },
+            | Computation::Fixpoint { body, evidence } => {
+                record.put_tag(gandr_kernel_term::NODE_C_FIXPOINT);
+                record.put_tag(match evidence {
+                    | gandr_kernel_term::FixpointEvidence::Partial => {
+                        gandr_kernel_term::FIXPOINT_PARTIAL
+                    },
+                    | gandr_kernel_term::FixpointEvidence::StructuralDescent => {
+                        gandr_kernel_term::FIXPOINT_STRUCTURAL_DESCENT
+                    },
+                });
                 record.put_content(self.content_of(AnyNode::Computation(body)));
             },
             | Computation::Application(head, argument) => {
@@ -1366,7 +1379,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::RecordProjection(record,_)) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
-            Some(&Computation::Lambda(body)) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
+            Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
             Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
             Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
             Some(&Computation::Bind(bound,body)) => opened.eq(([AnyNode::Computation(bound),AnyNode::Computation(body)].into_iter()).map(Some)),
@@ -1473,7 +1486,7 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
-            | Some(&Computation::Lambda(body)) => {
+            | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
             | Some(&Computation::Application(head, argument)) => {

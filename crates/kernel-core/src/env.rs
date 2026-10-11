@@ -1490,7 +1490,9 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(path));
                     pending.push(AnyNode::Value(value));
                 },
-                | Some(&Computation::Lambda(body)) => pending.push(AnyNode::Computation(body)),
+                | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
+                    pending.push(AnyNode::Computation(body));
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     pending.push(AnyNode::Computation(head));
                     pending.push(AnyNode::Value(argument));
