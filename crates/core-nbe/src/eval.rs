@@ -615,6 +615,9 @@ enum Task
     /// Remember the weak head on the stack as the evaluation of a pending
     /// configuration.
     Remember(PendingId),
+    /// Apply an already-captured fixpoint to the value on the stack: a
+    /// spine's stuck fixpoint, re-applied.
+    FixpointClosure(CompClosureId),
 }
 
 /// The index of one configuration whose evaluation is under way.
@@ -1968,7 +1971,7 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_))),
+        requires: matches!(spine.first(), Some(Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case { .. } | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
@@ -1992,6 +1995,7 @@ impl<'run> Evaluation<'run>
                         answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::CaseClosures { on_left: left, on_right: right }) if *left == on_left && *right == on_right)
                     },
+                    Elimination::Fixpoint(recursive) => { answer = Answer::Computation; matches!(tasks.next(), Some(Task::FixpointClosure(held)) if *held == recursive) },
                 });
                 ordered && tasks.next().is_none() && ret.answer == answer
             },
@@ -2043,6 +2047,10 @@ impl<'run> Evaluation<'run>
                 | Elimination::Case { on_left, on_right } => {
                     answer = Answer::Computation;
                     machine.tasks.push(Task::CaseClosures { on_left, on_right });
+                },
+                | Elimination::Fixpoint(recursive) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::FixpointClosure(recursive));
                 },
             }
         }
@@ -2333,7 +2341,7 @@ fn run(
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
             Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::RecordProjection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
-            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) => machine.tasks.len() >= entry_tasks,
+            | Task::BindClosure(_) | Task::CaseClosures { .. } | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
                     || (machine.values.len() == entry_values && machine.tasks.len() > entry_tasks)),
@@ -2519,9 +2527,9 @@ fn step(
             Ok(())
         },
         | Task::Force => step_force(domain, machine),
-        | Task::Apply => step_apply(domain, machine),
+        | Task::Apply => step_apply(core, domain, machine),
         | Task::StaticApply => step_static_apply(core, domain, machine),
-        | Task::Bind { body, env } => step_bind(domain, machine, body, env),
+        | Task::Bind { body, env } => step_bind(core, domain, machine, body, env),
         | Task::Case {
             on_left,
             on_right,
@@ -2531,11 +2539,17 @@ fn step(
             machine.values.push(value);
             Ok(())
         },
-        | Task::BindClosure(body) => step_bind_closure(domain, machine, body),
+        | Task::BindClosure(body) => step_bind_closure(core, domain, machine, body),
         | Task::CaseClosures { on_left, on_right } => {
             step_case_closures(domain, machine, on_left, on_right)
         },
         | Task::Remember(pending) => machine.remember(pending),
+        | Task::FixpointClosure(recursive) => {
+            machine
+                .comps
+                .push(domain.comp_fixpoint(recursive, CompTermFace::Reduced));
+            step_apply(core, domain, machine)
+        },
     }
 }
 
@@ -2871,6 +2885,16 @@ fn step_comp(
             machine.comps.push(domain.comp_lambda(closure, face));
             Ok(())
         },
+        // A fixpoint is inert until a gate observes it: it closes over its
+        // own source node, which is what the self thunk suspends.
+        | Computation::Fixpoint { .. } => {
+            let captured = machine.capture(env)?;
+            let closed = capture_keeps_source(&captured);
+            let closure = domain.comp_closure_node(term, captured);
+            let face = composite_comp_face(closed, term);
+            machine.comps.push(domain.comp_fixpoint(closure, face));
+            Ok(())
+        },
         | Computation::Return(value) => {
             machine.tasks.push(Task::Return { term });
             machine.tasks.push(Task::Value { term: value, env });
@@ -3078,22 +3102,28 @@ fn step_force(
 /// - requires: nothing; a missing head or argument is admissible and refused.
 /// - ensures: a lambda pushes a task entering its closure with the argument
 ///   bound in the intuitionistic zone; a neutral grows its spine by one
-///   application.
-/// - provides: the β rule and its stuck case, which are one arm apart. The
-///   clause states the consumed argument and head results and the two
-///   admissible outcomes — one task entering the closure, or one computation
-///   result standing for the grown neutral; that the stuck outcome's spine grew
-///   by exactly one application is a judgement over the produced graph, and the
-///   witnesses below carry it.
+///   application; a fixpoint applied to a canonical value unfolds once, the
+///   argument kept beneath for the application that follows, and applied to a
+///   stuck value stacks itself on that value's neutral.
+/// - provides: the β rule and its stuck case, which are one arm apart, and the
+///   fixpoint's `<` gate. The clause states the consumed head and the three
+///   admissible outcomes — one task entering the closure, one computation
+///   result standing for the grown neutral, or the argument restored beneath
+///   two tasks unfolding the fixpoint and applying it; that a stuck outcome's
+///   spine grew by exactly one elimination is a judgement over the produced
+///   graph, and the witnesses below carry it.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing head or argument,
-///   [`EvalFault::Domain`] for a missing node, and
+///   [`EvalFault::Domain`] for a missing node, [`EvalFault::DanglingTerm`] for
+///   a fixpoint closure over no source fixpoint, and
 ///   [`EvalFault::AppliedNonFunction`] when the head is a returner.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the three-way match, separated by
-///   applying a lambda, a neutral and a returner.
+/// - hypothesis: L3 — the decision surface is the four-way match, separated by
+///   applying a lambda, a neutral, a returner, and a fixpoint at a constructor
+///   and at a neutral.
 /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
+/// - witness: `eval::tests::a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
 /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
@@ -3109,9 +3139,13 @@ fn step_force(
             && ((machine.tasks.len() == entry_tasks.saturating_add(1_usize)
                 && machine.comps.len() == entry_comps.saturating_sub(1_usize))
                 || (machine.comps.len() == entry_comps
-                    && machine.tasks.len() == entry_tasks)))),
+                    && machine.tasks.len() == entry_tasks)))
+        || (machine.values.len() == entry_values
+            && machine.comps.len() == entry_comps.saturating_sub(1_usize)
+            && machine.tasks.len() == entry_tasks.saturating_add(2_usize))),
 )]
 fn step_apply(
+    core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
 ) -> Result<(), EvalFault>
@@ -3155,9 +3189,93 @@ fn step_apply(
             Ok(())
         },
         | DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
+        // The `<` gate: a canonical argument unfolds the fixpoint once and
+        // the application follows; a stuck one carries the fixpoint on its
+        // spine until its head unfolds.
+        | DomainComp::Fixpoint { recursive, .. } => {
+            let Some(&argument_node) = domain.value(argument)
+            else {
+                return Err(EvalFault::Domain(DomainFault::Dangling));
+            };
+            match argument_node {
+                | DomainValue::Neutral { neutral, .. } => {
+                    let grown = extend_spine(domain, neutral, Elimination::Fixpoint(recursive))?;
+                    machine
+                        .comps
+                        .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+                    Ok(())
+                },
+                | DomainValue::Constructor { .. }
+                | DomainValue::Record { .. }
+                | DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Unit { .. }
+                | DomainValue::Literal { .. }
+                | DomainValue::Pair { .. }
+                | DomainValue::Injection { .. }
+                | DomainValue::Thunk { .. }
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => {
+                    machine.values.push(argument);
+                    machine.tasks.push(Task::Apply);
+                    unfold(core, domain, machine, recursive)
+                },
+            }
+        },
     }
 }
 
+/// Unfold a fixpoint once: push the task entering its body with a thunk of
+/// the fixpoint itself bound innermost in its own environment.
+///
+/// # Specification
+/// - requires: nothing; a closure over anything but a source fixpoint is
+///   admissible and refused.
+/// - ensures: one task pushed, entering the fixpoint's body in the closure's
+///   environment extended by a thunk suspending the closure itself.
+/// - provides: `fix x. M ⇝ M[thunk (fix x. M)/x]`, the step both gates fire. It
+///   is not otherwise bounded: the driver charges every task, so an unfolding
+///   that never reaches a weak head runs out of fuel.
+/// - fails: [`EvalFault::Domain`] when the closure does not resolve, and
+///   [`EvalFault::DanglingTerm`] when it closes no source fixpoint.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unfolding at a constructor reaches the branch the
+///   constructor selects with the recursive call bound, and a loop under a bind
+///   exhausts its fuel.
+/// - witness: `eval::tests::a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral`
+/// - witness: `eval::tests::an_observed_loop_runs_out_of_fuel`
+#[spec(
+    captures: entry_tasks = machine.tasks.len(),
+    ensures: |ret| ret.is_err() || machine.tasks.len() == entry_tasks.saturating_add(1_usize),
+)]
+fn unfold(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    recursive: CompClosureId,
+) -> Result<(), EvalFault>
+{
+    let closure = domain
+        .comp_closure(recursive)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let crate::closure::CompBody::Source(term) = closure.body()
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let Some(&Computation::Fixpoint { body, .. }) = core.computation(term)
+    else {
+        return Err(EvalFault::DanglingTerm);
+    };
+    let mut extended = closure.environment().clone();
+    let recursion = domain.value_thunk(recursive, TermFace::Reduced);
+    extended.extend(Zone::Intuitionistic, recursion);
+    let env = machine.hold_env(extended);
+    machine.tasks.push(Task::Comp { term: body, env });
+    Ok(())
+}
 /// Apply the operator beneath the top of the value stack to the argument on
 /// top of it.
 ///
@@ -3268,23 +3386,27 @@ fn step_static_apply(
 /// - requires: one computation result on the stack; `env` names an environment
 ///   this machine holds.
 /// - ensures: a returner pushes the body's task with the returned value bound;
-///   a neutral grows its spine by one bind, capturing the body as a closure.
-/// - provides: the sequencing rule and its stuck case. The clause states the
-///   consumed computation result and the two admissible outcomes — one task
-///   carrying the body, or one computation result standing for the grown
-///   neutral; that the returned value is bound in the body's environment, and
-///   that the stuck outcome's spine grew by exactly one bind, are judgements
-///   over the produced graph, and the witnesses below carry them.
+///   a neutral grows its spine by one bind, capturing the body as a closure; a
+///   fixpoint unfolds once beneath the same bind.
+/// - provides: the sequencing rule, its stuck case, and the fixpoint's `>`
+///   gate: one observation, one unfolding. The clause states the consumed
+///   computation result and the three admissible outcomes — one task carrying
+///   the body, one computation result standing for the grown neutral, or two
+///   tasks re-binding beneath the unfolding; that the returned value is bound
+///   in the body's environment, and that the stuck outcome's spine grew by
+///   exactly one bind, are judgements over the produced graph, and the
+///   witnesses below carry them.
 /// - fails: [`EvalFault::BoundNonReturner`] when the bound computation is a
 ///   lambda.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the three-way match, separated by
-///   binding a returner, a neutral and a lambda.
+/// - hypothesis: L3 — the decision surface is the four-way match, separated by
+///   binding a returner, a neutral, a lambda and a fixpoint.
 /// - witness: `eval::tests::a_bind_passes_the_returned_value_on`
 /// - witness: `eval::tests::an_eliminator_on_a_neutral_grows_its_spine`
 /// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
+/// - witness: `eval::tests::an_observed_loop_runs_out_of_fuel`
 #[spec(
     requires: [!machine.comps.is_empty(), env.0 < machine.envs.len()],
     captures: [
@@ -3294,9 +3416,12 @@ fn step_static_apply(
     ensures: |ret| ret.is_err()
         || (machine.comps.len() == entry_comps.saturating_sub(1_usize)
             && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
-        || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks),
+        || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)
+        || (machine.comps.len() == entry_comps.saturating_sub(1_usize)
+            && machine.tasks.len() == entry_tasks.saturating_add(2_usize)),
 )]
 fn step_bind(
+    core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     body: ComputationId,
@@ -3324,6 +3449,12 @@ fn step_bind(
             Ok(())
         },
         | DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        // The `>` gate: the observation stays, and the fixpoint beneath it
+        // unfolds once.
+        | DomainComp::Fixpoint { recursive, .. } => {
+            machine.tasks.push(Task::Bind { body, env });
+            unfold(core, domain, machine, recursive)
+        },
     }
 }
 
@@ -3423,7 +3554,8 @@ fn step_case(
 ///   refused.
 /// - ensures: a returner pushes the continuation's body with the returned value
 ///   bound innermost in its own environment; a neutral grows its spine by the
-///   same bind, the closure reused rather than re-captured.
+///   same bind, the closure reused rather than re-captured; a fixpoint unfolds
+///   once beneath the same bind.
 /// - provides: [`step_bind`] for a continuation a spine already captured, which
 ///   is how an unfolding re-applies a stuck bind.
 /// - fails: [`EvalFault::MachineInvariant`] when the operand is missing,
@@ -3444,9 +3576,11 @@ fn step_case(
         && machine.values.len() == entry_values
         && (ret.is_err()
             || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
-            || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)),
+            || (machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks)
+            || (machine.comps.len() == entry_comps.saturating_sub(1_usize) && machine.tasks.len() == entry_tasks.saturating_add(2_usize))),
 )]
 fn step_bind_closure(
+    core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     body: CompClosureId,
@@ -3477,6 +3611,10 @@ fn step_bind_closure(
             Ok(())
         },
         | DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+        | DomainComp::Fixpoint { recursive, .. } => {
+            machine.tasks.push(Task::BindClosure(body));
+            unfold(core, domain, machine, recursive)
+        },
     }
 }
 
@@ -4702,6 +4840,125 @@ mod tests
             Unfolding::Rigid,
             held.unfolding(),
             "an unknown constant has no body, so growing the spine kept it rigid"
+        );
+    }
+
+    /// `fix rec. λx. case x of { zero ↦ return zero; succ ↦ λp. r ← (force
+    /// rec) p; return (succ (succ r)) }` over the nominal `nat`, with the
+    /// constructors `zero` and `succ` at tags 0 and 1.
+    ///
+    /// # Specification
+    /// trivial.
+    fn doubling(
+        core: &mut CoreArena,
+        nat: gandr_core_term::ValueTypeId,
+        evidence: gandr_kernel_term::FixpointEvidence,
+    ) -> gandr_core_term::ComputationId
+    {
+        let zero = core.value_constructor(
+            nat,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::new(),
+        );
+        let returner = core.comp_type_returner(nat);
+        let on_zero = core.computation_return(zero);
+        let field = core.value_variable(Zone::Intuitionistic, innermost());
+        let recursive = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let forced = core.computation_force(recursive);
+        let call = core.computation_application(forced, field);
+        let result = core.value_variable(Zone::Intuitionistic, innermost());
+        let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
+        let once = core.value_constructor(nat, successor, Vec::from([result]));
+        let twice = core.value_constructor(nat, successor, Vec::from([once]));
+        let returned = core.computation_return(twice);
+        let bound = core.computation_bind(call, returned);
+        let on_successor = core.computation_lambda(bound);
+        let argument = core.value_variable(Zone::Intuitionistic, innermost());
+        let case =
+            core.computation_data_case(argument, returner, Vec::from([on_zero, on_successor]));
+        let body = core.computation_lambda(case);
+        core.computation_fixpoint(body, evidence)
+    }
+
+    #[test]
+    fn a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral()
+    {
+        let mut core = CoreArena::new();
+        let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let successor = gandr_kernel_term::ConstructorTag::from(1_usize);
+        let zero = core.value_constructor(
+            nat,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::new(),
+        );
+        let one = core.value_constructor(nat, successor, Vec::from([zero]));
+        let two = core.value_constructor(nat, successor, Vec::from([one]));
+        let three = core.value_constructor(nat, successor, Vec::from([two]));
+        let four = core.value_constructor(nat, successor, Vec::from([three]));
+        let fixpoint = doubling(
+            &mut core,
+            nat,
+            gandr_kernel_term::FixpointEvidence::StructuralDescent,
+        );
+        let applied = core.computation_application(fixpoint, two);
+        let expected = core.computation_return(four);
+        let variable = core.value_variable(Zone::Intuitionistic, innermost());
+        let stuck = core.computation_application(fixpoint, variable);
+        let abstracted = core.computation_lambda(stuck);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        for (term, normal) in [(applied, expected), (abstracted, abstracted)] {
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), term)
+                .expect("a gated fixpoint reaches its weak head");
+            let read = crate::readback::readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                ample(),
+                evaluated,
+            )
+            .expect("the weak head reads back");
+            let read = core.value_thunk(read);
+            let normal = core.value_thunk(normal);
+            assert_eq!(
+                gandr_core_term::CertificateEquality::Equal,
+                gandr_core_term::equal_certificate_syntax(&core, read, normal),
+                "at a constructor the fixpoint unfolds to the doubled numeral; at a neutral \
+                 it stands, and reads back as itself"
+            );
+        }
+    }
+
+    #[test]
+    fn an_observed_loop_runs_out_of_fuel()
+    {
+        let mut core = CoreArena::new();
+        let recursive = core.value_variable(Zone::Intuitionistic, innermost());
+        let forced = core.computation_force(recursive);
+        let looping =
+            core.computation_fixpoint(forced, gandr_kernel_term::FixpointEvidence::Partial);
+        let unit = core.value_unit();
+        let returned = core.computation_return(unit);
+        let observed = core.computation_bind(looping, returned);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let bare = eval_computation(&core, &mut domain, definitions, ample(), looping)
+            .expect("a bare fixpoint is inert");
+        assert!(
+            matches!(domain.computation(bare), Some(&DomainComp::Fixpoint { .. })),
+            "no gate observes it, so it is its own weak head"
+        );
+        assert_eq!(
+            Err(EvalFault::OutOfFuel),
+            eval_computation(&core, &mut domain, definitions, ample(), observed),
+            "each observation unfolds it once, and the loop never returns"
         );
     }
 

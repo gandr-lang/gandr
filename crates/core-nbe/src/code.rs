@@ -798,7 +798,8 @@ _ => ret == Ok(Atom::Other(node)),
                 | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
-                | Elimination::Case { .. }),
+                | Elimination::Case { .. }
+                | Elimination::Fixpoint(_)),
             ) => Ok(Atom::Other(Node::Stuck(neutral, prefix))),
             | None => Err(ConversionFault::MachineInvariant),
         }

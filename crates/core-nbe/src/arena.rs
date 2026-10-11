@@ -719,8 +719,8 @@ impl DomainArena
     /// - requires: nothing.
     /// - ensures: [`Guard::Flexible`] when the unfolding face is loaded, when
     ///   the head is a hole or a mark, or when the spine stacks a bind, a case,
-    ///   a transport, or an argument whose word is flexible; otherwise the fold
-    ///   of the head and each elimination in spine order.
+    ///   a transport, a fixpoint, or an argument whose word is flexible;
+    ///   otherwise the fold of the head and each elimination in spine order.
     /// - provides: the rigidity rule for a stuck node: a head with a body to
     ///   unfold, a head a fill can still decide, or an elimination holding a
     ///   closure, can change the answer. Its cost is the spine's length, which
@@ -746,7 +746,7 @@ impl DomainArena
         (!matches!(unfolding, Unfolding::Rigid) || matches!(head, NeutralHead::Hole { .. } | NeutralHead::Mark { .. }) || spine.iter().any(|elimination| match *elimination {
             Elimination::Apply(argument) | Elimination::StaticApply(argument) =>
                 !matches!(self.value_guard(argument), Ok(Guard::Rigid(_))),
-            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) => true,
+            Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Bind(_) | Elimination::Case { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Fixpoint(_) => true,
             Elimination::Force => false,
         })))]
     fn neutral_word(
@@ -789,7 +789,8 @@ impl DomainArena
                 | Elimination::RecordProjection(_)
                 | Elimination::ProductTransport(_)
                 | Elimination::Bind(_)
-                | Elimination::Case { .. } => return Guard::Flexible,
+                | Elimination::Case { .. }
+                | Elimination::Fixpoint(_) => return Guard::Flexible,
             };
         }
         word
@@ -1757,6 +1758,33 @@ impl DomainArena
             .ok_or(DomainFault::Dangling)?;
         let forced = node.force_to(glued);
         forced.map_err(DomainFault::from)
+    }
+
+    /// Mint a fixpoint over its own closed source node.
+    ///
+    /// # Specification
+    /// - requires: `recursive` closes a source fixpoint over its environment.
+    /// - ensures: a fresh computation node carrying that closure id and `face`.
+    /// - provides: the weak-head form a fixpoint evaluates to, inert until a
+    ///   gate observes it; the comparison opens it like a lambda, so its guard
+    ///   is flexible.
+    /// - fails: never — a closure that dangles surfaces where a gate resolves
+    ///   it, not here.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare fixpoint reads back as itself, and a stuck one
+    ///   keeps its binder; a wrong closure or face changes the observed term.
+    /// - witness: `readback::tests::a_fixpoint_reads_back_with_its_self_binder`
+    #[inline]
+    #[spec(ensures: |ret| self.computation(ret) == Some(&DomainComp::Fixpoint { recursive, face }))]
+    pub fn comp_fixpoint(
+        &mut self,
+        recursive: CompClosureId,
+        face: CompTermFace,
+    ) -> DomainCompId
+    {
+        self.alloc_computation(DomainComp::Fixpoint { recursive, face }, Guard::Flexible)
     }
 }
 

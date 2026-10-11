@@ -268,6 +268,10 @@ pub enum Elimination
     /// `f a`: a static application whose operator was stuck, applied to a
     /// domain value argument.
     StaticApply(DomainValueId),
+    /// `(fix x. M) v`: a fixpoint applied to the stuck value, retaining the
+    /// fixpoint as its source node closed over its environment. Re-applied
+    /// when the head unfolds, it meets its gate again.
+    Fixpoint(CompClosureId),
 }
 
 /// A stuck computation or value: a head, the eliminations stacked on it, and
@@ -728,6 +732,17 @@ pub enum DomainComp
         /// The term face.
         face: CompTermFace,
     },
+    /// A fixpoint standing at no gate: inert until an application to a
+    /// canonical value or a bind observes it.
+    Fixpoint
+    {
+        /// The fixpoint's own source node, closed over its environment: what
+        /// the self thunk suspends, and what an unfolding or an opening reads
+        /// the body from.
+        recursive: CompClosureId,
+        /// The term face.
+        face: CompTermFace,
+    },
 }
 
 impl DomainComp
@@ -755,14 +770,16 @@ impl DomainComp
     #[spec(ensures: |ret| match *self {
         | Self::Lambda { face, .. }
         | Self::Return { face, .. }
-        | Self::Neutral { face, .. } => ret == face,
+        | Self::Neutral { face, .. }
+        | Self::Fixpoint { face, .. } => ret == face,
     })]
     pub fn face(&self) -> CompTermFace
     {
         match *self {
             | Self::Lambda { face, .. }
             | Self::Return { face, .. }
-            | Self::Neutral { face, .. } => face,
+            | Self::Neutral { face, .. }
+            | Self::Fixpoint { face, .. } => face,
         }
     }
 }
