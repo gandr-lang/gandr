@@ -349,12 +349,12 @@ impl MoldTable
     /// - hypothesis: For finite checked rule lists, L3 duplicate-context and
     ///   ordered-owner observations plus a built-in finite inventory catch
     ///   misaligned tables, invalid context ids and wrong ownership. The
-    ///   predicate checks adjacency order, same-owner edges, exact incoming and
-    ///   outgoing flags, the dense form-membership flags against their lists
-    ///   and each mold's successor run against the pair list once at
-    ///   construction; every built-in mold's flags and run, and the first id
-    ///   past the table, are compared with the lists through the public
-    ///   queries. 32-bit exhaustion is outside the allocated fixtures.
+    ///   predicate checks each mold against its owning rule and each adjacency
+    ///   within one owner; the derived indexes are checked once by
+    ///   [`assemble`](Self::assemble), and every built-in mold's flags and run,
+    ///   and the first id past the table, are compared with the lists through
+    ///   the public queries. 32-bit exhaustion is outside the allocated
+    ///   fixtures.
     /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
     /// - witness: `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`
     /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
@@ -364,26 +364,10 @@ impl MoldTable
         |error| matches!(error, PbgError::DuplicateTile { .. } | PbgError::MoldOverflow),
         |table| {
             let count = table.molds.len();
-            table.bounds.len() == count && table.owners.len() == count && table.closing.len() == count && table.has_pred.len() == count && table.has_succ.len() == count && table.is_first.len() == count && table.is_complete_last.len() == count && table.is_required_tail.len() == count && table.successor_starts.len() == count.saturating_add(1)
+            table.owners.len() == count && table.closing.len() == count
                 && table.owners.is_sorted()
                 && table.molds.iter().zip(&table.owners).all(|(mold, &owner)| rules.get(owner).is_some_and(|rule| mold.sort == rule.sort && mold.prec == rule.prec) && usize::try_from(mold.rctx.0).is_ok_and(|index| index < table.rctxs.len()))
-                && table.adjacencies.iter().is_sorted_by(|left, right| left < right)
-                && {
-                    let mut incidence = vec![(false, false); count];
-                    for &(left, right) in &table.adjacencies {
-                        let Some((left_index, right_index)) = usize::try_from(u32::from(left)).ok().zip(usize::try_from(u32::from(right)).ok()) else { return false; };
-                        if table.owners.get(left_index).zip(table.owners.get(right_index)).is_none_or(|(left_owner, right_owner)| left_owner != right_owner) { return false; }
-                        let Some(left_flags) = incidence.get_mut(left_index) else { return false; };
-                        left_flags.1 = true;
-                        let Some(right_flags) = incidence.get_mut(right_index) else { return false; };
-                        right_flags.0 = true;
-                    }
-                    incidence.iter().zip(&table.has_pred).zip(&table.has_succ).all(|((&(incoming, outgoing), &has_pred), &has_succ)| incoming == has_pred && outgoing == has_succ)
-                }
-                && [(&table.form_first, &table.is_first), (&table.complete_last, &table.is_complete_last), (&table.required_tail, &table.is_required_tail)].into_iter().all(|(list, flags)| flags.iter().enumerate().all(|(position, &flag)| flag == MoldId::try_from(position).is_ok_and(|mold| list.contains(&mold))))
-                && table.successor_starts.first().is_none_or(|&start| start == 0)
-                && table.successor_starts.last().is_none_or(|&end| end == table.adjacencies.len())
-                && table.successor_starts.windows(2).enumerate().all(|(position, pair)| match *pair { [start, end] => table.adjacencies.get(start .. end).is_some_and(|run| run.iter().all(|&(left, _)| usize::try_from(u32::from(left)) == Ok(position))), _ => false })
+                && table.adjacencies.iter().all(|&(left, right)| usize::try_from(u32::from(left)).ok().zip(usize::try_from(u32::from(right)).ok()).and_then(|(left, right)| table.owners.get(left).zip(table.owners.get(right))).is_some_and(|(left_owner, right_owner)| left_owner == right_owner))
         }))]
     pub(crate) fn build(
         rules: &[Rule],
@@ -582,10 +566,15 @@ impl MoldTable
     /// - requires: every column of `parts` is indexed by mold id and as long as
     ///   `parts.molds`; the adjacency and membership lists are ascending,
     ///   unique and within the table.
-    /// - ensures: each label's molds ascending; the dense flags agree with the
-    ///   adjacency and membership lists; each mold's successor run is its pairs
-    ///   in the adjacency list; the fingerprint folds `dag_fingerprint` with
-    ///   the molds and contexts.
+    /// - ensures: each label's molds ascending, and each mold in exactly its
+    ///   label's menu; each fresh menu is its label's menu filtered to the
+    ///   molds without a same-form predecessor or that open a form; the
+    ///   adjacency is ascending and unique, and the dense predecessor and
+    ///   successor flags are its incidence; each membership list is ascending
+    ///   and holds exactly the molds its dense flag marks, and the form-last
+    ///   list is the disjoint union of the complete-last and required-tail
+    ///   lists; each mold's successor run is its pairs in the adjacency list;
+    ///   the fingerprint folds `dag_fingerprint` with the molds and contexts.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -593,11 +582,42 @@ impl MoldTable
     ///   assemble through here, and the built-in table assembled from frozen
     ///   columns renders byte-identical to the one assembled from interned
     ///   ones; the flag, run and menu witnesses of `build` observe the
-    ///   derivation itself.
+    ///   derivation itself. The predicate checks every index once, in time
+    ///   linear in the table, so the queries need check only the order and
+    ///   membership of what they return.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
     /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
-    #[spec(ensures: |ret| ret.bounds.len() == ret.molds.len() && ret.has_pred.len() == ret.molds.len() && ret.has_succ.len() == ret.molds.len() && ret.successor_starts.len() == ret.molds.len().saturating_add(1) && ret.candidates.values().map(Vec::len).sum::<usize>() == ret.molds.len())]
+    #[spec(ensures: |ret| {
+        let count = ret.molds.len();
+        let index = |mold: MoldId| usize::try_from(u32::from(mold)).ok();
+        let flag = |flags: &[bool], mold: MoldId| index(mold).and_then(|at| flags.get(at)).copied().unwrap_or(false);
+        ret.bounds.len() == count && ret.has_pred.len() == count && ret.has_succ.len() == count && ret.is_first.len() == count && ret.is_complete_last.len() == count && ret.is_required_tail.len() == count && ret.successor_starts.len() == count.saturating_add(1)
+            && ret.candidates.values().map(Vec::len).sum::<usize>() == count
+            && ret.candidates.iter().all(|(&label, molds)| molds.is_sorted_by(|left, right| left < right) && molds.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label)))
+            && ret.fresh.keys().eq(ret.candidates.keys())
+            && ret.fresh.values().zip(ret.candidates.values()).all(|(fresh, molds)| fresh.iter().copied().eq(molds.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))))
+            && ret.adjacencies.is_sorted_by(|left, right| left < right)
+            && {
+                let mut incidence = vec![(false, false); count];
+                for &(left, right) in &ret.adjacencies {
+                    let Some((left_index, right_index)) = index(left).zip(index(right)) else { return false; };
+                    let Some(left_flags) = incidence.get_mut(left_index) else { return false; };
+                    left_flags.1 = true;
+                    let Some(right_flags) = incidence.get_mut(right_index) else { return false; };
+                    right_flags.0 = true;
+                }
+                incidence.iter().zip(&ret.has_pred).zip(&ret.has_succ).all(|((&(incoming, outgoing), &has_pred), &has_succ)| incoming == has_pred && outgoing == has_succ)
+            }
+            && [(&ret.form_first, &ret.is_first), (&ret.complete_last, &ret.is_complete_last), (&ret.required_tail, &ret.is_required_tail)].into_iter().all(|(list, flags)| list.is_sorted_by(|left, right| left < right) && list.len() == flags.iter().filter(|&&set| set).count() && list.iter().all(|&mold| flag(flags, mold)))
+            && ret.is_complete_last.iter().zip(&ret.is_required_tail).all(|(&clean, &tail)| !(clean && tail))
+            && ret.form_last.is_sorted_by(|left, right| left < right)
+            && ret.form_last.len() == ret.complete_last.len().saturating_add(ret.required_tail.len())
+            && ret.form_last.iter().all(|&mold| flag(&ret.is_complete_last, mold) || flag(&ret.is_required_tail, mold))
+            && ret.successor_starts.first().is_none_or(|&start| start == 0)
+            && ret.successor_starts.last().is_none_or(|&end| end == ret.adjacencies.len())
+            && ret.successor_starts.windows(2).enumerate().all(|(position, pair)| match *pair { [start, end] => ret.adjacencies.get(start .. end).is_some_and(|run| run.iter().all(|&(left, _)| index(left) == Some(position))), _ => false })
+    })]
     fn assemble(
         parts: Parts,
         dag_fingerprint: GrammarFingerprint,
@@ -1119,8 +1139,10 @@ impl MoldTable
     /// - hypothesis: L2 — every built-in mold's run compares with a filter of
     ///   the whole adjacency, and the first id past the table reads empty; an
     ///   off-by-one start or a neighbor's run changes a comparison.
+    ///   Construction proves every run exact once; the predicate checks that
+    ///   each returned pair starts at `mold`.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.adjacencies.iter().copied().filter(|&(left, _)| left == mold)))]
+    #[spec(ensures: |ret| ret.iter().all(|&(left, _)| left == mold))]
     #[inline]
     #[must_use]
     pub(crate) fn successors(
@@ -1153,7 +1175,7 @@ impl MoldTable
     ///   reversed and absent pairs compare with the whole list; a search in the
     ///   wrong run changes a comparison.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.0 == self.adjacencies.contains(&(left, right)))]
+    #[spec(ensures: |ret| ret.0 == self.adjacencies.binary_search(&(left, right)).is_ok())]
     #[inline]
     #[must_use]
     pub(crate) fn adjacent(
@@ -1236,7 +1258,7 @@ impl MoldTable
     ///   membership and L3 boundary observations catch missed or invented form
     ///   openers.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.0 == self.form_first.contains(&mold))]
+    #[spec(ensures: |ret| ret.0 == self.form_first.binary_search(&mold).is_ok())]
     #[inline]
     #[must_use]
     pub(crate) fn is_form_first(
@@ -1264,7 +1286,7 @@ impl MoldTable
     ///   observations catch premature or lost clean completion.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
-    #[spec(ensures: |ret| ret.0 == self.complete_last.contains(&mold))]
+    #[spec(ensures: |ret| ret.0 == self.complete_last.binary_search(&mold).is_ok())]
     #[inline]
     #[must_use]
     pub(crate) fn is_form_last(
@@ -1293,7 +1315,7 @@ impl MoldTable
     ///   invented tails; arbitrary form languages are not enumerated.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
-    #[spec(ensures: |ret| ret.0 == self.required_tail.contains(&mold))]
+    #[spec(ensures: |ret| ret.0 == self.required_tail.binary_search(&mold).is_ok())]
     #[inline]
     #[must_use]
     pub(crate) fn has_required_tail(

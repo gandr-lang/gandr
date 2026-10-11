@@ -1818,9 +1818,11 @@ impl Pbg
     /// # Adequacy
     /// - hypothesis: For the built-in label inventory and an absent label, L2
     ///   finite inventory observations catch lost, duplicated or reordered mold
-    ///   occurrences; arbitrary grammars are outside the census.
+    ///   occurrences; arbitrary grammars are outside the census. Construction
+    ///   proves each menu exact once; the predicate checks the returned molds'
+    ///   order and label.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, mold)| (mold.label == label.0).then_some(id))))]
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == label.0)))]
     #[inline]
     #[must_use]
     pub fn candidates(
@@ -1845,9 +1847,11 @@ impl Pbg
     /// - hypothesis: For every built-in label and an absent label, L2 finite
     ///   inventory observations compare fresh menus with the predecessor-free
     ///   or form-first subset, catching dropped openers and retained dependent
-    ///   molds; arbitrary grammars are not enumerated.
+    ///   molds; arbitrary grammars are not enumerated. Construction proves each
+    ///   menu exact once; the predicate checks the returned molds' order, label
+    ///   and freshness.
     /// - witness: `tests::walk::fresh_menus_keep_exactly_the_form_openers`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.candidates(label).iter().copied().filter(|&mold| !bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| self.molds.mold(mold).is_ok_and(|def| def.label == label.0) && (!bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
     #[inline]
     #[must_use]
     pub fn fresh_candidates(
@@ -1952,8 +1956,10 @@ impl Pbg
     /// - hypothesis: L2 — every built-in mold's run compares with a filter of
     ///   the whole adjacency, and the first id past the table reads empty; a
     ///   run cut short, shifted, or a neighbor's changes a comparison.
+    ///   Construction proves every run exact once; the predicate checks that
+    ///   each returned pair starts at `mold`.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.adjacencies().iter().copied().filter(|&(left, _)| left == mold)))]
+    #[spec(ensures: |ret| ret.iter().all(|&(left, _)| left == mold))]
     #[inline]
     #[must_use]
     pub fn mold_successors(
@@ -1978,7 +1984,7 @@ impl Pbg
     ///   table compare with the whole list; a lookup in the wrong run changes a
     ///   comparison.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| bool::from(ret) == self.adjacencies().contains(&(left, right)))]
+    #[spec(ensures: |ret| bool::from(ret) == self.adjacencies().binary_search(&(left, right)).is_ok())]
     #[inline]
     #[must_use]
     pub fn molds_adjacent(
@@ -2003,8 +2009,10 @@ impl Pbg
     /// - hypothesis: For all built-in molds, L2 ordered-set and membership
     ///   observations catch omitted or duplicated first tiles and inconsistent
     ///   flags; nullable prefixes of arbitrary user forms are not exhausted.
+    ///   Construction proves the list equals the flags once; the predicate
+    ///   checks the returned molds' order and flag.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, _)| bool::from(self.molds.is_form_first(id)).then_some(id))))]
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| bool::from(self.molds.is_form_first(mold))))]
     #[inline]
     #[must_use]
     pub fn form_first(&self) -> &[MoldId]
@@ -2027,8 +2035,10 @@ impl Pbg
     /// - hypothesis: For all built-in molds, L2 finite membership observations
     ///   catch omissions, duplicates and overlaps between clean completion and
     ///   required tails; arbitrary form languages are outside the census.
+    ///   Construction proves the list equals the flags once; the predicate
+    ///   checks the returned molds' order and flags.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, _)| (bool::from(self.molds.is_form_last(id)) || bool::from(self.molds.has_required_tail(id))).then_some(id))))]
+    #[spec(ensures: |ret| ret.is_sorted_by(|left, right| left < right) && ret.iter().all(|&mold| bool::from(self.molds.is_form_last(mold)) != bool::from(self.molds.has_required_tail(mold))))]
     #[inline]
     #[must_use]
     pub fn form_last(&self) -> &[MoldId]
@@ -2103,7 +2113,7 @@ impl Pbg
     ///   finite and L3 boundary observations compare first membership with the
     ///   ordered list, catching reversed flags and out-of-range acceptance.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| bool::from(ret) == self.molds.form_first().contains(&mold))]
+    #[spec(ensures: |ret| bool::from(ret) == self.molds.form_first().binary_search(&mold).is_ok())]
     #[inline]
     #[must_use]
     pub fn mold_is_form_first(
@@ -2129,7 +2139,7 @@ impl Pbg
     ///   invalid id is rejected.
     /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().contains(&mold) && !bool::from(self.molds.has_required_tail(mold))))]
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().binary_search(&mold).is_ok() && !bool::from(self.molds.has_required_tail(mold))))]
     #[inline]
     #[must_use]
     pub fn mold_is_form_last(
@@ -2155,7 +2165,7 @@ impl Pbg
     ///   first invalid id is rejected.
     /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
-    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().contains(&mold) && !bool::from(self.molds.is_form_last(mold))))]
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().binary_search(&mold).is_ok() && !bool::from(self.molds.is_form_last(mold))))]
     #[inline]
     #[must_use]
     pub fn mold_has_required_tail(
