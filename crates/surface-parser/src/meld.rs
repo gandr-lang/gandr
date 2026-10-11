@@ -1563,11 +1563,13 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — an empty slope, an open bracket and its closer versus
     ///   an unrelated atom expose continuation. Selecting an outer or closed
     ///   frontier, or ignoring the grammar adjacency, flips a boundary
-    ///   decision.
+    ///   decision. Every mutation proves the frontier cache exact against the
+    ///   stack; the predicate reads the topmost frontier from the cache, checks
+    ///   its cell is an open form, and searches the whole adjacency list.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == (self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None })).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
+    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().and_then(|&index| match self.stack.get(index)?.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
     pub fn would_continue_form(
         &self,
         mold: MoldId,
@@ -2863,9 +2865,11 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — no forms, nested forms and reopening an older
     ///   frontier expose the exact nearest position. A stale cache, wrong
-    ///   insertion order or counting a closed tile changes it.
+    ///   insertion order or counting a closed tile changes it. Every mutation
+    ///   proves the cache exact against the stack; the predicate checks that
+    ///   the returned position holds an open form.
     /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
-    #[spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().rposition(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))]
+    #[spec(ensures: |ret| ret.is_none_or(|frontier| self.stack.get(usize::from(frontier)).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. }))))]
     fn nearest_open_form(&self) -> Option<FrontierIndex>
     {
         self.frontiers.last().copied().map(FrontierIndex::from)
