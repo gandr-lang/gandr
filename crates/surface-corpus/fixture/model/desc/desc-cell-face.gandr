@@ -1,3 +1,4 @@
+@[ checks ]
 data NatTheory : Type {
   Zero : NatTheory;
   oper id(x : NatTheory) -> NatTheory;
