@@ -723,6 +723,7 @@ enum Family
             (
                 Former::Name
                     | Former::Constructor
+                    | Former::Hole
                     | Former::Number
                     | Former::Text
                     | Former::Parenthesized
@@ -766,6 +767,7 @@ const fn family_of(former: Former) -> Family
     match former {
         | Former::Name
         | Former::Constructor
+        | Former::Hole
         | Former::Number
         | Former::Text
         | Former::Parenthesized
@@ -1212,6 +1214,10 @@ enum Plan
 {
     /// Mint nothing.
     Unplanned,
+    /// A value hole at its source occurrence.
+    ValueHole(gandr_core_term::hole::HoleId),
+    /// A computation hole at its source occurrence.
+    CompHole(gandr_core_term::hole::HoleId),
     /// A variable at this index.
     Variable(DeBruijnIndex),
     /// A constant at this admission position.
@@ -2814,6 +2820,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         match former {
             | Former::Name => self.name(site),
             | Former::Constructor => self.constructor(site),
+            | Former::Hole => {
+                let identity = u32::try_from(usize::from(site.at.node)).map_err(|_overflow| {
+                    LoweringRefusal::BudgetExceeded {
+                        budget: self.fuel.budget,
+                    }
+                })?;
+                let hole = gandr_core_term::hole::HoleId::from(identity);
+                let plan = if matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
+                    let _frame = self.require(site, Produced::Computation)?;
+                    Plan::CompHole(hole)
+                }
+                else {
+                    let _frame = self.require(site, Produced::Value)?;
+                    Plan::ValueHole(hole)
+                };
+                self.plan(site, plan);
+                Ok(())
+            },
             | Former::Number => self.number(site),
             | Former::Text => self.text(site, pieces),
             | Former::Parenthesized => self.parenthesized(site, cursor),
@@ -5838,6 +5862,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         captures: promised = (
             match plan {
                 | Plan::Variable(_)
+                | Plan::ValueHole(_)
                 | Plan::Constant(_)
                 | Plan::Primitive(_)
                 | Plan::Unit
@@ -5847,7 +5872,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) | Plan::Case(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) | Plan::Case(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -5917,6 +5942,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         match plan {
+            | Plan::ValueHole(hole) => {
+                let id = sink.arena.value_hole(hole);
+                Maybe::Present(sink.value(id, origin))
+            },
+            | Plan::CompHole(hole) => {
+                let id = sink.arena.computation_hole(hole);
+                Maybe::Present(sink.computation(id, origin))
+            },
             | Plan::Primitive(primitive) => {
                 let id = primitive.thunk(sink.arena);
                 if let Some(&Value::Primitive { body, .. }) = sink.arena.value(id) {
@@ -6532,6 +6565,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.computation(id, origin)
             }),
             | Plan::Unplanned
+            | Plan::ValueHole(_)
+            | Plan::CompHole(_)
             | Plan::Variable(_)
             | Plan::Constant(_)
             | Plan::Primitive(_)
@@ -8706,6 +8741,7 @@ fn parse_literal(
                 ))))
             }),
         | Former::Name
+        | Former::Hole
         | Former::Binary
         | Former::Unary
         | Former::Constructor
@@ -9406,6 +9442,41 @@ mod tests
             Some(&ValueType::Base(BaseType::Integer)),
             "the obligation carries the declared type"
         );
+    }
+
+    #[test]
+    fn source_holes_keep_their_families_and_distinct_occurrences()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(r#"def a = ?; def b = ?named; def c() { ?pending }"#),
+            &mut arena,
+        );
+        let [
+            DeclarationOutcome::Bodied { body: a },
+            DeclarationOutcome::Bodied { body: b },
+            DeclarationOutcome::Bodied { body: c },
+        ] = outcomes(&module)[..]
+        else {
+            panic!("each unfinished definition lowers");
+        };
+        let Some(&Value::Hole(first)) = arena.value(a)
+        else {
+            panic!("anonymous value hole")
+        };
+        let Some(&Value::Hole(second)) = arena.value(b)
+        else {
+            panic!("named value hole")
+        };
+        assert_ne!(first, second);
+        let Some(&Value::Thunk(body)) = arena.value(c)
+        else {
+            panic!("function thunk")
+        };
+        assert!(matches!(
+            arena.computation(body),
+            Some(&Computation::Hole(_))
+        ));
     }
 
     #[test]
