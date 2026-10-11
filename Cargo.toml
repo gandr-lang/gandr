@@ -46,6 +46,7 @@ members = [
   "crates/theory-orders",
   "crates/theory-sites",
   "crates/theory-virtual-doctrines",
+  "crates/workflow-spec-cost",
   "crates/workflow-test-timing",
 ]
 
@@ -134,6 +135,7 @@ default-features = false
 # - theory-orders
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.anodized]
 package = "quenchant-anodized"
@@ -165,6 +167,7 @@ default-features = false
 # - env: `GANDR_JOBS`, the environment's default for `--jobs`
 # consumers:
 # - surface-driver
+# - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.clap]
 version = "4.6.6"
@@ -648,6 +651,13 @@ default-features = false
 path = "crates/theory-orders"
 default-features = false
 
+# Recent merge-queue test durations: the specification-cost ranking profiles
+# the slowest enforcing tests the stored reports name.
+# consumers:
+# - workflow-spec-cost
+[workspace.dependencies.gandr-workflow-test-timing]
+path = "crates/workflow-test-timing"
+
 # Exact, dynamically sized integers for native arithmetic.
 # features:
 # - none: allocation works without std or optional integrations
@@ -677,6 +687,20 @@ features = ["alloc"]
 [workspace.dependencies.petgraph]
 version = "0.8.3"
 default-features = false
+
+# Token spans with line numbers outside a procedural macro: the
+# specification-cost ranking reads each `#[spec]` attribute's lines from a
+# parsed source file. Defaults off: `proc-macro` links the compiler's own
+# spans, which exist only inside a macro expansion.
+# features:
+# - span-locations: the line and column of every span; without it a parsed
+#   file's spans carry no position
+# consumers:
+# - workflow-spec-cost
+[workspace.dependencies.proc-macro2]
+version = "1.0.107"
+default-features = false
+features = ["span-locations"]
 
 # Property-based testing with shrinking.
 # features:
@@ -752,6 +776,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-sites
 # - theory-virtual-doctrines
+# - workflow-spec-cost
 # - workflow-test-timing
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
@@ -829,8 +854,9 @@ default-features = false
 version = "18.0.1"
 default-features = false
 
-# The serialization framework the render-bus wire image and the language
-# server's protocol messages derive through.
+# The serialization framework the render-bus wire image, the language
+# server's protocol messages and the specification-cost ranking's reading of
+# nextest's test list derive through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
@@ -838,23 +864,43 @@ default-features = false
 # - core-checker
 # - surface-lsp
 # - surface-render-remote
+# - workflow-spec-cost
 [workspace.dependencies.serde]
 version = "1.0.229"
 default-features = false
 features = ["alloc", "derive"]
 
-# JSON: the language server's wire format, and the format the render-bus codec
-# witnesses round-trip through.
+# JSON: the language server's wire format, the format the render-bus codec
+# witnesses round-trip through, and nextest's machine-readable test list.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
 # - core-checker (dev)
 # - surface-lsp
 # - surface-render-remote (dev)
+# - workflow-spec-cost
 [workspace.dependencies.serde_json]
 version = "1.0.151"
 default-features = false
 features = ["alloc"]
+
+# Rust source parsed into items with their attributes: the specification-cost
+# ranking maps every `#[spec]` attribute to the lines it spans. The ecosystem
+# standard, at major 3, which the derive macros already link. Defaults off:
+# `derive`, `printing`, `clone-impls` and `proc-macro` serve macro authors;
+# the ranking reads spans straight off the attribute's tokens. Chosen over
+# `ra_ap_syntax`, which re-releases weekly with breaking changes, and
+# `tree-sitter-rust`, which adds a C parser for the same item tree.
+# Reversal: a `#[spec]` placement the parser does not read.
+# features:
+# - full: items, impls and traits beyond the derive-input subset
+# - parsing: `parse_file`
+# consumers:
+# - workflow-spec-cost
+[workspace.dependencies.syn]
+version = "3.0.4"
+default-features = false
+features = ["full", "parsing"]
 
 # Reads a macOS sysctl by name: the dispatcher's default width counts the
 # host's physical performance cores (`hw.perflevel0.physicalcpu`), which no

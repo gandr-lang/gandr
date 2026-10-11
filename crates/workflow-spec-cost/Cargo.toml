@@ -1,0 +1,31 @@
+[package]
+name = "gandr-workflow-spec-cost"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ranks executable specifications by the time the slowest enforcing tests spend checking them"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["anodized", "gandr", "perf", "profiling"]
+categories = ["development-tools::profiling"]
+publish.workspace = true
+
+[[bin]]
+name = "spec-cost"
+path = "src/main.rs"
+
+# The pinned anodized facade supplies the specification attribute; the shape
+# crate the `Maybe` a lookup outside every specification returns.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+gandr-workflow-test-timing.workspace = true
+proc-macro2.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syn.workspace = true
+
+[lints]
+workspace = true

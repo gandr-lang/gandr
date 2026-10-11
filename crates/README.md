@@ -69,6 +69,7 @@ crates/
 ├── surface-repl/                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
 ├── surface-tui/                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
 ├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
+├── workflow-spec-cost/            the `spec-cost` binary: executable specifications ranked by the check time profiled in the slowest enforcing tests
 └── workflow-test-timing/          the `test-timing` binary: nextest priority levels proposed from recent merge-queue runs' JUnit reports
 ```
 

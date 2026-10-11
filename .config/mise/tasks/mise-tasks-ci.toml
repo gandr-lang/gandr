@@ -178,6 +178,20 @@ flag "--offline" help="report on the stored runs without invoking gh"
 '''
 run = "cargo run --locked --quiet --package gandr-workflow-test-timing -- --runs {{usage.runs}}{% if usage.offline %} --offline{% endif %}"
 
+# Specification cost is profiled, never guessed from clause shapes: the tool
+# samples the slowest enforcing tests the timing store names under perf and
+# ranks the #[spec] checks by the time charged to them (Linux only;
+# crates/workflow-spec-cost/README.md). Named tests go to the binary directly.
+["ci:spec-cost"]
+description = "Rank executable specifications by profiled check time"
+usage = '''
+flag "--tests <tests>" help="how many of the slowest enforcing tests to profile" default="5"
+flag "--runs <runs>" help="how many of the newest stored queue runs name them" default="5"
+flag "--frequency <hz>" help="samples per second" default="499"
+flag "--top <top>" help="how many checks to list" default="30"
+'''
+run = "cargo run --locked --quiet --package gandr-workflow-spec-cost -- --tests {{usage.tests}} --runs {{usage.runs}} --frequency {{usage.frequency}} --top {{usage.top}}"
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 ["pr:land"]
