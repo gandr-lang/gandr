@@ -181,11 +181,46 @@ The prior implementation evaluated a top-level expression and reported a definit
 
 `run` executes the selected arm under its pattern bindings without re-matching or re-evaluating the scrutinee. `MatchRun::Held` and `MatchRun::Uncovered` remain distinct and consume no evaluation fuel; `MatchRun::Evaluated` names the resulting computation in the checkpoint's domain. The analysis must belong to that checkpoint and precede any subsequent fill.
 
-Coverage comes from the checker's `cover` judgement and remains a separate report, including analysis refusals. It enforces no admission policy and makes no claim of index-sensitive exhaustiveness. Coverage enforcement belongs to the admission policy that consumes it.
+Coverage comes from the checker's `cover` judgement and remains a separate report, including analysis refusals. It enforces no admission policy and makes no claim of index-sensitive exhaustiveness. Coverage enforcement belongs to the admission policy that consumes it. The lowering already refuses one shape of gap: a match that leaves a constructor without an arm and with no pattern hole to stand for it is `NonExhaustiveMatch`, because its decision tree has no leaf there. A hole lowers. Its match reports `Exhaustiveness::Possibly`, and a run reaching it is held.
 
 The checkpoint keeps a semantic domain rather than a source expression: a fill preserves completed reductions and captured environments. Re-evaluating the original source would duplicate completed work; a second matcher would duplicate core semantics. The representation changes when durable semantic checkpoints become available.
 
-The `tests::live_match` suite exercises root and payload holes, ordered selection, coverage refinement, and fill resumption over sums, including a fill that reads a captured binder. `tests::pattern_holes` distinguishes unfinished arm execution from ordinary constructor selection.
+A match written in source reaches the checkpoint unchanged. The lowering keeps each match's pattern table and its rows, one per or-pattern alternative, in `CaseOrigin`. A pattern hole is named by its syntax node, so the compiled tree stops at the same hole the row reports `Possibly` for. The suites read those rows, analyze them, and run the compiled tree through the live evaluator.
+
+The prior implementation's two suites are the floor: `live_match` (25) and `pattern_holes` (21).
+
+| Suite | Ported | Deferred on a former | Not ported |
+| ----- | -----: | -------------------: | ---------: |
+| `live_match` | 13 | 1 | 11 |
+| `pattern_holes` | 17 | 2 | 2 |
+
+`translation_covers_the_landed_pattern_grammar` reads every pattern form the lowering compiles:
+
+- wildcards, binders, holes and named holes;
+- constructors, nested;
+- integer and boolean literals;
+- or-patterns.
+
+Its string, tuple, record, list and as-pattern rows wait for those formers.
+
+| Witness | Status and reason |
+| ------- | ----------------- |
+| `an_as_pattern_entails_through_its_binder` | Deferred on as-patterns, which neither the core pattern table nor the lowering has |
+| `an_as_binder_over_a_hole_does_not_settle_it` | Deferred on as-patterns |
+| `the_list_eliminator_stops_at_an_indeterminate_arm` | Deferred on the native `List` former, which the effects lane adds |
+| `the_stream_publishes_per_branch_status` | Not ported: no submission records match liveness into the synthesis stream, though `gandr-core-incremental` carries `SynthesisEvent::Match` |
+| `the_submission_and_the_stream_agree_on_the_origin` | Not ported: as above |
+| `adoption_does_not_move_a_verdict` | Not ported: as above |
+| `a_prior_submissions_matches_survive_the_next_one` | Not ported: as above |
+| `one_source_item_lowering_to_several_core_items_keeps_one_entry` | Not ported: as above |
+| `a_resumed_session_matches_an_uninterrupted_one` | Not ported: as above |
+| `a_record_stripped_resume_reports_source_not_retained` | Not ported: as above |
+| `core_equal_programs_differ_in_liveness` | Not ported: as above |
+| `an_unreadable_row_leaves_a_missing_constructor_undecided` | Not ported: the lowering refuses a pattern it cannot compile, so no unreadable row reaches the matrix (`an_uncompiled_arm_is_declined_and_a_hole_is_not`) |
+| `a_readable_row_after_an_unreadable_twin_is_not_redundant` | Not ported: as above |
+| `an_exhaustive_match_stays_exhaustive_beside_an_unreadable_row` | Not ported: as above |
+| `filling_a_hole_in_a_live_session_evaluates_like_a_fresh_source` | Not ported: the session runs a declaration on the dispatcher's machine, which refuses to focus a hole |
+| `a_named_pattern_hole_carries_its_name` | Not ported: a pattern hole is named by its syntax node, and no report carries the `?name` spelling yet |
 
 ## Contract evidence and its limits
 

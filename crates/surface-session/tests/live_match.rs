@@ -1,10 +1,12 @@
 //! Live answers and coverage over retained semantic scrutinees.
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Exhaustiveness;
 use gandr_core_checker::Redundancy;
 use gandr_core_checker::form_value_type;
+use gandr_core_incremental::Typing;
 use gandr_core_nbe::ArmIndex;
 use gandr_core_nbe::Definitions;
 use gandr_core_nbe::Fuel;
@@ -17,9 +19,86 @@ use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::pattern::BranchStatus;
 use gandr_core_term::pattern::Pattern;
+use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
+use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_session::MatchCheckpoint;
+
+use crate::common::resumed;
+use crate::common::session;
+use crate::common::submit;
+use crate::written::COLOR;
+use crate::written::NESTED;
+use crate::written::Ran;
+use crate::written::Written;
+use crate::written::refusal;
+
+/// `pick` over `Color`, its arms `arms` written in source.
+///
+/// # Specification
+/// trivial.
+fn color_pick(arms: &str) -> Written
+{
+    Written::new(
+        &alloc::format!("{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ {arms} }} }}\n"),
+        "pick",
+    )
+}
+
+/// The pattern `id` of `patterns`, spelled as a source author would.
+///
+/// # Specification
+/// - requires: `id` and every part beneath it resolve in `patterns`.
+/// - ensures: constructors as `#tag(fields)`, holes as `?`, binders as `x`,
+///   wildcards as `_`, integers by their digits, injections as `inl`/`inr`.
+/// - panics: if a part does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: two patterns of different shape never share a spelling.
+/// - witness: `tests::live_match::translation_covers_the_landed_pattern_grammar`
+#[spec(ensures: |ret| !ret.is_empty())]
+fn spelled(
+    patterns: &Patterns,
+    id: PatternId,
+) -> alloc::string::String
+{
+    let Some(pattern) = patterns.pattern(id)
+    else {
+        panic!("pattern {id:?} resolves");
+    };
+    match *pattern {
+        | Pattern::Wildcard => alloc::string::String::from("_"),
+        | Pattern::Binder => alloc::string::String::from("x"),
+        | Pattern::Unit => alloc::string::String::from("()"),
+        | Pattern::Hole(_) => alloc::string::String::from("?"),
+        | Pattern::Literal(Literal::Integer(ref integer)) => {
+            alloc::string::String::from(integer.magnitude().as_ref())
+        },
+        | Pattern::Literal(ref other) => alloc::format!("{other:?}"),
+        | Pattern::Pair(first, second) => alloc::format!(
+            "({}, {})",
+            spelled(patterns, first),
+            spelled(patterns, second)
+        ),
+        | Pattern::Injection(side, body) => {
+            let former = match side {
+                | Side::Left => "inl",
+                | Side::Right => "inr",
+            };
+            alloc::format!("{former}({})", spelled(patterns, body))
+        },
+        | Pattern::Constructor { tag, ref fields } => {
+            let fields: Vec<_> = fields
+                .iter()
+                .map(|&field| spelled(patterns, field))
+                .collect();
+            alloc::format!("#{}({})", usize::from(tag), fields.join(", "))
+        },
+    }
+}
 
 /// Evaluate a closed fixture without global definitions.
 ///
@@ -71,6 +150,20 @@ fn a_hole_scrutinee_leaves_every_branch_possible()
     assert_eq!(
         analysis.coverage().as_ref().unwrap().exhaustiveness(),
         Exhaustiveness::Exhaustive
+    );
+    let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let hole = HoleId::from(0_u32);
+    let scrutinee = written.hole(hole);
+    let written_analysis = written.analyze("Color", scrutinee);
+    assert_eq!(
+        written_analysis.branches(),
+        &[BranchStatus::Possibly; 3],
+        "a written match over a hole is stuck, every arm still in play"
+    );
+    assert_eq!(
+        written.run(scrutinee),
+        Ran::Hole(hole),
+        "and its compiled tree stops at the scrutinee"
     );
 }
 
@@ -366,4 +459,142 @@ fn the_eliminator_still_fires_on_a_hole_payload()
         checkpoint.domain().value(value),
         Some(&gandr_core_nbe::DomainValue::Neutral { .. })
     ));
+}
+
+#[test]
+fn a_missing_constructor_is_reported_by_name()
+{
+    let unfinished = alloc::format!(
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0, Green => ret 1 }} }}\n"
+    );
+    assert!(
+        matches!(
+            refusal(&unfinished, "pick"),
+            Some(LoweringRefusal::NonExhaustiveMatch { .. })
+        ),
+        "the lowering refuses the declaration a constructor has no arm in"
+    );
+    let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    for tag in 0 .. 2_usize {
+        let covered = written.construct("Color", tag, Vec::new());
+        let analysis = written.analyze_prefix("Color", covered, 2);
+        assert!(
+            matches!(analysis.selection(), &Selection::Taken { arm, .. } if usize::from(arm) == tag),
+            "the constructor at tag {tag} has its own row"
+        );
+    }
+    let blue = written.construct("Color", 2, Vec::new());
+    let analysis = written.analyze_prefix("Color", blue, 2);
+    assert_eq!(
+        analysis.coverage().as_ref().unwrap().exhaustiveness(),
+        Exhaustiveness::Inexhaustive,
+        "the checker's report over the two written rows proves the residue"
+    );
+    assert_eq!(
+        analysis.branches(),
+        &[BranchStatus::Refuted; 2],
+        "and the residue is `Blue`, the one constructor every row refutes"
+    );
+    assert_eq!(analysis.selection(), &Selection::Exhausted);
+}
+
+#[test]
+fn an_inexhaustive_match_does_not_block_its_siblings()
+{
+    let mut session = session(SourceRoot::Strict);
+    let source = alloc::format!(
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0 }} }}\ndef sibling = 41 ;\n"
+    );
+    let _submission = submit(&mut session, &source);
+    assert!(
+        matches!(
+            refusal(&source, "pick"),
+            Some(LoweringRefusal::NonExhaustiveMatch { .. })
+        ),
+        "the inexhaustive match is refused as its own declaration"
+    );
+    let typings = resumed(&session);
+    assert!(
+        matches!(typings.last(), Some(&Typing::Synthesised { .. })),
+        "and the sibling definition still lands: {typings:?}"
+    );
+}
+
+#[test]
+fn an_or_pattern_entails_a_later_repeat_of_either_alternative()
+{
+    let mut written = color_pick("Red | Green => ret 0, Green => ret 1, Blue => ret 2");
+    let arms: Vec<usize> = written.rows().iter().map(|row| row.arm).collect();
+    assert_eq!(
+        arms,
+        [0_usize, 0, 1, 2],
+        "each alternative is a row of its arm"
+    );
+    let red = written.construct("Color", 0, Vec::new());
+    let analysis = written.analyze("Color", red);
+    assert_eq!(
+        analysis.coverage().as_ref().unwrap().arms(),
+        &[
+            Redundancy::Irredundant,
+            Redundancy::Irredundant,
+            Redundancy::Redundant,
+            Redundancy::Irredundant
+        ],
+        "the first arm alone entails the repeat of its `Green` alternative"
+    );
+}
+
+#[test]
+fn a_pattern_hole_carries_the_pattern_position_mark()
+{
+    let mut written = color_pick("Red => ret 0, ? => ret 1");
+    let Some(&hole) = written.rows().get(1)
+    else {
+        panic!("two rows");
+    };
+    let Some(&Pattern::Hole(identity)) = written.patterns().pattern(hole.pattern)
+    else {
+        panic!("the second row is a pattern hole");
+    };
+    assert_eq!(
+        identity,
+        HoleId::from(u32::try_from(usize::from(hole.written)).unwrap()),
+        "the hole is named by its pattern position"
+    );
+    let green = written.construct("Color", 1, Vec::new());
+    let analysis = written.analyze("Color", green);
+    assert_eq!(analysis.branches(), &[
+        BranchStatus::Refuted,
+        BranchStatus::Possibly
+    ]);
+    assert_eq!(
+        written.run(green),
+        Ran::Hole(identity),
+        "the compiled tree stops at that same position, an unfinished test rather than an error"
+    );
+}
+
+#[test]
+fn translation_covers_the_landed_pattern_grammar()
+{
+    let source = alloc::format!(
+        "{COLOR}{NESTED}def shapes(m : Outer) -> -F Integer {{ case m {{ None => ret 0, Some(Yes(y)) => ret 1, ? => ret 2, ?named => ret 3, x => ret 4, _ => ret 5 }} }}\ndef literal(n : Integer) -> -F Integer {{ case n {{ 7 => ret 0, _ => ret 1 }} }}\ndef flag(b : Bool) -> -F Integer {{ case b {{ true => ret 0, false => ret 1 }} }}\ndef either(c : Color) -> -F Integer {{ case c {{ Red | Green => ret 0, Blue => ret 1 }} }}\n"
+    );
+    for (function, expected) in [
+        ("shapes", &["#0()", "#1(#1(x))", "?", "?", "x", "_"][..]),
+        ("literal", &["7", "_"][..]),
+        ("flag", &["inl(())", "inr(())"][..]),
+        ("either", &["#0()", "#1()", "#2()"][..]),
+    ] {
+        let written = Written::new(&source, function);
+        let rows: Vec<_> = written
+            .rows()
+            .iter()
+            .map(|row| spelled(written.patterns(), row.pattern))
+            .collect();
+        assert_eq!(
+            rows, expected,
+            "every landed pattern form of `{function}` reaches the core matcher"
+        );
+    }
 }

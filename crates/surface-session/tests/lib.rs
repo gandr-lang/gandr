@@ -34,3 +34,5 @@ mod live_match;
 mod pattern_holes;
 #[cfg(test)]
 mod session;
+#[cfg(test)]
+mod written;
