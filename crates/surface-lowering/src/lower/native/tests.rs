@@ -433,7 +433,7 @@ fn a_recursive_family_names_itself_in_its_fields()
     let verdicts: Vec<Verdict> = report
         .judged()
         .iter()
-        .map(|judged| judged.verdict())
+        .map(gandr_core_checker::Judged::verdict)
         .collect();
     assert!(
         matches!(verdicts.as_slice(), [

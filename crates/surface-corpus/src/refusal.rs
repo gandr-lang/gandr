@@ -735,6 +735,21 @@ impl Refusal<'_>
         RefusalName::StaticLambdaArgument) |
         (Self::Checking(CheckRefusal::StaticClassifierExpected { .. }),
         RefusalName::StaticClassifierExpected) |
+        (Self::Checking(CheckRefusal::NotADataType(_)), RefusalName::NotADataType)
+        | (Self::Checking(CheckRefusal::DataKindNotUniverse(_)), RefusalName::DataKindNotUniverse)
+        | (Self::Checking(CheckRefusal::DataFieldLevel { .. }), RefusalName::DataFieldLevel)
+        | (Self::Checking(CheckRefusal::DataArgumentArity(_)), RefusalName::DataArgumentArity)
+        | (Self::Checking(CheckRefusal::UnknownConstructor { .. }), RefusalName::UnknownConstructor)
+        | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
+        | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
+        | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
+        | (Self::Checking(CheckRefusal::MissingRecordField { .. }), RefusalName::MissingRecordField)
+        | (Self::Checking(CheckRefusal::NegativeOccurrence(_)), RefusalName::NegativeOccurrence)
+        | (Self::Checking(CheckRefusal::NestedOccurrence(_)), RefusalName::NestedOccurrence)
+        | (Self::Checking(CheckRefusal::IndexOccurrence(_)), RefusalName::IndexOccurrence)
+        | (Self::Checking(CheckRefusal::NonUniformOccurrence(_)), RefusalName::NonUniformOccurrence)
+        | (Self::Checking(CheckRefusal::CrossBlockReference { .. }), RefusalName::CrossBlockReference)
+        | (Self::Checking(CheckRefusal::DescentNotReplayed { .. }), RefusalName::DescentNotReplayed) |
         (Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }),
         RefusalName::ExpectationOutsideFixtureRoot)
     )

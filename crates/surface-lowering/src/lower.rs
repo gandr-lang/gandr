@@ -3037,15 +3037,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
                         matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && (usize::from(constant) < usize::from(own) || (usize::from(constant) == usize::from(own) && matches!(entry.definition, Maybe::Present(Half { operand: Operand::Data(_), .. })))) && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
                     },
-                    | Err(LoweringRefusal::ForwardMemberReference {
-                        span,
-                        name: refused,
-                        ..
-                    }) => span == site.at.span && refused == name,
-                    | Err(LoweringRefusal::UnmarkedSelfReference {
-                        span,
-                        name: refused,
-                    }) => span == site.at.span && refused == name,
+                    | Err(
+                        LoweringRefusal::ForwardMemberReference {
+                            span,
+                            name: refused,
+                            ..
+                        }
+                        | LoweringRefusal::UnmarkedSelfReference {
+                            span,
+                            name: refused,
+                        },
+                    ) => span == site.at.span && refused == name,
                     | _ => true,
                 }
         },

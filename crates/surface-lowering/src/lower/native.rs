@@ -89,7 +89,7 @@
 //!
 //! Alternative: the recursive argument first and every later parameter
 //! pushed into the case's motive and re-bound under each branch's fields, as
-//! an eliminator's methods take them (McBride, *Elimination with a Motive*,
+//! an eliminator's methods take them (`McBride`, *Elimination with a Motive*,
 //! TYPES 2000), which admits a recursive call that varies them, an
 //! accumulator, at the cost of re-indexing every branch. Reversal: a
 //! recursive definition that must vary an earlier parameter.
@@ -310,7 +310,7 @@ pub(super) struct CaseIndex(usize);
 /// Whether a recursive call claims descent.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct Claimed(pub(super) bool);
+pub(super) struct Claimed(pub bool);
 
 /// A recursive function's own name, which the frame of its fixpoint binds.
 ///
@@ -336,10 +336,10 @@ pub(super) struct Recursion
 {
     /// The parameters before the last, in the lowerer's parameter store: the
     /// ones every recursive call passes unchanged.
-    pub(super) uniform: Stretch,
+    pub uniform: Stretch,
     /// Whether a call claims descent, which makes the fixpoint's evidence
     /// structural rather than partial.
-    pub(super) claimed: Claimed,
+    pub claimed: Claimed,
 }
 
 /// A recursive call as its call form read it: what its head's claim checks.
@@ -364,9 +364,9 @@ pub(super) struct Recursion
 pub(super) struct Descent
 {
     /// The call form.
-    pub(super) call: Site,
+    pub call: Site,
     /// Every argument the call wrote, in the lowerer's operand store.
-    pub(super) arguments: Stretch,
+    pub arguments: Stretch,
 }
 
 /// The column entry no written pattern fills: it matches anything and binds

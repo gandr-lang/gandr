@@ -70,9 +70,11 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the insertions the lowering writes at a checked site: the five
-/// bridges, the classifier of a constructor written without one, the
-/// eliminations a match compiles to, and a recursive function's fixpoint.
+/// One of the insertions the lowering writes at a checked site.
+///
+/// The five bridges, the classifier of a constructor written without one,
+/// the eliminations a match compiles to, and a recursive function's
+/// fixpoint.
 ///
 /// # Specification
 /// - requires: nothing.
