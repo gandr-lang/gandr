@@ -21,8 +21,9 @@
 //! The memory rows are heap bytes still allocated when each measured scope
 //! closes, counted on the calling thread at one thread's width, so every
 //! molding runs where it is counted: the lowered revision (its arena and
-//! module), the form store's parked units, a session after its first
-//! submission, and what one edit's submission adds to that session.
+//! module), the form store's parked units with the text and labeling it
+//! relabels the next revision from, a session after its first submission, and
+//! what one edit's submission adds to that session.
 
 extern crate alloc;
 
@@ -473,8 +474,9 @@ fn kept<Value>(
 }
 
 /// The bytes the edit loop keeps over a module of `forms` forms under the
-/// strict root, one row each: the lowered revision, the form store, a
-/// session after its first submission, and one edit's submission to it.
+/// strict root, one row each: the lowered revision, the form store with the
+/// text and labeling it relabels from, a session after its first submission,
+/// and one edit's submission to it.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -513,7 +515,7 @@ fn memory(
             .iter()
             .map(|&run| (split.identity(run), split.mold(&mut molder, run).park()))
             .collect();
-        Ok(units)
+        Ok((units, text.clone(), split.into_labeling()))
     })?;
     let one = Width::Threads(Threads::from(NonZeroUsize::MIN));
     let (mut session, first) = kept(|| {
@@ -552,7 +554,7 @@ fn memory_rows(
     writeln!(out, "|---|---:|---:|")?;
     for (name, info) in [
         "lowered revision (arena and module)",
-        "form store (parked units by identity)",
+        "form store (parked units by identity, text and labeling)",
         "session after its first submission",
         "one edit's submission, added",
     ]

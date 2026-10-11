@@ -1179,6 +1179,8 @@ impl Labeling
             labeling.tokens.push(token);
             pos = next;
         }
+        labeling.tokens.shrink_to_fit();
+        labeling.within.shrink_to_fit();
         labeling
     }
 
@@ -1320,6 +1322,7 @@ impl Labeling
             token.end = shift(token.end);
         }
         let fresh_count = fresh.len();
+        tokens.reserve_exact(fresh_count.saturating_sub(resync.saturating_sub(restart)));
         drop(tokens.splice(restart .. resync, fresh));
         let kept_tail = within.partition_point(|&index| index < TokenIndex::from(resync));
         let kept_head = within.partition_point(|&index| index < TokenIndex::from(restart));
@@ -1337,6 +1340,7 @@ impl Labeling
             })
             .collect();
         within.truncate(kept_head);
+        within.reserve_exact(fresh_within.len().saturating_add(tail.len()));
         within.extend(fresh_within);
         within.extend(tail);
         Self { tokens, within }

@@ -24,10 +24,13 @@
 //! rollback is log truncation and checkpoints are cheap and serializable.
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
+use core::num::NonZeroU32;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -950,6 +953,112 @@ enum EmitDigest
     Unfolded,
 }
 
+/// Where a folded digest stands in its log's [`FoldedDigests`] table, one
+/// past the index, so a slot that names no digest costs no more than one
+/// that names one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DigestIndex(NonZeroU32);
+
+/// What a log keeps of one emission's digest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DigestSlot
+{
+    /// Folded where the emission's unit was molded; the digest stands at this
+    /// index of the table.
+    Folded(DigestIndex),
+    /// Left for the commit's builder to fold.
+    Unfolded,
+}
+
+/// The digests folded for a prefix of an emission log: a table of digests,
+/// and per emission, index for index, a slot naming its digest's entry.
+///
+/// A leaf's digest reads only its label and its text, so the leaves a form
+/// repeats — its layout, keywords, punctuation and names — share one entry,
+/// and an emission costs four bytes beside its log's distinct digests rather
+/// than a digest each.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct FoldedDigests
+{
+    /// The digests, in the order first folded.
+    table: Vec<NodeDigest>,
+    /// One slot per emission of the prefix, index for index.
+    slots: Vec<DigestSlot>,
+}
+
+impl FoldedDigests
+{
+    /// What the commit knows of emission `id`'s digest.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at(
+        &self,
+        id: EmitId,
+    ) -> EmitDigest
+    {
+        usize::try_from(id.0)
+            .ok()
+            .and_then(|position| self.slots.get(position))
+            .map_or(EmitDigest::Unfolded, |&slot| self.at_slot(slot))
+    }
+
+    /// Enter `digest` in the table and return the slot naming it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table ends with `digest` and the slot names that entry; a
+    ///   table already holding `u32::MAX` entries is left unchanged and the
+    ///   slot is [`DigestSlot::Unfolded`], which the commit folds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every joined corpus source stages each slot's entry,
+    ///   and the enforcing build folds it again; an entry off by one names
+    ///   another emission's digest and is refused.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    #[spec(ensures: |ret| match ret {
+        DigestSlot::Folded(_) => self.at_slot(ret) == EmitDigest::Folded(digest),
+        DigestSlot::Unfolded => true,
+    })]
+    fn enter(
+        &mut self,
+        digest: NodeDigest,
+    ) -> DigestSlot
+    {
+        let Some(index) = u32::try_from(self.table.len())
+            .ok()
+            .and_then(|length| length.checked_add(1))
+            .and_then(NonZeroU32::new)
+        else {
+            return DigestSlot::Unfolded;
+        };
+        self.table.push(digest);
+        DigestSlot::Folded(DigestIndex(index))
+    }
+
+    /// What `slot` names in this table.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at_slot(
+        &self,
+        slot: DigestSlot,
+    ) -> EmitDigest
+    {
+        match slot {
+            | DigestSlot::Folded(DigestIndex(index)) => {
+                usize::try_from(index.get().saturating_sub(1))
+                    .ok()
+                    .and_then(|entry| self.table.get(entry))
+                    .map_or(EmitDigest::Unfolded, |&digest| EmitDigest::Folded(digest))
+            },
+            | DigestSlot::Unfolded => EmitDigest::Unfolded,
+        }
+    }
+}
+
 /// The operator shape of a shifted tile, derived from its precedence bounds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpShape
@@ -1276,7 +1385,7 @@ pub struct MeldState<'pbg>
     /// The digests folded for a prefix of the emission log, index for index;
     /// an emission past the prefix, or unfolded in it, is folded by the
     /// commit. Never longer than the log.
-    digests: Vec<EmitDigest>,
+    digests: FoldedDigests,
 }
 
 impl<'pbg> MeldState<'pbg>
@@ -1299,7 +1408,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.digests.is_empty() && ret.pbg.fingerprint() == pbg.fingerprint())]
+    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.digests == FoldedDigests::default() && ret.pbg.fingerprint() == pbg.fingerprint())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         Self {
@@ -1316,7 +1425,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
-            digests: Vec::new(),
+            digests: FoldedDigests::default(),
         }
     }
 
@@ -4525,11 +4634,8 @@ impl<'pbg> MeldState<'pbg>
         let mut mapping: Vec<StagedId> = Vec::with_capacity(self.emit.len());
         let mut child_nodes: Vec<StagedId> = Vec::new();
         for (position, op) in self.emit.iter().enumerate() {
-            let folded = self
-                .digests
-                .get(position)
-                .copied()
-                .unwrap_or(EmitDigest::Unfolded);
+            let folded = u32::try_from(position)
+                .map_or(EmitDigest::Unfolded, |id| self.digests.at(EmitId(id)));
             let node = match *op {
                 | EmitOp::Token { label, start, end } => {
                     let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
@@ -4585,12 +4691,13 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one digest per emission, in log order. An emission is folded
+    /// - ensures: one slot per emission, in log order. An emission is folded
     ///   when it is not the stand-in of a [`UnitBase::FormBoundary`] unit, its
     ///   span names a fragment of this state's source and each of its children
-    ///   is an earlier folded emission; its digest is then [`digest_of`] its
+    ///   is an earlier folded emission; its slot then names [`digest_of`] its
     ///   label, that fragment and its significant children's digests in order.
     ///   Every other emission is unfolded, and so is any emission over it.
+    ///   Leaves of one label and one text share one table entry.
     /// - panics: none.
     /// - executable: none — the fold is the body; the enforcing build folds
     ///   each digest again where the commit stages it
@@ -4612,25 +4719,51 @@ impl<'pbg> MeldState<'pbg>
     )
     {
         let source = SourceText::from(self.source.as_str());
-        let mut digests: Vec<EmitDigest> = Vec::with_capacity(self.emit.len());
+        let mut folded = FoldedDigests {
+            table: Vec::new(),
+            slots: Vec::with_capacity(self.emit.len()),
+        };
+        // A leaf's digest is its label's and its text's, so each spelling is
+        // folded and entered once.
+        let mut leaves: BTreeMap<
+            (NodeLabel, gandr_surface_syntax::SourceFragment<'_>),
+            DigestSlot,
+        > = BTreeMap::new();
         let mut significant: Vec<NodeDigest> = Vec::new();
         for (index, op) in self.emit.iter().enumerate() {
-            let digest = if index == 0 && base == UnitBase::FormBoundary {
-                EmitDigest::Unfolded
+            let slot = if index == 0 && base == UnitBase::FormBoundary {
+                DigestSlot::Unfolded
+            }
+            else if let EmitOp::Token { label, start, end } = *op
+                && let Some(text) =
+                    SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+                        .byte_span()
+                        .ok()
+                        .and_then(|span| source.fragment(span).ok())
+            {
+                match leaves.entry((label, text)) {
+                    | Entry::Occupied(entry) => *entry.get(),
+                    | Entry::Vacant(entry) => {
+                        *entry.insert(folded.enter(digest_of(label, text, &[])))
+                    },
+                }
             }
             else {
-                self.fold_emission(source, op, &digests, &mut significant)
+                match self.fold_emission(source, op, &folded, &mut significant) {
+                    | EmitDigest::Folded(digest) => folded.enter(digest),
+                    | EmitDigest::Unfolded => DigestSlot::Unfolded,
+                }
             };
-            digests.push(digest);
+            folded.slots.push(slot);
         }
-        self.digests = digests;
+        self.digests = folded;
     }
 
     /// Fold `op`'s digest over the digests `folded` holds for the emissions
     /// before it, with `significant` as scratch.
     ///
     /// # Specification
-    /// - requires: `folded` holds one entry per emission before `op`.
+    /// - requires: `folded` holds one slot per emission before `op`.
     /// - ensures: [`EmitDigest::Folded`] with [`digest_of`] `op`'s label, its
     ///   fragment of `source` and its significant children's digests when the
     ///   span names a fragment and every child is folded;
@@ -4646,7 +4779,7 @@ impl<'pbg> MeldState<'pbg>
         &self,
         source: SourceText<'_>,
         op: &EmitOp,
-        folded: &[EmitDigest],
+        folded: &FoldedDigests,
         significant: &mut Vec<NodeDigest>,
     ) -> EmitDigest
     {
@@ -4674,8 +4807,8 @@ impl<'pbg> MeldState<'pbg>
             else {
                 return EmitDigest::Unfolded;
             };
-            let (Some(&EmitDigest::Folded(digest)), Some(child)) =
-                (folded.get(index), self.emit.get(index))
+            let (EmitDigest::Folded(digest), Some(child)) =
+                (folded.at(*child), self.emit.get(index))
             else {
                 return EmitDigest::Unfolded;
             };
@@ -4782,7 +4915,7 @@ impl<'pbg> MeldState<'pbg>
             removed: Vec::new(),
             live_marks: 0,
             low_water: usize::MAX,
-            digests: Vec::new(),
+            digests: FoldedDigests::default(),
         };
         state.rebuild_head_caches();
         state
@@ -4891,10 +5024,26 @@ impl<'pbg> MeldState<'pbg>
             ..
         } = unit;
         let landed = self.emit.len();
-        if self.digests.len() < landed {
-            self.digests.resize(landed, EmitDigest::Unfolded);
+        if self.digests.slots.len() < landed {
+            self.digests.slots.resize(landed, DigestSlot::Unfolded);
         }
-        self.digests.extend(digests.into_iter().skip(1));
+        // The unit's entries land past this state's, so each slot past the
+        // stand-in shifts by this table's length.
+        let FoldedDigests { table, slots } = digests;
+        let entries = u32::try_from(self.digests.table.len()).unwrap_or(u32::MAX);
+        self.digests.table.extend(table);
+        self.digests
+            .slots
+            .extend(slots.into_iter().skip(1).map(|slot| {
+                match slot {
+                    | DigestSlot::Folded(DigestIndex(index)) => index
+                        .checked_add(entries)
+                        .map_or(DigestSlot::Unfolded, |landed_index| {
+                            DigestSlot::Folded(DigestIndex(landed_index))
+                        }),
+                    | DigestSlot::Unfolded => DigestSlot::Unfolded,
+                }
+            }));
         let byte_offset = self.source.len();
         let offset = u32::try_from(byte_offset).unwrap_or(u32::MAX);
         let base = u32::try_from(self.emit.len()).unwrap_or(u32::MAX);
@@ -5071,7 +5220,7 @@ impl<'pbg> MeldState<'pbg>
     {
         self.source.truncate(mark.source_len);
         self.emit.truncate(mark.emit_len);
-        self.digests.truncate(mark.emit_len);
+        self.digests.slots.truncate(mark.emit_len);
         self.obligations.truncate(mark.oblig_len);
         self.spaces.truncate(mark.spaces_len);
         // Undo the slope edits made since the mark, newest first; the lowest
@@ -5545,7 +5694,7 @@ pub struct ParkedUnit
     /// The unit's melder.
     checkpoint: Checkpoint,
     /// The digests folded for the unit's emissions.
-    digests: Vec<EmitDigest>,
+    digests: FoldedDigests,
 }
 
 impl ParkedUnit
