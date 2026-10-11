@@ -15,9 +15,11 @@ use crate::model::Pbg;
 use crate::model::PbgError;
 use crate::model::PrecName;
 use crate::model::PrecTable;
+use crate::model::Rule;
 use crate::model::Sort;
 
 mod circuit;
+mod frozen;
 mod term;
 mod type_shell;
 
@@ -260,7 +262,9 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 /// - ensures: a checked grammar over [`built_in_prec_table`]'s DAG, whose item,
 ///   expression, pattern and type bands are mutually incomparable and chained
 ///   only as [`PREC_EDGES`] declares; its forms range over tiles and holes, and
-///   named kinds appear only as rule provenance.
+///   named kinds appear only as rule provenance. The mold table is thawed from
+///   the frozen tables while the rules digest to theirs, and built through
+///   every gate otherwise; both are the same table.
 /// - fails: a precedence or gate violation in the constant rules.
 /// - panics: none.
 /// - intension: the term rules, then the type-and-shell rules, then the circuit
@@ -273,22 +277,47 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 /// - hypothesis: The built-in grammar supplies L3 exact fingerprint, precedence
 ///   and named-kind observations, catching missing rule families, changed band
 ///   relations and reordered mold identities; corpus parsing covers admitted
-///   examples, not every source or a machine-dependent build-time limit.
+///   examples, not every source or a machine-dependent build-time limit. The
+///   frozen-table witness compares the thawed grammar with the gated build
+///   whole.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.dag().groups().count() == PREC_GROUPS.len() && pbg.dag().groups().zip(PREC_GROUPS.iter()).all(|((_, name, assoc), &(expected, expected_assoc))| name == expected && assoc == expected_assoc) && [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].iter().all(|sort| pbg.forms().keys().any(|&(present, _)| present == *sort))))]
 #[inline]
 pub fn built_in() -> Result<Pbg, PbgError>
 {
     let precs = built_in_prec_table()?;
-    let mut rules = term::rules(&precs)?;
-    let type_shell_rules = type_shell::rules(&precs)?;
-    rules.extend(type_shell_rules);
-    let circuit_rules = circuit::rules(&precs)?;
-    rules.extend(circuit_rules);
-    Pbg::build_table(precs, rules)
+    let rules = built_in_rules(&precs)?;
+    Pbg::thawed(precs, rules, &frozen::BUILT_IN)
+}
+
+/// The built-in rules over the built-in precedence table.
+///
+/// # Specification
+/// - requires: `precs` is [`built_in_prec_table`]'s table.
+/// - ensures: the term rules, then the type-and-shell rules, then the circuit
+///   rules.
+/// - fails: a group a rule list names is missing from `precs`.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`] from a rule list.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each rule list's own witness pins its count and order;
+///   the frozen-table witness builds this list through every gate and compares
+///   it with the thawed grammar.
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| !rules.is_empty()))]
+fn built_in_rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
+{
+    let mut rules = term::rules(precs)?;
+    rules.extend(type_shell::rules(precs)?);
+    rules.extend(circuit::rules(precs)?);
+    Ok(rules)
 }
 
 /// Builds the built-in precedence table.
@@ -597,5 +626,43 @@ mod tests
             }),
             prec_table_names(&incomplete)
         );
+    }
+
+    /// The frozen tables are the gated build's: the committed source is the
+    /// rendering of the table built through every gate, and the grammar
+    /// [`built_in`] thaws from it is that grammar, byte for byte. A change to
+    /// the built-in rules fails here until `UPDATE_EXPECT=1` rewrites the
+    /// frozen source.
+    #[test]
+    fn the_frozen_tables_are_the_built_ones()
+    {
+        extern crate std;
+
+        let precs = built_in_prec_table().expect("the built-in table builds");
+        let rules = built_in_rules(&precs).expect("the built-in rules build");
+        let built = Pbg::build_table(precs, rules).expect("the built-in rules pass every gate");
+        expect_test::expect_file!["surface/frozen.rs"]
+            .assert_eq(&built.frozen_source().expect("a string sink never fails"));
+        let thawed = built_in().expect("the built-in grammar thaws");
+        assert_eq!(
+            alloc::format!("{built:?}"),
+            alloc::format!("{thawed:?}"),
+            "the thawed grammar differs from the built one",
+        );
+    }
+
+    /// Rules that no longer digest to the frozen tables' rules are built
+    /// through every gate, never thawed: the built-in rules less their last
+    /// one give the grammar the gated build gives them.
+    #[test]
+    fn a_stale_frozen_table_builds_its_rules()
+    {
+        let precs = built_in_prec_table().expect("the built-in table builds");
+        let mut rules = built_in_rules(&precs).expect("the built-in rules build");
+        rules.pop();
+        let built =
+            Pbg::build_table(precs.clone(), rules.clone()).expect("a prefix passes every gate");
+        let thawed = Pbg::thawed(precs, rules, &frozen::BUILT_IN).expect("stale rules build");
+        assert_eq!(alloc::format!("{built:?}"), alloc::format!("{thawed:?}"));
     }
 }
