@@ -324,5 +324,63 @@ pub fn power(
     arena.alloc(Term::Lambda(outer, body))
 }
 
+/// Build `double : Nat_outer -> Lift Nat_inner -> Lift Nat_inner`.
+///
+/// The program is `λn. λx. iter n <1> (λp.<~x * ~p * ~x>)`: each step
+/// multiplies the quoted input in on both sides of the accumulator, so a
+/// numeral `n` and a quoted inner numeral specialize to `2n` multiplications.
+/// Each step's certificate splices the input twice where the power's splices
+/// it once, so its programs harvest more members per family.
+///
+/// # Specification
+/// - ensures: constructs one exponent-independent program at the indexed model;
+///   specializing a numeral `n` and a quoted inner numeral `x` leaves `2n`
+///   multiplications computing `x` to the power `2n`.
+/// - fails: syntax allocation errors.
+/// - panics: none.
+///
+/// # Errors
+/// Propagates stage arena errors.
+///
+/// # Adequacy
+/// - hypothesis: L2 — varying both exponent and input separates the doubled
+///   iterator from the power, a precomputed answer or a fixed residual.
+/// - witness: `stage::tests::double_residualizes`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|root| match arena.term(*root) {
+    Ok(Term::Lambda(outer, body)) => arena.ty(outer) == Ok(Type::Nat(Stage::Outer))
+        && match arena.term(body) {
+            Ok(Term::Lambda(lifted, _)) => match arena.ty(lifted) {
+                Ok(Type::Lift(inner)) => arena.ty(inner) == Ok(Type::Nat(Stage::Inner(model))),
+                _ => false,
+            },
+            _ => false,
+        },
+    _ => false,
+}))]
+pub fn double(
+    arena: &mut Arena,
+    model: Model,
+) -> Result<TermId, StageError>
+{
+    let outer = arena.alloc_type(Type::Nat(Stage::Outer))?;
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(model)))?;
+    let lifted = arena.alloc_type(Type::Lift(inner))?;
+    let one = arena.alloc(Term::Natural(Stage::Inner(model), Natural(1)))?;
+    let initial = arena.alloc(Term::Quote(one))?;
+    let input = arena.alloc(Term::Variable(Index(1)))?;
+    let input = arena.alloc(Term::Splice(input))?;
+    let previous = arena.alloc(Term::Variable(Index(0)))?;
+    let previous = arena.alloc(Term::Splice(previous))?;
+    let product = arena.alloc(Term::Multiply(input, previous))?;
+    let product = arena.alloc(Term::Multiply(product, input))?;
+    let body = arena.alloc(Term::Quote(product))?;
+    let step = arena.alloc(Term::Lambda(lifted, body))?;
+    let exponent = arena.alloc(Term::Variable(Index(1)))?;
+    let body = arena.alloc(Term::Iterate(exponent, initial, step))?;
+    let body = arena.alloc(Term::Lambda(lifted, body))?;
+    arena.alloc(Term::Lambda(outer, body))
+}
+
 #[cfg(test)]
 mod tests;
