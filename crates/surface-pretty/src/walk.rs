@@ -168,7 +168,7 @@ enum Kind
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-        | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+        | Former::Literal(_) | Former::Tuple(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..)),
@@ -203,7 +203,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Constant(_)
         | Former::Unit
         | Former::Literal(_)
-        | Former::Pair(..)
+        | Former::Tuple(_)
         | Former::ListNil
         | Former::ListCons(..)
         | Former::Injection(..)
@@ -316,14 +316,16 @@ enum Children<Node>
     One(Slot<Node>),
     /// Two children, first then second.
     Two(Slot<Node>, Slot<Node>),
-    /// The value-type components of the product or the sum `of` names, which
+    /// The components of the product, the sum or the tuple `of` names, which
     /// the source answers one by one ([`Source::component`]).
     Components
     {
-        /// The product or the sum.
+        /// The product, the sum or the tuple.
         of: Node,
         /// How many components it has.
         arity: Arity,
+        /// What each component's position admits.
+        admits: Admits,
     },
 }
 
@@ -331,15 +333,15 @@ enum Children<Node>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a product's and a sum's components, each a value type, are
-///   answered by the source for `node`; a static Pi's domain and codomain admit
-///   value types; a thunk type's body and a quoted computation type admit
-///   computation types; a returner's result, an arrow's and a dependent arrow's
-///   domain and a quoted value type admit value types, the arrows' codomains
-///   computation types; a decode's code, a pair's items, an injection's body, a
-///   static abstraction's body and a static application's operator and argument
-///   admit values; native path endpoints, maps and component paths admit
-///   values; every other former is a leaf.
+/// - ensures: a product's and a sum's components, each a value type, and a
+///   tuple's, each a value, are answered by the source for `node`; a static
+///   Pi's domain and codomain admit value types; a thunk type's body and a
+///   quoted computation type admit computation types; a returner's result, an
+///   arrow's and a dependent arrow's domain and a quoted value type admit value
+///   types, the arrows' codomains computation types; a decode's code, an
+///   injection's body, a static abstraction's body and a static application's
+///   operator and argument admit values; native path endpoints, maps and
+///   component paths admit values; every other former is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -357,12 +359,14 @@ enum Children<Node>
     | Former::Stack(..) | Former::With(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
     | Former::Product(arity) | Former::Sum(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), .. } if count == usize::from(arity)),
+        Children::Components { arity: Arity(count), admits: Admits::ValueType, .. } if count == usize::from(arity)),
+    | Former::Tuple(arity) => matches!(ret,
+        Children::Components { arity: Arity(count), admits: Admits::Value, .. } if count == usize::from(arity)),
     | Former::StaticPi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Pair(..) | Former::StaticApplication(..) => matches!(ret,
+    | Former::ListCons(..) | Former::PathUniverse(..) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::StaticApplication(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::Value, .. }, Slot { admits: Admits::Value, .. })),
     | Former::ThunkType(_) | Former::QuoteComputation(_) => matches!(ret,
         Children::One(Slot { admits: Admits::CompType, .. })),
@@ -388,6 +392,12 @@ where
         | Former::Product(arity) | Former::Sum(arity) => Children::Components {
             of: node,
             arity: Arity(usize::from(arity)),
+            admits: Admits::ValueType,
+        },
+        | Former::Tuple(arity) => Children::Components {
+            of: node,
+            arity: Arity(usize::from(arity)),
+            admits: Admits::Value,
         },
         | Former::StaticPi {
             domain: first,
@@ -403,7 +413,6 @@ where
         | Former::PathUniverse(first, second)
         | Former::PathProduct(first, second)
         | Former::PathEquiv(first, second)
-        | Former::Pair(first, second)
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second) => {
             Children::Two(slot(first, Admits::Value), slot(second, Admits::Value))
@@ -612,8 +621,6 @@ enum Bracket
     PathEquiv,
     /// A native product path.
     PathProduct,
-    /// A pair `(a, b)`.
-    Pair,
     /// A native cell, `cons(head, tail)`.
     ListCons,
     /// A left injection `Inl(v)`.
@@ -645,6 +652,9 @@ enum Join
     Apply(Arity),
     /// A bracketed value former over its items.
     Bracket(Bracket),
+    /// A tuple over this many components: `(a,)` for one, `(a, b, …)` from
+    /// two.
+    Tuple(Arity),
 }
 
 /// One unit of the walk's pending work.
@@ -883,10 +893,11 @@ where
             | Children::Components {
                 of,
                 arity: Arity(count),
+                admits,
             } => {
                 for index in (0_usize .. count).rev() {
                     if let Some(component) = source.component(of, Component::from(index)) {
-                        pending.push((component, Admits::ValueType, below));
+                        pending.push((component, admits, below));
                     }
                 }
             },
@@ -1570,7 +1581,7 @@ impl Walk<'_, '_, '_>
             | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
             | Former::Pi { .. } => Some(Join::Pi),
             | Former::StaticLambda(_) => Some(Join::StaticLambda),
-            | Former::Pair(..) => Some(Join::Bracket(Bracket::Pair)),
+            | Former::Tuple(arity) => Some(Join::Tuple(Arity(usize::from(arity)))),
             | Former::ListCons(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::ListCons))
@@ -1601,13 +1612,14 @@ impl Walk<'_, '_, '_>
             | Children::Components {
                 of,
                 arity: Arity(count),
+                admits,
             } => {
                 for index in (0_usize .. count).rev() {
                     tasks.push(source.component(of, Component::from(index)).map_or(
                         Task::Missing,
                         |component| Task::Visit {
                             node: component,
-                            admits: Admits::ValueType,
+                            admits,
                             depth: below,
                         },
                     ));
@@ -1797,8 +1809,8 @@ impl Walk<'_, '_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right | Bracket::PathRefl) => Some(1_usize),
-            Join::Infix(_, Arity(components)) => Some(components),
-            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::Pair | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
+            Join::Infix(_, Arity(components)) | Join::Tuple(Arity(components)) => Some(components),
+            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
@@ -1808,7 +1820,7 @@ impl Walk<'_, '_, '_>
                     Join::Infix(Infix::Product, _) => Binding::Product,
                     Join::Infix(Infix::Sum, _) => Binding::Sum,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
-                    Join::Apply(_) | Join::Bracket(_) => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Tuple(_) => Binding::Atom,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
             | Err(PresentationError::Render(_)) => false,
@@ -1907,6 +1919,28 @@ impl Walk<'_, '_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
+            | Join::Tuple(Arity(count)) => {
+                let mut components = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    components.push(self.pop()?);
+                }
+                let opener = self.leaf(Glyphs("("))?;
+                let mut items = Vec::from([opener]);
+                for (position, component) in components.iter().rev().enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    items.push(component.doc);
+                }
+                if count == 1_usize {
+                    items.push(self.leaf(Glyphs(","))?);
+                }
+                let inner = self.builder.concat_all(items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs(")"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
+            },
             | Join::Bracket(bracket) => {
                 let mut items = Vec::new();
                 match bracket {
@@ -1915,8 +1949,7 @@ impl Walk<'_, '_, '_>
                     | Bracket::With
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
-                    | Bracket::ListCons
-                    | Bracket::Pair => {
+                    | Bracket::ListCons => {
                         let second = self.pop()?;
                         let first = self.pop()?;
                         let opener = self.leaf(Glyphs(match bracket {
@@ -1926,10 +1959,7 @@ impl Walk<'_, '_, '_>
                             | Bracket::PathEquiv => "equiv(",
                             | Bracket::PathProduct => "pathProduct(",
                             | Bracket::ListCons => "cons(",
-                            | Bracket::Pair
-                            | Bracket::PathRefl
-                            | Bracket::Left
-                            | Bracket::Right => "(",
+                            | Bracket::PathRefl | Bracket::Left | Bracket::Right => "(",
                         }))?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
@@ -1941,7 +1971,6 @@ impl Walk<'_, '_, '_>
                             | Bracket::PathRefl => "refl(",
                             | Bracket::Left => "Inl(",
                             | Bracket::Right
-                            | Bracket::Pair
                             | Bracket::ListCons
                             | Bracket::Stack
                             | Bracket::With

@@ -76,7 +76,7 @@ impl Borrow<str> for Name<'_>
     }
 }
 
-/// How many components a product or a sum has.
+/// How many components a product, a sum or a tuple has.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Arity(usize);
@@ -107,7 +107,8 @@ impl From<Arity> for usize
     }
 }
 
-/// The position of one component of a product or a sum, counting from zero.
+/// The position of one component of a product, a sum or a tuple, counting
+/// from zero.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Component(usize);
@@ -263,8 +264,10 @@ pub enum Former<'source, Node>
     Unit,
     /// A literal.
     Literal(&'source Literal),
-    /// A pair of values.
-    Pair(Node, Node),
+    /// A tuple of values, which the source answers by [`Source::component`]:
+    /// `(a,)` at arity one, `(a, b, …)` from two; the empty tuple is
+    /// [`Former::Unit`].
+    Tuple(Arity),
     /// A sum injection.
     Injection(Side, Node),
     /// A suspended computation, which the printer shows as opaque.
@@ -324,13 +327,14 @@ pub trait Source
         node: Self::Node,
     ) -> Former<'_, Self::Node>;
 
-    /// The handle of component `index` of the product or the sum `node` names.
+    /// The handle of component `index` of the product, the sum or the tuple
+    /// `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the handle of the component at `index` when [`read`] answers
-    ///   a [`Former::Product`] or a [`Former::Sum`] for `node` and `index` is
-    ///   below its arity; none otherwise.
+    ///   a [`Former::Product`], a [`Former::Sum`] or a [`Former::Tuple`] for
+    ///   `node` and `index` is below its arity; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -343,9 +347,10 @@ pub trait Source
     ///
     /// # Adequacy
     /// - hypothesis: L3 — core-backed and table-backed readers answer the
-    ///   components of products and sums of arity zero, two and three in order,
-    ///   and none past the arity or for another former; a reversed or shifted
-    ///   component changes a golden spelling.
+    ///   components of products and sums of arity zero, two and three, and of
+    ///   tuples of arity one to three, in order, and none past the arity or for
+    ///   another former; a reversed or shifted component changes a golden
+    ///   spelling.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
