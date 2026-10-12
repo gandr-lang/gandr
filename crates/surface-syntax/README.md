@@ -13,6 +13,7 @@ The concrete syntax tree of the gandr surface language: a molded node vocabulary
 - [Layout in the tree](#layout-in-the-tree)
 - [Arena position and content digest](#arena-position-and-content-digest)
 - [Digest preimage](#digest-preimage)
+  - [A preimage is hashed in one call](#a-preimage-is-hashed-in-one-call)
 - [Level-order layout](#level-order-layout)
 - [Builder identity](#builder-identity)
 - [Source text and fragments](#source-text-and-fragments)
@@ -130,6 +131,13 @@ Every token the source wrote is a node, layout included, so the leaves read in s
 ## Digest preimage
 
 The preimage is the domain string `gandr.surface-syntax.node.v2`, the label's pinned tag, the label's payload (a mold id as four little-endian bytes; a grout's sort as two and its shape as one; a minted close's sort as two and its family as one), the significant child count, the node's own text when its label is a leaf label, and the significant children's digests in order. Spans, child positions and layout children are excluded, so moving or reformatting text leaves its digest unchanged. Every variable-width field is preceded by its length at a fixed width, so `ab` beside `c` and `a` beside `bc` hash differently. The version suffix belongs to the domain: a change to the layout changes every node's identity, and two layouts never compare equal. The pinned form is asserted against an external BLAKE3 golden rather than a value this crate produced.
+
+### A preimage is hashed in one call
+
+Most nodes are leaves and small forms: over the corpus, 97% of the digested nodes have a preimage of at most four BLAKE3 blocks, 256 bytes. `digest_of` writes such a preimage into a 256-byte stack buffer and hashes it with one `blake3::hash` call; a longer one goes through the incremental hasher field by field. Both read the same bytes, so every digest is unchanged. A leaf's digest takes 91 ns rather than 130, a form over two children 163 rather than 191, and parsing the corpus about 4% less time.
+
+- Alternatives: the incremental hasher for every node, which sets up its whole chunk state and copies each field through its buffer; a kilobyte stack buffer, which zeroes a kilobyte for every leaf and measured 101 ns; a heap buffer past the stack one, which allocates where the incremental hasher does not; reading the digest with `finalize` instead of the extendable output, which measured no different.
+- Reversal: a preimage layout whose common case outgrows four blocks moves the bound; hashing many nodes' preimages at once replaces the per-node call.
 
 ## Level-order layout
 

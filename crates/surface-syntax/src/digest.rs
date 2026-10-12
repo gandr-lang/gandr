@@ -51,6 +51,15 @@ pub const NODE_DIGEST_LEN: usize = 32_usize;
 /// the two generations must not be comparable.
 const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v2";
 
+/// The widest fixed-width head a preimage opens with: the domain, the tag, a
+/// four-byte payload, the child count and the text length.
+const HEAD_CAPACITY: usize = NODE_DOMAIN.len() + 1 + 4 + 8 + 8;
+
+/// The longest preimage hashed from the stack: four BLAKE3 blocks, which hold
+/// a leaf's head and up to two hundred bytes of text, or an interior's head
+/// and up to six children. A longer one goes through the incremental hasher.
+const INLINE_PREIMAGE: usize = 256;
+
 /// The content identity of one node: a digest of its label and its content.
 ///
 /// # Specification
@@ -244,15 +253,23 @@ impl core::fmt::Debug for NodeDigest
 /// quintillion children or bytes, far above what any source produces — so the
 /// saturation is a documented ceiling rather than a reachable path.
 ///
+/// A preimage of at most [`INLINE_PREIMAGE`] bytes is assembled on the stack
+/// and hashed in one call; a longer one is fed to the incremental hasher
+/// field by field. Both hash the same bytes.
+///
 /// # Adequacy
 /// - hypothesis: L2 — one node's digest is pinned against an external
 ///   hexadecimal golden, so any change to the domain, the tag placement, the
-///   payload, the count width or the field order moves it; the L3 residue is
-///   the set of collisions a fold could admit, separated by two labels over
-///   identical children, by two payloads of one variant, by two sibling texts
-///   of equal total length split differently, by reversed child order, and by
-///   an interior label whose text differs.
+///   payload, the count width or the field order moves it; interiors of every
+///   width up to sixteen children and leaves whose text crosses the stack
+///   buffer are compared with the layout fed field by field, so a field lost at
+///   the buffer's edge on either path moves one side; the L3 residue is the set
+///   of collisions a fold could admit, separated by two labels over identical
+///   children, by two payloads of one variant, by two sibling texts of equal
+///   total length split differently, by reversed child order, and by an
+///   interior label whose text differs.
 /// - witness: `digest::tests::a_pinned_leaf_digest_is_stable`
+/// - witness: `digest::tests::a_preimage_hashes_alike_on_either_side_of_the_stack_buffer`
 /// - witness: `digest::tests::two_labels_over_the_same_children_differ`
 /// - witness: `digest::tests::every_payload_reaches_the_digest`
 /// - witness: `digest::tests::sibling_texts_do_not_run_together`
@@ -266,47 +283,85 @@ pub fn digest_of(
     children: &[NodeDigest],
 ) -> NodeDigest
 {
+    // The fixed-width head: the domain, the tag, the payload, the child count
+    // and, for a label that carries text, the text's length.
+    let carries = bool::from(label.carries_text());
+    let text = if carries {
+        <&str>::from(text).as_bytes()
+    }
+    else {
+        &[]
+    };
+    let mut head = [0_u8; HEAD_CAPACITY];
+    let mut head_len = 0_usize;
+    {
+        let mut put = |bytes: &[u8]| {
+            let end = head_len.saturating_add(bytes.len());
+            if let Some(slot) = head.get_mut(head_len .. end) {
+                slot.copy_from_slice(bytes);
+                head_len = end;
+            }
+        };
+        put(NODE_DOMAIN);
+        put(&[u8::from(label.tag())]);
+        match label {
+            | NodeLabel::Wald | NodeLabel::Space => {},
+            | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+                put(&u32::from(mold).to_le_bytes());
+            },
+            | NodeLabel::Grout { sort, shape } => {
+                put(&u16::from(sort).to_le_bytes());
+                put(&[match shape {
+                    | GroutShape::Convex => 0x01_u8,
+                    | GroutShape::Prefix => 0x02_u8,
+                    | GroutShape::Postfix => 0x03_u8,
+                    | GroutShape::Infix => 0x04_u8,
+                }]);
+            },
+            | NodeLabel::GhostClose { sort, class } => {
+                put(&u16::from(sort).to_le_bytes());
+                put(&[match class {
+                    | ClosingClass::Paren => 0x01_u8,
+                    | ClosingClass::Bracket => 0x02_u8,
+                    | ClosingClass::Brace => 0x03_u8,
+                }]);
+            },
+        }
+        put(&u64::try_from(children.len())
+            .unwrap_or(u64::MAX)
+            .to_le_bytes());
+        if carries {
+            put(&u64::try_from(text.len()).unwrap_or(u64::MAX).to_le_bytes());
+        }
+    }
+    // The whole preimage in one stack buffer when it fits, hashed in one
+    // call; past the buffer, the same bytes through the incremental hasher.
+    let head = head.get(.. head_len).unwrap_or_default();
+    let total = head_len
+        .saturating_add(text.len())
+        .saturating_add(NODE_DIGEST_LEN.saturating_mul(children.len()));
+    let mut inline = [0_u8; INLINE_PREIMAGE];
+    if let Some(preimage) = inline.get_mut(.. total) {
+        let pieces = [head, text]
+            .into_iter()
+            .chain(children.iter().map(AsRef::as_ref));
+        let mut at = 0_usize;
+        for piece in pieces {
+            let end = at.saturating_add(piece.len());
+            if let Some(slot) = preimage.get_mut(at .. end) {
+                slot.copy_from_slice(piece);
+            }
+            at = end;
+        }
+        return NodeDigest(*blake3::hash(preimage).as_bytes());
+    }
     let mut hasher = blake3::Hasher::new();
-    let _domain = hasher.update(NODE_DOMAIN);
-    let _tag = hasher.update(&[u8::from(label.tag())]);
-    match label {
-        | NodeLabel::Wald | NodeLabel::Space => {},
-        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
-            let _mold = hasher.update(&u32::from(mold).to_le_bytes());
-        },
-        | NodeLabel::Grout { sort, shape } => {
-            let _sort = hasher.update(&u16::from(sort).to_le_bytes());
-            let _shape = hasher.update(&[match shape {
-                | GroutShape::Convex => 0x01_u8,
-                | GroutShape::Prefix => 0x02_u8,
-                | GroutShape::Postfix => 0x03_u8,
-                | GroutShape::Infix => 0x04_u8,
-            }]);
-        },
-        | NodeLabel::GhostClose { sort, class } => {
-            let _sort = hasher.update(&u16::from(sort).to_le_bytes());
-            let _class = hasher.update(&[match class {
-                | ClosingClass::Paren => 0x01_u8,
-                | ClosingClass::Bracket => 0x02_u8,
-                | ClosingClass::Brace => 0x03_u8,
-            }]);
-        },
-    }
-    let child_count = u64::try_from(children.len()).unwrap_or(u64::MAX);
-    let _count = hasher.update(&child_count.to_le_bytes());
-    if bool::from(label.carries_text()) {
-        let bytes = <&str>::from(text).as_bytes();
-        let text_length = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
-        let _length = hasher.update(&text_length.to_le_bytes());
-        let _text = hasher.update(bytes);
-    }
+    let _head = hasher.update(head);
+    let _text = hasher.update(text);
     for child in children {
         let _child = hasher.update(child.as_ref());
     }
-    let mut output = [0_u8; NODE_DIGEST_LEN];
-    hasher.finalize_xof().fill(output.as_mut_slice());
-
-    NodeDigest(output)
+    NodeDigest(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]
@@ -421,6 +476,54 @@ mod tests
             "7951888b97e227bb76a1ca6bd9736ed8fb7be0ecb4369a5b4bdb11f43ec9b0b4",
             "the preimage layout is pinned against an external golden"
         );
+    }
+
+    #[test]
+    fn a_preimage_hashes_alike_on_either_side_of_the_stack_buffer()
+    {
+        // The layout assembled here field by field, through the incremental
+        // hasher, against `digest_of` for interiors from no children to well
+        // past the stack buffer and for leaves whose text crosses it: a
+        // field dropped, duplicated or misplaced at the buffer's edge, on
+        // either path, moves one side only.
+        let spelled = |tag: u8, payload: &[u8], children: &[NodeDigest], text: Option<&[u8]>| {
+            let mut hasher = blake3::Hasher::new();
+            let _head = hasher
+                .update(super::NODE_DOMAIN)
+                .update(&[tag])
+                .update(payload);
+            let count = u64::try_from(children.len()).unwrap_or(u64::MAX);
+            let _count = hasher.update(&count.to_le_bytes());
+            if let Some(text) = text {
+                let length = u64::try_from(text.len()).unwrap_or(u64::MAX);
+                let _text = hasher.update(&length.to_le_bytes()).update(text);
+            }
+            for child in children {
+                let _child = hasher.update(child.as_ref());
+            }
+            NodeDigest::from(*hasher.finalize().as_bytes())
+        };
+        let mold = MoldId::from(9_u32);
+        let meld = u8::from(NodeLabel::Meld(mold).tag());
+        let children = [word(SourceFragment::from("x")); 16];
+        for width in 0 ..= children.len() {
+            let children = children.get(.. width).unwrap_or_default();
+            assert_eq!(
+                digest_of(NodeLabel::Meld(mold), SourceFragment::from(""), children),
+                spelled(meld, &9_u32.to_le_bytes(), children, None),
+                "an interior of {width} children"
+            );
+        }
+        let tile_tag = u8::from(NodeLabel::Tile(mold).tag());
+        let text = "t".repeat(400);
+        for length in [0_usize, 1, 150, 200, 210, 250, 400] {
+            let text = text.get(.. length).unwrap_or_default();
+            assert_eq!(
+                tile(mold, SourceFragment::from(text)),
+                spelled(tile_tag, &9_u32.to_le_bytes(), &[], Some(text.as_bytes())),
+                "a leaf of {length} bytes"
+            );
+        }
     }
 
     #[test]
