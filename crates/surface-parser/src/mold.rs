@@ -621,8 +621,8 @@ pub fn candidate_labels<'text>(
         | Lexeme::TypedNumber => labels.push(CandidateLabel::from("typed_number")),
         | Lexeme::Character => labels.push(CandidateLabel::from("character")),
         | Lexeme::Quote => labels.push(CandidateLabel::from("\"")),
-        | Lexeme::StringFragment => {
-            labels.push(CandidateLabel::from("string_fragment"));
+        | Lexeme::StringFragment => labels.push(CandidateLabel::from("string_fragment")),
+        | Lexeme::ShellStringFragment => {
             labels.push(CandidateLabel::from("double_string_fragment"));
         },
         | Lexeme::EscapeSequence => labels.push(CandidateLabel::from("escape_sequence")),
@@ -2138,7 +2138,9 @@ impl<'pbg> Molder<'pbg>
     /// a bounded greedy lookahead instead. First the next significant token
     /// prunes the tie: a tied candidate whose hole the token cannot begin, or
     /// whose next symbol is a tile of its own form that the token cannot be,
-    /// is dropped ([`drop_refuted`](Self::drop_refuted)), and a lone survivor
+    /// is dropped ([`drop_refuted`](Self::drop_refuted)), and of openers the
+    /// grammar reads alike only the least remains
+    /// ([`drop_interchangeable`](Self::drop_interchangeable)); a lone survivor
     /// wins without a window. Each remaining candidate is dry-run and its
     /// window molded greedily by [`choose`](Self::choose) (which IS
     /// completion aware and prunes its own ties by the token after each, so
@@ -2213,6 +2215,9 @@ impl<'pbg> Molder<'pbg>
         let mut openers = core::mem::take(&mut self.openers);
         self.drop_refuted(&mut openers, tokens, index, source);
         self.openers = openers;
+        // Interchangeable openers mold every later token alike, so their
+        // windows tie exactly and the least would win: only it remains.
+        self.drop_interchangeable();
         if let [sole] = *self.openers.as_slice() {
             return Some(sole);
         }
@@ -2448,6 +2453,53 @@ impl<'pbg> Molder<'pbg>
         }
         molds.retain(|&mold| self.follow(mold, &labels) == Follow::Possible);
     }
+
+    /// Keep, of each class of interchangeable openers in `self.openers`, only
+    /// the least.
+    ///
+    /// Interchangeable molds ([`Pbg::least_interchangeable`]) leave the slope
+    /// to evolve alike under every later tile, so their windows close with the
+    /// same delta, and the strict comparison keeps the least of them. Dropping
+    /// the others before any window runs makes the same choice.
+    ///
+    /// # Specification
+    /// - requires: `self.openers` ascending.
+    /// - ensures: the openers that remain are, in their order, each class's
+    ///   least member among the openers.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition's two parameter-name molds beside a mold
+    ///   of another class: the later name mold goes and the other class stays;
+    ///   and the corpus molds to the same trees with the windows the drop
+    ///   skips.
+    /// - witness: `mold::tests::interchangeable_openers_keep_only_the_least`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.openers.clone(), ensures: |()| self.openers.iter().all(|mold| before.contains(mold)) && before.iter().all(|&mold| self.openers.iter().any(|&kept| kept <= mold && self.pbg.least_interchangeable(kept) == self.pbg.least_interchangeable(mold))) && self.openers.iter().zip(self.openers.iter().skip(1)).all(|(left, right)| left < right && self.pbg.least_interchangeable(*left) != self.pbg.least_interchangeable(*right)))]
+    fn drop_interchangeable(&mut self)
+    {
+        let pbg = self.pbg;
+        let mut kept = 0_usize;
+        for slot in 0 .. self.openers.len() {
+            let Some(&mold) = self.openers.get(slot)
+            else {
+                break;
+            };
+            let class = pbg.least_interchangeable(mold);
+            let seen = self.openers.get(.. kept).is_some_and(|earlier| {
+                earlier
+                    .iter()
+                    .any(|&earlier| pbg.least_interchangeable(earlier) == class)
+            });
+            if !seen {
+                if let Some(at) = self.openers.get_mut(kept) {
+                    *at = mold;
+                }
+                kept = kept.saturating_add(1);
+            }
+        }
+        self.openers.truncate(kept);
+    }
 }
 
 #[cfg(test)]
@@ -2558,8 +2610,8 @@ mod tests
             (Lexeme::TypedNumber, "1u32", &["typed_number"]),
             (Lexeme::Character, "'a'", &["character"]),
             (Lexeme::Quote, "\"", &["\""]),
-            (Lexeme::StringFragment, "x", &[
-                "string_fragment",
+            (Lexeme::StringFragment, "x", &["string_fragment"]),
+            (Lexeme::ShellStringFragment, "x", &[
                 "double_string_fragment",
             ]),
             (Lexeme::EscapeSequence, "\\n", &["escape_sequence"]),
@@ -3220,6 +3272,38 @@ mod tests
             );
             assert_eq!(molds, kept, "{source:?}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn interchangeable_openers_keep_only_the_least() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        // A definition's lowercase parameter name: `identifier` and
+        // `type_variable` at one position read alike.
+        let (variable, name) = pbg
+            .iter_molds()
+            .find_map(|(mold, def)| {
+                let twin = pbg.least_interchangeable(mold);
+                (twin != mold
+                    && def.label == "type_variable"
+                    && pbg.rule_of(mold).is_ok_and(|rule| rule.name() == DEF))
+                .then_some((mold, twin))
+            })
+            .ok_or("a definition's parameter names share a class")?;
+        let other = mold_in(&pbg, CALL, COMMA, RightSide::Hole, &[])?;
+        assert_ne!(pbg.least_interchangeable(other), name);
+        let mut ascending = [name, variable, other];
+        ascending.sort_unstable();
+        molder.openers = ascending.to_vec();
+        molder.drop_interchangeable();
+        let mut kept = vec![name, other];
+        kept.sort_unstable();
+        assert_eq!(molder.openers, kept);
+        molder.openers = vec![variable];
+        molder.drop_interchangeable();
+        assert_eq!(molder.openers, vec![variable]);
         Ok(())
     }
 

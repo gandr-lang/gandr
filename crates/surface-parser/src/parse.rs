@@ -553,6 +553,7 @@ impl<'source> FormSplit<'source>
                 | Lexeme::FileDescriptor => 15,
                 | Lexeme::Space => 16,
                 | Lexeme::Unknown => 17,
+                | Lexeme::ShellStringFragment => 18,
             });
             spelling.extend_from_slice(&token.end.saturating_sub(origin).to_le_bytes());
         }

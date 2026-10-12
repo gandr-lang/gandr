@@ -15,6 +15,8 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [The molder's search stops at its least key](#the-molders-search-stops-at-its-least-key)
   - [A tie the next token refutes runs no window](#a-tie-the-next-token-refutes-runs-no-window)
   - [A tied bracket is read past its closer](#a-tied-bracket-is-read-past-its-closer)
+  - [Interchangeable openers share one window](#interchangeable-openers-share-one-window)
+  - [A shell string's text is its own lexeme](#a-shell-strings-text-is-its-own-lexeme)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
@@ -154,6 +156,20 @@ Extending every tied bracket's window changes no tree over the corpus and molds 
 
 - Alternatives: factoring the grammar so that one standalone block precedes every declaration removes the tie, but takes the attributes out of a definition's identity, which [the lowering](../surface-lowering/README.md#attributes-a-closed-registry-and-a-side-table) keys its side table by; a longer fixed window moves the bound without removing it.
 - Reversal: a bracket-free family whose deciding token lies past the window needs a window bounded by the grammar instead of the token count, and that bound replaces this one.
+
+### Interchangeable openers share one window
+
+A lowercase parameter name ties its `identifier` and `type_variable` molds: both stand at one position of one form, with the same neighbours, context, precedence and closing class, and only their labels differ. Everything the melder reads of a pushed tile but its label agrees, so their windows mold every later token alike and close with the same delta, and the window comparison keeps the lesser mold. `Pbg::least_interchangeable` names each mold's class, and of tied openers in one class only the least is kept before any window runs; a class that was the whole tie then has a lone opener and runs no window. Of the corpus's 779 windowed ties, 224 held two openers of one class; keeping one takes 8% off parsing the corpus, and every tree is the same.
+
+- Alternatives: dropping the type-variable reading of a parameter name from the grammar removes the tie at its source, but it is a grammar change the lowering would have to follow; a window per class member, as before, molds every later token a second time for a known answer.
+- Reversal: a melder that reads a pushed tile's label after the push — the label becomes a component of the class, and the classes split.
+
+### A shell string's text is its own lexeme
+
+A `"` opens an expression string in code and a double-quoted string in a shell block, and both forms open with the same `"` label. The labeler already scans the two interiors in different modes, so it gives a shell string's text its own lexeme, `ShellStringFragment`, labelled `double_string_fragment`, where an expression string's text stays a `StringFragment` labelled `string_fragment`. The token after the `"` then refutes the reading of the other context, and the tie runs no window. Before, both fragments carried both labels, the two readings molded alike, and the window kept the lesser mold, the expression string, inside shell blocks too: the corpus's shell strings now mold as `double_quoted_string`, and no other tree changes. The split removes 203 of the corpus's 982 windowed ties and takes 6% off parsing it.
+
+- Alternatives: a distinct label for the shell `"` itself, which is a grammar change for what the labeler already knows.
+- Reversal: a string form that admits both interiors, which would take both labels again.
 
 ## A closer with a required operand after it is a mid tile
 
