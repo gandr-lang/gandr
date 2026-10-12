@@ -116,6 +116,12 @@ static_text_wrapper!(
 );
 static_text_wrapper!(SortName, "The display name of one grammar sort.");
 
+/// A label as a token spells it, declared by the grammar or not;
+/// [`Pbg::tile_label`] resolves it to the declared [`TileLabel`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LabelText<'text>(pub &'text str);
+
 /// How many molds a grammar declares.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1808,6 +1814,32 @@ impl Pbg
     ) -> Result<&[RCtxStep], PbgError>
     {
         self.molds.step(rctx, dir)
+    }
+
+    /// The declared label spelled `spelled`: how a token's spelling, or the
+    /// lexeme class it falls back to, finds its menus.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the declared label with exactly this spelling, or
+    ///   none when no rule declares one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label resolves to itself and a
+    ///   spelling no rule declares to none; a lost, shadowed or misspelt key
+    ///   changes one of the observations. The predicate checks a returned
+    ///   label's spelling and menu without scanning the table.
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.is_none_or(|label| label.0 == spelled.0 && !self.candidates(label).is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn tile_label(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<TileLabel>
+    {
+        self.molds.tile_label(spelled)
     }
 
     /// Every mold `label` can take, ascending.

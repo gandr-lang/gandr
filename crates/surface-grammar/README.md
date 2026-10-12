@@ -12,6 +12,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Regex layout](#regex-layout)
 - [Gates](#gates)
 - [Molds and contexts](#molds-and-contexts)
+  - [A token's label and menus in one probe](#a-tokens-label-and-menus-in-one-probe)
 - [Successor runs and dense membership flags](#successor-runs-and-dense-membership-flags)
 - [A lookup builds its refusal only on a miss](#a-lookup-builds-its-refusal-only-on-a-miss)
 - [Closing class](#closing-class)
@@ -137,6 +138,15 @@ A mold is one tile occurrence: its label, its sort, its precedence group, and th
 
 - Alternatives: a hash-map interner needs `std` or a further dependency and a fixed hasher for a stable order.
 - Reversal: a measured build in which interning dominates.
+
+### A token's label and menus in one probe
+
+A parser resolves every token's spellings to declared labels and reads their menus: a keyword's own spelling, then the lexeme classes it falls back to. `Pbg::tile_label` resolves a `LabelText` to its `TileLabel`, and the table keeps both of a label's menus in one hash map keyed by the label, so the resolution and each menu read are one hash probe apiece rather than string comparisons down an ordered map, and a parser holds no label list of its own. Against those comparisons, parsing the corpus takes about a fifth less time and builds the same trees. Nothing iterates the map in an observable order: `candidate_counts` sorts what it lists, and the fingerprint and the frozen tables read the mold columns.
+
+The hasher is `foldhash`'s fixed-seed `fast` state over `hashbrown`, both with their default features off. Measured as this index, `rapidhash`, `rustc-hash`, `ahash`, `foldhash` and `xxhash-rust`'s `xxh3` came within one percent of each other except `xxh3`, four percent slower on these short keys; with no measurable difference the choice is the cheapest build, and the crate graph already compiles `hashbrown` 0.17 and `foldhash` 0.2 beneath `petgraph`. The keys are the grammar's own labels, so hash flooding is not a threat a seeded hasher would answer.
+
+- Alternatives: a sorted label list the parser binary-searches per token, which costs string comparisons on every token; a perfect hash generated with the frozen tables, which needs a build step for a cost a probe already removes; `rapidhash`, the fastest measured by half a percent, which adds a proc-macro dependency.
+- Reversal: `foldhash` unmaintained or dropped from the graph, or a grammar whose labels come from untrusted input.
 
 ## Successor runs and dense membership flags
 

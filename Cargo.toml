@@ -204,6 +204,17 @@ features = ["std"]
 version = "1.5.1"
 default-features = false
 
+# The hasher behind the grammar's label index: a fixed-seed folded-multiply
+# hash, deterministic across runs. The choice and its reversal are in the
+# grammar's README.
+# features:
+# - none: the fixed-seed state needs neither `std` nor a random seed
+# consumers:
+# - surface-grammar
+[workspace.dependencies.foldhash]
+version = "0.2.0"
+default-features = false
+
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.
 # consumers:
@@ -657,6 +668,16 @@ default-features = false
 # - workflow-spec-cost
 [workspace.dependencies.gandr-workflow-test-timing]
 path = "crates/workflow-test-timing"
+
+# SwissTable hash maps without `std`, for the grammar's label index. The
+# choice and its reversal are in the grammar's README.
+# features:
+# - none: the index names its own hasher, so the default one stays off
+# consumers:
+# - surface-grammar
+[workspace.dependencies.hashbrown]
+version = "0.17.1"
+default-features = false
 
 # Exact, dynamically sized integers for native arithmetic.
 # features:

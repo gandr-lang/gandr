@@ -19,6 +19,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use foldhash::fast::FixedState;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GrammarFingerprint;
@@ -31,8 +32,10 @@ use gandr_theory_graphs::NodeCount;
 use gandr_theory_graphs::NodeId;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::condensation;
+use hashbrown::HashMap;
 
 use crate::model::CandidateCount;
+use crate::model::LabelText;
 use crate::model::MoldCount;
 use crate::model::PbgError;
 use crate::model::RegexShape;
@@ -195,6 +198,20 @@ mold_flag! {
     MoldsAdjacent
 }
 
+/// One declared label's two candidate menus.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct LabelMenus
+{
+    /// Every mold the label can take, ascending.
+    declared: Vec<MoldId>,
+    /// The molds it can take where no form is open, ascending: those without a
+    /// same-form predecessor, and the form-first ones.
+    fresh: Vec<MoldId>,
+}
+
 /// The mold and context tables of a checked grammar.
 #[derive(Clone, Debug)]
 pub struct MoldTable
@@ -208,11 +225,9 @@ pub struct MoldTable
     /// Each mold's rule, by id: its position in the rules the table was built
     /// from.
     owners: Vec<usize>,
-    /// Each label's molds, ascending.
-    candidates: BTreeMap<&'static str, Vec<MoldId>>,
-    /// Each label's molds admissible where no form is open, ascending: those
-    /// without a same-form predecessor, and the form-first ones.
-    fresh: BTreeMap<&'static str, Vec<MoldId>>,
+    /// Each declared label's candidate menus, keyed by the label so a token's
+    /// spelling resolves to its label and both menus in one probe.
+    labels: HashMap<TileLabel, LabelMenus, FixedState>,
     /// The same-form adjacency, ascending and unique.
     adjacencies: Vec<(MoldId, MoldId)>,
     /// Where each mold's run of [`adjacencies`](Self::adjacencies) starts, by
@@ -593,10 +608,8 @@ impl MoldTable
         let index = |mold: MoldId| usize::try_from(u32::from(mold)).ok();
         let flag = |flags: &[bool], mold: MoldId| index(mold).and_then(|at| flags.get(at)).copied().unwrap_or(false);
         ret.bounds.len() == count && ret.has_pred.len() == count && ret.has_succ.len() == count && ret.is_first.len() == count && ret.is_complete_last.len() == count && ret.is_required_tail.len() == count && ret.successor_starts.len() == count.saturating_add(1)
-            && ret.candidates.values().map(Vec::len).sum::<usize>() == count
-            && ret.candidates.iter().all(|(&label, molds)| molds.is_sorted_by(|left, right| left < right) && molds.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label)))
-            && ret.fresh.keys().eq(ret.candidates.keys())
-            && ret.fresh.values().zip(ret.candidates.values()).all(|(fresh, molds)| fresh.iter().copied().eq(molds.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))))
+            && ret.labels.values().map(|menus| menus.declared.len()).sum::<usize>() == count
+            && ret.labels.iter().all(|(label, menus)| menus.declared.is_sorted_by(|left, right| left < right) && menus.declared.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label.0)) && menus.fresh.iter().copied().eq(menus.declared.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))))
             && ret.adjacencies.is_sorted_by(|left, right| left < right)
             && {
                 let mut incidence = vec![(false, false); count];
@@ -638,11 +651,12 @@ impl MoldTable
             .iter()
             .map(|mold| bounds_for(mold, &rctxs))
             .collect::<Vec<_>>();
-        let mut candidates: BTreeMap<&'static str, Vec<MoldId>> = BTreeMap::new();
+        let mut labels = HashMap::with_hasher(FixedState::default());
         for (raw, mold) in (0_u32 ..).zip(&molds) {
-            candidates
-                .entry(mold.label)
-                .or_default()
+            labels
+                .entry(TileLabel(mold.label))
+                .or_insert_with(LabelMenus::default)
+                .declared
                 .push(MoldId::from(raw));
         }
         // Dense per-mold flags: the fresh-menu filter probes them once per
@@ -695,30 +709,26 @@ impl MoldTable
             running = running.saturating_add(*start);
             *start = running;
         }
-        let fresh = candidates
-            .iter()
-            .map(|(&label, label_molds)| {
-                let fresh = label_molds
-                    .iter()
-                    .copied()
-                    .filter(|mold| {
-                        let at = usize::try_from(u32::from(*mold)).unwrap_or(usize::MAX);
-                        let pred = has_pred.get(at).copied().unwrap_or(true);
-                        let first = is_first.get(at).copied().unwrap_or(false);
-                        !pred || first
-                    })
-                    .collect::<Vec<_>>();
-                (label, fresh)
-            })
-            .collect();
+        for menus in labels.values_mut() {
+            menus.fresh = menus
+                .declared
+                .iter()
+                .copied()
+                .filter(|mold| {
+                    let at = usize::try_from(u32::from(*mold)).unwrap_or(usize::MAX);
+                    let pred = has_pred.get(at).copied().unwrap_or(true);
+                    let first = is_first.get(at).copied().unwrap_or(false);
+                    !pred || first
+                })
+                .collect();
+        }
         let fingerprint = fold_fingerprint(dag_fingerprint, &molds, &rctxs);
         Self {
             molds,
             rctxs,
             bounds,
             owners,
-            candidates,
-            fresh,
+            labels,
             adjacencies,
             successor_starts,
             has_pred,
@@ -1076,6 +1086,22 @@ impl MoldTable
         })
     }
 
+    /// The declared label spelled `spelled`, if one is.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn tile_label(
+        &self,
+        spelled: LabelText<'_>,
+    ) -> Option<TileLabel>
+    {
+        self.labels
+            .get_key_value(spelled.0)
+            .map(|(&label, _menus)| label)
+    }
+
     /// Every mold `label` can take, ascending.
     ///
     /// # Specification
@@ -1087,9 +1113,9 @@ impl MoldTable
         label: TileLabel,
     ) -> &[MoldId]
     {
-        self.candidates
-            .get(label.as_ref())
-            .map_or(&[], Vec::as_slice)
+        self.labels
+            .get(label.0)
+            .map_or(&[], |menus| menus.declared.as_slice())
     }
 
     /// The molds `label` can take where no form is open, ascending.
@@ -1103,7 +1129,9 @@ impl MoldTable
         label: TileLabel,
     ) -> &[MoldId]
     {
-        self.fresh.get(label.as_ref()).map_or(&[], Vec::as_slice)
+        self.labels
+            .get(label.0)
+            .map_or(&[], |menus| menus.fresh.as_slice())
     }
 
     /// Every declared label with its mold count, ascending by label.
@@ -1114,10 +1142,13 @@ impl MoldTable
     #[must_use]
     pub(crate) fn candidate_counts(&self) -> Vec<(TileLabel, CandidateCount)>
     {
-        self.candidates
+        let mut counts = self
+            .labels
             .iter()
-            .map(|(&label, molds)| (TileLabel(label), CandidateCount(molds.len())))
-            .collect()
+            .map(|(&label, menus)| (label, CandidateCount(menus.declared.len())))
+            .collect::<Vec<_>>();
+        counts.sort_unstable_by_key(|&(label, _count)| label);
+        counts
     }
 
     /// The same-form adjacency, ascending and unique.

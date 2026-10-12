@@ -24,9 +24,11 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
+foldhash.workspace = true
 gandr-surface-render-remote.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true
+hashbrown.workspace = true
 
 # The role golden runs the parser over the corpus sources and pins each
 # source's spans in a file the suite rewrites under `UPDATE_EXPECT=1`. The
