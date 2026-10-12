@@ -428,6 +428,7 @@ path = "crates/surface-dispatcher"
 # The source formatter: a parsed source laid out at a page width, its tokens
 # and comments kept and its meaning checked unchanged.
 # consumers:
+# - surface-dispatcher
 # - surface-driver
 # - surface-lsp
 [workspace.dependencies.gandr-surface-format]

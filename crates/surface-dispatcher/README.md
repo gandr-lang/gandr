@@ -1,6 +1,6 @@
 # gandr-surface-dispatcher
 
-Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check`, `test` and `run` verbs run: parse, lower, check, settle, over every source under the paths given, and for `run` the run stage after the check: focus, run on the L machine, read back.
+Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check`, `test` and `run` verbs run: parse, lower, check, settle, over every source under the paths given, and for `run` the run stage after the check: focus, run on the L machine, read back. The `fmt` verb reaches the same paths and lays each source out through `gandr-surface-format`.
 
 <!-- toc -->
 
@@ -21,6 +21,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - [Goals are reported, never settled](#goals-are-reported-never-settled)
 - [The exercised table is read from the report](#the-exercised-table-is-read-from-the-report)
 - [The stage verb checks staged programs on a stealing pool](#the-stage-verb-checks-staged-programs-on-a-stealing-pool)
+- [The format verb lays out what a walk reaches](#the-format-verb-lays-out-what-a-walk-reaches)
 - [Optional tracing](#optional-tracing)
 - [License](#license)
 
@@ -50,6 +51,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `run_target::Absent` and `declaration_name::Absent`: the run stage. Witnesses: `evaluate::tests::a_value_runs_to_its_spelling`, `evaluate::tests::a_run_reaching_a_goal_blames_it`, `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`, `evaluate::tests::each_outcome_class_has_its_status`, `evaluate::tests::the_run_target_is_the_last_name_declared`.
 - `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb. Witnesses: `tests::the_run_verb_routes_to_a_script`, `script::tests::each_kind_of_source_has_its_status`, `run::run::run_source_runs_source_text`, `run::run::run_source_file_runs_a_script_file`, `run::run::run_source_file_accepts_an_executable_shebang_line`, `run::run::run_source_file_reports_the_path_of_an_absent_file`, `run::run::run_source_file_surfaces_a_source_failure_unchanged`.
 - `ProgramSpec`, `SpecError`, `Staging`, `StageRun`, `Staged`, `StageFault`, `StageVerdict`, `PoolFault` and `RunDigest`: the stage verb. Witnesses: `tests::the_stage_verb_routes_to_a_staging`, `stage::tests::spellings_read_and_print_alike`, `stage::tests::every_width_stages_the_serial_run`, `stage::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`, `stage::tests::a_fault_outranks_a_refusal`.
+- `Formatting`, `FormatStep`, `FormatFault` and `Rewrite`: the format verb. Witnesses: `tests::the_format_verb_routes_to_a_formatting`, `format::tests::a_tree_is_formatted_in_place_once`, `format::tests::checking_writes_nothing`.
 - The corpus's two roots, run through the walk: `corpus::corpus::the_strict_root_checks_owing_nothing`, `corpus::corpus::the_fixture_root_settles_every_fixture`, `corpus::corpus::the_two_roots_exercise_every_row`, `corpus::corpus::a_run_lowers_each_source_once`; every run outcome they state, and the focusing of every declaration they accept: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`, `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`, `corpus::corpus::focusing_is_total_on_the_model_corpus`, `corpus::corpus::focusing_is_total_on_the_pathological_corpus`; and the registration witness ([one walk registers every source](../surface-corpus/README.md#one-walk-registers-every-source)): `corpus::corpus::every_corpus_source_is_registered`, `corpus::corpus::a_planted_orphan_is_not_registered`.
 
 Each nontrivial operation states an executable contract or a local exemption, plus a bounded adequacy claim pointing to its witnesses. The boundary evidence includes:
@@ -65,7 +67,7 @@ Each nontrivial operation states an executable contract or a local exemption, pl
 ## Expected features
 
 - **A renderer.** The caller renders each `Outcome` and each `Step`; `gandr-surface-diagnostics` renders a source step. A `Step::Source` carries the source's text, and `Composed::Settled` the module's origin table and the spellings of the types its checker refusals compare, so a renderer can quote the lines a refusal covers, locate a checker refusal at its node's origin and name the types it compares without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
-- **A file system.** `Walk::step` and `Walk::visit` list directories and read sources; every failure to do so is a `Step::Fault`, never a panic.
+- **A file system.** `Walk::step` and `Walk::visit` list directories and read sources, and `Formatting::step` reads them and writes a changed layout back; every failure to do so is a fault step, never a panic.
 - **Threads.** `Walk::visit` starts scoped threads from `std`; a thread the host refuses to start leaves its sources to the others. `Staging::run` builds a `rayon` pool of its width once per run, and reports a pool the host refuses as `PoolFault`. The default width reads the host's physical performance cores: `hw.perflevel0.physicalcpu` on macOS, the `cpu_core` CPU list and each CPU's core siblings under `/sys/devices` on Linux; a host that reports neither runs on the parallelism `std` reports.
 
 ## Examples
@@ -212,6 +214,12 @@ The check forks below the source and nests a per-item fork inside each half of a
 - _[`chili`](https://crates.io/crates/chili), a heartbeat-scheduled `join`._ It offers `join` without a scope for the per-item fork, and one maintainer carries it. Reversal: a scope and a release history in it, and a measured gain on this verb.
 
 `rayon` is the ecosystem's standard data-parallel pool, maintained by many contributors, with default features off; it brings `rayon-core` and the `crossbeam` deque and epoch crates. The choice reverses on an advisory against `rayon` or `rayon-core` that no release fixes, an unmaintained mark, or a measured loss against scoped threads on this verb.
+
+## The format verb lays out what a walk reaches
+
+`Formatting::step` reaches the paths it was given through the walk's own traversal — the same order, the same skipped links, the same fault for a path naming no source — so `gandr fmt` and `gandr check` over the same paths visit the same sources. Each source is read, parsed, and laid out by `gandr-surface-format` at the invocation's page; a source whose formatted text is its own is `FormatStep::Unchanged` and is never written, and one whose text differs is `FormatStep::Changed`, written back over the source first under `Rewrite::InPlace` and left untouched under `Rewrite::Check`. A source the formatter refuses, or the parse cannot commit, is a `FormatFault` and stays as written; the formatting continues past it.
+
+`Formatting::visit` forks the way `Walk::visit` does: at a width above one it reaches every path first, then lays the sources out on scoped threads, largest first, and hands the steps over in walk order, so every byte the driver prints, every source rewritten and the exit are the serial formatting's. A source's text lives only on the thread laying it out; what the calling thread holds is each path and whether its layout changed. On the corpus in a release build the serial formatting takes about 65 ms, a parse, a layout and the formatter's own reparse per source, against about 15 ms for `check` at the default width; forked, `fmt --check` takes the same 15 ms. The alternative was the stepped formatting alone, which streams but leaves the formatter four times slower than the checker on the same tree; it reverses if a caller needs a source's line printed before the next is laid out. The formatted text is written with `std::fs::write`, which keeps the file's permissions and replaces its bytes in place; a write interrupted midway leaves a truncated source, which a temporary file renamed over the source would not. That alternative loses the file's permissions and any hard link to it, and reverses the choice if a truncated source is ever reported.
 
 ## Optional tracing
 

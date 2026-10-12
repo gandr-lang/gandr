@@ -249,7 +249,7 @@ pub struct Walk
 
 /// Where a walk is among the paths it was given.
 #[derive(Debug)]
-struct Traversal
+pub struct Traversal
 {
     /// The paths not yet started, the next on top.
     arguments: Vec<PathBuf>,
@@ -288,7 +288,7 @@ enum Answered
 
 /// What the traversal reached next, at the walk's current path.
 #[derive(Debug)]
-enum Reached
+pub enum Reached
 {
     /// A source to classify, read and compose.
     Source,
@@ -354,17 +354,9 @@ impl Walk
     )]
     pub fn new(paths: Vec<PathBuf>) -> Self
     {
-        let mut arguments = paths;
-        arguments.reverse();
         Self {
             grammar: built_in(),
-            traversal: Traversal {
-                arguments,
-                argument: PathBuf::new(),
-                answered: Answered::Yes,
-                entries: Vec::new(),
-                path: PathBuf::new(),
-            },
+            traversal: Traversal::new(paths),
             text: String::new(),
             report: RunReport::default(),
         }
@@ -646,6 +638,41 @@ impl Walk
 
 impl Traversal
 {
+    /// A traversal of `paths`, in the order given, nothing yet reached.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn new(paths: Vec<PathBuf>) -> Self
+    {
+        let mut arguments = paths;
+        arguments.reverse();
+        Self {
+            arguments,
+            argument: PathBuf::new(),
+            answered: Answered::Yes,
+            entries: Vec::new(),
+            path: PathBuf::new(),
+        }
+    }
+
+    /// The source or directory last reached.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn path(&self) -> &Path
+    {
+        &self.path
+    }
+
+    /// The source or directory last reached, taken, leaving an empty path.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn take_path(&mut self) -> PathBuf
+    {
+        core::mem::take(&mut self.path)
+    }
+
     /// Advance the traversal to the next source or fault, leaving its path in
     /// `self.path`.
     ///
@@ -680,7 +707,7 @@ impl Traversal
             Maybe::Present(Reached::Source | Reached::Unreadable(_)) => self.answered == Answered::Yes,
         },
     )]
-    fn reach(&mut self) -> Maybe<Reached, walk_step::Absent>
+    pub fn reach(&mut self) -> Maybe<Reached, walk_step::Absent>
     {
         loop {
             let Some(entry) = self.entries.pop()
@@ -1071,7 +1098,7 @@ fn entry_path(entry: &Entry) -> &Path
 }
 
 #[cfg(test)]
-mod tests
+pub mod tests
 {
     use core::convert::Infallible;
     use core::num::NonZeroUsize;
@@ -1097,7 +1124,7 @@ mod tests
 
     /// A fresh scratch directory, removed when dropped.
     #[repr(transparent)]
-    struct Scratch(PathBuf);
+    pub struct Scratch(PathBuf);
 
     impl Scratch
     {
@@ -1120,7 +1147,7 @@ mod tests
         /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
         #[spec(ensures: |ref ret|
             std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()))]
-        fn new(test: &Path) -> Self
+        pub fn new(test: &Path) -> Self
         {
             let root = std::env::temp_dir().join(format!(
                 "gandr-dispatcher-{}-{}",
@@ -1132,6 +1159,15 @@ mod tests
             }
             std::fs::create_dir_all(&root).expect("the scratch directory is created");
             Self(root)
+        }
+
+        /// The directory.
+        ///
+        /// # Specification
+        /// trivial.
+        pub fn root(&self) -> &Path
+        {
+            &self.0
         }
 
         /// Write `text` at `relative`, creating its directories.
@@ -1156,7 +1192,7 @@ mod tests
         #[spec(requires: relative.is_relative() && relative.file_name().is_some()
             && relative.components().all(|component|
                 matches!(component, std::path::Component::Normal(_))))]
-        fn file(
+        pub fn file(
             &self,
             relative: &Path,
             text: SourceText<'_>,

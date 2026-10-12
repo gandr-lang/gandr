@@ -28,6 +28,7 @@ anodized.workspace = true
 clap.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
+gandr-surface-format.workspace = true
 gandr-surface-lsp.workspace = true
 gandr-surface-repl.workspace = true
 gandr-surface-tui.workspace = true
