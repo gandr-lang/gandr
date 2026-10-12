@@ -17,6 +17,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
   - [A window counts eight tokens](#a-window-counts-eight-tokens)
   - [Interchangeable openers share one window](#interchangeable-openers-share-one-window)
   - [An opener the next token continues beats a one-tile form](#an-opener-the-next-token-continues-beats-a-one-tile-form)
+  - [Readings that end alike before the next token keep the least](#readings-that-end-alike-before-the-next-token-keep-the-least)
   - [A shell string's text is its own lexeme](#a-shell-strings-text-is-its-own-lexeme)
   - [A token's labels are derived once and held inline](#a-tokens-labels-are-derived-once-and-held-inline)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
@@ -170,10 +171,19 @@ A lowercase parameter name ties its `identifier` and `type_variable` molds: both
 
 A type name ties its two readings: the complete type `List`, a form of that one tile, and the name that opens the application `List(T)`. When the next significant token is `(`, the application's own next tile, the molder takes the application without a window. A one-tile form is complete at its tile, so the token after it would have to stand after the whole form, in whatever encloses it, while the opener reads the token inside its own form: the longer reading wins, as maximal munch. The rule applies only when exactly one tied opener is continued that way and every other tied opener is a whole one-tile form; any other tie keeps its window. It decides the type-application family, the package type against a type variable, and `pack` against an identifier: of 390 windowed ties on one corpus parse, 239 remain, and parsing the corpus takes 7% less time.
 
+The opener may be one that could also end its form at its tile: a constructor pattern's name opens `Some(x)`, whose arguments are optional, and ties the bare constructor `Some`. Before `(` it is continued all the same, and the corpus's windows chose it every time.
+
 One corpus tree changes, and the window was wrong there. In `-F HomPlus(Integer, String, x, x)` the window of eight tokens ends inside the argument list, so it scored the unfinished application against the complete type `HomPlus` followed by a complete parenthesized type, and took the latter: the definition's return type was `-F HomPlus` with a stray tuple type beside it. The rule reads the application whole. Every other corpus tree is identical.
 
-- Alternatives: a static table of the token sequences that tell each tied family apart, LL(k) over the same successor relation, which the census showed is needed only for families this rule does not reach (the data declaration's two `:` readings and the constructor pattern's); a longer window, which moves the misreading to longer argument lists and costs every tie more.
+- Alternatives: a static table of the token sequences that tell each tied family apart, LL(k) over the same successor relation, which the census showed is needed only for families this rule does not reach (the data declaration's two `:` readings); a longer window, which moves the misreading to longer argument lists and costs every tie more.
 - Reversal: a grammar in which a one-tile form of some sort can itself be followed by the tile that continues its tied opener, so that both readings are well formed with different meanings — the rule then has to ask the enclosing form, or yield to the window, for that family.
+
+### Readings that end alike before the next token keep the least
+
+A constructor pattern's name before `=>` ties its two rules, the opener of `Some(x)` and the bare constructor; a parenthesized expression's `)` ties the closers of its two shapes; a primitive type's name ties a type variable. When every tied opener can end its form at its tile, none is continued by the next significant token, and every opener's rule has one sort and one precedence, the molder keeps the least opener without a window. Each reading then ends a whole form before the token, and the forms stand alike as operands to whatever follows, so every window closes with the same obligations and the exact-tie rule keeps the least: the rule makes the window's choice without molding it. Over the corpus it and the constructor pattern's continued opener decide 115 of the 238 ties that still ran a window, every one as the window did; every corpus tree is identical, and a corpus parse takes 8% less time (12.67 ms to 11.62 ms, best of 200). The data declaration's two `:` readings (107 ties) are the largest family left.
+
+- Alternatives: comparing the readings' whole outside view — closing class, context contents and rule as well as sort and precedence — which is stricter than any observed tie needs and would leave the primitive type and constructor families to the window; LL(k) tables over the successor relation, which these families do not need, since no reading goes on.
+- Reversal: a grammar in which the rule of a complete form, not only its sort and precedence, changes how a later tile molds — a binder whose operand's rule decides what it binds, say. The rule then has to compare that too, or yield to the window.
 
 ### A shell string's text is its own lexeme
 
