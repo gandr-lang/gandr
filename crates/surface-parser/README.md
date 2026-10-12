@@ -16,6 +16,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
   - [A tie the next token refutes runs no window](#a-tie-the-next-token-refutes-runs-no-window)
   - [A window counts eight tokens](#a-window-counts-eight-tokens)
   - [Interchangeable openers share one window](#interchangeable-openers-share-one-window)
+  - [An opener the next token continues beats a one-tile form](#an-opener-the-next-token-continues-beats-a-one-tile-form)
   - [A shell string's text is its own lexeme](#a-shell-strings-text-is-its-own-lexeme)
   - [A token's labels are derived once and held inline](#a-tokens-labels-are-derived-once-and-held-inline)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
@@ -164,6 +165,15 @@ A lowercase parameter name ties its `identifier` and `type_variable` molds: both
 
 - Alternatives: dropping the type-variable reading of a parameter name from the grammar removes the tie at its source, but it is a grammar change the lowering would have to follow; a window per class member, as before, molds every later token a second time for a known answer.
 - Reversal: a melder that reads a pushed tile's label after the push — the label becomes a component of the class, and the classes split.
+
+### An opener the next token continues beats a one-tile form
+
+A type name ties its two readings: the complete type `List`, a form of that one tile, and the name that opens the application `List(T)`. When the next significant token is `(`, the application's own next tile, the molder takes the application without a window. A one-tile form is complete at its tile, so the token after it would have to stand after the whole form, in whatever encloses it, while the opener reads the token inside its own form: the longer reading wins, as maximal munch. The rule applies only when exactly one tied opener is continued that way and every other tied opener is a whole one-tile form; any other tie keeps its window. It decides the type-application family, the package type against a type variable, and `pack` against an identifier: of 390 windowed ties on one corpus parse, 239 remain, and parsing the corpus takes 7% less time.
+
+One corpus tree changes, and the window was wrong there. In `-F HomPlus(Integer, String, x, x)` the window of eight tokens ends inside the argument list, so it scored the unfinished application against the complete type `HomPlus` followed by a complete parenthesized type, and took the latter: the definition's return type was `-F HomPlus` with a stray tuple type beside it. The rule reads the application whole. Every other corpus tree is identical.
+
+- Alternatives: a static table of the token sequences that tell each tied family apart, LL(k) over the same successor relation, which the census showed is needed only for families this rule does not reach (the data declaration's two `:` readings and the constructor pattern's); a longer window, which moves the misreading to longer argument lists and costs every tie more.
+- Reversal: a grammar in which a one-tile form of some sort can itself be followed by the tile that continues its tied opener, so that both readings are well formed with different meanings — the rule then has to ask the enclosing form, or yield to the window, for that family.
 
 ### A shell string's text is its own lexeme
 

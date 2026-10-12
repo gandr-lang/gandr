@@ -787,7 +787,7 @@ const UPPER_KEYWORDS: &[&str] = &[
 
 /// The generic labels a reserved uppercase word falls back to where its own
 /// tile cannot mold: [`Molder::gather_reserved_fallback`] re-admits them, and
-/// [`Molder::drop_refuted`] counts them among the word's labels.
+/// [`next_labels`] counts them among the word's labels.
 const RESERVED_FALLBACK_LABELS: [&str; 2] = ["constructor", "type_identifier"];
 
 /// Return the next non-space token after `index`.
@@ -820,6 +820,43 @@ fn next_significant(
         next = next.saturating_add(1);
     }
     None
+}
+
+/// The whole candidate menu of the next significant token after `index`: its
+/// labels, and a reserved uppercase word's generic fallback labels.
+///
+/// The menu reads the token alone, so a decision taken on it never depends
+/// on the state a mold would leave.
+///
+/// # Specification
+/// - requires: `index` indexes `tokens`, which `source` spells.
+/// - ensures: none at the stream's end; otherwise the [`candidate_labels`] of
+///   [`next_significant`]'s token, followed by [`RESERVED_FALLBACK_LABELS`]
+///   when that token is a reserved uppercase word.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a name, a reserved uppercase word, a closer and the
+///   stream's end read through the follow check: dropping the fallback refutes
+///   the parameter comma before `Type`, and reading the current token instead
+///   keeps the open comma before a closer.
+/// - witness: `mold::tests::the_next_token_keeps_only_the_molds_it_can_follow`
+#[spec(ensures: |ret| ret.as_ref().map(|labels| labels.len()) == next_significant(tokens, index).map(|(_, next)| { let text = TokenText::from(<&str>::from(next.text(source))); candidate_labels(next.lexeme, text).len().saturating_add(if matches!(next.lexeme, Lexeme::UpperWord) && UPPER_KEYWORDS.contains(&<&str>::from(text)) { RESERVED_FALLBACK_LABELS.len() } else { 0 }) }))]
+fn next_labels<'src>(
+    tokens: &[Token],
+    index: TokenIndex,
+    source: &'src SourceFragment<'src>,
+) -> Option<TokenLabels<'src>>
+{
+    let (_, next) = next_significant(tokens, index)?;
+    let text = TokenText::from(<&str>::from(next.text(source)));
+    let mut labels = candidate_labels(next.lexeme, text);
+    if matches!(next.lexeme, Lexeme::UpperWord) && UPPER_KEYWORDS.contains(&<&str>::from(text)) {
+        for fallback in RESERVED_FALLBACK_LABELS {
+            labels.push(CandidateLabel::from(fallback));
+        }
+    }
+    Some(labels)
 }
 
 /// How a token takes part in bracket nesting.
@@ -2135,14 +2172,16 @@ impl<'pbg> Molder<'pbg>
     /// is dropped ([`drop_refuted`](Self::drop_refuted)), and of openers the
     /// grammar reads alike only the least remains
     /// ([`drop_interchangeable`](Self::drop_interchangeable)); a lone survivor
-    /// wins without a window. Each remaining candidate is dry-run and its
-    /// window molded greedily by [`choose`](Self::choose) (which IS
-    /// completion aware and prunes its own ties by the token after each, so
-    /// the window itself molds well), and the reading
-    /// whose window closes with the fewest obligations wins —
-    /// deterministically, keeping the smaller [`MoldId`] on an exact window
-    /// tie. When the local minimum is unique the fast path returns it
-    /// directly.
+    /// wins without a window, and so does the one opener the token continues
+    /// inside its own form when every other survivor is a one-tile form
+    /// ([`continued_opener`](Self::continued_opener)). Each remaining candidate
+    /// is dry-run and its window molded greedily by
+    /// [`choose`](Self::choose) (which IS completion aware and prunes its
+    /// own ties by the token after each, so the window itself molds well),
+    /// and the reading whose window closes with the fewest obligations wins
+    /// — deterministically, keeping the smaller [`MoldId`] on an exact
+    /// window tie. When the local minimum is unique the fast path returns
+    /// it directly.
     ///
     /// # Specification
     /// - requires: candidates are canonical for the current token.
@@ -2210,6 +2249,13 @@ impl<'pbg> Molder<'pbg>
         self.drop_interchangeable();
         if let [sole] = *self.openers.as_slice() {
             return Some(sole);
+        }
+        // An opener the next token continues inside its own form beats the
+        // one-tile forms the token could only follow from outside them.
+        if let Some(labels) = next_labels(tokens, index, source)
+            && let Some(mold) = self.continued_opener(&labels)
+        {
+            return Some(mold);
         }
         // A shared-prefix family: break the tie by a bounded greedy lookahead.
         // Windows run in ascending MoldId order and a later opener wins only
@@ -2418,19 +2464,10 @@ impl<'pbg> Molder<'pbg>
         source: &'src SourceFragment<'src>,
     )
     {
-        let Some((_, next)) = next_significant(tokens, index)
+        let Some(labels) = next_labels(tokens, index, source)
         else {
             return;
         };
-        let slice = next.text(source);
-        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
-        let mut labels = candidate_labels(next.lexeme, text);
-        if matches!(next.lexeme, Lexeme::UpperWord) && UPPER_KEYWORDS.contains(&<&str>::from(text))
-        {
-            for fallback in RESERVED_FALLBACK_LABELS {
-                labels.push(CandidateLabel::from(fallback));
-            }
-        }
         if molds
             .iter()
             .all(|&mold| self.follow(mold, &labels) == Follow::Refuted)
@@ -2438,6 +2475,76 @@ impl<'pbg> Molder<'pbg>
             return;
         }
         molds.retain(|&mold| self.follow(mold, &labels) == Follow::Possible);
+    }
+
+    /// The one opener in `self.openers` that the token carrying `labels`
+    /// continues inside its own form, when every other opener is a whole
+    /// one-tile form.
+    ///
+    /// A one-tile form is complete at its tile, so the token after it stands
+    /// outside it, after whatever form encloses it; an opener whose form goes
+    /// on with a tile the token carries reads the token inside. The longer
+    /// reading wins, as maximal munch: `List(` opens a type application
+    /// rather than ending the type `List` before a parenthesis. A window would
+    /// make the same choice on a well-formed source whose continuation it
+    /// reads to the end; one that ends inside a long argument list scores the
+    /// opener's unfinished form against the complete tile and can choose the
+    /// tile.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a mold exactly when exactly one opener is not
+    ///   form-last and has a same-form successor labelled with one of `labels`,
+    ///   and every other opener is form-last with no same-form predecessor or
+    ///   successor; the mold returned is that opener.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type application's name tied with the bare type
+    ///   name before `(` and before `,`, beside a second opener `(` continues,
+    ///   and beside a tile with a successor: only the first returns the
+    ///   application; reading a form-last opener as continued, dropping the
+    ///   uniqueness check, or admitting a tile with a successor as complete
+    ///   each changes one case. The corpus and a long application after `-F`
+    ///   observe the choice through whole parses.
+    /// - witness: `mold::tests::a_continued_opener_beats_a_one_tile_form`
+    /// - witness: `mold::tests::a_long_type_application_is_read_whole`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(ensures: |ret| {
+        let pbg = self.pbg;
+        let continued = |mold: MoldId| !bool::from(pbg.mold_is_form_last(mold)) && pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
+        let whole = |mold: MoldId| bool::from(pbg.mold_is_form_last(mold)) && !bool::from(pbg.mold_has_successor(mold)) && !bool::from(pbg.mold_has_predecessor(mold));
+        let mut found = self.openers.iter().copied().filter(|&mold| continued(mold));
+        let only = found.next().filter(|_| found.next().is_none());
+        ret == only.filter(|_| self.openers.iter().all(|&mold| continued(mold) || whole(mold)))
+    })]
+    fn continued_opener(
+        &self,
+        labels: &[CandidateLabel<'_>],
+    ) -> Option<MoldId>
+    {
+        let pbg = self.pbg;
+        let mut continued = None;
+        for &mold in &self.openers {
+            let form_last = bool::from(pbg.mold_is_form_last(mold));
+            if !form_last
+                && pbg.mold_successors(mold).iter().any(|&(_, right)| {
+                    pbg.mold(right)
+                        .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
+                })
+            {
+                if continued.replace(mold).is_some() {
+                    return None;
+                }
+            }
+            else if !form_last
+                || bool::from(pbg.mold_has_successor(mold))
+                || bool::from(pbg.mold_has_predecessor(mold))
+            {
+                return None;
+            }
+        }
+        continued
     }
 
     /// Keep, of each class of interchangeable openers in `self.openers`, only
@@ -3267,6 +3374,102 @@ mod tests
         molder.openers = vec![variable];
         molder.drop_interchangeable();
         assert_eq!(molder.openers, vec![variable]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_continued_opener_beats_a_one_tile_form() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let open = TileLabel("(");
+        // `List(T)` against the complete type `List`.
+        let application = mold_in(
+            &pbg,
+            RuleName("type_application"),
+            TYPE_IDENTIFIER,
+            RightSide::Closed,
+            &[open],
+        )?;
+        let bare = mold_in(
+            &pbg,
+            RuleName("type_identifier"),
+            TYPE_IDENTIFIER,
+            RightSide::Closed,
+            &[],
+        )?;
+        // A data declaration's name, which `(` also continues.
+        let declared = mold_in(
+            &pbg,
+            RuleName("data_declaration"),
+            TYPE_IDENTIFIER,
+            RightSide::Closed,
+            &[open],
+        )?;
+        // A parameter comma: neither continued by `(` nor a form of its own.
+        let parameter_comma = mold_in(&pbg, DEF, COMMA, RightSide::Closed, &[TYPE_IDENTIFIER])?;
+        let parenthesis = [CandidateLabel::from("(")];
+        let comma = [CandidateLabel::from(",")];
+        let cases: [(&[MoldId], &[CandidateLabel<'_>], Option<MoldId>); 4] = [
+            (&[application, bare], &parenthesis, Some(application)),
+            (&[application, bare], &comma, None),
+            (&[application, declared], &parenthesis, None),
+            (&[application, parameter_comma], &parenthesis, None),
+        ];
+        for (openers, labels, expected) in cases {
+            let mut ascending = openers.to_vec();
+            ascending.sort_unstable();
+            molder.openers = ascending;
+            assert_eq!(
+                molder.continued_opener(labels),
+                expected,
+                "{openers:?} before {labels:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_long_type_application_is_read_whole() -> Result<(), Box<dyn Error>>
+    {
+        // Nine tokens follow the name, so a window ends inside the argument
+        // list, where the complete type `Pair` before a parenthesized type
+        // scored better than the unfinished application.
+        let pbg = built()?;
+        let source = "def pair(x : Integer) -> -F Pair(Integer, String, x, x) { ret x }\n";
+        let parsed = crate::parse(&pbg, SourceText::from(source))?;
+        let tree = parsed.tree();
+        let applied = source.find("Pair(").ok_or("the source applies `Pair`")?;
+        let melds: Vec<(RuleName, usize, usize)> = tree
+            .positions()
+            .filter_map(|position| {
+                let node = tree.node(position)?;
+                let NodeLabel::Meld(mold) = node.label()
+                else {
+                    return None;
+                };
+                let rule = pbg.rule_of(mold).ok()?.name();
+                Some((
+                    rule,
+                    usize::from(node.span().start()),
+                    usize::from(node.span().end()),
+                ))
+            })
+            .collect();
+        assert!(
+            melds.contains(&(
+                RuleName("type_application"),
+                applied,
+                applied.saturating_add("Pair(Integer, String, x, x)".len())
+            )),
+            "the application spans its arguments: {melds:?}"
+        );
+        assert!(
+            melds
+                .iter()
+                .all(|&(rule, ..)| rule != RuleName("parenthesized_type")),
+            "no argument list stands alone: {melds:?}"
+        );
         Ok(())
     }
 
