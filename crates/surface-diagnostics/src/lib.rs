@@ -69,6 +69,7 @@
 mod culprit;
 mod entry;
 mod locus;
+mod message;
 mod report;
 mod style;
 
@@ -85,6 +86,7 @@ pub use crate::locus::PrimaryLabel;
 pub use crate::locus::Reason;
 pub use crate::locus::report_context;
 pub use crate::report::Class;
+pub use crate::report::Message;
 pub use crate::report::Note;
 pub use crate::report::Report;
 pub use crate::report::Title;

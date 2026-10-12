@@ -1,4 +1,4 @@
-error[ShapeMismatch]: the rule here requires a thunk type `+U C`
+error[ShapeMismatch]: expected a thunk type `+U C`
   ╭▸ force.gandr:2:23
   │
 2 │ def a = thunk { force 1 } ;

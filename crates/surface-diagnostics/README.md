@@ -8,6 +8,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [What a report shows](#what-a-report-shows)
+- [The message is the user's; the title is the producer's](#the-message-is-the-users-the-title-is-the-producers)
 - [The label says what the locus is](#the-label-says-what-the-locus-is)
 - [A label names the types its refusal compares](#a-label-names-the-types-its-refusal-compares)
 - [A refusal names the judgements it stood inside](#a-refusal-names-the-judgements-it-stood-inside)
@@ -74,18 +75,18 @@ The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the
 
 ## What a report shows
 
-| Kind | Title | Primary locus and label | Note |
-| ---- | ----- | ----------------------- | ---- |
+| Kind | First line | Primary locus and label | Note |
+| ---- | ---------- | ----------------------- | ---- |
 | refusal | `error[<refusal>]: <message>` | the refusal's span, labelled with what the bytes there are | the declaration, what it states and its surviving obligations |
 | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
 | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
-| source refused as a whole | `error[<refusal>]: the lowering refused the source as a whole: …` | the refusal's span, labelled with what the bytes there are | none |
+| source refused as a whole | `error[<refusal>]: the source is not a list of declarations: …` | the refusal's span, labelled with what the bytes there are | none |
 | shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
 
-The refusal name in the title is the spelling the corpus's `refuses` attribute states, so a reader can copy it into an expectation. A type mismatch renders as:
+The refusal name in the first line is the spelling the corpus's `refuses` attribute states, so a reader can copy it into an expectation. A type mismatch renders as:
 
 ```text
-error[TypeMismatch]: the type this term synthesises does not convert to the type it is checked against
+error[TypeMismatch]: mismatched types
   ╭▸ mismatch.gandr:2:13
   │
 1 │ def wrong : Integer ;
@@ -96,7 +97,13 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
   ╰ note: unsettled `wrong` states checks owing 0
 ```
 
-The checker's refusals are worded here; the lowering's and the corpus root's use their own `Display`. No title carries a byte range: the snippet's path, line and column locate the refusal, and an offset beside them is noise. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`. A pending source's ledger line has no snippet, so it keeps the refusal's byte range after its message.
+No message carries a byte range: the snippet's path, line and column locate the refusal, and an offset beside them is noise. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`. A pending source's ledger line has no snippet, so it keeps the refusal's byte range after the producer's text.
+
+## The message is the user's; the title is the producer's
+
+Each producer words its refusals for whoever reads its code: the lowering names the grammar's sorts (`` `hole` has an operand where it takes none ``), the checker its rules (`the rule here requires a thunk type`). A report keeps that text as `Report::title` and leads with `Report::message` instead: one plain message per refusal variant, chosen by an exhaustive match in `message.rs`, naming the source's own names and its forms in words (`this hole has an operand it does not take`, `expected a thunk type`, `` `missing` is not defined ``), and naming no grammar sort, node or admission position. A refusal only a producer's broken invariant reaches says `internal error:`. Every other report's message is its title, which is already the user's. The terminal and the language server both lead with the message; the title stays for a face that wants the producer's words, the verbosity levels in particular.
+
+The alternative was rewording each producer's `Display`, which would leave the implementer text nowhere: the lowering's and the checker's own tests, ledger lines and a detailed verbosity read it. Reversal: when no face reads the producer's text, the two collapse into one. Witness: `message::tests::every_refusal_name_has_a_plain_message`, which builds one refusal of every vocabulary name and holds each message to one line with no grammar sort.
 
 ## The label says what the locus is
 
@@ -115,7 +122,7 @@ The alternatives were a note after the snippet, which the reader meets after the
 A refused body's trail, kept by the dispatcher, is the value and computation judgements the refusal stood inside, outermost first. `Report::reasons` reads each one whose term the origin table locates as a `Reason`: the term's bytes and how it was judged — checked against a type, spelled where the dispatcher could spell it, or synthesised. The snippet marks each as a context locus labelled with a `while` clause, so a force of an integer inside a thunk renders as:
 
 ```text
-error[ShapeMismatch]: the rule here requires a thunk type `+U C`
+error[ShapeMismatch]: expected a thunk type `+U C`
   ╭▸ force.gandr:2:23
   │
 2 │ def a = thunk { force 1 } ;

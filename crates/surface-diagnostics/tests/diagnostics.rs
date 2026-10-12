@@ -356,6 +356,17 @@ def wrong = "text" ;
             include_str!("golden/type-mismatch.txt"),
             "the terminal layout is a public surface"
         );
+        assert_eq!(
+            (report.message().to_string(), report.title().to_string()),
+            (
+                "mismatched types".to_owned(),
+                "the type this term synthesises does not convert to the type it is checked \
+                 against"
+                    .to_owned()
+            ),
+            "the snippet leads with the plain message and keeps the checker's own words as \
+             the title"
+        );
     }
 
     #[test]

@@ -54,6 +54,7 @@ use crate::locus::Label;
 use crate::locus::PrimaryLabel;
 use crate::locus::Reason;
 use crate::locus::report_context;
+use crate::message::Plain;
 use crate::style::RenderStyle;
 use crate::style::Rendered;
 
@@ -403,16 +404,17 @@ impl<'step> Report<'step>
         }
     }
 
-    /// The report's title: what its snippet's first line says after the level
-    /// and the identifier.
+    /// The report's title: the producer's own text for what the report is
+    /// about.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the title [`Report::render`] writes: the producer's message
-    ///   for a refusal, what the declaration states and produced for an
-    ///   unsettled declaration or a goal, the lowering's refusal for a source
-    ///   refused as a whole, and the path a shadowed builtin is bound at.
-    /// - provides: the message a face shows beside the report's span.
+    /// - ensures: the producer's message for a refusal, what the declaration
+    ///   states and produced for an unsettled declaration or a goal, the
+    ///   lowering's refusal for a source refused as a whole, and the path a
+    ///   shadowed builtin is bound at.
+    /// - provides: the detail a face shows beside the [`Report::message`] it
+    ///   leads with, for a reader who wants the producer's own words.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -435,6 +437,36 @@ impl<'step> Report<'step>
     pub const fn title(&self) -> Title<'step>
     {
         Title(self.subject)
+    }
+
+    /// The report's message: what its snippet's first line says after the
+    /// level and the identifier.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the plain message of a refusal, naming no grammar sort, node
+    ///   or admission position; the title of every other report.
+    /// - provides: the message [`Report::render`] writes and a face shows
+    ///   beside the report's span.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type mismatch's message differs from its title, and
+    ///   one refusal of every vocabulary name has a plain message.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    #[spec(ensures: |ret| matches!((self.subject, ret.0),
+        (Subject::Refused { .. }, Subject::Refused { .. })
+            | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
+            | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
+            | (Subject::Shadowed(_), Subject::Shadowed(_))
+    ))]
+    #[inline]
+    #[must_use]
+    pub const fn message(&self) -> Message<'step>
+    {
+        Message(self.subject)
     }
 
     /// The loci that explain the report beside its primary one.
@@ -629,19 +661,19 @@ impl<'step> Report<'step>
     /// - requires: nothing.
     /// - ensures: the first line is the level — `error`, `goal` for a goal,
     ///   `warning` for a shadowed builtin — with a refusal's vocabulary name as
-    ///   its identifier, and the title: the producer's message for a refusal,
-    ///   what the declaration states and produced for a declaration, the
-    ///   shadowed path for a warning. A located report then quotes the lines
-    ///   its loci cover under the source's path, line and column, the primary
-    ///   locus underlined and labelled with what its bytes are or with the
-    ///   surviving obligations, each context locus marked with what it
-    ///   explains, and each nested reason marked with the judgement it stands
-    ///   for; an unlocated report names the source's path alone. A refused
-    ///   declaration closes with a note naming it and what it states. A source
-    ///   with an empty path is named `<input>`. Plain adds no styling; styled
-    ///   adds the backend's colour sequences. Caller path controls remain
-    ///   literal in both modes. No framing terminator is appended, but a
-    ///   trailing path line ending can end an unlocated rendering.
+    ///   its identifier, and the message: a refusal's plain message, what the
+    ///   declaration states and produced for a declaration, the shadowed path
+    ///   for a warning. A located report then quotes the lines its loci cover
+    ///   under the source's path, line and column, the primary locus underlined
+    ///   and labelled with what its bytes are or with the surviving
+    ///   obligations, each context locus marked with what it explains, and each
+    ///   nested reason marked with the judgement it stands for; an unlocated
+    ///   report names the source's path alone. A refused declaration closes
+    ///   with a note naming it and what it states. A source with an empty path
+    ///   is named `<input>`. Plain adds no styling; styled adds the backend's
+    ///   colour sequences. Caller path controls remain literal in both modes.
+    ///   No framing terminator is appended, but a trailing path line ending can
+    ///   end an unlocated rendering.
     /// - provides: the plain text the driver prints and the tests compare.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
@@ -688,7 +720,7 @@ impl<'step> Report<'step>
             .into_iter()
             .map(|reason| (reason.span, reason.to_string()))
             .collect();
-        let title = self.title().to_string();
+        let title = self.message().to_string();
         let level = match self.subject {
             | Subject::Goal(_) => Level::INFO.with_name("goal"),
             | Subject::Shadowed(_) => Level::WARNING,
@@ -961,6 +993,54 @@ impl fmt::Display for Title<'_>
                 "`{}` shadows a builtin name; the source's binding wins",
                 shadowed.path
             ),
+        }
+    }
+}
+
+/// The message a report leads with.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Message<'step>(Subject<'step>);
+
+impl fmt::Display for Message<'_>
+{
+    /// Writes a refusal's plain message, and every other report's title.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a refused declaration writes its refusal's plain message; a
+    ///   source refused as a whole says so, then the plain message; an
+    ///   unsettled declaration, a goal and a warning write their title, which
+    ///   is already the user's; propagates a write failure.
+    /// - provides: the first line of a report and the language server's
+    ///   message.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one refusal of every vocabulary name writes a
+    ///   nonempty, single-line message that names no grammar sort; a type
+    ///   mismatch's message differs from its producer's title.
+    /// - witness: `message::tests::every_refusal_name_has_a_plain_message`
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.0 {
+            | Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
+            | Subject::Source(refusal) => write!(
+                f,
+                "the source is not a list of declarations: {}",
+                Plain(Refusal::Lowering(refusal))
+            ),
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Shadowed(_) => {
+                fmt::Display::fmt(&Title(self.0), f)
+            },
         }
     }
 }

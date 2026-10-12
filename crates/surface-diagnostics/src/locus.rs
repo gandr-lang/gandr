@@ -1150,7 +1150,7 @@ impl fmt::Display for Checked
 /// The former a rule required, as prose.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Shape(ExpectedShape);
+pub struct Shape(pub ExpectedShape);
 
 impl fmt::Display for Shape
 {
@@ -1195,7 +1195,7 @@ impl fmt::Display for Shape
 /// A former the judgement has no rule for, as prose.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Former(UnadmittedFormer);
+pub struct Former(pub UnadmittedFormer);
 
 impl fmt::Display for Former
 {
@@ -1250,7 +1250,7 @@ impl fmt::Display for Former
 /// The parameter or field a data declaration's occurrence stands in, as prose.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Site(OccurrenceSite);
+pub struct Site(pub OccurrenceSite);
 
 impl fmt::Display for Site
 {
@@ -1293,7 +1293,7 @@ impl fmt::Display for Site
 /// The rule of the descent walk a claim failed, as prose.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Descent(DescentRefusal);
+pub struct Descent(pub DescentRefusal);
 
 impl fmt::Display for Descent
 {
