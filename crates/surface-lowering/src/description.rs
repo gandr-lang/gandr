@@ -90,24 +90,37 @@ impl DescriptionDiagnostic
     ///
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
-    ///   site.
+    ///   site; a reserved glyph is a reserved form, a form the route parses and
+    ///   does not read yet (an operation filler, a fillerless higher cell, a
+    ///   wheel) an unadmitted one, and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused middle member cannot erase either
-    ///   neighboring member.
+    ///   neighboring member, and a wheel, a reversible glyph and a cycle keep
+    ///   three classes apart.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    /// - witness: `description::sign::tests::sign_declines_and_malformed_wiring_are_refused_apart`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
     pub(crate) fn lowering_refusal(&self) -> LoweringRefusal<'static>
     {
+        let unread = |boundary| LoweringRefusal::OutOfFragment {
+            span: self.span,
+            form: crate::FormName::DECLARATION,
+            sort: crate::FragmentSort::Declaration,
+            boundary,
+        };
         match self.fault {
             | DescriptionFault::HigherOrderField
             | DescriptionFault::TypeShape
-            | DescriptionFault::NativeDecode(_) => LoweringRefusal::OutOfFragment {
-                span: self.span,
-                form: crate::FormName::DECLARATION,
-                sort: crate::FragmentSort::Declaration,
-                boundary: crate::FragmentBoundary::Unadmitted,
+            | DescriptionFault::NativeDecode(_)
+            | DescriptionFault::Signature(
+                crate::circuit::SignatureFault::OperationFiller
+                | crate::circuit::SignatureFault::HigherCell
+                | crate::circuit::SignatureFault::Wheel,
+            ) => unread(crate::FragmentBoundary::Unadmitted),
+            | DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
+                unread(crate::FragmentBoundary::Reserved)
             },
             | DescriptionFault::Malformed
             | DescriptionFault::FamilyHead
@@ -146,6 +159,8 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// A `sign` block declares its sorts and cells inside the description.
             Signature,
+            /// A top-level `oper` declares one operation by its circuit.
+            Circuit,
         }
     }
 }
@@ -387,6 +402,9 @@ pub fn elaborate_descriptions<'source>(
         }
         else if run.eat(Spelling("sign")).0 {
             reader.signature(at, &mut run, serial, &mut report.diagnostics)
+        }
+        else if run.eat(Spelling("oper")).0 {
+            reader.circuit_declaration(at, &mut run, serial, &mut report.diagnostics)
         }
         else {
             continue;

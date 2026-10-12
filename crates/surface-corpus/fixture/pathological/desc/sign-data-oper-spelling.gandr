@@ -1,0 +1,6 @@
+@[ refuses("MalformedForm") ]
+sign Theory {
+  sort Nat : Type;
+  oper add(m : Nat, n : Nat) -> Nat;
+  oper succ : (n : Nat) --> Nat;
+}

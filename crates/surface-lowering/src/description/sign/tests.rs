@@ -124,30 +124,372 @@ fn an_item_level_data_member_declines_with_the_nested_block_respelling()
     );
 }
 
+/// The rewrite node of a two-output congruence: `p` rewrites the dividend
+/// before `divmod` reads it, and both of `divmod`'s ports leave the body.
+const DIVMOD_CONGRUENCE: &str = "sign Div {
+  sort Nat : Type;
+  oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat);
+  rule pass : (rule p : Nat ==> Nat, data m : Nat, data n : Nat) ==> (q : Nat, r : Nat) {
+    node : p(m) ==> (m′);
+    node : divmod(m′, n) --> (q, r);
+  };
+}";
+
 #[test]
-fn a_many_out_node_declines_naming_the_cell_alphabet_question()
+fn a_many_out_frame_binds_every_port_and_roots_the_body()
 {
-    let report = described(
-        "sign Wide { sort Nat : Type; oper f : Nat --> Nat; rule split : (data x : Nat) ==> (z : Nat) { node : f(x) --> (z, w); }; }",
-    );
-    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
-        == DescriptionFault::Signature(SignatureFault::MultipleOutputs(OutputCount(2)))));
-    assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
+    let report = described(DIVMOD_CONGRUENCE);
+    assert_eq!(report.diagnostics, []);
+    let [ref rule] = *report.declarations[0].description.circuits.as_ref()
+    else {
+        panic!("one circuit rule")
+    };
+    let names = |ports: &[Name]| {
+        ports
+            .iter()
+            .map(|port| port.as_ref().into())
+            .collect::<Vec<alloc::string::String>>()
+    };
     assert_eq!(
-        report.declarations[0].description.opers[0].name.as_ref(),
-        "f"
+        names(&rule.body.outs),
+        ["q", "r"],
+        "one root per declared output, in order"
+    );
+    let [CircuitNode::Redex(_), CircuitNode::Frame(ref frame)] = *rule.body.nodes
+    else {
+        panic!("a redex and the many-out frame")
+    };
+    assert_eq!(
+        names(&frame.outs),
+        ["q", "r"],
+        "the frame binds every port, in order"
+    );
+    assert_eq!(
+        (rule.sphere.lhs.clone(), rule.sphere.rhs.clone()),
+        (
+            FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::var("n")]),
+            FreeTerm::op("divmod", [FreeTerm::var("m′"), FreeTerm::var("n")]),
+        ),
+        "the frame leaving whole is its application"
     );
 }
 
 #[test]
-fn a_many_out_interface_declines_naming_the_cell_alphabet_question()
+fn one_port_of_a_many_out_frame_is_refused_by_the_derivation()
 {
     let report = described(
-        "sign Wide { sort Nat : Type; oper f : Nat --> Nat; rule pair : (data x : Nat) ==> (y : Nat, z : Nat) { node : f(x) --> (y); }; }",
+        "sign Wide { sort Nat : Type; oper tee : (a : Nat) --> (b : Nat, c : Nat); rule split : (data x : Nat) ==> (z : Nat) { node : tee(x) --> (z, w); }; }",
     );
-    assert!(report.diagnostics.iter().any(|diagnostic| diagnostic.fault
-        == DescriptionFault::Signature(SignatureFault::MultipleOutputs(OutputCount(2)))));
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.fault,
+            DescriptionFault::Signature(SignatureFault::Derivation(_))
+        )),
+        "{:?}",
+        report.diagnostics
+    );
     assert_eq!(report.declarations[0].description.circuits.as_ref(), []);
+}
+
+#[test]
+fn a_two_output_operation_keeps_both_ports_in_order()
+{
+    let report = described(
+        "sign Div { sort Nat : Type; oper divmod : (m : Nat, n : Nat) --> (q : Nat, r : Nat); }",
+    );
+    assert_eq!(report.diagnostics, []);
+    let [ref operation] = *report.declarations[0].description.opers
+    else {
+        panic!("one operation")
+    };
+    assert_eq!(
+        operation
+            .arity
+            .outputs
+            .iter()
+            .map(|port| port.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["q", "r"]
+    );
+    assert_eq!(
+        operation.arity.factors.as_ref(),
+        [2_u32, 2_u32],
+        "one monomial per output"
+    );
+}
+
+#[test]
+fn a_port_name_on_both_sides_is_two_ports()
+{
+    let report = described(
+        "sign S { sort Nat : Type; sort Bit : Type; oper narrow : (v : Nat) --> (v : Bit); oper split : (b : Bit) --> (_ : Bit, _ : Bit); }",
+    );
+    assert_eq!(
+        report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.fault.clone())
+            .collect::<Vec<_>>(),
+        [DescriptionFault::Signature(SignatureFault::SharedPort(
+            "v".into()
+        ))]
+    );
+    assert_eq!(
+        report.declarations[0]
+            .description
+            .opers
+            .iter()
+            .map(|operation| operation.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["split"],
+        "two unnamed ports are two fresh wires"
+    );
+}
+
+#[test]
+fn both_reversible_glyphs_are_reserved()
+{
+    let source = "sign R { sort Bit : Type; oper negate : (b : Bit) <-> (c : Bit); rule involutive : (b : Bit) <=> (c : Bit); }";
+    let report = described(source);
+    let reserved: Vec<_> = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.fault == DescriptionFault::Signature(SignatureFault::Reversible)
+        })
+        .filter_map(|diagnostic| {
+            source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+        })
+        .collect();
+    assert_eq!(reserved, ["<->", "<=>"]);
+    assert_eq!(report.declarations[0].description.opers.as_ref(), []);
+}
+
+#[test]
+fn the_cat_shape_laws_are_written_faces()
+{
+    let report = described(
+        "sign CatShape {
+  sort Ob : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+  oper id : (a : Ob) --> Hom(a, a);
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+  rule unitL : comp(id(a), f) ==> f;
+  rule unitR : comp(f, id(b)) ==> f;
+  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+}",
+    );
+    assert_eq!(report.diagnostics, []);
+    let description = &report.declarations[0].description;
+    assert_eq!(
+        description
+            .sorts
+            .iter()
+            .map(|sort| (sort.name.as_ref(), sort.indices.len()))
+            .collect::<Vec<_>>(),
+        [("Ob", 0_usize), ("Hom", 2_usize)]
+    );
+    assert_eq!(
+        description
+            .opers
+            .iter()
+            .map(|operation| operation.name.as_ref())
+            .collect::<Vec<_>>(),
+        ["id", "comp"]
+    );
+    let op = |name: &str, args: [FreeTerm; 2]| FreeTerm::op(name, args);
+    let id = |name: &str| FreeTerm::op("id", [FreeTerm::var(name)]);
+    let var = FreeTerm::var;
+    assert_eq!(
+        description
+            .rules
+            .iter()
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (op("comp", [id("a"), var("f")]), var("f")),
+            (op("comp", [var("f"), id("b")]), var("f")),
+            (
+                op("comp", [op("comp", [var("f"), var("g")]), var("h")]),
+                op("comp", [var("f"), op("comp", [var("g"), var("h")])]),
+            ),
+        ],
+        "each law is a face between the terms it writes, in order"
+    );
+    let cells = crate::desc_cells::elaborate_desc_cells(&report.declarations);
+    assert_eq!(
+        cells
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.fault.clone())
+            .collect::<Vec<_>>(),
+        [const {
+            crate::desc_cells::CellFault::Rule(
+                gandr_theory_computads::ElaborateError::UnsupportedShape,
+            )
+        }; 3],
+        "an operation application where the cut reads a value has no cell yet"
+    );
+}
+
+#[test]
+fn a_pinned_rewrite_endpoint_reads_as_a_variable()
+{
+    let report = described(
+        "sign Labelled {
+  sort Nat : Type;
+  oper step : (i : Nat) --> (o : Nat);
+  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
+    node w1 : p(x) ==> (m);
+    node w2 : step(m) --> (o);
+  };
+}",
+    );
+    assert_eq!(report.diagnostics, []);
+    let [ref rule] = *report.declarations[0].description.circuits.as_ref()
+    else {
+        panic!("one circuit rule")
+    };
+    let [ref port] = *rule.ports.as_ref()
+    else {
+        panic!("one rewrite port")
+    };
+    assert_eq!(port.face, PortFace::Pinned {
+        source: FreeTerm::var("x"),
+        target: FreeTerm::var("x′"),
+    });
+}
+
+#[test]
+fn a_top_level_operation_declines_its_filler_by_name()
+{
+    let source =
+        "oper split : (b : Bit) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\n";
+    let report = described(source);
+    let [ref declaration] = *report.declarations.as_slice()
+    else {
+        panic!("the operation is a described declaration")
+    };
+    assert_eq!(
+        source.get(
+            usize::from(declaration.named.span.start())
+                .. usize::from(declaration.named.span.end())
+        ),
+        Some("split")
+    );
+    assert_eq!(
+        declaration.classifier,
+        Maybe::Absent(family_classifier::Absent::Circuit)
+    );
+    assert_eq!(declaration.description.opers.as_ref(), []);
+    assert_eq!(
+        report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| (diagnostic.fault.clone(), diagnostic.span))
+            .collect::<Vec<_>>(),
+        [(
+            DescriptionFault::Signature(SignatureFault::OperationFiller),
+            declaration.at.span
+        )]
+    );
+}
+
+#[test]
+fn sign_declines_and_malformed_wiring_are_refused_apart()
+{
+    let span = ByteSpan::new(0_usize.into(), 1_usize.into()).unwrap();
+    let refusal = |fault| DescriptionDiagnostic { span, fault }.lowering_refusal();
+    for fault in [
+        SignatureFault::Wheel,
+        SignatureFault::OperationFiller,
+        SignatureFault::HigherCell,
+    ] {
+        assert!(matches!(
+            refusal(DescriptionFault::Signature(fault)),
+            crate::LoweringRefusal::OutOfFragment {
+                boundary: crate::FragmentBoundary::Unadmitted,
+                ..
+            }
+        ));
+    }
+    assert!(matches!(
+        refusal(DescriptionFault::Signature(SignatureFault::Reversible)),
+        crate::LoweringRefusal::OutOfFragment {
+            boundary: crate::FragmentBoundary::Reserved,
+            ..
+        }
+    ));
+    for fault in [
+        SignatureFault::SharedPort("v".into()),
+        SignatureFault::MultipleOutputs(OutputCount(2_usize)),
+        SignatureFault::MissingOutput,
+    ] {
+        assert!(matches!(
+            refusal(DescriptionFault::Signature(fault)),
+            crate::LoweringRefusal::MalformedForm { .. }
+        ));
+    }
+}
+
+#[test]
+fn a_refused_sign_block_states_its_refusal()
+{
+    let source = r#"@[ refuses("OutOfFragment") ]
+sign Wheel {
+  sort Nat : Type;
+  oper zip : (s : Nat, t : Nat) --> (u : Nat);
+  rule spin : (data stream : Nat) ==> (out : Nat) {
+    node : zip(stream, state) --> (out);
+    feed : (out) --> (state);
+  };
+}
+"#;
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let [ref wheel] = *module.declarations()
+    else {
+        panic!("the refused block is one declaration")
+    };
+    assert_eq!(wheel.name().as_ref(), "Wheel");
+    assert_eq!(
+        wheel.role(),
+        crate::module::Role::Held,
+        "its name enters no namespace"
+    );
+    assert!(matches!(
+        wheel.outcome(),
+        crate::DeclarationOutcome::Refused(crate::LoweringRefusal::OutOfFragment {
+            boundary: crate::FragmentBoundary::Unadmitted,
+            ..
+        })
+    ));
+    assert!(
+        source
+            .get(usize::from(wheel.span().start()) .. usize::from(wheel.span().end()))
+            .is_some_and(|member| member.starts_with("rule spin")),
+        "the refusal stands at its member"
+    );
+    let Maybe::Present(key) = wheel.signature()
+    else {
+        panic!("the block is the declaration's half")
+    };
+    assert_eq!(
+        module.attributes().entries(key).len(),
+        1_usize,
+        "the decoration states the block's refusal"
+    );
 }
 
 #[test]
@@ -473,4 +815,44 @@ fn an_unreadable_member_keeps_its_own_report()
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
         Some("rule ident ==> add")
     );
+}
+
+#[test]
+fn a_coherence_between_composites_is_a_higher_cell()
+{
+    let source = "sign C {
+  sort Ob : Type;
+  oper id : (a : Ob) --> Ob;
+  rule unitL : id(a) ==> a;
+  rule triangle : (unitL(a) then unitL(a)) ==> unitL(a);
+  rule face : (f) ==> (z : Ob) { node : id(f) --> (z); };
+}";
+    let report = described(source);
+    let faults: Vec<_> = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .is_some_and(|member| member.starts_with("rule triangle")),
+            )
+        })
+        .collect();
+    assert_eq!(
+        faults,
+        [
+            (
+                DescriptionFault::Signature(SignatureFault::HigherCell),
+                true
+            ),
+            (
+                DescriptionFault::Signature(SignatureFault::ExpressionEndpoint),
+                false
+            ),
+        ],
+        "the bodiless composite is a higher cell; a bodied expression endpoint stays refused"
+    );
+    assert_eq!(report.declarations[0].description.rules.len(), 1_usize);
 }
