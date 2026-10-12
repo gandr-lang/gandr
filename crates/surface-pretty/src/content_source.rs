@@ -81,9 +81,9 @@ impl Source for ContentSource<'_>
     /// - requires: nothing; any index is admissible.
     /// - ensures: each core former read as its [`Former`], over the same
     ///   indices; every computation former as [`Former::Computation`]; an
-    ///   unresolved node, a hole, a mark, the unknown type, and an index past
-    ///   the table, as [`Former::Unreadable`].
-    /// Native data and record syntax is outside this source adapter's fragment.
+    ///   unresolved node, a hole, a mark, the unknown type, an empty record,
+    ///   and an index past the table, as [`Former::Unreadable`]. Native data
+    ///   syntax is outside this source adapter's fragment.
     /// - provides: the printer's input over checkpoint tables.
     /// - fails: never.
     /// - panics: none.
@@ -99,8 +99,8 @@ impl Source for ContentSource<'_>
     /// - witness: `content_source::tests::a_malformed_table_spells_unknown`
     #[spec(ensures: |ret| match (self.0.get(usize::from(node)), ret) {
         (Some(&ContentNode::PrimitiveValue(primitive)), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
-        (Some(&ContentNode::Data { .. } | &ContentNode::RecordType(_) |
-&ContentNode::Constructor { .. } | &ContentNode::Record(_) |
+        (Some(&ContentNode::Data { .. } |
+&ContentNode::Constructor { .. } |
 &ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
 &ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
 &ContentNode::UnknownType | &ContentNode::UnknownComputationType |
@@ -132,9 +132,11 @@ impl Source for ContentSource<'_>
             name.as_ref().as_bytes() == key.as_ref(),
         (Some(content), Former::Literal(actual)) =>
             matches!(*content, ContentNode::Literal(ref literal) if literal == actual),
-        (Some(&ContentNode::Injection(summand, body)), Former::Injection(actual_side, actual_body)) =>
-            summand == actual_side.into() && body == actual_body,
-        (Some(&ContentNode::Injection(summand, _)), Former::Unreadable) => usize::from(summand) > 1,
+        (Some(&ContentNode::Injection(summand, body)), Former::Injection(actual_summand, actual_body)) =>
+            usize::from(summand) == usize::from(actual_summand) && body == actual_body,
+        (Some(&ContentNode::RecordType(ref fields) | &ContentNode::Record(ref fields)), Former::Unreadable) => fields.is_empty(),
+        (Some(&ContentNode::RecordType(ref fields)), Former::RecordType(arity))
+        | (Some(&ContentNode::Record(ref fields)), Former::Record(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         (Some(held), Former::Unit) => matches!(*held, ContentNode::Tuple(ref components) if components.is_empty()),
         (Some(held), Former::Tuple(arity)) => matches!(*held, ContentNode::Tuple(ref components) if !components.is_empty() && components.len() == usize::from(arity)),
         (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
@@ -149,8 +151,7 @@ impl Source for ContentSource<'_>
         (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
         (Some(&ContentNode::Base(a)), Former::BaseType(b)) => a == b,
         (Some(&ContentNode::Product(ref parts)), Former::Product(arity)) | (Some(&ContentNode::Sum(ref parts)), Former::Sum(arity)) =>
-            parts.len() != 1 && usize::from(arity) == parts.len(),
-        (Some(&ContentNode::Product(ref parts) | &ContentNode::Sum(ref parts)), Former::Unreadable) => parts.len() == 1,
+            usize::from(arity) == parts.len(),
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
 
@@ -214,21 +215,21 @@ impl Source for ContentSource<'_>
             | ContentNode::Tuple(ref components) if components.is_empty() => Former::Unit,
             | ContentNode::Tuple(ref components) => Former::Tuple(Arity::from(components.len())),
             | ContentNode::Injection(summand, body) => {
-                match gandr_kernel_term::Side::try_from(summand) {
-                    | Ok(side) => Former::Injection(side, body),
-                    // An injection past the second summand has no spelling yet.
-                    | Err(_) => Former::Unreadable,
-                }
+                Former::Injection(Component::from(usize::from(summand)), body)
             },
             | ContentNode::Thunk(_) => Former::Thunk,
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
             | ContentNode::Base(base) => Former::BaseType(base),
-            // The 1-ary product and sum have no spelling yet.
-            | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) if parts.len() == 1 => {
+            // The surface writes no empty record: `#{}` is the unit.
+            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields)
+                if fields.is_empty() =>
+            {
                 Former::Unreadable
             },
+            | ContentNode::RecordType(ref fields) => Former::RecordType(Arity::from(fields.len())),
+            | ContentNode::Record(ref fields) => Former::Record(Arity::from(fields.len())),
             | ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
             | ContentNode::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             | ContentNode::List(element) => Former::List(element),
@@ -257,9 +258,7 @@ impl Source for ContentSource<'_>
             },
             | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
             | ContentNode::Data { .. }
-            | ContentNode::RecordType(_)
             | ContentNode::Constructor { .. }
-            | ContentNode::Record(_)
             | ContentNode::Unresolved(_)
             | ContentNode::Hole(_)
             | ContentNode::ValueMark { .. }
@@ -275,24 +274,29 @@ impl Source for ContentSource<'_>
         }
     }
 
-    /// The index of component `index` of the product, the sum or the tuple at
-    /// `node`.
+    /// The index of component `index` of the product, the sum, the tuple, the
+    /// record or the record type at `node`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the index at `index` among a product's, a sum's or a tuple's
-    ///   components; none past them, for another node, or past the table.
-    /// - provides: the printer's reading of an n-ary product, sum or tuple.
+    ///   components, or a record's or a record type's fields in label order;
+    ///   none past them, for another node, or past the table.
+    /// - provides: the printer's reading of an n-ary former.
     /// - fails: never.
     /// - panics: none.
+    /// - intension: a record's field is reached by counting through its
+    ///   label-ordered map, linear in the fields before it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the table fixture's products and sums of arity zero,
-    ///   two and three, and its tuples of arity one to three, read every
-    ///   component in order and nothing past them; a base type reads none.
+    /// - hypothesis: L3 — the table fixture's products and sums of arity zero
+    ///   to three, its tuples of arity one to three and its record type of two
+    ///   fields read every component in order and nothing past them; a base
+    ///   type reads none.
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     #[spec(ensures: |ret| ret == match self.0.get(usize::from(node)) {
         | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) | ContentNode::Tuple(ref parts))) => parts.get(usize::from(index)).copied(),
+        | Some(&(ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields))) => fields.values().nth(usize::from(index)).copied(),
         | _ => None,
     })]
     #[inline]
@@ -306,6 +310,45 @@ impl Source for ContentSource<'_>
             | ContentNode::Product(ref parts)
             | ContentNode::Sum(ref parts)
             | ContentNode::Tuple(ref parts) => parts.get(usize::from(index)).copied(),
+            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => {
+                fields.values().nth(usize::from(index)).copied()
+            },
+            | _ => None,
+        }
+    }
+
+    /// The label of field `index` of the record or the record type at `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the label at `index` among a record's or a record type's
+    ///   fields, in label order; none past them, for another node, or past the
+    ///   table.
+    /// - provides: the printer's reading of a record's labels.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: as [`Self::component`], linear in the fields before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the table fixture's record type of two fields spells
+    ///   each field under its own label, in label order.
+    /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
+    #[spec(ensures: |ret| ret.as_ref().map(|name| -> &str { name.as_ref() }) == match self.0.get(usize::from(node)) {
+        | Some(&(ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields))) => fields.keys().nth(usize::from(index)).map(AsRef::as_ref),
+        | _ => None,
+    })]
+    #[inline]
+    fn label(
+        &self,
+        node: NodeIndex,
+        index: Component,
+    ) -> Option<Name<'_>>
+    {
+        match *self.0.get(usize::from(node))? {
+            | ContentNode::RecordType(ref fields) | ContentNode::Record(ref fields) => fields
+                .keys()
+                .nth(usize::from(index))
+                .map(|label| Name::from(label.as_ref())),
             | _ => None,
         }
     }
@@ -314,6 +357,7 @@ impl Source for ContentSource<'_>
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
     use alloc::format;
     use alloc::string::String;
     use alloc::string::ToString as _;
@@ -327,6 +371,7 @@ mod tests
     use gandr_core_incremental::Reference;
     use gandr_core_incremental::Sort;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::FieldLabel;
 
     use super::ContentSource;
     use crate::Fidelity;
@@ -468,8 +513,9 @@ mod tests
             ]),
             approximate("Path_U(Unit, Integer)".into())
         );
-        // One 3-ary chain, its nested product parenthesized; the empty sum;
-        // the sum of two units; and the 1-ary product, which has no spelling.
+        // One 3-ary product, the nested product one of its components; the
+        // empty sum; the sum of two units; the 1-ary product; and a record
+        // type, its fields in label order whatever order they were given in.
         assert_eq!(
             spelled(&[
                 ContentNode::Product(Vec::from([n1, n2, n3])),
@@ -477,7 +523,7 @@ mod tests
                 ContentNode::Product(Vec::from([n1, n1])),
                 ContentNode::Sum(Vec::new()),
             ]),
-            faithful("Integer * (Integer * Integer) * Void".into())
+            faithful("#{Integer, #{Integer, Integer}, Void}".into())
         );
         assert_eq!(
             spelled(&[
@@ -491,15 +537,31 @@ mod tests
                 ContentNode::Product(Vec::from([n1])),
                 ContentNode::Base(BaseType::Integer),
             ]),
+            faithful("#{Integer}".into())
+        );
+        assert_eq!(
+            spelled(&[
+                ContentNode::RecordType(BTreeMap::from([
+                    (FieldLabel::from(String::from("v")), n2),
+                    (FieldLabel::from(String::from("n")), n1),
+                ])),
+                ContentNode::Base(BaseType::Integer),
+                ContentNode::Base(BaseType::String),
+            ]),
+            faithful("#{n : Integer, v : String}".into())
+        );
+        // The surface writes no empty record type, `#{}` being `Unit`; a
+        // component the table does not hold spells `?`.
+        assert_eq!(
+            spelled(&[ContentNode::RecordType(BTreeMap::new())]),
             approximate("?".into())
         );
-        // A component the table does not hold spells `?`.
         assert_eq!(
             spelled(&[
                 ContentNode::Sum(Vec::from([n1, n4])),
                 ContentNode::Base(BaseType::Integer),
             ]),
-            approximate("Integer + ?".into())
+            approximate("+{Integer, ?}".into())
         );
     }
 
@@ -570,6 +632,21 @@ mod tests
                 },
             ]),
             faithful("+U (-F Integer) -> -F Integer".into())
+        );
+        assert_eq!(
+            spelled(&[
+                ContentNode::WithType(n1, n2),
+                ContentNode::Returner {
+                    result: n3,
+                    effects: gandr_core_term::effect::EffectRow::EMPTY
+                },
+                ContentNode::Arrow {
+                    domain: n3,
+                    codomain: n1,
+                },
+                ContentNode::Base(BaseType::Integer),
+            ]),
+            faithful("&{-F Integer, Integer -> -F Integer}".into())
         );
     }
 

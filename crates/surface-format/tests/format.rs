@@ -165,6 +165,12 @@ mod tests
     }
 
     #[test]
+    fn the_arity_shaped_formers_keep_their_written_spelling()
+    {
+        golden(Path::new("arity"));
+    }
+
+    #[test]
     fn top_level_forms_and_comments_keep_their_lines()
     {
         let grammar = grammar();

@@ -15,35 +15,31 @@
 //! as a constant or an abstract type the term mentions. Both passes bound
 //! their scheduled visits, including when the source changes between passes.
 //!
-//! # Products, sums and tuples are one chain of their components
+//! # Products, sums and tuples are written between their braces
 //!
 //! The core's product and sum hold a list of components
 //! ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the printer
-//! writes each as one chain: `A * B * C` is a 3-ary product, and a product
-//! written inside a product keeps its parentheses on either side, so `(A * B) *
-//! C` and `A * (B * C)` are the 2-ary products they are. The 0-ary product is
-//! `Unit`, the 0-ary sum `Void`, and the sum of two units `Bool`, the fixed
-//! names the lowering resolves. The 1-ary product and sum have no surface
-//! spelling yet and are written `?`. A `Former` counts the components rather
-//! than holding them, and the printer asks the source for each one by position
-//! (`Source::component`), because the core's components are value-type ids
-//! while its handles are `CoreNode`s; a component the source does not answer is
-//! written `?`.
+//! writes each between its delimiters at any arity from one: `#{A}` and
+//! `#{A, B, C}`, `+{A}` and `+{A, B, C}`, a nested product or sum one
+//! component among them. The 0-ary product is `Unit`, the 0-ary sum `Void`,
+//! and the sum of two units `Bool`, the fixed names the lowering resolves. A
+//! `Former` counts the components rather than holding them, and the printer
+//! asks the source for each one by position (`Source::component`), because
+//! the core's components are value-type ids while its handles are
+//! `CoreNode`s; a component the source does not answer is written `?`. A
+//! tuple is read the same way, `#{a}` and `#{a, b, c}`, the empty tuple
+//! `unit`; an injection is `+{.i = v}` at its summand's position. A record
+//! type and a record are `#{a : A, b : B}` and `#{.a = v, .b = w}`, in label
+//! order; the empty record, which the surface does not write (`#{}` is the
+//! unit), is `?`. The lazy product is `&{C, D}`, binary as the core holds it.
 //!
 //! - **Alternatives.** A former holding its components' handles would need
 //!   every source to keep them as a slice of its own handle type, which the
-//!   core arena does not. Keeping the binary former and printing other arities
-//!   as `?` would hide the n-ary types the core already holds. A tuple is read
-//!   the same way, its components values: `(a, b, c)` is a 3-tuple, a 1-tuple
-//!   keeps its trailing comma, `(a,)`, and the empty tuple is `unit`. An
-//!   injection past the second summand has no surface spelling, as the sums it
-//!   injects into have none, and is written `?`.
-//!
-//! - **Reversal.** A spelling for the 1-ary product, or for an injection past
-//!   the second summand, which
-//!   [#134](https://github.com/gandr-lang/gandr/issues/134) leaves open, gives
-//!   it a case here. A source whose components are costly to reach one at a
-//!   time, measured, answers them as a slice instead.
+//!   core arena does not. Printing the binary sugar would leave the 1-ary
+//!   product, an injection past the second summand and a record without a
+//!   spelling.
+//! - **Reversal.** A source whose components are costly to reach one at a time,
+//!   measured, answers them as a slice instead.
 //!
 //! # Native universe paths
 //!
@@ -126,7 +122,6 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_surface_layout::arena::DocId;
 use gandr_surface_layout::arena::TextSource;
@@ -260,14 +255,14 @@ enum Kind
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
-        | Former::Literal(_) | Former::Tuple(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
+        | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::Injection(..) | Former::Thunk | Former::ValueLift
         | Former::Reify | Former::ListNil | Former::ListCons(..)
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..)),
@@ -281,6 +276,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::Product(_)
+        | Former::RecordType(_)
         | Former::Sum(_)
         | Former::List(_)
         | Former::ThunkType(_)
@@ -303,6 +299,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Unit
         | Former::Literal(_)
         | Former::Tuple(_)
+        | Former::Record(_)
         | Former::ListNil
         | Former::ListCons(..)
         | Former::Injection(..)
@@ -415,16 +412,19 @@ enum Children<Node>
     One(Slot<Node>),
     /// Two children, first then second.
     Two(Slot<Node>, Slot<Node>),
-    /// The components of the product, the sum or the tuple `of` names, which
-    /// the source answers one by one ([`Source::component`]).
+    /// The components of the product, the sum, the tuple, the record or the
+    /// record type `of` names, which the source answers one by one
+    /// ([`Source::component`]).
     Components
     {
-        /// The product, the sum or the tuple.
+        /// The former that holds them.
         of: Node,
         /// How many components it has.
         arity: Arity,
         /// What each component's position admits.
         admits: Admits,
+        /// Whether each is written after a label.
+        entries: Entries,
     },
 }
 
@@ -432,15 +432,17 @@ enum Children<Node>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a product's and a sum's components, each a value type, and a
-///   tuple's, each a value, are answered by the source for `node`; a static
-///   Pi's domain and codomain admit value types; a thunk type's body and a
-///   quoted computation type admit computation types; a returner's result, an
-///   arrow's and a dependent arrow's domain and a quoted value type admit value
-///   types, the arrows' codomains computation types; a decode's code, an
-///   injection's body, a static abstraction's body and a static application's
-///   operator and argument admit values; native path endpoints, maps and
-///   component paths admit values; every other former is a leaf.
+/// - ensures: a product's, a sum's and a record type's components, each a value
+///   type, and a tuple's and a record's, each a value, are answered by the
+///   source for `node`, a record's and a record type's written after their
+///   field labels; a stack's and a lazy pair's two items admit computation
+///   types; a static Pi's domain and codomain admit value types; a thunk type's
+///   body and a quoted computation type admit computation types; a returner's
+///   result, an arrow's and a dependent arrow's domain and a quoted value type
+///   admit value types, the arrows' codomains computation types; a decode's
+///   code, an injection's body, a static abstraction's body and a static
+///   application's operator and argument admit values; native path endpoints,
+///   maps and component paths admit values; every other former is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -451,6 +453,7 @@ enum Children<Node>
 ///   abstraction and application fixtures cover their value positions;
 ///   arbitrary node representations are outside this spelling evidence.
 /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
 /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
@@ -458,9 +461,17 @@ enum Children<Node>
     | Former::Stack(..) | Former::With(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
     | Former::Product(arity) | Former::Sum(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::ValueType, .. } if count == usize::from(arity)),
+        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Positional, .. }
+            if count == usize::from(arity)),
+    | Former::RecordType(arity) => matches!(ret,
+        Children::Components { arity: Arity(count), admits: Admits::ValueType, entries: Entries::Labelled(Label::Field), .. }
+            if count == usize::from(arity)),
     | Former::Tuple(arity) => matches!(ret,
-        Children::Components { arity: Arity(count), admits: Admits::Value, .. } if count == usize::from(arity)),
+        Children::Components { arity: Arity(count), admits: Admits::Value, entries: Entries::Positional, .. }
+            if count == usize::from(arity)),
+    | Former::Record(arity) => matches!(ret,
+        Children::Components { arity: Arity(count), admits: Admits::Value, entries: Entries::Labelled(Label::Assignment), .. }
+            if count == usize::from(arity)),
     | Former::StaticPi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
@@ -483,20 +494,27 @@ where
     Node: Copy,
 {
     let slot = |node: Node, admits: Admits| Slot { node, admits };
+    let components =
+        |arity: crate::former::Arity, admits: Admits, entries: Entries| Children::Components {
+            of: node,
+            arity: Arity(usize::from(arity)),
+            admits,
+            entries,
+        };
     match *former {
         | Former::Stack(first, second) | Former::With(first, second) => Children::Two(
             slot(first, Admits::CompType),
             slot(second, Admits::CompType),
         ),
-        | Former::Product(arity) | Former::Sum(arity) => Children::Components {
-            of: node,
-            arity: Arity(usize::from(arity)),
-            admits: Admits::ValueType,
+        | Former::Product(arity) | Former::Sum(arity) => {
+            components(arity, Admits::ValueType, Entries::Positional)
         },
-        | Former::Tuple(arity) => Children::Components {
-            of: node,
-            arity: Arity(usize::from(arity)),
-            admits: Admits::Value,
+        | Former::RecordType(arity) => {
+            components(arity, Admits::ValueType, Entries::Labelled(Label::Field))
+        },
+        | Former::Tuple(arity) => components(arity, Admits::Value, Entries::Positional),
+        | Former::Record(arity) => {
+            components(arity, Admits::Value, Entries::Labelled(Label::Assignment))
         },
         | Former::StaticPi {
             domain: first,
@@ -579,18 +597,15 @@ fn below(
 ///
 /// A piece stands bare in a slot that admits its binding and is parenthesized
 /// in one that admits only tighter pieces. The order is the grammar's: an
-/// atom, then the bridges, then `*`, then `+`, then `->`.
+/// atom, then the bridges, then `->`. Every arity-shaped former is an atom,
+/// its entries between its own delimiters.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Binding
 {
-    /// A name, a literal, a universe, a bracketed form.
+    /// A name, a literal, a universe, a bracketed or braced form.
     Atom,
     /// `+U C` or `-F A`.
     Prefix,
-    /// `A * B`.
-    Product,
-    /// `A + B`.
-    Sum,
     /// `A -> C`, `(x : A) -> C`, or the static abstraction `\a. v`, whose
     /// body runs as far right as an arrow's codomain.
     Arrow,
@@ -618,90 +633,65 @@ enum Prefix
     Returner,
 }
 
-/// The two infix value-type formers, each written as one chain of its
-/// components.
+/// The delimiters of the arity-shaped formers, one per polarity of the
+/// former.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Infix
+enum Brace
 {
-    /// The product `A * B`.
-    Product,
-    /// The sum `A + B`.
-    Sum,
+    /// `#{…}`: a product, a tuple, a record type or a record.
+    Hash,
+    /// `+{…}`: a sum or an injection.
+    Plus,
+    /// `&{…}`: a lazy pair.
+    Ampersand,
 }
 
-impl Infix
+impl Brace
 {
-    /// The symbol after the left operand, with its leading space.
+    /// The opening delimiter.
     ///
     /// # Specification
-    /// - ensures: a leading space followed by `*` for a product or `+` for a
-    ///   sum.
+    /// - ensures: `#{` for [`Self::Hash`], `+{` for [`Self::Plus`] and `&{` for
+    ///   [`Self::Ampersand`].
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — product and sum spellings in the finite grammar
-    ///   fixtures distinguish swapped operators and missing separators.
+    /// - hypothesis: L3 — products, sums and lazy pairs in the grammar fixtures
+    ///   distinguish a swapped delimiter.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     #[spec(ensures: |ret| matches!((self, ret.0.as_bytes()),
-        (Self::Product, &[b' ', b'*']) | (Self::Sum, &[b' ', b'+'])
+        (Self::Hash, b"#{") | (Self::Plus, b"+{") | (Self::Ampersand, b"&{")
     ))]
-    const fn glyphs(self) -> Glyphs<'static>
+    const fn opener(self) -> Glyphs<'static>
     {
         match self {
-            | Self::Product => Glyphs(" *"),
-            | Self::Sum => Glyphs(" +"),
+            | Self::Hash => Glyphs("#{"),
+            | Self::Plus => Glyphs("+{"),
+            | Self::Ampersand => Glyphs("&{"),
         }
     }
+}
 
-    /// How the joined piece binds.
-    ///
-    /// # Specification
-    /// - ensures: product binding for a product, sum binding for a sum.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — nested products and sums in the grammar fixtures
-    ///   distinguish reversed precedence and unnecessary parentheses; other
-    ///   binding classes are not returned by this function.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    #[spec(ensures: |ret| matches!((self, ret),
-        (Self::Product, Binding::Product) | (Self::Sum, Binding::Sum)
-    ))]
-    const fn binding(self) -> Binding
-    {
-        match self {
-            | Self::Product => Binding::Product,
-            | Self::Sum => Binding::Sum,
-        }
-    }
+/// What an entry of a braced former is written after.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Label
+{
+    /// A record type's field label: `l : A`.
+    Field,
+    /// A record's field label: `.l = a`.
+    Assignment,
+    /// The summand an injection enters: `.i = v`.
+    Summand,
+}
 
-    /// The loosest component that stands bare.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one step tighter than the former itself, so a component of
-    ///   the same former, on either side, is parenthesized.
-    /// - provides: a chain is one n-ary former, so a written nesting is real
-    ///   nesting and keeps its parentheses.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — left- and right-nested product and sum fixtures and a
-    ///   3-ary chain distinguish a missing parenthesis on either side from one
-    ///   around a tighter component.
-    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
-    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
-    #[spec(ensures: |ret| matches!((self, ret),
-        (Self::Product, Binding::Prefix) | (Self::Sum, Binding::Product)
-    ))]
-    const fn operand(self) -> Binding
-    {
-        match self {
-            | Self::Product => Binding::Prefix,
-            | Self::Sum => Binding::Product,
-        }
-    }
+/// How the entries of a braced former are written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Entries
+{
+    /// By position alone.
+    Positional,
+    /// Each after its label.
+    Labelled(Label),
 }
 
 /// The bracketed value formers.
@@ -710,8 +700,6 @@ enum Bracket
 {
     /// A stack classifier with ordered computation endpoints.
     Stack,
-    /// A lazy pair classifier.
-    With,
     /// A native path classifier.
     PathUniverse,
     /// Native reflexivity.
@@ -722,10 +710,6 @@ enum Bracket
     PathProduct,
     /// A native cell, `cons(head, tail)`.
     ListCons,
-    /// A left injection `Inl(v)`.
-    Left,
-    /// A right injection `Inr(v)`.
-    Right,
 }
 
 /// How one join combines the finished pieces below it.
@@ -736,8 +720,17 @@ enum Join
     Prefix(Prefix),
     /// A returner prefixed by the rendered effect names.
     EffectReturner(DocId),
-    /// An infix former over this many components, written as one chain.
-    Infix(Infix, Arity),
+    /// A braced former over this many entries.
+    Braced
+    {
+        /// Its delimiter.
+        brace: Brace,
+        /// How many entries it holds.
+        arity: Arity,
+        /// Whether each entry is written after a label, finished just below
+        /// it.
+        entries: Entries,
+    },
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -751,9 +744,6 @@ enum Join
     Apply(Arity),
     /// A bracketed value former over its items.
     Bracket(Bracket),
-    /// A tuple over this many components: `(a,)` for one, `(a, b, …)` from
-    /// two.
-    Tuple(Arity),
 }
 
 /// One unit of the walk's pending work.
@@ -777,6 +767,16 @@ enum Task<Node>
     Unbind,
     /// Spell a component the source did not answer, as `?`.
     Missing,
+    /// Spell the label entry `index` of `of` is written after.
+    Label
+    {
+        /// The record, the record type or the injection.
+        of: Node,
+        /// The entry's position; an injection's summand.
+        index: Component,
+        /// What the label is.
+        label: Label,
+    },
     /// Combine finished pieces.
     Join(Join),
 }
@@ -993,6 +993,7 @@ where
                 of,
                 arity: Arity(count),
                 admits,
+                ..
             } => {
                 for index in (0_usize .. count).rev() {
                     if let Some(component) = source.component(of, Component::from(index)) {
@@ -1323,6 +1324,69 @@ impl Walk<'_, '_, '_>
         self.atom(Glyphs(text))
     }
 
+    /// Pushes the label an entry of a braced former is written after: `l : `
+    /// before a record type's field, `.l = ` before a record's, `.i = ` before
+    /// an injection's body.
+    ///
+    /// # Specification
+    /// - requires: nothing; a source may answer no label.
+    /// - ensures: one atom piece: the field label the source answers for `of`
+    ///   at `index`, or the summand `index` in decimal, then its separator; `?`
+    ///   in place of a label the source does not answer or a line cannot hold,
+    ///   which makes the presentation approximate.
+    /// - provides: the labelled entries of records and injections.
+    /// - fails: as [`Self::leaf`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::leaf`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — record types and records of two fields, injections
+    ///   into the first and the third summand, and a table record that answers
+    ///   no label distinguish a swapped label, a wrong separator and a missing
+    ///   label claimed faithful.
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
+    /// - witness: `goldens::tests::n_ary_tuples_and_injections_spell_between_their_braces`
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(
+        captures: [entry = self.pieces.len(), fidelity = self.fidelity],
+        ensures: |ref ret| (fidelity != Fidelity::Approximate || self.fidelity == Fidelity::Approximate)
+            && match *ret {
+                | Ok(()) => entry.checked_add(1_usize) == Some(self.pieces.len())
+                    && self.pieces.last().is_some_and(|piece| piece.binding == Binding::Atom),
+                | Err(PresentationError::Build(_)) => self.pieces.len() == entry,
+                | Err(_) => false,
+            },
+    )]
+    fn label<S>(
+        &mut self,
+        source: &S,
+        of: S::Node,
+        index: Component,
+        label: Label,
+    ) -> Result<(), PresentationError>
+    where
+        S: Source + ?Sized,
+    {
+        let spelled = match label {
+            | Label::Summand => format!(".{} = ", usize::from(index)),
+            | Label::Field | Label::Assignment => {
+                let held = source.label(of, index);
+                let mut text: &str = held.as_ref().map_or("", AsRef::as_ref);
+                if text.is_empty() || text.contains(['\n', '\r', '\t']) {
+                    self.fidelity = Fidelity::Approximate;
+                    text = "?";
+                }
+                match label {
+                    | Label::Field => format!("{text} : "),
+                    | Label::Assignment | Label::Summand => format!(".{text} = "),
+                }
+            },
+        };
+        self.atom(Glyphs(spelled.as_str()))
+    }
+
     /// Pushes the name an intuitionistic variable `index` binders out reads
     /// as, or `?` for one past every open binder.
     ///
@@ -1422,9 +1486,9 @@ impl Walk<'_, '_, '_>
     /// As [`Self::leaf`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — mixed and nested product, sum, bridge and arrow
-    ///   fixtures distinguish wrong precedence and missing parentheses. The
-    ///   finite grammar cases do not exhaust all possible composite trees.
+    /// - hypothesis: L3 — bridge and arrow fixtures distinguish wrong
+    ///   precedence and missing parentheses. The finite grammar cases do not
+    ///   exhaust all possible composite trees.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     #[spec(
@@ -1456,7 +1520,7 @@ impl Walk<'_, '_, '_>
     /// - ensures: the inline branch is exactly one space; the broken branch
     ///   starts the continuation two columns in and is the left alternative,
     ///   retained when both alternatives are width-tainted.
-    /// - provides: the break after an arrow, an infix symbol and a comma.
+    /// - provides: the break after an arrow and a comma.
     /// - fails: the builder's refusal.
     /// - panics: none.
     ///
@@ -1540,11 +1604,11 @@ impl Walk<'_, '_, '_>
     ///   `<thunk>`; a leaf former finishes as its spelling, the 0-ary product
     ///   as `Unit`, the 0-ary sum as `Void` and the sum of two 0-ary products
     ///   as `Bool`; a composite former pushes its join below its children's
-    ///   visits, a dependent arrow's codomain and a static abstraction's body
-    ///   between the opening and the closing of its binder; a static
-    ///   application schedules its spine as [`Self::spine`] does; a decode and
-    ///   a quote push their child's visit alone, so the child's piece is
-    ///   theirs.
+    ///   visits, each labelled entry's label scheduled just before it, a
+    ///   dependent arrow's codomain and a static abstraction's body between the
+    ///   opening and the closing of its binder; a static application schedules
+    ///   its spine as [`Self::spine`] does; a decode and a quote push their
+    ///   child's visit alone, so the child's piece is theirs.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -1638,10 +1702,11 @@ impl Walk<'_, '_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::Stack))
             },
-            | Former::With(..) => {
-                self.fidelity = Fidelity::Approximate;
-                Some(Join::Bracket(Bracket::With))
-            },
+            | Former::With(..) => Some(Join::Braced {
+                brace: Brace::Ampersand,
+                arity: Arity(2_usize),
+                entries: Entries::Positional,
+            }),
             | Former::BaseType(BaseType::Numeric)
             | Former::TypeLift
             | Former::ValueLift
@@ -1666,8 +1731,21 @@ impl Walk<'_, '_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathProduct))
             },
-            | Former::Product(arity) => Some(Join::Infix(Infix::Product, Arity(usize::from(arity)))),
-            | Former::Sum(arity) => Some(Join::Infix(Infix::Sum, Arity(usize::from(arity)))),
+            | Former::Product(arity) | Former::Tuple(arity) => Some(Join::Braced {
+                brace: Brace::Hash,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            }),
+            | Former::Sum(arity) => Some(Join::Braced {
+                brace: Brace::Plus,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Positional,
+            }),
+            | Former::RecordType(arity) => Some(Join::Braced {
+                brace: Brace::Hash,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Labelled(Label::Field),
+            }),
             | Former::List(_) => Some(Join::Prefix(Prefix::List)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
@@ -1680,13 +1758,20 @@ impl Walk<'_, '_, '_>
             | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
             | Former::Pi { .. } => Some(Join::Pi),
             | Former::StaticLambda(_) => Some(Join::StaticLambda),
-            | Former::Tuple(arity) => Some(Join::Tuple(Arity(usize::from(arity)))),
+            | Former::Record(arity) => Some(Join::Braced {
+                brace: Brace::Hash,
+                arity: Arity(usize::from(arity)),
+                entries: Entries::Labelled(Label::Assignment),
+            }),
             | Former::ListCons(..) => {
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::ListCons))
             },
-            | Former::Injection(Side::Left, _) => Some(Join::Bracket(Bracket::Left)),
-            | Former::Injection(Side::Right, _) => Some(Join::Bracket(Bracket::Right)),
+            | Former::Injection(..) => Some(Join::Braced {
+                brace: Brace::Plus,
+                arity: Arity(1_usize),
+                entries: Entries::Labelled(Label::Summand),
+            }),
             | Former::StaticApplication(operator, argument) => {
                 Self::spine(source, operator, argument, depth, tasks);
                 return Ok(());
@@ -1712,16 +1797,22 @@ impl Walk<'_, '_, '_>
                 of,
                 arity: Arity(count),
                 admits,
+                entries,
             } => {
                 for index in (0_usize .. count).rev() {
-                    tasks.push(source.component(of, Component::from(index)).map_or(
-                        Task::Missing,
-                        |component| Task::Visit {
-                            node: component,
-                            admits,
-                            depth: below,
-                        },
-                    ));
+                    let index = Component::from(index);
+                    tasks.push(
+                        source
+                            .component(of, index)
+                            .map_or(Task::Missing, |component| Task::Visit {
+                                node: component,
+                                admits,
+                                depth: below,
+                            }),
+                    );
+                    if let Entries::Labelled(label) = entries {
+                        tasks.push(Task::Label { of, index, label });
+                    }
                 }
             },
             | Children::One(only) => {
@@ -1743,6 +1834,13 @@ impl Walk<'_, '_, '_>
                 }
                 tasks.push(visit(first));
             },
+        }
+        if let Former::Injection(summand, _) = former {
+            tasks.push(Task::Label {
+                of: node,
+                index: summand,
+                label: Label::Summand,
+            });
         }
         Ok(())
     }
@@ -1874,15 +1972,13 @@ impl Walk<'_, '_, '_>
     /// - requires: available operands are the top finished pieces in operand
     ///   order, last on top; application arity comes from a bounded spine.
     /// - ensures: `+U C` and `-F A` with the operand parenthesized unless it is
-    ///   an atom; `A * B * …` and `A + B + …` as one chain of the components,
-    ///   each parenthesized when it binds as loosely as the former, a break
-    ///   after each symbol; `A -> C` with the domain bare up to a sum and the
-    ///   codomain bare, a break after the arrow; `(x : A) -> C` naming the
-    ///   binder by the binders open outside it, a break after the arrow; `\a.
-    ///   v` naming its binder so, a break after the dot; `f(a1, …, an)` with
-    ///   the operator parenthesized unless it is an atom; `(a, b)`, `Inl(v)`
-    ///   and `Inr(v)`; every list with a break after each comma and before the
-    ///   closer.
+    ///   an atom; `#{…}`, `+{…}` and `&{…}` around their entries, each bare and
+    ///   after its label when it has one; `A -> C` with the domain bare up to a
+    ///   bridge and the codomain bare, a break after the arrow; `(x : A) -> C`
+    ///   naming the binder by the binders open outside it, a break after the
+    ///   arrow; `\a. v` naming its binder so, a break after the dot; `f(a1, …,
+    ///   an)` with the operator parenthesized unless it is an atom; every list
+    ///   with a break after each comma and before the closer.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -1903,23 +1999,23 @@ impl Walk<'_, '_, '_>
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    /// - witness: `goldens::tests::records_spell_their_fields_in_label_order`
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `walk::tests::missing_operands_are_unbalanced_not_layout_failures`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right | Bracket::PathRefl) => Some(1_usize),
-            Join::Infix(_, Arity(components)) | Join::Tuple(Arity(components)) => Some(components),
-            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
+            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::PathRefl) => Some(1_usize),
+            Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } => Some(count),
+            Join::Braced { arity: Arity(count), entries: Entries::Labelled(_), .. } => count.checked_mul(2_usize),
+            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) => Binding::Prefix,
-                    Join::Infix(Infix::Product, _) => Binding::Product,
-                    Join::Infix(Infix::Sum, _) => Binding::Sum,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
-                    Join::Apply(_) | Join::Bracket(_) | Join::Tuple(_) => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } => Binding::Atom,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
             | Err(PresentationError::Render(_)) => false,
@@ -1946,30 +2042,40 @@ impl Walk<'_, '_, '_>
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
-            | Join::Infix(infix, Arity(count)) => {
-                let mut components = Vec::with_capacity(count);
-                for _ in 0_usize .. count {
-                    components.push(self.pop()?);
+            | Join::Braced {
+                brace,
+                arity: Arity(count),
+                entries,
+            } => {
+                let per_entry = match entries {
+                    | Entries::Positional => 1_usize,
+                    | Entries::Labelled(_) => 2_usize,
+                };
+                let taken = count
+                    .checked_mul(per_entry)
+                    .ok_or(PresentationError::Unbalanced)?;
+                let mut popped = Vec::with_capacity(taken);
+                for _ in 0_usize .. taken {
+                    popped.push(self.pop()?);
                 }
-                let mut chain = None;
-                for component in components.into_iter().rev() {
-                    let component = self.bare_up_to(component, infix.operand())?;
-                    chain = Some(match chain {
-                        | None => component,
-                        | Some(head) => {
-                            let symbol = self.leaf(infix.glyphs())?;
-                            let head = self.builder.concat(head, symbol)?;
-                            let head = self.space_or_break(head)?;
-                            self.builder.concat(head, component)?
-                        },
-                    });
+                let opener = self.leaf(brace.opener())?;
+                let mut items = Vec::from([opener]);
+                for (position, entry) in popped.rchunks(per_entry).enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    items.extend(entry.iter().rev().map(|piece| piece.doc));
                 }
-                (chain.ok_or(PresentationError::Unbalanced)?, infix.binding())
+                let inner = self.builder.concat_all(items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs("}"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
             },
             | Join::Arrow => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
-                let domain = self.bare_up_to(domain, Binding::Sum)?;
+                let domain = self.bare_up_to(domain, Binding::Prefix)?;
                 let arrow = self.leaf(Glyphs(" ->"))?;
                 let head = self.builder.concat(domain, arrow)?;
                 let head = self.space_or_break(head)?;
@@ -2018,34 +2124,11 @@ impl Walk<'_, '_, '_>
                 let close = self.leaf(Glyphs(")"))?;
                 (self.builder.concat(inner, close)?, Binding::Atom)
             },
-            | Join::Tuple(Arity(count)) => {
-                let mut components = Vec::with_capacity(count);
-                for _ in 0_usize .. count {
-                    components.push(self.pop()?);
-                }
-                let opener = self.leaf(Glyphs("("))?;
-                let mut items = Vec::from([opener]);
-                for (position, component) in components.iter().rev().enumerate() {
-                    if position > 0_usize {
-                        let comma = self.leaf(Glyphs(","))?;
-                        items.push(self.space_or_break(comma)?);
-                    }
-                    items.push(component.doc);
-                }
-                if count == 1_usize {
-                    items.push(self.leaf(Glyphs(","))?);
-                }
-                let inner = self.builder.concat_all(items)?;
-                let inner = self.none_or_break(inner)?;
-                let close = self.leaf(Glyphs(")"))?;
-                (self.builder.concat(inner, close)?, Binding::Atom)
-            },
             | Join::Bracket(bracket) => {
                 let mut items = Vec::new();
                 match bracket {
                     | Bracket::PathUniverse
                     | Bracket::Stack
-                    | Bracket::With
                     | Bracket::PathEquiv
                     | Bracket::PathProduct
                     | Bracket::ListCons => {
@@ -2053,30 +2136,19 @@ impl Walk<'_, '_, '_>
                         let first = self.pop()?;
                         let opener = self.leaf(Glyphs(match bracket {
                             | Bracket::Stack => "Stack(",
-                            | Bracket::With => "With(",
                             | Bracket::PathUniverse => "Path_U(",
                             | Bracket::PathEquiv => "equiv(",
                             | Bracket::PathProduct => "pathProduct(",
                             | Bracket::ListCons => "cons(",
-                            | Bracket::PathRefl | Bracket::Left | Bracket::Right => "(",
+                            | Bracket::PathRefl => "refl(",
                         }))?;
                         let comma = self.leaf(Glyphs(","))?;
                         let comma = self.space_or_break(comma)?;
                         items.extend([opener, first.doc, comma, second.doc]);
                     },
-                    | Bracket::PathRefl | Bracket::Left | Bracket::Right => {
+                    | Bracket::PathRefl => {
                         let body = self.pop()?;
-                        let opener = self.leaf(Glyphs(match bracket {
-                            | Bracket::PathRefl => "refl(",
-                            | Bracket::Left => "Inl(",
-                            | Bracket::Right
-                            | Bracket::ListCons
-                            | Bracket::Stack
-                            | Bracket::With
-                            | Bracket::PathUniverse
-                            | Bracket::PathEquiv
-                            | Bracket::PathProduct => "Inr(",
-                        }))?;
+                        let opener = self.leaf(Glyphs("refl("))?;
                         items.extend([opener, body.doc]);
                     },
                 }
@@ -2170,6 +2242,7 @@ where
             | Task::Bind => walk.open = OpenBinders(walk.open.0.saturating_add(1_usize)),
             | Task::Unbind => walk.open = OpenBinders(walk.open.0.saturating_sub(1_usize)),
             | Task::Missing => walk.approximate(Glyphs("?"))?,
+            | Task::Label { of, index, label } => walk.label(source, of, index, label)?,
             | Task::Join(join) => walk.join(join)?,
         }
     }
@@ -2267,6 +2340,19 @@ mod tests
             _node: ChangingNode,
             _index: Component,
         ) -> Option<ChangingNode>
+        {
+            None
+        }
+
+        /// No label: the fixture holds no record.
+        ///
+        /// # Specification
+        /// trivial.
+        fn label(
+            &self,
+            _node: ChangingNode,
+            _index: Component,
+        ) -> Option<super::Name<'_>>
         {
             None
         }

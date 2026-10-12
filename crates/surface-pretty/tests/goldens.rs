@@ -13,6 +13,7 @@ extern crate alloc;
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
     use alloc::sync::Arc;
     use std::path::Path;
 
@@ -39,6 +40,7 @@ mod tests
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::FieldLabel;
     use gandr_kernel_term::FractionDigits;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::IntegerLiteral;
@@ -419,6 +421,20 @@ mod tests
         {
             None
         }
+
+        /// No label: a row holds its former alone, so a record the table
+        /// holds has every label missing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn label(
+            &self,
+            _node: Row,
+            _index: Component,
+        ) -> Option<Name<'_>>
+        {
+            None
+        }
     }
 
     /// How a table's first row is read.
@@ -578,7 +594,7 @@ mod tests
         let read = normal_form(&mut core, pair);
         pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
             name: "pair_injections",
-            flat: "(Inl(1), Inr(\"two\"))",
+            flat: "#{+{.0 = 1}, +{.1 = \"two\"}}",
             fidelity: Fidelity::Faithful,
         });
     }
@@ -596,7 +612,7 @@ mod tests
             value = core.value_injection(Side::Left.into(), value);
         }
         let read = normal_form(&mut core, value);
-        let flat = format!("{}<deep>{}", "Inl(".repeat(limit), ")".repeat(limit));
+        let flat = format!("{}<deep>{}", "+{.0 = ".repeat(limit), "}".repeat(limit));
         pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
             name: "deep_value",
             flat: flat.as_str(),
@@ -604,9 +620,9 @@ mod tests
         });
     }
 
-    /// A value too long for the narrow page breaks after a comma, its
-    /// continuation two columns in: the prior record of three fields, carried
-    /// by the fragment as a right-nested pair of the same three values.
+    /// A record too long for the narrow page breaks after a comma, its
+    /// continuation two columns in, its fields in label order whatever order
+    /// they were given in.
     #[test]
     fn record_value_breaks_fields_at_the_narrow_page()
     {
@@ -614,12 +630,15 @@ mod tests
         let machine = text(&mut core, Written("analytical engine"));
         let name = text(&mut core, Written("ada lovelace"));
         let year = integer(&mut core, Sign::NonNegative, Written("1843"));
-        let rest = core.value_tuple(&[name, year]);
-        let record = core.value_tuple(&[machine, rest]);
+        let record = core.value_record(BTreeMap::from([
+            (FieldLabel::from(String::from("year")), year),
+            (FieldLabel::from(String::from("name")), name),
+            (FieldLabel::from(String::from("engine")), machine),
+        ]));
         let read = normal_form(&mut core, record);
         pin(&CoreSource::new(&core, &[]), Root::Value(read), Pinned {
             name: "record_value",
-            flat: "(\"analytical engine\", (\"ada lovelace\", 1843))",
+            flat: "#{.engine = \"analytical engine\", .name = \"ada lovelace\", .year = 1843}",
             fidelity: Fidelity::Faithful,
         });
     }
@@ -663,11 +682,12 @@ mod tests
         );
     }
 
-    /// A product or a sum of any arity spells as one chain of its components,
-    /// a written nesting parenthesized; the 0-ary product and sum spell
-    /// `Unit` and `Void`, and the sum of two units `Bool`.
+    /// A product or a sum of any arity from one spells its components between
+    /// its braces, a nested product or sum one component among them; the
+    /// 0-ary product and sum spell `Unit` and `Void`, and the sum of two units
+    /// `Bool`.
     #[test]
-    fn n_ary_products_and_sums_spell_as_one_chain()
+    fn n_ary_products_and_sums_spell_between_their_braces()
     {
         let mut core = CoreArena::new();
         let integer = core.value_type_base(BaseType::Integer);
@@ -675,6 +695,8 @@ mod tests
         let unit = core.value_type_product(&[]);
         let void = core.value_type_sum(&[]);
         let boolean = core.value_type_sum(&[unit, unit]);
+        let lonely = core.value_type_product(&[integer]);
+        let only = core.value_type_sum(&[integer]);
         let triple = core.value_type_product(&[integer, string, unit]);
         let choice = core.value_type_sum(&[integer, string, void]);
         let pair = core.value_type_product(&[integer, string]);
@@ -688,37 +710,38 @@ mod tests
         for (root, spelling) in [
             (CoreNode::ValueType(void), "Void"),
             (CoreNode::ValueType(boolean), "Bool"),
-            (CoreNode::ValueType(triple), "Integer * String * Unit"),
-            (CoreNode::ValueType(choice), "Integer + String + Void"),
+            (CoreNode::ValueType(lonely), "#{Integer}"),
+            (CoreNode::ValueType(only), "+{Integer}"),
+            (CoreNode::ValueType(triple), "#{Integer, String, Unit}"),
+            (CoreNode::ValueType(choice), "+{Integer, String, Void}"),
             (
                 CoreNode::ValueType(nested),
-                "(Integer * String) * Integer * (Integer * String)",
+                "#{#{Integer, String}, Integer, #{Integer, String}}",
             ),
             (
                 CoreNode::ValueType(mixed),
-                "Integer * String + (Integer + String) + Integer * String * Unit",
+                "+{#{Integer, String}, +{Integer, String}, #{Integer, String, Unit}}",
             ),
-            (CoreNode::ValueType(flags), "Bool * Bool"),
-            (CoreNode::ValueType(not_bool), "Unit + Integer"),
+            (CoreNode::ValueType(flags), "#{Bool, Bool}"),
+            (CoreNode::ValueType(not_bool), "+{Unit, Integer}"),
             (
                 CoreNode::CompType(returns_choice),
-                "-F (Integer + String + Void)",
+                "-F +{Integer, String, Void}",
             ),
         ] {
             assert_eq!(
                 spelled(&source, Root::Type(root)),
                 faithful(Written(spelling)),
-                "{root:?} spells as one chain"
+                "{root:?} spells between its braces"
             );
         }
     }
 
-    /// A tuple of any arity spells its components between parentheses, a
-    /// 1-tuple with its trailing comma; a nested tuple stays a component. The
-    /// surface writes no 1-ary product type and no injection past the second
-    /// summand, so each spells `?`.
+    /// A tuple of any arity from one spells its components between `#{` and
+    /// `}`, a nested tuple one component among them; an injection spells the
+    /// summand it enters, the third as readily as the first.
     #[test]
-    fn n_ary_tuples_spell_with_their_commas()
+    fn n_ary_tuples_and_injections_spell_between_their_braces()
     {
         let mut core = CoreArena::new();
         let one = integer(&mut core, Sign::NonNegative, Written("1"));
@@ -729,35 +752,82 @@ mod tests
         let pair = core.value_tuple(&[one, two]);
         let nested = core.value_tuple(&[single, pair]);
         let third = core.value_injection(Summand::from(2_usize), one);
-        let tuples = [single, triple, nested, third].map(|value| normal_form(&mut core, value));
-        let integer_type = core.value_type_base(BaseType::Integer);
-        let lonely = core.value_type_product(&[integer_type]);
+        let values = [single, triple, nested, third].map(|value| normal_form(&mut core, value));
         let source = CoreSource::new(&core, &[]);
-        for (root, expected) in tuples.into_iter().zip([
-            faithful(Written("(1,)")),
-            faithful(Written("(1, \"two\", unit)")),
-            faithful(Written("((1,), (1, \"two\"))")),
-            approximate(Written("?")),
+        for (root, expected) in values.into_iter().zip([
+            "#{1}",
+            "#{1, \"two\", unit}",
+            "#{#{1}, #{1, \"two\"}}",
+            "+{.2 = 1}",
         ]) {
             assert_eq!(
                 spelled(&source, Root::Value(root)),
-                expected,
-                "{root:?} spells with its commas"
+                faithful(Written(expected)),
+                "{root:?} spells between its braces"
             );
         }
-        assert_eq!(
-            spelled(&source, Root::Type(CoreNode::ValueType(lonely))),
-            approximate(Written("?")),
-            "the 1-ary product has no spelling"
-        );
+    }
+
+    /// A record type and a record spell each field after its own label, in
+    /// label order whatever order they were given in; the surface writes no
+    /// empty record, `#{}` being the unit, so one spells `?`.
+    #[test]
+    fn records_spell_their_fields_in_label_order()
+    {
+        let mut core = CoreArena::new();
+        let integer_type = core.value_type_base(BaseType::Integer);
+        let string_type = core.value_type_base(BaseType::String);
+        let record_type = core.value_type_record(BTreeMap::from([
+            (FieldLabel::from(String::from("b")), string_type),
+            (FieldLabel::from(String::from("a")), integer_type),
+        ]));
+        let returns_record = core.comp_type_returner(record_type);
+        let empty_type = core.value_type_record(BTreeMap::new());
+        let one = integer(&mut core, Sign::NonNegative, Written("1"));
+        let two = text(&mut core, Written("two"));
+        let record = core.value_record(BTreeMap::from([
+            (FieldLabel::from(String::from("b")), two),
+            (FieldLabel::from(String::from("a")), one),
+        ]));
+        let record = normal_form(&mut core, record);
+        let empty = core.value_record(BTreeMap::new());
+        let source = CoreSource::new(&core, &[]);
+        for (root, expected) in [
+            (
+                Root::Type(CoreNode::ValueType(record_type)),
+                faithful(Written("#{a : Integer, b : String}")),
+            ),
+            (
+                Root::Type(CoreNode::CompType(returns_record)),
+                faithful(Written("-F #{a : Integer, b : String}")),
+            ),
+            (
+                Root::Value(record),
+                faithful(Written("#{.a = 1, .b = \"two\"}")),
+            ),
+            (
+                Root::Type(CoreNode::ValueType(empty_type)),
+                approximate(Written("?")),
+            ),
+            (
+                Root::Value(CoreNode::Value(empty)),
+                approximate(Written("?")),
+            ),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                expected,
+                "{root:?} spells its labels"
+            );
+        }
     }
 
     /// Every value-type and computation-type former of the core spells as the
     /// grammar parses it: the two bridges with their operand parenthesized
-    /// unless atomic, a product or a sum nested in either side of its own
-    /// former parenthesized, the product binding tighter, the arrow's domain
-    /// bare up to a sum, a decode as the code it reads, and an abstract
-    /// type by its name.
+    /// unless atomic, a product, a sum or a lazy pair between its braces with
+    /// any former bare among its entries, the arrow's domain bare up to a
+    /// bridge, a decode as the code it reads, and an abstract type by its
+    /// name.
     #[test]
     fn every_type_former_spells_as_the_grammar_writes_it()
     {
@@ -801,6 +871,9 @@ mod tests
         let returns_named = core.comp_type_returner(named);
         let quoted_returner = core.value_quote_computation(returns_integer);
         let decoded_returner = core.comp_type_element(quoted_returner, Level::zero());
+        let lazy = core.comp_type_with(returns_integer, returns_unit);
+        let lazy_chain = core.comp_type_with(function, lazy);
+        let suspended_lazy = core.value_type_thunk(lazy);
         let source = CoreSource::new(&core, &names);
         for (root, spelling) in [
             (CoreNode::ValueType(integer), "Integer"),
@@ -811,40 +884,52 @@ mod tests
             (CoreNode::CompType(returns_thunk), "-F (+U (-F Unit))"),
             (
                 CoreNode::ValueType(right_nested),
-                "Integer * (String * Unit)",
+                "#{Integer, #{String, Unit}}",
             ),
             (
                 CoreNode::ValueType(left_nested),
-                "(Integer * String) * Unit",
+                "#{#{Integer, String}, Unit}",
             ),
             (
                 CoreNode::ValueType(product_then_sum),
-                "Integer * String + Unit",
+                "+{#{Integer, String}, Unit}",
             ),
             (
                 CoreNode::ValueType(sum_of_product),
-                "Integer + String * Unit",
+                "+{Integer, #{String, Unit}}",
             ),
             (
                 CoreNode::ValueType(sum_then_product),
-                "(Integer + String) * Unit",
+                "#{+{Integer, String}, Unit}",
             ),
-            (CoreNode::ValueType(sum_chain), "Integer + (String + Unit)"),
-            (CoreNode::ValueType(sum_left), "(Integer + String) + Unit"),
+            (
+                CoreNode::ValueType(sum_chain),
+                "+{Integer, +{String, Unit}}",
+            ),
+            (CoreNode::ValueType(sum_left), "+{+{Integer, String}, Unit}"),
             (
                 CoreNode::ValueType(thunk_in_product),
-                "+U (-F Integer) * Unit",
+                "#{+U (-F Integer), Unit}",
             ),
             (
                 CoreNode::CompType(sum_domain),
-                "Integer + String -> -F Unit",
+                "+{Integer, String} -> -F Unit",
             ),
             (
                 CoreNode::CompType(thunk_domain),
                 "+U (Integer -> -F Unit) -> -F Unit",
             ),
-            (CoreNode::CompType(returns_product), "-F (Integer * String)"),
-            (CoreNode::CompType(returns_decoded), "-F (Integer * String)"),
+            (CoreNode::CompType(returns_product), "-F #{Integer, String}"),
+            (CoreNode::CompType(returns_decoded), "-F #{Integer, String}"),
+            (CoreNode::CompType(lazy), "&{-F Integer, -F Unit}"),
+            (
+                CoreNode::CompType(lazy_chain),
+                "&{Integer -> -F Unit, &{-F Integer, -F Unit}}",
+            ),
+            (
+                CoreNode::ValueType(suspended_lazy),
+                "+U &{-F Integer, -F Unit}",
+            ),
             (CoreNode::CompType(returns_named), "-F small"),
             (CoreNode::CompType(decoded_returner), "-F Integer"),
         ] {
@@ -971,16 +1056,16 @@ mod tests
                 Root::Type(CoreNode::ValueType(classifier)),
                 "(Type -> Type[-]) -> Type -> Type",
             ),
-            (Root::Value(CoreNode::Value(squaring)), "\\a. -F (a * a)"),
-            (Root::Value(CoreNode::Value(nested)), "\\a. \\b. a * b"),
+            (Root::Value(CoreNode::Value(squaring)), "\\a. -F #{a, a}"),
+            (Root::Value(CoreNode::Value(nested)), "\\a. \\b. #{a, b}"),
             (Root::Value(CoreNode::Value(once)), "t(Integer)"),
             (
                 Root::Value(CoreNode::Value(applied)),
-                "t(\\a. -F (a * a), Integer, Integer)",
+                "t(\\a. -F #{a, a}, Integer, Integer)",
             ),
             (
                 Root::Type(CoreNode::ValueType(decoded)),
-                "t(\\a. -F (a * a), Integer, Integer)",
+                "t(\\a. -F #{a, a}, Integer, Integer)",
             ),
             (Root::Value(CoreNode::Value(redex)), "(\\a. a)(Integer)"),
         ] {
@@ -1085,7 +1170,13 @@ mod tests
             (
                 vec![Former::Product(Arity::from(3_usize))],
                 Reading::AsType,
-                "? * ? * ?",
+                "#{?, ?, ?}",
+            ),
+            // A record whose labels the source does not answer.
+            (
+                vec![Former::Record(Arity::from(2_usize))],
+                Reading::AsValue,
+                "#{.? = ?, .? = ?}",
             ),
             (
                 vec![Former::ThunkType(Row(1)), Former::Arrow {
