@@ -1024,7 +1024,7 @@ mod tests
         let table = RoleTable::build(&pbg).expect("the role table builds");
         let classes: &[(&str, &str, HlRole)] = &[
             ("def", "def_value", HlRole::Keyword),
-            ("val", "let_statement", HlRole::Keyword),
+            ("val", "val_statement", HlRole::Keyword),
             ("->", "function_type", HlRole::Operator),
             ("<>", "redirection_operator", HlRole::Operator),
             ("list_operator", "shell_list", HlRole::Operator),

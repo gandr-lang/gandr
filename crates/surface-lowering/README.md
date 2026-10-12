@@ -213,11 +213,11 @@ The alternative was a dependent arrow for every parameter, which is one rule and
 
 ## A block binds each statement over the next
 
-A block is a sequence of `run x <- c;` statements and a last computation. It lowers to a chain of binds, `c₁` bound over the rest of the block with `x` in scope, the last computation innermost, each bind at the origin of its `run` keyword. A block with no last computation is refused at the block as `Arity` with zero; every other statement — `let`, `unpack`, `leta`, `recv`, `acquire`, `release`, `fork` and a bare expression statement — is refused as `Unadmitted`, named by its form, at its keyword or, for an expression statement, at the expression; and a `run` binder that is annotated or is a pattern other than a name is refused the same way, at the annotation or the pattern.
+A block is a sequence of `run x <- c;` statements and a last computation. It lowers to a chain of binds, `c₁` bound over the rest of the block with `x` in scope, the last computation innermost, each bind at the origin of its `run` keyword. A block with no last computation is refused at the block as `Arity` with zero; every other statement — `val`, `unpack`, `leta`, `recv`, `acquire`, `release`, `fork` and a bare expression statement — is refused as `Unadmitted`, named by its form, at its keyword or, for an expression statement, at the expression; and a `run` binder that is annotated or is a pattern other than a name is refused the same way, at the annotation or the pattern.
 
 A block also stands wherever a computation is read: a match arm that sequences, `Succ(p) => { run r <- f[<](p); ret Succ(r) }`, is a block lowered by the same chain, and a block where a value is read is refused as the wrong sort.
 
-The alternative was lowering `let x = v;` beside `run`, as the substitution of a value. It was declined because the core has no let and the substitution would duplicate `v` at each occurrence, which the fragment has no sharing to undo. Reversal: when the core gains a let, or the lowering gains sharing, `let` lowers to it.
+The alternative was lowering `val x = v;` beside `run`, as the substitution of a value. It was declined because the core has no let and the substitution would duplicate `v` at each occurrence, which the fragment has no sharing to undo. Reversal: when the core gains a let, or the lowering gains sharing, `val` lowers to it.
 
 ## Five insertions, by the sort of the position
 

@@ -8529,7 +8529,7 @@ fn parameter<'source>(
 ///   including the ordinary/shared fork distinction outside this table.
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 const UNREAD_STATEMENTS: [(TileName, FormName); 6_usize] = [
-    (TileName::VAL, FormName::LET_STATEMENT),
+    (TileName::VAL, FormName::VAL_STATEMENT),
     (TileName::UNPACK, FormName::UNPACK_STATEMENT),
     (TileName::LETA, FormName::LETA_STATEMENT),
     (TileName::RECV, FormName::RECV_STATEMENT),
@@ -11338,7 +11338,7 @@ mod tests
                 unadmitted(
                     16_usize,
                     19_usize,
-                    FormName::LET_STATEMENT,
+                    FormName::VAL_STATEMENT,
                     FragmentSort::Computation,
                 ),
             ),
