@@ -109,7 +109,7 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
         ("computation sort", "def f : Type[-];"),
         ("value sort and level", "def f : Type[+, 1];"),
         ("computation sort and level", "def f : Type[-, 0];"),
-        ("bare binder", "def f(a : Type, x : a) -> -F a { ret x }"),
+        ("bare binder", "def f(a : Type, x : a) -> -F a { return x }"),
         ("under an arrow", "def f : +U (Type[+, 1] -> -F Type);"),
     ];
     for (case, source) in cases {
@@ -139,10 +139,13 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
         ("unary alias", "def f : Integer => Integer * Integer;"),
         ("n-ary alias", "def f : (A, B => C) => D;"),
         ("alias in a product", "def f : (A => B) * ((C, D) => E);"),
-        ("alias in a binder", "def f(k : A => B) -> -F B { force k }"),
+        (
+            "alias in a binder",
+            "def f(k : A => B) -> -F B { become force k }",
+        ),
         (
             "case arm beside the alias",
-            "def f : A => B; def g(c : C) -> -F Integer { case c { Red => ret 0, _ => ret 1 } }",
+            "def f : A => B; def g(c : C) -> -F Integer { case c { Red => pure 0, _ => pure 1 } }",
         ),
     ];
     for (case, source) in cases {

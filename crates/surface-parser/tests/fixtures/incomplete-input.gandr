@@ -1,2 +1,2 @@
 fn(x) {
-  ret x
+  return x

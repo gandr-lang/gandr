@@ -1,11 +1,11 @@
 error[NotSynthesisable]: the type of a return cannot be inferred where it stands
-  ╭▸ application.gandr:2:18
+  ╭▸ application.gandr:2:25
   │
-2 │ def b = thunk { (ret 1)(2) } ;
-  │         ┬───────┬┯━━━━──────
-  │         │       ││
-  │         │       │needs a type to be checked against
-  │         │       while checking this against `-F Integer`
+2 │ def b = thunk { become (pure 1)(2) } ;
+  │         ┬──────────────┬┯━━━━━──────
+  │         │              ││
+  │         │              │needs a type to be checked against
+  │         │              while checking this against `-F Integer`
   │         while checking this against `+U (-F Integer)`
   │
   ╰ note: unsettled `b` states checks owing 0

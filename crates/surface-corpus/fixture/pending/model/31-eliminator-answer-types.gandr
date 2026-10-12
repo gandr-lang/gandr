@@ -1,14 +1,14 @@
-if true -> -F Integer { ret 1 } else { ret 2 }
+if true -> -F Integer { pure 1 } else { pure 2 }
 
 case (Inl(41) : Integer + String) -> -F Integer {
-  Inl(x) => ret (x + 1),
-  Inr(s) => ret 0
+  Inl(x) => pure (x + 1),
+  Inr(s) => pure 0
 }
 
-if false -> -F Integer { ret 0 } else if true { ret 1 } else { ret 2 }
+if false -> -F Integer { pure 0 } else if true { pure 1 } else { pure 2 }
 
 {
-  run x : -F Integer <- ret 40;
-  run y <- (ret 2 : -F Integer);
-  ret (x + y)
+  run x : -F Integer <- pure 40;
+  run y <- (pure 2 : -F Integer);
+  pure (x + y)
 }

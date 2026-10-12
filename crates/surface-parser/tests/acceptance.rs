@@ -253,11 +253,11 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let clean: &[&str] = &[
         "def greeting = \"the value zone\";",
-        "ret greeting",
+        "pure greeting",
         "def answer = 42;",
         "1 + 2 * 3",
         "- x",
-        "ret -y",
+        "pure -y",
         "def id = x;",
         "def nested = comp(id(a), f);",
     ];
@@ -286,7 +286,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
 fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Box<dyn Error>>
 {
     let source = r#"def nth @[A : Type, i : Fin(length(xs))] (xs : List(A)) -> A {
-  ret xs
+  pure xs
 }
 "#;
     let result = parse(built(), SourceText::from(source))?;
@@ -329,7 +329,7 @@ fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<()
 fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<dyn Error>>
 {
     let source = r#"@[doc("d")]
-def tagged @[] (x : Type) -> Type { ret x }
+def tagged @[] (x : Type) -> Type { pure x }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -364,8 +364,8 @@ def tagged @[] (x : Type) -> Type { ret x }
 #[test]
 fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Error>>
 {
-    let source = r#"def bad @[A : Type, broken] (x : Type) -> Type { ret x }
-def good @[B : Type] (y : Type) -> Type { ret y }
+    let source = r#"def bad @[A : Type, broken] (x : Type) -> Type { pure x }
+def good @[B : Type] (y : Type) -> Type { pure y }
 "#;
     let result = parse(built(), SourceText::from(source))?;
     assert!(
@@ -375,7 +375,7 @@ def good @[B : Type] (y : Type) -> Type { ret y }
     let good = find_meld_with_tile(result.tree(), result.tree().root(), TileText::from("good"))
         .expect("the later valid definition survives prefix recovery");
     assert_eq!(
-        "def good @[B : Type] (y : Type) -> Type { ret y }",
+        "def good @[B : Type] (y : Type) -> Type { pure y }",
         text(result.tree(), good),
         "the surviving declaration is not absorbed by the malformed prefix"
     );
@@ -401,7 +401,7 @@ fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let renamed = [
         "val value = expression;",
-        "def use() -> -F Integer { val value = expression; ret value }",
+        "def use() -> -F Integer { val value = expression; pure value }",
     ];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
@@ -430,7 +430,7 @@ fn bind_statement_uses_run_keyword() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let renamed = [
         "run value <- action;",
-        "def bind() -> -F Integer { run value <- action; ret value }",
+        "def bind() -> -F Integer { run value <- action; pure value }",
     ];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
@@ -467,13 +467,13 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
     // the reserved `with` view on `case`. The bare spellings are unchanged.
     let pbg = built();
     let annotated = [
-        "if flag -> -F Integer { ret 1 } else { ret 2 }",
-        "if flag -> -F Integer { ret 1 } else if other -> -F Integer { ret 2 } else { ret 3 }",
-        "if flag { ret 1 } else if other -> -F Integer { ret 2 } else { ret 3 }",
-        "case subject -> -F Integer { Inl(x) => ret x, Inr(y) => ret y }",
-        "case subject with view -> -F Integer { Inl(x) => ret x, Inr(y) => ret y }",
+        "if flag -> -F Integer { pure 1 } else { pure 2 }",
+        "if flag -> -F Integer { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
+        "if flag { pure 1 } else if other -> -F Integer { pure 2 } else { pure 3 }",
+        "case subject -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
+        "case subject with view -> -F Integer { Inl(x) => pure x, Inr(y) => pure y }",
         "case subject -> -F Integer { }",
-        "if flag -> +U[1] (-F Integer) -> -F Integer { ret f } else { ret g }",
+        "if flag -> +U[1] (-F Integer) -> -F Integer { pure f } else { pure g }",
     ];
     for src in annotated {
         let result = parse(pbg, SourceText::from(src))?;
@@ -489,8 +489,8 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
     }
 
     let bare = [
-        "if flag { ret 1 } else { ret 2 }",
-        "case subject { Inl(x) => ret x, Inr(y) => ret y }",
+        "if flag { pure 1 } else { pure 2 }",
+        "case subject { Inl(x) => pure x, Inr(y) => pure y }",
     ];
     for src in bare {
         let result = parse(pbg, SourceText::from(src))?;
@@ -509,7 +509,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
     // after the body requires repair. A missing scrutinee is a hole the molder
     // fills without an obligation, so its refusal belongs to lowering, not to
     // the parser.
-    let rejected = ["if flag { ret 1 } -> -F Integer else { ret 2 }"];
+    let rejected = ["if flag { pure 1 } -> -F Integer else { pure 2 }"];
     for src in rejected {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
@@ -529,8 +529,8 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let annotated = [
         "run value : -F Integer <- action;",
-        "def bind() -> -F Integer { run value : -F Integer <- action; ret value }",
-        "def bind() -> -F Integer { run (left, right) : -F Integer <- action; ret left }",
+        "def bind() -> -F Integer { run value : -F Integer <- action; pure value }",
+        "def bind() -> -F Integer { run (left, right) : -F Integer <- action; pure left }",
     ];
     for src in annotated {
         let result = parse(pbg, SourceText::from(src))?;
@@ -675,8 +675,8 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
     let unchanged: &[&str] = &[
         "case x { A => 1, B => 2 }",
         "run value <- action;",
-        "def le() -> -F Boolean { ret a <= b }",
-        "def eq() -> -F Boolean { ret a == b }",
+        "def le() -> -F Boolean { return a <= b }",
+        "def eq() -> -F Boolean { return a == b }",
         "def arrow : A -> B;",
     ];
     for &src in unchanged {
@@ -796,8 +796,8 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def sort = 1;",
         "def node = 1;",
         "def feed = 1;",
-        "def use() -> -F Integer { val node = 1; ret node }",
-        "def project(sort: Integer) -> -F Integer { ret sort }",
+        "def use() -> -F Integer { val node = 1; pure node }",
+        "def project(sort: Integer) -> -F Integer { return sort }",
         "def record = #{ node = 1, feed = 2 };",
     ];
     for &src in binding {
@@ -1135,7 +1135,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         // `def x = 1 + ;` fixture now force-closes the factored def value at
         // the `;` instead, flagging a `MissingTile`; the operator-completion
         // path is exercised directly here, where it is the sole repair.)
-        ("ret 1 +", Oblig::MissingMeld),
+        ("pure 1 +", Oblig::MissingMeld),
         // A stray byte the grammar has no tile for.
         ("def x = 1 ~ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
@@ -1535,10 +1535,10 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let sources = [
         "def x = 1;".to_owned(),
-        "fn(a) { ret a }".to_owned(),
-        "if c { ret 1 } else { ret 2 }".to_owned(),
-        "ret 1 +".to_owned(),
-        "ret ( 1 +".to_owned(),
+        "fn(a) { pure a }".to_owned(),
+        "if c { pure 1 } else { pure 2 }".to_owned(),
+        "pure 1 +".to_owned(),
+        "pure ( 1 +".to_owned(),
         read_source(&corpus_root().join("fixture/surface/string-interpolation.gandr"))?,
     ];
     let mut excess_seen = 0_usize;
@@ -1641,7 +1641,7 @@ fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error
     // At expression start (`ret -y`, `-y`), `-` molds prefix (unary): the
     // meld carries the operator and its single right operand (two children),
     // and the parse is clean — no missing-left obligation.
-    for src in ["ret -y", "-y"] {
+    for src in ["pure -y", "-y"] {
         let prefix = parse(pbg, SourceText::from(src))?;
         let prefix_meld =
             find_meld_with_tile(prefix.tree(), prefix.tree().root(), TileText::from("-"))
@@ -1678,14 +1678,14 @@ fn hole_positions_mold_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     // (source, the tile that must NOT be absorbed into the hole meld).
     let cases: &[(&str, &str)] = &[
-        ("def ho = ret ?name;", ";"),
+        ("def ho = pure ?name;", ";"),
         ("thunk { ? }", "}"),
-        ("thunk { ret ?seed }", "}"),
+        ("thunk { return ?seed }", "}"),
         ("? + 1", "+"),
         ("f(?, 2)", ","),
-        ("def ho = ret ?;", ";"),
+        ("def ho = pure ?;", ";"),
         ("def x = ?;", ";"),
-        ("ret ?name", "name"),
+        ("pure ?name", "name"),
     ];
     for &(src, closer) in cases {
         let result = parse(pbg, SourceText::from(src))?;

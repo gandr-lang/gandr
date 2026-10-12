@@ -7,7 +7,7 @@ data Maybe(a : Type) : Type {
 @[ checks ]
 def unwrap_or_zero() -> -F Integer {
   case (Some(3) : Maybe(Integer)) {
-    None => ret 0,
-    Some(x) => ret x
+    None => return 0,
+    Some(x) => return x
   }
 }

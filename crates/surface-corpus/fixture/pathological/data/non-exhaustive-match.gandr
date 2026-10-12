@@ -7,6 +7,6 @@ data Maybe(a : Type) : Type {
 @[ refuses("NonExhaustiveMatch") ]
 def unwrap() -> -F Integer {
   case (None : Maybe(Integer)) {
-    Some(x) => ret x
+    Some(x) => return x
   }
 }

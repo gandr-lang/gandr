@@ -4,7 +4,7 @@ data Either(a : Type, b : Type) : Type {
 }
 
 def from_left() -> -F Integer {
-  case (Left(5) : Either(Integer, String)) { Left(x) => ret x, Right(y) => ret 0 }
+  case (Left(5) : Either(Integer, String)) { Left(x) => return x, Right(y) => return 0 }
 }
 
 module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
@@ -16,5 +16,5 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
   def total = inner.answer + 1;
 }
 
-def pairs = thunk { fn (m) { fn (k) { run p <- force m ; (force k)(1) } } } ;
+def pairs = thunk { fn (m) { fn (k) { run p <- force m ; become (force k)(1) } } } ;
 def listed = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] ;

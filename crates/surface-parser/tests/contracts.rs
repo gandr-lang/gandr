@@ -105,7 +105,7 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
         "module M { def x = 1; def y : Integer; }",
         r#"module M : #{ x: Integer, f: -F Integer } {
   def x = 1;
-  def f(a: Integer) -> -F Integer { ret a }
+  def f(a: Integer) -> -F Integer { pure a }
 }"#,
     ];
     for src in cases {

@@ -6,7 +6,7 @@ data Color : Type {
 
 def classify(c : Color) -> -F Integer {
   case c {
-    ?branch => ret 1
+    ?branch => return 1
   }
 }
 

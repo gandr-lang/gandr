@@ -5,6 +5,6 @@ def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
 }
 
 def counter : package [ T ] +U[ω] (-F #{ seed: T });
-def counter = pack [ Integer ] thunk { ret #{ seed = 7 } };
+def counter = pack [ Integer ] thunk { return #{ seed = 7 } };
 
 leak(counter)

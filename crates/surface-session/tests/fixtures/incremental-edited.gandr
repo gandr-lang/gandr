@@ -1,5 +1,5 @@
 def target(x: Integer) -> -F Integer {
-  ret 2
+  return 2
 }
 def shown : +U (-F Integer) ;
-def shown = thunk { (force target)(0) } ;
+def shown = thunk { become (force target)(0) } ;

@@ -181,10 +181,10 @@ mod tests
     fn a_continuation_line_indents_under_its_statement()
     {
         let grammar = grammar();
-        let source = "def f(x : Integer) -> -F Integer {\nrun y <- inc(x)\n      ;\n         run z <- inc(y);\n  ret z\n}\n";
+        let source = "def f(x : Integer) -> -F Integer {\nrun y <- inc(x)\n      ;\n         run z <- inc(y);\n  return z\n}\n";
         assert_eq!(
             text(&grammar, source, WIDE),
-            "def f(x : Integer) -> -F Integer {\n  run y <- inc(x)\n    ;\n  run z <- inc(y);\n  ret z\n}\n",
+            "def f(x : Integer) -> -F Integer {\n  run y <- inc(x)\n    ;\n  run z <- inc(y);\n  return z\n}\n",
             "a line indented past its statement continues it; one after a separator starts a statement"
         );
     }
@@ -224,10 +224,10 @@ mod tests
     fn the_source_line_ending_is_kept()
     {
         let grammar = grammar();
-        let source = "def f() -> -F Integer {\r\n\r\n  ret 1\r\n}\r\n";
+        let source = "def f() -> -F Integer {\r\n\r\n  return 1\r\n}\r\n";
         assert_eq!(
             text(&grammar, source, NARROW),
-            "def f() -> -F Integer {\r\n  ret 1\r\n}\r\n",
+            "def f() -> -F Integer {\r\n  return 1\r\n}\r\n",
             "carriage returns stay with their line feeds"
         );
     }

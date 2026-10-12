@@ -899,7 +899,7 @@ mod tests
     fn nested_reasons_become_lsp_related_information()
     {
         let uri = DocumentUri::from("file:///strict/force.gandr");
-        let text = "def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n";
+        let text = "def a : +U (-F Integer) ;\ndef a = thunk { become force 1 } ;\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -907,7 +907,7 @@ mod tests
         };
         assert_eq!(
             (diagnostic.range, diagnostic.code.as_deref()),
-            (range(Span(1, 22, 1, 23)), Some("ShapeMismatch")),
+            (range(Span(1, 29, 1, 30)), Some("ShapeMismatch")),
             "the forced integer is the primary locus"
         );
         let related: Vec<(Range, &str)> = diagnostic
@@ -919,11 +919,11 @@ mod tests
             related,
             [
                 (
-                    range(Span(1, 8, 1, 25)),
+                    range(Span(1, 8, 1, 32)),
                     "while checking this against `+U (-F Integer)`"
                 ),
                 (
-                    range(Span(1, 16, 1, 23)),
+                    range(Span(1, 23, 1, 30)),
                     "while checking this against `-F Integer`"
                 ),
             ],
@@ -981,7 +981,7 @@ mod tests
     fn a_refusal_publishes_its_label_and_note()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = "def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n";
+        let text = "def f(xs: List(Integer)) -> -F Integer {\n  pure 1\n}\n";
         let diagnostics = checked(&uri, SourceText::from(text));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
@@ -1011,7 +1011,7 @@ mod tests
     fn one_refusal_is_published_at_every_verbosity()
     {
         let uri = DocumentUri::from("file:///strict/head.gandr");
-        let text = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let text = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  return 1\n}\n");
         let [user, detailed, debug, json] = [
             Verbosity::User,
             Verbosity::Detailed,
@@ -1093,7 +1093,7 @@ mod tests
         assert!(diagnostic.related_information.is_empty());
         let pending = DocumentUri::from("file:///corpus/fixture/pending/whole.gandr");
         assert_eq!(
-            checked(&pending, SourceText::from("ret 3\n")),
+            checked(&pending, SourceText::from("pure 3\n")),
             Vec::new(),
             "a pending source refused as a whole stands as its root expects"
         );
@@ -1143,7 +1143,7 @@ mod tests
         let refused = recheck(
             &uri,
             &mut session,
-            SourceText::from("ret 3\n"),
+            SourceText::from("pure 3\n"),
             Verbosity::User,
         );
         assert_eq!(
@@ -1161,7 +1161,7 @@ mod tests
         let base = "def a = 1 ;\ndef f : Integer ;\n";
         let candidates = [
             "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
-            "def a = 1 ;\ndef f : Integer ;\nret 3\n",
+            "def a = 1 ;\ndef f : Integer ;\npure 3\n",
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
         let mut session = open(&uri);

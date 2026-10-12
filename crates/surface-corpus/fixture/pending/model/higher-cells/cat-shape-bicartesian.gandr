@@ -15,7 +15,7 @@ data UnitHom(a : UnitOb, b : UnitOb) : Type {
 }
 
 def unit_id(a : UnitOb) -> -F UnitHom(a, a) {
-  ret UnitId
+  return UnitId
 }
 
 data PairOb(a : Type, b : Type) : Type {
@@ -38,14 +38,14 @@ data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type {
 
 def prod_id(x : PairOb(Integer, String)) -> -F ProdHom(x, x) {
   case x {
-    Pair(l, r) => ret PairHom(0, 0)
+    Pair(l, r) => return PairHom(0, 0)
   }
 }
 
 def coprod_id(x : SumOb(Integer, String)) -> -F HomPlus(Integer, String, x, x) {
   case x {
-    Inl(a) => ret HomInl(a, a, 0),
-    Inr(b) => ret HomInr(b, b, 0)
+    Inl(a) => return HomInl(a, a, 0),
+    Inr(b) => return HomInr(b, b, 0)
   }
 }
 
@@ -54,5 +54,5 @@ def mixed_elim(a : Integer, b : String, h : HomPlus(Integer, String, Inl(a), Inr
 }
 
 def empty_probe() -> -F EmptyHom(Star, Star) {
-  empty_id(Star)
+  become empty_id(Star)
 }

@@ -29,7 +29,7 @@ mod run
     use gandr_surface_syntax::SourceText;
 
     /// A program whose last declaration returns forty-two.
-    const ANSWER: &str = "def main : +U (-F Integer) ;\ndef main = thunk { ret 42 } ;\n";
+    const ANSWER: &str = "def main : +U (-F Integer) ;\ndef main = thunk { return 42 } ;\n";
 
     /// A scratch source file, removed when dropped.
     #[repr(transparent)]

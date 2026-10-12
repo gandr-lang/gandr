@@ -72,7 +72,7 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
         2_usize,
         "both declarations are items"
     );
-    let refused = items.items(&Revision::from(String::from("def a = 1 ;\nret a")));
+    let refused = items.items(&Revision::from(String::from("def a = 1 ;\npure a")));
     let Err(RevisionFault::Refused { class, span }) = refused
     else {
         panic!("a root that is no list of declarations is refused whole: {refused:?}");
@@ -87,7 +87,7 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
         panic!("the refusal names its source extent")
     };
     assert_eq!(usize::from(span.start()), "def a = 1 ;\n".len());
-    assert_eq!(usize::from(span.end()), "def a = 1 ;\nret a".len());
+    assert_eq!(usize::from(span.end()), "def a = 1 ;\npure a".len());
     assert_eq!(program.items()[0].key().as_ref(), b"a");
     assert_eq!(program.items()[1].key().as_ref(), b"b");
     let next = items

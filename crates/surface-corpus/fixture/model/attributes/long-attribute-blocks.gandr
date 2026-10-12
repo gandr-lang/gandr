@@ -10,5 +10,5 @@ def answer = 42 ;
 
 @[ refuses("UnknownAttribute"), note("the first of two integers") ]
 def first(x : Integer, y : Integer) -> -F Integer {
-  ret x
+  return x
 }

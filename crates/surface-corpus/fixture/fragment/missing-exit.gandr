@@ -1,0 +1,47 @@
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+def rec down(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become down[<](p)
+  }
+}
+
+@[ refuses("MissingExit") ]
+def produced(n : Nat) -> -F Nat { pure n }
+
+@[ refuses("MissingExit") ]
+def called(n : Nat) -> -F Nat { down(n) }
+
+@[ refuses("MissingExit") ]
+def one_arm(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => pure p
+  }
+}
+
+@[ refuses("MissingExit") ]
+def sequenced(n : Nat) -> -F Nat {
+  run m <- down(n) ;
+  pure m
+}
+
+@[ refuses("MissingExit") ]
+def thunked : +U (-F Nat) ;
+def thunked = thunk { pure Zero } ;
+
+@[ refuses("MissingExit") ]
+def lambda : +U (Nat -> -F Nat) ;
+def lambda = thunk { fn (n) { pure n } } ;
+
+@[ checks ]
+def bound(n : Nat) -> -F Nat {
+  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;
+  return m
+}

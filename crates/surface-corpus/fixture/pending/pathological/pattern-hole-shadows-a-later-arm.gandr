@@ -6,9 +6,9 @@ data Color : Type {
 
 def classify(c : Color) -> -F Integer {
   case c {
-    Red => ret 0,
-    ? => ret 1,
-    Blue => ret 2
+    Red => return 0,
+    ? => return 1,
+    Blue => return 2
   }
 }
 

@@ -5,5 +5,5 @@
 16..30 StringLit "the value zone"
 30..31 StringLit "\""
 31..32 Other ";"
-34..37 Keyword "ret"
-38..46 Variable "greeting"
+34..38 Keyword "pure"
+39..47 Variable "greeting"

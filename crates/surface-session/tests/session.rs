@@ -418,7 +418,10 @@ fn an_unbound_variable_is_a_type_error()
 fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
 {
     let mut session = session(SourceRoot::Strict);
-    let refused = submit(&mut session, "def f(x: NoSuchType) -> -F Integer { ret 1 }");
+    let refused = submit(
+        &mut session,
+        "def f(x: NoSuchType) -> -F Integer { return 1 }",
+    );
     let Composed::Settled { ref report, .. } = *refused.composed()
     else {
         panic!("the definition lowers");
@@ -430,7 +433,7 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
         ),
         "an undeclared type name in a signature is refused by its name: {report:?}"
     );
-    let accepted = submit(&mut session, "def f(x: Integer) -> -F Integer { ret 1 }");
+    let accepted = submit(&mut session, "def f(x: Integer) -> -F Integer { return 1 }");
     assert_eq!(
         rows(accepted.composed()),
         vec![("f".to_owned(), checks(), Settlement::Settled)],
@@ -478,7 +481,7 @@ fn failed_submission_retains_latest_synthesis()
     let before: Vec<SynthesisEvent> = before.collect();
     let before_snapshot = session.snapshot().items().to_vec();
     let before_lowerings = usize::from(session.lowerings());
-    let refused = submit(&mut session, "def retained = 40 ;\nret retained");
+    let refused = submit(&mut session, "def retained = 40 ;\npure retained");
     assert!(
         matches!(refused.composed(), Composed::Refused(_)),
         "a top-level expression refuses the revision as a whole"
@@ -552,7 +555,7 @@ fn a_judged_revision_reports_before_its_admission()
     );
     let _superseded = judging.judge(text).expect("judges again");
     let refused = judging
-        .judge(gandr_surface_syntax::SourceText::from("ret 3"))
+        .judge(gandr_surface_syntax::SourceText::from("pure 3"))
         .expect("judges");
     assert_eq!(
         refused.kernel(),
@@ -726,7 +729,7 @@ fn nullary_function_call_evaluates()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def step() -> -F Integer { ret 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { step() } ;",
+        "def step() -> -F Integer { return 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { become step() } ;",
     );
     assert_eq!(
         rows(submission.composed()),
@@ -769,7 +772,7 @@ def broken = 1 ;"#,
     let mut whole = submit(
         &mut held,
         r#"def answer = 42 ;
-ret answer"#,
+pure answer"#,
     );
     assert!(matches!(
         whole.evaluate(ConstantIndex::from(0_usize)),
@@ -818,7 +821,7 @@ fn holes_decline_evaluation()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { force later } ;",
+        "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { become force later } ;",
     );
     let later = constant_of(submission.composed(), SurfaceName::from("later"));
     assert_eq!(
@@ -840,7 +843,7 @@ fn arithmetic_operators_type_check_and_evaluate()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def answer : +U (-F Integer) ; def answer = thunk { 1 + 2 } ;",
+        "def answer : +U (-F Integer) ; def answer = thunk { become 1 + 2 } ;",
     );
     assert_eq!(rows(submission.composed()), vec![(
         "answer".to_owned(),
@@ -858,14 +861,15 @@ fn arithmetic_operators_type_check_and_evaluate()
 fn operator_definition_carries_across_lines()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = "def z : +U (-F Integer) ; def z = thunk { 1 + 2 } ;";
+    let first = "def z : +U (-F Integer) ; def z = thunk { become 1 + 2 } ;";
     let initial = submit(&mut session, first);
     assert_eq!(rows(initial.composed()), vec![(
         "z".to_owned(),
         checks(),
         Settlement::Settled
     )]);
-    let revision = format!("{first} def answer : +U (-F Integer) ; def answer = thunk {{ z() }} ;");
+    let revision =
+        format!("{first} def answer : +U (-F Integer) ; def answer = thunk {{ become z() }} ;");
     let mut submission = submit(&mut session, &revision);
     assert_eq!(rows(submission.composed()), vec![
         ("z".to_owned(), checks(), Settlement::Settled),
@@ -884,7 +888,7 @@ fn module_builtins_type_and_evaluate()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def identity : +U (-F Integer) ; def identity = thunk { prim.id(5) } ; def first : +U (-F Integer) ; def first = thunk { prim.const(7, 9) } ;",
+        "def identity : +U (-F Integer) ; def identity = thunk { become prim.id(5) } ; def first : +U (-F Integer) ; def first = thunk { become prim.const(7, 9) } ;",
     );
     assert_eq!(rows(submission.composed()), vec![
         ("identity".to_owned(), checks(), Settlement::Settled),
@@ -905,7 +909,7 @@ fn comparison_operators_type_check_and_evaluate()
     let mut session = session(SourceRoot::Strict);
     let mut submission = submit(
         &mut session,
-        "def answer : +U (-F Bool) ; def answer = thunk { 1 < 2 } ;",
+        "def answer : +U (-F Bool) ; def answer = thunk { become 1 < 2 } ;",
     );
     assert_eq!(rows(submission.composed()), vec![(
         "answer".to_owned(),
@@ -923,7 +927,7 @@ fn comparison_operators_type_check_and_evaluate()
 fn a_dependent_signature_is_an_abstention_not_a_refusal()
 {
     let mut session = session(SourceRoot::Strict);
-    let submission = submit(&mut session, "def id(a : Type, x : a) -> -F a { ret x }");
+    let submission = submit(&mut session, "def id(a : Type, x : a) -> -F a { return x }");
     assert_eq!(rows(submission.composed()), vec![(
         "id".to_owned(),
         checks(),

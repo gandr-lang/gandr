@@ -8,8 +8,8 @@ def from_left() -> -F Integer {
     Integer,
     String
   )) {
-    Left(x) => ret x,
-    Right(y) => ret 0
+    Left(x) => return x,
+    Right(y) => return 0
   }
 }
 
@@ -29,7 +29,7 @@ def pairs = thunk {
   fn (m) {
     fn (k) {
       run p <- force m ;
-      (force k)(1)
+      become (force k)(1)
     }
   }
 } ;

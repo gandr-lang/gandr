@@ -42,7 +42,7 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why.
-const BUILT_IN_FINGERPRINT: u64 = 0x5fb6_e1c9_d486_9467;
+const BUILT_IN_FINGERPRINT: u64 = 0x4116_5b5c_93e2_0732;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
@@ -184,10 +184,10 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("pipeline_operand", 2),
     ("postfix", 1),
     ("prefix", 1),
+    ("pure", 1),
     ("rec", 2),
     ("recv", 20),
     ("release", 20),
-    ("ret", 1),
     ("return", 1),
     ("rule", 16),
     ("run", 20),

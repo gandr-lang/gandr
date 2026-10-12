@@ -39,7 +39,7 @@ const MALFORMED_THEN_VALID: &str = "def bad = 1 ~ 2 ;\ndef good = 2 ;\n";
 
 /// A source whose obligations disagree about order: the most severe, the
 /// unmolded `~`, is the last in the source, behind two lower-severity repairs.
-const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { ret 1 ;\ndef b = 1 ~ 2 ;\n";
+const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { pure 1 ;\ndef b = 1 ~ 2 ;\n";
 
 /// A recovering source the lowering refuses as a whole: an unterminated shell
 /// block after a declaration.
@@ -248,8 +248,8 @@ fn rows_are_in_source_order_not_severity_order()
         rows,
         &[
             at!(Oblig::MissingTile, 6 .. 7),
-            at!(Oblig::MissingTile, 22 .. 23),
-            at!(Oblig::UnmoldedTok, 34 .. 35),
+            at!(Oblig::MissingTile, 23 .. 24),
+            at!(Oblig::UnmoldedTok, 35 .. 36),
         ],
         "the rows ascend by span"
     );

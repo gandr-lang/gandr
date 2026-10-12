@@ -10,7 +10,7 @@
   run cwd <- fs.cwd();
   run tracked <- fs.ls_files(".");
   run path_entries <- env.path();
-  ret #{
+  pure #{
     content = content,
     name = path.basename(file),
     ext = path.extension(file),

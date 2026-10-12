@@ -64,7 +64,7 @@ const KEYWORDS: &[&str] = &[
     "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for",
     "forall", "force", "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl",
     "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack",
-    "package", "postfix", "prefix", "rec", "recv", "release", "ret", "return", "rule", "run",
+    "package", "postfix", "prefix", "pure", "rec", "recv", "release", "return", "rule", "run",
     "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unpack", "val", "while",
     "with",
 ];

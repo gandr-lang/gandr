@@ -10,18 +10,18 @@ def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed:
 
 def int_counter : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T });
 def int_counter = pack [ Integer ] thunk {
-  ret #{ read = thunk { fn (n: Integer) { ret n } }, seed = 7 }
+  return #{ read = thunk { fn (n: Integer) { return n } }, seed = 7 }
 };
 
 def text_counter : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T });
 def text_counter = pack [ String ] thunk {
-  ret #{ read = thunk { fn (s: String) { ret 42 } }, seed = "seven" }
+  return #{ read = thunk { fn (s: String) { return 42 } }, seed = "seven" }
 };
 
 def total() -> -F Integer {
   run a <- consume(int_counter);
   run b <- consume(text_counter);
-  ret (a + b)
+  return (a + b)
 }
 
 total()

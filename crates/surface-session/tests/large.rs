@@ -223,7 +223,7 @@ impl Module
             | FormEdit::RefuseWhole(position) => {
                 let fresh = self.fresh;
                 self.fresh = self.fresh.saturating_add(1);
-                self.forms.insert(at(position), format!("ret {fresh}"));
+                self.forms.insert(at(position), format!("pure {fresh}"));
             },
         }
     }
@@ -245,8 +245,8 @@ impl Module
 #[spec(captures: before = form.clone(), ensures: |_| *form != before && form.lines().count() == before.lines().count())]
 fn change(form: &mut String)
 {
-    if form.contains("ret x }") {
-        *form = form.replacen("ret x }", "ret y }", 1);
+    if form.contains("return x }") {
+        *form = form.replacen("return x }", "return y }", 1);
         return;
     }
     if form.contains("(7)") {
@@ -300,7 +300,7 @@ pub fn module(
                 shape.push(format!("@[ runs(\"{i}\") ]\ndef v{i} : Integer ;"));
                 shape.push(format!("def v{i} = {i} ;"));
             },
-            | 1 => shape.push(format!("def id{i}(a : Type, x : a) -> -F a {{ ret x }}")),
+            | 1 => shape.push(format!("def id{i}(a : Type, x : a) -> -F a {{ return x }}")),
             | 2 => {
                 shape.push(format!("def t{i} : +U (-F Integer) ;"));
                 shape.push(format!(
@@ -322,13 +322,13 @@ pub fn module(
                     "def p{i} : +U (Integer -> Integer -> -F Integer) ;"
                 ));
                 shape.push(format!(
-                    "def p{i} = thunk {{ fn (x) {{ fn (y) {{ ret x }} }} }} ;"
+                    "def p{i} = thunk {{ fn (x) {{ fn (y) {{ return x }} }} }} ;"
                 ));
             },
             | 5 => {
                 shape.push(format!("def c{i} : +U (-F Integer) ;"));
                 shape.push(format!(
-                    "def c{i} = thunk {{ ((force p{})(v{}))(7) }} ;",
+                    "def c{i} = thunk {{ become ((force p{})(v{}))(7) }} ;",
                     i.saturating_sub(1),
                     i.saturating_sub(5)
                 ));
@@ -339,13 +339,13 @@ pub fn module(
                         "def u{i} : +U (Integer -> Integer -> -F Integer) ;"
                     ));
                     shape.push(format!(
-                        "def u{i} = thunk {{ fn (x) {{ fn (y) {{ run p <- (force p{})(x)(y) ; ret p }} }} }} ;",
+                        "def u{i} = thunk {{ fn (x) {{ fn (y) {{ run p <- (force p{})(x)(y) ; return p }} }} }} ;",
                         i.saturating_sub(2)
                     ));
                 },
                 | SourceRoot::Fixture | SourceRoot::Pending => {
                     shape.push(format!(
-                        "@[ refuses(\"OutOfFragment\") ]\ndef h{i} = thunk {{ ret ?seed{i} }} ;"
+                        "@[ refuses(\"OutOfFragment\") ]\ndef h{i} = thunk {{ return ?seed{i} }} ;"
                     ));
                 },
             },
@@ -354,14 +354,14 @@ pub fn module(
                     "data Box{i} : Type {{\n  Empty{i} : Box{i};\n  Full{i} : (n : Integer) --> Box{i};\n}}"
                 ));
                 shape.push(format!(
-                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  case b {{\n    Empty{i} => ret 0,\n    Full{i}(n) => ret n\n  }}\n}}"
+                    "def unbox{i}(b : Box{i}) -> -F Integer {{\n  case b {{\n    Empty{i} => return 0,\n    Full{i}(n) => return n\n  }}\n}}"
                 ));
             },
             | _ => match root {
                 | SourceRoot::Strict => {
                     shape.push(format!("def w{i} : +U (Integer -> -F Integer) ;"));
                     shape.push(format!(
-                        "def w{i} = thunk {{ fn (n) {{ run a <- (force p{})(n)(n) ; run b <- (force p{})(a)(n) ; ret b }} }} ;",
+                        "def w{i} = thunk {{ fn (n) {{ run a <- (force p{})(n)(n) ; run b <- (force p{})(a)(n) ; return b }} }} ;",
                         i.saturating_sub(4),
                         i.saturating_sub(4)
                     ));
@@ -369,7 +369,7 @@ pub fn module(
                 | SourceRoot::Fixture | SourceRoot::Pending => {
                     let boxed = i.saturating_sub(1);
                     shape.push(format!(
-                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  case b {{\n    Empty{boxed} => ret {i}\n  }}\n}}"
+                        "@[ refuses(\"NonExhaustiveMatch\") ]\ndef k{i}(b : Box{boxed}) -> -F Integer {{\n  case b {{\n    Empty{boxed} => return {i}\n  }}\n}}"
                     ));
                 },
             },

@@ -14,8 +14,8 @@ data Color : Type {
 @[ checks ]
 def from_left() -> -F Integer {
   case (Left(5,) : Either(Integer, String,)) {
-    | Left(x,) => ret x,
-    | Right(y) => ret 0,
+    | Left(x,) => return x,
+    | Right(y) => return 0,
   }
 }
 
@@ -23,25 +23,25 @@ def from_left() -> -F Integer {
 def warm(c : Color) -> -F Integer {
   case c {
     | Red
-    | Green => ret 1,
-    Blue => ret 0
+    | Green => return 1,
+    Blue => return 0
   }
 }
 
 @[ checks ]
 def cool(c : Color) -> -F Integer {
-  case c { Red | Green => ret 0, | Blue => ret 1, }
+  case c { Red | Green => return 0, | Blue => return 1, }
 }
 
 @[ runs("<fun>") ]
 def first : +U (Integer -> Integer -> -F Integer) ;
-def first = thunk { fn (x) { fn (y) { ret x } } } ;
+def first = thunk { fn (x) { fn (y) { return x } } } ;
 
 @[ runs("42") ]
 def chosen : +U (-F Integer) ;
-def chosen = thunk { ((force first)(42,))(7,) } ;
+def chosen = thunk { become (force first)(42,)(7,) } ;
 
 @[ checks ]
 def pick(x : Integer, y : Integer,) -> -F Integer {
-  ret x
+  return x
 }

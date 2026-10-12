@@ -8,7 +8,7 @@ def compose(
   x : t
 ) -> -F v {
   run y <- f(x);
-  g(y)
+  become g(y)
 }
 
 def captured(
@@ -17,7 +17,9 @@ def captured(
   u : +U[ω] (a -> -F d),
   h : +U[ω] (d -> -F d)
 ) -> -F (+U[ω] (a -> -F d)) {
-  ret thunk { compose(a, d, d, u, h) }
+  return thunk {
+    become compose(a, d, d, u, h)
+  }
 }
 
 def answer : Integer ;

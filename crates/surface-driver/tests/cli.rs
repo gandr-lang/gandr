@@ -468,7 +468,7 @@ mod cli
         let fixture = scratch.file(Path::new("fixture/later.gandr"), owed);
         let pending = scratch.file(
             Path::new("fixture/pending/whole.gandr"),
-            Text::from("ret 3\n"),
+            Text::from("pure 3\n"),
         );
         let root = scratch.0.join("fixture");
 
@@ -480,7 +480,7 @@ mod cli
         assert!(fixture_lines[0].starts_with("settled `later`"));
         assert_eq!(pending_lines.len(), 1);
         assert!(pending_lines[0].starts_with("pending: "));
-        assert!(pending_lines[0].contains("`ret_expression`"));
+        assert!(pending_lines[0].contains("`pure_expression`"));
 
         let checked = ran(gandr(&[Path::new("check"), &root]));
         assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
@@ -760,7 +760,7 @@ mod cli
         let source = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
         let program = scratch.file(
             Path::new("program.gandr"),
-            Text::from("def main : +U (-F Integer) ; def main = thunk { ret 17 } ;"),
+            Text::from("def main : +U (-F Integer) ; def main = thunk { return 17 } ;"),
         );
         for arguments in [
             &[][..],
@@ -1352,7 +1352,7 @@ mod cli
         let (_path, output) = run_script(
             &scratch,
             Path::new("value.gandr"),
-            Text::from("def main : +U (-F Integer) ;\ndef main = thunk { ret 42 } ;\n"),
+            Text::from("def main : +U (-F Integer) ;\ndef main = thunk { return 42 } ;\n"),
         );
         assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
         assert_eq!(
@@ -1373,7 +1373,7 @@ mod cli
             &scratch,
             Path::new("once.gandr"),
             Text::from(
-                "def answer = 42 ;\ndef copy = answer ;\ndef shown : +U (-F Integer) ;\ndef shown = thunk { ret copy } ;\n",
+                "def answer = 42 ;\ndef copy = answer ;\ndef shown : +U (-F Integer) ;\ndef shown = thunk { return copy } ;\n",
             ),
         );
         assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
@@ -1394,7 +1394,7 @@ mod cli
             &scratch,
             Path::new("blame.gandr"),
             Text::from(
-                "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { force later } ;\n",
+                "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { become force later } ;\n",
             ),
         );
         assert_eq!(
@@ -1528,7 +1528,7 @@ mod cli
         assert!(stderr(&output).starts_with("gandr: -: "));
         let _path = scratch.file(
             Path::new("-"),
-            Text::from("def main : +U (-F Integer) ; def main = thunk { ret 17 } ;"),
+            Text::from("def main : +U (-F Integer) ; def main = thunk { return 17 } ;"),
         );
         let mut present = gandr(&["run", "-"]);
         present.current_dir(&scratch.0);
@@ -1575,7 +1575,7 @@ mod cli
         let source = scratch.file(
             Path::new("value.gandr"),
             Text::from(
-                "def unused : Integer ; def main : +U (-F Integer) ; def main = thunk { ret 9 } ;",
+                "def unused : Integer ; def main : +U (-F Integer) ; def main = thunk { return 9 } ;",
             ),
         );
         let control = ran(gandr(&[Path::new("run"), &source]));

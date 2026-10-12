@@ -6,7 +6,7 @@ def seed = prim.const(40, prim.id(999));
 
 def plus_two : +U[1] (Integer -> -F Integer);
 def plus_two(x: Integer) -> -F Integer {
-  ret (x + 2)
+  return (x + 2)
 }
 
 plus_two(seed)

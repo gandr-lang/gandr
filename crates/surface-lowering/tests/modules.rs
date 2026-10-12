@@ -2007,7 +2007,7 @@ mod modules
     fn member_signature_attaches_and_wins_over_derived_function_type()
     {
         let source = "module M { def f : +U (Integer -> -F Integer); def f(x : Integer) -> -F \
-                      Integer { ret x } }";
+                      Integer { return x } }";
         let mut lowered = lower(source);
         assert_eq!(
             rows(&lowered),
@@ -2041,7 +2041,7 @@ mod modules
     fn signatures_attach_to_their_defs()
     {
         let source = "def answer : Integer;\ndef answer = 42;\ndef f : +U (Integer -> -F \
-                      Integer);\ndef f(x : Integer) -> -F Integer { ret x }";
+                      Integer);\ndef f(x : Integer) -> -F Integer { return x }";
         let mut lowered = lower(source);
         assert_eq!(
             rows(&lowered),
@@ -2079,8 +2079,8 @@ mod modules
     #[test]
     fn computation_signed_module_member_origin_mirrors_ascription_encoding()
     {
-        let member = "module M { def x : -F Integer; def x = ret 1; }";
-        let top = "def x : -F Integer;\ndef x = ret 1;";
+        let member = "module M { def x : -F Integer; def x = pure 1; }";
+        let top = "def x : -F Integer;\ndef x = pure 1;";
         let refusal = |source| {
             Amounts::Refused(LoweringRefusal::OutOfFragment {
                 span: span_of(source, "-F Integer", 0_usize),
@@ -2353,7 +2353,7 @@ mod modules
         ] {
             let source = format!(
                 "module {spelled} : #{{ type T = Integer, zero : T, add : +U[ω] (T -> T -> -F \
-                 T) }} {{ def zero = 0; def add(x : Integer, y : Integer) -> -F Integer {{ ret \
+                 T) }} {{ def zero = 0; def add(x : Integer, y : Integer) -> -F Integer {{ return \
                  x }} }}"
             );
             if readable {

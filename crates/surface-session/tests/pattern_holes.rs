@@ -354,7 +354,7 @@ fn filling_the_hole_changes_exactly_the_branches_it_shadowed()
 #[test]
 fn filling_the_hole_moves_a_stuck_branch_to_uncovered_not_to_taken()
 {
-    let mut holed = color_pick("Red => ret 0, ? => ret 1");
+    let mut holed = color_pick("Red => return 0, ? => return 1");
     let blue = nullary(&mut holed, "Color", 2);
     assert_eq!(
         holed.analyze("Color", blue).selection(),
@@ -363,7 +363,7 @@ fn filling_the_hole_moves_a_stuck_branch_to_uncovered_not_to_taken()
         },
         "before the fill the hole holds `Blue`"
     );
-    let mut filled = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let mut filled = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     let green = nullary(&mut filled, "Color", 1);
     assert_eq!(
         filled.run(green),
@@ -383,7 +383,7 @@ fn filling_the_hole_moves_a_stuck_branch_to_uncovered_not_to_taken()
 #[test]
 fn a_fill_turns_a_held_constructor_into_an_uncovered_one()
 {
-    let mut holed = color_pick("Red => ret 0, ? => ret 1");
+    let mut holed = color_pick("Red => return 0, ? => return 1");
     let red = nullary(&mut holed, "Color", 0);
     assert_eq!(
         holed
@@ -396,7 +396,7 @@ fn a_fill_turns_a_held_constructor_into_an_uncovered_one()
         "before the fill the match owes an unfinished test, not a missing arm"
     );
     let filled = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0, Green => ret 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, Green => return 1 }} }}\n"
     );
     assert!(
         matches!(
@@ -412,7 +412,7 @@ fn a_hole_in_a_payload_stops_only_its_own_constructor()
 {
     let mut written = Written::new(
         &alloc::format!(
-            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ case m {{ Just(?) => ret 0, Nothing => ret 1 }} }}\n"
+            "{MAYBE}def pick(m : Maybe) -> -F Integer {{ case m {{ Just(?) => return 0, Nothing => return 1 }} }}\n"
         ),
         "pick",
     );
@@ -433,7 +433,8 @@ fn a_hole_in_a_payload_stops_only_its_own_constructor()
 #[test]
 fn a_doubly_nested_hole_is_reached_only_through_its_written_tests()
 {
-    let mut written = outer_pick("Some(Yes(?inner)) => ret 0, Some(No) => ret 2, None => ret 1");
+    let mut written =
+        outer_pick("Some(Yes(?inner)) => return 0, Some(No) => return 2, None => return 1");
     let none = nullary(&mut written, "Outer", 0);
     assert_eq!(
         written.run(none),
@@ -457,7 +458,8 @@ fn a_doubly_nested_hole_is_reached_only_through_its_written_tests()
 #[test]
 fn a_nested_constructor_pattern_binds_and_runs()
 {
-    let mut written = outer_pick("Some(Yes(k)) => ret k, Some(No) => ret 0, None => ret 1");
+    let mut written =
+        outer_pick("Some(Yes(k)) => return k, Some(No) => return 0, None => return 1");
     let value = some_yes(&mut written, "41");
     assert_eq!(
         written.run(value),
@@ -469,7 +471,7 @@ fn a_nested_constructor_pattern_binds_and_runs()
 #[test]
 fn an_or_pattern_of_holes_is_indeterminate()
 {
-    let mut written = color_pick("Red => ret 7, ? | ?other => ret 1");
+    let mut written = color_pick("Red => return 7, ? | ?other => return 1");
     let blue = nullary(&mut written, "Color", 2);
     assert!(
         matches!(written.run(blue), Ran::Hole(_)),
@@ -480,7 +482,7 @@ fn an_or_pattern_of_holes_is_indeterminate()
 #[test]
 fn a_case_whose_first_arm_is_indeterminate_is_one_hole()
 {
-    for arms in ["? => ret 0", "?arm => ret 0"] {
+    for arms in ["? => return 0", "?arm => return 0"] {
         let mut written = color_pick(arms);
         let red = nullary(&mut written, "Color", 0);
         assert!(
@@ -494,7 +496,7 @@ fn a_case_whose_first_arm_is_indeterminate_is_one_hole()
 fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 {
     let mut written = Written::new(
-        "def pick(b : Bool) -> -F Integer { case b { true => ret 1, ? => ret 0 } }\n",
+        "def pick(b : Bool) -> -F Integer { case b { true => return 1, ? => return 0 } }\n",
         "pick",
     );
     let yes = written.boolean(Side::Left);
@@ -513,13 +515,14 @@ fn the_sum_eliminator_stops_at_an_indeterminate_arm()
 #[test]
 fn an_uncompiled_arm_is_declined_and_a_hole_is_not()
 {
-    let text = "def pick(s : String) -> -F Integer { case s { \"a\" => ret 1, _ => ret 2 } }\n";
+    let text =
+        "def pick(s : String) -> -F Integer { case s { \"a\" => return 1, _ => return 2 } }\n";
     assert!(
         refusal(text, "pick").is_some(),
         "a text column has no test this lowering compiles, and is declined by name"
     );
     let holed = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0, ? => ret 1 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0, ? => return 1 }} }}\n"
     );
     assert_eq!(
         refusal(&holed, "pick"),
@@ -531,8 +534,9 @@ fn an_uncompiled_arm_is_declined_and_a_hole_is_not()
 #[test]
 fn a_hole_shadows_the_second_arm_at_one_head()
 {
-    let mut written =
-        outer_pick("? => ret 0, Some(Yes(k)) => ret k, Some(No) => ret 8, None => ret 1");
+    let mut written = outer_pick(
+        "? => return 0, Some(Yes(k)) => return k, Some(No) => return 8, None => return 1",
+    );
     let none = nullary(&mut written, "Outer", 0);
     assert!(
         matches!(written.run(none), Ran::Hole(_)),
@@ -543,7 +547,7 @@ fn a_hole_shadows_the_second_arm_at_one_head()
 #[test]
 fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
 {
-    let mut stuck = color_pick("Red => ret 0, ? => ret 1");
+    let mut stuck = color_pick("Red => return 0, ? => return 1");
     let green = nullary(&mut stuck, "Color", 1);
     let held = stuck.analyze("Color", green);
     assert_eq!(
@@ -554,7 +558,7 @@ fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
         arm: ArmIndex::from(1_usize)
     });
     let missing = alloc::format!(
-        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => ret 0 }} }}\n"
+        "{COLOR}def pick(c : Color) -> -F Integer {{ case c {{ Red => return 0 }} }}\n"
     );
     assert!(
         matches!(
@@ -563,7 +567,7 @@ fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
         ),
         "an arm the author never wrote is a refusal of its own, not an unfinished test"
     );
-    let mut complete = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let mut complete = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     let green = nullary(&mut complete, "Color", 1);
     let uncovered = complete.analyze_prefix("Color", green, RowCount(1));
     assert_eq!(
@@ -581,7 +585,7 @@ fn a_stuck_arm_and_a_missing_arm_carry_different_notes()
 #[test]
 fn every_arm_of_a_declared_data_case_is_addressable()
 {
-    let mut written = color_pick("Red => ret 0, Green => ret 1, Blue => ret 2");
+    let mut written = color_pick("Red => return 0, Green => return 1, Blue => return 2");
     let rows = written.rows().to_vec();
     assert_eq!(rows.len(), 3, "one row per arm");
     for (tag, row) in rows.iter().enumerate() {

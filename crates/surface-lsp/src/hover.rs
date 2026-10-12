@@ -223,7 +223,8 @@ mod tests
     #[test]
     fn only_a_declared_name_hovers()
     {
-        let text = SourceText::from("def x = 1 ;\n// x\ndef f(x: String) -> -F String { ret x }\n");
+        let text =
+            SourceText::from("def x = 1 ;\n// x\ndef f(x: String) -> -F String { return x }\n");
         assert!(
             shown(text, (0.into(), 4.into())).is_ok(),
             "the name's first character hovers"

@@ -7,5 +7,5 @@
 16..17 Number "2"
 17..18 Other ")"
 18..19 Other ";"
-21..24 Keyword "ret"
-25..30 Variable "point"
+21..25 Keyword "pure"
+26..31 Variable "point"

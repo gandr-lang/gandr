@@ -7,37 +7,37 @@ data Nat : Type {
 @[ refuses("UnmarkedSelfReference") ]
 def rec bare(n : Nat) -> -F Nat {
   case n {
-    Zero => ret n,
-    Succ(p) => bare(p)
+    Zero => return n,
+    Succ(p) => become bare(p)
   }
 }
 
 @[ checks ]
 def rec marked(n : Nat) -> -F Nat {
   case n {
-    Zero => ret n,
-    Succ(p) => marked[<](p)
+    Zero => return n,
+    Succ(p) => become marked[<](p)
   }
 }
 
 @[ checks ]
-def rec idle(n : Nat) -> -F Nat { ret n }
+def rec idle(n : Nat) -> -F Nat { return n }
 
 @[ refuses("OutOfFragment") ]
 def rec varied(n : Nat, m : Nat) -> -F Nat {
   case m {
-    Zero => ret n,
-    Succ(p) => varied[<](p, p)
+    Zero => return n,
+    Succ(p) => become varied[<](p, p)
   }
 }
 
 @[ refuses("OutOfFragment") ]
 def rec ahead(n : Nat) -> -F Nat {
   case n {
-    Zero => ret n,
-    Succ(p) => ahead[>](p)
+    Zero => return n,
+    Succ(p) => become ahead[>](p)
   }
 }
 
 @[ refuses("OutOfFragment") ]
-def rec constant() -> -F Nat { ret Zero }
+def rec constant() -> -F Nat { return Zero }
