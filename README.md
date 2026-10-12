@@ -17,6 +17,8 @@ cargo run -p gandr-lang -- check --jobs 1 crates/surface-corpus/strict   # one s
 
 `gandr check` exits `0` when every declaration settles, `1` when one does not, and `2` on an engine fault, an unreadable path or a malformed invocation. The [driver](crates/surface-driver/README.md) states the verbs and the exit codes; the [corpus](crates/surface-corpus/README.md#the-corpus) states what the two roots hold.
 
+`gandr lsp` serves the Language Server Protocol over standard input and output; [`contrib/gandr-vscode`](contrib/gandr-vscode/README.md) is the Visual Studio Code extension that connects to it.
+
 ## Crates
 
 `crates/README.md` names every crate, its package and its layer.

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "gandr",
+  "scopeName": "source.gandr",
+  "patterns": [
+    {
+      "include": "#block-comments"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "comment": "line comments",
+          "name": "comment.line.double-slash.gandr",
+          "match": "(//).*$",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.comment.gandr"
+            }
+          }
+        }
+      ]
+    },
+    "block-comments": {
+      "patterns": [
+        {
+          "comment": "block comments, which nest",
+          "name": "comment.block.gandr",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "include": "#block-comments"
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "comment": "case",
+          "name": "keyword.control.gandr",
+          "match": "\\b(case)\\b"
+        },
+        {
+          "comment": "codata",
+          "name": "keyword.declaration.codata.gandr storage.type.gandr",
+          "match": "\\b(codata)\\b"
+        },
+        {
+          "comment": "data",
+          "name": "keyword.declaration.data.gandr storage.type.gandr",
+          "match": "\\b(data)\\b"
+        },
+        {
+          "comment": "def",
+          "name": "keyword.other.def.gandr",
+          "match": "\\b(def)\\b"
+        },
+        {
+          "comment": "ret",
+          "name": "keyword.control.gandr",
+          "match": "\\b(ret)\\b"
+        },
+        {
+          "comment": "sign",
+          "name": "storage.type.gandr",
+          "match": "\\b(sign)\\b"
+        },
+        {
+          "comment": "val",
+          "name": "keyword.other.gandr storage.type.gandr",
+          "match": "\\b(val)\\b"
+        },
+        {
+          "comment": "-F, the shift into computation types",
+          "name": "keyword.other.shift.gandr",
+          "match": "(?<![\\w+-])(-F)\\b"
+        },
+        {
+          "comment": "+U, the shift into value types",
+          "name": "keyword.other.shift.gandr",
+          "match": "(?<![\\w+-])(\\+U)\\b"
+        },
+        {
+          "comment": "Type",
+          "name": "entity.name.type.primitive.gandr",
+          "match": "\\b(Type)\\b"
+        }
+      ]
+    }
+  }
+}

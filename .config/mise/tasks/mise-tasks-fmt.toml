@@ -1,12 +1,20 @@
 #:tombi toml-version = "v1.0.0"
 #:schema https://mise.jdx.dev/schema/mise-task.json
 
+# Type-aware oxlint resolves the extension's tsconfig and types from the aube
+# workspace, so every treefmt pass installs it from the lockfile first.
+["aube:install"]
+description = "Install the aube workspace from its lockfile"
+run = "aube install --frozen-lockfile"
+
 [treefmt]
 description = "Run treefmt"
+depends = ["aube:install"]
 run = "treefmt"
 
 ["treefmt:check"]
 description = "Run treefmt in CI mode"
+depends = ["aube:install"]
 run = "treefmt --ci"
 
 [changelog]

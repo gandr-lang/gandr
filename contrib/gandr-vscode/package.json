@@ -1,0 +1,71 @@
+{
+  "name": "gandr-vscode",
+  "displayName": "gandr",
+  "version": "0.0.0",
+  "private": true,
+  "description": "gandr language support for Visual Studio Code",
+  "categories": [
+    "Programming Languages"
+  ],
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gandr-lang/gandr",
+    "directory": "contrib/gandr-vscode"
+  },
+  "publisher": "gandr-lang",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "bundle": "esbuild dist/src/extension.js --bundle --minify --outfile=dist/extension.js --platform=node --format=cjs --target=node24 --external:vscode",
+    "clean": "rimraf dist",
+    "compile": "aube run clean && tsc -p ./",
+    "package": "vsce package --no-dependencies --skip-license",
+    "vscode:prepublish": "aube run compile && aube run bundle",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.2"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^2.0.8",
+    "@types/node": "^24.19.2",
+    "@types/vscode": "^1.140.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "rimraf": "^6.1.3",
+    "typescript": "^7.0.2"
+  },
+  "contributes": {
+    "grammars": [
+      {
+        "language": "gandr",
+        "scopeName": "source.gandr",
+        "path": "./syntaxes/gandr.tmLanguage.json"
+      }
+    ],
+    "languages": [
+      {
+        "id": "gandr",
+        "extensions": [
+          ".gandr"
+        ],
+        "configuration": "./languages/gandr/language-configuration.json"
+      }
+    ]
+  },
+  "activationEvents": [
+    "workspaceContains:**/*.gandr"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "enabledApiProposals": []
+}
