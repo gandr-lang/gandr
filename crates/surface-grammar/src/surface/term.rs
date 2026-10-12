@@ -1131,7 +1131,7 @@ fn attributes_parameters_externs(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["let_statement", "bind_statement", "unpack_statement", "leta_statement", "recv_statement", "acquire_statement", "release_statement", "fork_statement", "fork_shared_statement", "expression_statement"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 10 && added.iter().zip(["val_statement", "bind_statement", "unpack_statement", "leta_statement", "recv_statement", "acquire_statement", "release_statement", "fork_statement", "fork_shared_statement", "expression_statement"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn statements(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -1139,8 +1139,8 @@ fn statements(
 {
     let s = Sort::Item;
     out.push(r(
-        RuleName("let_statement"),
-        Provenance("let_statement"),
+        RuleName("val_statement"),
+        Provenance("val_statement"),
         s,
         p,
         val_statement(),

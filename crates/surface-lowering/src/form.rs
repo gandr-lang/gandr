@@ -124,7 +124,7 @@ impl FormName
         Self::ATTRIBUTE,
         Self::DECLARATION,
         Self::BIND_STATEMENT,
-        Self::LET_STATEMENT,
+        Self::VAL_STATEMENT,
         Self::UNPACK_STATEMENT,
         Self::LETA_STATEMENT,
         Self::RECV_STATEMENT,
@@ -181,8 +181,6 @@ impl FormName
     pub const INSTANTIATION: Self = Self("instantiation_expression");
     /// The statement `leta x = e ;`, inlined into its block.
     pub const LETA_STATEMENT: Self = Self("leta_statement");
-    /// The statement `val p = e ;`, inlined into its block.
-    pub const LET_STATEMENT: Self = Self("let_statement");
     /// The module family `module M …`, its members included.
     pub const MODULE: Self = Self("module_declaration");
     /// One typed parameter `name : T`, folded into its parameter list.
@@ -209,6 +207,8 @@ impl FormName
     pub const UNIT: Self = Self("unit");
     /// The statement `unpack … = e ;`, inlined into its block.
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
+    /// The statement `val p = e ;`, inlined into its block.
+    pub const VAL_STATEMENT: Self = Self("val_statement");
     /// The data declaration `data T(a : A) : U { … }`.
     pub const DATA: Self = Self("data_declaration");
     /// A data block's generator member `C : (x : A) --> T(a)`, inlined into
