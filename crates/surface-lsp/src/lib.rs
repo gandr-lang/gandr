@@ -1,5 +1,6 @@
-//! **The language server**: diagnostics and semantic tokens over the Language
-//! Server Protocol, served over any pair of byte streams.
+//! **The language server**: diagnostics, semantic tokens and inline
+//! completion over the Language Server Protocol, served over any pair of
+//! byte streams.
 //!
 //! # Every synchronisation submits the document to its session
 //!
@@ -13,7 +14,9 @@
 //! `gandr check --goals` prints. Each synchronisation logs one line: the forms
 //! molded, the items the incremental checker judged, and the wall. A token
 //! request highlights the document whole through the grammar's role table,
-//! the same classification a terminal face styles. Positions are counted in
+//! the same classification a terminal face styles. An inline-completion
+//! request molds the form the cursor ends and answers, as a snippet, the
+//! material the parser expects to close it. Positions are counted in
 //! UTF-16 code units through the renderer seam's line index.
 //!
 //! # The transport is the base protocol, written here
@@ -64,6 +67,7 @@ extern crate alloc;
 
 use core::fmt;
 
+mod inline;
 mod position;
 mod protocol;
 mod recheck;

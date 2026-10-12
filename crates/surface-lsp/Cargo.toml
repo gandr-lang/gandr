@@ -3,7 +3,7 @@ name = "gandr-surface-lsp"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The gandr language server: diagnostics and semantic tokens over the Language Server Protocol"
+description = "The gandr language server: diagnostics, semantic tokens and inline completion over the Language Server Protocol"
 repository.workspace = true
 license.workspace = true
 keywords = ["gandr", "language", "lsp"]
@@ -14,8 +14,9 @@ publish.workspace = true
 # over the incremental checker's memory checkpoint store and the record
 # plane's memory block store; the dispatcher's root classification and
 # check verb, the renderer's reports, the grammar's highlighter over the
-# parser's tree, and the renderer seam's UTF-16 projection. The wire is JSON,
-# decoded and encoded through serde; a `file` URI's path is percent-decoded.
+# parser's tree, the parser's completion query, and the renderer seam's UTF-16
+# projection. The wire is JSON, decoded and encoded through serde; a `file`
+# URI's path is percent-decoded.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]

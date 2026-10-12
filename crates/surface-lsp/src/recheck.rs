@@ -104,6 +104,28 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
         .as_ref()
 }
 
+/// The process's one grammar, built on first use.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the grammar of [`toolkit`], at the same address on every call.
+/// - provides: the grammar an inline completion molds under.
+/// - fails: the [`PbgError`] the toolkit's first build met.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the grammar is asserted at the toolkit's address;
+///   building a grammar of its own changes that address.
+/// - witness: `recheck::tests::the_grammar_is_built_once_per_process`
+#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
+pub fn grammar() -> Result<&'static Pbg, &'static PbgError>
+{
+    toolkit().map(|toolkit| &toolkit.grammar)
+}
+
 /// A fresh session for the document at `uri`, under the root its `file`
 /// URI's path classifies as.
 ///
@@ -582,6 +604,7 @@ mod tests
 
     use super::admit;
     use super::admitted;
+    use super::grammar;
     use super::highlight;
     use super::open;
     use super::recheck;
@@ -638,6 +661,11 @@ mod tests
         assert!(
             core::ptr::eq(core::ptr::from_ref(first), core::ptr::from_ref(second)),
             "each recheck reads one shared grammar rather than building its own"
+        );
+        let grammar = grammar().expect("the built-in grammar builds");
+        assert!(
+            core::ptr::eq(core::ptr::from_ref(grammar), &raw const first.grammar),
+            "an inline completion molds under the toolkit's grammar"
         );
     }
 

@@ -58,6 +58,8 @@ use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecIndex;
 
+use crate::closing::LeadingSlot;
+use crate::closing::push_closing;
 use crate::mold::TokenRun;
 use crate::oblig::Delta;
 use crate::oblig::Oblig;
@@ -601,6 +603,8 @@ enum Shortfall
         mold: MoldId,
         /// The frontier tile's bytes.
         frontier: SourceSpan,
+        /// Whether anything stands above the frontier already.
+        leading: LeadingSlot,
     },
     /// An operator of `sort` misses its right operand, owed at `at`.
     RightOperand
@@ -609,6 +613,8 @@ enum Shortfall
         sort: Sort,
         /// The empty span right after the operator.
         at: SourceSpan,
+        /// Whether a form is under way where the operand goes.
+        pending: PendingOperand,
     },
     /// An operator misses its left operand, owed at `at`.
     LeftOperand
@@ -616,6 +622,17 @@ enum Shortfall
         /// The empty span right before the operator.
         at: SourceSpan,
     },
+}
+
+/// What stands where an operator's missing right operand goes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingOperand
+{
+    /// Nothing: the operand is still to be written.
+    Absent,
+    /// A form opened there and is still open: closing it supplies the
+    /// operand.
+    UnderWay,
 }
 
 /// One slope edit made while a [`Mark`] is live, undone by
@@ -3173,40 +3190,6 @@ impl<'pbg> MeldState<'pbg>
         SameFormAdjacency::from(bool::from(self.pbg.molds_adjacent(left, right)))
     }
 
-    /// Return the first `≐`-successor mold of `mold`, if any (the completion
-    /// query's expected next tile).
-    ///
-    /// # Specification
-    /// - ensures: returns the smallest same-form successor of this mold, or
-    ///   none.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — real form successors and an absent mold expose the
-    ///   optional least identity. An off-by-one partition or taking a
-    ///   neighboring form successor changes completion.
-    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
-    #[spec(ensures: |ret| {
-        let adjacencies = self.pbg.adjacencies();
-        ret.map_or_else(
-            || adjacencies.binary_search_by_key(&mold, |&(left, _)| left).is_err(),
-            |successor| adjacencies.binary_search(&(mold, successor)).is_ok_and(|index| {
-                index.checked_sub(1).and_then(|previous| adjacencies.get(previous))
-                    .is_none_or(|&(left, _)| left != mold)
-            }),
-        )
-    })]
-    fn first_successor(
-        &self,
-        mold: MoldId,
-    ) -> Option<MoldId>
-    {
-        self.pbg
-            .mold_successors(mold)
-            .first()
-            .map(|&(_, right)| right)
-    }
-
     /// Classify an incoming tile by its `≐`-membership and precedence bounds.
     ///
     /// A tile that participates in the same-form `≐` relation is a form tile
@@ -4205,22 +4188,29 @@ impl<'pbg> MeldState<'pbg>
     /// here.
     ///
     /// This is `finalize` as a **query**: it computes the expected material
-    /// (closers for open delimiters, holes for operators missing an operand)
-    /// and the obligations closing would introduce, **without mutating** the
-    /// committed parse. The scan reads each cell of the slope head as it
-    /// stands, so it is a bound rather than a replay: an operator whose
-    /// operand is a form still open counts a missing operand, which the
-    /// commit's force-close then supplies by closing that form into the
-    /// operand.
+    /// (each open form's cheapest closing tiles with the holes between them,
+    /// holes for operators missing an operand) and the obligations closing
+    /// would introduce, **without mutating** the committed parse. The scan
+    /// reads each cell of the slope head as it stands, so its obligations are
+    /// a bound rather than a replay: an operator whose operand is a form
+    /// still open counts a missing operand, which the commit's force-close
+    /// then supplies by closing that form into the operand. The material
+    /// omits that operand's hole, since closing the form supplies it.
     ///
     /// # Specification
     /// - requires: none.
     /// - ensures: returns the expected material and would-introduce obligations
     ///   for the current slope; every obligation a commit from this state
     ///   inserts beyond the buffered ones is among them, and their only excess
-    ///   is [`Oblig::MissingMeld`]; leaves `self` unchanged.
-    /// - provides: the REPL/TUI "expected next" surface and the molder's
-    ///   per-candidate completion cost.
+    ///   is [`Oblig::MissingMeld`]; leaves `self` unchanged. The material runs
+    ///   from the slope head down: for each open frontier the closing material
+    ///   `push_closing` states, its first hole omitted when anything stands
+    ///   above the frontier; for each operator missing its right operand a hole
+    ///   of its sort, unless a form is open where the operand goes. The
+    ///   innermost material ends after the first frontier's closing material
+    ///   that is not empty, or is the whole material when there is none.
+    /// - provides: the REPL/TUI/LSP "expected next" surface, and the
+    ///   obligations the molder's per-candidate completion cost counts.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -4229,31 +4219,43 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — empty stacks, missing unary/binary operands, open
     ///   forms, completable optional tails and occupied required tails expose
     ///   exact expected material and repair spans without changing the
-    ///   checkpoint. Charging a completed tail, omitting a missing side or
-    ///   advancing the machine changes these observations.
+    ///   checkpoint. Charging a completed tail, omitting a missing side,
+    ///   reporting the hole of an operand whose form is under way, naming a
+    ///   frontier's first successor rather than its closer, or advancing the
+    ///   machine changes these observations.
     /// - witness: `meld::tests::finalize_is_non_destructive`
     /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
     /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    /// - witness: `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.expected.len() <= self.stack.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
     pub fn finalize(&self) -> Completion
     {
         let mut expected: Vec<Expected> = Vec::new();
         let mut obligations: Vec<ObligationInstance> = Vec::new();
+        let mut innermost: Vec<usize> = Vec::with_capacity(1);
         self.shortfalls(|shortfall| match shortfall {
-            | Shortfall::Continuation { mold, frontier } => {
-                if let Some(succ) = self.first_successor(mold)
-                    && let Ok(def) = self.pbg.mold(succ)
-                {
-                    expected.push(Expected::Tile(def.label));
+            | Shortfall::Continuation {
+                mold,
+                frontier,
+                leading,
+            } => {
+                let before = expected.len();
+                // An unreachable end pushes no material: the frontier's mold
+                // is then not the grammar's, and its obligation still stands.
+                let _reach = push_closing(self.pbg, mold, leading, &mut expected);
+                if innermost.is_empty() && expected.len() > before {
+                    innermost.push(expected.len());
                 }
                 if let Ok(span) = frontier.byte_span() {
                     obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
                 }
             },
-            | Shortfall::RightOperand { sort, at } => {
-                expected.push(Expected::Hole(sort));
+            | Shortfall::RightOperand { sort, at, pending } => {
+                if pending == PendingOperand::Absent {
+                    expected.push(Expected::Hole(sort));
+                }
                 if let Ok(span) = at.byte_span() {
                     obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
                 }
@@ -4265,6 +4267,7 @@ impl<'pbg> MeldState<'pbg>
             },
         });
         Completion {
+            innermost: innermost.first().copied().unwrap_or(expected.len()),
             expected,
             obligations,
         }
@@ -4364,23 +4367,37 @@ impl<'pbg> MeldState<'pbg>
                     }
                     // An open form frontier expects its `≐`-continuation; commit
                     // force-closes it with a ghost end and a MissingTile.
+                    let above = index.checked_add(1).and_then(|next| self.stack.get(next));
                     visit(Shortfall::Continuation {
                         mold,
                         frontier: SourceSpan::new(
                             SourceOffset::from(cell.start),
                             SourceOffset::from(cell.end),
                         ),
+                        leading: if above.is_some() {
+                            LeadingSlot::Occupied
+                        }
+                        else {
+                            LeadingSlot::Empty
+                        },
                     });
                 },
                 | Role::Operator { sort, shape, .. } => {
                     let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
-                    let right_filled = index
-                        .checked_add(1)
-                        .is_some_and(|next| bool::from(self.is_operand_at(StackIndex::from(next))));
+                    let above = index.checked_add(1).and_then(|next| self.stack.get(next));
+                    let right_filled = above.is_some_and(|next| matches!(next.role, Role::Operand));
                     if wants_right && !right_filled {
                         visit(Shortfall::RightOperand {
                             sort,
                             at: SourceSpan::point(SourceOffset::from(cell.end)),
+                            pending: if above.is_some_and(|next| {
+                                matches!(next.role, Role::FormTile { start: true, .. })
+                            }) {
+                                PendingOperand::UnderWay
+                            }
+                            else {
+                                PendingOperand::Absent
+                            },
                         });
                     }
                     // An infix / postfix operator with no left operand is a
@@ -4433,7 +4450,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.expected.len() <= self.stack.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
+    #[spec(ensures: |ret| ret.innermost <= ret.expected.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
     pub fn expected(&self) -> Completion
     {
         self.finalize()
@@ -5764,6 +5781,9 @@ pub struct Completion
 {
     /// The expected material to reach `⊢`, from the head down.
     expected: Vec<Expected>,
+    /// How much of [`expected`](Self::expected) closes the innermost open
+    /// form: the material up to and including its last tile.
+    innermost: usize,
     /// The obligations closing the input would introduce.
     obligations: Vec<ObligationInstance>,
 }
@@ -5779,6 +5799,32 @@ impl Completion
     pub fn expected(&self) -> &[Expected]
     {
         &self.expected
+    }
+
+    /// Return the expected material up to and including the closing of the
+    /// innermost open form: the holes of the operators above it, then its
+    /// own closing material. With no form open, the whole material.
+    ///
+    /// # Specification
+    /// - ensures: a prefix of [`expected`](Self::expected), as
+    ///   [`MeldState::finalize`] bounds it; empty exactly when the input is
+    ///   complete.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator under an open form, nested open forms and
+    ///   an operator alone each split at their exact prefix. Returning the
+    ///   whole material, or cutting before the innermost closer, changes the
+    ///   prefix.
+    /// - witness: `meld::tests::finalize_closes_each_frontier_at_its_innermost_material`
+    #[spec(ensures: |ret| self.expected.starts_with(ret) && (ret.is_empty() == self.expected.is_empty()))]
+    #[inline]
+    #[must_use]
+    pub fn innermost(&self) -> &[Expected]
+    {
+        self.expected
+            .get(.. self.innermost)
+            .unwrap_or(&self.expected)
     }
 
     /// Return the obligations closing the input would introduce.
@@ -8158,9 +8204,6 @@ mod tests
         let prec = pbg.mold(open)?.prec;
         assert!(bool::from(state.adjacent(open, close)));
         assert!(!bool::from(state.adjacent(close, open)));
-        assert_eq!(state.first_successor(open), Some(close));
-        assert_eq!(state.first_successor(close), None);
-        assert_eq!(state.first_successor(MoldId::from(u32::MAX)), None);
         assert_eq!(
             state.compare(open, prec, Sort::Expression, close, prec, Sort::Pattern),
             super::Rel::Match
@@ -9683,6 +9726,39 @@ mod tests
             owed(&with(("(", "parenthesized_type")))?,
             "an opened operand fills the tail, and only its `)` is owed in its place"
         );
+        Ok(())
+    }
+
+    /// `finalize` closes each open frontier at its cheapest material, omits
+    /// the hole of an operand whose form is under way, and marks where the
+    /// innermost form's closing ends.
+    #[test]
+    fn finalize_closes_each_frontier_at_its_innermost_material() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let hole = Expected::Hole;
+        let tile = Expected::Tile;
+        for (source, expected, innermost) in [
+            ("( x", vec![tile(")")], 1_usize),
+            ("def x = 1 +", vec![hole(Sort::Expression), tile(";")], 2),
+            ("def x = 1 + (2", vec![tile(")"), tile(";")], 1),
+            ("def f = [1, 2", vec![tile("]"), tile(";")], 1),
+            ("def f = \"abc", vec![tile("\""), tile(";")], 1),
+            ("def x = 1", vec![tile(";")], 1),
+            ("x", vec![], 0),
+        ] {
+            let mut molder = crate::Molder::new(&pbg);
+            let mut state = MeldState::new(&pbg);
+            let tokens = crate::label::label(gandr_surface_syntax::SourceFragment::from(source));
+            molder.mold_stream(&mut state, &tokens, SourceText::from(source));
+            let completion = state.finalize();
+            assert_eq!(completion.expected(), expected.as_slice(), "`{source}`");
+            assert_eq!(
+                completion.innermost(),
+                expected.get(.. innermost).unwrap_or_default(),
+                "`{source}`: the innermost form's closing"
+            );
+        }
         Ok(())
     }
     /// A synthetic PBG whose `hole = ? name?` form has a nullable tail (so `?`

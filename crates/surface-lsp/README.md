@@ -1,6 +1,6 @@
 # gandr-surface-lsp
 
-The gandr language server: diagnostics and semantic tokens over the Language Server Protocol, served over any pair of byte streams.
+The gandr language server: diagnostics, semantic tokens and inline completion over the Language Server Protocol, served over any pair of byte streams.
 
 <!-- toc -->
 
@@ -12,6 +12,7 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 - [Every synchronisation judges the document, publishes, then admits](#every-synchronisation-judges-the-document-publishes-then-admits)
 - [Diagnostics are the renderer's reports](#diagnostics-are-the-renderers-reports)
 - [Tokens are the highlighter's roles](#tokens-are-the-highlighters-roles)
+- [Inline completion is the parser's expected syntax](#inline-completion-is-the-parsers-expected-syntax)
 - [Positions count UTF-16 code units](#positions-count-utf-16-code-units)
 - [The lifecycle and its error codes](#the-lifecycle-and-its-error-codes)
 - [The transport is written here](#the-transport-is-written-here)
@@ -25,15 +26,16 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 
 ## Synopsis
 
-**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, and `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output and logs to standard error.
+**What.** `gandr-surface-lsp` serves a subset of the Language Server Protocol 3.17: the base protocol's framing, the JSON-RPC 2.0 envelope with its standard error codes, the lifecycle from `initialize` to `exit`, incremental document synchronisation, `textDocument/publishDiagnostics` after every synchronisation, and `textDocument/semanticTokens/full` and `textDocument/semanticTokens/range`; and, from 3.18, `textDocument/inlineCompletion`. `serve` runs one session over any `BufRead` and `Write` pair, logging one timing line per synchronisation to a third `Write`; `Capabilities` displays what `initialize` answers. The driver's `gandr lsp` serves it over standard input and output and logs to standard error.
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are the reports `gandr-surface-diagnostics` renders for the dispatcher's step, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
+**How.** Each open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the held text and judges the text in the session, reads the judgement's step through `gandr-surface-diagnostics`' `entries` under `check --goals`, and publishes each report as one diagnostic: its span as the range, its refusal's vocabulary name as the code, its title, primary label and note as the message, its context loci as related information. Then it runs the kernel admission the judgement left. A token request parses the document, takes the highlighter's spans and delta-encodes them under the standard legend. An inline-completion request molds the form the cursor ends and spells what `gandr-surface-parser` expects to close it as a snippet. Every position is a UTF-16 position read through `gandr-surface-render-remote`'s `LineIndex`. The server keeps the open documents' text and sessions and one grammar per process.
 
 ## References
 
 - Microsoft. "Language Server Protocol Specification 3.17." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — the base protocol, the lifecycle, document synchronisation, published diagnostics, semantic tokens and the position encodings this server serves.
+- Microsoft. "Language Server Protocol Specification 3.18." <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/> — `textDocument/inlineCompletion`, its snippet `StringValue`, and the snippet syntax a ghost text's tab stops are written in.
 - JSON-RPC Working Group. "JSON-RPC 2.0 Specification." 2010, revised 2013. <https://www.jsonrpc.org/specification> — the envelope, the batch the server refuses, and the reserved error codes it answers with.
 - Matthew Kerwin. "The 'file' URI Scheme." RFC 8089, February 2017. `doi:10.17487/RFC8089` — the URI a document is named by, whose percent-decoded path classifies its source root.
 
@@ -46,6 +48,7 @@ The gandr language server: diagnostics and semantic tokens over the Language Ser
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error, including invalid UTF-8 and exceeded number or nesting limits; a decoded batch or other invalid message refused as an invalid request. Witnesses: `rpc::tests::a_request_is_classified`, `rpc::tests::a_batch_is_rejected`, `rpc::tests::decoder_rejections_keep_the_parse_error_class`.
 - Published diagnostics: one per report the renderer gives the document's step, at its range, under its code, with its message and related information; republished at every change, cleared at close. Witnesses: `server::tests::a_refused_program_is_published_as_an_editor_diagnostic`, `server::tests::synchronisation_publishes_and_close_clears`, `recheck::tests::causal_contexts_become_lsp_related_information`, `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`, `recheck::tests::a_refusal_publishes_its_label_and_note`, `recheck::tests::a_fault_is_published_at_the_origin`, `session::session::a_refusal_is_published_where_the_renderer_renders_it`, `session::session::every_corpus_report_is_published_where_the_walk_renders_it`.
 - Semantic tokens for the whole document and for a range, and `TOKEN_TYPES` and `TOKEN_MODIFIERS`, the legend. Witnesses: `tokens::tests::every_classified_role_maps_inside_the_legend`, `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`, `tokens::tests::a_one_line_keyword_encodes_as_five_integers`, `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`, `server::tests::semantic_tokens_full_answers_a_known_document`, `server::tests::a_range_returns_only_the_tokens_it_covers`, `server::tests::a_range_over_the_whole_document_agrees_with_the_full_stream`, `server::tests::a_token_straddling_the_range_edge_is_returned_whole`, `server::tests::an_inverted_range_yields_no_tokens`, `server::tests::an_empty_range_yields_no_tokens`, `recheck::tests::a_definition_produces_semantic_tokens`, `session::session::corpus_tokens_cover_the_highlighted_bytes`.
+- Inline completion: the material the parser expects to close the innermost form at the cursor, as one snippet whose holes and lexical classes are tab stops; nothing where text follows the cursor on its line or the cursor is in a comment. Witnesses: `inline::tests::ghost_text_closes_the_innermost_form`, `inline::tests::no_ghost_text_where_text_or_a_comment_stands`, `server::tests::inline_completion_answers_the_expected_closer`.
 - Positions in UTF-16 code units, a position past a line's end or past the last line clamped. Witnesses: `position::tests::utf16_counts_an_astral_character_as_two_units`, `position::tests::a_line_past_the_end_clamps`.
 - `Capabilities`: the `initialize` result as one line of JSON. Witnesses: `capabilities::capabilities::advertised_capabilities_name_the_token_legend`, `server::tests::initialize_advertises_the_token_legend`.
 - A `file` URI's percent-decoded path. Witness: `protocol::tests::a_file_uri_names_its_decoded_path`.
@@ -145,6 +148,15 @@ The tokens are the highlighter's `HlSpan`s, sorted and disjoint, delta-encoded a
 | `Label` | `label` | |
 
 A range request restricts which tokens are sent, never the coordinates they are sent in: the deltas still chain from the document's origin, and a token sharing at least one byte with the half-open range is sent whole rather than clipped, so a client can merge a range answer into a full one. Empty spans never intersect. An inverted or empty range answers no token. A request for a document the server does not hold answers `null`.
+
+## Inline completion is the parser's expected syntax
+
+An inline-completion request labels the text before the cursor, splits it at its predicted top-level form boundaries, molds the last form alone, and asks the parser's completion query what closes it: `Completion::innermost`, the holes of the operators above the innermost open form and that form's cheapest closing tiles. The answer is one item, inserted at the empty range at the cursor, whose text is a snippet. A tile is written as `tile_spelling` gives it, escaped for the snippet syntax; a lexical class such as `identifier` is a tab stop naming the class; a hole of an expression, a pattern or a type is a tab stop holding `?`, so accepting the ghost text unedited leaves holes the checker reports as goals. Items are separated by a space except after `(` or `[` and before `)`, `]`, `,`, `;` and a quote. So `def x = f(1` shows `)`, `def x = 1 +` shows `${1:?};`, and `run y <-` in a block shows `${1:?}; \}`. Over every line end of the corpus sources, accepting the ghost text with each tab stop filled closes a form and adds no repair.
+
+Nothing is shown when text other than whitespace follows the cursor on its line, since the closer may already be written there, or when the text before the cursor ends in a line comment, a shebang or an unclosed block comment. The text after the cursor is never labeled, so the parser's lookahead reads only what precedes it. The material is structure only — closers, required keywords, holes and classes — never a name; names come from completion over goals.
+
+- Alternatives: the whole completion to the end of the input, which closes every enclosing form at once and reads as noise past the innermost; molding the document from its start, which costs the whole prefix per request where the form costs its own tokens; the session's parse of the whole text, whose forms read the text after the cursor as lookahead and are kept by identity rather than by position.
+- Reversal: a measured labeling cost on long documents moves the label pass onto the session's held labeling; an observed preference for less ghost text cuts the material at the first tile.
 
 ## Positions count UTF-16 code units
 

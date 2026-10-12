@@ -27,6 +27,8 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 
+use crate::inline::ghost;
+use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::Answer;
 use crate::protocol::ContentChange;
@@ -36,12 +38,17 @@ use crate::protocol::DocumentParams;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
 use crate::protocol::InitializeResult;
+use crate::protocol::InlineCompletionItem;
+use crate::protocol::InlineCompletionList;
+use crate::protocol::InlineCompletionParams;
 use crate::protocol::PublishParams;
 use crate::protocol::RangeParams;
 use crate::protocol::SemanticTokens;
+use crate::protocol::StringValue;
 use crate::recheck::DocumentSession;
 use crate::recheck::Timing;
 use crate::recheck::admit;
+use crate::recheck::grammar;
 use crate::recheck::highlight;
 use crate::recheck::open;
 use crate::recheck::recheck;
@@ -381,6 +388,7 @@ impl Server
     ///   ending; L2 — token responses agree with pinned streams.
     /// - witness: `server::tests::the_lifecycle_admits_requests_in_the_protocol_order`
     /// - witness: `server::tests::semantic_tokens_full_answers_a_known_document`
+    /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
     #[spec(
         captures: [phase = self.phase, documents = self.documents.len()],
         ensures: |ret| self.documents.len() == documents && match (phase, method.as_ref()) {
@@ -395,6 +403,12 @@ impl Server
             (Phase::Running, "textDocument/semanticTokens/full" | "textDocument/semanticTokens/range") =>
                 self.phase == phase && match ret {
                     Outgoing::Success { result: Answer::Nothing | Answer::Tokens(_), .. } => true,
+                    Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
+                    _ => false,
+                },
+            (Phase::Running, "textDocument/inlineCompletion") =>
+                self.phase == phase && match ret {
+                    Outgoing::Success { result: Answer::Nothing | Answer::Inline(_), .. } => true,
                     Outgoing::Failure { ref error, .. } => error.code == ErrorCode::INVALID_PARAMS,
                     _ => false,
                 },
@@ -446,6 +460,14 @@ impl Server
                         id,
                         self.tokens(&params.text_document.uri, Window::Within(params.range)),
                     ),
+                    | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
+                }
+            },
+            | (Phase::Running, "textDocument/inlineCompletion") => {
+                match serde_json::from_value::<InlineCompletionParams>(params) {
+                    | Ok(params) => {
+                        success(id, self.inline(&params.text_document.uri, params.position))
+                    },
                     | Err(error) => failure(id, ErrorCode::INVALID_PARAMS, error.to_string()),
                 }
             },
@@ -592,7 +614,7 @@ impl Server
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
             && tokens.data.as_ref().len().is_multiple_of(5)
             && match window { Window::Within(range) if range.start >= range.end => tokens.data.as_ref().is_empty(), _ => true },
-        Answer::Initialize(_) => false,
+        Answer::Initialize(_) | Answer::Inline(_) => false,
     })]
     fn tokens(
         &self,
@@ -616,6 +638,58 @@ impl Server
         Answer::Tokens(SemanticTokens {
             data: encode(&index, &spans),
         })
+    }
+
+    /// The inline completion of the document at `uri` at `position`.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unknown URI and any position are admitted.
+    /// - ensures: an unknown document yields Nothing; a held document yields
+    ///   one item when [`ghost()`] shows ghost text at the position's byte, its
+    ///   snippet inserted at the empty range at `position`, and no item when it
+    ///   shows none or the grammar did not build.
+    /// - provides: the answer to `textDocument/inlineCompletion`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a known document after an open bracket, the same
+    ///   document where nothing is owed, and an unknown document distinguish
+    ///   the item, the empty list and null through exact wire answers.
+    /// - witness: `server::tests::inline_completion_answers_the_expected_closer`
+    #[spec(ensures: |ret| match ret {
+        Answer::Nothing => !self.documents.contains_key(uri),
+        Answer::Inline(ref list) => self.documents.contains_key(uri) && list.items.len() <= 1
+            && list.items.iter().all(|item| item.range.start == position && item.range.end == position),
+        Answer::Initialize(_) | Answer::Tokens(_) => false,
+    })]
+    fn inline(
+        &self,
+        uri: &DocumentUri,
+        position: Position,
+    ) -> Answer
+    {
+        let Some(document) = self.documents.get(uri)
+        else {
+            return Answer::Nothing;
+        };
+        let text = document.text.as_str();
+        let index = LineIndex::new(text.into());
+        let at = position.byte(&index);
+        let items = match grammar().map(|grammar| ghost(grammar, SourceText::from(text), at)) {
+            | Ok(Maybe::Present(snippet)) => vec![InlineCompletionItem {
+                insert_text: StringValue {
+                    kind: "snippet",
+                    value: String::from(snippet),
+                },
+                range: Range {
+                    start: position,
+                    end: position,
+                },
+            }],
+            | Ok(Maybe::Absent(_)) | Err(_) => Vec::new(),
+        };
+        Answer::Inline(InlineCompletionList { items })
     }
 }
 
@@ -975,12 +1049,13 @@ mod tests
                                     "number","string","comment","macro","label"],
                                 "tokenModifiers":["declaration","defaultLibrary"]},
                             "full":true,
-                            "range":true}},
+                            "range":true},
+                        "inlineCompletionProvider":true},
                     "serverInfo":{"name":"gandr","version":""#,
                 env!("CARGO_PKG_VERSION"),
                 r#""}}}]"#
             ))),
-            "the advertised capabilities, whole: no hover, no completion"
+            "the advertised capabilities, whole: no hover, no completion list"
         );
     }
 
@@ -1021,6 +1096,48 @@ mod tests
                 "{method} is not advertised, so it is not served"
             );
         }
+    }
+
+    #[test]
+    fn inline_completion_answers_the_expected_closer()
+    {
+        let mut server = initialized();
+        let _published = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/open.gandr","languageId":"gandr","version":1,
+                     "text":"def x = f(1\n"}}}"#,
+            ),
+        );
+        let ask = |server: &mut Server, uri: &str, character: u32| {
+            let request = format!(
+                r#"{{"jsonrpc":"2.0","id":7,"method":"textDocument/inlineCompletion","params":{{
+                    "textDocument":{{"uri":"{uri}"}},
+                    "position":{{"line":0,"character":{character}}},
+                    "context":{{"triggerKind":2}}}}}}"#
+            );
+            send(server, Json(&request))
+        };
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", 11),
+            wire(Json(
+                r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[{
+                    "insertText":{"kind":"snippet","value":")"},
+                    "range":{"start":{"line":0,"character":11},"end":{"line":0,"character":11}}}]}}]"#
+            )),
+            "after `f(1` the call's closer is the ghost text"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/open.gandr", 5),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":{"items":[]}}]"#)),
+            "text after the cursor on its line: nothing is shown"
+        );
+        assert_eq!(
+            ask(&mut server, "file:///tmp/closed.gandr", 0),
+            wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
+            "a document the server does not hold answers null"
+        );
     }
 
     #[test]
