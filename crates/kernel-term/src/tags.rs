@@ -518,8 +518,9 @@ pub struct NodeTagDescription
 /// Build one row of [`NODE_TAG_TABLE`].
 ///
 /// # Specification
-/// - requires: `tag` is a native node tag, not an inline opcode or reservation,
-///   and the two verdicts are the classifications recorded for it.
+/// - requires: `tag` is a native node tag, a former [`NODE_TAG_TABLE`] lists,
+///   not an inline opcode or reservation, and the two verdicts are the
+///   classifications recorded for it.
 /// - ensures: returns the description carrying its arguments unchanged, with
 ///   the tag's own token contribution fixed at one.
 /// - provides: the one row constructor, so every row agrees that a tag
@@ -570,8 +571,8 @@ const fn row(
 /// criteria.
 ///
 /// # Specification
-/// - requires: `tag` names a former whose inline payload has no finite token
-///   bound.
+/// - requires: `tag` names a native former [`NODE_TAG_TABLE`] lists whose
+///   inline payload has no finite token bound.
 /// - ensures: returns the row with no token bound and both verdicts
 ///   [`NodeTagVerdict::Boundary`].
 /// - provides: the shorthand that keeps an unbounded payload from being
