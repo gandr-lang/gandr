@@ -1383,6 +1383,69 @@ fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
     }
     Ok(())
 }
+
+/// Comments are owned by forms across the corpus without reaching an identity
+/// or losing a byte: every source still reads back from its leaves in offset
+/// order, and blanking every comment leaves the root digest unchanged.
+#[test]
+fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let mut comments = 0_usize;
+    for path in &gandr_files(&corpus_root()) {
+        let src = read_source(path)?;
+        let result = parse(pbg, SourceText::from(src.as_str()))?;
+        let tree = result.tree();
+        let mut leaves: Vec<(usize, String)> = tree
+            .positions()
+            .filter(|&at| {
+                tree.node(at)
+                    .is_some_and(|node| bool::from(node.label().carries_text()))
+            })
+            .map(|at| {
+                span(tree, at).map_or((0, String::new()), |bytes| {
+                    (usize::from(bytes.start()), text(tree, at))
+                })
+            })
+            .collect();
+        leaves.sort_unstable();
+        let read_back: String = leaves.into_iter().map(|(_, written)| written).collect();
+        assert_eq!(
+            read_back,
+            src,
+            "{} reads back byte for byte",
+            path.display()
+        );
+        let mut blanked = String::with_capacity(src.len());
+        for token in label(SourceFragment::from(src.as_str())) {
+            let start = usize::try_from(token.start)?;
+            let end = usize::try_from(token.end)?;
+            let written = src.get(start .. end).unwrap_or_default();
+            if token.lexeme == Lexeme::Space
+                && (written.starts_with("//") || written.starts_with("/*"))
+            {
+                comments = comments.saturating_add(1);
+                blanked.extend(
+                    written
+                        .chars()
+                        .map(|character| if character == '\n' { '\n' } else { ' ' }),
+                );
+            }
+            else {
+                blanked.push_str(written);
+            }
+        }
+        let bare = parse(pbg, SourceText::from(blanked.as_str()))?;
+        assert_eq!(
+            root_digest(tree),
+            root_digest(bare.tree()),
+            "{}'s comments reach no digest",
+            path.display()
+        );
+    }
+    assert!(comments > 0, "the corpus writes comments");
+    Ok(())
+}
 // A wall-clock budget measures the parser, not its predicates: under
 // `anodized_panic` every `#[spec]` predicate runs inside the timed parse, so
 // the enforcing lane is not a timing lane and this assertion stays out of it.
