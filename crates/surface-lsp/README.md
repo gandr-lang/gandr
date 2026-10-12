@@ -20,6 +20,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - [Formatting answers the formatter's layout as edits](#formatting-answers-the-formatters-layout-as-edits)
 - [One hub serves a workspace's clients](#one-hub-serves-a-workspaces-clients)
 - [Model proposals reach the editor once they check](#model-proposals-reach-the-editor-once-they-check)
+- [The hub serves the render bus](#the-hub-serves-the-render-bus)
 - [The transport is written here](#the-transport-is-written-here)
 - [Document URIs](#document-uris)
 - [Coverage of the specification](#coverage-of-the-specification)
@@ -63,6 +64,7 @@ The gandr language server: diagnostics, semantic tokens, inline completion, the 
 - `Workspace::held`, `Workspace::published`, `Workspace::watch` and `Workspace::query`: what another face reads off the shared workspace — the open documents and their versions, the diagnostics last published for each, a channel told of each publication and forgotten document, and any request the server answers, run on a connection that holds nothing. Witness: `server::tests::a_workspace_answers_queries_off_its_documents`.
 - `Workspace::trial`, `Tried` and `Reached`, with `ContentChange`, `Range`, `Position`, `Line` and `Character`: candidate changes, each applied alone to a held document's text as a synchronisation applies it, judged by the session's trial without submitting any and ranked best first, each with the diagnostics a synchronisation to its text would publish; the document and its session unchanged. Witnesses: `server::tests::a_workspace_tries_candidate_fills`, `recheck::tests::a_trial_ranks_candidates_with_their_diagnostics`.
 - `Workspace::propose`, `Proposal` and `ProposalRefusal`: a model's fill of a range kept beside the document once it checks, refused when stale or failing, and withdrawn by the next synchronisation; kept fills served as ghost text, code lenses, code actions and hover notes. Witnesses: `server::tests::a_proposal_is_kept_only_once_it_checks`, `server::tests::kept_proposals_reach_every_editor_surface`.
+- `RENDER_BUS_PREFACE`, `Workspace::greeting` and `Workspace::rendered`: the render bus on the hub's socket — a connection opening with the preface greeted with the held documents and sent each one's report, then the report of every publication; a resync answered at the current version, a detach closing it, another bus version detached at once. A report is the held text, its highlights, a card per published error or warning and marks under errors and holes. Witnesses: `hub::tests::an_attached_view_follows_the_editors_edits`, `view::tests::a_report_cards_errors_and_marks_holes`.
 - Incremental synchronisation: each content change applied in order, a ranged one to its range and one naming no range as the whole text, and the document judged again in its session, which molds only the forms the change touched; one log line per synchronisation names the forms molded, the items the incremental checker judged, the recheck's wall and the admission's. Witnesses: `server::tests::ranged_changes_edit_the_held_text_in_order`, `session::session::an_edit_to_a_large_document_rechecks_its_forms`.
 - `Server::admit`: the kernel admission each synchronisation left, run once its diagnostics are published. Witnesses: `server::tests::an_admission_follows_its_synchronisation`, `recheck::tests::an_admission_follows_the_published_diagnostics`.
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body. Witnesses: `transport::tests::a_round_trip_preserves_the_payload`, `transport::tests::eof_at_a_boundary_is_clean`, `transport::tests::a_header_block_the_framing_cannot_read_is_refused`.
@@ -265,6 +267,14 @@ The client's `options` — tab size, spaces or tabs — are read and set aside: 
 
 **Reversal.** A proposal that should survive an edit far from its range moves with the edit and is checked again; an editor measured to show stale lenses for long gets the refresh request.
 
+## The hub serves the render bus
+
+**Choice.** A connection to the hub whose first byte is `r` attaches to the render bus: it opens with the line `render-bus/1`, naming the bus and its wire schema version, and is then served newline-delimited `gandr-surface-render-remote` frames. The face greets it with every document the hub holds and sends each one's report, then a report for every document a synchronisation publishes, at the version published; a resync is answered with the document's current report, a detach with a detach and the end of the connection, and an attach naming another version with a detach at once. A report (`Workspace::rendered`) is read off what the editor shows, never judged again: the held text, the highlighter's spans over it, and one card per published error or warning — the registry code when the diagnostic's code is a registry spelling and `Other` with the vocabulary name leading the message otherwise, its span in bytes, absent for one published at the origin, and the related information as its derivation — with an error mark under each located error and a hole tint under each goal. The face is built in, where the Model Context Protocol face is a parameter, because its frames are this crate's own diagnostics and the seam is already a dependency.
+
+**Alternatives.** A report built from the judgement's reports rather than the published diagnostics would carry the typed arguments a card has room for, at the cost of keeping each document's reports beside its diagnostics, or judging again; the cards today carry what the editor shows. Goal cards wait on goals whose types the checker spells: a goal travels as a tinted hole mark carrying its message until then. A forgotten document is not announced: the frame set has no closing body, and a view keeps the last report it was sent until another document is checked. Sending the text in every report costs its bytes per publication over a local socket; a renderer holding no buffer of its own cannot place a byte range without it.
+
+**Reversal.** A view that must show unsaved goals with their types reads goal cards once the checker spells them; a frame set that gains a closing body announces a forgotten document; a report measured as too large for a document's every edit sends only what changed.
+
 ## The transport is written here
 
 The framing, the envelope and the protocol types the server reads and writes are this crate's own, on `serde` and `serde_json` with `alloc` only. Each message the server writes is a typed value encoded once at the stream, so the field order on the wire is the struct's.
@@ -322,7 +332,7 @@ Every feature of the protocol, 3.17 and 3.18, with whether this server serves it
 | configuration | `workspace/didChangeConfiguration` | served: the `gandr` section's `diagnostics.verbosity`, [as above](#diagnostics-are-the-renderers-reports) |
 | pulled configuration | `workspace/configuration` | declined: the setting is pushed; reverses for a client that only answers pulls |
 | window messages and progress | `window/showMessage`, `logMessage`, `workDoneProgress/*` | declined: the timing line goes to the server's log; reverses for a client that reads only the protocol stream |
-| gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach | blocked: each as [the assessment below](#extensions-beyond-the-specification) names |
+| gandr's extensions | `gandr/goals`, `gandr/syntaxTree`, `gandr/serverStatus`, the render-bus attach through the language server's stream | blocked: each as [the assessment below](#extensions-beyond-the-specification) names; the bus itself is served on the hub's socket ([the hub serves the render bus](#the-hub-serves-the-render-bus)) |
 
 ## What editors add beyond the protocol
 

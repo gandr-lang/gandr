@@ -25,7 +25,9 @@ use std::sync::mpsc::Sender;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_render_remote::DocId;
 use gandr_surface_render_remote::LineIndex;
+use gandr_surface_render_remote::RenderFrame;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize as _;
@@ -91,6 +93,7 @@ use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::read_frame;
 use crate::transport::write_frame;
+use crate::view::report;
 
 /// Where the server stands in the protocol's lifecycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -355,6 +358,64 @@ impl Workspace
         self.documents
             .get(uri)
             .map(|document| (document.version, document.published.as_slice()))
+    }
+
+    /// The render bus's greeting: every open document, at the version each is
+    /// at, in URI order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn greeting(&self) -> RenderFrame
+    {
+        RenderFrame::hello(
+            self.documents
+                .iter()
+                .map(|(uri, document)| DocId {
+                    uri: uri.into(),
+                    version: document.version.into(),
+                })
+                .collect(),
+        )
+    }
+
+    /// The render bus's report of the document at `uri`, as its last
+    /// synchronisation published it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds; otherwise a frame
+    ///   scoped to the document at its held version, carrying the
+    ///   [`crate::view::report`] of its text and published diagnostics.
+    /// - provides: what the render-bus face sends after each publication.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a client attached to a hub receives a held document's
+    ///   frame at its version, then the next version's after an edit, and a
+    ///   resync answered at the current version.
+    /// - witness: `hub::tests::an_attached_view_follows_the_editors_edits`
+    #[spec(ensures: |ret| ret.is_some() == self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn rendered(
+        &self,
+        uri: &DocumentUri,
+    ) -> Option<RenderFrame>
+    {
+        self.documents.get(uri).map(|document| {
+            RenderFrame::frame(
+                DocId {
+                    uri: uri.into(),
+                    version: document.version.into(),
+                },
+                report(
+                    SourceText::from(document.text.as_str()),
+                    &document.published,
+                ),
+            )
+        })
     }
 
     /// Judge each of `changes`, applied alone to the document at `uri` as it

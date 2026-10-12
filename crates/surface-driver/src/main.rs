@@ -219,6 +219,26 @@ enum Command
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
     },
+    /// Follow the document the engine hub checked last: its diagnostics, each
+    /// at its row and column with its derivation, and its holes, beside the
+    /// editor that shows the text.
+    ///
+    /// Attaches to the render bus of the hub serving the current directory's
+    /// workspace, started when none runs. On a terminal the view takes the
+    /// screen until Esc; piped, each report prints as plain rows. Exits 0 when
+    /// the user leaves or the hub closes the bus, and 2 when a stream fails,
+    /// a line from the hub is not a frame, or no hub can be reached.
+    #[cfg(unix)]
+    View
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+    },
     /// Run the read-evaluate loop over standard input and output.
     ///
     /// On a terminal, lines are edited with history kept for the session;
@@ -522,6 +542,13 @@ fn main() -> ExitCode
         | Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput });
         },
+        #[cfg(unix)]
+        | Some(Command::View { socket, linger_ms }) => {
+            return view(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+            );
+        },
         | Some(Command::Tui { smoke }) => {
             return tui(if smoke {
                 Screen::Smoke
@@ -713,6 +740,60 @@ fn mcp(
     }
 }
 
+/// Attach to the render bus of the hub at `socket`, starting one lingering
+/// `linger` when none answers, follow it, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the attach is sent to the hub [`reach_hub`] reaches; with
+///   standard input and output both terminals, the bus is followed as
+///   `gandr_surface_tui::follow` states, and otherwise its reports are printed
+///   as `gandr_surface_tui::follow_plain` states. The view exits `0` when it
+///   completes, and `2` when a hub is never reached, a stream fails or the view
+///   ends faulted, the cause noted on standard error when writable.
+/// - provides: `gandr view`, the side view beside an editor.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a piped view prints the report of a document an editor
+///   opens through the same hub, then the next one after the editor's edit.
+/// - witness: `cli::cli::a_view_follows_what_an_editor_holds_open`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn view(
+    socket: Option<PathBuf>,
+    linger: Duration,
+) -> ExitCode
+{
+    let attached = reach_hub(socket, linger).and_then(|mut stream| {
+        stream.write_all(gandr_surface_lsp::RENDER_BUS_PREFACE.as_bytes())?;
+        let reading = std::io::BufReader::new(stream.try_clone()?);
+        Ok((stream, reading))
+    });
+    let (mut writing, reading) = match attached {
+        | Ok(ends) => ends,
+        | Err(error) => return hub_fault(&error),
+    };
+    let terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let followed = if terminal {
+        gandr_surface_tui::follow(reading, &mut writing)
+    }
+    else {
+        gandr_surface_tui::follow_plain(reading, &mut std::io::stdout().lock())
+    };
+    let noted = match followed {
+        | Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: the view: {fault}"),
+        | Err(error) => writeln!(std::io::stderr(), "gandr: the view: {error}"),
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
 /// A connection to the hub at `socket`, started lingering `linger` when none
 /// answers.
 ///
@@ -735,6 +816,7 @@ fn mcp(
 ///   connects to it.
 /// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
 /// - witness: `cli::cli::mcp_reads_what_an_editor_holds_open`
+/// - witness: `cli::cli::a_view_follows_what_an_editor_holds_open`
 #[cfg(unix)]
 fn reach_hub(
     socket: Option<PathBuf>,

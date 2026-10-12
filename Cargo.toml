@@ -515,7 +515,8 @@ path = "crates/surface-pretty"
 # The renderer seam: presentation spans, cards and transcript blocks, the
 # byte-to-position projections and the versioned render-bus frame.
 # features:
-# - serde: the wire image the codec witnesses round-trip, so the gate runs them
+# - serde: the wire image the codec witnesses round-trip, so the gate runs
+#   them; the hub's render-bus face writes it and `gandr view` reads it
 # consumers:
 # - surface-grammar
 # - surface-lsp
@@ -929,9 +930,9 @@ default-features = false
 features = ["alloc", "derive"]
 
 # JSON: the language server's and the Model Context Protocol server's wire
-# format, the diagnostics' JSON verbosity level, the format the render-bus
-# codec witnesses round-trip through, and nextest's machine-readable test
-# list.
+# format, the diagnostics' JSON verbosity level, the render bus's line format
+# and the format its codec witnesses round-trip through, and nextest's
+# machine-readable test list.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -941,6 +942,7 @@ features = ["alloc", "derive"]
 # - surface-lsp
 # - surface-mcp
 # - surface-render-remote (dev)
+# - surface-tui
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]
 version = "1.0.151"

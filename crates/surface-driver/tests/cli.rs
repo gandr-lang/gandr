@@ -1067,6 +1067,137 @@ mod cli
         );
     }
 
+    #[test]
+    fn a_view_follows_what_an_editor_holds_open()
+    {
+        use std::ffi::OsStr;
+        use std::io::BufRead as _;
+        use std::io::BufReader;
+
+        // The name is short: a socket path must fit the platform's limit.
+        let scratch = Scratch::new(Path::new("view"));
+        let socket = scratch.0.join("hub.sock");
+        let mut editor = gandr(&[
+            OsStr::new("lsp"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--linger-ms"),
+            OsStr::new("200"),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the editor's server starts");
+        let mut to_editor = editor.stdin.take().expect("standard input is piped");
+        let mut from_editor =
+            BufReader::new(editor.stdout.take().expect("standard output is piped"));
+        let mut next_from_editor = || {
+            let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame")
+            else {
+                panic!("the editor's server ended early");
+            };
+            String::from_utf8(body.as_ref().to_vec()).expect("UTF-8")
+        };
+        to_editor
+            .write_all(
+                frames(&[
+                    Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                    Text::from(
+                        r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/viewed.gandr","languageId":"gandr","version":1,"text":"def g = missing ;\n"}}}"#,
+                    ),
+                ])
+                .as_ref(),
+            )
+            .expect("the editor's session is written");
+        drop(next_from_editor());
+        assert!(
+            next_from_editor().contains("UnresolvedName"),
+            "the editor sees the refusal first"
+        );
+        let mut view = gandr(&[
+            OsStr::new("view"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the view starts");
+        let mut from_view = BufReader::new(view.stdout.take().expect("standard output is piped"));
+        let mut report = || {
+            let mut rows = Vec::new();
+            loop {
+                let mut row = String::new();
+                assert_ne!(
+                    from_view.read_line(&mut row).expect("the view prints"),
+                    0_usize,
+                    "the view ended early"
+                );
+                if row == "\n" {
+                    return rows;
+                }
+                rows.push(row.trim_end().to_owned());
+            }
+        };
+        let first = report();
+        assert_eq!(
+            first.first().map(String::as_str),
+            Some("file:///tmp/viewed.gandr at version 1: 1 diagnostic, 0 holes"),
+            "the view shows what the editor holds: {first:#?}"
+        );
+        assert!(
+            first
+                .get(1_usize)
+                .is_some_and(|row| row.starts_with("1:9 [UnresolvedName]")),
+            "the refusal is placed at its row and column: {first:#?}"
+        );
+        to_editor
+            .write_all(
+                frames(&[Text::from(
+                    r#"{"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///tmp/viewed.gandr","version":2},"contentChanges":[{"text":"def g = 1 ;\n"}]}}"#,
+                )])
+                .as_ref(),
+            )
+            .expect("the editor's edit is written");
+        drop(next_from_editor());
+        assert_eq!(
+            report(),
+            ["file:///tmp/viewed.gandr at version 2: 0 diagnostics, 0 holes"],
+            "the editor's edit reaches the view within one check"
+        );
+        view.kill().expect("the view stops");
+        assert!(
+            !view.wait().expect("the view is reaped").success(),
+            "the view runs until it is stopped"
+        );
+        to_editor
+            .write_all(
+                frames(&[
+                    Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                    Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+                ])
+                .as_ref(),
+            )
+            .expect("the editor's session is ended");
+        drop(to_editor);
+        // The shutdown reply is read, so the editor's last write finds a
+        // reader.
+        let mut rest = Vec::new();
+        std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
+        let ended = editor.wait_with_output().expect("the editor's server runs");
+        assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+        while socket.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(core::time::Duration::from_millis(50));
+        }
+        assert!(
+            !socket.exists(),
+            "the hub exits after its linger, removing its socket"
+        );
+    }
+
     /// The finished run of `gandr` with `arguments` and `input` on standard
     /// input, its output captured.
     ///

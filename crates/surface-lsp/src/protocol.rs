@@ -52,6 +52,32 @@ impl From<&str> for DocumentUri
     }
 }
 
+impl From<&DocumentUri> for gandr_surface_render_remote::DocumentUri
+{
+    /// The render bus's name for the document the client named.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(uri: &DocumentUri) -> Self
+    {
+        Self::from(uri.0.clone())
+    }
+}
+
+impl From<&gandr_surface_render_remote::DocumentUri> for DocumentUri
+{
+    /// The client's name for the document the render bus named.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(uri: &gandr_surface_render_remote::DocumentUri) -> Self
+    {
+        Self::from(uri.as_ref())
+    }
+}
+
 impl DocumentUri
 {
     /// The path a `file` URI names.
@@ -134,6 +160,19 @@ impl fmt::Display for DocumentVersion
     ) -> fmt::Result
     {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<DocumentVersion> for gandr_surface_render_remote::DocVersion
+{
+    /// The render bus's count of the version the client numbered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(version: DocumentVersion) -> Self
+    {
+        Self::from(version.0)
     }
 }
 

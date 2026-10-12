@@ -17,12 +17,21 @@
 //! lowers, types and marks nothing: every line goes to the loop, and every
 //! block it paints is the loop's.
 //!
+//! # The side view
+//!
+//! [`follow()`] attaches nothing itself: given the two ends of a connection to
+//! the engine hub's render bus, it follows the document the hub checked last
+//! and paints its cards — each diagnostic at its row and column with its
+//! derivation, each hole with its goal — beside an editor that shows the
+//! text; [`follow_plain`] prints the same rows to a pipe after each report.
+//!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 
 extern crate alloc;
 
 mod app;
+mod follow;
 mod run;
 mod theme;
 mod view;
@@ -30,6 +39,14 @@ mod view;
 pub use crate::app::App;
 pub use crate::app::Handled;
 pub use crate::app::Key;
+pub use crate::follow::Following;
+pub use crate::follow::Heard;
+pub use crate::follow::Row;
+pub use crate::follow::Seen;
+pub use crate::follow::draw_following;
+pub use crate::follow::drive_following;
+pub use crate::follow::follow;
+pub use crate::follow::follow_plain;
 pub use crate::run::Input;
 pub use crate::run::InputSource;
 pub use crate::run::SMOKE_NOTE;

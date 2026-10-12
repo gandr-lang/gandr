@@ -82,6 +82,8 @@ extern crate alloc;
 
 use core::fmt;
 
+#[cfg(unix)]
+mod bus;
 mod format;
 mod hover;
 #[cfg(unix)]
@@ -96,7 +98,10 @@ mod rpc;
 mod server;
 mod tokens;
 mod transport;
+mod view;
 
+#[cfg(unix)]
+pub use crate::bus::RENDER_BUS_PREFACE;
 #[cfg(unix)]
 pub use crate::hub::Face;
 #[cfg(unix)]
