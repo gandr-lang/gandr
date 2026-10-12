@@ -29,7 +29,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
   - [Data and record floor](#data-and-record-floor)
 - [Recursive data, fixpoints and derived eliminators](#recursive-data-fixpoints-and-derived-eliminators)
 - [Native universe paths](#native-universe-paths)
-- [Whose fact a refusal is](#whose-fact-a-refusal-is)
+- [Refusals](#refusals)
 - [The checker owns its context](#the-checker-owns-its-context)
 - [The support is what the judgement read](#the-support-is-what-the-judgement-read)
 - [One machine, one allowance, no memo](#one-machine-one-allowance-no-memo)
@@ -92,6 +92,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity. Witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`.
 - `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells. Witness: `refusal::tests::a_refusal_compares_the_types_it_names`.
+- `trace_value`, `Pending`, `pending::Absent` and `ModuleReport::pending`: the value and computation judgements a refusal stood inside, outermost first, each a term and the type it was checked against, and `check_module`'s trail of each refused body by position. Witnesses: `judgement::elaboration::tests::a_traced_run_keeps_the_judgements_a_refusal_stood_in`, `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`.
 - `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment. Witnesses: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
 - `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome. Witnesses: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
 - `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations. Witnesses: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`, `bridge::tests::native_operations_cross_as_audited_assumptions`.
@@ -282,9 +283,9 @@ Both checkers refuse an inadmissible self occurrence by the kernel's names, chec
 
 **Choice.** Preserve untrusted native evidence across the existing export boundary instead of treating successful frontend checking as certification. `CheckBudget` bounds the frontend machine; the kernel’s formation and replay allowances remain separate and their exhaustion is not a negative equality verdict. **Reversal.** Broader endpoint codes or a source notation must acquire their own typing and kernel replay rules before this boundary widens.
 
-## Whose fact a refusal is
+## Refusals
 
-`CheckRefusal::classify` is a `const`, wildcard-free match that binds no payload. A type mismatch, a shape mismatch, a checking form in synthesis position, an unknown constant, a universe of the wrong sort or level, a bind whose type mentions its binder, a static application past its head's arity or at an argument of the wrong classifier, a static lambda handed to a dynamic parameter and a static Pi over a classifier that holds no codes are malformed source, the author's mistake. A former outside the fragment is unrepresentable. An unbound index, an exhausted allowance, a dangling id, an admission out of order, a machine invariant and an unfolding the normaliser did not certify are engine faults: a producer that resolves binders and positions never hands the checker an unbound index or an out-of-order admission, so either one is the producer's fault, not the author's; the machine invariant reports a miscount of the machine's own frames instead of asserting it. The absence class has no refusal, because obligations come from a declaration's shape. The alternative for the unbound index — classing it as the author's — would hide a resolution bug in the producer behind a source diagnostic; it reverses if a producer ever hands over unresolved author text.
+Every refusal is classified by whose fact it is — the author's malformed source, an unrepresentable former, or an engine fault — and a refused body keeps the judgements it was refused inside, its nested reasons. The [refusals page](docs/refusals.md) states both, with the decisions' alternatives and reversals.
 
 ## The checker owns its context
 

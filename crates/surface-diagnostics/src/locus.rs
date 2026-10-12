@@ -15,6 +15,16 @@
 //! The types a checker refusal compares were spelled when its module was
 //! judged; a [`Comparison`] reads them back by node, so a synthesised type the
 //! label cannot point at is still named in it.
+//!
+//! # A refusal's nested reasons are the judgements it stood inside
+//!
+//! The composition keeps, for each refused body, the value and computation
+//! judgements the refusal stood inside, outermost first. Each one whose term
+//! the origin table locates is a [`Reason`]: its term's bytes, and whether the
+//! term was checked, against which type, or synthesised. A reason at the
+//! primary locus, or at bytes an outer reason already marks, says nothing the
+//! report does not, and is left out; a term with no origin is left out rather
+//! than located at a guess.
 
 use core::fmt;
 
@@ -24,6 +34,7 @@ use gandr_core_checker::CheckingForm;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::Pending;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
@@ -285,6 +296,117 @@ impl fmt::Display for PrimaryLabel<'_>
             return Ok(());
         }
         write!(f, ": {}", self.comparison)
+    }
+}
+
+/// How a judgement a refusal stood inside judged its term.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Judging<'step>
+{
+    /// The term was checked against a type, spelled when the composition
+    /// could spell it.
+    Checked(Maybe<&'step str, spelling::Absent>),
+    /// The term's type was synthesised.
+    Synthesised,
+}
+
+/// One judgement a refusal stood inside, at its term's bytes: a nested reason.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Reason<'step>
+{
+    /// The bytes of the term under judgement.
+    pub span: ByteSpan,
+    /// How the term was judged.
+    pub judging: Judging<'step>,
+}
+
+impl<'step> Reason<'step>
+{
+    /// The located reasons `pending` gives, outermost first.
+    ///
+    /// # Specification
+    /// - requires: `origins` and `spellings` were built over the arena
+    ///   `pending` names.
+    /// - ensures: one reason per judgement of `pending` whose term `origins`
+    ///   locates, in order, except one at `primary` or at bytes an earlier
+    ///   reason marks; each checked against the spelling of its expected type,
+    ///   absent where the spellings hold none, or synthesised.
+    /// - provides: the nested reasons a report renders beside its primary
+    ///   locus.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a force refused inside a thunk keeps the thunk as a
+    ///   checked reason with its type and drops the force, which is the primary
+    ///   locus; a mismatch at a declaration's whole body keeps none.
+    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
+    #[spec(ensures: |ret| ret.len() <= pending.len()
+        && ret.iter().all(|reason| primary != Maybe::Present(reason.span))
+        && ret.iter().enumerate().all(|(at, reason)| ret.iter().take(at).all(|outer| outer.span != reason.span)))]
+    pub(crate) fn trail(
+        pending: &[Pending],
+        origins: &OriginTable,
+        spellings: &'step Spellings,
+        primary: Maybe<ByteSpan, report_span::Absent>,
+    ) -> Vec<Self>
+    {
+        let mut reasons: Vec<Self> = Vec::with_capacity(pending.len());
+        for judgement in pending {
+            let Maybe::Present(span) = node(origins, CoreNode::Term(judgement.term))
+            else {
+                continue;
+            };
+            if primary == Maybe::Present(span) || reasons.iter().any(|outer| outer.span == span) {
+                continue;
+            }
+            let judging = match judgement.expected {
+                | Maybe::Present(expected) => {
+                    Judging::Checked(spellings.get(expected).map(AsRef::as_ref))
+                },
+                | Maybe::Absent(_) => Judging::Synthesised,
+            };
+            reasons.push(Self { span, judging });
+        }
+        reasons
+    }
+}
+
+impl fmt::Display for Reason<'_>
+{
+    /// Writes the judgement the reason stands for, as a clause beginning
+    /// `while`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes ``while checking this against `T` `` for a term
+    ///   checked against a spelled type, `while checking this` for one whose
+    ///   type has no spelling, and `while synthesising the type of this` for a
+    ///   synthesised one; propagates a destination failure.
+    /// - provides: the label a terminal writes under the reason's bytes and an
+    ///   editor shows at its related location.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked thunk and a synthesised application render
+    ///   their two clauses.
+    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match self.judging {
+            | Judging::Checked(Maybe::Present(expected)) => {
+                write!(f, "while checking this against `{expected}`")
+            },
+            | Judging::Checked(Maybe::Absent(_)) => f.write_str("while checking this"),
+            | Judging::Synthesised => f.write_str("while synthesising the type of this"),
+        }
     }
 }
 

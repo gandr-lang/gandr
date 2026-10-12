@@ -22,6 +22,7 @@ use annotate_snippets::Renderer;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::DecorStyle;
 use anodized::spec;
+use gandr_core_checker::Pending;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
@@ -41,6 +42,7 @@ use crate::locus::Checked;
 use crate::locus::Comparison;
 use crate::locus::Label;
 use crate::locus::PrimaryLabel;
+use crate::locus::Reason;
 use crate::locus::report_context;
 use crate::style::RenderStyle;
 use crate::style::Rendered;
@@ -192,6 +194,8 @@ pub enum Subject<'step>
         origins: &'step OriginTable,
         /// The spellings of the types it compares.
         spellings: &'step Spellings,
+        /// The judgements its body was refused inside, outermost first.
+        pending: &'step [Pending],
     },
     /// A declaration unsettled with no refusal produced.
     Unsettled
@@ -518,6 +522,47 @@ impl<'step> Report<'step>
         }
     }
 
+    /// The judgements the report's refusal stood inside, located, outermost
+    /// first: its nested reasons.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a refused declaration's reasons are those [`Reason::trail`]
+    ///   reads from its judgements against its primary locus, less any whose
+    ///   bytes the text cannot answer; every other report has none.
+    /// - provides: the reasons [`Report::render`] marks, for a face that shows
+    ///   them as related locations.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a force refused inside a thunk names the thunk and
+    ///   the force; a goal names nothing.
+    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
+    #[spec(ensures: |ret| ret.iter().all(|reason| self.text.fragment(reason.span).is_ok())
+        && match self.subject {
+            Subject::Refused { .. } => true,
+            Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => ret.is_empty(),
+        })]
+    #[inline]
+    #[must_use]
+    pub fn reasons(&self) -> Vec<Reason<'step>>
+    {
+        match self.subject {
+            | Subject::Refused {
+                origins,
+                spellings,
+                pending,
+                ..
+            } => {
+                let mut reasons = Reason::trail(pending, origins, spellings, self.span());
+                reasons.retain(|reason| self.text.fragment(reason.span).is_ok());
+                reasons
+            },
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => Vec::new(),
+        }
+    }
+
     /// The note the report closes with.
     ///
     /// # Specification
@@ -557,13 +602,14 @@ impl<'step> Report<'step>
     ///   produced otherwise. A located report then quotes the lines its loci
     ///   cover under the source's path, line and column, the primary locus
     ///   underlined and labelled with what its bytes are or with the surviving
-    ///   obligations, each context locus marked with what it explains; an
-    ///   unlocated report names the source's path alone. A refused declaration
-    ///   closes with a note naming it and what it states. A source with an
-    ///   empty path is named `<input>`. Plain adds no styling; styled adds the
-    ///   backend's colour sequences. Caller path controls remain literal in
-    ///   both modes. No framing terminator is appended, but a trailing path
-    ///   line ending can end an unlocated rendering.
+    ///   obligations, each context locus marked with what it explains, and each
+    ///   nested reason marked with the judgement it stands for; an unlocated
+    ///   report names the source's path alone. A refused declaration closes
+    ///   with a note naming it and what it states. A source with an empty path
+    ///   is named `<input>`. Plain adds no styling; styled adds the backend's
+    ///   colour sequences. Caller path controls remain literal in both modes.
+    ///   No framing terminator is appended, but a trailing path line ending can
+    ///   end an unlocated rendering.
     /// - provides: the plain text the driver prints and the tests compare.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
@@ -586,6 +632,7 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
     /// - witness: `report::tests::literal_path_controls_are_not_styling_or_framing`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
+    /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
     #[spec(ensures: |ref ret| match style {
         RenderStyle::Plain => match self.subject {
             Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
@@ -602,6 +649,11 @@ impl<'step> Report<'step>
     ) -> Rendered
     {
         let annotations = self.annotations();
+        let reasons: Vec<(ByteSpan, String)> = self
+            .reasons()
+            .into_iter()
+            .map(|reason| (reason.span, reason.to_string()))
+            .collect();
         let title = self.title().to_string();
         let level = match self.subject {
             | Subject::Goal(_) => Level::INFO.with_name("goal"),
@@ -652,6 +704,13 @@ impl<'step> Report<'step>
                                 .label(label.as_str()),
                         );
                     }
+                }
+                for &(span, ref label) in &reasons {
+                    snippet = snippet.annotation(
+                        AnnotationKind::Context
+                            .span(usize::from(span.start()) .. usize::from(span.end()))
+                            .label(label.as_str()),
+                    );
                 }
                 group = group.element(snippet);
             },

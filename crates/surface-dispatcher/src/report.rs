@@ -876,6 +876,7 @@ def broken = missing ;"#,
             kernel: quenchant_shape::shape::Maybe::Present(kernel),
             origins: module.into_origins(),
             spellings: crate::spelled::Spellings::default(),
+            trails: crate::spelled::Trails::default(),
             program,
         };
         let mut engine = RunReport::default();

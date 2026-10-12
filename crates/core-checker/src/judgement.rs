@@ -171,8 +171,11 @@ use self::elaboration::Anchor;
 pub use self::elaboration::Elaboration;
 pub use self::elaboration::MarkEntry;
 use self::elaboration::Marking;
+pub use self::elaboration::Pending;
 pub use self::elaboration::elaborate_comp;
 pub use self::elaboration::elaborate_value;
+pub use self::elaboration::pending;
+pub use self::elaboration::trace_value;
 
 /// The direction a judgement runs in.
 ///

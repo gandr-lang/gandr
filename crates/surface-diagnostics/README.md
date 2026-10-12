@@ -10,6 +10,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [What a report shows](#what-a-report-shows)
 - [The label says what the locus is](#the-label-says-what-the-locus-is)
 - [A label names the types its refusal compares](#a-label-names-the-types-its-refusal-compares)
+- [A refusal names the judgements it stood inside](#a-refusal-names-the-judgements-it-stood-inside)
 - [Native universe-path diagnostics](#native-universe-path-diagnostics)
 - [The one input is the step](#the-one-input-is-the-step)
 - [Every span is the producer's](#every-span-is-the-producers)
@@ -35,8 +36,8 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 | Entry streams | Declaration order, verb filtering and persistent exhaustion. Witnesses: `diagnostics::diagnostics::each_verb_prints_its_entries`, `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`. |
 | Ledger entries | Borrow the source path and add no framing terminator; literal path controls remain. The verb witness checks prefixes and semantic payloads through real walks. |
 | Classification and loci | Producer classes and origin families remain distinct. Witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`. |
-| Metadata | Refusal identifiers, title payloads, labelled context and the types a refusal compares are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`, `diagnostics::diagnostics::a_mismatch_label_spells_both_types`. |
-| Rendering | Refusal, unsettled and goal layouts have consumer-visible golden witnesses; pathless sources and duplicate-signature context have location assertions. |
+| Metadata | Refusal identifiers, title payloads, labelled context, the types a refusal compares and its nested reasons are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`, `diagnostics::diagnostics::a_mismatch_label_spells_both_types`, `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`. |
+| Rendering | Refusal, unsettled and goal layouts, and a refusal with nested reasons, have consumer-visible golden witnesses; pathless sources and duplicate-signature context have location assertions. |
 | Styling | Both terminal capabilities have exact style observations; forced styling preserves plain glyphs after removing backend SGR controls. Witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`. |
 
 ## Expected features
@@ -105,7 +106,29 @@ The alternative was the failure class as the label, which repeats what the title
 
 A checker refusal that sets a type against another — a type, sort, level or family-argument mismatch — or meets a type of the wrong shape names those types as nodes, and a type the checker synthesised has no origin to mark. The primary label therefore carries them after its text: ``its type does not convert: expected `Integer`, found `String` ``, ``its type is not of the required shape: found `Integer` ``. The types are the ones the dispatcher spelled at the judgement, through the printer the REPL and the language server's hover share, and `Report::comparison` exposes them as a `Comparison` of an expected and a found side, each absent when the refusal names no type there or none could be spelled on one line. A refusal that compares nothing keeps its label as it was.
 
-The alternatives were a note after the snippet, which the reader meets after the underline it explains, and the types in the title, which the checker's `Display` words without the spellings. Reversal: when nested reasons carry their own types, each reason's label spells its own and the primary label keeps only the failing comparison.
+The alternatives were a note after the snippet, which the reader meets after the underline it explains, and the types in the title, which the checker's `Display` words without the spellings. Each [nested reason](#a-refusal-names-the-judgements-it-stood-inside) spells the type its own judgement was checked against, so the primary label keeps only the failing comparison. Reversal: a type whose spelling needs more than one line, left unspelled today, moves to a note under the snippet.
+
+## A refusal names the judgements it stood inside
+
+A refused body's trail, kept by the dispatcher, is the value and computation judgements the refusal stood inside, outermost first. `Report::reasons` reads each one whose term the origin table locates as a `Reason`: the term's bytes and how it was judged — checked against a type, spelled where the dispatcher could spell it, or synthesised. The snippet marks each as a context locus labelled with a `while` clause, so a force of an integer inside a thunk renders as:
+
+```text
+error[ShapeMismatch]: the rule here requires a thunk type `+U C`
+  ╭▸ force.gandr:2:23
+  │
+2 │ def a = thunk { force 1 } ;
+  │         ┬───────┬─────┯──
+  │         │       │     │
+  │         │       │     its type is not of the required shape: found `Integer`
+  │         │       while checking this against `-F Integer`
+  │         while checking this against `+U (-F Integer)`
+  │
+  ╰ note: unsettled `a` states checks owing 0
+```
+
+A reason at the primary locus, or at bytes an outer reason already marks, says nothing the snippet does not, and is left out, so a body refused where it stands has none; a term with no origin is left out rather than located at a guess. The language server publishes the same reasons as related information.
+
+The alternatives were a `note: while …` line per reason after the snippet, which repeats the source position in prose where the snippet can point at it, and a reason per machine frame, which names the rule waiting on a subterm but not the subterm's own bytes. Reversal: a reason with no locus worth showing — a term only the lowering minted — becomes a note when a reader needs it.
 
 ## Native universe-path diagnostics
 
