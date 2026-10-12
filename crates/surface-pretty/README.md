@@ -9,6 +9,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 - [Examples](#examples)
 - [The input is a source](#the-input-is-a-source)
 - [One spelling per former](#one-spelling-per-former)
+- [Products and sums are one chain of their components](#products-and-sums-are-one-chain-of-their-components)
 - [Native universe paths](#native-universe-paths)
 - [Break points](#break-points)
 - [Binder names](#binder-names)
@@ -106,7 +107,7 @@ The printer asks one question of its input, the former at a node, through the `S
 
 ## One spelling per former
 
-Every former has exactly one spelling, the one the surface grammar parses, so a printed type reads back as the type it names: `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B` between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by name, and a decode as the code it reads; values are `unit`, literals with their canonical digits and escapes, `(a, b)`, `Inl(v)`, `Inr(v)`, the static abstraction `\a. v`, and a static application as its spine, `f(a, b)` for `f` applied to `a` and then to `b` ([type operators](../surface-grammar/README.md#type-operators-the-static-abstraction-and-the-value-function-space)). Binding strength follows the grammar's bands, tightest first: atoms, the bridges `+U` and `-F` ([the bridges and the universe](../surface-grammar/README.md#the-bridges-and-the-universe-are-built-in-spellings)), product, sum, arrow. Product and sum associate to the right and parenthesize a left operand of equal strength; an arrow's domain is bare up to a sum and its codomain bare. A static abstraction binds as loosely as an arrow, its body running to the right, and an application is an atom whose operator is parenthesized unless it is one, so a redex reads `(\a. a)(Integer)`. The value-function alias `(A, B) => C` is never printed: it lowers to `+U (A -> B -> -F C)`, and the printer writes what the core holds.
+Every former has exactly one spelling, the one the surface grammar parses, so a printed type reads back as the type it names: `Integer`, `String`, `Unit`, `Void`, `Bool`, `A * B * …`, `A + B + …`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B` between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by name, and a decode as the code it reads; values are `unit`, literals with their canonical digits and escapes, `(a, b)`, `Inl(v)`, `Inr(v)`, the static abstraction `\a. v`, and a static application as its spine, `f(a, b)` for `f` applied to `a` and then to `b` ([type operators](../surface-grammar/README.md#type-operators-the-static-abstraction-and-the-value-function-space)). Binding strength follows the grammar's bands, tightest first: atoms, the bridges `+U` and `-F` ([the bridges and the universe](../surface-grammar/README.md#the-bridges-and-the-universe-are-built-in-spellings)), product, sum, arrow. A product or a sum is written as one chain of its components, and a component of equal strength on either side is parenthesized; an arrow's domain is bare up to a sum and its codomain bare. A static abstraction binds as loosely as an arrow, its body running to the right, and an application is an atom whose operator is parenthesized unless it is one, so a redex reads `(\a. a)(Integer)`. The value-function alias `(A, B) => C` is never printed: it lowers to `+U (A -> B -> -F C)`, and the printer writes what the core holds.
 
 A node the surface has no spelling for — a lift, the numeric atom, a linear or unbound variable, a term where a type stands — is written `?`, and a thunk value `<thunk>`; each makes the presentation approximate. Fidelity is recorded by the nodes the walk met, so a name that happens to contain `?` stays faithful.
 
@@ -114,6 +115,13 @@ A right-nested arrow chain stays bare because the grammar parses it so. The REPL
 
 - **Alternatives.** A notation independent of the grammar would print text the surface cannot read back. Parenthesizing every compound operand is simpler to state but lengthens every chain.
 - **Reversal.** A ruled change to the grammar's spellings or bands; this crate follows it, never leads it.
+
+## Products and sums are one chain of their components
+
+The core's product and sum hold a list of components ([#134](https://github.com/gandr-lang/gandr/issues/134)), and the printer writes each as one chain: `A * B * C` is a 3-ary product, and a product written inside a product keeps its parentheses on either side, so `(A * B) * C` and `A * (B * C)` are the 2-ary products they are. The 0-ary product is `Unit`, the 0-ary sum `Void`, and the sum of two units `Bool`, the fixed names the lowering resolves. The 1-ary product and sum have no surface spelling yet and are written `?`. A `Former` counts the components rather than holding them, and the printer asks the source for each one by position (`Source::component`), because the core's components are value-type ids while its handles are `CoreNode`s; a component the source does not answer is written `?`.
+
+- **Alternatives.** A former holding its components' handles would need every source to keep them as a slice of its own handle type, which the core arena does not. Keeping the binary former and printing other arities as `?` would hide the n-ary types the core already holds.
+- **Reversal.** A spelling for the 1-ary product, which [#134](https://github.com/gandr-lang/gandr/issues/134) leaves open, gives it a case here. A source whose components are costly to reach one at a time, measured, answers them as a slice instead.
 
 ## Native universe paths
 

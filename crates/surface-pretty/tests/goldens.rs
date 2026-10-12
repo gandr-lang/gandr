@@ -48,6 +48,8 @@ mod tests
     use gandr_kernel_term::Side;
     use gandr_kernel_term::Sign;
     use gandr_kernel_term::StringLiteral;
+    use gandr_surface_pretty::Arity;
+    use gandr_surface_pretty::Component;
     use gandr_surface_pretty::CoreNode;
     use gandr_surface_pretty::CoreSource;
     use gandr_surface_pretty::DEPTH_LIMIT;
@@ -402,6 +404,20 @@ mod tests
         {
             self.0.get(node.0).copied().unwrap_or(Former::Unreadable)
         }
+
+        /// No component: a row holds its former alone, so a product or a sum
+        /// the table holds has every component missing.
+        ///
+        /// # Specification
+        /// trivial.
+        fn component(
+            &self,
+            _node: Row,
+            _index: Component,
+        ) -> Option<Row>
+        {
+            None
+        }
     }
 
     /// How a table's first row is read.
@@ -646,11 +662,62 @@ mod tests
         );
     }
 
+    /// A product or a sum of any arity spells as one chain of its components,
+    /// a written nesting parenthesized; the 0-ary product and sum spell
+    /// `Unit` and `Void`, and the sum of two units `Bool`.
+    #[test]
+    fn n_ary_products_and_sums_spell_as_one_chain()
+    {
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let string = core.value_type_base(BaseType::String);
+        let unit = core.value_type_product(&[]);
+        let void = core.value_type_sum(&[]);
+        let boolean = core.value_type_sum(&[unit, unit]);
+        let triple = core.value_type_product(&[integer, string, unit]);
+        let choice = core.value_type_sum(&[integer, string, void]);
+        let pair = core.value_type_product(&[integer, string]);
+        let nested = core.value_type_product(&[pair, integer, pair]);
+        let either = core.value_type_sum(&[integer, string]);
+        let mixed = core.value_type_sum(&[pair, either, triple]);
+        let flags = core.value_type_product(&[boolean, boolean]);
+        let not_bool = core.value_type_sum(&[unit, integer]);
+        let returns_choice = core.comp_type_returner(choice);
+        let source = CoreSource::new(&core, &[]);
+        for (root, spelling) in [
+            (CoreNode::ValueType(void), "Void"),
+            (CoreNode::ValueType(boolean), "Bool"),
+            (CoreNode::ValueType(triple), "Integer * String * Unit"),
+            (CoreNode::ValueType(choice), "Integer + String + Void"),
+            (
+                CoreNode::ValueType(nested),
+                "(Integer * String) * Integer * (Integer * String)",
+            ),
+            (
+                CoreNode::ValueType(mixed),
+                "Integer * String + (Integer + String) + Integer * String * Unit",
+            ),
+            (CoreNode::ValueType(flags), "Bool * Bool"),
+            (CoreNode::ValueType(not_bool), "Unit + Integer"),
+            (
+                CoreNode::CompType(returns_choice),
+                "-F (Integer + String + Void)",
+            ),
+        ] {
+            assert_eq!(
+                spelled(&source, Root::Type(root)),
+                faithful(Written(spelling)),
+                "{root:?} spells as one chain"
+            );
+        }
+    }
+
     /// Every value-type and computation-type former of the core spells as the
     /// grammar parses it: the two bridges with their operand parenthesized
-    /// unless atomic, product and sum right-associative with the product
-    /// binding tighter, the arrow's domain bare up to a sum, a decode as the
-    /// code it reads, and an abstract type by its name.
+    /// unless atomic, a product or a sum nested in either side of its own
+    /// former parenthesized, the product binding tighter, the arrow's domain
+    /// bare up to a sum, a decode as the code it reads, and an abstract
+    /// type by its name.
     #[test]
     fn every_type_former_spells_as_the_grammar_writes_it()
     {
@@ -702,7 +769,10 @@ mod tests
             (CoreNode::ValueType(accumulator), "Accumulator"),
             (CoreNode::ValueType(thunk), "+U (-F Integer)"),
             (CoreNode::CompType(returns_thunk), "-F (+U (-F Unit))"),
-            (CoreNode::ValueType(right_nested), "Integer * String * Unit"),
+            (
+                CoreNode::ValueType(right_nested),
+                "Integer * (String * Unit)",
+            ),
             (
                 CoreNode::ValueType(left_nested),
                 "(Integer * String) * Unit",
@@ -719,7 +789,7 @@ mod tests
                 CoreNode::ValueType(sum_then_product),
                 "(Integer + String) * Unit",
             ),
-            (CoreNode::ValueType(sum_chain), "Integer + String + Unit"),
+            (CoreNode::ValueType(sum_chain), "Integer + (String + Unit)"),
             (CoreNode::ValueType(sum_left), "(Integer + String) + Unit"),
             (
                 CoreNode::ValueType(thunk_in_product),
@@ -971,6 +1041,12 @@ mod tests
             ),
             (vec![Former::ThunkType(Row(7))], Reading::AsType, "+U ?"),
             (Vec::new(), Reading::AsType, "?"),
+            // A product whose components the source does not answer.
+            (
+                vec![Former::Product(Arity::from(3_usize))],
+                Reading::AsType,
+                "? * ? * ?",
+            ),
             (
                 vec![Former::ThunkType(Row(1)), Former::Arrow {
                     domain: Row(0),

@@ -13,6 +13,8 @@ use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
 
+use crate::former::Arity;
+use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Source;
@@ -238,13 +240,10 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
         (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown) | None,
 Former::Unreadable) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
-        | (Some(&ValueType::Product(ref parts)), Former::UnitType) => parts.is_empty(),
-        | (Some(&ValueType::Product(ref parts)), Former::Unreadable) => !matches!(parts.len(), 0 | 2),
-        | (Some(&ValueType::Sum(ref parts)), Former::Unreadable) => parts.len() != 2,
+        | (Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)), Former::Unreadable) => parts.len() == 1,
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
-        | (Some(&ValueType::Product(ref parts)), Former::Product(actual_first, actual_second))
-        | (Some(&ValueType::Sum(ref parts)), Former::Sum(actual_first, actual_second)) =>
-            [actual_first, actual_second].into_iter().eq(parts.iter().map(|&part| CoreNode::ValueType(part))),
+        | (Some(&ValueType::Product(ref parts)), Former::Product(arity))
+        | (Some(&ValueType::Sum(ref parts)), Former::Sum(arity)) => parts.len() != 1 && usize::from(arity) == parts.len(),
         | (Some(&ValueType::List(element)), Former::List(actual)) => actual == CoreNode::ValueType(element),
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
@@ -271,21 +270,12 @@ Former::Unreadable) |
             | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
                 Former::Unreadable
             },
-            | ValueType::Product(ref parts) => match **parts {
-                | [] => Former::UnitType,
-                | [first, second] => {
-                    Former::Product(CoreNode::ValueType(first), CoreNode::ValueType(second))
-                },
-                // A product of any other arity has no spelling yet.
-                | _ => Former::Unreadable,
+            // The 1-ary product and sum have no spelling yet.
+            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) if parts.len() == 1 => {
+                Former::Unreadable
             },
-            | ValueType::Sum(ref parts) => match **parts {
-                | [first, second] => {
-                    Former::Sum(CoreNode::ValueType(first), CoreNode::ValueType(second))
-                },
-                // A sum of any other arity has no spelling yet.
-                | _ => Former::Unreadable,
-            },
+            | ValueType::Product(ref parts) => Former::Product(Arity::from(parts.len())),
+            | ValueType::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             | ValueType::Stack { input, output } => {
                 Former::Stack(CoreNode::CompType(input), CoreNode::CompType(output))
             },
@@ -420,9 +410,9 @@ impl Source for CoreSource<'_>
             | Former::Reify | Former::ListNil | Former::ListCons(..)
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
             | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
-        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::UnitType | Former::Product(..)
+        | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::Product(_)
             | Former::Stack(..) | Former::List(_)
-            | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
+            | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
             | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Unreadable),
         | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. } | Former::Pi { .. }
             | Former::With(..) | Former::ComputationElement(_) | Former::Unreadable),
@@ -465,14 +455,61 @@ impl Source for CoreSource<'_>
             | CoreNode::CompType(id) => self.comp_type(id),
         }
     }
+
+    /// The handle of component `index` of the product or the sum `node`
+    /// names in the arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value type at `index` among a held product's or sum's
+    ///   components; none for an index past them, another former, another
+    ///   family or a missing handle.
+    /// - provides: the printer's reading of an n-ary product or sum.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the golden chains read every component of products
+    ///   and sums of arity two and three in order; a direct read past the arity
+    ///   and of a non-product observes the absence.
+    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
+    /// - witness: `core_source::tests::components_read_in_order_and_stop_at_the_arity`
+    #[spec(ensures: |ret| ret == match node {
+        | CoreNode::ValueType(id) => match self.arena.value_type(id) {
+            | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => parts.get(usize::from(index)).map(|&part| CoreNode::ValueType(part)),
+            | _ => None,
+        },
+        | CoreNode::Value(_) | CoreNode::Computation(_) | CoreNode::CompType(_) => None,
+    })]
+    #[inline]
+    fn component(
+        &self,
+        node: CoreNode,
+        index: Component,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::ValueType(id) = node
+        else {
+            return None;
+        };
+        match *self.arena.value_type(id)? {
+            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts
+                .get(usize::from(index))
+                .map(|&part| CoreNode::ValueType(part)),
+            | _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
+    use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::DeBruijnIndex;
 
+    use super::Component;
     use super::ConstantIndex;
     use super::CoreArena;
     use super::CoreNode;
@@ -505,7 +542,7 @@ mod tests
         ));
         assert!(matches!(
             source.read(CoreNode::ValueType(value_type)),
-            Former::UnitType
+            Former::Product(arity) if usize::from(arity) == 0
         ));
         assert!(
             matches!(source.read(CoreNode::CompType(comp_type)), Former::Returner(body)
@@ -521,6 +558,54 @@ mod tests
         ] {
             assert!(matches!(source.read(node), Former::Unreadable));
         }
+    }
+
+    /// A product's and a sum's components read in order, and nothing reads
+    /// past the arity or below another former.
+    #[test]
+    fn components_read_in_order_and_stop_at_the_arity()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unit = arena.value_type_product(&[]);
+        let product = arena.value_type_product(&[integer, string, unit]);
+        let sum = arena.value_type_sum(&[string, integer]);
+        let returns = arena.comp_type_returner(product);
+        let source = CoreSource::new(&arena, &[]);
+        let read = |node: ValueTypeId, index: usize| {
+            source.component(CoreNode::ValueType(node), Component::from(index))
+        };
+        assert!(matches!(
+            source.read(CoreNode::ValueType(product)),
+            Former::Product(arity) if usize::from(arity) == 3
+        ));
+        assert_eq!(
+            [
+                read(product, 0),
+                read(product, 1),
+                read(product, 2),
+                read(product, 3)
+            ],
+            [
+                Some(CoreNode::ValueType(integer)),
+                Some(CoreNode::ValueType(string)),
+                Some(CoreNode::ValueType(unit)),
+                None
+            ]
+        );
+        assert_eq!([read(sum, 0), read(sum, 1), read(sum, 2)], [
+            Some(CoreNode::ValueType(string)),
+            Some(CoreNode::ValueType(integer)),
+            None
+        ]);
+        assert_eq!(read(unit, 0), None, "the unit has no component");
+        assert_eq!(read(integer, 0), None, "a base type has no component");
+        assert_eq!(
+            source.component(CoreNode::CompType(returns), Component::from(0_usize)),
+            None,
+            "a computation type has no component"
+        );
     }
 
     /// Admission position, not the first available name, governs both named
