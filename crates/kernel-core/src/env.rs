@@ -68,6 +68,36 @@
 //! resolves its mark too. A producer that drops a [`StagedDeclaration`] without
 //! doing any of those keeps its content in the arena, and the mark keeps saying
 //! so, which is why the refusal is a producer-visible fact rather than a leak.
+//!
+//! Before a borrowing session finishes, both explicit discard and ordinary
+//! scope exit roll back its builder and release its final registration. The
+//! claim guard holds only the exclusive tracker borrow: no intervening
+//! registration is possible, so release pops that final entry without an
+//! allocation, state flag or duplicate watermark. All four finishers disarm
+//! the guard when responsibility passes to the [`StagedDeclaration`].
+//! [`Environment::abandon`] truncates when nothing outstanding sits above the
+//! mark and otherwise retains the region as an orphan, the same clamp a
+//! rejection takes. "Above" is componentwise rather than lexicographic,
+//! because truncation is per family. Removing the outstanding-content guard
+//! from `add_decl` is caught by the witness that the later staging's root
+//! still resolves after the refusal.
+//!
+//! # Receipts and the audit
+//!
+//! A [`CheckedId`] names a position, not an environment identity; it is
+//! meaningful only with the admission history it came from, which the
+//! position alone cannot establish. [`Environment::add_decl_unchecked`]
+//! performs no checking: the caller vouches for the declaration, a wrong one
+//! can make the kernel prove anything, and the audit reports every
+//! declaration that rests on it.
+//!
+//! **The audit follows types and terms.** A declaration can depend on a
+//! sealed atom, a nominal declaration and its schema, or constants reached
+//! through code and nominal arguments. A quote crosses back from a value to
+//! its type. The dependency walk therefore follows both languages and every
+//! variadic native child. Sealing provenance remains a separate question —
+//! which sealed atoms did a projection rebind? — and does not become more
+//! permissive by following ordinary code dependencies.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

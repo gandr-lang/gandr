@@ -1,4 +1,45 @@
 //! The decision vocabulary: which side reduced, and which branch was taken.
+//!
+//! The vocabulary is at the grain of a proof search. `Unfold`, `Postpone`,
+//! `Force` and `ComparedShared` suffice for a heuristic unfolding strategy;
+//! `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Freeze`, `EtaExpand` and
+//! `NegativeSubgoal` add the side of every reduction, the branch taken at
+//! every choice point and the premise every refutation of a decomposition
+//! rests on, which a search-free replay needs. `Unfold` and `Postpone` are the
+//! two outcomes of one unfolding choice. The variants are those of
+//! [`ConversionDecision`].
+//!
+//! # The refuted premise
+//!
+//! `NegativeSubgoal` carries the one premise a refutation of a decomposition
+//! rests on. A decomposition — two applications of one rigid head, or two
+//! formers compared child by child — is refuted by any one premise, and the
+//! rule that refutes it has that one premise and no other. A replay that met
+//! the decomposition with no position would have to try every premise until
+//! one refuted, which is search; the position names the premise, so the replay
+//! checks one.
+//!
+//! **Alternatives.** Emit the refuted premise alone and let the replay find
+//! where it fits, which is the same search moved one step; or emit every
+//! premise's derivation, which would make a refutation as long as the
+//! agreement it contradicts. **Reversal.** A replay that can locate the
+//! refuted premise from the terms without trying the others, which would make
+//! the position redundant.
+//!
+//! # Structural selection and sides
+//!
+//! `Decompose` selects a structural rule before the next child dialogue. It
+//! preserves paired-trace boundaries when a component begins with
+//! `ComparedShared`: that shortcut must not close the enclosing pair instead.
+//! The consumer checks that the current goal has structural premises; it
+//! refuses the decision at leaves and at goals requiring unfolding, force or
+//! eta.
+//!
+//! [`ConversionSide`] is a type. `Freeze` records which side froze and
+//! `EtaExpand` which side was applied to the fresh variable; `ReduceLeft` and
+//! `ReduceRight` carry the side structurally. A trace whose side is implicit
+//! cannot be replayed without searching for it, and search-free replay is what
+//! the seam exists to deliver.
 
 /// Which of the two compared terms a one-sided decision acted on.
 ///

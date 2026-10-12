@@ -3,6 +3,53 @@
 //! The producer supplies every related pair. Replay checks local obligations
 //! and set membership; it never generates a candidate relation or unfolds a
 //! recursive type to a fixed point. Payload paths are ordinary checker goals.
+//!
+//! # Session codes
+//!
+//! `ValueType::Session` is a finite protocol-code graph whose payload codes
+//! are the parts of one n-ary product. Formation checks rooted syntax, lexical
+//! binders, immediate action guards, reachable states and payload slots;
+//! payload codes form in an empty term context. Mu and Var edges resolve
+//! within the finite graph. No endpoint or channel values enter the kernel,
+//! and no linearity is certified.
+//!
+//! **Choice.** Session and first-order codes share the value universe, with
+//! finite formation and replay in the trusted base. **Alternative.** A
+//! `gandr-core-session` library decision alone supplies no kernel
+//! certificate; trusting its Boolean answer would move search into admission.
+//! **Reversal.** A combined universe shown non-conservative beyond what finite
+//! replay can fence requires a separate protocol stratum. Finite witnesses
+//! establish no combined-universe conservativity theorem, live endpoint
+//! ownership, FIFO correlation or infinite-run productivity.
+//!
+//! # Identity
+//!
+//! `Value::SessionPath` introduces native `Path_U` by local bisimulation
+//! replay over supplied observable pairs, including extras. The kernel
+//! requires the root and continuation pairs, matching action directions, equal
+//! labels, and structurally equal payload codes or checked native payload
+//! paths. It never performs coinductive search; `gandr-core-session` supplies
+//! candidate relations. Admission keys commit all evidence even though
+//! conversion erases derivation pairs.
+//!
+//! # Directed flows
+//!
+//! `Flow::Session` checks Gay–Hole subtyping: source selections are a subset
+//! of target selections; target offers are a subset of source offers. Each
+//! consumer rechecks formation, simulation and payload proofs. This is
+//! forward-only evidence with no inverse or Path coercion. CBPV lowering
+//! refuses it as `RecordedRunRequired`; the recorded-run consumer in
+//! `gandr-core-session` supplies finite skeleton transport. Relation replay
+//! terminates over finite supplied data, not an observation budget that could
+//! declare an unfinished relation valid.
+//!
+//! # Witnesses
+//!
+//! The witnesses target session formation, relation replay, native
+//! traversal/content keys and recorded transport: omitted roots or
+//! continuations, wrong directions and label inclusions, escaped binders,
+//! unchecked payload paths, evidence-key collisions, dropped moves and changed
+//! digests. The memo's six binding conditions are unchanged.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

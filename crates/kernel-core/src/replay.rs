@@ -1,6 +1,15 @@
 //! **Conversion replay**: the kernel's sequential recheck of a conversion
 //! engine's trace, under a three-valued verdict.
 //!
+//! Term conversion with δ-, β- and η-rules is proof search, and a concurrent
+//! search is too large to trust. Courant and Leroy instrument their checker to
+//! emit a trace of its decisions and recheck the trace sequentially
+//! (Nathanaëlle Courant and Xavier Leroy, "A Lazy, Concurrent Convertibility
+//! Checker", POPL 2026, §9, `doi:10.1145/3776695`). [`replay()`] is that
+//! recheck: the engine's search stays outside the trusted base, and what the
+//! kernel trusts is a loop that fires every step itself and reads the trace
+//! only where a rule leaves a choice.
+//!
 //! # What the replay trusts, and what it does not
 //!
 //! An engine outside the trusted base decides conversion by a concurrent search
@@ -61,6 +70,69 @@
 //! Every loop is iterative over an explicit stack, and every step the replay
 //! takes is charged to a [`ReplayBudget`], so a trace of any length and a term
 //! that reduces forever both end in a verdict.
+//!
+//! A `ComparedShared` met at a decomposable goal closes that goal when it can
+//! and otherwise passes to the first premise; the engine emits an agreeing
+//! decomposition it settled equal as that one closing, so the two readings
+//! coincide.
+//!
+//! # Codes and static operators
+//!
+//! The replay closes a comparison of two codes as the untrusted engine's
+//! shared comparison does: α-equal codes convert, codes whose quoted types
+//! hold nothing that could still unfold are apart, and any other pair is
+//! refused rather than guessed at. Rigidity reads through quoted types and the
+//! codes they decode, so the engine's verdict of apart is one the kernel
+//! reaches in its own terms.
+//!
+//! A static definition's certificate unfolds one instance of an operator.
+//! [`Unfoldable::Operator`] hands the replay the operator's body with its
+//! [`ParameterCount`] binders stripped, the innermost binder its last
+//! parameter; unfolding a value headed by it instantiates the binders at the
+//! side's first arguments, innermost first, each argument shifted past the
+//! parameters still standing outside it, and keeps any further applications
+//! over the reduct. A body standing at a static spine keeps the spine. An
+//! operator short of its arguments has no reduct and refuses as unreadable. A
+//! kernel static lambda would turn this δβ into a δ-step followed by a β-rule
+//! at values, owing a reduction the kernel otherwise never fires; stripping
+//! the binders keeps the substitution the kernel already trusts for
+//! computations as the only rewrite. When a static lambda arrives (see
+//! `gandr-kernel-term`), the operator unfolding becomes a body unfolding and
+//! the weak head form fires static β like the computational one.
+//!
+//! # Alternatives and reversal
+//!
+//! **Alternatives.** Running the engine's search inside the kernel would
+//! certify by trusting the search. Trusting the engine's verdict would certify
+//! nothing. Replaying a refuted decomposition without its negative subgoal
+//! means trying every premise, which is search. Memoizing replayed
+//! sub-derivations would let a trace refer back to a shared one; the engine
+//! emits a derivation shared by two parents once under each, so the trace is
+//! the derivation's expansion as a tree and the replay needs no table.
+//!
+//! **Reversal.** A back-reference decision, with a replay-side table keyed on
+//! the goal it names, replaces the expansion once a measured trace of a deeply
+//! shared proof outgrows the replay budget. A closing the kernel cannot
+//! reproduce, because the engine's structural equality and the kernel's
+//! α-equality disagree on a pair, shows up as a refusal on an engine trace and
+//! moves the tie-break into the vocabulary.
+//!
+//! # Laws and evidence
+//!
+//! The unit and purity specifications, their named witnesses and the
+//! goal-refinement composition shape live on [`replay()`]. [`KernelVerdict`]
+//! carries the refusal class table and the certified fragment's
+//! partial-equivalence scope. The `replay_laws` integration test generates 256
+//! recipes, checking each claim twice and in a cloned arena, with exact
+//! unit-law goldens and rollback checks.
+//!
+//! **Property-test dependency.** Dev-only `proptest` uses the workspace's 1.11
+//! version range, defaults off and only `std` for generation, shrinking and
+//! persistence. It reuses the workspace's runner without expanding the shipped
+//! kernel dependencies. The `quickcheck` crate would add a second runner;
+//! hand-written enumeration would lose shrinking of generated term recipes.
+//! Reconsider on an unmaintained release, a high-risk advisory or a need the
+//! existing strategy API cannot express.
 
 use alloc::vec::Vec;
 use core::iter::Peekable;

@@ -1,4 +1,32 @@
 //! Native nominal signatures, capture-avoiding instantiation and case motives.
+//!
+//! Data admission forms each parameter beneath its predecessors, then every
+//! constructor field beneath all parameters, and checks their universe bound.
+//! Only the already admitted prefix and the declaration's own family are
+//! visible; the sibling `occurrence` module states when a self occurrence is
+//! admitted. The declaration's identity is generative and cannot synthesize as
+//! an ordinary value constant.
+//!
+//! A nominal application checks its argument telescope. A constructor must
+//! name that application, a declared tag and exactly its declared fields.
+//! Data elimination checks a motive under one scrutinee binder and exact
+//! constructor coverage; each ambient branch is checked as a function of its
+//! constructor fields returning the instantiated motive. Empty data admits an
+//! empty branch list without inventing a constructor or losing the surrounding
+//! context.
+//!
+//! Records admit directional width and recursive depth assignment. Conversion
+//! still requires the same labels. Projection checks the record and reports a
+//! missing field rather than selecting by position. Nominal argument
+//! conversion is invariant structural value equality; it performs no beta,
+//! delta or eta search. The frontend observes this same boundary.
+//!
+//! **Choice.** Ordinary checked declarations and native term nodes, rather
+//! than opaque axioms or an encoding that loses nominal identity.
+//! **Reversal.** Variance annotations and definitional index conversion need
+//! explicit formation or replay rules. The seven `native_formers` integration
+//! witnesses cover admission, refusals, dependent arguments and motives,
+//! record assignment and canonical artifact reconstruction.
 
 use alloc::vec::Vec;
 

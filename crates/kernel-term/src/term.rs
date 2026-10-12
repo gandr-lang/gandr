@@ -26,8 +26,48 @@
 //! explicitly; the format's deduplication is keyed on encoded content, never on
 //! a node's derived equality.
 //!
+//! # Nominal data and structural records
+//!
+//! [`DeclarationContent::Data`] carries parameter classifiers, constructor
+//! field lists and a universe kind; its declaration-kind byte is
+//! [`KIND_DATA`]. A nominal application names the admitted declaration and
+//! retains every argument as a value child; a constructor carries its complete
+//! classifier, tag and fields. A case carries its scrutinee, a motive binding
+//! that scrutinee and ambient branch functions. Record types and values carry
+//! fields in strictly increasing UTF-8 label order; projection carries one
+//! label and its record value.
+//!
+//! These six nodes use counted arities where their children vary. Canonical
+//! encoding includes counts, labels and every child, including empty records
+//! and nullary constructors. Decoding rejects malformed ordering, lengths and
+//! child families; it grants no typing authority. Ordinary kernel admission
+//! checks the reconstructed declaration, and `gandr-kernel-core`'s
+//! `native_declarations_and_eliminators_survive_canonical_decode` exercises
+//! that complete path.
+//!
+//! A recursive declaration needs no new framing: a field naming its own family
+//! is an ordinary nominal application whose declaration index is the
+//! declaration's own position. Admission, not the reader, decides whether that
+//! occurrence is strictly positive and uniform. The fixpoint carries one
+//! evidence byte, [`FIXPOINT_PARTIAL`] or [`FIXPOINT_STRUCTURAL_DESCENT`], then
+//! one computation child: its body under the self binder. Any other evidence
+//! byte is refused as an unknown tag at the evidence site. The byte records a
+//! claim kernel admission replays; decoding it grants nothing. The encoder's
+//! entry goldens and the decoder's former-preservation witness pin both bytes.
+//!
+//! **Choice.** Native identity and field structure, not atom names or product
+//! offsets. New node and declaration-kind bytes extend the closed vocabulary
+//! without changing existing byte meanings, so they hold the version.
+//! **Reversal.** A changed framing or reassigned meaning requires a version
+//! change; mutual blocks, indexed families and further conversion evidence
+//! need explicit new readers.
+//!
 //! [`ValueId`]: crate::ValueId
 //! [`ComputationId`]: crate::ComputationId
+//! [`DeclarationContent::Data`]: crate::DeclarationContent::Data
+//! [`KIND_DATA`]: crate::KIND_DATA
+//! [`FIXPOINT_PARTIAL`]: crate::FIXPOINT_PARTIAL
+//! [`FIXPOINT_STRUCTURAL_DESCENT`]: crate::FIXPOINT_STRUCTURAL_DESCENT
 
 use anodized::spec;
 use gandr_kernel_strata::Level;

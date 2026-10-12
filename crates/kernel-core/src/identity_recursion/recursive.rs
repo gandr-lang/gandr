@@ -5,6 +5,49 @@
 //! for Nil or `inr head` for Cons, whose recursive coordinate is the guarded
 //! tail edge. A Nil never observes its tail. Redirect consumes work without
 //! exposing a constructor. No infinite observation enters native conversion.
+//!
+//! The native List former represents the finite, strictly positive code
+//! `μX. Unit + A × X`, at A's universe level, without unfolding a recursive
+//! type graph; the guarded observation language here is separate from its
+//! native nil, cons and pure fold. `Relation::observe_lists` uses the same
+//! fold's element relation, returns Unit only after both finite spines end,
+//! and returns Empty at the first differing head or constructor. Neither
+//! verdict validates an unobserved tail.
+//!
+//! One shared `ReplayBudget` counts both graphs' Guard and Redirect visits. A
+//! constructor pair costs two instructions; a list of length n compared
+//! through Nil costs 2(n + 1). Returned progress includes the terminal or
+//! distinguishing constructor. Element checking and each CBPV replay retain
+//! separate finite bounds; this is an observation count, not a global work
+//! theorem.
+//!
+//! `ListEquivalence::form` checks an element equivalence and lifts its forward
+//! and inverse maps constructorwise. Nil is fixed; Cons maps its head and
+//! delays the tail. Finite-list round trips follow by spine induction from the
+//! checked element round trips. Transport rechecks that raw certificate,
+//! replays each claimed head output, preserves constructors and consumes
+//! precisely one dialogue per Cons. Bool negation computes on empty, singleton
+//! and three-element lists through the same rule.
+//!
+//! `Refusal` retains the `NonProductive` verdict for constructor-free cycles
+//! and `DepthBound` for exhausted observations, together with completed depth
+//! and visited instructions. A productive infinite spine still returns
+//! `DepthBound`: productivity does not establish a finite equality decision.
+//! There is no uncertified-stratum error and no recursive conversion rule.
+//!
+//! **Choice.** A native finite List former plus borrowed guarded observations
+//! keeps code identity decidable and list observations incremental.
+//! **Alternatives.** Eager unfolding cannot retain an unobserved tail;
+//! recursive Rust data would compromise bounded stack use. **Reversal.**
+//! General strictly positive descriptions require their own constructor,
+//! substitution and persistence rules; this observation surface supports the
+//! List fixed point and first-order element observations.
+//!
+//! **Adequacy.** The witnesses distinguish swapped constructor branches,
+//! dropped heads, eager tail reads, missing instruction charges, false
+//! productivity, truncated coverage, corrupt transport dialogues and
+//! finite-depth success on infinite input. No mutation campaign or
+//! infinite-coherence theorem is claimed.
 
 use alloc::collections::BTreeSet;
 use core::fmt;

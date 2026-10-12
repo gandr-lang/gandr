@@ -19,7 +19,9 @@
 //! the declared type, a context slot, a synthesized type, an expected type
 //! flowing into a check. Eliminating a type former is a read of its child ids.
 //! Synthesized types are minted into the arena as checker intermediates, which
-//! the admission choke point truncates after the verdict.
+//! the admission choke point truncates after the verdict. Node reads borrow
+//! arena storage; frames retain the child ids and levels synthesized types
+//! need, without cloning literal payloads merely to dispatch a rule.
 //!
 //! # Terms live in types, and four rules rest on it
 //!
@@ -132,6 +134,113 @@
 //! different type parameter** rather than a second implementation — which is
 //! what makes the differential a genuine one and what makes the memoless path a
 //! permanent rollback target rather than dead code.
+//!
+//! # The dependent arrow and the drain
+//!
+//! The dependent arrow forms at the join of its children like the
+//! non-dependent one, and a lambda checks against the domain slot its codomain
+//! is written against. Universe decoding makes a type depend on a code value.
+//! Native nominal applications also carry term arguments, checked against the
+//! declaration's parameter telescope; these are invariant typed indices, not
+//! implicitly decoded type arguments.
+//!
+//! **The carried level keeps the two machines apart.** The former names the
+//! universe it is read out of, so type formation is a lookup rather than an
+//! inference, and the obligation formation cannot discharge — that the code
+//! inhabits that universe — is recorded rather than pursued. The drain carries
+//! a ceiling derived from the format's subterm-table cap, because a drained
+//! check can form a synthesized type and owe more codes, so the loop's bound
+//! is not the artifact's own size.
+//!
+//! A type synthesized under the binder of a bind or a case branch is
+//! strengthened by instantiating the binder's variable at the index one past
+//! the outer context, which nothing outside the binder can name; the reach
+//! walk refuses the result as [`KernelError::BinderEscape`] when that index
+//! survives — exactly when the type mentioned the bound value. A dedicated
+//! occurrence walk would answer the same question as a third machine; the
+//! instantiation and the reach walk already answer it.
+//!
+//! # Universe families, codes and the lift
+//!
+//! **Two universes, one rule.** The universe of value types and the universe
+//! of computation types each form one level above the level they carry, as
+//! value types: a code is a value whichever family it decodes into. A sealed
+//! atom's kind must be the value universe, because an atom is a value type. A
+//! quote synthesizes the universe of its family at its quoted type's own
+//! level, by calling the formation walk directly, as the lift's frame does;
+//! the computation decode owes its code against the computation universe
+//! exactly as the value decode owes its code against the value universe,
+//! through the same deferred obligation.
+//!
+//! **No cumulativity; the lift is written.** A code inhabits exactly the
+//! universe at its type's level, so a code bound for a larger universe reaches
+//! the kernel as the quote of an explicit `Lift`, and the formation walk's
+//! strictness check on that lift is the kernel's smallness check. The producer
+//! decides smallness at the site it checks and writes the lift at
+//! readmission; the kernel trusts neither the decision nor the level. The
+//! alternative, a cumulative universe rule in conversion or in checking, would
+//! make conversion directional and put subtyping into the trusted base; the
+//! reversal condition is a measured cost of the written lifts that a
+//! subsumption rule would remove.
+//!
+//! **Codes compare by their quoted types.** Structural conversion compares two
+//! quotes by the types they quote; [`replay`](mod@crate::replay) states how a
+//! replayed comparison of two codes closes. Conversion fires no reduction, so
+//! a producer hands the kernel reduced codes to avoid a refusal.
+//!
+//! # Static operators
+//!
+//! **Formation.** A static Pi forms only over static classifiers — a universe
+//! of either sort, or a static Pi — and refuses any other child as
+//! `StaticClassifierExpected`. It forms at the join of its children's levels
+//! and is a value type, so an operator is a value whatever it builds. The
+//! check reads each child's head; a static Pi child is formed by the walk in
+//! turn, so every leaf of a curried classifier is reached.
+//!
+//! **Application.** A static application synthesizes: its head synthesizes a
+//! static Pi, its argument checks against the domain, and it produces the
+//! codomain, which binds nothing. A head of any other type refuses as
+//! `ValueShapeMismatch` expecting a static Pi. Every static application the
+//! kernel admits is neutral: there is no static lambda for it to meet.
+//! Structural conversion compares two static applications head to head and
+//! argument to argument, and a static Pi by its two children.
+//!
+//! **Alternatives.** A dependent static Pi would need a substitution at every
+//! synthesis; no former at this vocabulary is indexed by a static argument.
+//! The static lambda's absence and its reversal are recorded in
+//! `gandr-kernel-term`, and the replay's operator unfolding in
+//! [`replay`](mod@crate::replay).
+//!
+//! # Native List
+//!
+//! `List A` is a built-in finite former beside nominal data and records. Its
+//! introductions and pure right fold participate in ordinary declaration
+//! checking, readmission, encoding, substitution and normalization. They are
+//! not a Sum encoding and add no effects to the kernel.
+//!
+//! | Former | Typing and computation |
+//! | ------ | ---------------------- |
+//! | `List A` | Forms at the universe level of `A`; conversion compares element types. |
+//! | `nil` | Checks at any expected `List A`; does not synthesize an element type. |
+//! | `cons head tail` | Checks `head : A` and `tail : List A`; malformed tails and Sum injections refuse. |
+//! | `fold[A, B] list on_nil on_cons` | Forms both annotations, checks `list : List A`, and synthesizes `F B`. The empty branch checks at `F B` in the ambient context. The cell branch checks beneath `head : A` then `folded : B`, with capture-avoiding shifts of the ambient types. Nil reduces to `on_nil`; cons folds its tail before entering `on_cons`. |
+//!
+//! The two cell binders are ordered: folded result is index zero, head is
+//! index one. Substitution protects both binders and any outer context. A
+//! neutral list retains its fold rather than fabricating a result. Checking
+//! and replay use the iterative machines, not recursive host-language list
+//! ownership. The fold carries its element and result annotations so the
+//! eliminator synthesizes.
+//!
+//! **Choice.** Complete the represented List former instead of translating it
+//! into sums or nominal declarations; the kernel needs no host operations or
+//! effect rows for this eliminator. **Reversal.** Dependent motives or general
+//! strictly positive descriptions require their own formation, binding and
+//! replay rules; neither is implied by this pure fold. The
+//! `native_list_introductions_and_fold_check` and
+//! `native_list_fold_reduces_without_capturing_outer_variables` witnesses
+//! exercise native typing, refusals and reduction; `gandr-kernel-term`'s tag
+//! table assigns the persisted syntax.
 
 use alloc::vec::Vec;
 

@@ -170,7 +170,6 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude,glob)crates/README.md' \
   ':(exclude,glob)crates/*/README.md' \
   ':(exclude,glob)contrib/*/README.md' \
-  ':(exclude)AGENTS.md' \
   ':(exclude)crates/core-checker/data-record-floor.md' \
   ':(exclude)crates/core-checker/docs/effects.md' \
   ':(exclude)crates/core-checker/docs/holes.md' \
@@ -183,13 +182,6 @@ outside=$(git ls-files -- '*.md' \
   ':(exclude)crates/core-nbe/docs/sharing.md' \
   ':(exclude)crates/core-nbe/docs/staging.md' \
   ':(exclude)crates/core-nbe/docs/trace-pairing.md' \
-  ':(exclude)crates/kernel-core/docs/admission.md' \
-  ':(exclude)crates/kernel-core/docs/conversion-replay.md' \
-  ':(exclude)crates/kernel-core/docs/identity-recursion.md' \
-  ':(exclude)crates/kernel-core/docs/native-list.md' \
-  ':(exclude)crates/kernel-core/docs/recursive-data.md' \
-  ':(exclude)crates/kernel-core/docs/session-certificates.md' \
-  ':(exclude)crates/kernel-core/docs/staging.md' \
   ':(exclude)crates/surface-lowering/docs/attributes.md' \
   ':(exclude)crates/surface-lowering/docs/descriptions.md' \
   ':(exclude)crates/surface-lowering/docs/modules.md' \

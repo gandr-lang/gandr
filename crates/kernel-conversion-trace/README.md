@@ -9,12 +9,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [The decision vocabulary](#the-decision-vocabulary)
-- [Portable path dialogues](#portable-path-dialogues)
-- [Static dispatch](#static-dispatch)
-- [Traces and equality](#traces-and-equality)
-- [Exhaustive matching](#exhaustive-matching)
-- [Specification attributes](#specification-attributes)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 <!-- tocstop -->
@@ -57,43 +52,9 @@ cargo nextest run -p gandr-kernel-conversion-trace
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-conversion-trace
 ```
 
-## The decision vocabulary
+## Where the detail lives
 
-The vocabulary is at the grain of a proof search. `Unfold`, `Postpone`, `Force` and `ComparedShared` suffice for a heuristic unfolding strategy; `ReduceLeft`, `ReduceRight`, `ConstShortcut`, `Freeze`, `EtaExpand` and `NegativeSubgoal` add the side of every reduction, the branch taken at every choice point and the premise every refutation of a decomposition rests on, which a search-free replay needs. `Unfold` and `Postpone` are the two outcomes of one unfolding choice.
-
-`NegativeSubgoal` carries the one premise a refutation of a decomposition rests on. A decomposition — two applications of one rigid head, or two formers compared child by child — is refuted by any one premise, and the rule that refutes it has that one premise and no other. A replay that met the decomposition with no position would have to try every premise until one refuted, which is search; the position names the premise, so the replay checks one. The alternatives were to emit the refuted premise alone and let the replay find where it fits, which is the same search moved one step, or to emit every premise's derivation, which would make a refutation as long as the agreement it contradicts. The reversal condition is a replay that can locate the refuted premise from the terms without trying the others, which would make the position redundant.
-
-`Decompose` selects a structural rule before the next child dialogue. It preserves paired-trace boundaries when a component begins with `ComparedShared`: that shortcut must not close the enclosing pair instead. The consumer checks that the current goal has structural premises; it refuses the decision at leaves and at goals requiring unfolding, force or eta.
-
-`ConversionSide` is a type. `Freeze` records which side froze and `EtaExpand` which side was applied to the fresh variable; `ReduceLeft` and `ReduceRight` carry the side structurally. A trace whose side is implicit cannot be replayed without searching for it, and search-free replay is what the seam exists to deliver.
-
-## Portable path dialogues
-
-`kernel-term::PathEvidence` persists this vocabulary with unit anchors, source and target dialogue boundaries, and ordered decision words. The kernel reconstructs every replay obligation from typed terms; a stored trace is not an admission receipt. `Dialogue::pair` in `kernel-core` prefixes two `Decompose` decisions before concatenating returner component traces, so a component’s closing shortcut cannot accidentally discharge the enclosing pair.
-
-**Choice.** One decision alphabet for ordinary conversion and the computations that native paths, higher fields, funext and `Flow_U` replay. A separate certificate protocol would duplicate side, decomposition and negative-premise semantics. **Reversal.** A consumer needing a new payload must define its replay rule and framing without reinterpreting an existing decision. The consumer owns the replay budget; exhaustion is a decline, not an equality decision.
-
-## Static dispatch
-
-`SinkActivity` follows the same discipline as the check-memo seam's `MemoActivity`: a conversion path branches on it at compile time, so under `NullSink` it builds no decision values. `TraceLog` is what a conversion run emits replay evidence through and what a differential counts its exercised path through; a suite that instantiates only `NullSink` can be green while reaching no recording code at all.
-
-## Traces and equality
-
-A trace individuates strictly more finely than convertibility: two convertible terms can carry different traces. A trace is replay evidence and never an equality, so comparing two traces decides something finer than conversion and would disagree on convertible inputs while raising nothing.
-
-A trace records that two occurrences met, not that they agreed. A refutation and a proof can carry the same closing decision, and the replay recomputes the verdict from the terms.
-
-## Exhaustive matching
-
-No enum here is `#[non_exhaustive]`. The workspace does not publish, so the attribute would protect no external consumer while forcing a wildcard arm at every match and defeating exhaustiveness exactly where a new variant should break every consumer.
-
-## Specification attributes
-
-The `# Specification` prose states the obligation; `#[spec(...)]` checks the clauses expressible over one call. Both shipped sinks have exact count predicates: the null sink remains at zero, an append grows the log by one, and the count reports the held sequence's length. These predicates capture scalar counts, not owned snapshots.
-
-Each nontrivial item has a bounded `# Adequacy` hypothesis. The storage witnesses cover every decision kind, side-specific payloads, position boundaries, repeated events and non-Copy identifiers through exact iteration and counts. The layered-term workload checks atom-derived verdicts and closing decisions; malformed traces exercise each refusal guard and error precedence. Reusing a populated log checks that a new refutation appends without clearing its prefix. These observations do not measure optimizer elimination of decision construction.
-
-A final `- executable: none` clause names the remaining boundary: external arenas or event histories, data construction that invokes no predicate, trait instrumentation that would change required implementor methods, unsupported associated constants, or the opaque iterator return type. The witnesses certify the shipped implementations on their stated domains, not arbitrary consumers or traces.
+The vocabulary's grain, the refuted premise and the side discipline are in [`src/decision.rs`](src/decision.rs); static dispatch, traces and equality, portable path dialogues, exhaustive matching and the specification attributes are in [`src/lib.rs`](src/lib.rs); the sinks' obligations are on their items in [`src/sink.rs`](src/sink.rs).
 
 ## License
 

@@ -80,7 +80,7 @@ The generator protocol is `mu t. &{next: !Y.t, stop: end}`. Its consumer selects
 
 ## Certified protocol identities
 
-The engine searches; the kernel replays. `relate` exports candidate observable pairs, and `certified::encode` replaces opaque payload identities with slots in native payload codes. The [kernel's session rules](../kernel-core/README.md#session-code-identities) establish code identity and directed subtyping from supplied evidence.
+The engine searches; the kernel replays. `relate` exports candidate observable pairs, and `certified::encode` replaces opaque payload identities with slots in native payload codes. The [kernel's session rules](../kernel-core/src/session.rs) establish code identity and directed subtyping from supplied evidence.
 
 `certified::transport` re-forms a direct session Flow, checks both complete monitor/code bindings, replays the source run, maps moves through supplied pairs, and replays the target run. Labels, action directions and payload digests stay unchanged; payload identities follow the target assignment. Bodies stay opaque. The arena watermark is restored on success and refusal. A payload path certifies code identity, not a transformation of a stored body.
 

@@ -1,11 +1,45 @@
-//! Declarations as data: the prenex level signature, the three live content
-//! shapes, the structured name, the admission mark that rides with each
-//! declaration in an artifact, and the borrowing builder that ties content
-//! minting to the arena watermark.
+//! Declarations as data: the prenex level signature, the live content shapes,
+//! the structured name, the admission mark that rides with each declaration in
+//! an artifact, and the borrowing builder that ties content minting to the
+//! arena watermark.
 //!
 //! Nothing here admits anything. A [`Declaration`] is the unit an artifact
 //! carries and a choke point later re-checks; the checking, the audit, and the
 //! environment that orders admissions belong to the crate above this one.
+//!
+//! # Structured names
+//!
+//! **Choice.** A declaration carries a [`StructuredName`]: a list of
+//! [`NameSegment`]s, outermost first, written in the segment's name record as
+//! a count and then each segment's length-prefixed UTF-8. A segment never
+//! holds `.`. [`NameSegment::from_text`] is the only constructor and refuses
+//! the separator, so the encoder's input cannot carry one and the encoder
+//! stays total; the decoder rebuilds every segment through the same
+//! constructor and refuses a dotted or non-UTF-8 segment as
+//! [`MalformedSite::NameSegment`]. A finisher builds an unnamed declaration,
+//! and a producer names it afterwards with [`Declaration::named`]. The name is
+//! identity for a reader and is never read by a check: a reference is a
+//! [`ConstantIndex`], the admission position of what it names, so renaming a
+//! sequence leaves every content root and the arena unchanged.
+//!
+//! **Alternatives.** One dotted string per declaration would make the
+//! namespace's spelling the exported identity, and two different segment
+//! lists would collide on one string. Keeping the record reserved and naming
+//! declarations in a side table would leave an artifact unreadable without
+//! that table. A fallible `encode` refusing the separator would make every
+//! caller handle a refusal its input type can rule out.
+//!
+//! **Reversal.** If a renamed module must export a byte-identical artifact,
+//! the names move to a side table and the record is pinned empty again. If a
+//! segment needs to carry `.` — a foreign namespace whose names hold it — the
+//! segment gains an escape in its text field, which changes the field's shape
+//! and bumps [`FORMAT_VERSION`]. The record is framed in every declaration
+//! segment and an unnamed declaration writes a zero count, so naming
+//! declarations changes no byte of an unnamed sequence's artifact.
+//!
+//! [`MalformedSite::NameSegment`]: crate::MalformedSite::NameSegment
+//! [`ConstantIndex`]: crate::ConstantIndex
+//! [`FORMAT_VERSION`]: crate::FORMAT_VERSION
 
 use alloc::string::String;
 use alloc::vec::Vec;

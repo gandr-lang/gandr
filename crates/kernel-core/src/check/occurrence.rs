@@ -6,6 +6,26 @@
 //! always at the parameter variables in telescope order. Every other
 //! occurrence is refused by name, and a reference to a later position is a
 //! reference outside the block.
+//!
+//! The walk reads every parameter and field before formation and refuses, at
+//! the parameter or field site:
+//!
+//! - an occurrence under a function's domain, `NegativeOccurrence`;
+//! - one inside another family's arguments or a field-local positive former,
+//!   `NestedOccurrence`;
+//! - one inside a term a type reads, or in the parameter telescope,
+//!   `IndexOccurrence`;
+//! - the family applied to any other arguments, `NonUniformOccurrence`;
+//! - a field naming a position after its own block, `CrossBlockReference`.
+//!
+//! Formation then reads the self occurrence through the block's own
+//! signature. Every other reference still sees only the admitted prefix. The
+//! criteria are strict positivity with uniform parameters (Thierry Coquand and
+//! Christine Paulin, "Inductively defined types", COLOG-88, LNCS 417, 1990,
+//! `doi:10.1007/3-540-52335-9_47`), within the formation criteria of
+//! inductive families (Peter Dybjer, "Inductive families", Formal Aspects of
+//! Computing 6, 1994, `doi:10.1007/BF01211308`). The fixpoint the admitted
+//! family recurses through is in the sibling `descent` module.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

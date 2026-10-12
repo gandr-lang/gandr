@@ -8,6 +8,84 @@
 //! consumer rather than a CBPV endpoint-value action. The syntax is an
 //! in-memory rule language, separate from native terms and
 //! from universe paths. It carries no admission receipt or reusable verdict.
+//!
+//! # The family
+//!
+//! This module defines a separate in-memory `Flow_U a b` family over quoted
+//! Base codes, products of any arity (the unit among them) and sums of at
+//! least one summand. The empty sum is outside the vocabulary. A forward
+//! certificate stores one closed CBPV translator and one proposed
+//! image/dialogue per source constructor pattern. It carries neither an
+//! inverse nor round-trip evidence. Every consuming formation checks the
+//! translator in a fresh closed checker session, validates the images, and
+//! replays kernel-built positive claims. No stored node or classifier is an
+//! admission receipt.
+//!
+//! | Boundary | Rule or refusal |
+//! | -------- | --------------- |
+//! | Forward formation | Exhaustive symbolic source patterns; each target Base position selects a same-typed source leaf. |
+//! | Directed computation | `ride e v` exposes the checked forward application for ordinary conversion replay. |
+//! | Directed reflexivity | `ride (stay a) v` returns `v` in one step, without allocating or evaluating an identity translator. |
+//! | Motive formation | Moving endpoints occur only covariantly; arrow domains and Flow sources reverse variance. |
+//! | Symmetry | `Flow(Moving, Fixed)` returns `NonCovariantMotive`, including when nested beneath positive formers. |
+//! | Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
+//! | Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
+//! | Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
+//!
+//! **Native family boundary.** `Certificate::Path` carries a native value id.
+//! `form_certificate` synthesizes that value through the ordinary closed
+//! checker and decodes its checked `Path_U` endpoints; there is no auxiliary
+//! path arena or trusted classifier shortcut. Missing round-trip evidence and
+//! non-path classifiers refuse. Matching Path and Flow families retain
+//! separate formation judgements, and both cross-family directions refuse
+//! before elimination. The Flow range of `gandr-kernel-term`'s wire-tag table
+//! remains reserved and unassigned.
+//!
+//! **Leaf naturality.** Each source Base position is a distinct rigid
+//! variable, including equal-typed positions in a product. Proposed output
+//! syntax contains only canonical constructors and those correctly typed
+//! variables. The kernel replays the translator on these symbolic inputs; a
+//! trace generated at a literal sample has no authority over that obligation.
+//! Literals nested beneath sums or products, fresh variables, wrong-typed
+//! selections, and sample-only constant maps refuse. The witnesses cover
+//! diagonals, both injections, codiagonals, product identity and terminal
+//! projection to Unit. The native CBPV vocabulary has no general product
+//! eliminator, so these witnesses do not establish generation of every
+//! projection or fullness of the one-way alphabet.
+//!
+//! **The gate reads wiring.** Sequence has one edge between two occurrences;
+//! feedback adds the reverse edge and closes a cycle. Equal endpoint codes do
+//! not identify occurrences. In particular, injection followed by fold forms
+//! and replays as identity, and terminal followed by injection forms a
+//! constant Bool endomap. Neither composite grants inverse evidence. This
+//! closed-code gate handles explicit two-occurrence seams, not a general
+//! reflected cell-support graph or invertible-core comparison.
+//!
+//! # Decision
+//!
+//! **Choice.** The rule arena reuses native closed checking and conversion
+//! replay. Flat, constructor-ordered ids and bounded iterative walks avoid
+//! recursive ownership; formation and lowering tables live only for one call.
+//! **Alternatives.** A second evaluator; host-language translators, which
+//! would bypass the obligation; native persisted formers, which would require
+//! encoding, support and wire integration. No wire tag is allocated.
+//! **Reversal.** Declaration admission must consume Flow syntax. Motive
+//! checking is the term-structural covariance side condition over El, Flow,
+//! Arrow, Sum and Product; value transport uses `El(Moving)`. General
+//! dependent directed elimination and the reflected variance calculus remain
+//! outside this rule language.
+//!
+//! # Witnesses
+//!
+//! The seven witnesses in this module's tests use the independent conversion
+//! engine and exact expected outputs. The public replay boundary restores its
+//! arena watermark on success and failure. Its memo discipline is the memo's
+//! six-condition discipline: no caller-supplied checker memo, persistent
+//! verdict, storage policy or authority-bearing hit. A standalone mutation
+//! campaign belongs over leaf aliasing and type confusion, manufactured
+//! constants, omitted source coverage, forged dialogues, reversed
+//! composition, missed feedback, motive sign propagation, family coercion and
+//! Stay reduction; no campaign or score is claimed.
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;

@@ -7,6 +7,86 @@
 //! instead replay a supplied finite bisimulation. Evidence contributes to
 //! content identity, never to certificate conversion. No path inspection, K or
 //! path-induction eliminator exists.
+//!
+//! # Formation and computation
+//!
+//! `ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base
+//! codes, products of any arity (the unit among them), sums of at least one
+//! summand, and finite session codes. The empty sum is outside the
+//! vocabulary. `PathProduct` stays binary: it relates two-component products
+//! only, and transport over it computes on pairs. First-order endpoints remain
+//! level zero; a session forms at its payload telescope's universe level.
+//! `Value::PathEquiv`, `PathRefl`, `PathProduct` and `SessionPath` introduce
+//! paths. `Computation::Transport` computes for the first three; session
+//! evidence describes recorded action skeletons, not kernel endpoint values.
+//! They participate in ordinary arena traversal, declaration admission,
+//! structural conversion and artifact encoding. The surface parser has no path
+//! syntax.
+//!
+//! | Rule | Kernel obligation or computation |
+//! | ---- | -------------------------------- |
+//! | Formation | Both endpoints decode to the admitted value-code vocabulary and pass ordinary type formation. Session payload codes are checked in an empty term context. |
+//! | Equivalence | Closed translators check at opposite CBPV arrows; every source and target round trip replays. |
+//! | Reflexivity | The endpoint code forms. |
+//! | Product | Both component paths form; endpoints are their products. |
+//! | Transport | The input checks at the source and the comparison target at the target returner. |
+//! | Equivalence beta | `transport (equiv f g) v` becomes `force f v`. |
+//! | Reflexivity beta | `transport (refl a) v` becomes `return v` in one step. |
+//! | Product beta | Pair input becomes left and right component transports. |
+//! | Path conversion | Codes and translators compare structurally; round-trip evidence grants no certificate equality. |
+//!
+//! Round-trip coverage is symbolic: sums enumerate both injections, products
+//! enumerate constructor combinations, and Base leaves introduce distinct
+//! rigid variables rather than sample literals. Each pattern requires a
+//! dialogue. Missing, extra or invalid evidence refuses admission. A
+//! shape/coverage ceiling and per-dialogue replay budget are independent
+//! limits, not one global work counter.
+//!
+//! `Dialogue::pair` constructs one product dialogue by prefixing explicit
+//! `Decompose` decisions for the returner and pair, then concatenating
+//! component traces. This prevents an initial `ComparedShared` from consuming
+//! a component trace at the enclosing pair. The kernel re-derives every
+//! boundary and premise. There is no transitive certificate-composition
+//! operation.
+//!
+//! # Admission
+//!
+//! `Environment::add_decl` checks both endpoint codes, checks translators
+//! under an empty term context and replays every source and target round
+//! trip. Decoding and frontend typechecking grant no authority. Portable
+//! evidence participates in artifact content and admission memo keys, but
+//! structural certificate conversion erases evidence only: it does not
+//! normalize translator syntax. A fresh admission owns the memo and rechecks
+//! imported candidates.
+//!
+//! `code`, `Dialogue::pair` and `replay_transport` remain callable. Path
+//! operands are ordinary `ValueId`s in `TermArena`; no separate path arena or
+//! string-named eliminator dispatcher exists. `replay_transport` rechecks the
+//! native path and transport goal before consuming its dialogue.
+//!
+//! **Choice.** Native syntax makes the ordinary admission boundary
+//! authoritative and permits artifacts to carry untrusted candidates.
+//! Transport reduces to ordinary CBPV computations; product transport
+//! sequences component computations through capture-avoiding binds.
+//! **Alternative.** Rust translator closures or an auxiliary path arena would
+//! evade persisted admission. **Reversal.** Extend the code grammar only with
+//! formation, coverage and replay rules for the new fragment. Element
+//! identity, open codes, higher fields, function codes and general dependent
+//! elimination remain outside this fragment.
+//!
+//! # Witnesses
+//!
+//! The seven witnesses in this module's tests submit native declarations and
+//! use independent `gandr-core-nbe` dialogues for Bool negation, product
+//! transport, reflexivity, wrong-answer refusal, non-equivalence refusal,
+//! intensional certificate conversion and absent K. The K witness applies
+//! ordinary force and case eliminators to a path and observes their typing
+//! refusals; it is not a theorem about future language extensions. Triple
+//! negation retains its two sequencing seams and is compared with direct
+//! composition at both Bool constructors. They distinguish omitted coverage,
+//! swapped maps or product legs, accepted bad dialogues, reflexivity
+//! reduction, evidence omitted from memo keys, and translator syntax erased by
+//! conversion; no mutation score is claimed.
 use alloc::vec::Vec;
 use core::fmt;
 

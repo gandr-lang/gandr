@@ -27,22 +27,65 @@
 //! a field makes an older reader parse successfully and *wrongly*, which is the
 //! failure the version field exists to prevent and the only one it can prevent.
 //!
-//! # The numbering above the frozen block
+//! # The numbering
 //!
-//! The numbering above the frozen block is settled in one table, and the
-//! dependent former's tag is assigned against it.
+//! The tag space is one disjoint enumeration over four families, and this
+//! table is authoritative; [`NODE_TAG_TABLE`] supplies the assigned formers
+//! and their arities. Native paths have distinct bytes. Higher fields and
+//! function identity remain in-memory rule languages, with reserved ranges and
+//! no wire nodes. The original `0x00–0x1F` meanings are frozen, including the
+//! static operators at `0x1E–0x1F`.
 //!
-//! | region        | tags        | holds                                                                |
-//! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | the original native formers from zero; `0x01` and `0x0B` retired in version 3 |
-//! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
-//! | empty fragment | `0x28–0x29` | retired in version 3: the empty type is the sum of no summands |
-//! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
-//! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
-//! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
-//! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
-//! | finite Lists | `0x50–0x51`, `0x5B–0x5C` | List type, nil, cons and pure fold |
-//! | session codes | `0x52–0x5A` | native session code, seven inline graph opcodes, native session Path evidence |
+//! | Byte or range | Meaning | Artifact reader |
+//! | ------------- | ------- | --------------- |
+//! | `0x00–0x1F` | Original formers in [`NODE_TAG_TABLE`], less the retired unit type `0x01` and unit value `0x0B` | Admitted; the retired bytes refused |
+//! | `0x20` | Reserved value sharing | Refused |
+//! | `0x21` | Reserved computation sharing | Refused |
+//! | `0x22` | Reserved value-type sharing | Refused |
+//! | `0x23` | Reserved computation-type sharing | Refused |
+//! | `0x24–0x27` | Held weakening slots | Refused |
+//! | `0x28` | Retired: the empty value type | Refused |
+//! | `0x29` | Retired: the absurd computation | Refused |
+//! | `0x2A` | `Path_U`, two value-code children | Admitted |
+//! | `0x2B` | Path reflexivity, one code child | Admitted |
+//! | `0x2C` | Equivalence, evidence and three children | Admitted |
+//! | `0x2D` | Product path, two path children | Admitted |
+//! | `0x2E` | Transport, path and input children | Admitted |
+//! | `0x2F` | Unassigned | Refused |
+//! | `0x30–0x37` | Higher-field reservation | Refused |
+//! | `0x38–0x47` | Funext reservation | Refused |
+//! | `0x48–0x4F` | `Flow_U` reservation | Refused |
+//! | `0x50` | List code, one element-type child | Admitted |
+//! | `0x51` | Native List nil, no children | Admitted |
+//! | `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
+//! | `0x53–0x59` | Inline send, receive, select, offer, end, Mu and Var opcodes | Graph fields only; refused as native node tags |
+//! | `0x5A` | Session Path evidence, classifier and payload-proof children | Admitted |
+//! | `0x5B` | Native List cons, head and tail value children | Admitted |
+//! | `0x5C` | Pure List fold, element type, result type, list and two branch children | Admitted |
+//! | `0x5D` | Nominal data application, declaration and counted value arguments | Admitted |
+//! | `0x5E` | Record type, ordered labels and value-type children | Admitted |
+//! | `0x5F` | Constructor, classifier, tag and counted value fields | Admitted |
+//! | `0x60` | Record value, ordered labels and value children | Admitted |
+//! | `0x61` | Data case, scrutinee, motive and counted branches | Admitted |
+//! | `0x62` | Record projection, label and value child | Admitted |
+//! | `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
+//! | `0x64` | Tuple projection, component and value child | Admitted |
+//! | `0x65–0xFF` | Unassigned | Refused |
+//!
+//! The admitted domain is sparse: the greatest assigned native byte is
+//! `0x64`, not a promise to accept every smaller byte. Boundary witnesses
+//! admit assigned native tags, refuse inline opcodes and retired bytes as
+//! native nodes, and retain the frozen block. The unit and the empty type are
+//! zero-count products and sums, and List nil is a zero-child leaf; all three
+//! may be bounded-alias targets, and no reservation becomes an alias target by
+//! being below the maximum.
+//!
+//! On the wire, product, sum, tuple and case carry a child count before their
+//! children; an injection carries its summand as an unsigned varint before its
+//! one child, and a tuple projection carries its component the same way.
+//! Format version 3 introduced the counted formers, and the reader refuses
+//! version 2. The retired unit and empty bytes are refused as unassigned, so
+//! no artifact spells the unit or the empty type twice.
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
@@ -51,31 +94,94 @@
 //! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
 //! path endpoints include closed first-order and finite session codes.
 //!
-//! The universe families took four tags from the growth room at once, one
-//! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
-//! among the value types, the computation decode [`NODE_CT_ELEMENT`] among the
+//! The universe families hold four tags of the frozen block's growth room, one
+//! per family: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`] among
+//! the value types, the computation decode [`NODE_CT_ELEMENT`] among the
 //! computation types, and the two quotes [`NODE_V_QUOTE`] and
 //! [`NODE_V_QUOTE_COMPUTATION`] among the values. The sort of a universe is a
 //! tag rather than an inline byte on [`NODE_VT_UNIVERSE`] for the reason the
 //! dependent arrow is: a payload byte that changes what the node means is a
 //! field-shape change, which bumps the version, where a fresh tag holds it.
 //!
-//! The static operators took the last two tags of the growth room: the
-//! static Pi [`NODE_VT_STATIC_PI`] among the value types and the static
-//! application [`NODE_V_STATIC_APPLICATION`] among the values. The static
-//! lambda takes none, because the kernel never represents it: a producer
-//! normalizes it away before export. The growth room is spent, so the next
-//! former resumes above [`SHARING_BLOCK_LAST`].
+//! The static operators hold the last two tags of the growth room: the static
+//! Pi [`NODE_VT_STATIC_PI`] among the value types and the static application
+//! [`NODE_V_STATIC_APPLICATION`] among the values. The static lambda holds
+//! none, because the kernel never represents it: a producer normalizes it away
+//! before export. The growth room is spent, so the next former resumes above
+//! [`SHARING_BLOCK_LAST`].
 //!
 //! The sharing block is **reserved and unassigned**: four per-family sharing
 //! formers so polarity stays recoverable from the tag alone, and four held
-//! slots for an explicit weakening form. No entry carries one, and a reader
-//! meeting one refuses it by name at the node site, exactly as it refuses any
-//! other unassigned byte. Reserving the block rather than numbering it on
-//! demand is what stops the core vocabulary from growing into it: the core
-//! resumes above [`SHARING_BLOCK_LAST`], and the block's contiguity — the
-//! property that makes a sharing former's family a subtraction rather than a
-//! lookup — survives.
+//! slots for an explicit weakening form. [`NODE_SHARE_VALUE`],
+//! [`NODE_SHARE_COMPUTATION`], [`NODE_SHARE_VALUE_TYPE`] and
+//! [`NODE_SHARE_COMP_TYPE`] name its per-family bytes. No entry carries one,
+//! and a reader meeting one refuses it by name at the node site, exactly as it
+//! refuses any other unassigned byte. Reserving the block rather than
+//! numbering it on demand is what stops the core vocabulary from growing into
+//! it: the core resumes above [`SHARING_BLOCK_LAST`], and the block's
+//! contiguity — the property that makes a sharing former's family a
+//! subtraction rather than a lookup — survives.
+//!
+//! # Universe paths
+//!
+//! `PathUniverse` has two value-code children; reflexivity has one code,
+//! product paths have two paths, and transport has a path and input value.
+//! [`NODE_V_PATH_EQUIV`] carries inline portable evidence followed by its
+//! classifier, forward map and backward map children. Evidence is source then
+//! target: a dialogue count, then each dialogue's decision count and unsigned
+//! decision words. Unknown words and oversized negative-premise positions are
+//! malformed; decoding never certifies a round trip.
+//!
+//! The portable decision alphabet comes from `gandr-kernel-conversion-trace`;
+//! unit anchors carry no arena identity. Reusing that vocabulary avoids a
+//! second replay protocol. The sharing-format witness preserves all
+//! decisions, empty dialogues and direction boundaries against independent
+//! bytes, and rejects malformed words and truncated prefixes. **Reversal:** a
+//! new framing version, if the alphabet needs payloads that cannot be encoded
+//! without changing existing word meanings.
+//!
+//! # Lists
+//!
+//! The List code [`NODE_VT_LIST`] has one value-type child, its element code.
+//! Its native introductions are [`NODE_V_LIST_NIL`] and [`NODE_V_LIST_CONS`],
+//! not Sum encodings or nominal data constructors. [`NODE_C_LIST_FOLD`]
+//! carries five children in order: ambient element type, ambient result type,
+//! list value, nil branch and cons branch. Only the cons branch binds values:
+//! head first, folded result second, so the result is index zero. Both
+//! branches return the annotated result type. The ordinary sharing format
+//! persists this pure fragment; guarded recursive observations remain
+//! separate in-memory programs.
+//!
+//! # Session codes
+//!
+//! Session codes use [`NODE_VT_SESSION`]. Their inline graph stores a root,
+//! node count, and finite nodes tagged send `0x53`, receive `0x54`, select
+//! `0x55`, offer `0x56`, end `0x57`, binder `0x58` and variable `0x59`. Graph
+//! integers are canonical unsigned varints. A label is its byte count followed
+//! by its exact UTF-8 bytes, each encoded as an unsigned varint. Choice maps
+//! are in label order. The graph's only native child is one n-ary payload-type
+//! product; payload slots index its parts. Internal recursion references
+//! finite graph positions, never a native type-arena back edge.
+//!
+//! [`NODE_V_SESSION_PATH`] has two native children: its `Path_U` classifier
+//! and one tuple of native payload-path values. Inline evidence is a sorted
+//! set of source/target state pairs followed by ordered source/target
+//! payload-slot obligations. Decoding rejects unknown opcodes, malformed
+//! UTF-8, duplicate labels or relation pairs, truncation and noncanonical
+//! encodings. Counts consume input before growing allocations; exhausted input
+//! is `Truncated`, while the ordinary table and expanded-work budgets retain
+//! their typed refusals. Contractivity, scope, relation coverage and payload
+//! typing belong to kernel formation. All relation data participates in
+//! canonical bytes even when conversion erases derivation pairs.
+//!
+//! **Choice.** Inline finite graph data with one native payload-code child
+//! preserves the format's fixed child arities and ordinary content sharing
+//! without recursive Rust ownership. **Alternatives.** Separate native
+//! constructors would spread finite graph framing across seven additional
+//! native cases; a second opaque payload-identity scheme would bypass universe
+//! formation. **Reversal.** A distinct protocol universe or a persisted
+//! endpoint-value language requires its own formation and elimination rules.
+//! These tags encode protocol types and identity evidence, not live channels.
 
 use anodized::spec;
 

@@ -22,12 +22,33 @@
 //! - **Constructor-only minting.** A constructor appends to one family over
 //!   caller-supplied live children. Within that family, a new index follows its
 //!   children while the family length fits u32; cross-family ids have no common
-//!   ordering. Ids carry no arena provenance or reuse generation.
+//!   ordering. Ids carry no arena provenance or reuse generation: lookup checks
+//!   the family index, truncation permits index reuse, and minting saturates
+//!   the returned index at the `u32` ceiling.
 //! - **The admission watermark.** [`TermArena::watermark`] snapshots four
 //!   family lengths. [`TermArena::truncate_to`] removes suffixes but cannot
-//!   grow a shorter family or restore overwritten nodes. The caller keeps
-//!   removed ids unreachable from retained content and pairs each mark with its
-//!   arena; these obligations are not encoded in the mark.
+//!   grow a shorter family or restore overwritten nodes; a stale mark past a
+//!   family's end leaves that family unchanged. The caller keeps removed ids
+//!   unreachable from retained content and pairs each mark with its arena;
+//!   these obligations are not encoded in the mark.
+//!
+//! # The watermark
+//!
+//! A choke point takes an [`ArenaWatermark`] before staging a declaration and
+//! truncates after the verdict, on rejection and on success alike.
+//! [`DeclarationBuilder`] records its own mark and truncates each family to
+//! `min(current_len, content_start)` when abandoned. Its mutable arena borrow
+//! also permits shrinking and reminting below that mark: abandonment preserves
+//! those leading nodes rather than restoring an earlier snapshot. A
+//! [`Declaration`] carries no watermark: decode builds one table for the whole
+//! artifact, so a decoded declaration has no meaningful content-start mark.
+//! [`ArenaWatermark::clamped_into`] is the clamp a rollback needs when staging
+//! order differs from admission order.
+//!
+//! **Choice.** The mark stores lengths rather than copied nodes, keeping
+//! truncation allocation-free. **Alternative.** Snapshot restoration, which
+//! must retain overwritten content. **Reversal.** Staging that must restore
+//! arbitrary edits rather than discard an appended suffix.
 //!
 //! # The honest cost
 //!
@@ -36,6 +57,9 @@
 //! constructor-only minting, one arena per environment, a checked lookup
 //! returning an option rather than an index, and decode-side validation of
 //! every child reference before it mints.
+//!
+//! [`DeclarationBuilder`]: crate::DeclarationBuilder
+//! [`Declaration`]: crate::Declaration
 
 use alloc::vec::Vec;
 

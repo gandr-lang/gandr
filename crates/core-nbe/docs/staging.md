@@ -10,7 +10,7 @@ The one-subject page for the `stage` module of `gandr-core-nbe`: the strict meta
 
 ## Experimental stage normalization
 
-`stage::normalize` evaluates the meta level of the auxiliary [stage language](../../kernel-core/docs/staging.md#experimental-stage-universe) and leaves the object program as written. Typing determines the stage through the universe index. Every meta contraction and congruence equation is independently replayed by the kernel before the residual is admitted as object code.
+`stage::normalize` evaluates the meta level of the auxiliary [stage language](../../kernel-core/src/stage.rs) and leaves the object program as written. Typing determines the stage through the universe index. Every meta contraction and congruence equation is independently replayed by the kernel before the residual is admitted as object code.
 
 The producer uses a postorder worklist and capture-avoiding substitution. It reduces meta beta, outer natural iteration, outer identity elimination and both quote/splice round trips, including beneath object binders. Object beta, iteration, elimination and multiplication remain residual. In particular, `(λx. x * x) e` retains its application and sharing instead of duplicating `e`.
 

@@ -28,7 +28,9 @@
 //! digests prove disagreement, and equal digests hand off to byte equality of
 //! the canonical support encodings — the deciding comparison. A collision
 //! therefore costs one comparison and degrades to a miss, priced strictly as
-//! recomputation.
+//! recomputation. Collapsing every digest to one constant changes no verdict
+//! and no count — it costs a linear bucket scan — so only the digest's own unit
+//! witnesses distinguish it.
 //!
 //! # The encoding is injective by construction
 //!
@@ -48,14 +50,21 @@
 //!   is length-prefixed, so no two component splittings concatenate alike.
 //!
 //! Key collision is the one obligation a randomized differential cannot probe,
-//! which is why these ride as static witnesses on the derivation itself.
+//! which is why these ride as static witnesses on the derivation itself. A
+//! trap pair exhibits its ambiguity inside one framed unit: the length-prefix
+//! pair is stated over a numeric literal, which carries two text payloads in
+//! one record, so `1.23` and `12.3` concatenate to the same digits. Over two
+//! text literals the record framing would separate them whatever their
+//! payloads do, and the pair would test nothing.
 //!
 //! # Cost
 //!
 //! Each distinct node is encoded once per session, so deriving every key of one
 //! check costs one pass over the distinct nodes — the "hash every node" price
 //! the content key is adopted at, and linear rather than quadratic even on a
-//! chain-deep term a decoder built from bytes.
+//! chain-deep term a decoder built from bytes. What the content key buys over
+//! an identity key on a real corpus is unmeasured; a measurement showing that
+//! pass dominating the reuse payoff re-keys the memo.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;

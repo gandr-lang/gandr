@@ -31,8 +31,12 @@
 //! Reconstruction returns a node unchanged when its children did not change,
 //! rather than allocating another spelling. A zero shift returns its root
 //! directly, and an index already at the saturation ceiling is not re-minted.
-//! Memo hits may reuse another equal-content result from the same session, so
-//! content is preserved without promising identical arena ids across hits.
+//! An unreadable root bypasses memo lookup: two missing ids have no content
+//! whose equality would justify adopting one as the other's result. Other
+//! memo hits may reuse another equal-content result from the same session, so
+//! identity preservation is a reconstruction property, not a promise across
+//! hits. Shifting a value type and instantiating a computation type are the
+//! public rewrite surface; the other family faces are crate-visible.
 //!
 //! A type carrying no code is closed. Its reconstruction allocates no new term
 //! nodes; a type carrying a code rewrites through that code. Node dispatch

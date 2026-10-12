@@ -9,13 +9,7 @@ The check-memo seam: a statically dispatched interface through which a checker s
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [What a hit claims](#what-a-hit-claims)
-- [Digest and agreement](#digest-and-agreement)
-- [Static dispatch](#static-dispatch)
-- [Per-plane accounting](#per-plane-accounting)
-- [Ordered storage](#ordered-storage)
-- [Exhaustive matching](#exhaustive-matching)
-- [Contract attributes](#contract-attributes)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 <!-- tocstop -->
@@ -81,45 +75,9 @@ cargo nextest run -p gandr-kernel-check-memo
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-check-memo
 ```
 
-## What a hit claims
+## Where the detail lives
 
-A hit claims exactly one thing: this process already computed this answer for this support. It does not claim that the answer is right, that the support was well formed, or that anything was validated.
-
-A hit carries its support. `MemoHit` hands back the support the entry was recorded under beside the outcome, so a consumer checking adoption compares demanded against supplied pointwise rather than intersecting footprints.
-
-## Digest and agreement
-
-A key is content-derived, so it survives relocation and two equal obligations key equally wherever they arise. The digest is a positive fast path and never a decision: different digests prove disagreement, and equal digests hand off to `MemoKey::agreement`. A collision therefore costs one comparison and is priced as recomputation, never as a wrong answer.
-
-## Static dispatch
-
-`MemoActivity` is an associated constant, so liveness is known at compile time. Under `NullMemo` every memo interaction, support construction included when the consumer guards it, is a constant-false branch, and the consumer compiles to the code it would have with no memo at all. The memoless path is the same function at a different type parameter, which is what makes a memoless-against-memoized differential meaningful.
-
-## Per-plane accounting
-
-A checker running two machines over one shared graph, such as a goal loop over terms and a formation walk over types, gives each machine its own plane. `entry_count` and `plane_entry_count` sit on the seam trait, so a differential asserts the collapse of each plane separately at either instantiation.
-
-The counts are a contract that consumers assert through, so they use checked arithmetic. `remember` returns a `MemoRecord` and refuses with `MemoError::EntryCountOverflow` at the ceiling, leaving the memo as it was.
-
-## Ordered storage
-
-`OrderedMemo` uses ordered maps rather than hashed ones. No hasher enters the kernel's dependency wall, and iteration order is deterministic, so a measurement over the memo is re-derivable.
-
-## Exhaustive matching
-
-No enum here is `#[non_exhaustive]`. The workspace does not publish, so the attribute would protect no external consumer while forcing a wildcard arm at every match and defeating exhaustiveness exactly where a new variant should break every consumer.
-
-## Contract attributes
-
-The `# Specification` prose states the obligation; `#[spec(...)]` mirrors clauses that can be checked over one call. Each nontrivial item has a `# Adequacy` hypothesis naming the bounded evidence and the deviations its observer distinguishes.
-
-- Checked arithmetic specifies the exact successor, per-plane lookup and overflow refusal, including unchanged accounting on failure.
-- Ordered storage specifies digest-bucket lookup, support agreement, insertion versus replacement, and unchanged counts on refusal. Collision and ceiling tests also observe retained answers, rather than counts alone.
-- The differential workload specifies its arena topology, framed content identity, folds and census arithmetic. Closed-form counts and ordinary versus memoized runs distinguish missing work from reused work.
-
-Anodized evaluates postconditions after early `?` returns, so refusal paths are included. Production predicates capture scalar counts and membership facts, not owned snapshots; additional predicate traversals run only when enforcement is enabled.
-
-A final `- executable: none` clause identifies the remaining data, declaration or external-context obligation. Instrumenting `CheckMemo` or `MemoKey` declarations would change the implementation interface; data-item expansion does not check construction. The bounded witnesses exercise the shipped implementations and fixture relations. They do not certify arbitrary consumer implementations of the semantic agreement laws.
+What a hit claims, the digest and agreement contract, static dispatch, per-plane accounting, ordered storage, exhaustive matching and the specification attributes are stated in [`src/lib.rs`](src/lib.rs); each operation's obligation is on its item in [`src/memo.rs`](src/memo.rs), [`src/key.rs`](src/key.rs), [`src/digest.rs`](src/digest.rs) and [`src/accounting.rs`](src/accounting.rs).
 
 ## License
 
