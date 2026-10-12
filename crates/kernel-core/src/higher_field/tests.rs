@@ -54,7 +54,7 @@ fn symmetry_on_a_boolean_square_computes()
 {
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
-    let boolean = arena.value_type_sum(unit_type, unit_type);
+    let boolean = arena.value_type_sum(&[unit_type, unit_type]);
     let code = arena.value_quote(boolean);
     let unit = arena.value_unit();
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -62,8 +62,8 @@ fn symmetry_on_a_boolean_square_computes()
     let context = [unit_type, unit_type];
     let higher = guarded(unit);
     for side in [Side::Left, Side::Right] {
-        let a = arena.value_injection(side, x);
-        let b = arena.value_injection(side, y);
+        let a = arena.value_injection(side.into(), x);
+        let b = arena.value_injection(side.into(), y);
         assert_eq!(equal_values(&arena, a, b), Convertibility::Distinct);
         let path = Cell {
             code,
@@ -207,7 +207,7 @@ fn non_productive_certificate_is_refused()
         missing.observe(&mut arena, &[], cell, cell, budget()),
         Err(HigherError::UnknownLayer(HigherId(1)))
     ));
-    let injected = arena.value_injection(Side::Left, unit);
+    let injected = arena.value_injection(Side::Left.into(), unit);
     let corrupt = Codata {
         nodes: vec![
             Layer::Guard {
@@ -253,17 +253,17 @@ fn higher_fibres_preserve_boundaries()
 {
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
-    let boolean = arena.value_type_sum(unit_type, unit_type);
-    let product = arena.value_type_product(boolean, boolean);
+    let boolean = arena.value_type_sum(&[unit_type, unit_type]);
+    let product = arena.value_type_product(&[boolean, boolean]);
     let code = arena.value_quote(product);
     let unit = arena.value_unit();
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let truth = arena.value_injection(Side::Left, unit);
-    let falsity = arena.value_injection(Side::Right, unit);
-    let value = arena.value_pair(truth, falsity);
-    let p = arena.value_pair(unit, variable);
-    let q = arena.value_pair(variable, unit);
-    let evidence = arena.value_pair(unit, unit);
+    let truth = arena.value_injection(Side::Left.into(), unit);
+    let falsity = arena.value_injection(Side::Right.into(), unit);
+    let value = arena.value_tuple(&[truth, falsity]);
+    let p = arena.value_tuple(&[unit, variable]);
+    let q = arena.value_tuple(&[variable, unit]);
+    let evidence = arena.value_tuple(&[unit, unit]);
     let left = Cell {
         code,
         left: value,
@@ -290,7 +290,7 @@ fn higher_fibres_preserve_boundaries()
         erased.observe(&mut arena, &[unit_type], left, right, budget()),
         Err(HigherError::Relation(RelationError::Typing(_)))
     ));
-    let invalid = arena.value_pair(unit, truth);
+    let invalid = arena.value_tuple(&[unit, truth]);
     assert!(matches!(
         higher.observe(
             &mut arena,
@@ -304,7 +304,7 @@ fn higher_fibres_preserve_boundaries()
         ),
         Err(HigherError::Relation(RelationError::Typing(_)))
     ));
-    let other = arena.value_pair(truth, truth);
+    let other = arena.value_tuple(&[truth, truth]);
     assert!(matches!(
         higher.observe(
             &mut arena,

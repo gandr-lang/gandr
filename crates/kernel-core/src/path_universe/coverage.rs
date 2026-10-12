@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_term::DeBruijnIndex;
-use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -30,9 +30,11 @@ use crate::rewrite::shift_value;
 ///
 /// # Specification
 /// - requires: the code root belongs to `arena`.
-/// - ensures: outer formers are Base, Unit, Product, Sum or Session; session
-///   graph structure and guards check. Native formation separately checks
-///   session payload codes in an empty term context.
+/// - ensures: outer formers are Base, Product (the unit among them), a Sum of
+///   at least one summand, or Session; session graph structure and guards
+///   check. The empty sum is refused, as the retired empty type was. Native
+///   formation separately checks session payload codes in an empty term
+///   context.
 /// - provides: code-shape inspection, never a checking verdict.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
 ///   `Budget`.
@@ -50,7 +52,7 @@ use crate::rewrite::shift_value;
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
         Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Unit | &ValueType::Sum(..) | &ValueType::Product(..) | &ValueType::Session { .. })),
+        Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..) | &ValueType::Session { .. }) && node.summands().is_none_or(<[_]>::is_empty)),
         Err(PathError::Budget) => allowance.0 == 0,
         Err(PathError::Arena | PathError::Session(_)) => true,
         Err(_) => false,
@@ -75,7 +77,7 @@ pub(super) fn code(
         }
         let node = arena.value_type(id).ok_or(PathError::Arena)?;
         match node {
-            | &ValueType::Unit | &ValueType::Base(_) => {},
+            | &ValueType::Base(_) => {},
             | &ValueType::Session {
                 ref graph,
                 payloads,
@@ -85,9 +87,11 @@ pub(super) fn code(
                 // Ordinary formation checks payload codes in an empty
                 // telescope.
             },
-            | &ValueType::Sum(first, second) | &ValueType::Product(first, second) => {
-                pending.push(second);
-                pending.push(first);
+            | &ValueType::Sum(ref parts) if parts.is_empty() => {
+                return Err(PathError::UnsupportedType(id));
+            },
+            | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
+                pending.extend(parts.iter().rev().copied());
             },
             | _ => return Err(PathError::UnsupportedType(id)),
         }
@@ -111,10 +115,12 @@ enum Cover
 {
     /// Expand one type's constructor patterns.
     Visit(ValueTypeId),
-    /// Join summand patterns with their distinct injection tags.
-    Sum,
-    /// Form every pair of component patterns, renaming base variables apart.
-    Product,
+    /// Join the patterns of this many summands with their distinct injection
+    /// tags.
+    Sum(usize),
+    /// Form every tuple of this many components' patterns, renaming base
+    /// variables apart.
+    Product(usize),
 }
 
 /// Enumerate constructor coverage without enumerating base inhabitants.
@@ -126,7 +132,7 @@ enum Cover
 /// - provides: a symbolic universal boundary for a round-trip dialogue.
 /// - fails: `Arena`, `UnsupportedType` or `Budget`.
 /// - panics: none.
-/// - intension: sums are left-first and products are lexicographic.
+/// - intension: sums are first-summand-first and products are lexicographic.
 ///
 /// # Errors
 /// As `fails`.
@@ -134,14 +140,16 @@ enum Cover
 /// # Adequacy
 /// - hypothesis: L3 — both Bool branches are required; a literal sample cannot
 ///   establish a Base round trip, while a generic product identity is admitted.
+///   A product and a sum of three cover by position with distinct variables.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+/// - witness: `path_universe::coverage::tests::n_ary_codes_cover_by_position`
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(ref patterns) => allowance.0 < before
             && patterns.iter().all(|pattern| arena.value(pattern.value).is_some())
             && match arena.value_type(root) {
-                Some(&ValueType::Unit) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 0 && matches!(arena.value(pattern.value), Some(&Value::Unit))),
+Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 0 && arena.value(pattern.value).and_then(Value::components) == Some(&[])),
                 Some(&ValueType::Base(_)) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| u32::from(pattern.binders) == 1 && matches!(arena.value(pattern.value), Some(&Value::Variable(index)) if u32::from(index) == 0)),
                 Some(&ValueType::Sum(..) | &ValueType::Product(..)) => !patterns.is_empty(),
                 _ => false,
@@ -164,66 +172,76 @@ fn patterns(
             | Cover::Visit(id) => {
                 let node = arena.value_type(id).ok_or(PathError::Arena)?;
                 match node {
-                    | &ValueType::Unit => results.push(Vec::from([Pattern {
-                        value: arena.value_unit(),
-                        binders: BinderDepth::default(),
-                    }])),
                     | &ValueType::Base(_) => results.push(Vec::from([Pattern {
                         value: arena.value_variable(DeBruijnIndex::from(0_u32)),
                         binders: BinderDepth::from(1_u32),
                     }])),
-                    | &ValueType::Sum(first, second) => {
-                        pending.push(Cover::Sum);
-                        pending.push(Cover::Visit(second));
-                        pending.push(Cover::Visit(first));
+                    | &ValueType::Sum(ref parts) if parts.is_empty() => {
+                        return Err(PathError::UnsupportedType(id));
                     },
-                    | &ValueType::Product(first, second) => {
-                        pending.push(Cover::Product);
-                        pending.push(Cover::Visit(second));
-                        pending.push(Cover::Visit(first));
+                    | &ValueType::Sum(ref parts) => {
+                        pending.push(Cover::Sum(parts.len()));
+                        pending.extend(parts.iter().rev().copied().map(Cover::Visit));
+                    },
+                    | &ValueType::Product(ref parts) => {
+                        pending.push(Cover::Product(parts.len()));
+                        pending.extend(parts.iter().rev().copied().map(Cover::Visit));
                     },
                     | _ => return Err(PathError::UnsupportedType(id)),
                 }
             },
-            | Cover::Sum => {
-                let second = results.pop().ok_or(PathError::Arena)?;
-                let first = results.pop().ok_or(PathError::Arena)?;
-                let mut joined = Vec::with_capacity(first.len().saturating_add(second.len()));
-                for (side, branch) in [(Side::Left, first), (Side::Right, second)] {
+            | Cover::Sum(arity) => {
+                let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
+                let mut joined = Vec::new();
+                for (summand, branch) in results.drain(start ..).enumerate() {
                     for pattern in branch {
                         allowance.charge()?;
                         joined.push(Pattern {
-                            value: arena.value_injection(side, pattern.value),
+                            value: arena.value_injection(Summand::from(summand), pattern.value),
                             binders: pattern.binders,
                         });
                     }
                 }
                 results.push(joined);
             },
-            | Cover::Product => {
-                let second = results.pop().ok_or(PathError::Arena)?;
-                let first = results.pop().ok_or(PathError::Arena)?;
-                let mut joined = Vec::new();
-                for left in first {
-                    for right in &second {
-                        allowance.charge()?;
-                        let binders = u32::from(left.binders)
-                            .checked_add(u32::from(right.binders))
-                            .ok_or(PathError::Budget)?;
-                        let value = shift_value(
-                            arena,
-                            &mut table,
-                            &mut NullMemo,
-                            left.value,
-                            BinderDepth::default(),
-                            right.binders,
-                        );
-                        joined.push(Pattern {
-                            value: arena.value_pair(value, right.value),
-                            binders: BinderDepth::from(binders),
-                        });
+            // Each step crosses the tuples so far with the next component's
+            // patterns; the earlier components' base variables shift past the
+            // new component's, so every variable stays distinct.
+            | Cover::Product(arity) => {
+                let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
+                let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
+                for component in results.drain(start ..) {
+                    let mut crossed = Vec::new();
+                    for &(ref prefix, binders) in &tuples {
+                        for next in &component {
+                            allowance.charge()?;
+                            let binders = binders
+                                .checked_add(u32::from(next.binders))
+                                .ok_or(PathError::Budget)?;
+                            let mut values = Vec::with_capacity(prefix.len().saturating_add(1));
+                            for &earlier in prefix {
+                                values.push(shift_value(
+                                    arena,
+                                    &mut table,
+                                    &mut NullMemo,
+                                    earlier,
+                                    BinderDepth::default(),
+                                    next.binders,
+                                ));
+                            }
+                            values.push(next.value);
+                            crossed.push((values, binders));
+                        }
                     }
+                    tuples = crossed;
                 }
+                let joined = tuples
+                    .into_iter()
+                    .map(|(values, binders)| Pattern {
+                        value: arena.value_tuple(&values),
+                        binders: BinderDepth::from(binders),
+                    })
+                    .collect();
                 results.push(joined);
             },
         }
@@ -296,4 +314,77 @@ pub fn round_trip(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::Summand;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
+
+    use super::Allowance;
+    use super::patterns;
+    use crate::path_universe::PathError;
+
+    /// A product of three base types covers in one pattern whose three base
+    /// variables stay distinct, first component outermost; a sum of three
+    /// covers in one pattern per summand, tagged by position; the empty sum is
+    /// outside the vocabulary.
+    #[test]
+    fn n_ary_codes_cover_by_position()
+    {
+        let mut arena = TermArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let triple = arena.value_type_product(&[integer, integer, integer]);
+        let covered =
+            patterns(&mut arena, triple, &mut Allowance(u64::MAX)).expect("a product covers");
+        let [ref only] = *covered.as_slice()
+        else {
+            panic!("one pattern for a product of base types");
+        };
+        assert_eq!(3_u32, u32::from(only.binders));
+        let components = arena
+            .value(only.value)
+            .and_then(Value::components)
+            .expect("a tuple")
+            .to_vec();
+        let indices = components
+            .iter()
+            .map(|&component| match arena.value(component) {
+                | Some(&Value::Variable(index)) => u32::from(index),
+                | _ => panic!("a base position is a variable"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(vec![2_u32, 1_u32, 0_u32], indices);
+
+        let unit = arena.value_type_unit();
+        let choice = arena.value_type_sum(&[unit, unit, unit]);
+        let covered = patterns(&mut arena, choice, &mut Allowance(u64::MAX)).expect("a sum covers");
+        let summands = covered
+            .iter()
+            .map(|pattern| match arena.value(pattern.value) {
+                | Some(&Value::Injection(summand, _)) => summand,
+                | _ => panic!("a sum pattern is an injection"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            vec![
+                Summand::from(0_usize),
+                Summand::from(1_usize),
+                Summand::from(2_usize)
+            ],
+            summands
+        );
+
+        let empty = arena.value_type_empty();
+        assert!(matches!(
+            patterns(&mut arena, empty, &mut Allowance(u64::MAX)),
+            Err(PathError::UnsupportedType(found)) if found == empty
+        ));
+    }
 }

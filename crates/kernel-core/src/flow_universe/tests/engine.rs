@@ -41,7 +41,7 @@ use crate::replay::ReplayNode;
 /// - hypothesis: L3 — the engine retains pair order and negation branch
 ///   distinctions.
 /// - witness: `flow_universe::tests::one_way_classes_preserve_leaves`
-#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => match arena.value(id) { Some(&Value::PathEquiv { .. }) => 3, Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2, Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1, _ => 0 }, AnyNode::Computation(id) => match arena.computation(id) { Some(&Computation::Case { .. }) => 3, Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2, Some(_) => 1, None => 0 }, _ => 0 })]
+#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, _ => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, _ => 1 }), _ => 0 })]
 fn children(
     arena: &TermArena,
     node: AnyNode,
@@ -49,10 +49,12 @@ fn children(
 {
     match node {
         | AnyNode::Value(id) => match arena.value(id).expect("value resolves") {
-            | &Value::Pair(a, b) => vec![AnyNode::Value(a), AnyNode::Value(b)],
+            | &Value::Tuple(ref components) => {
+                components.iter().copied().map(AnyNode::Value).collect()
+            },
             | &Value::Injection(_, value) => vec![AnyNode::Value(value)],
             | &Value::Thunk(body) => vec![AnyNode::Computation(body)],
-            | &Value::Unit | &Value::Variable(_) | &Value::Literal(_) => Vec::new(),
+            | &Value::Variable(_) | &Value::Literal(_) => Vec::new(),
             | _ => panic!("unsupported fixture value"),
         },
         | AnyNode::Computation(id) => match *arena.computation(id).expect("computation resolves") {
@@ -64,15 +66,11 @@ fn children(
             | Computation::Bind(a, b) => vec![AnyNode::Computation(a), AnyNode::Computation(b)],
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
-            } => vec![
-                AnyNode::Value(scrutinee),
-                AnyNode::Computation(on_left),
-                AnyNode::Computation(on_right),
-            ],
+                ref branches,
+            } => core::iter::once(AnyNode::Value(scrutinee))
+                .chain(branches.iter().copied().map(AnyNode::Computation))
+                .collect(),
             | Computation::ListFold { .. }
-            | Computation::Absurd(_)
             | Computation::Transport(..)
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..) => {
@@ -128,13 +126,15 @@ fn translate(
         match node {
             | AnyNode::Value(id) => {
                 let value = match arena.value(id).expect("value resolves") {
-                    | &Value::Unit => core.value_unit(),
                     | &Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    | &Value::Pair(first, second) => {
-                        core.value_tuple(&[values[&first], values[&second]])
-                    },
-                    | &Value::Injection(side, value) => {
-                        core.value_injection(side.into(), values[&value])
+                    | &Value::Tuple(ref components) => core.value_tuple(
+                        &components
+                            .iter()
+                            .map(|component| values[component])
+                            .collect::<Vec<_>>(),
+                    ),
+                    | &Value::Injection(summand, value) => {
+                        core.value_injection(summand, values[&value])
                     },
                     | &Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | &Value::Literal(ref value) => core.value_literal(value.clone()),
@@ -155,14 +155,15 @@ fn translate(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
-                    } => core.computation_case(values[&scrutinee], &[
-                        computations[&on_left],
-                        computations[&on_right],
-                    ]),
+                        ref branches,
+                    } => core.computation_case(
+                        values[&scrutinee],
+                        &branches
+                            .iter()
+                            .map(|branch| computations[branch])
+                            .collect::<Vec<_>>(),
+                    ),
                     | Computation::ListFold { .. }
-                    | Computation::Absurd(_)
                     | Computation::Transport(..)
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..) => {

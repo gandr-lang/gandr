@@ -530,16 +530,19 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&ValueType::Unit, &ValueType::Unit)
-                    | (&ValueType::Empty, &ValueType::Empty) => {},
-                    | (
-                        &ValueType::Product(one_first, one_second),
-                        &ValueType::Product(other_first, other_second),
-                    )
-                    | (
-                        &ValueType::Sum(one_first, one_second),
-                        &ValueType::Sum(other_first, other_second),
-                    )
+                    // Two products, or two sums, convert part by part; a
+                    // different arity separates them.
+                    | (&ValueType::Product(ref one), &ValueType::Product(ref other))
+                    | (&ValueType::Sum(ref one), &ValueType::Sum(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::ValueType(one, other)),
+                        );
+                    },
                     | (
                         &ValueType::StaticPi {
                             domain: one_first,
@@ -631,8 +634,6 @@ fn converge(
                         | &ValueType::Record(_)
                         | &ValueType::PathUniverse(..)
                         | &ValueType::Base(_)
-                        | &ValueType::Unit
-                        | &ValueType::Empty
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
                         | &ValueType::Session { .. }
@@ -772,7 +773,19 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&Value::Unit, &Value::Unit) | (&Value::ListNil, &Value::ListNil) => {},
+                    | (&Value::ListNil, &Value::ListNil) => {},
+                    // Two tuples convert component by component; a different
+                    // arity separates them.
+                    | (&Value::Tuple(ref one), &Value::Tuple(ref other)) => {
+                        if one.len() != other.len() {
+                            return Convertibility::Distinct;
+                        }
+                        stack.extend(
+                            one.iter()
+                                .zip(other.iter())
+                                .map(|(&one, &other)| ConversionGoal::Value(one, other)),
+                        );
+                    },
                     // As at the universe arm: both sides are pinned to the
                     // literal former, which carries one field, so the node
                     // comparison delegated to here is the literal comparison.
@@ -781,10 +794,6 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (
-                        &Value::Pair(one_first, one_second),
-                        &Value::Pair(other_first, other_second),
-                    )
                     | (&Value::ListCons(one_first, one_second), &Value::ListCons(other_first, other_second))
                     // A static application is neutral — no static lambda can
                     // stand at its head — so two convert exactly when their
@@ -838,10 +847,9 @@ fn converge(
                         &Value::Constructor { .. } | &Value::Record(_) | &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
-                        | &Value::Unit
                         | &Value::ListNil | &Value::ListCons(..)
                         | &Value::Literal(_)
-                        | &Value::Pair(..)
+                        | &Value::Tuple(..)
                         | &Value::Injection(..)
                         | &Value::Thunk(_)
                         | &Value::Lift { .. }
@@ -939,7 +947,6 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_argument, other_argument));
                     },
                     | (&Computation::Return(one), &Computation::Return(other))
-                    | (&Computation::Absurd(one), &Computation::Absurd(other))
                     | (&Computation::Force(one), &Computation::Force(other)) => {
                         stack.push(ConversionGoal::Value(one, other));
                     },
@@ -953,18 +960,23 @@ fn converge(
                     | (
                         &Computation::Case {
                             scrutinee: one_scrutinee,
-                            on_left: one_left,
-                            on_right: one_right,
+                            branches: ref one_branches,
                         },
                         &Computation::Case {
                             scrutinee: other_scrutinee,
-                            on_left: other_left,
-                            on_right: other_right,
+                            branches: ref other_branches,
                         },
                     ) => {
+                        if one_branches.len() != other_branches.len() {
+                            return Convertibility::Distinct;
+                        }
                         stack.push(ConversionGoal::Value(one_scrutinee, other_scrutinee));
-                        stack.push(ConversionGoal::Computation(one_left, other_left));
-                        stack.push(ConversionGoal::Computation(one_right, other_right));
+                        stack.extend(
+                            one_branches
+                                .iter()
+                                .zip(other_branches.iter())
+                                .map(|(&one, &other)| ConversionGoal::Computation(one, other)),
+                        );
                     },
                     | (
                         &Computation::DataCase { .. }
@@ -975,7 +987,6 @@ fn converge(
                         | &Computation::ListFold { .. }
                         | &Computation::Application(..)
                         | &Computation::Return(_)
-                        | &Computation::Absurd(_)
                         | &Computation::Bind(..)
                         | &Computation::Force(_)
                         | &Computation::Case { .. },
@@ -1024,7 +1035,7 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(unit, base);
+        let product = arena.value_type_product(&[unit, base]);
         assert_eq!(
             Convertibility::Convertible,
             convertible_value_types(&arena, product, product),
@@ -1052,8 +1063,8 @@ mod tests
         let mut arena = TermArena::new();
         let first_unit = arena.value_type_unit();
         let second_unit = arena.value_type_unit();
-        let first = arena.value_type_product(first_unit, first_unit);
-        let second = arena.value_type_product(second_unit, second_unit);
+        let first = arena.value_type_product(&[first_unit, first_unit]);
+        let second = arena.value_type_product(&[second_unit, second_unit]);
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
         assert_eq!(
             Convertibility::Convertible,
@@ -1071,8 +1082,8 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
         let numeric = arena.value_type_base(BaseType::Numeric);
-        let product = arena.value_type_product(unit, integer);
-        let sum = arena.value_type_sum(unit, integer);
+        let product = arena.value_type_product(&[unit, integer]);
+        let sum = arena.value_type_sum(&[unit, integer]);
         let returner = arena.comp_type_returner(unit);
         let thunk = arena.value_type_thunk(returner);
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
@@ -1100,7 +1111,7 @@ mod tests
                 );
             }
         }
-        let transposed = arena.value_type_product(integer, unit);
+        let transposed = arena.value_type_product(&[integer, unit]);
         assert_eq!(
             Convertibility::Distinct,
             convertible_value_types(&arena, product, transposed),
@@ -1285,10 +1296,10 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let constant = arena.value_constant(ConstantIndex::from(0_usize));
         let other_constant = arena.value_constant(ConstantIndex::from(1_usize));
-        let pair = arena.value_pair(unit, variable);
-        let transposed = arena.value_pair(variable, unit);
-        let left = arena.value_injection(Side::Left, unit);
-        let right = arena.value_injection(Side::Right, unit);
+        let pair = arena.value_tuple(&[unit, variable]);
+        let transposed = arena.value_tuple(&[variable, unit]);
+        let left = arena.value_injection(Side::Left.into(), unit);
+        let right = arena.value_injection(Side::Right.into(), unit);
         let returner = arena.computation_return(unit);
         let force = arena.computation_force(unit);
         let thunk = arena.value_thunk(returner);
@@ -1342,8 +1353,8 @@ mod tests
         let mut left = arena.value_type_unit();
         let mut right = arena.value_type_unit();
         for _step in 0 .. 30_u32 {
-            left = arena.value_type_product(left, left);
-            right = arena.value_type_product(right, right);
+            left = arena.value_type_product(&[left, left]);
+            right = arena.value_type_product(&[right, right]);
         }
         assert_ne!(
             left, right,
@@ -1362,7 +1373,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let mut other = integer;
         for _step in 0 .. 30_u32 {
-            other = arena.value_type_product(other, other);
+            other = arena.value_type_product(&[other, other]);
         }
         assert_eq!(
             Convertibility::Distinct,
@@ -1457,7 +1468,7 @@ mod tests
         else {
             panic!("the refusal is a value-type mismatch");
         };
-        assert_eq!(ValueTypeHead::Unit, mismatch.expected().head());
+        assert_eq!(ValueTypeHead::Product, mismatch.expected().head());
         assert_eq!(ValueTypeHead::Base, mismatch.actual().head());
         assert_ne!(
             mismatch.expected().digest(),

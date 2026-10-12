@@ -397,8 +397,13 @@ pub fn level_of(
                 | ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. } => {
                     levels.push(target.clone());
                 },
-                | ValueTypeView::Sum(first, second)
-                | ValueTypeView::Product(first, second)
+                | ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
+                    levels.push(Level::zero());
+                    for &component in components.iter().rev() {
+                        tasks.push(Task::Join);
+                        tasks.push(Task::Enter(TypeNode::Value(component)));
+                    }
+                },
                 | ValueTypeView::StaticPi {
                     domain: first,
                     codomain: second,

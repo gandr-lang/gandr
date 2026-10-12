@@ -16,6 +16,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Universe families and quotes](#universe-families-and-quotes)
 - [Static operators](#static-operators)
 - [Nominal data and structural records](#nominal-data-and-structural-records)
+- [N-ary products and sums](#n-ary-products-and-sums)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
@@ -69,7 +70,7 @@ fn example() {
     let mut arena = TermArena::new();
     let declared = arena.value_type_unit();
     let unit = arena.value_unit();
-    let body = arena.value_pair(unit, unit);
+    let body = arena.value_tuple(&[unit, unit]);
     let builder = DeclarationBuilder::new(&mut arena);
     let declaration = builder.def(LevelSignature::monomorphic(), declared, body);
     let sequence = [MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
@@ -152,24 +153,32 @@ These six nodes use counted arities where their children vary. Canonical encodin
 
 A recursive declaration needs no new framing: a field naming its own family is an ordinary nominal application whose declaration index is the declaration's own position. Admission, not the reader, decides whether that occurrence is strictly positive and uniform. The fixpoint `0x63` carries one evidence byte, `0` for a partial fixpoint and `1` for a structural-descent claim, then one computation child: its body under the self binder. Any other evidence byte is refused as an unknown tag at the evidence site. The byte records a claim that kernel admission replays; decoding it grants nothing. `encode::tests::entry_goldens_pin_every_former_and_child_position` and `decode::tests::decoded_entries_preserve_every_former_and_child_position` pin both bytes.
 
-**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so the format remains version 2. **Reversal.** A changed framing or reassigned meaning requires a version change; mutual blocks, indexed families and further conversion evidence need explicit new readers.
+**Choice.** Native identity and field structure, not atom names or product offsets. New node and declaration-kind bytes extend the closed vocabulary without changing existing byte meanings, so they changed no version. **Reversal.** A changed framing or reassigned meaning requires a version change; mutual blocks, indexed families and further conversion evidence need explicit new readers.
+
+## N-ary products and sums
+
+`ValueType::Product` and `ValueType::Sum` hold a list of parts; `Value::Tuple` holds its components, `Value::Injection` names its summand by position, and `Computation::Case` holds one branch per summand. The unit is the product of no parts and the empty tuple; the empty type is the sum of no summands, and a case of no branches eliminates it. There is no unit, empty, pair or absurd variant, and no side alphabet. `ValueType::unit()`, `ValueType::empty()` and `Value::unit()` build the zero-ary nodes; `Value::components`, `ValueType::product_parts` and `ValueType::summands` read the lists.
+
+On the wire, product (`0x03`), sum (`0x04`), tuple (`0x0D`) and case (`0x16`) carry a child count before their children; an injection (`0x0E`) carries its summand as an unsigned varint before its one child. Format version 3 is that change, and the reader refuses version 2. The retired bytes `0x01` (unit type), `0x0B` (unit value), `0x28` (empty type) and `0x29` (absurd) are refused as unassigned, so no artifact spells the unit or the empty type twice.
+
+**Choice.** One former per shape, counted, so `A × B × C` is not `(A × B) × C` and the zero-ary cases are the same former at count zero. **Alternatives.** Keeping binary formers with a unit terminator would encode an n-ary product as a right-nested chain the checker and the surface would both have to re-associate, and two spellings of one type would need a canonicalization rule. Keeping the unit and empty variants beside counted formers would leave two canonical forms of each. **Reversal.** None planned; a new arity-dependent former would take a new byte.
 
 ## Tag numbering and versioning
 
-The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Empty, absurd and native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
+The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
 
 The original `0x00–0x1F` meanings are frozen, including static operators at `0x1E–0x1F`. The extension and reservation table covers the remaining bytes:
 
 | Byte or range | Meaning | Artifact reader |
 | ------------- | ------- | --------------- |
-| `0x00–0x1F` | Original formers in `NODE_TAG_TABLE` | Admitted, unchanged |
+| `0x00–0x1F` | Original formers in `NODE_TAG_TABLE`, less the retired unit type `0x01` and unit value `0x0B` | Admitted; the retired bytes refused |
 | `0x20` | Reserved value sharing | Refused |
 | `0x21` | Reserved computation sharing | Refused |
 | `0x22` | Reserved value-type sharing | Refused |
 | `0x23` | Reserved computation-type sharing | Refused |
 | `0x24–0x27` | Held weakening slots | Refused |
-| `0x28` | Empty value type, no children | Admitted |
-| `0x29` | Absurd computation, one value child | Admitted |
+| `0x28` | Retired: the empty value type | Refused |
+| `0x29` | Retired: the absurd computation | Refused |
 | `0x2A` | `Path_U`, two value-code children | Admitted |
 | `0x2B` | Path reflexivity, one code child | Admitted |
 | `0x2C` | Equivalence, evidence and three children | Admitted |
@@ -195,7 +204,7 @@ The original `0x00–0x1F` meanings are frozen, including static operators at `0
 | `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
 | `0x64–0xFF` | Unassigned | Refused |
 
-The admitted domain is sparse: the greatest assigned native byte is `0x63`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty and List nil are zero-child leaves and may be bounded-alias targets; no reservation becomes an alias target by being below the maximum.
+The admitted domain is sparse: the greatest assigned native byte is `0x63`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes and retired bytes as native nodes, and retain the frozen block. The unit and the empty type are zero-count products and sums, and List nil is a zero-child leaf; all three and may be bounded-alias targets; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
@@ -207,9 +216,9 @@ The portable decision alphabet comes from `kernel-conversion-trace`; unit anchor
 
 The List code (`NODE_VT_LIST`, `0x50`) has one value-type child, its element code. Its native introductions are `ListNil` (`0x51`) and `ListCons` (`0x5B`), not Sum encodings or nominal data constructors. `ListFold` (`0x5C`) carries five children in order: ambient element type, ambient result type, list value, nil branch and cons branch. Only the cons branch binds values: head first, folded result second, so the result is index zero. Both branches return the annotated result type. The ordinary sharing format persists this pure fragment; guarded recursive observations remain separate in-memory programs.
 
-Session codes use `NODE_VT_SESSION` (`0x52`). Their inline graph stores a root, node count, and finite nodes tagged send `0x53`, receive `0x54`, select `0x55`, offer `0x56`, end `0x57`, binder `0x58` and variable `0x59`. Graph integers are canonical unsigned varints. A label is its byte count followed by its exact UTF-8 bytes, each encoded as an unsigned varint. Choice maps are in label order. The graph's only native child is a right-associated payload-type product ending in Unit; payload slots index its fields. Internal recursion references finite graph positions, never a native type-arena back edge.
+Session codes use `NODE_VT_SESSION` (`0x52`). Their inline graph stores a root, node count, and finite nodes tagged send `0x53`, receive `0x54`, select `0x55`, offer `0x56`, end `0x57`, binder `0x58` and variable `0x59`. Graph integers are canonical unsigned varints. A label is its byte count followed by its exact UTF-8 bytes, each encoded as an unsigned varint. Choice maps are in label order. The graph's only native child is one n-ary payload-type product; payload slots index its parts. Internal recursion references finite graph positions, never a native type-arena back edge.
 
-`NODE_V_SESSION_PATH` (`0x5A`) has two native children: its `Path_U` classifier and a Unit-terminated product of native payload-path values. Inline evidence is a sorted set of source/target state pairs followed by ordered source/target payload-slot obligations. Decoding rejects unknown opcodes, malformed UTF-8, duplicate labels or relation pairs, truncation and noncanonical encodings. Counts consume input before growing allocations; exhausted input is `Truncated`, while the ordinary table and expanded-work budgets retain their typed refusals. Contractivity, scope, relation coverage and payload typing belong to kernel formation. All relation data participates in canonical bytes even when conversion erases derivation pairs.
+`NODE_V_SESSION_PATH` (`0x5A`) has two native children: its `Path_U` classifier and one tuple of native payload-path values. Inline evidence is a sorted set of source/target state pairs followed by ordered source/target payload-slot obligations. Decoding rejects unknown opcodes, malformed UTF-8, duplicate labels or relation pairs, truncation and noncanonical encodings. Counts consume input before growing allocations; exhausted input is `Truncated`, while the ordinary table and expanded-work budgets retain their typed refusals. Contractivity, scope, relation coverage and payload typing belong to kernel formation. All relation data participates in canonical bytes even when conversion erases derivation pairs.
 
 **Choice.** Inline finite graph data with one native payload-code child preserves the format's fixed child arities and ordinary content sharing without recursive Rust ownership. Separate native constructors would spread finite graph framing across seven additional native cases; a second opaque payload-identity scheme would bypass universe formation. **Reversal.** A distinct protocol universe or a persisted endpoint-value language requires its own formation and elimination rules. These tags encode protocol types and identity evidence, not live channels.
 

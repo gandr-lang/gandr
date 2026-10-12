@@ -47,7 +47,7 @@ use crate::base::Literal;
 use crate::term::Computation;
 use crate::term::ConstantIndex;
 use crate::term::DeBruijnIndex;
-use crate::term::Side;
+use crate::term::Summand;
 use crate::term::Value;
 use crate::types::CompType;
 use crate::types::GroundSort;
@@ -803,14 +803,15 @@ impl TermArena
         requires: match value {
             Value::Constructor { datatype, ref fields, .. } => self.value_type(datatype).is_some() && fields.iter().all(|field| self.value(*field).is_some()),
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
-            Value::ListCons(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
             Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) => self.computation(body).is_some(),
             Value::Quote(quoted) => self.value_type(quoted).is_some(),
             Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
-            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
+            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
         }, captures: entry = (self.watermark(), core::mem::discriminant(&value)),
         ensures: |ret| self.values.len() == entry.0.values.saturating_add(1)
                 && self.computations.len() == entry.0.computations
@@ -856,10 +857,10 @@ impl TermArena
             Computation::RecordProjection(record, _) => self.value(record).is_some(),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
-            Computation::Return(value) | Computation::Force(value) | Computation::Absurd(value) => self.value(value).is_some(),
+            Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
             Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
-            Computation::Case { scrutinee, on_left, on_right } => self.value(scrutinee).is_some() && self.computation(on_left).is_some() && self.computation(on_right).is_some(),
+            Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
         }, captures: entry = (self.watermark(), core::mem::discriminant(&computation)),
         ensures: |ret| self.values.len() == entry.0.values
@@ -904,13 +905,14 @@ impl TermArena
         requires: match value_type {
             ValueType::Data { ref arguments, .. } => arguments.iter().all(|argument| self.value(*argument).is_some()),
             ValueType::Record(ref fields) => fields.values().all(|field| self.value_type(*field).is_some()),
-            ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
+            ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
             ValueType::Element { code, .. } => self.value(code).is_some(),
-            ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
+            ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
         }, captures: entry = (self.watermark(), core::mem::discriminant(&value_type)),
         ensures: |ret| self.values.len() == entry.0.values
                 && self.computations.len() == entry.0.computations
@@ -1081,12 +1083,12 @@ impl TermArena
                 && self.value_types.len() == before.value_types
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
-                && matches!(self.values.last(), Some(&Value::Unit)),
+                && self.values.last().is_some_and(|node| node.components().is_some_and(<[_]>::is_empty)),
     )]
     #[inline]
     pub fn value_unit(&mut self) -> ValueId
     {
-        self.alloc_value(Value::Unit)
+        self.value_tuple(&[])
     }
 
     /// Mint a base-type literal value.
@@ -1128,15 +1130,15 @@ impl TermArena
         self.alloc_value(Value::Literal(literal))
     }
 
-    /// Mint a pair over two already-allocated value children.
+    /// Mint a tuple over already-allocated value components, in order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` resolve in this arena.
+    /// - requires: every component resolves in this arena.
     /// - ensures: appends the node and returns the value family's length before
     ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
-    ///   the id names the appended node and is strictly greater than both child
-    ///   ids, which the precondition keeps live.
-    /// - provides: the pair node, acyclic by construction; the id ordering is
+    ///   the id names the appended node and is strictly greater than every
+    ///   component id, which the precondition keeps live.
+    /// - provides: the tuple node, acyclic by construction; the id ordering is
     ///   what the subterm table's strictly-earlier invariant rests on.
     /// - panics: none.
     ///
@@ -1150,36 +1152,33 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: self.value(first).is_some()
-                && self.value(second).is_some(), captures: before = self.watermark(),
+        requires: components.iter().all(|&component| self.value(component).is_some()), captures: before = self.watermark(),
         ensures: |ret| self.values.len() == before.values.saturating_add(1)
                 && self.computations.len() == before.computations
                 && self.value_types.len() == before.value_types
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
-                && matches!(self.values.last(), Some(&Value::Pair(left, right)) if left == first
-                && right == second),
+                && self.values.last().and_then(Value::components) == Some(components),
     )]
     #[inline]
-    pub fn value_pair(
+    pub fn value_tuple(
         &mut self,
-        first: ValueId,
-        second: ValueId,
+        components: &[ValueId],
     ) -> ValueId
     {
-        self.alloc_value(Value::Pair(first, second))
+        self.alloc_value(Value::Tuple(components.into()))
     }
 
     /// Mint a sum injection over an already-allocated value body.
     ///
     /// # Specification
     /// - requires: `body` resolves in this arena.
-    /// - ensures: appends the node on the named side and returns the value
+    /// - ensures: appends the node at the named summand and returns the value
     ///   family's length before the push, saturated at the `u32` ceiling; while
     ///   that length fits `u32` the id names the appended node and is strictly
     ///   greater than `body`, which the precondition keeps live.
-    /// - provides: the injection node, acyclic by construction; which summand
-    ///   the side selects is a typing fact.
+    /// - provides: the injection node, acyclic by construction; whether the
+    ///   summand exists is a typing fact.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1198,17 +1197,17 @@ impl TermArena
                 && self.value_types.len() == before.value_types
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.values).unwrap_or(u32::MAX)
-                && matches!(self.values.last(), Some(&Value::Injection(actual_side, actual_body)) if actual_side == side
+                && matches!(self.values.last(), Some(&Value::Injection(actual, actual_body)) if actual == summand
                 && actual_body == body),
     )]
     #[inline]
     pub fn value_injection(
         &mut self,
-        side: Side,
+        summand: Summand,
         body: ValueId,
     ) -> ValueId
     {
-        self.alloc_value(Value::Injection(side, body))
+        self.alloc_value(Value::Injection(summand, body))
     }
 
     /// Mint a thunk over an already-allocated computation body.
@@ -1654,19 +1653,19 @@ impl TermArena
         self.alloc_computation(Computation::Force(value))
     }
 
-    /// Mint a case over an already-allocated scrutinee and two branches.
+    /// Mint a case over an already-allocated scrutinee and its branches, one
+    /// per summand in summand order.
     ///
     /// # Specification
-    /// - requires: `scrutinee`, `on_left`, and `on_right` resolve in this
-    ///   arena, the scrutinee in its value family and the branches in its
-    ///   computation family.
+    /// - requires: `scrutinee` resolves in this arena's value family and every
+    ///   branch in its computation family.
     /// - ensures: appends the node and returns the computation family's length
     ///   before the push, saturated at the `u32` ceiling; while that length
     ///   fits `u32` the id names the appended node and is strictly greater than
-    ///   both branch ids, which the precondition keeps live.
+    ///   every branch id, which the precondition keeps live.
     /// - provides: the sum elimination; each branch is checked with the
     ///   injected value bound, which is a typing fact rather than a
-    ///   representation one.
+    ///   representation one. A case of no branches eliminates the empty sum.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1680,53 +1679,36 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: self.value(scrutinee).is_some()
-                && self.computation(on_left).is_some()
-                && self.computation(on_right).is_some(), captures: before = self.watermark(),
+                && branches.iter().all(|&branch| self.computation(branch).is_some()), captures: before = self.watermark(),
         ensures: |ret| self.values.len() == before.values
                 && self.computations.len() == before.computations.saturating_add(1)
                 && self.value_types.len() == before.value_types
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.computations).unwrap_or(u32::MAX)
-                && matches!(self.computations.last(), Some(&Computation::Case { scrutinee: actual, on_left: left, on_right: right }) if actual == scrutinee
-                && left == on_left
-                && right == on_right),
+                && matches!(self.computations.last(), Some(&Computation::Case { scrutinee: actual, branches: ref minted }) if actual == scrutinee
+                && **minted == *branches),
     )]
     #[inline]
     pub fn computation_case(
         &mut self,
         scrutinee: ValueId,
-        on_left: ComputationId,
-        on_right: ComputationId,
+        branches: &[ComputationId],
     ) -> ComputationId
     {
         self.alloc_computation(Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            branches: branches.into(),
         })
     }
 
-    /// Mint empty elimination over an already-allocated scrutinee.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn computation_absurd(
-        &mut self,
-        scrutinee: ValueId,
-    ) -> ComputationId
-    {
-        self.alloc_computation(Computation::Absurd(scrutinee))
-    }
-
-    /// Mint the empty value type.
+    /// Mint the empty value type: the sum of no summands.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn value_type_empty(&mut self) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Empty)
+        self.value_type_sum(&[])
     }
 
     // Value-type constructors.
@@ -1769,7 +1751,7 @@ impl TermArena
         self.alloc_value_type(ValueType::Base(base))
     }
 
-    /// Mint the unit value type.
+    /// Mint the unit value type: the product of no components.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1796,22 +1778,22 @@ impl TermArena
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Unit)),
+                && matches!(self.value_types.last(), Some(ValueType::Product(components)) if components.is_empty()),
     )]
     #[inline]
     pub fn value_type_unit(&mut self) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Unit)
+        self.value_type_product(&[])
     }
 
-    /// Mint a product over two already-allocated value types.
+    /// Mint a product over already-allocated value types, in order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` resolve in this arena.
+    /// - requires: every component resolves in this arena.
     /// - ensures: appends the node and returns the value-type family's length
     ///   before the push, saturated at the `u32` ceiling; while that length
     ///   fits `u32` the id names the appended node and is strictly greater than
-    ///   both child ids, which the precondition keeps live.
+    ///   every component id, which the precondition keeps live.
     /// - provides: the product type, acyclic by construction.
     /// - panics: none.
     ///
@@ -1825,36 +1807,33 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: self.value_type(first).is_some()
-                && self.value_type(second).is_some(), captures: before = self.watermark(),
+        requires: components.iter().all(|&component| self.value_type(component).is_some()), captures: before = self.watermark(),
         ensures: |ret| self.values.len() == before.values
                 && self.computations.len() == before.computations
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Product(left, right)) if left == first
-                && right == second),
+                && matches!(self.value_types.last(), Some(ValueType::Product(minted)) if **minted == *components),
     )]
     #[inline]
     pub fn value_type_product(
         &mut self,
-        first: ValueTypeId,
-        second: ValueTypeId,
+        components: &[ValueTypeId],
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Product(first, second))
+        self.alloc_value_type(ValueType::Product(components.into()))
     }
 
-    /// Mint a sum over two already-allocated value types.
+    /// Mint a sum over already-allocated value types, in summand order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` resolve in this arena.
+    /// - requires: every summand resolves in this arena.
     /// - ensures: appends the node and returns the value-type family's length
     ///   before the push, saturated at the `u32` ceiling; while that length
     ///   fits `u32` the id names the appended node and is strictly greater than
-    ///   both child ids, which the precondition keeps live.
+    ///   every summand id, which the precondition keeps live.
     /// - provides: the sum type, acyclic by construction; the summand order is
-    ///   the order the two arguments are given in.
+    ///   the order the slice gives.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1867,24 +1846,21 @@ impl TermArena
     ///   hash-consing; the probes are not a typing or arena-provenance proof.
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
-        requires: self.value_type(first).is_some()
-                && self.value_type(second).is_some(), captures: before = self.watermark(),
+        requires: summands.iter().all(|&summand| self.value_type(summand).is_some()), captures: before = self.watermark(),
         ensures: |ret| self.values.len() == before.values
                 && self.computations.len() == before.computations
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Sum(left, right)) if left == first
-                && right == second),
+                && matches!(self.value_types.last(), Some(ValueType::Sum(minted)) if **minted == *summands),
     )]
     #[inline]
     pub fn value_type_sum(
         &mut self,
-        first: ValueTypeId,
-        second: ValueTypeId,
+        summands: &[ValueTypeId],
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Sum(first, second))
+        self.alloc_value_type(ValueType::Sum(summands.into()))
     }
 
     /// Allocate the strictly positive list code over an element type.
@@ -2452,12 +2428,13 @@ impl TermArena
         AnyNode::Value(id) => self.value(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => ret.iter().copied().eq(core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))),
 Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::Value)),
-Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => ret.is_empty(),
+Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied().map(AnyNode::Value)),
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
 Value::PathRefl(code) => ret.as_slice() == [AnyNode::Value(code)],
-Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) =>
+Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -2474,22 +2451,19 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
-            Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) =>
+            Some(&Computation::Return(value) | &Computation::Force(value)) =>
                 ret.as_slice() == [AnyNode::Value(value)],
             Some(&Computation::Bind(bound, body)) =>
                 ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
-            Some(&Computation::Case { scrutinee, on_left, on_right }) =>
-                ret.as_slice() == [
-                    AnyNode::Value(scrutinee),
-                    AnyNode::Computation(on_left),
-                    AnyNode::Computation(on_right),
-                ],
+            Some(&Computation::Case { scrutinee, ref branches }) =>
+                ret.iter().copied().eq(core::iter::once(AnyNode::Value(scrutinee)).chain(branches.iter().copied().map(AnyNode::Computation))),
         },
         AnyNode::ValueType(id) => self.value_type(id).map_or(ret.is_empty(), |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(AnyNode::Value)),
 ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(AnyNode::ValueType)),
-ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => ret.is_empty(),
-ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } =>
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => ret.is_empty(),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(AnyNode::ValueType)),
+ValueType::StaticPi { domain: first, codomain: second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
 ValueType::PathUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
@@ -2528,10 +2502,12 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     &Value::ListNil
                     | &Value::Variable(_)
                     | &Value::Constant(_)
-                    | &Value::Unit
                     | &Value::Literal(_),
                 )
                 | None => {},
+                | Some(&Value::Tuple(ref components)) => {
+                    children.extend(components.iter().copied().map(AnyNode::Value));
+                },
                 | Some(&Value::PathEquiv {
                     path_type,
                     forward,
@@ -2553,7 +2529,6 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&Value::PathRefl(code)) => children.push(AnyNode::Value(code)),
                 | Some(
                     &Value::PathProduct(first, second)
-                    | &Value::Pair(first, second)
                     | &Value::ListCons(first, second)
                     | &Value::StaticApplication(first, second),
                 ) => {
@@ -2608,11 +2583,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Computation(head));
                     children.push(AnyNode::Value(argument));
                 },
-                | Some(
-                    &Computation::Return(value)
-                    | &Computation::Force(value)
-                    | &Computation::Absurd(value),
-                ) => {
+                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                     children.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -2621,12 +2592,10 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     children.push(AnyNode::Value(scrutinee));
-                    children.push(AnyNode::Computation(on_left));
-                    children.push(AnyNode::Computation(on_right));
+                    children.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
             },
             | AnyNode::ValueType(id) => match self.value_type(id) {
@@ -2637,21 +2606,16 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend(fields.values().copied().map(AnyNode::ValueType));
                 },
                 | Some(
-                    &ValueType::Base(_)
-                    | &ValueType::Unit
-                    | &ValueType::Empty
-                    | &ValueType::Universe { .. }
-                    | &ValueType::Abstract(_),
+                    &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_),
                 )
                 | None => {},
-                | Some(
-                    &ValueType::Product(first, second)
-                    | &ValueType::Sum(first, second)
-                    | &ValueType::StaticPi {
-                        domain: first,
-                        codomain: second,
-                    },
-                ) => {
+                | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                    children.extend(parts.iter().copied().map(AnyNode::ValueType));
+                },
+                | Some(&ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                }) => {
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
                 },
@@ -3064,11 +3028,66 @@ mod tests
     }
 
     #[test]
+    fn the_unit_and_the_empty_type_are_zero_ary()
+    {
+        use super::Value;
+        use super::ValueType;
+
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let first = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let pair = arena.value_tuple(&[unit, first]);
+        let injection = arena.value_injection(super::Summand::from(0_usize), unit);
+        assert_eq!(arena.value(unit), Some(&Value::unit()));
+        assert_eq!(
+            arena.value(unit).and_then(Value::components),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value(pair).and_then(Value::components),
+            Some([unit, first].as_slice()),
+            "a tuple reads its components in order"
+        );
+        assert_ne!(arena.value(pair), Some(&Value::unit()));
+        assert_eq!(arena.value(injection).and_then(Value::components), None);
+        let unit_type = arena.value_type_unit();
+        let empty = arena.value_type_empty();
+        let product = arena.value_type_product(&[unit_type, unit_type]);
+        assert_eq!(arena.value_type(unit_type), Some(&ValueType::unit()));
+        assert_eq!(arena.value_type(empty), Some(&ValueType::empty()));
+        assert_ne!(ValueType::unit(), ValueType::empty());
+        assert_ne!(arena.value_type(product), Some(&ValueType::unit()));
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::product_parts),
+            Some([unit_type, unit_type].as_slice())
+        );
+        assert_eq!(
+            arena
+                .value_type(unit_type)
+                .and_then(ValueType::product_parts),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::product_parts),
+            None
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::summands),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::summands),
+            None
+        );
+    }
+
+    #[test]
     fn ordered_edges_preserve_distinct_children_and_quote_boundaries()
     {
         use super::CompType;
         use super::Computation;
         use super::GroundSort;
+        use super::Summand;
         use super::Value;
         use super::ValueType;
 
@@ -3109,24 +3128,30 @@ mod tests
                 Value::Constant(super::ConstantIndex::from(usize::MAX)),
                 &[],
             ),
-            (arena.value_unit(), Value::Unit, &[]),
+            (arena.value_unit(), Value::unit(), &[]),
             (
                 arena.value_literal(literal.clone()),
                 Value::Literal(literal),
                 &[],
             ),
-            (arena.value_pair(v0, v1), Value::Pair(v0, v1), &[
-                AnyNode::Value(v0),
-                AnyNode::Value(v1),
-            ]),
             (
-                arena.value_injection(super::Side::Left, v0),
-                Value::Injection(super::Side::Left, v0),
+                arena.value_tuple(&[v0, v1]),
+                Value::Tuple([v0, v1].into()),
+                &[AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_tuple(&[v1, v0, v1]),
+                Value::Tuple([v1, v0, v1].into()),
+                &[AnyNode::Value(v1), AnyNode::Value(v0), AnyNode::Value(v1)],
+            ),
+            (
+                arena.value_injection(Summand::from(0_usize), v0),
+                Value::Injection(Summand::from(0_usize), v0),
                 &[AnyNode::Value(v0)],
             ),
             (
-                arena.value_injection(super::Side::Right, v1),
-                Value::Injection(super::Side::Right, v1),
+                arena.value_injection(Summand::from(2_usize), v1),
+                Value::Injection(Summand::from(2_usize), v1),
                 &[AnyNode::Value(v1)],
             ),
             (arena.value_thunk(c1), Value::Thunk(c1), &[
@@ -3204,17 +3229,24 @@ mod tests
                 AnyNode::Value(v0),
             ]),
             (
-                arena.computation_case(v1, c0, c1),
+                arena.computation_case(v1, &[c0, c1]),
                 Computation::Case {
                     scrutinee: v1,
-                    on_left: c0,
-                    on_right: c1,
+                    branches: [c0, c1].into(),
                 },
                 &[
                     AnyNode::Value(v1),
                     AnyNode::Computation(c0),
                     AnyNode::Computation(c1),
                 ],
+            ),
+            (
+                arena.computation_case(v0, &[]),
+                Computation::Case {
+                    scrutinee: v0,
+                    branches: alloc::boxed::Box::default(),
+                },
+                &[AnyNode::Value(v0)],
             ),
         ];
         for (offset, &(id, ref expected, children)) in computations.iter().enumerate() {
@@ -3239,16 +3271,22 @@ mod tests
                 ValueType::Base(super::BaseType::String),
                 &[],
             ),
-            (arena.value_type_unit(), ValueType::Unit, &[]),
+            (arena.value_type_unit(), ValueType::unit(), &[]),
+            (arena.value_type_empty(), ValueType::empty(), &[]),
             (
-                arena.value_type_product(t0, t1),
-                ValueType::Product(t0, t1),
+                arena.value_type_product(&[t0, t1]),
+                ValueType::Product([t0, t1].into()),
                 &[AnyNode::ValueType(t0), AnyNode::ValueType(t1)],
             ),
-            (arena.value_type_sum(t1, t0), ValueType::Sum(t1, t0), &[
-                AnyNode::ValueType(t1),
-                AnyNode::ValueType(t0),
-            ]),
+            (
+                arena.value_type_sum(&[t1, t0, t1]),
+                ValueType::Sum([t1, t0, t1].into()),
+                &[
+                    AnyNode::ValueType(t1),
+                    AnyNode::ValueType(t0),
+                    AnyNode::ValueType(t1),
+                ],
+            ),
             (arena.value_type_thunk(k1), ValueType::Thunk(k1), &[
                 AnyNode::CompType(k1),
             ]),
@@ -3406,7 +3444,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         assert!(
             unit < pair,
             "constructor-only minting orders child below parent"

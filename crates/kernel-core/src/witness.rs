@@ -117,7 +117,7 @@ mod tests
         let floor = arena.watermark();
         let unit = arena.value_type_unit();
         let readable = value_type_witness(&arena, unit);
-        assert_eq!(readable.head(), ValueTypeHead::Unit);
+        assert_eq!(readable.head(), ValueTypeHead::Product);
         arena.truncate_to(floor);
         let unreadable = value_type_witness(&arena, unit);
         assert_eq!(

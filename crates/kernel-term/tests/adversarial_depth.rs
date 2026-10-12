@@ -149,14 +149,15 @@ mod adversarial_depth
         ensures: |ret| { let entries = CHAIN_LINKS.saturating_mul(2).saturating_add(1);
             let count_word = u64::try_from(entries).unwrap_or(u64::MAX);
             let first = 13_usize.saturating_add(usize::try_from(64_u32.saturating_sub((count_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
-            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 2, 0, 0, 1, 0, 1, 0, 0, 0])
+            ret.0.starts_with(&[b'G', b'K', b'X', b'1', 3, 0, 0, 1, 0, 1, 0, 0, 0])
                 && ({ let scalar = count_word;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get(13_usize .. (13_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                && ret.0.get(first) == Some(&1)
-                && (1 .. entries).try_fold(first.saturating_add(1),
+                && ret.0.get(first) == Some(&3)
+                && ret.0.get(first.saturating_add(1)) == Some(&0)
+                && (1 .. entries).try_fold(first.saturating_add(2),
             |position, index| { let previous = u64::try_from(index.saturating_sub(1)).unwrap_or(u64::MAX);
             let tag = if index.rem_euclid(2) == 1 { 0x07 }
             else { 0x05 };
@@ -225,7 +226,7 @@ mod adversarial_depth
                 }
                 assert_eq!(
                     artifact.arena().value_type(node),
-                    Some(&gandr_kernel_term::ValueType::Unit),
+                    Some(&gandr_kernel_term::ValueType::unit()),
                     "the exact chain ends at unit"
                 );
                 // Nothing but this binding owns the decoded graph, so dropping it

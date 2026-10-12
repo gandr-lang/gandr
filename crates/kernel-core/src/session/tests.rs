@@ -40,8 +40,7 @@ fn code(
     payload: ValueTypeId,
 ) -> ValueId
 {
-    let unit = arena.value_type_unit();
-    let payloads = arena.value_type_product(payload, unit);
+    let payloads = arena.value_type_product(&[payload]);
     let ty = arena.value_type_session(
         Arc::new(Graph {
             nodes,
@@ -388,7 +387,7 @@ fn session_relations_replay_without_search()
 
     // Different payload codes require an actual native equivalence, not a tag.
     let unit_ty = arena.value_type_unit();
-    let pair_ty = arena.value_type_product(unit_ty, unit_ty);
+    let pair_ty = arena.value_type_product(&[unit_ty, unit_ty]);
     let source = code(
         &mut arena,
         vec![Node::Send(PayloadSlot(0), State(1)), Node::End],
@@ -413,7 +412,7 @@ fn session_relations_replay_without_search()
     );
     evidence.payloads.push((PayloadSlot(0), PayloadSlot(0)));
     let one = arena.value_unit();
-    let two = arena.value_pair(one, one);
+    let two = arena.value_tuple(&[one, one]);
     let forward = arena.computation_return(two);
     let forward = arena.computation_lambda(forward);
     let forward = arena.value_thunk(forward);
@@ -426,11 +425,11 @@ fn session_relations_replay_without_search()
     let two_code = arena.value_quote(pair_ty);
     let payload_ty = arena.value_type_path_universe(one_code, two_code);
     let payload_path = arena.value_path_equiv(payload_ty, forward, backward, rounds);
-    let tuple = arena.value_pair(payload_path, proofs);
+    let tuple = arena.value_tuple(&[payload_path]);
     let (ty, good) = path(&mut arena, (source, target), evidence.clone(), tuple);
     assert_eq!(check_closed_value(&mut arena, good, ty), Ok(()));
     let false_path = arena.value_path_refl(one_code);
-    let false_tuple = arena.value_pair(false_path, proofs);
+    let false_tuple = arena.value_tuple(&[false_path]);
     let (_, bad) = path(&mut arena, (source, target), evidence, false_tuple);
     assert!(matches!(
         synth_closed_value(&mut arena, bad),
@@ -454,8 +453,8 @@ fn session_relations_replay_without_search()
         crate::conv::equal_values(arena, good, bad),
         crate::Convertibility::Convertible
     );
-    let declared = arena.value_type_product(ty, ty);
-    let body = arena.value_pair(good, bad);
+    let declared = arena.value_type_product(&[ty, ty]);
+    let body = arena.value_tuple(&[good, bad]);
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
     assert_eq!(
         environment.add_decl(staged),
@@ -497,8 +496,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
     );
     assert_eq!(super::payload_codes(&arena, unit), Ok(Vec::new()));
     let payload = arena.value_type_base(BaseType::String);
-    let tail = arena.value_type_product(unit, unit);
-    let telescope = arena.value_type_product(payload, tail);
+    let telescope = arena.value_type_product(&[payload, unit]);
     assert_eq!(
         super::payload_codes(&arena, telescope),
         Ok(vec![payload, unit])
@@ -552,7 +550,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
         .expect("payload path obligation");
     let payload_code = arena.value_quote(unit);
     let path_ty = arena.value_type_path_universe(payload_code, payload_code);
-    let wanted = arena.value_type_product(path_ty, unit);
+    let wanted = arena.value_type_product(&[path_ty]);
     assert_eq!(
         crate::convertible_value_types(&arena, expected, wanted),
         crate::Convertibility::Convertible
@@ -658,7 +656,7 @@ fn session_choice_relations_exhaust_two_label_widths()
                             assert!(admitted, "invalid label inclusion admitted");
                             assert_eq!(
                                 arena.value_type(expected),
-                                Some(&gandr_kernel_term::ValueType::Unit)
+                                Some(&gandr_kernel_term::ValueType::unit())
                             );
                         },
                         | Err(error) => {

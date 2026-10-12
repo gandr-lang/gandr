@@ -82,7 +82,7 @@ use crate::error::TagSite;
 use crate::tags;
 use crate::term::ConstantIndex;
 use crate::term::DeBruijnIndex;
-use crate::term::Side;
+use crate::term::Summand;
 use crate::types::GroundSort;
 use crate::wire::ArtifactImage;
 use crate::wire::ByteCount;
@@ -1888,14 +1888,6 @@ fn decode_entry(
             let id = table.arena.value_type_base(base);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
-        | tags::NODE_VT_UNIT => (
-            DecodedNode::ValueType(table.arena.value_type_unit()),
-            Family::ValueType,
-        ),
-        | tags::NODE_VT_EMPTY => (
-            DecodedNode::ValueType(table.arena.value_type_empty()),
-            Family::ValueType,
-        ),
         | tags::NODE_VT_UNIVERSE => {
             let level = decode_level(reader)?;
             let id = table.arena.value_type_universe(GroundSort::Value, level);
@@ -1919,9 +1911,12 @@ fn decode_entry(
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_VT_PRODUCT => {
-            let first = read_value_type(reader, table, this, &mut children)?;
-            let second = read_value_type(reader, table, this, &mut children)?;
-            let id = table.arena.value_type_product(first, second);
+            let count = usize::from(reader.read_usize()?);
+            let mut components = Vec::new();
+            for _ in 0 .. count {
+                components.push(read_value_type(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.value_type_product(&components);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_VT_LIST => {
@@ -1951,9 +1946,12 @@ fn decode_entry(
             (DecodedNode::Computation(id), Family::Computation)
         },
         | tags::NODE_VT_SUM => {
-            let first = read_value_type(reader, table, this, &mut children)?;
-            let second = read_value_type(reader, table, this, &mut children)?;
-            let id = table.arena.value_type_sum(first, second);
+            let count = usize::from(reader.read_usize()?);
+            let mut summands = Vec::new();
+            for _ in 0 .. count {
+                summands.push(read_value_type(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.value_type_sum(&summands);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_VT_THUNK => {
@@ -2016,22 +2014,24 @@ fn decode_entry(
                 .value_constant(ConstantIndex::from(usize::from(index)));
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_UNIT => (DecodedNode::Value(table.arena.value_unit()), Family::Value),
         | tags::NODE_V_LITERAL => {
             let literal = decode_literal(reader)?;
             let id = table.arena.value_literal(literal);
             (DecodedNode::Value(id), Family::Value)
         },
-        | tags::NODE_V_PAIR => {
-            let first = read_value(reader, table, this, &mut children)?;
-            let second = read_value(reader, table, this, &mut children)?;
-            let id = table.arena.value_pair(first, second);
+        | tags::NODE_V_TUPLE => {
+            let count = usize::from(reader.read_usize()?);
+            let mut components = Vec::new();
+            for _ in 0 .. count {
+                components.push(read_value(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.value_tuple(&components);
             (DecodedNode::Value(id), Family::Value)
         },
         | tags::NODE_V_INJECTION => {
-            let side = decode_side(reader)?;
+            let summand = Summand::from(usize::from(reader.read_usize()?));
             let body = read_value(reader, table, this, &mut children)?;
-            let id = table.arena.value_injection(side, body);
+            let id = table.arena.value_injection(summand, body);
             (DecodedNode::Value(id), Family::Value)
         },
         | tags::NODE_V_THUNK => {
@@ -2094,16 +2094,14 @@ fn decode_entry(
             let id = table.arena.computation_force(value);
             (DecodedNode::Computation(id), Family::Computation)
         },
-        | tags::NODE_C_ABSURD => {
-            let value = read_value(reader, table, this, &mut children)?;
-            let id = table.arena.computation_absurd(value);
-            (DecodedNode::Computation(id), Family::Computation)
-        },
         | tags::NODE_C_CASE => {
+            let count = usize::from(reader.read_usize()?);
             let scrutinee = read_value(reader, table, this, &mut children)?;
-            let on_left = read_computation(reader, table, this, &mut children)?;
-            let on_right = read_computation(reader, table, this, &mut children)?;
-            let id = table.arena.computation_case(scrutinee, on_left, on_right);
+            let mut branches = Vec::new();
+            for _ in 0 .. count {
+                branches.push(read_computation(reader, table, this, &mut children)?);
+            }
+            let id = table.arena.computation_case(scrutinee, &branches);
             (DecodedNode::Computation(id), Family::Computation)
         },
         | other => {
@@ -2989,43 +2987,6 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
     }
 }
 
-/// Decode an injection side.
-///
-/// # Specification
-/// - requires: the cursor is positioned at an injection side.
-/// - ensures: on `Ok`, returns the side the tag named and advances past it.
-/// - provides: the side alphabet's one interpretation site.
-/// - fails: [`DecodeError::Truncated`] at the end of the image;
-///   [`DecodeError::UnknownTag`] at the side site on any other byte.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 partitions every byte of each closed tag alphabet into its
-///   exact value or named refusal, with empty-input truncation and
-///   consumed-offset checks. Reserved declaration kinds remain distinct from
-///   unassigned bytes. This proves the finite alphabets, not surrounding record
-///   validity.
-/// - witness: `decode::tests::tag_alphabets_partition_every_byte`
-#[spec(
-    captures: start = reader.position,
-    ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
-        reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&Side::Left), Some(1) => ret.as_ref() == Ok(&Side::Right), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::Side, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
-)]
-#[inline]
-fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
-{
-    let tag = reader.next_tag()?;
-    match tag {
-        | tags::SIDE_LEFT => Ok(Side::Left),
-        | tags::SIDE_RIGHT => Ok(Side::Right),
-        | other => Err(DecodeError::UnknownTag {
-            site: TagSite::Side,
-            tag: other,
-        }),
-    }
-}
-
 /// Decode a fixpoint's termination claim.
 ///
 /// # Specification
@@ -3319,7 +3280,7 @@ mod tests
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 2 {
+            let expected = if version == 3 {
                 Ok(())
             }
             else {
@@ -3458,14 +3419,6 @@ mod tests
             assert_eq!(super::decode_base_type(&mut reader), base);
             assert_eq!(reader.position.0, 1);
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
-            let side = match byte {
-                | 0 => Ok(super::Side::Left),
-                | 1 => Ok(super::Side::Right),
-                | _ => Err(unknown(super::TagSite::Side)),
-            };
-            assert_eq!(super::decode_side(&mut reader), side);
-            assert_eq!(reader.position.0, 1);
-            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             let evidence = match byte {
                 | 0 => Ok(crate::FixpointEvidence::Partial),
                 | 1 => Ok(crate::FixpointEvidence::StructuralDescent),
@@ -3518,10 +3471,6 @@ mod tests
         );
         assert_eq!(
             super::decode_base_type(&mut ByteReader::new(image)),
-            Err(DecodeError::Truncated)
-        );
-        assert_eq!(
-            super::decode_side(&mut ByteReader::new(image)),
             Err(DecodeError::Truncated)
         );
         assert_eq!(
@@ -3689,7 +3638,7 @@ mod tests
             super::Family::Value, super::Family::CompType, super::Family::Computation])]
     fn four_family_table() -> super::Table
     {
-        let bytes = [1_u8, 0x0b, 7, 0, 0x13, 1, 0, 1, 9, 7, 7, 4, 0x15, 5];
+        let bytes = [3_u8, 0, 0x0d, 0, 7, 0, 0x13, 1, 0, 1, 9, 7, 7, 4, 0x15, 5];
         let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
         let mut table = super::Table::new();
         for _entry in 0_u8 .. 8 {
@@ -3847,7 +3796,9 @@ mod tests
                     | (Some(first), None) => {
                         table.arena.value_type_lift(first, super::Level::zero())
                     },
-                    | (Some(first), Some(second)) => table.arena.value_type_product(first, second),
+                    | (Some(first), Some(second)) => {
+                        table.arena.value_type_product(&[first, second])
+                    },
                 };
                 table.nodes.push(super::DecodedNode::ValueType(id));
                 table.families.push(super::Family::ValueType);
@@ -3998,7 +3949,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 2, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 3, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -4131,7 +4082,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 2, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 3, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -4277,8 +4228,8 @@ mod tests
                 crate::types::ValueType::Base(super::BaseType::Numeric),
                 &[],
             ),
-            (&[1], crate::types::ValueType::Unit, &[]),
-            (&[0x28], crate::types::ValueType::Empty, &[]),
+            (&[3, 0], crate::types::ValueType::unit(), &[]),
+            (&[4, 0], crate::types::ValueType::empty(), &[]),
             (
                 &[0x2a, 5, 1],
                 crate::types::ValueType::PathUniverse(v1, v0),
@@ -4293,10 +4244,16 @@ mod tests
                 },
                 &[],
             ),
-            (&[3, 4, 0], crate::types::ValueType::Product(vt1, vt0), &[
-                4, 0,
-            ]),
-            (&[4, 0, 4], crate::types::ValueType::Sum(vt0, vt1), &[0, 4]),
+            (
+                &[3, 2, 4, 0],
+                crate::types::ValueType::Product([vt1, vt0].into()),
+                &[4, 0],
+            ),
+            (
+                &[4, 3, 0, 4, 4],
+                crate::types::ValueType::Sum([vt0, vt1, vt1].into()),
+                &[0, 4, 4],
+            ),
             (&[5, 6], crate::types::ValueType::Thunk(ct1), &[6]),
             (
                 &[6, 7, 0, 4],
@@ -4448,7 +4405,7 @@ mod tests
                 crate::term::Value::Constant(super::ConstantIndex::from(129_usize)),
                 &[],
             ),
-            (&[0x0b], crate::term::Value::Unit, &[]),
+            (&[0x0d, 0], crate::term::Value::unit(), &[]),
             (&[0x2b, 5], crate::term::Value::PathRefl(v1), &[5]),
             (&[0x2d, 5, 1], crate::term::Value::PathProduct(v1, v0), &[
                 5, 1,
@@ -4475,15 +4432,19 @@ mod tests
                 ))),
                 &[],
             ),
-            (&[0x0d, 5, 1], crate::term::Value::Pair(v1, v0), &[5, 1]),
+            (
+                &[0x0d, 2, 5, 1],
+                crate::term::Value::Tuple([v1, v0].into()),
+                &[5, 1],
+            ),
             (
                 &[0x0e, 0, 1],
-                crate::term::Value::Injection(super::Side::Left, v0),
+                crate::term::Value::Injection(super::Summand::from(0_usize), v0),
                 &[1],
             ),
             (
-                &[0x0e, 1, 5],
-                crate::term::Value::Injection(super::Side::Right, v1),
+                &[0x0e, 0x81, 1, 5],
+                crate::term::Value::Injection(super::Summand::from(129_usize), v1),
                 &[5],
             ),
             (&[0x0f, 7], crate::term::Value::Thunk(c1), &[7]),
@@ -4557,7 +4518,14 @@ mod tests
                 },
                 &[7],
             ),
-            (&[0x29, 5], crate::term::Computation::Absurd(v1), &[5]),
+            (
+                &[0x16, 0, 5],
+                crate::term::Computation::Case {
+                    scrutinee: v1,
+                    branches: alloc::boxed::Box::default(),
+                },
+                &[5],
+            ),
             (
                 &[0x2e, 5, 1],
                 crate::term::Computation::Transport(v1, v0),
@@ -4574,11 +4542,10 @@ mod tests
             ]),
             (&[0x15, 5], crate::term::Computation::Force(v1), &[5]),
             (
-                &[0x16, 5, 7, 3],
+                &[0x16, 2, 5, 7, 3],
                 crate::term::Computation::Case {
                     scrutinee: v1,
-                    on_left: c1,
-                    on_right: c0,
+                    branches: [c1, c0].into(),
                 },
                 &[5, 7, 3],
             ),
@@ -4642,13 +4609,13 @@ mod tests
         }
         assert_eq!(
             table.arena.value_type(vt0),
-            Some(&crate::types::ValueType::Unit)
+            Some(&crate::types::ValueType::unit())
         );
         assert_eq!(
             table.arena.value_type(vt1),
             Some(&crate::types::ValueType::Base(super::BaseType::String))
         );
-        assert_eq!(table.arena.value(v0), Some(&crate::term::Value::Unit));
+        assert_eq!(table.arena.value(v0), Some(&crate::term::Value::unit()));
         assert_eq!(
             table.arena.value(v1),
             Some(&crate::term::Value::Variable(super::DeBruijnIndex::from(

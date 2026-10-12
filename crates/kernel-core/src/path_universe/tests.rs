@@ -39,6 +39,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::PathEvidence;
 use gandr_kernel_term::Side;
+use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -81,20 +82,22 @@ use crate::replay::Unfoldings;
 Value::Constructor {ref fields,..} => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::PathEquiv { .. } => 3,
-Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) => 2,
+Value::Tuple(ref components) => components.len(),
+Value::StaticApplication(..) | Value::PathProduct(..) => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1,
 _ => 0,
 }),
         AnyNode::Computation(id) => arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::DataCase {ref branches,..} => branches.len().saturating_add(2),
-Computation::Case { .. } => 3,
+Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 _ => 1,
 }),
         AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
 ValueType::Data {ref arguments,..} => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
+ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) => 1,
 _ => 0,
 }),
@@ -131,18 +134,15 @@ fn children(
                 backward,
                 ..
             } => vec![A(path_type), V(forward), V(backward)],
-            | Value::PathProduct(a, b) | Value::Pair(a, b) | Value::StaticApplication(a, b) => {
-                vec![V(a), V(b)]
-            },
+            | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => vec![V(a), V(b)],
+            | Value::Tuple(ref components) => components.iter().copied().map(V).collect(),
             | Value::PathRefl(a) | Value::Injection(_, a) | Value::Lift { body: a, .. } => {
                 vec![V(a)]
             },
             | Value::Thunk(a) => vec![M(a)],
             | Value::Quote(a) => vec![A(a)],
             | Value::QuoteComputation(a) => vec![C(a)],
-            | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
-                Vec::new()
-            },
+            | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => Vec::new(),
         },
         | M(id) => match *arena.computation(id).expect("fixture computation") {
             | Computation::DataCase {
@@ -154,8 +154,8 @@ fn children(
                 .chain(branches.iter().copied().map(M))
                 .collect(),
             | Computation::RecordProjection(record, _) => vec![V(record)],
-            | Computation::ListFold { .. } | Computation::Absurd(_) => {
-                panic!("empty elimination is outside the path fixture fragment")
+            | Computation::ListFold { .. } => {
+                panic!("list elimination is outside the path fixture fragment")
             },
             | Computation::Fixpoint { .. } => {
                 panic!("recursion is outside the path fixture fragment")
@@ -167,9 +167,10 @@ fn children(
             | Computation::Bind(a, b) => vec![M(a), M(b)],
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
-            } => vec![V(scrutinee), M(on_left), M(on_right)],
+                ref branches,
+            } => core::iter::once(V(scrutinee))
+                .chain(branches.iter().copied().map(M))
+                .collect(),
         },
         | A(id) => match *(arena.value_type(id).expect("fixture value type")) {
             | ValueType::Data { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
@@ -178,8 +179,9 @@ fn children(
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
             | ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
-            | ValueType::Product(a, b)
-            | ValueType::Sum(a, b)
+            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                parts.iter().copied().map(A).collect()
+            },
             | ValueType::StaticPi {
                 domain: a,
                 codomain: b,
@@ -187,11 +189,9 @@ fn children(
             | ValueType::Thunk(a) => vec![C(a)],
             | ValueType::Lift { inner: a, .. } => vec![A(a)],
             | ValueType::Element { code: a, .. } => vec![V(a)],
-            | ValueType::Base(_)
-            | ValueType::Unit
-            | ValueType::Empty
-            | ValueType::Universe { .. }
-            | ValueType::Abstract(_) => Vec::new(),
+            | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
+                Vec::new()
+            },
         },
         | C(id) => match arena.comp_type(id).expect("fixture computation type") {
             | &CompType::Returner(a) => vec![A(a)],
@@ -231,17 +231,17 @@ struct Boolean
 fn boolean(arena: &mut TermArena) -> Boolean
 {
     let unit_type = arena.value_type_unit();
-    let ty = arena.value_type_sum(unit_type, unit_type);
+    let ty = arena.value_type_sum(&[unit_type, unit_type]);
     let code = arena.value_quote(ty);
     let unit = arena.value_unit();
-    let truth = arena.value_injection(Side::Left, unit);
-    let falsity = arena.value_injection(Side::Right, unit);
+    let truth = arena.value_injection(Side::Left.into(), unit);
+    let falsity = arena.value_injection(Side::Right.into(), unit);
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let left = arena.value_injection(Side::Right, variable);
-    let right = arena.value_injection(Side::Left, variable);
+    let left = arena.value_injection(Side::Right.into(), variable);
+    let right = arena.value_injection(Side::Left.into(), variable);
     let left = arena.computation_return(left);
     let right = arena.computation_return(right);
-    let body = arena.computation_case(variable, left, right);
+    let body = arena.computation_case(variable, &[left, right]);
     let body = arena.computation_lambda(body);
     Boolean {
         ty,
@@ -299,14 +299,15 @@ fn compose(
 #[spec(ensures: |ret| {
     let Some(&Value::Thunk(lambda)) = arena.value(ret) else { return false; };
     let Some(&Computation::Lambda(case)) = arena.computation(lambda) else { return false; };
-    let Some(&Computation::Case { scrutinee, on_left, on_right }) = arena.computation(case) else { return false; };
+    let Some(&Computation::Case { scrutinee, ref branches }) = arena.computation(case) else { return false; };
+    let &[on_left, on_right] = &**branches else { return false; };
     matches!(arena.value(scrutinee), Some(&Value::Variable(index)) if u32::from(index) == 0)
         && [(on_left, Side::Right), (on_right, Side::Left)].into_iter().all(|(branch, side)| {
             let Some(&Computation::Bind(payload, inner)) = arena.computation(branch) else { return false; };
             let Some(&Computation::Bind(again, returned)) = arena.computation(inner) else { return false; };
             let Some(&Computation::Return(injection)) = arena.computation(returned) else { return false; };
             payload == again && arena.computation(payload) == Some(&Computation::Return(scrutinee))
-                && arena.value(injection) == Some(&Value::Injection(side, scrutinee))
+                && arena.value(injection) == Some(&Value::Injection(side.into(), scrutinee))
         })
 })]
 fn inlined_triple_negation(arena: &mut TermArena) -> ValueId
@@ -314,14 +315,14 @@ fn inlined_triple_negation(arena: &mut TermArena) -> ValueId
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     let payload = arena.computation_return(variable);
     let mut branch = |side| {
-        let value = arena.value_injection(side, variable);
+        let value = arena.value_injection(Summand::from(side), variable);
         let result = arena.computation_return(value);
         let result = arena.computation_bind(payload, result);
         arena.computation_bind(payload, result)
     };
     let left = branch(Side::Right);
     let right = branch(Side::Left);
-    let body = arena.computation_case(variable, left, right);
+    let body = arena.computation_case(variable, &[left, right]);
     let body = arena.computation_lambda(body);
     arena.value_thunk(body)
 }
@@ -447,13 +448,15 @@ fn translate(
                     ),
                     | Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
                     | Value::Constant(index) => core.value_constant(index),
-                    | Value::Unit => core.value_unit(),
                     | Value::Literal(ref literal) => core.value_literal(literal.clone()),
-                    | Value::Pair(first, second) => {
-                        core.value_tuple(&[values[&first], values[&second]])
-                    },
-                    | Value::Injection(side, body) => {
-                        core.value_injection(side.into(), values[&body])
+                    | Value::Tuple(ref components) => core.value_tuple(
+                        &components
+                            .iter()
+                            .map(|component| values[component])
+                            .collect::<Vec<_>>(),
+                    ),
+                    | Value::Injection(summand, body) => {
+                        core.value_injection(summand, values[&body])
                     },
                     | Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | Value::Lift { ref target, body } => {
@@ -483,8 +486,8 @@ fn translate(
                     | Computation::RecordProjection(record, ref label) => {
                         core.computation_record_projection(values[&record], label.clone())
                     },
-                    | Computation::ListFold { .. } | Computation::Absurd(_) => {
-                        panic!("empty elimination is outside the path fixture fragment")
+                    | Computation::ListFold { .. } => {
+                        panic!("list elimination is outside the path fixture fragment")
                     },
                     | Computation::Fixpoint { .. } => {
                         panic!("recursion is outside the path fixture fragment")
@@ -503,12 +506,14 @@ fn translate(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
-                    } => core.computation_case(values[&scrutinee], &[
-                        computations[&on_left],
-                        computations[&on_right],
-                    ]),
+                        ref branches,
+                    } => core.computation_case(
+                        values[&scrutinee],
+                        &branches
+                            .iter()
+                            .map(|branch| computations[branch])
+                            .collect::<Vec<_>>(),
+                    ),
                 };
                 computations.insert(id, computation);
             },
@@ -533,17 +538,12 @@ fn translate(
                     | ValueType::PathUniverse(source, target) => {
                         core.value_type_path_universe(values[&source], values[&target])
                     },
-                    | ValueType::Empty => {
-                        panic!("empty types are outside the path fixture fragment")
-                    },
                     | ValueType::Base(base) => core.value_type_base(base),
-                    | ValueType::Unit => core.value_type_unit(),
-                    | ValueType::Product(first, second) => {
-                        core.value_type_product(&[types[&first], types[&second]])
-                    },
-                    | ValueType::Sum(first, second) => {
-                        core.value_type_sum(&[types[&first], types[&second]])
-                    },
+                    | ValueType::Product(ref parts) => core.value_type_product(
+                        &parts.iter().map(|part| types[part]).collect::<Vec<_>>(),
+                    ),
+                    | ValueType::Sum(ref parts) => core
+                        .value_type_sum(&parts.iter().map(|part| types[part]).collect::<Vec<_>>()),
                     | ValueType::Thunk(body) => core.value_type_thunk(comp_types[&body]),
                     | ValueType::Universe { sort, ref level } => {
                         core.value_type_universe(gandr_core_term::Sort::Ground(sort), level.clone())
@@ -926,12 +926,12 @@ fn it_computes_through_a_former()
     let (boolean, negation) = admit_negation(&mut environment);
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let product = arena.value_type_product(boolean.ty, boolean.ty);
+    let product = arena.value_type_product(&[boolean.ty, boolean.ty]);
     let code = arena.value_quote(product);
     let declared = arena.value_type_path_universe(code, code);
     let path = arena.value_path_product(negation, negation);
-    let value = arena.value_pair(boolean.truth, boolean.falsity);
-    let expected_pair = arena.value_pair(boolean.falsity, boolean.truth);
+    let value = arena.value_tuple(&[boolean.truth, boolean.falsity]);
+    let expected_pair = arena.value_tuple(&[boolean.falsity, boolean.truth]);
     let first = arena.computation_transport(negation, boolean.truth);
     let second = arena.computation_transport(negation, boolean.falsity);
     let first_expected = arena.computation_return(boolean.falsity);
@@ -1058,8 +1058,8 @@ fn a_non_equivalence_is_refused()
             boolean.not,
             Arc::new(PathEvidence::default()),
         );
-        let declared = arena.value_type_product(ty, ty);
-        (declared, arena.value_pair(good, bad))
+        let declared = arena.value_type_product(&[ty, ty]);
+        (declared, arena.value_tuple(&[good, bad]))
     });
     assert!(matches!(
         missing,
@@ -1074,7 +1074,13 @@ fn a_non_equivalence_is_refused()
             arena.value_path_equiv(ty, unit, boolean.not, Arc::new(PathEvidence::default())),
         )
     });
-    assert!(matches!(mistyped, Err(KernelError::ValueTypeMismatch(_))));
+    assert!(matches!(
+        mistyped,
+        Err(KernelError::ValueShapeMismatch {
+            expected: ExpectedValueShape::Product,
+            ..
+        })
+    ));
     let unsupported = offer(&mut environment, |arena| {
         let unit = arena.value_type_unit();
         let returner = arena.comp_type_returner(unit);
@@ -1153,12 +1159,12 @@ fn a_non_equivalence_is_refused()
     ));
     let valid = offer(&mut environment, |arena| {
         let string = arena.value_type_base(BaseType::String);
-        let product = arena.value_type_product(string, string);
+        let product = arena.value_type_product(&[string, string]);
         let code = arena.value_quote(product);
         let sample = arena.value_literal(gandr_kernel_term::Literal::Text(
             gandr_kernel_term::StringLiteral::new("sample".into()),
         ));
-        let pair = arena.value_pair(sample, sample);
+        let pair = arena.value_tuple(&[sample, sample]);
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let identity = arena.computation_return(variable);
         let identity = arena.computation_lambda(identity);
@@ -1274,7 +1280,7 @@ fn no_k()
         let declared = arena.value_type_thunk(arrow);
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let branch = arena.computation_return(boolean.truth);
-        let body = arena.computation_case(variable, branch, branch);
+        let body = arena.computation_case(variable, &[branch, branch]);
         let body = arena.computation_lambda(body);
         (declared, arena.value_thunk(body))
     });

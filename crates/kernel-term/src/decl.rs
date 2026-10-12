@@ -1252,9 +1252,11 @@ mod tests
                     arena.clone()
                 };
                 let mut builder = DeclarationBuilder::new(&mut arena);
-                let _value = builder.arena().value_pair(value, value);
+                let _value = builder.arena().value_tuple(&[value, value]);
                 let _computation = builder.arena().computation_lambda(computation);
-                let _value_type = builder.arena().value_type_product(value_type, value_type);
+                let _value_type = builder
+                    .arena()
+                    .value_type_product(&[value_type, value_type]);
                 let _comp_type = builder.arena().comp_type_arrow(value_type, comp_type);
                 if shortened {
                     builder
@@ -1314,15 +1316,15 @@ mod tests
                 let thunk = builder.arena().value_thunk(returned);
                 let declared = match shape {
                     | 0 => thunk_type,
-                    | 1 => builder.arena().value_type_product(unit_type, thunk_type),
-                    | 2 => builder.arena().value_type_sum(unit_type, thunk_type),
+                    | 1 => builder.arena().value_type_product(&[unit_type, thunk_type]),
+                    | 2 => builder.arena().value_type_sum(&[unit_type, thunk_type]),
                     | _ => builder.arena().value_type_universe(
                         crate::types::GroundSort::Value,
                         gandr_kernel_strata::Level::zero(),
                     ),
                 };
                 let body = if shape == 1 {
-                    builder.arena().value_pair(unit_value, thunk)
+                    builder.arena().value_tuple(&[unit_value, thunk])
                 }
                 else {
                     thunk

@@ -150,7 +150,6 @@ use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -268,6 +267,48 @@ fn value_shape_mismatch(
     KernelError::ValueShapeMismatch {
         expected,
         actual: value_type_witness(arena, actual),
+    }
+}
+
+/// Pair each case branch with the summand it binds, the first branch last.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success, one `(branch, summand)` pair per branch, in reverse
+///   summand order so popping yields them first to last.
+/// - fails: a sum shape mismatch when `scrutinee_type` is not a sum of exactly
+///   as many summands as there are branches; [`KernelError::ArenaFault`] never,
+///   an unresolvable classifier being a shape mismatch too.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a three-way case checks and synthesizes; a case of two
+///   branches over a sum of three, and a case over a product, refuse as a sum
+///   shape mismatch.
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |pairs| pairs.len() == branches.len()
+    && pairs.iter().rev().map(|&(branch, _)| branch).eq(branches.iter().copied())))]
+fn case_branches(
+    arena: &TermArena,
+    scrutinee_type: ValueTypeId,
+    branches: &[ComputationId],
+) -> Result<Vec<(ComputationId, ValueTypeId)>, KernelError>
+{
+    match arena.value_type(scrutinee_type) {
+        | Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => Ok(branches
+            .iter()
+            .copied()
+            .zip(summands.iter().copied())
+            .rev()
+            .collect()),
+        | _ => Err(value_shape_mismatch(
+            arena,
+            ExpectedValueShape::Sum,
+            scrutinee_type,
+        )),
     }
 }
 
@@ -539,7 +580,7 @@ enum TypeLevelFrame
 /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
 #[spec(ensures: |ret| {
     let closed_leaf = match root {
-        TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty)),
+        TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_))) || matches!(arena.value_type(id), Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) if parts.is_empty()),
         TypeLevelGoal::Comp(_) => false,
     };
     (ret.is_err() || ret.as_ref().is_ok_and(|level| judgement.levels.check_level_scope(level).is_ok()))
@@ -653,7 +694,7 @@ where
                             goal = TypeLevelGoal::Value(endpoints.source);
                             continue 'expand;
                         },
-                        | ValueType::Base(_) | ValueType::Unit | ValueType::Empty => Level::zero(),
+                        | ValueType::Base(_) => Level::zero(),
                         // A universe of either sort forms one level above the
                         // level it carries, in the universe of value types:
                         // a code is a value whatever family it decodes into.
@@ -684,10 +725,17 @@ where
                             });
                             target.clone()
                         },
-                        | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
-                            frames.push(TypeLevelFrame::MaxSecondValue(second));
-                            goal = TypeLevelGoal::Value(first);
-                            continue 'expand;
+                        // A product or a sum forms at the join of its parts'
+                        // levels; the unit and the empty type, with no part,
+                        // form at level zero.
+                        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                            let mut parts = parts.iter().copied();
+                            if let Some(first) = parts.next() {
+                                frames.extend(parts.rev().map(TypeLevelFrame::MaxSecondValue));
+                                goal = TypeLevelGoal::Value(first);
+                                continue 'expand;
+                            }
+                            Level::zero()
                         },
                         // A static Pi classifies type operators, so both its
                         // children must classify codes: a universe, or a static
@@ -873,8 +921,6 @@ fn abstract_atom_level(
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
-        | ValueType::Unit
-        | ValueType::Empty
         | ValueType::Product(..)
         | ValueType::Session { .. }
         | ValueType::List(_)
@@ -925,8 +971,6 @@ fn static_classifier(
         | ValueType::Record(_)
         | ValueType::PathUniverse(..)
         | ValueType::Base(_)
-        | ValueType::Unit
-        | ValueType::Empty
         | ValueType::Product(..)
         | ValueType::Session { .. }
         | ValueType::List(_)
@@ -1176,17 +1220,21 @@ enum Frame
     },
     /// Check a transport operand after synthesizing its path classifier.
     Transport(ValueId),
-    /// A pair synthesis: the first component is synthesizing; the second source
-    /// is held.
-    SynthPairFirst(ValueId),
-    /// A pair synthesis: the first component is synthesized; the second is.
-    SynthPairSecond(ValueTypeId),
+    /// A tuple synthesis: the component in the register is synthesized; the
+    /// rest are held, in reverse order, with the types synthesized so far.
+    SynthTuple
+    {
+        /// The components still to synthesize, the next one last.
+        remaining: Vec<ValueId>,
+        /// The component types synthesized so far, in order.
+        types: Vec<ValueTypeId>,
+    },
     /// A thunk synthesis: the body computation is synthesizing.
     SynthThunk,
     /// A lift synthesis: the body is synthesizing; the target level is held.
     SynthLift(Level),
-    /// A pair check: the first component checked; check the second against the
-    /// held component type.
+    /// A list-cell check: the head checked; check the tail against the held
+    /// list type.
     CheckPairSecond(ValueId, ValueTypeId),
     /// Check the nil branch after checking the fold's list.
     FoldNil(ComputationId, CompTypeId),
@@ -1212,24 +1260,19 @@ enum Frame
     /// is held, and the body's type, strengthened past the bind's binder,
     /// becomes the bind's.
     SynthBind(ComputationId),
-    /// A case synthesis: the scrutinee is synthesized; both branch sources are
-    /// held.
-    SynthCaseScrutinee(ComputationId, ComputationId),
-    /// A case synthesis: the left branch synthesized; its type and the right
-    /// summand are held while the right branch synthesizes.
-    SynthCaseAfterLeft
+    /// A case synthesis: the scrutinee is synthesized; the branch sources are
+    /// held, in summand order.
+    SynthCaseScrutinee(alloc::boxed::Box<[ComputationId]>),
+    /// A case synthesis: the branch in the register synthesized under its
+    /// summand; the rest are held with their summands, and the first branch's
+    /// type, once known, for the convergence check.
+    SynthCaseBranch
     {
-        /// The right branch source.
-        on_right: ComputationId,
-        /// The right summand, a context slot for the right branch.
-        right: ValueTypeId,
-    },
-    /// A case synthesis: both branches synthesized; the left type is held for
-    /// the convergence check.
-    SynthCaseAfterRight
-    {
-        /// The left branch's synthesized type.
-        left_type: CompTypeId,
+        /// The branches still to synthesize with their summands, the next one
+        /// last.
+        remaining: Vec<(ComputationId, ValueTypeId)>,
+        /// The first branch's strengthened type, once synthesized.
+        first: Option<CompTypeId>,
     },
     /// A computation mode switch: the computation synthesized; convert against
     /// the held expected type.
@@ -1241,24 +1284,19 @@ enum Frame
     /// type are held.
     CheckCaseScrutinee
     {
-        /// The left branch source.
-        on_left: ComputationId,
-        /// The right branch source.
-        on_right: ComputationId,
-        /// The expected type both branches check against, written outside
+        /// The branch sources, in summand order.
+        branches: alloc::boxed::Box<[ComputationId]>,
+        /// The expected type every branch checks against, written outside
         /// their binders.
         expected: CompTypeId,
     },
-    /// A case check: the left branch checked; the right source, right summand
-    /// and expected type are held.
-    CheckCaseAfterLeft
+    /// A case check: the branches still to check, each under its summand.
+    CheckCaseBranch
     {
-        /// The right branch source.
-        on_right: ComputationId,
-        /// The right summand, a context slot for the right branch.
-        right: ValueTypeId,
-        /// The expected type the right branch checks against, already read
-        /// from under its binder.
+        /// The branches still to check with their summands, the next one last.
+        remaining: Vec<(ComputationId, ValueTypeId)>,
+        /// The expected type every branch checks against, already read from
+        /// under its binder.
         expected: CompTypeId,
     },
     /// A binder scope closes: pop the innermost context slot.
@@ -1594,6 +1632,8 @@ fn resolve_constant(
 /// - witness: `check::tests::a_force_unwraps_a_thunk`
 /// - witness: `check::tests::a_case_requires_convergent_branches`
 /// - witness: `check::tests::a_case_propagates_the_expected_type`
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+/// - witness: `check::tests::a_tuple_and_an_injection_read_their_positions`
 /// - witness: `check::tests::a_bind_binds_the_returned_value`
 #[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
@@ -1792,14 +1832,23 @@ where
                         };
                         Produced::ValueType(synthesized)
                     },
-                    | Value::Unit => Produced::ValueType(arena.value_type_unit()),
                     | Value::Literal(ref literal) => {
                         Produced::ValueType(arena.value_type_base(literal.base_type()))
                     },
-                    | Value::Pair(first, second) => {
-                        frames.push(Frame::SynthPairFirst(second));
-                        goal = Goal::SynthValue(first);
-                        continue 'expand;
+                    // A tuple synthesizes the product of its components'
+                    // types, in order; the empty tuple synthesizes the unit.
+                    | Value::Tuple(ref components) => {
+                        let mut remaining = components.iter().rev().copied().collect::<Vec<_>>();
+                        let arity = remaining.len();
+                        if let Some(first) = remaining.pop() {
+                            frames.push(Frame::SynthTuple {
+                                remaining,
+                                types: Vec::with_capacity(arity),
+                            });
+                            goal = Goal::SynthValue(first);
+                            continue 'expand;
+                        }
+                        Produced::ValueType(arena.value_type_unit())
                     },
                     | Value::Thunk(body) => {
                         frames.push(Frame::SynthThunk);
@@ -1933,28 +1982,47 @@ where
                             ));
                         },
                     },
-                    | Value::Injection(side, body) => match arena.value_type(expected) {
-                        | Some(&ValueType::Sum(left, right)) => {
-                            let summand = match side {
-                                | Side::Left => left,
-                                | Side::Right => right,
-                            };
-                            goal = Goal::CheckValue(body, summand);
-                            continue 'expand;
-                        },
-                        | _ => {
-                            return Err(value_shape_mismatch(
-                                arena,
-                                ExpectedValueShape::Sum,
-                                expected,
-                            ));
-                        },
+                    // An injection checks its body against the summand it
+                    // names; a position past the sum's summands is a shape
+                    // mismatch, as a non-sum classifier is.
+                    | Value::Injection(summand, body) => {
+                        match arena.value_type(expected).and_then(|held| match *held {
+                            | ValueType::Sum(ref summands) => {
+                                summands.get(usize::from(summand)).copied()
+                            },
+                            | _ => None,
+                        }) {
+                            | Some(summand_type) => {
+                                goal = Goal::CheckValue(body, summand_type);
+                                continue 'expand;
+                            },
+                            | _ => {
+                                return Err(value_shape_mismatch(
+                                    arena,
+                                    ExpectedValueShape::Sum,
+                                    expected,
+                                ));
+                            },
+                        }
                     },
-                    | Value::Pair(first, second) => match arena.value_type(expected) {
-                        | Some(&ValueType::Product(first_type, second_type)) => {
-                            frames.push(Frame::CheckPairSecond(second, second_type));
-                            goal = Goal::CheckValue(first, first_type);
-                            continue 'expand;
+                    // A tuple checks each component against the product's
+                    // component at its position; a product of another arity is
+                    // a shape mismatch.
+                    | Value::Tuple(ref components) => match arena.value_type(expected) {
+                        | Some(&ValueType::Product(ref parts)) if parts.len() == components.len() =>
+                        {
+                            let mut goals = components
+                                .iter()
+                                .zip(parts.iter())
+                                .rev()
+                                .map(|(&component, &part)| Goal::CheckValue(component, part))
+                                .collect::<Vec<_>>();
+                            if let Some(next) = goals.pop() {
+                                frames.push(Frame::Pending(goals, Produced::Checked));
+                                goal = next;
+                                continue 'expand;
+                            }
+                            Produced::Checked
                         },
                         | _ => {
                             return Err(value_shape_mismatch(
@@ -1984,7 +2052,6 @@ where
                     | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
-                    | Value::Unit
                     | Value::Literal(_)
                     | Value::Lift { .. }
                     | Value::Quote(_)
@@ -2035,11 +2102,6 @@ where
                         goal = Goal::CheckValue(list, list_type);
                         continue 'expand;
                     },
-                    | Computation::Absurd(_) => {
-                        return Err(KernelError::NotInferable {
-                            form: NonInferableForm::Absurd,
-                        });
-                    },
                     | Computation::Transport(path, value) => {
                         frames.push(Frame::Transport(value));
                         goal = Goal::SynthValue(path);
@@ -2065,12 +2127,18 @@ where
                         goal = Goal::SynthComp(bound);
                         continue 'expand;
                     },
+                    // A case of no branches has none to synthesize a type
+                    // from; it only checks.
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
+                        ref branches,
                     } => {
-                        frames.push(Frame::SynthCaseScrutinee(on_left, on_right));
+                        if branches.is_empty() {
+                            return Err(KernelError::NotInferable {
+                                form: NonInferableForm::EmptyCase,
+                            });
+                        }
+                        frames.push(Frame::SynthCaseScrutinee(branches.clone()));
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
@@ -2086,11 +2154,6 @@ where
                     },
                 },
                 | Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
-                    | Computation::Absurd(value) => {
-                        let empty = arena.value_type_empty();
-                        goal = Goal::CheckValue(value, empty);
-                        continue 'expand;
-                    },
                     // A lambda pushes the arrow's domain as the innermost
                     // context slot and checks its body against the codomain
                     // read from under that slot. The dependent arrow's codomain
@@ -2158,12 +2221,10 @@ where
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
+                        ref branches,
                     } => {
                         frames.push(Frame::CheckCaseScrutinee {
-                            on_left,
-                            on_right,
+                            branches: branches.clone(),
                             expected,
                         });
                         goal = Goal::SynthValue(scrutinee);
@@ -2315,8 +2376,8 @@ where
                         crate::replay::ReplayBudget::DEFAULT,
                     )
                     .map_err(KernelError::Path)?;
-                    let source = arena.value_type_product(first.source, second.source);
-                    let target = arena.value_type_product(first.target, second.target);
+                    let source = arena.value_type_product(&[first.source, second.source]);
+                    let target = arena.value_type_product(&[first.target, second.target]);
                     let source = arena.value_quote(source);
                     let target = arena.value_quote(target);
                     produced = Produced::ValueType(arena.value_type_path_universe(source, target));
@@ -2397,16 +2458,17 @@ where
                     goal = Goal::CheckValue(value, endpoints.source);
                     continue 'expand;
                 },
-                | Frame::SynthPairFirst(second) => {
-                    let first_type = produced.value_type()?;
-                    frames.push(Frame::SynthPairSecond(first_type));
-                    goal = Goal::SynthValue(second);
-                    continue 'expand;
-                },
-                | Frame::SynthPairSecond(first_type) => {
-                    let second_type = produced.value_type()?;
-                    produced =
-                        Produced::ValueType(arena.value_type_product(first_type, second_type));
+                | Frame::SynthTuple {
+                    mut remaining,
+                    mut types,
+                } => {
+                    types.push(produced.value_type()?);
+                    if let Some(next) = remaining.pop() {
+                        frames.push(Frame::SynthTuple { remaining, types });
+                        goal = Goal::SynthValue(next);
+                        continue 'expand;
+                    }
+                    produced = Produced::ValueType(arena.value_type_product(&types));
                 },
                 | Frame::SynthThunk => {
                     let body_type = produced.comp_type()?;
@@ -2544,43 +2606,58 @@ where
                         },
                     }
                 },
-                | Frame::SynthCaseScrutinee(on_left, on_right) => {
+                | Frame::SynthCaseScrutinee(branches) => {
                     let scrutinee_type = produced.value_type()?;
-                    match arena.value_type(scrutinee_type) {
-                        | Some(&ValueType::Sum(left, right)) => {
-                            context.push(left);
-                            frames.push(Frame::SynthCaseAfterLeft { on_right, right });
-                            frames.push(Frame::ScopeExit);
-                            goal = Goal::SynthComp(on_left);
-                            continue 'expand;
-                        },
-                        | _ => {
-                            return Err(value_shape_mismatch(
-                                arena,
-                                ExpectedValueShape::Sum,
-                                scrutinee_type,
-                            ));
-                        },
-                    }
-                },
-                | Frame::SynthCaseAfterLeft { on_right, right } => {
-                    let left_type = strengthened(arena, session, &context, produced.comp_type()?)?;
-                    context.push(right);
-                    frames.push(Frame::SynthCaseAfterRight { left_type });
+                    let mut remaining = case_branches(arena, scrutinee_type, &branches)?;
+                    let Some((branch, summand)) = remaining.pop()
+                    else {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::EmptyCase,
+                        });
+                    };
+                    context.push(summand);
+                    frames.push(Frame::SynthCaseBranch {
+                        remaining,
+                        first: None,
+                    });
                     frames.push(Frame::ScopeExit);
-                    goal = Goal::SynthComp(on_right);
+                    goal = Goal::SynthComp(branch);
                     continue 'expand;
                 },
-                | Frame::SynthCaseAfterRight { left_type } => {
-                    let right_type = strengthened(arena, session, &context, produced.comp_type()?)?;
-                    match convertible_comp_types(arena, left_type, right_type) {
-                        | Convertibility::Convertible => {
-                            produced = Produced::CompType(left_type);
+                // Every branch's type, strengthened out of its binder, must
+                // convert to the first branch's, which the case then has.
+                | Frame::SynthCaseBranch {
+                    mut remaining,
+                    first,
+                } => {
+                    let branch_type =
+                        strengthened(arena, session, &context, produced.comp_type()?)?;
+                    let first_type = match first {
+                        | None => branch_type,
+                        | Some(first_type) => {
+                            match convertible_comp_types(arena, first_type, branch_type) {
+                                | Convertibility::Convertible => first_type,
+                                | Convertibility::Distinct => {
+                                    return Err(case_branch_mismatch(
+                                        arena,
+                                        first_type,
+                                        branch_type,
+                                    ));
+                                },
+                            }
                         },
-                        | Convertibility::Distinct => {
-                            return Err(case_branch_mismatch(arena, left_type, right_type));
-                        },
+                    };
+                    if let Some((branch, summand)) = remaining.pop() {
+                        context.push(summand);
+                        frames.push(Frame::SynthCaseBranch {
+                            remaining,
+                            first: Some(first_type),
+                        });
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::SynthComp(branch);
+                        continue 'expand;
                     }
+                    produced = Produced::CompType(first_type);
                 },
                 | Frame::ConvertComp(expected) => {
                     let synthesized = produced.comp_type()?;
@@ -2606,43 +2683,34 @@ where
                         },
                     }
                 },
-                | Frame::CheckCaseScrutinee {
-                    on_left,
-                    on_right,
-                    expected,
-                } => {
+                // Each branch checks, under its summand's binder, against the
+                // expected type read from under that binder. A case of no
+                // branches over the empty sum checks at once.
+                | Frame::CheckCaseScrutinee { branches, expected } => {
                     let scrutinee_type = produced.value_type()?;
-                    match arena.value_type(scrutinee_type) {
-                        | Some(&ValueType::Sum(left, right)) => {
-                            let scoped = weakened(arena, session, expected);
-                            context.push(left);
-                            frames.push(Frame::CheckCaseAfterLeft {
-                                on_right,
-                                right,
-                                expected: scoped,
-                            });
-                            frames.push(Frame::ScopeExit);
-                            goal = Goal::CheckComp(on_left, scoped);
-                            continue 'expand;
-                        },
-                        | _ => {
-                            return Err(value_shape_mismatch(
-                                arena,
-                                ExpectedValueShape::Sum,
-                                scrutinee_type,
-                            ));
-                        },
-                    }
+                    let remaining = case_branches(arena, scrutinee_type, &branches)?;
+                    let scoped = weakened(arena, session, expected);
+                    frames.push(Frame::CheckCaseBranch {
+                        remaining,
+                        expected: scoped,
+                    });
+                    produced = Produced::Checked;
                 },
-                | Frame::CheckCaseAfterLeft {
-                    on_right,
-                    right,
+                | Frame::CheckCaseBranch {
+                    mut remaining,
                     expected,
                 } => {
-                    context.push(right);
-                    frames.push(Frame::ScopeExit);
-                    goal = Goal::CheckComp(on_right, expected);
-                    continue 'expand;
+                    if let Some((branch, summand)) = remaining.pop() {
+                        context.push(summand);
+                        frames.push(Frame::CheckCaseBranch {
+                            remaining,
+                            expected,
+                        });
+                        frames.push(Frame::ScopeExit);
+                        goal = Goal::CheckComp(branch, expected);
+                        continue 'expand;
+                    }
+                    produced = Produced::Checked;
                 },
                 | Frame::ScopeExit => {
                     let _popped = context.pop();
@@ -2989,8 +3057,6 @@ where
                 | ValueType::Record(_)
                 | ValueType::PathUniverse(..)
                 | ValueType::Base(_)
-                | ValueType::Unit
-                | ValueType::Empty
                 | ValueType::Product(..)
                 | ValueType::Session { .. }
                 | ValueType::List(_)
@@ -3304,6 +3370,7 @@ mod tests
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
+    use gandr_kernel_term::Summand;
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueId;
@@ -3339,7 +3406,7 @@ mod tests
         let cons = arena.value_list_cons(unit, nil);
         let malformed_tail = arena.value_list_cons(unit, unit);
         let malformed_head = arena.value_list_cons(nil, nil);
-        let sum_encoding = arena.value_injection(Side::Left, unit);
+        let sum_encoding = arena.value_injection(Side::Left.into(), unit);
         for valid in [nil, cons] {
             assert_eq!(
                 super::check_closed_value(&mut arena, valid, list_type),
@@ -3394,14 +3461,14 @@ mod tests
             let mut remaining = usize::from(super::MAX_CODE_OBLIGATIONS);
             while remaining != 0 {
                 if remaining & 1_usize != 0 {
-                    root = builder.arena().value_type_product(root, power);
+                    root = builder.arena().value_type_product(&[root, power]);
                 }
                 remaining >>= 1_u32;
                 if remaining != 0 {
-                    power = builder.arena().value_type_product(power, power);
+                    power = builder.arena().value_type_product(&[power, power]);
                 }
             }
-            let above = builder.arena().value_type_product(root, leaf);
+            let above = builder.arena().value_type_product(&[root, leaf]);
             (builder.axiom(LevelSignature::monomorphic(), root), above)
         };
         let above_limit = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
@@ -3673,7 +3740,8 @@ mod tests
     /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
     #[spec(ensures: |ret| match arena.value_type(root) {
         None => matches!(&ret, Err(KernelError::ArenaFault)),
-        Some(&ValueType::Base(_) | &ValueType::Unit) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(&ValueType::Base(_)) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(held) if held.product_parts() == Some(&[]) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
         Some(_) => ret.is_err() || ret.as_ref().is_ok_and(|level| level.atoms().next().is_none()),
     })]
     fn value_level(
@@ -3748,7 +3816,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let injection = arena.value_injection(Side::Left, unit);
+        let injection = arena.value_injection(Side::Left.into(), unit);
         assert_eq!(
             Err(KernelError::NotInferable {
                 form: NonInferableForm::Injection
@@ -3765,19 +3833,23 @@ mod tests
         let unit = arena.value_unit();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(unit_type, integer);
-        let left = arena.value_injection(Side::Left, unit);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let left = arena.value_injection(Side::Left.into(), unit);
         assert!(
             check_value(&mut arena, Vec::new(), left, sum).is_ok(),
             "the left injection checks against the left summand"
         );
-        let right = arena.value_injection(Side::Right, unit);
+        let right = arena.value_injection(Side::Right.into(), unit);
         assert!(
             matches!(
                 check_value(&mut arena, Vec::new(), right, sum),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
-            "and the right injection is checked against the right summand, which unit is not"
+            "and the right injection is checked against the right summand, which the unit tuple \
+             is not"
         );
         let refused = check_value(&mut arena, Vec::new(), left, unit_type);
         assert!(
@@ -3799,10 +3871,10 @@ mod tests
         let unit = arena.value_unit();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let injection = arena.value_injection(Side::Left, unit);
-        let sum = arena.value_type_sum(unit_type, integer);
-        let pair = arena.value_pair(unit, injection);
-        let product = arena.value_type_product(unit_type, sum);
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let pair = arena.value_tuple(&[unit, injection]);
+        let product = arena.value_type_product(&[unit_type, sum]);
         assert!(
             check_value(&mut arena, Vec::new(), pair, product).is_ok(),
             "the expected product flows into both components, so the checking-only injection \
@@ -3900,20 +3972,20 @@ mod tests
         let mut arena = TermArena::new();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(unit_type, unit_type);
+        let sum = arena.value_type_sum(&[unit_type, unit_type]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
         let left = arena.computation_return(bound);
         let right = arena.computation_return(bound);
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
             synth_comp(&mut arena, vec![sum], case).is_ok(),
             "two branches returning their own summand converge when the summands agree"
         );
 
-        let mixed = arena.value_type_sum(unit_type, integer);
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
             matches!(
                 synth_comp(&mut arena, vec![mixed], case),
@@ -3929,12 +4001,12 @@ mod tests
         let mut arena = TermArena::new();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let mixed = arena.value_type_sum(unit_type, integer);
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
         let unit = arena.value_unit();
         let left = arena.computation_return(unit);
         let right = arena.computation_return(unit);
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         let expected = arena.comp_type_returner(unit_type);
         let thunk = arena.value_thunk(case);
         let thunk_type = arena.value_type_thunk(expected);
@@ -3942,6 +4014,131 @@ mod tests
             check_value(&mut arena, vec![mixed], thunk, thunk_type).is_ok(),
             "checking pushes one expected type into both branches, where synthesis would have \
              required them to agree on their own"
+        );
+    }
+
+    /// A case binds each branch to the summand at its position, takes exactly
+    /// one branch per summand, and at no branches eliminates the empty sum,
+    /// which checks but cannot be synthesized.
+    #[test]
+    fn an_n_way_case_binds_each_summand()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let three_way = arena.computation_case(scrutinee, &[returned, returned, returned]);
+
+        let uniform = arena.value_type_sum(&[integer, integer, integer]);
+        let produced = synth_comp(&mut arena, vec![uniform], three_way)
+            .expect("three branches returning agreeing summands converge");
+        assert!(
+            matches!(
+                arena.comp_type(produced.comp_type().expect("a computation type")),
+                Some(&CompType::Returner(result)) if result == integer
+            ),
+            "and the case returns the summands' common type"
+        );
+        let middle_differs = arena.value_type_sum(&[integer, unit_type, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![middle_differs], three_way),
+                Err(KernelError::CaseBranchMismatch(_))
+            ),
+            "the middle branch binds the middle summand"
+        );
+        let two_way = arena.value_type_sum(&[integer, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![two_way], three_way),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "three branches do not eliminate a sum of two"
+        );
+
+        let empty = arena.value_type_empty();
+        let no_branches = arena.computation_case(scrutinee, &[]);
+        let returner = arena.comp_type_returner(integer);
+        let thunk_type = arena.value_type_thunk(returner);
+        let thunk = arena.value_thunk(no_branches);
+        assert!(
+            check_value(&mut arena, vec![empty], thunk, thunk_type).is_ok(),
+            "a case of no branches over the empty sum checks at any type"
+        );
+        assert_eq!(
+            Err(KernelError::NotInferable {
+                form: NonInferableForm::EmptyCase
+            }),
+            synth_comp(&mut arena, vec![empty], no_branches),
+            "and has no branch to synthesize a type from"
+        );
+        assert!(
+            matches!(
+                check_value(&mut arena, vec![unit_type], thunk, thunk_type),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "but eliminates nothing that is not the empty sum"
+        );
+    }
+
+    /// A tuple checks component by component against a product of its own
+    /// arity and synthesizes the product of its components' types; an
+    /// injection checks against the summand its position names.
+    #[test]
+    fn a_tuple_and_an_injection_read_their_positions()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_unit();
+        let triple = arena.value_tuple(&[unit, unit, unit]);
+        let three = arena.value_type_product(&[unit_type, unit_type, unit_type]);
+        assert!(check_value(&mut arena, Vec::new(), triple, three).is_ok());
+        let produced = synth_value(&mut arena, Vec::new(), triple)
+            .expect("a tuple synthesizes")
+            .value_type()
+            .expect("a value type");
+        assert_eq!(
+            crate::conv::Convertibility::Convertible,
+            crate::conv::convertible_value_types(&arena, produced, three),
+            "the product of its components' types"
+        );
+        let two = arena.value_type_product(&[unit_type, unit_type]);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), triple, two),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a product of another arity is a shape mismatch"
+        );
+
+        let sum = arena.value_type_sum(&[integer, integer, unit_type]);
+        let last = arena.value_injection(Summand::from(2_usize), unit);
+        assert!(
+            check_value(&mut arena, Vec::new(), last, sum).is_ok(),
+            "the third summand is the unit type"
+        );
+        let past = arena.value_injection(Summand::from(3_usize), unit);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), past, sum),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "a position past the summands is a shape mismatch"
         );
     }
 
@@ -4126,7 +4323,10 @@ mod tests
         assert!(
             matches!(
                 synth_value(&mut arena, vec![operator], ill_argument),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
             "the argument is checked against the domain"
         );
@@ -4540,9 +4740,9 @@ mod tests
     }
 
     /// A code whose type is not the universe its own node claimed is refused,
-    /// and the refusal is the ordinary conversion mismatch rather than a
-    /// special one — the carried level is checked exactly like every other
-    /// obligation the kernel re-derives.
+    /// and the refusal is the ordinary checking mismatch rather than a special
+    /// one — the carried level is checked exactly like every other obligation
+    /// the kernel re-derives.
     #[test]
     fn a_code_that_is_not_of_its_declared_universe_refuses()
     {
@@ -4550,8 +4750,9 @@ mod tests
         let axiom = {
             let mut staging = environment.stage();
             let mint = staging.arena();
-            // The unit *value* is not a code: its type is the unit type, not a
-            // universe, so the type read off it does not form.
+            // The unit *value* is not a code: it is the empty tuple, which
+            // checks only against a product, so the type read off it does not
+            // form.
             let not_a_code = mint.value_unit();
             let declared = mint.value_type_element(not_a_code, level(LevelConstant::from(0)));
             staging.axiom(LevelSignature::monomorphic(), declared)
@@ -4559,7 +4760,10 @@ mod tests
         assert!(
             matches!(
                 environment.add_decl(axiom),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
             "a code that does not inhabit the universe its type named is refused"
         );

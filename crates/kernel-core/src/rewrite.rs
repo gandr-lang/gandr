@@ -1208,9 +1208,8 @@ fn carried_occurrence(
         | Value::PathEquiv { .. }
         | Value::Variable(_)
         | Value::Constant(_)
-        | Value::Unit
         | Value::Literal(_)
-        | Value::Pair(..)
+        | Value::Tuple(..)
         | Value::ListNil
         | Value::ListCons(..)
         | Value::Injection(..)
@@ -1275,9 +1274,9 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(),
     ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
-    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::Pair(..) | Value::StaticApplication(..) => 2, _ => 1 }),
-    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
-    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::PathUniverse(..) | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Constructor { ref fields, .. } => fields.len().saturating_add(1), Value::Record(ref fields) => fields.len(), Value::Tuple(ref components) => components.len(), Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::ListCons(..) | Value::SessionPath { .. } | Value::PathProduct(..) | Value::StaticApplication(..) => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::ListFold { .. } => 5, Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2), Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Data { ref arguments, .. } => arguments.len(), ValueType::Record(ref fields) => fields.len(), ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(), ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
     AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }),
 }
         && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
@@ -1316,11 +1315,7 @@ fn push_rewrite_children(
                     .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
             ),
             | Some(
-                &Value::ListNil
-                | &Value::Variable(_)
-                | &Value::Constant(_)
-                | &Value::Unit
-                | &Value::Literal(_),
+                &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
             )
             | None => {},
             | Some(&Value::PathEquiv {
@@ -1358,13 +1353,18 @@ fn push_rewrite_children(
             },
             | Some(
                 &Value::PathProduct(first, second)
-                | &Value::Pair(first, second)
                 | &Value::ListCons(first, second)
                 | &Value::StaticApplication(first, second),
             ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
             },
+            | Some(&Value::Tuple(ref components)) => tasks.extend(
+                components
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::Value(*id), depth, rewrite)),
+            ),
             | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(body), depth, rewrite));
             },
@@ -1459,11 +1459,7 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(
-                &Computation::Return(value)
-                | &Computation::Force(value)
-                | &Computation::Absurd(value),
-            ) => {
+            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1480,19 +1476,11 @@ fn push_rewrite_children(
             },
             | Some(&Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             }) => {
-                tasks.push(RewriteTask::Open(
-                    AnyNode::Computation(on_right),
-                    depth.deeper(),
-                    rewrite,
-                ));
-                tasks.push(RewriteTask::Open(
-                    AnyNode::Computation(on_left),
-                    depth.deeper(),
-                    rewrite,
-                ));
+                tasks.extend(branches.iter().rev().map(|id| {
+                    RewriteTask::Open(AnyNode::Computation(*id), depth.deeper(), rewrite)
+                }));
                 tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
             },
         },
@@ -1509,23 +1497,19 @@ fn push_rewrite_children(
                     .rev()
                     .map(|id| RewriteTask::Open(AnyNode::ValueType(*id), depth, rewrite)),
             ),
-            | Some(
-                &ValueType::Base(_)
-                | &ValueType::Unit
-                | &ValueType::Empty
-                | &ValueType::Universe { .. }
-                | &ValueType::Abstract(_),
-            )
+            | Some(&ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_))
             | None => {},
+            | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => tasks.extend(
+                parts
+                    .iter()
+                    .rev()
+                    .map(|id| RewriteTask::Open(AnyNode::ValueType(*id), depth, rewrite)),
+            ),
             // The static Pi binds nothing: both children stand at its depth.
-            | Some(
-                &ValueType::Product(first, second)
-                | &ValueType::Sum(first, second)
-                | &ValueType::StaticPi {
-                    domain: first,
-                    codomain: second,
-                },
-            ) => {
+            | Some(&ValueType::StaticPi {
+                domain: first,
+                codomain: second,
+            }) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::ValueType(second),
                     depth,
@@ -1708,7 +1692,8 @@ fn popped(
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
 Value::PathEquiv { .. } => 3,
-Value::ListCons(..) | Value::Pair(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
+Value::Tuple(ref components) => components.len(),
+Value::ListCons(..) | Value::StaticApplication(..) | Value::PathProduct(..) | Value::SessionPath { .. } => 2,
 Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1,
 _ => 0,
 })],
@@ -1836,18 +1821,25 @@ fn close_value(
             }
         },
         | Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
-        | Value::ListNil | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
-        | Value::Pair(first, second) => {
+        | Value::ListNil | Value::Constant(_) | Value::Literal(_) => id,
+        | Value::Tuple(ref components) => {
             // Results are popped in reverse wire order: children were scheduled
             // so that they close left to right, so the last one to close is the
             // first one on top of the stack.
-            let rewritten_second = popped(results, AnyNode::Value(second)).value_or(second);
-            let rewritten_first = popped(results, AnyNode::Value(first)).value_or(first);
-            if rewritten_first == first && rewritten_second == second {
-                id
+            let mut rewritten = None;
+            for (index, original) in components.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::Value(original)).value_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| components.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
             }
-            else {
-                arena.value_pair(rewritten_first, rewritten_second)
+            match rewritten {
+                | Some(components) => arena.value_tuple(&components),
+                | None => id,
             }
         },
         | Value::ListCons(head, tail) => {
@@ -2041,7 +2033,7 @@ fn rewrite_variable(
     captures: [before = results.len(), arity = arena.computation(id).map_or(0, |matched_native_node| match *matched_native_node {
 Computation::ListFold { .. } => 5,
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
-Computation::Case { .. } => 3,
+Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
 _ => 1,
 })],
@@ -2168,15 +2160,6 @@ fn close_computation(
                 arena.computation_return(rewritten)
             }
         },
-        | Computation::Absurd(value) => {
-            let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
-            if rewritten == value {
-                id
-            }
-            else {
-                arena.computation_absurd(rewritten)
-            }
-        },
         | Computation::Force(value) => {
             let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
             if rewritten == value {
@@ -2199,23 +2182,27 @@ fn close_computation(
         },
         | Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         } => {
-            let rewritten_right =
-                popped(results, AnyNode::Computation(on_right)).computation_or(on_right);
-            let rewritten_left =
-                popped(results, AnyNode::Computation(on_left)).computation_or(on_left);
-            let rewritten_scrutinee =
-                popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
-            if rewritten_scrutinee == scrutinee
-                && rewritten_left == on_left
-                && rewritten_right == on_right
-            {
+            let mut rewritten = None;
+            for (index, original) in branches.iter().copied().enumerate().rev() {
+                let result =
+                    popped(results, AnyNode::Computation(original)).computation_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| branches.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
+            }
+            let value = popped(results, AnyNode::Value(scrutinee)).value_or(scrutinee);
+            if rewritten.is_none() && value == scrutinee {
                 id
             }
             else {
-                arena.computation_case(rewritten_scrutinee, rewritten_left, rewritten_right)
+                let branches = rewritten.unwrap_or_else(|| branches.clone());
+                arena.computation_case(value, &branches)
             }
         },
     }
@@ -2245,7 +2232,8 @@ fn close_computation(
     captures: [before = results.len(), arity = arena.value_type(id).map_or(0, |matched_native_node| match *matched_native_node {
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
-ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.len(),
+ValueType::StaticPi { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::List(_) | ValueType::Session { .. } => 1,
 _ => 0,
 }), element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
@@ -2313,11 +2301,7 @@ fn close_value_type(
                 arena.value_type_path_universe(rewritten_source, rewritten_target)
             }
         },
-        | ValueType::Base(_)
-        | ValueType::Unit
-        | ValueType::Empty
-        | ValueType::Universe { .. }
-        | ValueType::Abstract(_) => id,
+        | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => id,
         | ValueType::Session {
             ref graph,
             payloads,
@@ -2349,26 +2333,23 @@ fn close_value_type(
                 arena.value_type_element(rewritten, target)
             }
         },
-        | ValueType::Product(first, second) => {
-            let rewritten_second =
-                popped(results, AnyNode::ValueType(second)).value_type_or(second);
-            let rewritten_first = popped(results, AnyNode::ValueType(first)).value_type_or(first);
-            if rewritten_first == first && rewritten_second == second {
-                id
+        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+            let product = matches!(*node, ValueType::Product(_));
+            let mut rewritten = None;
+            for (index, original) in parts.iter().copied().enumerate().rev() {
+                let result = popped(results, AnyNode::ValueType(original)).value_type_or(original);
+                if result != original
+                    && let Some(slot) = rewritten
+                        .get_or_insert_with(|| parts.clone())
+                        .get_mut(index)
+                {
+                    *slot = result;
+                }
             }
-            else {
-                arena.value_type_product(rewritten_first, rewritten_second)
-            }
-        },
-        | ValueType::Sum(first, second) => {
-            let rewritten_second =
-                popped(results, AnyNode::ValueType(second)).value_type_or(second);
-            let rewritten_first = popped(results, AnyNode::ValueType(first)).value_type_or(first);
-            if rewritten_first == first && rewritten_second == second {
-                id
-            }
-            else {
-                arena.value_type_sum(rewritten_first, rewritten_second)
+            match rewritten {
+                | Some(parts) if product => arena.value_type_product(&parts),
+                | Some(parts) => arena.value_type_sum(&parts),
+                | None => id,
             }
         },
         | ValueType::StaticPi { domain, codomain } => {
@@ -2616,7 +2597,7 @@ mod tests
         let mut arena = TermArena::new();
         let inner = arena.value_variable(index(BinderDepth::from(0_u32)));
         let outer = arena.value_variable(index(BinderDepth::from(1_u32)));
-        let pair = arena.value_pair(inner, outer);
+        let pair = arena.value_tuple(&[inner, outer]);
         let body = arena.computation_return(pair);
         let lambda = arena.computation_lambda(body);
         let mut table = ContentTable::new();
@@ -2637,7 +2618,7 @@ mod tests
         else {
             panic!("its body is a returner");
         };
-        let Some(&Value::Pair(first, second)) = arena.value(shifted_pair)
+        let Some(&[first, second]) = arena.value(shifted_pair).and_then(Value::components)
         else {
             panic!("and the returner carries the pair");
         };
@@ -2661,8 +2642,8 @@ mod tests
         let bound_inside = arena.value_variable(index(BinderDepth::from(0_u32)));
         let substituted = arena.value_variable(index(BinderDepth::from(1_u32)));
         let outside = arena.value_variable(index(BinderDepth::from(2_u32)));
-        let inner_pair = arena.value_pair(bound_inside, substituted);
-        let pair = arena.value_pair(inner_pair, outside);
+        let inner_pair = arena.value_tuple(&[bound_inside, substituted]);
+        let pair = arena.value_tuple(&[inner_pair, outside]);
         let body = arena.computation_return(pair);
         let lambda = arena.computation_lambda(body);
         let thunk = arena.value_thunk(lambda);
@@ -2682,11 +2663,13 @@ mod tests
         else {
             panic!("whose body returns");
         };
-        let Some(&Value::Pair(result_inner, result_outside)) = arena.value(result_pair)
+        let Some(&[result_inner, result_outside]) =
+            arena.value(result_pair).and_then(Value::components)
         else {
             panic!("a pair");
         };
-        let Some(&Value::Pair(result_bound, result_substituted)) = arena.value(result_inner)
+        let Some(&[result_bound, result_substituted]) =
+            arena.value(result_inner).and_then(Value::components)
         else {
             panic!("over a pair");
         };
@@ -2749,7 +2732,7 @@ mod tests
         let mut arena = TermArena::new();
         let base = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
-        let product = arena.value_type_product(base, unit);
+        let product = arena.value_type_product(&[base, unit]);
         let returner = arena.comp_type_returner(product);
         let dependent = arena.comp_type_pi(unit, returner);
         let thunk = arena.value_type_thunk(dependent);
@@ -2876,7 +2859,7 @@ mod tests
         #[spec(ensures: |ret| if levels.0 == 0 {
             arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(0_u32)))
         } else {
-            matches!(arena.value(ret), Some(&Value::Pair(left, right)) if left == right)
+            matches!(arena.value(ret).and_then(Value::components), Some(&[left, right]) if left == right)
         })]
         fn shared_composite(
             arena: &mut TermArena,
@@ -2886,7 +2869,7 @@ mod tests
             let mut node = arena.value_variable(index(BinderDepth::from(0_u32)));
             let mut remaining = levels.0;
             while remaining > 0 {
-                node = arena.value_pair(node, node);
+                node = arena.value_tuple(&[node, node]);
                 remaining = u32::from(arith::sub(
                     arith::Int::from(remaining),
                     arith::Int::from(1_u32),
@@ -2944,7 +2927,8 @@ mod tests
         // answer shares its two children on one node, and the memoless answer
         // does not, so the workload cannot silently stop being shared and keep
         // this case passing.
-        let Some(&Value::Pair(memoized_left, memoized_right)) = arena.value(memoized_result)
+        let Some(&[memoized_left, memoized_right]) =
+            arena.value(memoized_result).and_then(Value::components)
         else {
             panic!("the composite rewrites to a pair");
         };
@@ -2952,7 +2936,8 @@ mod tests
             memoized_left, memoized_right,
             "the memoized rewrite answers once for the one distinct subject"
         );
-        let Some(&Value::Pair(memoless_left, memoless_right)) = arena.value(memoless_result)
+        let Some(&[memoless_left, memoless_right]) =
+            arena.value(memoless_result).and_then(Value::components)
         else {
             panic!("and so does the memoless one");
         };
@@ -3012,7 +2997,7 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let element = arena.value_type_element(variable, Level::zero());
         let unit = arena.value_type_unit();
-        let payloads = arena.value_type_product(element, unit);
+        let payloads = arena.value_type_product(&[element]);
         let graph = alloc::sync::Arc::new(Graph {
             root: State(0),
             nodes: alloc::vec![Node::End],
@@ -3066,11 +3051,12 @@ mod tests
             panic!("session code")
         };
         assert_eq!(actual, &graph);
-        let Some(&ValueType::Product(field, rest)) = arena.value_type(payloads)
+        let Some(&[field]) = arena
+            .value_type(payloads)
+            .and_then(ValueType::product_parts)
         else {
-            panic!("payload telescope")
+            panic!("one payload in the telescope")
         };
-        assert_eq!(rest, unit);
         let Some(&ValueType::Element { code, .. }) = arena.value_type(field)
         else {
             panic!("open payload code")
@@ -3110,7 +3096,7 @@ mod tests
         assert_eq!(actual, &graph);
         assert_eq!(
             arena.value_type(payloads),
-            Some(&ValueType::Product(unit, unit))
+            Some(&ValueType::Product(alloc::boxed::Box::from([unit])))
         );
         let before = arena.watermark();
         assert_eq!(
@@ -3315,7 +3301,7 @@ mod tests
         let left = arena.computation_return(inner);
         let right = arena.computation_return(outer);
         let sequence = arena.computation_bind(bound, left);
-        let case = arena.computation_case(inner, left, right);
+        let case = arena.computation_case(inner, &[left, right]);
         let mut table = ContentTable::new();
         let mut memo = RewriteMemo::new();
         let shifted = shift_computation(
@@ -3352,9 +3338,12 @@ mod tests
         );
         let Some(&Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         }) = arena.computation(shifted)
+        else {
+            panic!("expected case");
+        };
+        let &[on_left, on_right] = &**branches
         else {
             panic!("expected case");
         };

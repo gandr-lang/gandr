@@ -270,7 +270,13 @@ impl<'graph> Cursor<'graph>
                     self.current = next;
                 },
                 | Layer::Guard { evidence, tail } => {
-                    let Some(&Value::Injection(side, payload)) = arena.value(evidence)
+                    let Some((side, payload)) =
+                        arena.value(evidence).and_then(|held| match *held {
+                            | Value::Injection(summand, payload) => {
+                                Side::try_from(summand).ok().map(|side| (side, payload))
+                            },
+                            | _ => None,
+                        })
                     else {
                         return Err(meter.refuse(HigherError::Relation(RelationError::Evidence)));
                     };

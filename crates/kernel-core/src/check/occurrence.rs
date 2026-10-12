@@ -286,9 +286,12 @@ fn worst(
                             .map(|&field| (AnyNode::ValueType(field), nest(reach))),
                     );
                 },
-                | Some(&(ValueType::Product(first, second) | ValueType::Sum(first, second))) => {
-                    pending.push((AnyNode::ValueType(first), nest(reach)));
-                    pending.push((AnyNode::ValueType(second), nest(reach)));
+                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                    pending.extend(
+                        parts
+                            .iter()
+                            .map(|&part| (AnyNode::ValueType(part), nest(reach))),
+                    );
                 },
                 | Some(
                     &(ValueType::List(inner)
@@ -330,13 +333,7 @@ fn worst(
                     };
                     pending.push((AnyNode::CompType(body), inner));
                 },
-                | Some(
-                    &(ValueType::Base(_)
-                    | ValueType::Unit
-                    | ValueType::Empty
-                    | ValueType::Universe { .. }),
-                )
-                | None => {},
+                | Some(&(ValueType::Base(_) | ValueType::Universe { .. })) | None => {},
             },
             | AnyNode::CompType(id) => match arena.comp_type(id) {
                 | Some(&CompType::Arrow { domain, codomain }) => {
@@ -419,12 +416,18 @@ fn worst(
                 },
                 | Some(
                     &(Value::PathProduct(first, second)
-                    | Value::Pair(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second)),
                 ) => {
                     pending.push((AnyNode::Value(first), reach));
                     pending.push((AnyNode::Value(second), reach));
+                },
+                | Some(&Value::Tuple(ref components)) => {
+                    pending.extend(
+                        components
+                            .iter()
+                            .map(|&component| (AnyNode::Value(component), reach)),
+                    );
                 },
                 | Some(
                     &(Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. }),
@@ -436,10 +439,7 @@ fn worst(
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), reach));
                 },
-                | Some(
-                    &(Value::Variable(_) | Value::Unit | Value::Literal(_) | Value::ListNil),
-                )
-                | None => {},
+                | Some(&(Value::Variable(_) | Value::Literal(_) | Value::ListNil)) | None => {},
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
                 | Some(&Computation::DataCase {
@@ -457,7 +457,6 @@ fn worst(
                 },
                 | Some(
                     &(Computation::RecordProjection(value, _)
-                    | Computation::Absurd(value)
                     | Computation::Return(value)
                     | Computation::Force(value)),
                 ) => {
@@ -476,12 +475,14 @@ fn worst(
                 },
                 | Some(&Computation::Case {
                     scrutinee,
-                    on_left,
-                    on_right,
+                    ref branches,
                 }) => {
                     pending.push((AnyNode::Value(scrutinee), reach));
-                    pending.push((AnyNode::Computation(on_left), reach));
-                    pending.push((AnyNode::Computation(on_right), reach));
+                    pending.extend(
+                        branches
+                            .iter()
+                            .map(|&branch| (AnyNode::Computation(branch), reach)),
+                    );
                 },
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), reach));

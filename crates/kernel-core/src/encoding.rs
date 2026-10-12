@@ -74,7 +74,6 @@ use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
-use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
@@ -825,7 +824,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// # Specification
     /// - requires: every child of `value` has already been placed.
     /// - ensures: writes the former's own node tag, then its inline payload —
-    ///   an index, a constant position, a literal, an injection side, or a
+    ///   an index, a constant position, a literal, an injection's summand, or a
     ///   level — then each child's content id in the order the format writes
     ///   them; distinct formers write distinct tags, so no two write one
     ///   record.
@@ -836,8 +835,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// # Adequacy
     /// - hypothesis: L1/L3 — children are already placed in this session. The
     ///   predicate checks every required child and the appended node tag.
-    ///   Unit/pair, signed-literal and injection fixtures separate selected
-    ///   tags and payloads; they do not enumerate every value.
+    ///   Tuple, signed-literal and injection fixtures separate selected tags
+    ///   and payloads; they do not enumerate every value.
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
     /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
@@ -849,8 +848,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::SessionPath { path_type, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
             Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
-            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
-            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::Pair(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
+            Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
+            Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
+            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
                             && self.placed.contains_key(&AnyNode::Value(second)),
             Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
             Value::Thunk(body) => self.placed.contains_key(&AnyNode::Computation(body)),
@@ -867,11 +867,10 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
             Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
             Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
-            Value::Unit => gandr_kernel_term::NODE_V_UNIT,
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
             Value::ListCons(..) => gandr_kernel_term::NODE_V_LIST_CONS,
             Value::Literal(..) => gandr_kernel_term::NODE_V_LITERAL,
-            Value::Pair(..) => gandr_kernel_term::NODE_V_PAIR,
+            Value::Tuple(..) => gandr_kernel_term::NODE_V_TUPLE,
             Value::Injection(..) => gandr_kernel_term::NODE_V_INJECTION,
             Value::Thunk(..) => gandr_kernel_term::NODE_V_THUNK,
             Value::Lift { .. } => gandr_kernel_term::NODE_V_LIFT,
@@ -955,19 +954,20 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_V_CONSTANT);
                 record.put_count(ComponentCount(usize::from(index)));
             },
-            | Value::Unit => record.put_tag(gandr_kernel_term::NODE_V_UNIT),
             | Value::Literal(ref literal) => {
                 record.put_tag(gandr_kernel_term::NODE_V_LITERAL);
                 put_literal(record, literal);
             },
-            | Value::Pair(first, second) => {
-                record.put_tag(gandr_kernel_term::NODE_V_PAIR);
-                record.put_content(self.content_of(AnyNode::Value(first)));
-                record.put_content(self.content_of(AnyNode::Value(second)));
+            | Value::Tuple(ref components) => {
+                record.put_tag(gandr_kernel_term::NODE_V_TUPLE);
+                record.put_count(ComponentCount(components.len()));
+                for component in components {
+                    record.put_content(self.content_of(AnyNode::Value(*component)));
+                }
             },
-            | Value::Injection(side, body) => {
+            | Value::Injection(summand, body) => {
                 record.put_tag(gandr_kernel_term::NODE_V_INJECTION);
-                record.put_tag(side_tag(side));
+                record.put_count(ComponentCount(usize::from(summand)));
                 record.put_content(self.content_of(AnyNode::Value(body)));
             },
             | Value::Thunk(body) => {
@@ -1008,9 +1008,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// # Adequacy
     /// - hypothesis: L1/L3 — children are already placed in this session. The
     ///   predicate checks every required child and the appended node tag. Case
-    ///   fixtures change each of its three children independently and descend
-    ///   through returns; other forms retain executable tag and placement
-    ///   checks.
+    ///   fixtures change each of its children independently and descend through
+    ///   returns; other forms retain executable tag and placement checks.
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     #[spec(
         requires: match *computation {
@@ -1021,12 +1020,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
                             && self.placed.contains_key(&AnyNode::Value(argument)),
-            Computation::Absurd(value) | Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
+            Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
             Computation::Bind(bound, body) => self.placed.contains_key(&AnyNode::Computation(bound))
                             && self.placed.contains_key(&AnyNode::Computation(body)),
-            Computation::Case { scrutinee, on_left, on_right } => self.placed.contains_key(&AnyNode::Value(scrutinee))
-                            && self.placed.contains_key(&AnyNode::Computation(on_left))
-                            && self.placed.contains_key(&AnyNode::Computation(on_right)),
+            Computation::Case { scrutinee, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee))
+                            && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
@@ -1034,7 +1032,6 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
             Computation::ListFold { .. } => gandr_kernel_term::NODE_C_LIST_FOLD,
-            Computation::Absurd(_) => gandr_kernel_term::NODE_C_ABSURD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
             Computation::Fixpoint { .. } => gandr_kernel_term::NODE_C_FIXPOINT,
             Computation::Application(..) => gandr_kernel_term::NODE_C_APPLICATION,
@@ -1087,10 +1084,6 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(child));
                 }
             },
-            | Computation::Absurd(value) => {
-                record.put_tag(gandr_kernel_term::NODE_C_ABSURD);
-                record.put_content(self.content_of(AnyNode::Value(value)));
-            },
             | Computation::Transport(path, value) => {
                 record.put_tag(gandr_kernel_term::NODE_C_TRANSPORT);
                 record.put_content(self.content_of(AnyNode::Value(path)));
@@ -1132,13 +1125,14 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             },
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             } => {
                 record.put_tag(gandr_kernel_term::NODE_C_CASE);
+                record.put_count(ComponentCount(branches.len()));
                 record.put_content(self.content_of(AnyNode::Value(scrutinee)));
-                record.put_content(self.content_of(AnyNode::Computation(on_left)));
-                record.put_content(self.content_of(AnyNode::Computation(on_right)));
+                for branch in branches {
+                    record.put_content(self.content_of(AnyNode::Computation(*branch)));
+                }
             },
         }
     }
@@ -1168,8 +1162,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
             ValueType::PathUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
-            ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
-            ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.placed.contains_key(&AnyNode::ValueType(first))
+            ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
+            ValueType::StaticPi { domain: first, codomain: second } => self.placed.contains_key(&AnyNode::ValueType(first))
                             && self.placed.contains_key(&AnyNode::ValueType(second)),
             ValueType::Thunk(body) => self.placed.contains_key(&AnyNode::CompType(body)),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.placed.contains_key(&AnyNode::ValueType(inner)),
@@ -1182,9 +1177,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
             ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
             ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
-            ValueType::Empty => gandr_kernel_term::NODE_VT_EMPTY,
             ValueType::Base(..) => gandr_kernel_term::NODE_VT_BASE,
-            ValueType::Unit => gandr_kernel_term::NODE_VT_UNIT,
             ValueType::Universe { sort: GroundSort::Value, .. } => gandr_kernel_term::NODE_VT_UNIVERSE,
             ValueType::Universe { sort: GroundSort::Computation, .. } => gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE,
             ValueType::Product(..) => gandr_kernel_term::NODE_VT_PRODUCT,
@@ -1231,8 +1224,6 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
                 record.put_tag(base_tag(base));
             },
-            | ValueType::Unit => record.put_tag(gandr_kernel_term::NODE_VT_UNIT),
-            | ValueType::Empty => record.put_tag(gandr_kernel_term::NODE_VT_EMPTY),
             | ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
@@ -1247,15 +1238,15 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE);
                 put_level(record, level);
             },
-            | ValueType::Product(first, second) => {
-                record.put_tag(gandr_kernel_term::NODE_VT_PRODUCT);
-                record.put_content(self.content_of(AnyNode::ValueType(first)));
-                record.put_content(self.content_of(AnyNode::ValueType(second)));
-            },
-            | ValueType::Sum(first, second) => {
-                record.put_tag(gandr_kernel_term::NODE_VT_SUM);
-                record.put_content(self.content_of(AnyNode::ValueType(first)));
-                record.put_content(self.content_of(AnyNode::ValueType(second)));
+            | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                record.put_tag(match *value_type {
+                    | ValueType::Product(_) => gandr_kernel_term::NODE_VT_PRODUCT,
+                    | _ => gandr_kernel_term::NODE_VT_SUM,
+                });
+                record.put_count(ComponentCount(parts.len()));
+                for part in parts {
+                    record.put_content(self.content_of(AnyNode::ValueType(*part)));
+                }
             },
             | ValueType::Thunk(body) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
@@ -1391,10 +1382,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         AnyNode::Value(id) => match arena.value(id) { Some(matched_native_node) => match *matched_native_node {
 Value::Constructor { datatype, ref fields, .. } => opened.eq((core::iter::once(AnyNode::ValueType(datatype)).chain(fields.iter().copied().map(AnyNode::Value))).map(Some)),
 Value::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::Value)).map(Some)),
-Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
+Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::SessionPath { path_type, payload_paths, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
-Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::Pair(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
 Value::PathRefl(body) | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
 Value::Thunk(body) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
 Value::Quote(quoted) => opened.eq((core::iter::once(AnyNode::ValueType(quoted))).map(Some)),
@@ -1410,17 +1402,18 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
             Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
-            Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
+            Some(&Computation::Return(value) | &Computation::Force(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
             Some(&Computation::Bind(bound,body)) => opened.eq(([AnyNode::Computation(bound),AnyNode::Computation(body)].into_iter()).map(Some)),
-            Some(&Computation::Case {scrutinee,on_left,on_right}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::Computation(on_left),AnyNode::Computation(on_right)].into_iter()).map(Some)),
+            Some(&Computation::Case {scrutinee,ref branches}) => opened.eq((core::iter::once(AnyNode::Value(scrutinee)).chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
         },
         AnyNode::ValueType(id) => match arena.value_type(id) { Some(matched_native_node) => match *matched_native_node {
 ValueType::Data {ref arguments,..} => opened.eq((arguments.iter().copied().map(AnyNode::Value)).map(Some)),
 ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode::ValueType)).map(Some)),
-ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
+ValueType::Base(_) | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
 ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
 ValueType::PathUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
-ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
+ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
+ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
 ValueType::Thunk(body) => opened.eq((core::iter::once(AnyNode::CompType(body))).map(Some)),
 ValueType::Element {code,..} => opened.eq((core::iter::once(AnyNode::Value(code))).map(Some)),
 },
@@ -1456,12 +1449,17 @@ fn push_children(
             },
             | None
             | Some(
-                &Value::ListNil
-                | &Value::Variable(_)
-                | &Value::Constant(_)
-                | &Value::Unit
-                | &Value::Literal(_),
+                &Value::ListNil | &Value::Variable(_) | &Value::Constant(_) | &Value::Literal(_),
             ) => {},
+            | Some(&Value::Tuple(ref components)) => {
+                tasks.extend(
+                    components
+                        .iter()
+                        .copied()
+                        .map(AnyNode::Value)
+                        .map(EncodeTask::Open),
+                );
+            },
             | Some(&Value::PathEquiv {
                 path_type,
                 forward,
@@ -1483,7 +1481,6 @@ fn push_children(
             | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
             | Some(
                 &Value::PathProduct(first, second)
-                | &Value::Pair(first, second)
                 | &Value::ListCons(first, second)
                 | &Value::StaticApplication(first, second),
             ) => {
@@ -1544,11 +1541,7 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Computation(head)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(argument)));
             },
-            | Some(
-                &Computation::Return(value)
-                | &Computation::Force(value)
-                | &Computation::Absurd(value),
-            ) => {
+            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1557,12 +1550,16 @@ fn push_children(
             },
             | Some(&Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
+                ref branches,
             }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(scrutinee)));
-                tasks.push(EncodeTask::Open(AnyNode::Computation(on_left)));
-                tasks.push(EncodeTask::Open(AnyNode::Computation(on_right)));
+                tasks.extend(
+                    branches
+                        .iter()
+                        .copied()
+                        .map(AnyNode::Computation)
+                        .map(EncodeTask::Open),
+                );
             },
         },
         | AnyNode::ValueType(id) => match arena.value_type(id) {
@@ -1572,21 +1569,21 @@ fn push_children(
             | Some(&ValueType::Record(ref fields)) => tasks
                 .extend((fields.values().copied().map(AnyNode::ValueType)).map(EncodeTask::Open)),
             | None
-            | Some(
-                &ValueType::Base(_)
-                | &ValueType::Unit
-                | &ValueType::Empty
-                | &ValueType::Universe { .. }
-                | &ValueType::Abstract(_),
-            ) => {},
-            | Some(
-                &ValueType::Product(first, second)
-                | &ValueType::Sum(first, second)
-                | &ValueType::StaticPi {
-                    domain: first,
-                    codomain: second,
-                },
-            ) => {
+            | Some(&ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => {
+            },
+            | Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) => {
+                tasks.extend(
+                    parts
+                        .iter()
+                        .copied()
+                        .map(AnyNode::ValueType)
+                        .map(EncodeTask::Open),
+                );
+            },
+            | Some(&ValueType::StaticPi {
+                domain: first,
+                codomain: second,
+            }) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },
@@ -1638,19 +1635,6 @@ fn put_dangling(
 {
     record.put_tag(record_dangling());
     record.put_tag(family.tag());
-}
-
-/// The format's tag for an injection side.
-///
-/// # Specification
-/// trivial.
-#[inline]
-const fn side_tag(side: Side) -> WireTag
-{
-    match side {
-        | Side::Left => gandr_kernel_term::SIDE_LEFT,
-        | Side::Right => gandr_kernel_term::SIDE_RIGHT,
-    }
 }
 
 /// The format's tag for a base-type atom.
@@ -2386,8 +2370,8 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
-        let forward = arena.value_type_product(unit, base);
-        let backward = arena.value_type_product(base, unit);
+        let forward = arena.value_type_product(&[unit, base]);
+        let backward = arena.value_type_product(&[base, unit]);
         let mut table = ContentTable::new();
         assert_ne!(
             encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(forward), &[
@@ -2519,10 +2503,10 @@ mod tests
         // separates which pair.
         let left = arena.value_literal(text(String::from("ab")));
         let right = arena.value_literal(text(String::from("c")));
-        let joined = arena.value_pair(left, right);
+        let joined = arena.value_tuple(&[left, right]);
         let left = arena.value_literal(text(String::from("a")));
         let right = arena.value_literal(text(String::from("bc")));
-        let split = arena.value_pair(left, right);
+        let split = arena.value_tuple(&[left, right]);
         assert_ne!(
             encode_support(&mut table, &arena, SupportGoal::SynthValue(joined), &[]),
             encode_support(&mut table, &arena, SupportGoal::SynthValue(split), &[]),
@@ -2704,15 +2688,15 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let left = arena.value_injection(gandr_kernel_term::Side::Left, unit);
-        let right = arena.value_injection(gandr_kernel_term::Side::Right, unit);
+        let left = arena.value_injection(gandr_kernel_term::Side::Left.into(), unit);
+        let right = arena.value_injection(gandr_kernel_term::Side::Right.into(), unit);
         let returns_unit = arena.computation_return(unit);
         let returns_variable = arena.computation_return(variable);
         let roots = [
-            arena.computation_case(left, returns_unit, returns_unit),
-            arena.computation_case(right, returns_unit, returns_unit),
-            arena.computation_case(left, returns_variable, returns_unit),
-            arena.computation_case(left, returns_unit, returns_variable),
+            arena.computation_case(left, &[returns_unit, returns_unit]),
+            arena.computation_case(right, &[returns_unit, returns_unit]),
+            arena.computation_case(left, &[returns_variable, returns_unit]),
+            arena.computation_case(left, &[returns_unit, returns_variable]),
         ];
         let mut table = ContentTable::new();
         let keys =
@@ -2836,8 +2820,8 @@ mod tests
         let mut arena = TermArena::new();
         let first_unit = arena.value_type_unit();
         let second_unit = arena.value_type_unit();
-        let first = arena.value_type_product(first_unit, first_unit);
-        let second = arena.value_type_product(second_unit, second_unit);
+        let first = arena.value_type_product(&[first_unit, first_unit]);
+        let second = arena.value_type_product(&[second_unit, second_unit]);
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
         assert_eq!(
             content_digest(&arena, AnyNode::ValueType(first)),
@@ -2858,7 +2842,7 @@ mod tests
         let mut arena = TermArena::new();
         let mut body = arena.value_unit();
         for _step in 0 .. 16_u32 {
-            body = arena.value_pair(body, body);
+            body = arena.value_tuple(&[body, body]);
         }
         let mut table = ContentTable::new();
         let key = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
@@ -2885,7 +2869,7 @@ mod tests
         );
         let mut reminted = arena.value_unit();
         for _step in 0 .. 16_u32 {
-            reminted = arena.value_pair(reminted, reminted);
+            reminted = arena.value_tuple(&[reminted, reminted]);
         }
         let reminted_key =
             encode_support(&mut table, &arena, SupportGoal::SynthValue(reminted), &[]);

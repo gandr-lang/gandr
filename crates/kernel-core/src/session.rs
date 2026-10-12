@@ -147,8 +147,9 @@ enum Visit
 /// Extract the finite payload-code telescope.
 ///
 /// # Specification
-/// - ensures: returns fields in slot order and only accepts a Unit-terminated
-///   product spine; no recursive session edge is followed.
+/// - ensures: returns the parts of the one product the payloads name, in slot
+///   order; any other classifier is refused. No recursive session edge is
+///   followed.
 /// - fails: unreadable native references or malformed telescope shape.
 /// - panics: none.
 ///
@@ -159,29 +160,18 @@ enum Visit
 /// - hypothesis: L3 malformed payload slots and spines refuse at formation.
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 /// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
-#[spec(captures: start = payloads, ensures: |ret| ret.as_ref().map_or(true, |fields| {
-    let mut tail = start;
-    fields.iter().all(|field| match arena.value_type(tail) {
-        Some(&ValueType::Product(actual, rest)) if actual == *field => { tail = rest; true },
-        _ => false,
-    }) && matches!(arena.value_type(tail), Some(ValueType::Unit))
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |fields| {
+    matches!(arena.value_type(payloads), Some(ValueType::Product(parts)) if **parts == **fields)
 }))]
 #[inline]
 pub fn payload_codes(
     arena: &TermArena,
-    mut payloads: ValueTypeId,
+    payloads: ValueTypeId,
 ) -> Result<Vec<ValueTypeId>, SessionError>
 {
-    let mut fields = Vec::new();
-    loop {
-        match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
-            | ValueType::Product(field, rest) => {
-                fields.push(field);
-                payloads = rest;
-            },
-            | ValueType::Unit => return Ok(fields),
-            | _ => return Err(SessionError::PayloadTelescope),
-        }
+    match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
+        | ValueType::Product(ref parts) => Ok(parts.to_vec()),
+        | _ => Err(SessionError::PayloadTelescope),
     }
 }
 
@@ -217,20 +207,13 @@ pub fn payload_codes(
 pub fn validate_graph(
     arena: &TermArena,
     graph: &Graph,
-    mut payloads: ValueTypeId,
+    payloads: ValueTypeId,
 ) -> Result<(), SessionError>
 {
-    let mut fields = PayloadSlot(0);
-    loop {
-        match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
-            | ValueType::Product(_, rest) => {
-                fields.0 = fields.0.saturating_add(1);
-                payloads = rest;
-            },
-            | ValueType::Unit => break,
-            | _ => return Err(SessionError::PayloadTelescope),
-        }
-    }
+    let fields = match *arena.value_type(payloads).ok_or(SessionError::Arena)? {
+        | ValueType::Product(ref parts) => PayloadSlot(parts.len()),
+        | _ => return Err(SessionError::PayloadTelescope),
+    };
     let mut seen = alloc::vec![false; graph.nodes.len()];
     let mut binders = alloc::vec![false; graph.nodes.len()];
     let mut pending = alloc::vec![Visit::Enter(graph.root)];
@@ -502,14 +485,9 @@ enum Choice
 /// - witness: `session::tests::session_boundaries_name_payload_and_graph_refusals`
 /// - witness: `session::tests::session_choice_relations_exhaust_two_label_widths`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |root| {
-    let mut expected = *root;
-    evidence.payloads.iter().all(|_| match arena.value_type(expected) {
-        Some(&ValueType::Product(path, rest)) => {
-            expected = rest;
-            matches!(arena.value_type(path), Some(ValueType::PathUniverse(..)))
-        },
-        _ => false,
-    }) && matches!(arena.value_type(expected), Some(ValueType::Unit))
+    matches!(arena.value_type(*root), Some(ValueType::Product(paths))
+        if paths.len() == evidence.payloads.len()
+            && paths.iter().all(|&path| matches!(arena.value_type(path), Some(ValueType::PathUniverse(..)))))
 }))]
 pub(crate) fn obligations(
     arena: &mut TermArena,
@@ -608,8 +586,8 @@ pub(crate) fn obligations(
             | _ => return Err(SessionError::WrongAction(pair)),
         }
     }
-    let mut expected = arena.value_type_unit();
-    for &(source, target) in evidence.payloads.iter().rev() {
+    let mut paths = Vec::with_capacity(evidence.payloads.len());
+    for &(source, target) in &evidence.payloads {
         let source = *source_fields
             .get(source.0)
             .ok_or(SessionError::MissingPayload(source))?;
@@ -618,10 +596,9 @@ pub(crate) fn obligations(
             .ok_or(SessionError::MissingPayload(target))?;
         let source = arena.value_quote(source);
         let target = arena.value_quote(target);
-        let path = arena.value_type_path_universe(source, target);
-        expected = arena.value_type_product(path, expected);
+        paths.push(arena.value_type_path_universe(source, target));
     }
-    Ok(expected)
+    Ok(arena.value_type_product(&paths))
 }
 
 #[cfg(test)]

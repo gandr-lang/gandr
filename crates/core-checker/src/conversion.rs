@@ -656,17 +656,18 @@ fn convert(
                         pending.push(Pairing::Codes(left_code, right_code));
                         left_target == right_target
                     },
-                    | (
-                        ValueTypeView::Sum(left_first, left_second),
-                        ValueTypeView::Sum(right_first, right_second),
-                    )
-                    | (
-                        ValueTypeView::Product(left_first, left_second),
-                        ValueTypeView::Product(right_first, right_second),
-                    ) => {
-                        pending.push(values(left_second, right_second));
-                        pending.push(values(left_first, right_first));
-                        true
+                    | (ValueTypeView::Sum(left), ValueTypeView::Sum(right))
+                    | (ValueTypeView::Product(left), ValueTypeView::Product(right)) => {
+                        let same = left.len() == right.len();
+                        if same {
+                            pending.extend(
+                                left.iter()
+                                    .zip(right)
+                                    .rev()
+                                    .map(|(&left, &right)| values(left, right)),
+                            );
+                        }
+                        same
                     },
                     | (
                         ValueTypeView::StaticPi {

@@ -51,13 +51,9 @@ pub enum ValueTypeHead
     PathUniverse,
     /// A rigid base-type atom.
     Base,
-    /// The unit type.
-    Unit,
-    /// The empty type.
-    Empty,
-    /// A product.
+    /// A product, the unit type among them.
     Product,
-    /// A sum.
+    /// A sum, the empty type among them.
     Sum,
     /// A strictly positive list fixed point.
     List,
@@ -92,8 +88,6 @@ impl ValueTypeHead
             | ValueType::Record(_) => Self::Record,
             | ValueType::PathUniverse(..) => Self::PathUniverse,
             | ValueType::Base(_) => Self::Base,
-            | ValueType::Unit => Self::Unit,
-            | ValueType::Empty => Self::Empty,
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
             | ValueType::Sum(..) => Self::Sum,
@@ -285,8 +279,9 @@ pub enum NonInferableForm
     Injection,
     /// A lambda carries no domain annotation.
     Lambda,
-    /// Empty elimination carries no result annotation.
-    Absurd,
+    /// A case of no branches, the empty sum's elimination, carries no result
+    /// annotation and has no branch to synthesize one from.
+    EmptyCase,
     /// A fixpoint carries no classifier annotation.
     Fixpoint,
     /// A native list introduction needs its element classifier.
@@ -1035,7 +1030,10 @@ mod tests
             );
             assert_eq!(environment.arena().watermark(), watermark);
             assert_eq!(environment.entries().len(), entries);
-            assert_eq!(environment.arena().value_type(unit), Some(&ValueType::Unit));
+            assert_eq!(
+                environment.arena().value_type(unit),
+                Some(&ValueType::unit())
+            );
         }
     }
 }

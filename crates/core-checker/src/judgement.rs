@@ -122,6 +122,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::CodomainScope;
+use gandr_core_term::hole::Components;
 use gandr_core_term::hole::matched_function;
 use gandr_core_term::hole::matched_list;
 use gandr_core_term::hole::matched_product;
@@ -667,6 +668,13 @@ enum Frame
     /// An extra record field was typed but does not contribute to the expected
     /// type.
     NativeDiscard,
+    /// Assemble a synthesised tuple's eager product from its components'
+    /// types, the result-stack suffix from `base`.
+    NativeTuple
+    {
+        /// The result-stack suffix owned by this tuple.
+        base: usize,
+    },
     /// Assemble a record's exact inferred field types.
     NativeRecord
     {
@@ -855,25 +863,24 @@ enum Frame
         /// The target returner.
         result: CompTypeId,
     },
-    /// Await the sum scrutinee classifier.
+    /// Await the sum scrutinee classifier of the case `at`.
     CaseScrutinee
     {
+        /// The case.
+        at: ComputationId,
         /// The scrutinee.
         scrutinee: ValueId,
-        /// The left branch.
-        on_left: ComputationId,
-        /// The right branch.
-        on_right: ComputationId,
         /// The common result type.
         expected: CompTypeId,
     },
-    /// Close the left binder and check the right branch.
-    CaseRight
+    /// Once the previous branch has checked, check `branch` under a binder of
+    /// its summand.
+    CaseBranch
     {
-        /// The right branch.
-        on_right: ComputationId,
-        /// The right summand.
-        right: ValueTypeId,
+        /// The branch.
+        branch: ComputationId,
+        /// Its summand, which the branch binds.
+        summand: ValueTypeId,
         /// The common result type under one binder.
         expected: CompTypeId,
     },
@@ -984,20 +991,6 @@ enum Frame
         second: ValueId,
         /// The second factor.
         expected: ValueTypeId,
-    },
-    /// A synthesised pair waits on its first component's type; the second
-    /// component then synthesises.
-    PairFirstSynthesised
-    {
-        /// The second component.
-        second: ValueId,
-    },
-    /// A synthesised pair waits on its second component's type; the pair
-    /// then has the eager product of both.
-    PairSecondSynthesised
-    {
-        /// The first component's type.
-        first: ValueTypeId,
     },
     /// A static application waits on the type its head so far synthesises,
     /// which must be a static Pi; the argument at `position` then meets its
@@ -1992,16 +1985,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(term),
             }),
-            | Value::Tuple(ref components) => match **components {
-                | [] => produced(self.context.atom(Atom::Unit)),
-                | [first, second] => {
-                    self.frames.push(Frame::PairFirstSynthesised { second });
-                    Ok(Step::Descend(Goal::Value {
-                        term: first,
+            | Value::Tuple(ref components) if components.is_empty() => {
+                produced(self.context.atom(Atom::Unit))
+            },
+            | Value::Tuple(_) => {
+                let Some(components) = self.context.arena().value(term).and_then(Value::components)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                self.frames.push(Frame::NativeTuple {
+                    base: self.native_types.len(),
+                });
+                for &component in components.iter().rev() {
+                    self.frames.push(Frame::NativeCollect);
+                    self.frames.push(Frame::NativeNext(Goal::Value {
+                        term: component,
                         direction: Direction::Synthesise,
-                    }))
-                },
-                | _ => Err(unadmitted_value(term, UnadmittedFormer::ProductArity)),
+                    }));
+                }
+                let first = self.frames.pop().ok_or(CheckRefusal::MachineInvariant)?;
+                self.resume(first, Produced::Checked)
             },
             | Value::Injection(..) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Injection(term),
@@ -2117,20 +2120,33 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(body_type),
                 }))
             },
-            | Value::Tuple(ref components) if components.len() == 2 => {
-                let &[first, second] = &**components
+            | Value::Tuple(ref components) if !components.is_empty() => {
+                let count = components.len();
+                let factors = self.product_expected(term, expected)?;
+                if matches!(factors, Components::Known(ref parts) if parts.len() != count) {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Value(term),
+                        wanted: ExpectedShape::Product,
+                        found: TypeNode::Value(expected),
+                    });
+                }
+                let Some(components) = self.context.arena().value(term).and_then(Value::components)
                 else {
                     return Err(CheckRefusal::MachineInvariant);
                 };
-                let (first_factor, second_factor) = self.product_expected(term, expected)?;
-                self.frames.push(Frame::PairSecond {
-                    second,
-                    expected: second_factor,
-                });
-                Ok(Step::Descend(Goal::Value {
-                    term: first,
-                    direction: Direction::Check(first_factor),
-                }))
+                for (index, &component) in components.iter().enumerate().rev() {
+                    let factor = match factors {
+                        | Components::Known(ref parts) => {
+                            *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                        },
+                        | Components::Unknown(unknown) => unknown,
+                    };
+                    self.frames.push(Frame::NativeNext(Goal::Value {
+                        term: component,
+                        direction: Direction::Check(factor),
+                    }));
+                }
+                Ok(Step::Ascend(Produced::Checked))
             },
             | Value::StaticLambda(body) => {
                 let (domain, codomain) = self.static_pi_expected(term, expected)?;
@@ -2160,11 +2176,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | Value::Injection(summand, value) => {
-                let (left, right) = self.sum_expected(term, expected)?;
-                let summand = match usize::from(summand) {
-                    | 0 => left,
-                    | 1 => right,
-                    | _ => return Err(unadmitted_value(term, UnadmittedFormer::SumArity)),
+                let summand = match self.sum_expected(term, expected)? {
+                    | Components::Known(parts) => {
+                        *parts
+                            .get(usize::from(summand))
+                            .ok_or(CheckRefusal::ShapeMismatch {
+                                at: TermNode::Value(term),
+                                wanted: ExpectedShape::Sum,
+                                found: TypeNode::Value(expected),
+                            })?
+                    },
+                    | Components::Unknown(unknown) => unknown,
                 };
                 Ok(Step::Descend(Goal::Value {
                     term: value,
@@ -2620,21 +2642,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Bind(bound, body) => {
                 Ok(self.bind(term, bound, body, Direction::Check(expected)))
             },
-            | Computation::Case {
-                scrutinee,
-                ref branches,
-            } => {
-                let &[on_left, on_right] = &**branches
-                else {
-                    return Err(CheckRefusal::OutOfFragment {
-                        at: CoreNode::Term(TermNode::Computation(term)),
-                        former: UnadmittedFormer::SumArity,
-                    });
-                };
+            | Computation::Case { scrutinee, .. } => {
                 self.frames.push(Frame::CaseScrutinee {
+                    at: term,
                     scrutinee,
-                    on_left,
-                    on_right,
                     expected,
                 });
                 Ok(Step::Descend(Goal::Value {
@@ -2774,10 +2785,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Judgement
     /// - expected: `expected`
     #[spec(ensures: |ret| match ret {
-        | Ok((first, second)) => {
-            self.context.arena().value_type(first).is_some()
-                && self.context.arena().value_type(second).is_some()
+        | Ok(Components::Known(ref parts)) => {
+            parts.iter().all(|&part| self.context.arena().value_type(part).is_some())
         },
+        | Ok(Components::Unknown(unknown)) => self.context.arena().value_type(unknown).is_some(),
         | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found }) => {
             shaped == TermNode::Value(at)
                 && wanted == ExpectedShape::Product
@@ -2789,7 +2800,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         &mut self,
         at: ValueId,
         expected: ValueTypeId,
-    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    ) -> Result<Components, CheckRefusal>
     {
         let head = self.context.whnf_value_type(expected)?;
         match matched_product(self.context.arena_mut(), head) {
@@ -2995,10 +3006,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: an atom and the unit type are formed; a thunk type forms its
     ///   body; a universe is formed below the greatest level; a lift forms its
     ///   type, then awaits the raise; a decode awaits its code's synthesised
-    ///   type; an eager product forms both factors; a static Pi forms both
-    ///   classifiers, then awaits their check as static classifiers. A former
-    ///   formed at once leaves the frames as found; one that descends leaves
-    ///   them no shorter.
+    ///   type; an eager product and a sum form each component, an empty sum at
+    ///   once; a static Pi forms both classifiers, then awaits their check as
+    ///   static classifiers. A former formed at once leaves the frames as
+    ///   found, but for a data type, a record, a product and a sum, which queue
+    ///   their components; one that descends leaves them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`].
@@ -3012,7 +3024,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(
         captures: depth = self.frames.len(),
         ensures: |ret| match ret {
-            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_))) && self.frames.len() >= depth),
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth || (matches!(self.context.arena().value_type(at), Some(gandr_core_term::ValueType::Data { .. } | gandr_core_term::ValueType::Record(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_))) && self.frames.len() >= depth),
             | Ok(Step::Descend(_)) => self.frames.len() >= depth,
             | Err(_) => true,
         },
@@ -3071,9 +3083,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | ValueTypeView::Sum(first, second) | ValueTypeView::Product(first, second) => {
-                self.frames.push(Frame::FormNext(TypeNode::Value(second)));
-                Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
+            | ValueTypeView::Sum(components) | ValueTypeView::Product(components) => {
+                self.frames.extend(
+                    components
+                        .iter()
+                        .rev()
+                        .map(|&component| Frame::FormNext(TypeNode::Value(component))),
+                );
+                Ok(Step::Ascend(Produced::Checked))
             },
             | ValueTypeView::StaticPi { domain, codomain } => {
                 self.frames.push(Frame::FormStaticPi(at));
@@ -3549,6 +3566,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let record = self.context.arena_mut().value_type_record(fields);
                 Ok(Step::Ascend(Produced::ValueType(record)))
             },
+            | (Frame::NativeTuple { base }, Produced::Checked) => {
+                let product = self.context.arena_mut().value_type_product(
+                    self.native_types
+                        .get(base ..)
+                        .ok_or(CheckRefusal::MachineInvariant)?,
+                );
+                self.native_types.truncate(base);
+                Ok(Step::Ascend(Produced::ValueType(product)))
+            },
             | (Frame::NativeCase(term), Produced::ValueType(datatype)) => {
                 self.native_case(term, datatype)
             },
@@ -3563,6 +3589,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::NativeYield(_)
                 | Frame::NativeCollect
                 | Frame::NativeDiscard
+                | Frame::NativeTuple { .. }
                 | Frame::NativeRecord { .. }
                 | Frame::NativeCase(_)
                 | Frame::NativeMotive { .. }
@@ -3732,40 +3759,58 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             | (
                 Frame::CaseScrutinee {
+                    at,
                     scrutinee,
-                    on_left,
-                    on_right,
                     expected,
                 },
                 Produced::ValueType(classifier),
             ) => {
-                let (left, right) = self.sum_expected(scrutinee, classifier)?;
+                let summands = self.sum_expected(scrutinee, classifier)?;
                 let expected =
                     shift_comp_type(self.context.arena_mut(), expected, Binders::from(1_u32));
-                self.context.binders().open(Zone::Intuitionistic, left);
-                self.frames.push(Frame::CaseRight {
-                    on_right,
-                    right,
-                    expected,
-                });
-                Ok(Step::Descend(Goal::Computation {
-                    term: on_left,
-                    direction: Direction::Check(expected),
-                }))
+                let Some(case) = self.context.arena().computation(at)
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                let Computation::Case { ref branches, .. } = *case
+                else {
+                    return Err(CheckRefusal::MachineInvariant);
+                };
+                if matches!(summands, Components::Known(ref parts) if parts.len() != branches.len())
+                {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Value(scrutinee),
+                        wanted: ExpectedShape::Sum,
+                        found: TypeNode::Value(classifier),
+                    });
+                }
+                for (index, &branch) in branches.iter().enumerate().rev() {
+                    let summand = match summands {
+                        | Components::Known(ref parts) => {
+                            *parts.get(index).ok_or(CheckRefusal::MachineInvariant)?
+                        },
+                        | Components::Unknown(unknown) => unknown,
+                    };
+                    self.frames.push(Frame::CaseBranch {
+                        branch,
+                        summand,
+                        expected,
+                    });
+                }
+                Ok(Step::Ascend(Produced::Checked))
             },
             | (
-                Frame::CaseRight {
-                    on_right,
-                    right,
+                Frame::CaseBranch {
+                    branch,
+                    summand,
                     expected,
                 },
                 Produced::Checked,
             ) => {
-                self.close()?;
-                self.context.binders().open(Zone::Intuitionistic, right);
+                self.context.binders().open(Zone::Intuitionistic, summand);
                 self.frames.push(Frame::LambdaBody);
                 Ok(Step::Descend(Goal::Computation {
-                    term: on_right,
+                    term: branch,
                     direction: Direction::Check(expected),
                 }))
             },
@@ -3929,20 +3974,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(expected),
                 }))
             },
-            | (Frame::PairFirstSynthesised { second }, Produced::ValueType(first)) => {
-                self.frames.push(Frame::PairSecondSynthesised { first });
-                Ok(Step::Descend(Goal::Value {
-                    term: second,
-                    direction: Direction::Synthesise,
-                }))
-            },
-            | (Frame::PairSecondSynthesised { first }, Produced::ValueType(second)) => {
-                let product = self
-                    .context
-                    .arena_mut()
-                    .value_type_product(&[first, second]);
-                Ok(Step::Ascend(Produced::ValueType(product)))
-            },
             | (
                 Frame::StaticSpine {
                     at,
@@ -4036,8 +4067,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Force { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::FormElement(_)
-                | Frame::PairFirstSynthesised { .. }
-                | Frame::PairSecondSynthesised { .. }
                 | Frame::StaticSpine { .. }
                 | Frame::StaticArgument { .. },
                 Produced::CompType(_) | Produced::Checked,
@@ -4065,7 +4094,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::PrimitiveResult { .. }
                 | Frame::ListFold { .. }
                 | Frame::TransportOperand { .. }
-                | Frame::CaseRight { .. }
+                | Frame::CaseBranch { .. }
                 | Frame::ApplicationArgument { .. }
                 | Frame::LambdaBody
                 | Frame::FormBinder
@@ -4141,13 +4170,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
         arena.value_type_thunk(arrow)
     }
 
-    /// Read the two summands used by injection and case checking.
+    /// Read the summands used by injection and case checking.
     ///
     /// # Specification
     /// - requires: nothing; a non-sum classifier is refused.
-    /// - ensures: the summands the classifier's weak head matches as a sum; two
-    ///   unknown types for the unknown type.
-    /// - provides: the left and right summands in that order.
+    /// - ensures: the summands the classifier's weak head matches as a sum, any
+    ///   number of them; one unknown type for every summand of the unknown
+    ///   type.
+    /// - provides: the summands in order.
     /// - fails: a shape mismatch when the weak head is not a sum.
     /// - panics: none.
     ///
@@ -4158,7 +4188,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `bridge::tests::native_path_module_round_trips`
     /// - witness: `judgement::tests::an_introduction_against_the_unknown_type_checks_its_parts`
     #[spec(ensures: |ret| match ret {
-        Ok((left, right)) => self.context.arena().value_type(left).is_some() && self.context.arena().value_type(right).is_some() && self.context.arena().value_type(classifier).is_none_or(|held| !matches!(*held, gandr_core_term::ValueType::Sum(ref parts) if **parts != [left, right])),
+        Ok(Components::Known(ref parts)) => parts.iter().all(|&part| self.context.arena().value_type(part).is_some()) && self.context.arena().value_type(classifier).is_none_or(|held| !matches!(*held, gandr_core_term::ValueType::Sum(ref held) if held != parts)),
+        Ok(Components::Unknown(unknown)) => self.context.arena().value_type(unknown).is_some(),
         Err(CheckRefusal::ShapeMismatch { at: found_at, wanted, found }) => found_at == TermNode::Value(at) && wanted == ExpectedShape::Sum && found == TypeNode::Value(classifier),
         Err(_) => true,
     })]
@@ -4166,7 +4197,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         &mut self,
         at: ValueId,
         classifier: ValueTypeId,
-    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    ) -> Result<Components, CheckRefusal>
     {
         let head = self.context.whnf_value_type(classifier)?;
         match matched_sum(self.context.arena_mut(), head) {
@@ -4592,6 +4623,120 @@ mod tests
             }),
             "a pair against no eager product is a shape mismatch"
         );
+    }
+
+    /// A tuple, an injection and a case are judged at any arity: a tuple
+    /// against a product of as many components, an injection against the
+    /// summand it names, a case against a sum of as many summands as it has
+    /// branches, the empty sum's case at no branch.
+    #[test]
+    fn n_ary_tuples_injections_and_cases_check_at_their_arity()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unit_type = arena.value_type_unit();
+        let triple_type = arena.value_type_product(&[integer, string, unit_type]);
+        let pair_type = arena.value_type_product(&[integer, string]);
+        let single_type = arena.value_type_product(&[integer]);
+        let three = arena.value_type_sum(&[integer, string, unit_type]);
+        let empty = arena.value_type_sum(&[]);
+        let returns_integer = arena.comp_type_returner(integer);
+        let zero = arena.value_literal(integer_literal());
+        let text = arena.value_literal(text_literal());
+        let unit = arena.value_unit();
+        let triple = arena.value_tuple(&[zero, text, unit]);
+        let single = arena.value_tuple(&[zero]);
+        let last = arena.value_injection(gandr_core_term::Summand::from(2_usize), unit);
+        let beyond = arena.value_injection(gandr_core_term::Summand::from(3_usize), unit);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let payload = arena.computation_return(bound);
+        let constant = arena.computation_return(zero);
+        let scrutinee = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let three_way = arena.computation_case(scrutinee, &[payload, constant, constant]);
+        let two_way = arena.computation_case(scrutinee, &[payload, constant]);
+        let absurd = arena.computation_case(scrutinee, &[]);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let synthesised = synthesise_value(&mut context, triple)
+            .map(|found| found.produced().id())
+            .unwrap();
+        let Some(held) = context.arena().value_type(synthesised)
+        else {
+            panic!("a tuple synthesises an eager product");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("a tuple synthesises an eager product");
+        };
+        assert_eq!(
+            **parts,
+            [
+                context.atom(Atom::Integer).id(),
+                context.atom(Atom::String).id(),
+                context.atom(Atom::Unit).id()
+            ],
+            "a tuple of three synthesises the product of its three components' types"
+        );
+        let triple_type = form_value_type(&mut context, triple_type).unwrap();
+        let pair_type = form_value_type(&mut context, pair_type).unwrap();
+        let single_type = form_value_type(&mut context, single_type).unwrap();
+        let three = form_value_type(&mut context, three).unwrap();
+        assert_eq!(
+            check_value(&mut context, triple, triple_type).map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(3_usize)),
+            "each of three components checks against its factor"
+        );
+        assert_eq!(
+            check_value(&mut context, single, single_type).map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(1_usize)),
+            "a tuple of one checks against a product of one"
+        );
+        assert_eq!(
+            check_value(&mut context, triple, pair_type).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(triple),
+                wanted: ExpectedShape::Product,
+                found: TypeNode::Value(pair_type.id()),
+            }),
+            "a tuple against a product of another arity is a shape mismatch"
+        );
+        assert_eq!(
+            check_value(&mut context, last, three).map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(1_usize)),
+            "an injection checks its payload against the summand it names"
+        );
+        assert_eq!(
+            check_value(&mut context, beyond, three).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(beyond),
+                wanted: ExpectedShape::Sum,
+                found: TypeNode::Value(three.id()),
+            }),
+            "an injection past the last summand is a shape mismatch"
+        );
+        let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
+        for (case, scrutinised, checked) in [
+            (three_way, three.id(), Ok(ConversionCount::from(3_usize))),
+            (
+                two_way,
+                three.id(),
+                Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Value(scrutinee),
+                    wanted: ExpectedShape::Sum,
+                    found: TypeNode::Value(three.id()),
+                }),
+            ),
+            (absurd, empty, Ok(ConversionCount::default())),
+        ] {
+            context.binders().open(Zone::Intuitionistic, scrutinised);
+            assert_eq!(
+                check_comp(&mut context, case, returns_integer)
+                    .map(|evidence| evidence.conversions()),
+                checked,
+                "{case:?} checks one branch per summand, under that summand"
+            );
+            context.binders().close(Zone::Intuitionistic).unwrap();
+        }
     }
 
     #[test]

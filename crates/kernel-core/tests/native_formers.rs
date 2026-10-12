@@ -464,11 +464,11 @@ mod native_formers
         let quoted = arena.value_quote(record_type);
         let first = arena.value_thunk(case);
         let second = arena.value_thunk(projection);
-        let pair = arena.value_pair(first, second);
-        let body = arena.value_pair(quoted, pair);
+        let pair = arena.value_tuple(&[first, second]);
+        let body = arena.value_tuple(&[quoted, pair]);
         let thunk_type = arena.value_type_thunk(motive);
-        let pair_type = arena.value_type_product(thunk_type, thunk_type);
-        let declared = arena.value_type_product(universe, pair_type);
+        let pair_type = arena.value_type_product(&[thunk_type, thunk_type]);
+        let declared = arena.value_type_product(&[universe, pair_type]);
         let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
         declarations.push(MarkedDeclaration::new(
             AdmissionMark::Checked,
@@ -492,7 +492,7 @@ mod native_formers
         assert_eq!(constructors.len(), 1);
         assert_eq!(
             decoded.arena().value_type(constructors[0][0]),
-            Some(&ValueType::Unit)
+            Some(&ValueType::unit())
         );
         assert!(matches!(
             decoded.arena().value_type(*kind),
