@@ -109,7 +109,7 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the grammar of [`toolkit`], at the same address on every call.
-/// - provides: the grammar an inline completion molds under.
+/// - provides: the grammar an inline completion and the outline mold under.
 /// - fails: the [`PbgError`] the toolkit's first build met.
 /// - panics: none.
 ///
@@ -124,6 +124,28 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 pub fn grammar() -> Result<&'static Pbg, &'static PbgError>
 {
     toolkit().map(|toolkit| &toolkit.grammar)
+}
+
+/// The role table of the process's one grammar, built with it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the role table of [`toolkit`], at the same address on every call.
+/// - provides: the roles the outline reads a declaration's name by.
+/// - fails: the [`PbgError`] the toolkit's first build met.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the outline witness names each declaration by the role
+///   its name tile highlights as; a table of another grammar fails it.
+/// - witness: `outline::tests::declarations_nest_as_symbols`
+#[spec(ensures: |ret| ret.is_ok() == toolkit().is_ok())]
+pub fn roles() -> Result<&'static RoleTable, &'static PbgError>
+{
+    toolkit().map(|toolkit| &toolkit.roles)
 }
 
 /// A fresh session for the document at `uri`, under the root its `file`
