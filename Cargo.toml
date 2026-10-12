@@ -47,6 +47,7 @@ members = [
   "crates/theory-nominal-automata",
   "crates/theory-orders",
   "crates/theory-sites",
+  "crates/theory-spec-combinators",
   "crates/theory-virtual-doctrines",
   "crates/workflow-spec-cost",
   "crates/workflow-test-timing",
@@ -138,6 +139,7 @@ default-features = false
 # - theory-nominal-automata
 # - theory-orders
 # - theory-sites
+# - theory-spec-combinators
 # - theory-virtual-doctrines
 # - workflow-spec-cost
 # - workflow-test-timing

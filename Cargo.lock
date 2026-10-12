@@ -1050,6 +1050,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-spec-combinators"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-theory-virtual-doctrines"
 version = "0.0.0"
 dependencies = [

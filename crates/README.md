@@ -37,6 +37,7 @@ crates/
 ├── theory-nominal-automata/        nominal word and tree automata over caller-owned names, literal word membership and name dropping
 ├── theory-orders/                 order maintenance with constant-time comparison
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
+├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-virtual-doctrines/       virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
