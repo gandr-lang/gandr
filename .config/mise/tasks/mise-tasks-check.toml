@@ -65,6 +65,15 @@ env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{%
 # `cfg_attr(dylint_lib = "quenchant_dylints", …)`; that line leaves with the
 # crate's own backfill, and this flag stays.
 env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified -D adequacy_present -D maybe_shape -D erased_error_signature"
+# Every policy run also records what each specification names, one file per
+# compilation unit, for `evidence:obligations`. Recording always keeps one
+# configuration, so the lint state and the records never disagree; it adds no
+# measurable time to a full run of the wall. The directory sits beside the
+# rustdoc JSON the obligations report joins it with.
+env.DYLINT_TOML = '''
+[quenchant-dylints]
+evidence_directory = "{{ config_root }}/target/evidence/records"
+'''
 run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
 
 # External workflow consumers use one full revision in Dylint metadata for
@@ -139,6 +148,64 @@ env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = "quenchant-gates witnesses --manifest-path Cargo.toml"
+
+# Re-verification obligations (quenchant-gates obligations): a change owes a
+# re-check by every specification that names a changed item, through an
+# executable clause (the records `check:dylint` writes) or through an
+# intra-doc link in a prose clause (rustdoc's JSON, resolved). One hop out: a
+# specification whose own text is unchanged stops the cascade. CI runs these
+# on a pull request; the merge queue still runs every test.
+#
+# Rustdoc builds in its own target directory so its JSON flags never rebuild
+# `check:doc`'s HTML; default features match the policy pass's items.
+["evidence:rustdoc"]
+description = "Rustdoc JSON with every intra-doc link resolved, for the obligations report"
+env.RUSTDOCFLAGS = "-Z unstable-options --output-format json"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/evidence"
+run = "cargo doc --workspace --locked --no-deps --document-private-items"
+
+# Lists the changed items against the base, the obligations they raise and the
+# witnesses to rerun, and writes the pull-request comment and the witness
+# selection beside the records. The base defaults to where HEAD left
+# origin/main, so work landed on main since is not read as this change.
+# `--previous` reads an earlier comment back: its ticked boxes hold while the
+# clause and the items it names are unchanged.
+["evidence:obligations"]
+description = "List the specifications a change obliges to re-verify"
+depends = ["check:dylint", "evidence:rustdoc", "workflow:install"]
+usage = '''
+arg "[base]" help="the revision the change is measured against; defaults to the merge base with origin/main"
+flag "--previous <comment>" help="an earlier obligations comment whose acknowledgements carry over"
+'''
+env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+base=${usage_base:-$(git merge-base origin/main HEAD)}
+previous=()
+if [[ -n ${usage_previous:-} ]]; then previous=(--previous "$usage_previous"); fi
+quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
+  --records target/evidence/records --rustdoc target/evidence/doc "${previous[@]}" \
+  --comment target/evidence/comment.md --selection target/evidence/selection
+'''
+
+# The obligated witnesses, under the enforcing gate's flags and target
+# directory so a restored enforcing build serves them. The selection names
+# each witness's package, so Cargo builds only those packages' tests.
+["evidence:witnesses"]
+description = "Rerun the obligated witnesses with specifications enforced"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+mapfile -t selection < target/evidence/selection
+if (( ${#selection[@]} == 0 )); then
+  echo 'no obligated witness to rerun'
+  exit 0
+fi
+cargo nextest run --locked --profile "${NEXTEST_PROFILE:-default}" "${selection[@]}"
+{% endraw %}'''
 
 # `RUSTDOCFLAGS="-D warnings"` makes every rustdoc lint fatal, so a broken
 # intra-doc link — the vocabulary tables are rustdoc the types link into — is a
