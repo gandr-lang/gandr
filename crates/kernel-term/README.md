@@ -157,11 +157,13 @@ A recursive declaration needs no new framing: a field naming its own family is a
 
 ## N-ary products and sums
 
-`ValueType::Product` and `ValueType::Sum` hold a list of parts; `Value::Tuple` holds its components, `Value::Injection` names its summand by position, and `Computation::Case` holds one branch per summand. The unit is the product of no parts and the empty tuple; the empty type is the sum of no summands, and a case of no branches eliminates it. There is no unit, empty, pair or absurd variant, and no side alphabet. `ValueType::unit()`, `ValueType::empty()` and `Value::unit()` build the zero-ary nodes; `Value::components`, `ValueType::product_parts` and `ValueType::summands` read the lists.
+`ValueType::Product` and `ValueType::Sum` hold a list of parts; `Value::Tuple` holds its components, `Value::Injection` names its summand by position, `Computation::TupleProjection` names a tuple's component by position and returns it, and `Computation::Case` holds one branch per summand. The unit is the product of no parts and the empty tuple; the empty type is the sum of no summands, and a case of no branches eliminates it. There is no unit, empty, pair or absurd variant, and no side alphabet. `ValueType::unit()`, `ValueType::empty()` and `Value::unit()` build the zero-ary nodes; `Value::components`, `ValueType::product_parts` and `ValueType::summands` read the lists.
 
-On the wire, product (`0x03`), sum (`0x04`), tuple (`0x0D`) and case (`0x16`) carry a child count before their children; an injection (`0x0E`) carries its summand as an unsigned varint before its one child. Format version 3 is that change, and the reader refuses version 2. The retired bytes `0x01` (unit type), `0x0B` (unit value), `0x28` (empty type) and `0x29` (absurd) are refused as unassigned, so no artifact spells the unit or the empty type twice.
+On the wire, product (`0x03`), sum (`0x04`), tuple (`0x0D`) and case (`0x16`) carry a child count before their children; an injection (`0x0E`) carries its summand as an unsigned varint before its one child. Format version 3 is that change, and the reader refuses version 2. The retired bytes `0x01` (unit type), `0x0B` (unit value), `0x28` (empty type) and `0x29` (absurd) are refused as unassigned, so no artifact spells the unit or the empty type twice. A tuple projection (`0x64`) carries its component as an unsigned varint before its one value child; it fills an unassigned byte, so it holds the version.
 
 **Choice.** One former per shape, counted, so `A × B × C` is not `(A × B) × C` and the zero-ary cases are the same former at count zero. **Alternatives.** Keeping binary formers with a unit terminator would encode an n-ary product as a right-nested chain the checker and the surface would both have to re-associate, and two spellings of one type would need a canonicalization rule. Keeping the unit and empty variants beside counted formers would leave two canonical forms of each. **Reversal.** None planned; a new arity-dependent former would take a new byte.
+
+**Tuple projection.** **Choice.** A positional projection, mirroring the record projection: `TupleProjection(tuple, i)` synthesises `F Aᵢ` from a tuple of type `A₀ × … × Aₙ` and reduces on a tuple literal to the return of its `i`-th component. A component at or past the arity is refused as an absent component. **Alternatives.** A split eliminator binding every component at once (`split v as (x₀, …, xₙ) in M`) also reads arity zero, where no component exists to project; it binds n variables in one node where projection binds none. A split erased to a chain of projections keeps the kernel to one product eliminator. **Reversal.** A split former arrives in the kernel if an erased split's projection chain proves costly to check or replay.
 
 ## Tag numbering and versioning
 
@@ -202,9 +204,10 @@ The original `0x00–0x1F` meanings are frozen, including static operators at `0
 | `0x61` | Data case, scrutinee, motive and counted branches | Admitted |
 | `0x62` | Record projection, label and value child | Admitted |
 | `0x63` | Fixpoint, evidence byte and one computation child | Admitted |
-| `0x64–0xFF` | Unassigned | Refused |
+| `0x64` | Tuple projection, component and value child | Admitted |
+| `0x65–0xFF` | Unassigned | Refused |
 
-The admitted domain is sparse: the greatest assigned native byte is `0x63`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes and retired bytes as native nodes, and retain the frozen block. The unit and the empty type are zero-count products and sums, and List nil is a zero-child leaf; all three and may be bounded-alias targets; no reservation becomes an alias target by being below the maximum.
+The admitted domain is sparse: the greatest assigned native byte is `0x64`, not a promise to accept every smaller byte. Boundary witnesses admit assigned native tags, refuse inline opcodes and retired bytes as native nodes, and retain the frozen block. The unit and the empty type are zero-count products and sums, and List nil is a zero-child leaf; all three and may be bounded-alias targets; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
