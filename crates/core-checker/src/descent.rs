@@ -119,6 +119,13 @@ impl Branch
     /// - hypothesis: L3 — a call at a field and at a function field's result
     ///   replays; a call at the scrutinee does not.
     /// - witness: `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body follows the result chain through one branch's link table; the check scans that table once"
+        )
+    )]
     #[spec(ensures: |ret| ret == Descent::Unrelated
         || (FIRST_FIELD .. u32::from(self.fields_end)).contains(&u32::from(level))
         || self.links.iter().any(|link| link.level == level))]

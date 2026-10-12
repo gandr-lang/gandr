@@ -759,16 +759,10 @@ impl Measuring<'_>
         captures: [nodes = self.nodes, shares = self.shares, occurrences = self.occurrences, results = self.results.len(), visits = self.visits.len()],
         ensures: |ret| ret.is_err() || (nodes.0.checked_add(1_u64) == Some(self.nodes.0) && self.overlay.shape(node).is_ok_and(|shape| match shape {
             Shape::Opaque(_) => self.shares == shares && self.occurrences == occurrences && self.visits.len() == visits && self.results.len() == results.saturating_add(1) && self.results.last() == Some(&Measured::LEAF),
-            Shape::Bound(bound) => self.shares == shares && self.occurrences == occurrences && self.visits.len() == visits && self.results.len() == results.saturating_add(1) && usize::try_from(u32::from(bound.distance)).ok().and_then(|distance| self.legs.iter().rev().nth(distance)).is_some_and(|leg| self.results.last() == Some(&Measured { expansion: leg.expansion, depth: ShareDepth::default() })),
+            Shape::Bound(bound) => self.shares == shares && self.occurrences == occurrences && self.visits.len() == visits && self.results.len() == results.saturating_add(1) && usize::try_from(u32::from(bound.distance)).ok().and_then(|distance| self.legs.len().checked_sub(distance.saturating_add(1))).and_then(|offset| self.legs.get(offset)).is_some_and(|leg| self.results.last() == Some(&Measured { expansion: leg.expansion, depth: ShareDepth::default() })),
             Shape::Shared(sharing) => shares.0.checked_add(1_u64) == Some(self.shares.0) && occurrences.0.checked_add(u64::from(u32::from(sharing.arity))) == Some(self.occurrences.0) && self.results.len() == results && self.visits.get(visits..) == Some(&[Visit::Unbind { share: node }, Visit::Enter(sharing.body), Visit::Bind, Visit::Enter(sharing.leg)]),
             Shape::Grafted(children) => {
-                let ordered = match children {
-                    crate::overlay::Children::Leaf => [None, None, None],
-                    crate::overlay::Children::One(first) => [Some(first), None, None],
-                    crate::overlay::Children::Two(first, second) => [Some(first), Some(second), None],
-                    crate::overlay::Children::Three(first, second, third) => [Some(first), Some(second), Some(third)],
-                };
-                self.shares == shares && self.occurrences == occurrences && self.results.len() == results && self.visits.len() == visits.saturating_add(1).saturating_add(ordered.into_iter().flatten().count()) && self.visits.get(visits) == Some(&Visit::Assemble { graft: node, base: Height(results) }) && self.visits.get(visits.saturating_add(1)..).is_some_and(|queued| queued.iter().rev().zip(ordered.into_iter().flatten()).all(|(visit, child)| *visit == Visit::Enter(child)))
+                self.shares == shares && self.occurrences == occurrences && self.results.len() == results && self.visits.get(visits) == Some(&Visit::Assemble { graft: node, base: Height(results) }) && bool::from(crate::spec::queued_since(&self.visits, gandr_theory_spec_combinators::Mark::from(visits.saturating_add(1)), children, Visit::Enter))
             },
         }))
     )]
@@ -1131,6 +1125,13 @@ mod tests
     ///   expansion; unequal sibling chains witness the maximum rather than the
     ///   sum.
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check measures the nodes the body minted, each once"
+        )
+    )]
     #[spec(
         ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)).is_ok_and(|measured| measured.shares.0 == u64::from(links.0) && measured.occurrences.0 == u64::from(links.0) && measured.depth.0 == u64::from(links.0) && measured.nodes.0 == u64::from(links.0).saturating_mul(4).saturating_add(1) && measured.expansion.0 == u64::from(links.0).saturating_mul(2).saturating_add(1))
     )]
@@ -1166,6 +1167,13 @@ mod tests
     ///   expansion; unequal sibling chains witness the maximum rather than the
     ///   sum.
     /// - witness: `measure::tests::the_share_depth_is_the_longest_chain_of_nested_shares`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check measures the nodes the body minted, each once"
+        )
+    )]
     #[spec(
         ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)).is_ok_and(|measured| measured.shares.0 == u64::from(links.0) && measured.occurrences.0 == u64::from(links.0) && measured.depth.0 == u64::from(links.0) && measured.nodes.0 == u64::from(links.0).saturating_mul(2).saturating_add(1) && measured.expansion.0 == 1_u64)
     )]
@@ -1200,6 +1208,13 @@ mod tests
     ///   expansion or the exact overflowing graft.
     /// - witness: `measure::tests::a_doubling_chain_measures_in_its_own_size`
     /// - witness: `measure::tests::an_expansion_past_the_counter_is_refused_at_its_node`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check measures the nodes the body minted, each once"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             let expansion = 1_u64.checked_shl(links.0).and_then(|half| half.checked_add(half.saturating_sub(1)));
@@ -1250,6 +1265,13 @@ mod tests
     ///   must not change this root-local tuple.
     /// - witness: `measure::tests::a_leg_reads_the_shares_outside_its_own`
     /// - witness: `measure::tests::the_measure_is_a_function_of_what_the_root_reaches`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check measures the nine nodes the body minted, each once"
+        )
+    )]
     #[spec(
         ensures: |ret| SharingMeasure::of(overlay, OverlayId::Value(ret)) == Ok(SharingMeasure { shares: ShareCount(2), occurrences: OccurrenceCount(3), depth: ShareDepth(2), nodes: NodeCount(9), expansion: ExpansionSize(7) })
     )]

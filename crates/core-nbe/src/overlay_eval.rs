@@ -280,6 +280,13 @@ pub fn eval_overlay_shared(
 /// - [`OverlayEvalFault::Duplication`] — the root does not duplicate.
 /// - [`OverlayEvalFault::Erasure`] — the duplicate does not erase.
 /// - [`OverlayEvalFault::Evaluation`] — an erased leg does not resolve.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body reads every retained leg's free indices once through one cache; the check reads them once more the same way"
+    )
+)]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(term, ref legs)| {
     let matches_root = match (root, term) {
         (OverlayId::Value(_), CoreTerm::Value(value)) => core.value(value).is_some(),

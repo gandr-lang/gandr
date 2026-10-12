@@ -564,6 +564,13 @@ fn oracle(
 /// - hypothesis: L3 — a poisoned rule's refusals and a valid stream's counters
 ///   both pass only when every receipt matches.
 /// - witness: `admission::handoff::tests::pooled_receipts_equal_the_serial_oracle`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body sorts the receipts and compares each with the oracle once; the check reads each once more"
+    )
+)]
 #[spec(ensures: |ret| actual.is_sorted_by_key(|receipt| receipt.id)
     && ret.is_ok() == (actual.len() == expected.len()
         && actual.iter().zip(expected).all(|(actual, expected)| actual.id == expected.id && actual.result == expected.result)))]
@@ -951,6 +958,13 @@ struct Summary
 /// # Adequacy
 /// - hypothesis: L2 — every serial cost row takes its median through this.
 /// - witness: `admission::handoff::tests::warm_lookup_rows_allocate_nothing`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body sorts and sums every sample; the check reads each once more to confirm the order"
+    )
+)]
 #[spec(ensures: |ret| samples.is_sorted()
     && ret.min == samples.first().copied().unwrap_or_default()
     && ret.median == samples.get(samples.len().div_ceil(2).saturating_sub(1)).copied().unwrap_or_default()

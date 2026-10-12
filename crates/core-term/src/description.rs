@@ -112,6 +112,13 @@ impl<'names> DecodeContext<'names>
     /// - hypothesis: L3 — a local parameter shadows a closed global type of the
     ///   same name.
     /// - witness: `description::tests::native_indices_remain_values_under_telescope_scope`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the locals for the name once; the check scans them once more"
+        )
+    )]
     #[spec(ensures: |result| result.is_ok() == (self.locals.iter().any(|local| local.name == name) || self.types.contains_key(name)))]
     fn binding(
         self,

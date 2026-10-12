@@ -341,6 +341,13 @@ impl<'run> Reading<'run>
     /// - witness: `readback::tests::refusals_restore_an_existing_core_prefix`
     /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "invariant: the table holds only values this readback recorded, each checked by `reading` as it was inserted; the check re-reads the table once per call, one call per root set and one per suspended environment the readback closes"
+        )
+    )]
     #[spec(
         requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| ret.is_err() || self.read.iter().all(|(held, read)|
@@ -399,7 +406,9 @@ impl<'run> Reading<'run>
     /// dependencies.
     ///
     /// # Specification
-    /// - requires: recorded heap addresses and core readings still resolve.
+    /// - requires: recorded heap addresses and core readings still resolve,
+    ///   which [`Self::read`] checks around the loop that calls this once per
+    ///   value, so the requirement is not re-checked per value here.
     /// - ensures: the core value `id` denotes.
     /// - provides: one row of the readback table.
     /// - fails: as [`Self::read`], including a dependency not yet recorded.
@@ -421,7 +430,6 @@ impl<'run> Reading<'run>
     /// - witness: `tests::differential::hand_built_declared_data_cases_agree`
     /// - witness: `machine::tests::a_recursive_thunk_computes_through_its_own_binding`
     #[spec(
-        requires: self.read.iter().all(|(held, read)| self.store.value(*held).is_some() && self.core.value(*read).is_some()),
         ensures: |ret| match ret {
             | Err(error) => self.store.value(id).is_some() || error == ReadbackRefusal::Dangling(id),
             | Ok(read) => self.store.value(id).zip(self.core.value(read)).is_some_and(|(held, node)| match *held {

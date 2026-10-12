@@ -373,11 +373,14 @@ impl Context
     /// - requires: nothing — an out-of-range index is admissible input.
     /// - ensures: `|ret| ret.ok() ==
     ///   usize::try_from(u32::from(index)).ok().and_then(|index| match zone {
-    ///   Zone::Intuitionistic => self.intuitionistic.iter().rev().nth(index)
-    ///   .copied(), Zone::Linear => self.linear.iter().rev().nth(index)
-    ///   .map(|slot| slot.declared) })` — the id the named binder was opened
-    ///   at, counted inward from the innermost slot rather than through the
-    ///   shared offset arithmetic.
+    ///   Zone::Intuitionistic => self.intuitionistic.len()
+    ///   .checked_sub(index.saturating_add(1)).and_then(|offset|
+    ///   self.intuitionistic.get(offset)).copied(), Zone::Linear =>
+    ///   self.linear.len().checked_sub(index.saturating_add(1))
+    ///   .and_then(|offset| self.linear.get(offset)).map(|slot| slot.declared)
+    ///   })` — the id the named binder was opened at, counted inward from the
+    ///   innermost slot rather than through the shared offset arithmetic, by
+    ///   one indexed read.
     /// - provides: the non-consuming lookup, which is what separates reading a
     ///   context from typing an occurrence in it. The unchanged-context half of
     ///   the postcondition is `&self`'s own guarantee rather than a checkable
@@ -402,8 +405,10 @@ impl Context
     #[inline]
     #[spec(ensures: |ret| ret.ok() == usize::try_from(u32::from(index)).ok().and_then(|index| {
         match zone {
-            | Zone::Intuitionistic => self.intuitionistic.iter().rev().nth(index).copied(),
-            | Zone::Linear => self.linear.iter().rev().nth(index).map(|slot| slot.declared),
+            | Zone::Intuitionistic => self.intuitionistic.len().checked_sub(index.saturating_add(1))
+                .and_then(|offset| self.intuitionistic.get(offset)).copied(),
+            | Zone::Linear => self.linear.len().checked_sub(index.saturating_add(1))
+                .and_then(|offset| self.linear.get(offset)).map(|slot| slot.declared),
         }
     }))]
     pub fn declared(
@@ -523,8 +528,10 @@ impl Context
     /// - requires: nothing — an out-of-range index is admissible input.
     /// - ensures: `|ret| ret.ok() ==
     ///   usize::try_from(u32::from(index)).ok().and_then(|index|
-    ///   self.linear.iter().rev().nth(index).map(|slot| slot.use_state))` — the
-    ///   slot's remaining use, counted inward from the innermost slot.
+    ///   self.linear.len().checked_sub(index.saturating_add(1)).
+    ///   and_then(|offset| self.linear.get(offset)).map(|slot|
+    ///   slot.use_state))` — the slot's remaining use, counted inward from the
+    ///   innermost slot by one indexed read.
     /// - provides: the observation a caller needs to decide whether closing a
     ///   linear scope will be refused, without provoking the refusal. The
     ///   unchanged-context half of the postcondition is `&self`'s own guarantee
@@ -544,7 +551,8 @@ impl Context
     /// - witness: `context::tests::a_fresh_linear_slot_opens_available`
     #[inline]
     #[spec(ensures: |ret| ret.ok() == usize::try_from(u32::from(index)).ok().and_then(|index| {
-        self.linear.iter().rev().nth(index).map(|slot| slot.use_state)
+        self.linear.len().checked_sub(index.saturating_add(1))
+            .and_then(|offset| self.linear.get(offset)).map(|slot| slot.use_state)
     }))]
     pub fn linear_use(
         &self,

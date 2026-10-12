@@ -296,12 +296,12 @@ impl DefinitionChain
     ///
     /// # Specification
     /// - requires: nothing — an unknown position is admissible input.
-    /// - ensures: `|ret| ret == self.entries.iter().find(|held| held.constant()
+    /// - ensures: `|ret| ret.map_or_else(|| self.entries.binary_search_by_key(
+    ///   &constant, DefinitionEntry::constant).is_err(), |held| held.constant()
     ///   == constant)` — the entry whose position is `constant`, found by
     ///   binary search over the strictly increasing positions the chain
     ///   maintains; `None` for an axiom, a sealed atom, or a position never
-    ///   admitted. The clause scans linearly, so it is an independent reading
-    ///   of the same chain rather than the search read back.
+    ///   admitted.
     /// - provides: the lookup a normalizer's unfolding step and the height
     ///   computation both run.
     /// - fails: never; absence is `None` rather than an error, because "this
@@ -312,11 +312,16 @@ impl DefinitionChain
     /// - hypothesis: L3 — the decision surface is the binary search, separated
     ///   by the first, a middle and the last position of a three-entry chain,
     ///   plus a position between two entries and one past the end, each
-    ///   asserted exactly.
+    ///   asserted exactly. The predicate reads the returned entry's position
+    ///   and re-asks the logarithmic search for absence, so it costs what the
+    ///   lookup costs; the witness's exact assertions carry the absence half.
     /// - witness: `definition::tests::a_chain_resolves_only_the_positions_it_holds`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.entries.iter().find(|held| held.constant() == constant))]
+    #[spec(ensures: |ret| ret.map_or_else(
+        || self.entries.binary_search_by_key(&constant, DefinitionEntry::constant).is_err(),
+        |held| held.constant() == constant,
+    ))]
     pub fn entry(
         &self,
         constant: ConstantIndex,
@@ -669,6 +674,12 @@ impl DefinitionalEnvironment
     /// # Errors
     /// - [`DefinitionError::UnknownScope`] — `scope` names no frame of this
     ///   environment.
+    ///
+    /// # Clause cost
+    /// - bound: one per-constant query. It walks only the scopes enclosing
+    ///   `scope`, its lexical nesting depth rather than the environment's size,
+    ///   and scans each of those frames' own overrides; no definition body and
+    ///   no other scope is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the decision surfaces are the parent walk, the

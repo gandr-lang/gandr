@@ -52,6 +52,13 @@ impl Entry
     /// - hypothesis: L2 — every harvested row's guard is checked by the kernel
     ///   against the arm at that position, so a misplaced arm refuses a member.
     /// - witness: `template::tests::compressed_admission_matches_plain_families`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body places every arm once; the check reads each arm's slot once"
+        )
+    )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|arms| arms.len() == self.arms.len()
         && self.arms.iter().all(|(id, guard)| arms.get(usize::from(*guard)) == Some(id))))]
     pub(super) fn ordered(&self) -> Result<Vec<Id>, StageError>

@@ -409,6 +409,13 @@ impl Drafter
     ///   bind a body to the wrong arm, which the kernel's row check and the
     ///   fresh-run comparison observe over the edit-pair corpus.
     /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body writes every binding slot once; the check reads each once"
+        )
+    )]
     #[spec(ensures: |output| output.is_err() || (self.selected.is_empty() && self.rigid.is_empty()
         && self.freedom.len() == template.graph.end().0
         && self.arms.len() == template.entries.len()
@@ -478,6 +485,13 @@ impl Drafter
 ///   fresh run admits or binds one whose sides the kernel then refuses; the
 ///   edit-pair corpus's binders observe both.
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body searches the remembered pairs once before comparing; the check searches them once more"
+    )
+)]
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|agreement|
     known.iter().any(|&(l, r, a)| l == left && r == right && a == *agreement)))]
 fn classifiers_agree(
@@ -788,6 +802,13 @@ fn occurrences(
 ///   compact rebuilds it; the multi-program traces keep, widen, prune and
 ///   rebase, and the fresh-run comparison observes every held template.
 /// - witness: `template::tests::drafts_equal_fresh_runs_across_the_edit_traces`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body resets and marks the reach of every node of the graph once; the check reads each once"
+    )
+)]
 #[spec(ensures: |output| output.as_ref().ok().is_none_or(|tidiness| *tidiness == Tidiness::Garbage
     || drafter.reach.iter().take(graph.end().0).all(|reach| *reach == Reach::Reached)))]
 fn tidiness(
@@ -861,8 +882,9 @@ impl Template
     /// - witness: `template::tests::drafts_refuse_what_a_fresh_run_would_generalize_differently`
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|walked|
         *walked != Walked::Matched || (step.rule == self.rule
-            && drafter.bindings.iter().skip(usize::from(member).saturating_mul(self.entries.len()))
-                .take(self.entries.len()).all(|binding| *binding != Binding::Unbound))))]
+            && drafter.bindings.get(usize::from(member).saturating_mul(self.entries.len())
+                .. usize::from(member).saturating_add(1).saturating_mul(self.entries.len()))
+                .is_some_and(|row| row.iter().all(|binding| *binding != Binding::Unbound)))))]
     fn walk_member(
         &self,
         arena: &Arena,

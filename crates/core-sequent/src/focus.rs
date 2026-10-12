@@ -133,12 +133,15 @@ impl Provenance
     /// # Adequacy
     /// - hypothesis: L3 — empty and sparse increasing command tables, exact
     ///   hits, an interior gap, the end and a truncated suffix distinguish
-    ///   wrong-key searches, wrong origins and stale entries.
+    ///   wrong-key searches, wrong origins and stale entries. The predicate
+    ///   reads the one entry the increasing order places `command` at, found by
+    ///   a lower-bound partition rather than the body's equality search.
     /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.origins.iter()
-        .find(|&&(recorded, _)| recorded == command).map(|&(_, origin)| origin)
+    #[spec(ensures: |ret| ret == self.origins
+        .get(self.origins.partition_point(|&(recorded, _)| recorded < command))
+        .filter(|&&(recorded, _)| recorded == command).map(|&(_, origin)| origin)
     )]
     pub fn origin(
         &self,

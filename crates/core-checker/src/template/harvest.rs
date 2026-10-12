@@ -263,6 +263,13 @@ impl Harvest
     ///   interleave, joined one by one, are compared with grouping their
     ///   concatenation, and a mismatched step list is refused.
     /// - witness: `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the families once per key of the grouping; the check sums the families' member counts twice"
+        )
+    )]
     #[spec(captures: [members = self.families.iter().map(|family| family.members.len()).sum::<usize>()],
         ensures: |output| match output {
             Ok(()) => self.families.iter().map(|family| family.members.len()).sum::<usize>()

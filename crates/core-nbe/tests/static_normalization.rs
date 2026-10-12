@@ -414,6 +414,13 @@ mod static_normalization
     ///   normal form.
     /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
     /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's last step searched the normal form for a redex; the check searches it once more"
+        )
+    )]
     #[spec(
         requires: core.value(root).is_some(),
         ensures: |ret| core.value(ret).is_some() && first_redex(core, ret, Order::Outermost).is_none()

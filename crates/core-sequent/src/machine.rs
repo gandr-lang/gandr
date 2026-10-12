@@ -1219,10 +1219,21 @@ impl<'program> Machine<'program>
     /// # Adequacy
     /// - hypothesis: L3 — two resumes with different replies and an outer
     ///   projection distinguish destructive consumption, reversed frames and
-    ///   lost tails.
+    ///   lost tails. The predicate reads the region's height and its top frames
+    ///   from the top down, as many as the capture holds, so it reads none of
+    ///   the caller's frames beneath them.
     /// - witness: `machine::tests::handler_resumption_under_projection_uses_the_ambient_continuation_once`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body pushes every captured frame once; the check compares each pushed frame once, from the top"
+        )
+    )]
     #[spec(captures: height = usize::from(self.store.frame_height()), ensures: |ref ret| ret.is_err()
-        || matches!(self.store.value(stack), Some(HeapValue::Stack { frames }) if self.store.frames().skip(height).eq(frames.iter())))]
+        || matches!(self.store.value(stack), Some(HeapValue::Stack { frames })
+            if height.checked_add(frames.len()) == Some(usize::from(self.store.frame_height()))
+                && self.store.frames().rev().take(frames.len()).eq(frames.iter().rev())))]
     fn replay_stack(
         &mut self,
         at: CommandId,
@@ -2025,6 +2036,13 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "fixed size: the unfolding table holds one entry per definition of the program, sized when the machine is made and never grown; the check scans it once per evaluation"
+        )
+    )]
     #[spec(
         requires: !self.unfoldings.contains(&Unfolding::Running),
         ensures: |ref ret| !self.unfoldings.contains(&Unfolding::Running)
@@ -2090,6 +2108,13 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body leaves every value it computes on the result stack; the check reads each once"
+        )
+    )]
     #[spec(
         requires: results.iter().all(|value| self.store.value(*value).is_some()),
         ensures: |ref ret| ret.is_err() || (tasks.is_empty() && results.iter().all(|value| self.store.value(*value).is_some())),

@@ -432,6 +432,13 @@ impl CheckpointStore for MemoryCheckpointStore
     ///   decoding twice.
     /// - witness: `persistence::tests::memory_records_separate_addresses_backends_and_replacements`
     /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body and the check each open the ordered range of one address's records to its first entry, one logarithmic descent"
+        )
+    )]
     #[spec(
         captures: [before = self.records.len()],
         ensures: |ret| {

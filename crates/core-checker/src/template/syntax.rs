@@ -468,12 +468,16 @@ impl Graph
     /// # Adequacy
     /// - hypothesis: L3 — pattern nodes interned over an import and then
     ///   dropped distinguish a full truncation from one that leaves the
-    ///   interning map, sizes or addresses holding dropped coordinates.
+    ///   interning map, sizes or addresses holding dropped coordinates. The
+    ///   predicate reads the four table sizes and the last retained node's
+    ///   coordinate; the body writes nothing below the cut, so the retained
+    ///   prefix is not re-read.
     /// - witness: `template::tests::truncation_restores_the_imported_graph`
     #[spec(captures: [before = self.nodes.len()], ensures: self.nodes.len() == before.min(end.0)
         && self.sizes.len() == self.nodes.len() && self.addresses.len() == self.nodes.len()
         && self.ids.len() == self.nodes.len()
-        && self.nodes.iter().enumerate().all(|(index, node)| self.ids.get(node) == Some(&Id(index))))]
+        && self.nodes.last().is_none_or(|node|
+            self.ids.get(node) == Some(&Id(self.nodes.len().saturating_sub(1)))))]
     pub(super) fn truncate(
         &mut self,
         end: Id,
@@ -637,6 +641,13 @@ impl Graph
     /// - hypothesis: L2 — independent typed replay detects wrong classifier
     ///   edges.
     /// - witness: `template::tests::every_member_admits_as_its_plain_replay`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body exports every retained classifier once; the check reads each once and each exported one once"
+        )
+    )]
     #[spec(ensures: |output| output.as_ref().ok().is_none_or(|types|
         types.len() == self.types.len() && self.types.keys().all(|id| types.contains_key(id))
             && types.values().all(|id| arena.ty(*id).is_ok())))]

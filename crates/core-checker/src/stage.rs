@@ -303,6 +303,13 @@ impl Program
     ///   ceiling distinguish arithmetic from wrapping or constants.
     /// - witness: `stage::tests::power_is_admitted_and_executed`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body executes every instruction once; the check reads each instruction's operands once"
+        )
+    )]
     #[spec(requires: self.result.0 < self.instructions.len()
         && self.instructions.iter().enumerate().all(|(index, instruction)| match *instruction {
             Instruction::Multiply(left, right) => left.0 < index && right.0 < index,
@@ -360,6 +367,13 @@ impl Program
     ///   compared with exponentiation; audit observes the exact assumption.
     /// - witness: `stage::tests::power_is_admitted_and_executed`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body admits the definition through the kernel, which reads its body and the declarations it names; the check audits that definition's dependencies once"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|admitted| {
         let audit = environment.audit(admitted.definition);
         audit.unchecked_admissions().is_empty()

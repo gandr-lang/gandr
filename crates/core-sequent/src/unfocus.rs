@@ -473,8 +473,8 @@ impl Unfocusing<'_>
     /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
     #[spec(ensures: |ret| ret.is_err() || (self.tasks.is_empty()
         && match ret {
-            | Ok(Decoded::Value(id)) => self.values.as_slice() == [id] && self.computations.is_empty(),
-            | Ok(Decoded::Computation(id)) => self.computations.as_slice() == [id] && self.values.is_empty(),
+            | Ok(Decoded::Value(id)) => self.values.len() == 1 && self.values.first() == Some(&id) && self.computations.is_empty(),
+            | Ok(Decoded::Computation(id)) => self.computations.len() == 1 && self.computations.first() == Some(&id) && self.values.is_empty(),
             | Err(_) => false,
         })
     )]

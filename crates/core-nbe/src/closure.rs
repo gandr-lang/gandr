@@ -174,13 +174,15 @@ impl Environment
             | Zone::Intuitionistic => {
                 self.intuitionistic.len() == entry_intuitionistic.saturating_add(1_usize)
                     && self.intuitionistic.last() == Some(&bound)
-                    && self.intuitionistic.iter().rev().nth(1_usize).copied() == entry_innermost
+                    && self.intuitionistic.len().checked_sub(2_usize)
+                        .and_then(|offset| self.intuitionistic.get(offset)).copied() == entry_innermost
                     && self.linear.len() == entry_linear
             },
             | Zone::Linear => {
                 self.linear.len() == entry_linear.saturating_add(1_usize)
                     && self.linear.last() == Some(&bound)
-                    && self.linear.iter().rev().nth(1_usize).copied() == entry_innermost
+                    && self.linear.len().checked_sub(2_usize)
+                        .and_then(|offset| self.linear.get(offset)).copied() == entry_innermost
                     && self.intuitionistic.len() == entry_intuitionistic
             },
         }

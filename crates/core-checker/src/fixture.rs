@@ -1081,6 +1081,13 @@ impl FunctionRecipe
     ///   chosen return variable through checking and kernel readmission;
     ///   reversed or omitted scope entries change its expected type.
     /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every parameter and statement once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ret| ret.iter().eq(self.parameters.iter().chain(&self.statements)))]
     fn scope(&self) -> Vec<AtomType>
     {
@@ -1106,7 +1113,8 @@ impl FunctionRecipe
     /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
     #[spec(ensures: |ret| self.parameters.len().checked_add(self.statements.len()).is_some_and(|length| {
         let chosen = self.returned.0.checked_rem(length)
-            .and_then(|position| self.parameters.iter().chain(&self.statements).nth(position))
+            .and_then(|position| self.parameters.get(position)
+                .or_else(|| self.statements.get(position.checked_sub(self.parameters.len())?)))
             .unwrap_or(&self.result);
         (ret == Typing::WellTyped) == (*chosen == self.result)
     }))]
