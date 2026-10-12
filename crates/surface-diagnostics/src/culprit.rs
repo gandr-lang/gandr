@@ -105,6 +105,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
             | FragmentBoundary::Unannotated => "needs a stated type",
             | FragmentBoundary::NonUniform => "not the parameter itself",
             | FragmentBoundary::NotInTail => "not where the body ends",
+            | FragmentBoundary::EmptyList => "an empty list, not the unit",
         },
         | LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         | LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",

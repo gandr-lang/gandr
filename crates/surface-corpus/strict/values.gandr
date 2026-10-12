@@ -6,9 +6,9 @@ def answer = 42 ;
 def greeting : String ;
 def greeting = "hello, gandr" ;
 
-@[ runs("()") ]
+@[ runs("unit") ]
 def nothing : Unit ;
-def nothing = () ;
+def nothing = unit ;
 
 @[ runs("42") ]
 def copy = answer ;

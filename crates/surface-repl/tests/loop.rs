@@ -740,7 +740,7 @@ mod tests
             format!("greeting : {string}"),
             r#"= "hello, gandr""#.to_owned(),
             format!("nothing : {unit}"),
-            "= ()".to_owned(),
+            "= unit".to_owned(),
             format!("copy : {integer}"),
             "= 42".to_owned(),
             format!("echo : {integer}"),

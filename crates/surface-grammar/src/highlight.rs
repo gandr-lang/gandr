@@ -65,8 +65,8 @@ const KEYWORDS: &[&str] = &[
     "forall", "force", "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl",
     "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack",
     "package", "postfix", "prefix", "pure", "rec", "recv", "release", "return", "rule", "run",
-    "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unpack", "val", "while",
-    "with",
+    "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unit", "unpack", "val",
+    "while", "with",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the

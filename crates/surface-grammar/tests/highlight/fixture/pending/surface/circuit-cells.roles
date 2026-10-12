@@ -174,7 +174,7 @@
 554..558 TypeBuiltin "Type"
 558..559 Other ";"
 562..566 Keyword "oper"
-567..571 FunctionDef "unit"
+567..571 FunctionDef "zero"
 572..573 Other ":"
 574..575 Other "("
 575..576 Other ")"

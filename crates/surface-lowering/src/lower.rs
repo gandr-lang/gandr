@@ -762,6 +762,7 @@ fn ending(former: Former) -> Ending
         | Former::Constructor
         | Former::Number
         | Former::Text
+        | Former::Unit
         | Former::Thunk
         | Former::Return
         | Former::Force
@@ -817,6 +818,7 @@ fn ending(former: Former) -> Ending
                     | Former::Number
                     | Former::Text
                     | Former::Parenthesized
+                    | Former::Unit
                     | Former::Thunk
                     | Former::Lambda
                     | Former::Block
@@ -865,6 +867,7 @@ const fn family_of(former: Former) -> Family
         | Former::Number
         | Former::Text
         | Former::Parenthesized
+        | Former::Unit
         | Former::Thunk
         | Former::Lambda
         | Former::Block
@@ -1887,8 +1890,8 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
 /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
 /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
-/// - witness: `lower::tests::the_empty_parentheses_lower_to_the_unit_value`
-/// - witness: `lower::tests::an_identifier_spelled_unit_is_an_ordinary_name`
+/// - witness: `lower::tests::the_unit_keyword_lowers_to_the_unit_value`
+/// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
 /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
 /// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
 /// - witness: `lower::tests::force_and_application_lower_over_their_children`
@@ -3021,6 +3024,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Number => self.number(site),
             | Former::Text => self.text(site, pieces),
             | Former::Parenthesized => self.parenthesized(site, cursor),
+            | Former::Unit => {
+                let _frame = self.require(site, Produced::Value)?;
+                self.plan(site, Plan::Unit);
+                Ok(())
+            },
             | Former::Thunk => self.thunk(site, cursor),
             | Former::Lambda => self.lambda(site, cursor),
             | Former::Block => self.sequenced(site, cursor),
@@ -3538,22 +3546,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a parenthesised expression: the unit, a grouping, a pair or
-    /// an annotation.
+    /// Classify a parenthesised expression: a grouping, a pair or an
+    /// annotation.
     ///
     /// # Specification
     /// - requires: `site` is a parenthesised expression in term position.
-    /// - ensures: `()` standing as a value is planned as the unit; `(e)` reads
-    ///   its operand at its own reading and adopts it, the answer its position
-    ///   states passed on; a comma list is read as a pair; `(C… : T)` over a
-    ///   constructor standing as a value reads `T` as a value type under the
-    ///   same frame, records it as the constructor's classifier and adopts the
-    ///   constructor.
+    /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
+    ///   answer its position states passed on; a comma list is read as a pair;
+    ///   `(C… : T)` over a constructor standing as a value reads `T` as a value
+    ///   type under the same frame, records it as the constructor's classifier
+    ///   and adopts the constructor.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the unadmitted refusal for an
     ///   annotation over anything but a constructor standing as a value, the
-    ///   wrong-sort refusal for a unit outside value position, and the
+    ///   empty-list refusal for `()`, which is never the unit, and the
     ///   extra-operand refusal for a juxtaposition.
     /// - panics: none.
     ///
@@ -3566,13 +3573,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   commas as grouping.
     /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Unit | Plan::Transparent(_) | Plan::Pair(_)))
+                    Some(&(Plan::Transparent(_) | Plan::Pair(_)))
                 )
         },
     )]
@@ -3597,9 +3605,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 name: FormName::UNIT,
                 ..site
             };
-            let _frame = self.require(unit, Produced::Value)?;
-            self.plan(site, Plan::Unit);
-            return Ok(());
+            return Err(unit.out(FragmentBoundary::EmptyList));
         }
         let inner = site.one(run)?;
         self.read(inner.node, site.reading);
@@ -5654,17 +5660,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a value function space, `A => B` or `(A1, …, An) => B`.
+    /// Classify a value function space, `A => B` or `(A1, …, An) => B`, `n`
+    /// zero included.
     ///
     /// # Specification
     /// - requires: `site` is a value function space in type position, or in
     ///   value position where a type is quoted.
     /// - ensures: the alias stands as a value type; its domains — each member
-    ///   of a parenthesised list written before `=>`, else the one operand
-    ///   there — and its codomain are each read as value types under its own
-    ///   frame, and it is planned as the thunked arrow over them.
+    ///   of a parenthesised list written before `=>`, none for `()`, else the
+    ///   one operand there — and its codomain are each read as value types
+    ///   under its own frame, and it is planned as the thunked arrow over them.
     /// - provides: the value function space, the alias of `+U (A1 -> … -> An ->
-    ///   -F B)`.
+    ///   -F B)`, which is `+U (-F B)` at no domain.
     /// - fails: yields the wrong-sort refusal where no value type is read,
     ///   either hole's own refusal, and a domain list's refusal.
     /// - panics: none.
@@ -5676,16 +5683,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The domain loop runs once per entry of the finite domain stretch.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one domain, a list of two, and an alias nested to the
-    ///   right, each asserted as the same core node the thunked arrow it stands
-    ///   for lowers to.
+    /// - hypothesis: L3 — no domain, one domain, a list of two, and an alias
+    ///   nested to the right, each asserted as the same core node the thunked
+    ///   arrow it stands for lowers to.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::ValueFunction(domains, _)) if domains.start < domains.end
+                    Some(&Plan::ValueFunction(domains, _)) if domains.start <= domains.end
                 )
         },
     )]
@@ -5726,9 +5733,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `domain` is the operand written before `=>`.
-    /// - ensures: each member of an unrepaired parenthesised list of more than
-    ///   one, left to right; else `domain` itself, whose own reading groups,
-    ///   reports a repair or refuses an empty list.
+    /// - ensures: nothing for the empty list `()`, so `() => C` takes no
+    ///   argument; each member of an unrepaired parenthesised list of more than
+    ///   one, left to right; else `domain` itself, whose own reading groups or
+    ///   reports a repair.
     /// - provides: the n-ary domain of the alias, the one place a type list is
     ///   read.
     /// - fails: yields the list's refusal for a member out of shape;
@@ -5739,12 +5747,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The list's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one domain and a list of two, each asserted through
-    ///   the alias it lowers.
+    /// - hypothesis: L3 — no domain, one domain and a list of two, each
+    ///   asserted through the alias it lowers.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     #[spec(
         captures: before = self.operands.len(),
-        ensures: |ret| ret.is_err() || self.operands.len() > before,
+        ensures: |ret| ret.is_err() || self.operands.len() >= before,
     )]
     fn domains(
         &mut self,
@@ -5770,7 +5778,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let commas = scratch.pieces.iter().any(
                 |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::COMMA),
             );
-            if commas && let Maybe::Absent(_) = scratch.repair {
+            let empty = !scratch
+                .pieces
+                .iter()
+                .any(|piece| matches!(*piece, Piece::Operand(_)));
+            if empty && let Maybe::Absent(_) = scratch.repair {
+                Ok(())
+            }
+            else if commas && let Maybe::Absent(_) = scratch.repair {
                 let list = Site {
                     at: domain,
                     name,
@@ -5864,9 +5879,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the one operand is read at the form's own reading and
     ///   adopted.
     /// - provides: grouping in type position.
-    /// - fails: yields the hole's own refusal, and a misplaced-tile fault at
-    ///   the first comma of a list, which only a value function space's domain
-    ///   reads.
+    /// - fails: yields the empty-list refusal for `()`, which is never the unit
+    ///   type, the hole's own refusal, and a misplaced-tile fault at the first
+    ///   comma of a list, which only a value function space's domain reads.
     /// - panics: none.
     ///
     /// # Errors
@@ -5875,9 +5890,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — parenthesized type operands keep the surrounding
     ///   reading and lower to the wrapped type rather than introducing a core
-    ///   constructor.
+    ///   constructor; empty parentheses are refused by name.
     /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -5891,7 +5907,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let _open = cursor.tile(TileName::PAREN_OPEN);
-        let inner = site.one(cursor.operands())?;
+        let run = cursor.operands();
+        if let Run::Empty(_) = run {
+            let unit = Site {
+                name: FormName::UNIT,
+                ..site
+            };
+            return Err(unit.out(FragmentBoundary::EmptyList));
+        }
+        let inner = site.one(run)?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.read(inner.node, site.reading);
 
@@ -9165,10 +9189,10 @@ fn exhausted<'source>(
 /// # Specification
 /// - requires: nothing; the function is total over the former vocabulary.
 /// - ensures: exactly the value-producing formers answer affirmatively — a
-///   name, a capitalised name, a number, a string, a parenthesised expression
-///   and a thunk — the reserved tuple among them, since a reserved form is a
-///   value the fragment declines rather than a form of another sort, and
-///   keeping the two apart is what lets an attribute payload written as a
+///   name, a capitalised name, a number, a string, the unit, a parenthesised
+///   expression and a thunk — the reserved tuple among them, since a reserved
+///   form is a value the fragment declines rather than a form of another sort,
+///   and keeping the two apart is what lets an attribute payload written as a
 ///   computation be reported as a non-value rather than as a sort error.
 /// - provides: the guard the attribute payload reading takes.
 /// - fails: never.
@@ -9189,6 +9213,7 @@ fn exhausted<'source>(
                     | Former::Number
                     | Former::Text
                     | Former::Parenthesized
+                    | Former::Unit
                     | Former::Thunk
             )
     },
@@ -9202,6 +9227,7 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Number
             | Former::Text
             | Former::Parenthesized
+            | Former::Unit
             | Former::Thunk
     ))
 }
@@ -9317,6 +9343,7 @@ pub fn parse_literal(
         | Former::Unary
         | Former::Constructor
         | Former::Parenthesized
+        | Former::Unit
         | Former::Thunk
         | Former::Lambda
         | Former::Block
@@ -10563,37 +10590,70 @@ mod tests
     }
 
     #[test]
-    fn the_empty_parentheses_lower_to_the_unit_value()
+    fn the_unit_keyword_lowers_to_the_unit_value()
     {
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from("def x = () ;"), &mut arena);
-        let body = body_of(outcomes(&module)[0]);
+        let module = lowered(
+            SourceText::from("def x : Unit ; def x = unit ;"),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
 
         assert_eq!(
-            arena.value(body),
+            arena.value(body_of(lowered[0])),
             Some(&Value::Unit),
-            "`()` is the unit value"
+            "`unit` is the unit value"
+        );
+        assert_eq!(
+            spine(&arena, declared_of(lowered[0])),
+            ["Unit"],
+            "and `Unit` its type"
+        );
+        let matched = refusal(SourceText::from(
+            "def g(x : Unit) -> -F Integer { case x { unit => return 1 } }",
+        ));
+        assert!(
+            matches!(matched, LoweringRefusal::OutOfFragment {
+                form: FormName::UNIT,
+                boundary: FragmentBoundary::Unadmitted,
+                ..
+            }),
+            "the unit pattern molds, and a match does not admit it yet: {matched:?}"
         );
     }
 
     #[test]
-    fn an_identifier_spelled_unit_is_an_ordinary_name()
+    fn the_empty_parentheses_are_never_the_unit()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let refused = refusal(SourceText::from("def x = unit ;"));
+        let refused = refusal(SourceText::from("def x = () ;"));
 
         assert_eq!(
             refused,
-            LoweringRefusal::UnresolvedName {
-                span: at(8_usize, 12_usize),
-                name: SurfaceName::from("unit"),
+            LoweringRefusal::OutOfFragment {
+                span: at(8_usize, 10_usize),
+                form: FormName::UNIT,
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::EmptyList,
             },
-            "`unit` is resolved like any other name, and nothing answers it"
+            "`()` as a value is an empty list"
         );
-        assert_eq!(
-            refused.classify(),
-            FailureClass::MalformedSource,
-            "an unresolved name is the author's mistake"
+        assert!(
+            alloc::format!("{refused}").contains("`Unit`"),
+            "and the refusal names the unit value and its type: {refused}"
+        );
+        let typed = refusal(SourceText::from("def y : () ;"));
+        assert!(
+            matches!(typed, LoweringRefusal::OutOfFragment {
+                form: FormName::UNIT,
+                boundary: FragmentBoundary::EmptyList,
+                ..
+            }),
+            "`()` as a type is the same empty list: {typed:?}"
+        );
+        assert!(
+            alloc::format!("{typed}").contains("`Unit`"),
+            "and the refusal names the unit type: {typed}"
         );
     }
 
@@ -11385,7 +11445,8 @@ mod tests
                 "def a : Integer => String ; def b : +U (Integer -> -F String) ; def c : \
                  (Integer, String) => Unit ; def d : +U (Integer -> String -> -F Unit) ; def e \
                  : Integer => Integer => String ; def f : +U (Integer -> -F (+U (Integer -> -F \
-                 String))) ;",
+                 String))) ; def g : () => String ; def h : +U (-F String) ; def i : Unit => \
+                 String ;",
             ),
             &mut arena,
         );
@@ -11413,7 +11474,22 @@ mod tests
             "the alias nests to the right, each level its own thunk"
         );
         assert_eq!(
-            refusal(SourceText::from("def g : (Integer, String) ;")),
+            declared(6_usize),
+            ["U", "F", "String"],
+            "`() => C` takes no argument"
+        );
+        assert_eq!(
+            declared(6_usize),
+            declared(7_usize),
+            "and is the thunked returner itself"
+        );
+        assert_eq!(
+            declared(8_usize),
+            ["U", "->", "Unit", "F", "String"],
+            "`Unit => C` takes the unit value, a type of its own"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def z : (Integer, String) ;")),
             LoweringRefusal::MalformedForm {
                 span: at(16_usize, 17_usize),
                 form: FormName::from(NamedKind("parenthesized_type")),
@@ -11511,7 +11587,7 @@ mod tests
         let module = lowered(
             SourceText::from(
                 "def p : Integer * String ; def q = (1, \"a\") ; def r : Integer * Unit * String ; \
-                 def s = (1, (), \"a\") ;",
+                 def s = (1, unit, \"a\") ;",
             ),
             &mut arena,
         );
@@ -12700,6 +12776,7 @@ mod tests
             Former::Number,
             Former::Text,
             Former::Parenthesized,
+            Former::Unit,
             Former::Thunk,
         ];
         for former in Former::ALL {

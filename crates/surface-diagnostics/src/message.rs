@@ -185,6 +185,10 @@ fn lowered(
                     "a {form} leaves a function only where its body ends; early exits are not \
                      supported yet"
                 ),
+                | FragmentBoundary::EmptyList => f.write_str(
+                    "`()` is an empty list, never the unit; write the unit value as `unit` and \
+                     its type as `Unit`",
+                ),
             }
         },
         | LoweringRefusal::GradedBridge { grade, .. } => write!(

@@ -1450,7 +1450,7 @@ impl Walk<'_, '_, '_>
             | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
             | Former::BaseType(BaseType::String) => return self.atom(Glyphs("String")),
             | Former::UnitType => return self.atom(Glyphs("Unit")),
-            | Former::Unit => return self.atom(Glyphs("()")),
+            | Former::Unit => return self.atom(Glyphs("unit")),
             | Former::ListNil => return self.approximate(Glyphs("nil")),
             | Former::Abstract(name) | Former::Constant(name) => return self.name(name),
             | Former::Literal(value) => {

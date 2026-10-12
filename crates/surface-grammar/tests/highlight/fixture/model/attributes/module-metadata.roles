@@ -63,6 +63,5 @@
 203..206 Keyword "def"
 207..218 FunctionDef "parser_unit"
 219..220 Other "="
-221..222 Other "("
-222..223 Other ")"
-223..224 Other ";"
+221..225 Keyword "unit"
+225..226 Other ";"

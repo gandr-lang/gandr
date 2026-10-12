@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e81a7c6b75f5c5c1267c9dd6ba204cc940a6fad7a15d44e7c1d80cd5a740acf6 # shrinks to (statements, edits) = ([Stmt { name: 0, ascription: None, body: Int(0) }], [Replace(0, Stmt { name: 0, ascription: None, body: Int(0) })])

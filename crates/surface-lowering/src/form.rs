@@ -16,8 +16,8 @@
 //! the forms standing in its holes, interleaved in source order. A child tile
 //! whose mold belongs to the parent's rule is one of the parent's own tiles;
 //! every other child is an operand. A variant the grammar folded into another
-//! form — the unit `()` and the tuple into the parenthesised expression, the
-//! signature into the declaration — is told apart by its own tiles, and a
+//! form — the empty list `()` and the tuple into the parenthesised expression,
+//! the signature into the declaration — is told apart by its own tiles, and a
 //! diagnostic names it by the folded form's own kind.
 
 use alloc::vec::Vec;
@@ -203,7 +203,9 @@ impl FormName
     pub const TUPLE: Self = Self("tuple_expression");
     /// The type abstraction `fn [T] { … }`, folded into the lambda.
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
-    /// The empty parentheses `()`, folded into the parenthesised expression.
+    /// The unit value: the keyword `unit`, and the empty parentheses `()` the
+    /// grammar folds into the parenthesised expression, which the lowering
+    /// refuses as an empty list.
     pub const UNIT: Self = Self("unit");
     /// The statement `unpack … = e ;`, inlined into its block.
     pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
@@ -496,9 +498,11 @@ pub enum Former
     Number,
     /// A string literal.
     Text,
-    /// The parenthesised expression: the unit, a grouping, the reserved
-    /// tuple or an annotation, told apart by its own tiles.
+    /// The parenthesised expression: a grouping, the reserved tuple or an
+    /// annotation, told apart by its own tiles; empty, it is refused.
     Parenthesized,
+    /// The unit value `unit`.
+    Unit,
     /// The thunk `thunk { c }`.
     Thunk,
     /// The lambda `fn (x) { c }`.
@@ -589,13 +593,14 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 36_usize] = [
+    pub const ALL: [Self; 37_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
         Self::Number,
         Self::Text,
         Self::Parenthesized,
+        Self::Unit,
         Self::Thunk,
         Self::Lambda,
         Self::Block,
@@ -648,13 +653,14 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 37_usize] = [
+pub const FORMERS: [(&str, Former); 38_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
     ("number", Former::Number),
     ("string", Former::Text),
     ("parenthesized_expression", Former::Parenthesized),
+    ("unit", Former::Unit),
     ("thunk_expression", Former::Thunk),
     ("lambda_expression", Former::Lambda),
     ("block", Former::Block),

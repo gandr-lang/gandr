@@ -6,7 +6,7 @@ def at_a_static_parameter : apply(\Y. Y * Y, Integer) ;
 def at_a_static_parameter = (1, 2) ;
 
 @[ runs("<fun>") ]
-def use(f : Type -> Type) -> -F Unit { return () }
+def use(f : Type -> Type) -> -F Unit { return unit }
 
 @[ refuses("StaticLambdaArgument") ]
 def at_a_dynamic_parameter : +U (-F Unit) ;

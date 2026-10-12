@@ -21,7 +21,7 @@
 //!
 //! Every former has exactly one spelling, the one the surface grammar parses:
 //! `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`,
-//! `(x : A) -> C`, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`; `()`,
+//! `(x : A) -> C`, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`; `unit`,
 //! literals, `(a, b)`, `Inl(v)`, `Inr(v)`. A former the surface does not write
 //! — a lift, the numeric atom, a variable past every binder — is written `?`.
 //! Effectful returners display their interface names as diagnostic notation.
@@ -251,8 +251,8 @@ where
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the root written as [`present_type`] writes a type, a value's
-///   formers spelled `()`, as their literal, `(a, b)`, `Inl(v)` and `Inr(v)`, a
-///   constant by its name and the code of a type as the type; a thunk is
+///   formers spelled `unit`, as their literal, `(a, b)`, `Inl(v)` and `Inr(v)`,
+///   a constant by its name and the code of a type as the type; a thunk is
 ///   written `<thunk>`, and a value [`DEPTH_LIMIT`] value formers deep is
 ///   written `<deep>` inside the formers around it, each making the
 ///   presentation approximate. Output has the same line-ending and width

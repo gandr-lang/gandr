@@ -532,6 +532,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Unary
         | Former::Constructor
         | Former::Parenthesized
+        | Former::Unit
         | Former::Thunk
         | Former::Lambda
         | Former::Return
