@@ -918,6 +918,7 @@ dependencies = [
 name = "gandr-theory-cell-complexes"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -937,6 +938,7 @@ name = "gandr-theory-circuit-algebras"
 version = "0.0.0"
 dependencies = [
  "gandr-theory-cell-complexes",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -948,6 +950,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -1010,6 +1013,7 @@ dependencies = [
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-spec-combinators",
  "petgraph",
  "proptest",
  "quenchant-anodized",
@@ -1019,6 +1023,7 @@ dependencies = [
 name = "gandr-theory-levitation"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",

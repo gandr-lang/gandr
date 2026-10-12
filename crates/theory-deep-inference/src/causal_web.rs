@@ -128,6 +128,13 @@ impl DependenceBits
     ///   length changes the shape verdict.
     /// - witness: `causal_web::tests::a_malformed_web_refuses_structural_comparison`
     /// - witness: `causal_web::tests::empty_and_ragged_matrices_separate_shape_from_lookup`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body checks the same row lengths"
+        )
+    )]
     #[spec(ensures: |output| bool::from(output) == (self.rows.len() == usize::from(count) && self.rows.iter().all(|row| row.len() == usize::from(count))))]
     fn has_shape(
         &self,
@@ -375,6 +382,13 @@ else { WebRelation::Independent })]
     ///   remains a valid boundary.
     /// - witness: `causal_web::tests::a_malformed_web_refuses_structural_comparison`
     /// - witness: `causal_web::tests::empty_and_ragged_matrices_separate_shape_from_lookup`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's `has_shape` checks the same row lengths"
+        )
+    )]
     #[spec(ensures: |output| bool::from(output) == (self.precedes.rows.len() == self.events.len() && self.precedes.rows.iter().all(|row| row.len() == self.events.len())))]
     fn has_valid_shape(&self) -> WebShapeValidity
     {

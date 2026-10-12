@@ -293,8 +293,8 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
             .saturating_add(desc.ctors.iter().map(|ctor| ctor.code.recursive_sorts().filter(|name| !desc.sorts.iter().any(|sort| sort.name == **name)).count()).sum::<usize>()),
     ],
     ensures: diagnostics.len() == before.saturating_add(expected)
-        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)
-            && matches!(diagnostic.kind, WfKind::DuplicateSortName | WfKind::SortPolarityDisagreement | WfKind::UnknownResultSort | WfKind::UnknownVarSort)),
+        && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)
+            && matches!(diagnostic.kind, WfKind::DuplicateSortName | WfKind::SortPolarityDisagreement | WfKind::UnknownResultSort | WfKind::UnknownVarSort))),
 )]
 fn check_sorts<G>(
     desc: &SignDesc<G>,
@@ -391,10 +391,10 @@ fn check_sorts<G>(
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 #[spec(
     captures: before = diagnostics.len(),
-    ensures: diagnostics.len() >= before && diagnostics.iter().skip(before).all(|diagnostic|
+    ensures: diagnostics.len() >= before && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic|
         diagnostic.span == Maybe::Present(rule.sphere.provenance)
         && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnknownRewritePort
-            | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch)),
+            | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch))),
 )]
 fn check_circuit_rule(
     rule: &CircuitRule,
@@ -557,8 +557,8 @@ impl fmt::Display for AttributeOwner
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(RESERVED_DERIVED_MARKERS.iter().filter(|marker| bool::from(attrs.contains(NameRef::from(**marker)))).count())
-        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::DeclaresDerivedMetadata
-            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)),
+        && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.kind == WfKind::DeclaresDerivedMetadata
+            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded))),
 )]
 fn check_attrs(
     attrs: &Attrs,
@@ -613,8 +613,8 @@ fn signature_names<G>(desc: &SignDesc<G>) -> Vec<Name>
     ensures: diagnostics.len() == before.saturating_add(
         cell.lhs.applied_symbols().chain(cell.rhs.applied_symbols()).filter(|name| !signature.contains(name)).count()
             .saturating_add(cell.rhs.to_node().vars().filter(|name| !cell.lhs.to_node().vars().any(|left| left == *name)).count())
-    ) && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
-        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable)),
+    ) && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
+        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable))),
 )]
 fn check_rule_face(
     cell: &RuleFace,
@@ -656,7 +656,7 @@ fn check_rule_face(
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(term.applied_symbols().filter(|name| !signature.contains(name)).count())
-        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::OutOfSignatureRule && diagnostic.span == Maybe::Present(span)),
+        && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.kind == WfKind::OutOfSignatureRule && diagnostic.span == Maybe::Present(span))),
 )]
 fn check_free_term_symbols(
     term: &FreeTerm,
@@ -697,8 +697,8 @@ fn check_free_term_symbols(
         .saturating_add(usize::from(arity.source.len() != arity.factors.iter().fold(0_usize, |sum, count| sum.saturating_add(usize::try_from(*count).unwrap_or(usize::MAX)))))
         .saturating_add(arity.source.iter().filter(|index| usize::try_from(**index).unwrap_or(usize::MAX) >= arity.inputs.len()).count())
         .saturating_add(arity.dest.iter().filter(|index| usize::try_from(**index).unwrap_or(usize::MAX) >= arity.outputs.len()).count())
-        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::ArityDoesNotCompose
-            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)),
+        && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.kind == WfKind::ArityDoesNotCompose
+            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded))),
 )]
 fn check_arity(
     arity: &BridgeArity,

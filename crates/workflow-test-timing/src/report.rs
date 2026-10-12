@@ -117,6 +117,13 @@ impl TestName
     /// - witness: `priority::tests::a_filter_matches_exactly_or_by_containment`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body runs the same substring search once"
+        )
+    )]
     #[spec(ensures: |ret| (ret == Containment::Contains) == self.0.contains(&text.0))]
     pub fn contains(
         &self,

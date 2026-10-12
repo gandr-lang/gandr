@@ -671,6 +671,13 @@ pub fn elaborate_data_desc<G>(desc: &SignDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::face_admission_is_atomic_and_deduplicates`
 /// - witness: `elaborate::tests::operation_gate_precedes_shape_and_scans_both_faces`
 /// - witness: `elaborate::tests::a_repeated_hole_and_a_mixed_polarity_hole_earn_distinct_refusals`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body's insertion scans the store for an equal cell; the check scans it for a cell of this face's kind"
+    )
+)]
 #[spec(
     captures: before = usize::from(store.len()),
     ensures: |ret| {

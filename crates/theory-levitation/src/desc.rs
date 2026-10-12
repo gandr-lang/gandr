@@ -640,6 +640,13 @@ impl<G> SignDesc<G>
     /// - witness: `desc::tests::description_recursion_scans_both_constructor_boundaries`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every constructor's code up to the first recursive occurrence, as the check does"
+        )
+    )]
     #[spec(ensures: |recursive| bool::from(recursive)
         == self.ctors.iter().any(|ctor| ctor.code.recursive_sorts().next().is_some()))]
     pub fn is_recursive(&self) -> RecursiveStatus

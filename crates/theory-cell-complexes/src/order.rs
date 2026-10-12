@@ -80,6 +80,8 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use anodized::spec;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::pattern::CmdPat;
@@ -427,8 +429,11 @@ impl<'term> FlatTerm<'term>
     ///   order changes equality or strict order.
     /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
     #[spec(requires: children.iter().all(|child| child.0 < self.nodes.len()),
-        captures: before = self.nodes.len(), ensures: |output| output.0 == before && self.nodes.len() == before.saturating_add(1)
-            && self.nodes.get(output.0).is_some_and(|node| node.head == head && self.children_of(node) == children))]
+        captures: [before = self.nodes.len(), mark = Mark::of(&self.children)],
+        ensures: |output| output.0 == before && self.nodes.len() == before.saturating_add(1)
+            && self.nodes.get(output.0).is_some_and(|node| node.head == head
+                && node.first_child.0 == usize::from(mark) && node.child_count.0 == children.len())
+            && appended(&self.children, mark) == children)]
     fn push(
         &mut self,
         head: Head<'term>,

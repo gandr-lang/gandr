@@ -649,6 +649,13 @@ impl BatchGraph
     /// - hypothesis: L2 comparisons distinguish inverted cycle verdicts.
     /// - witness: `dynamic_graphs::differential::tests::the_differential_catches_a_seeded_wrong_verdict`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's batch traversal"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == cycle_witness(self).is_ok_and(|cycle| cycle.is_some()))]
     pub fn has_cycle(&self) -> CycleFound
     {

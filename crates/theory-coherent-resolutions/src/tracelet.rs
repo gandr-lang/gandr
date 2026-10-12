@@ -186,6 +186,13 @@ impl<A: CellAlphabet> Tracelet<A>
     /// - witness: `tracelet::tests::both_equivalence_boundaries_matter`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one replay"
+        )
+    )]
     #[spec(ensures: |output| output == replay_from_peak(store, &self.overlap.peak, &self.joins_at, &self.path_a, &self.path_b))]
     pub fn replay(
         &self,
@@ -229,6 +236,13 @@ impl<A: CellAlphabet> Tracelet<A>
     /// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check replays both paths the body traces"
+        )
+    )]
     #[spec(ensures: |output| output.path_a.started_at == A::skolemize(&self.overlap.peak) && output.path_b.started_at == output.path_a.started_at
         && output.joins_at == A::skolemize(&self.joins_at) && output.verdict() == self.replay(store))]
     pub fn replay_trace(
@@ -507,19 +521,22 @@ where
 ///   on generated ground instances. A second derivation reuses the same
 ///   identifier and certificate; wrong-kind and off-term refusals leave the
 ///   store unchanged. Duplicate insertion, wrong tags or mutation before
-///   refusal changes those observations.
+///   refusal changes those observations. The store only grows, by
+///   [`CellStore::insert`], which reuses an equal cell's identifier or appends
+///   under the next one, so the predicate reads the cell count and the
+///   witnesses compare whole stores.
 /// - witness: `tracelet::tests::a_fused_cell_certificate_replays`
 /// - witness: `tests::second_inhabitant::the_enumerator_finds_the_toy_composition_overlap`
 /// - witness: `tests::differential::fused_equals_two_step`
 /// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
 #[inline]
-#[spec(captures: before = store.clone(), ensures: |output| match output {
-    Err(ref reason) => *store == before && matches!(overlap.composite(&before), Err(ref expected) if expected == reason),
-    Ok(ref fused) => before.iter().all(|(id, cell)| store.get(id) == Maybe::Present(cell))
+#[spec(captures: cells = usize::from(store.len()), ensures: |output| match output {
+    Err(ref reason) => usize::from(store.len()) == cells && matches!(overlap.composite(store), Err(ref expected) if expected == reason),
+    Ok(ref fused) => usize::from(fused.0) <= cells
+        && usize::from(store.len()) == cells.saturating_add(usize::from(usize::from(fused.0) == cells))
         && matches!(store.get(fused.0), Maybe::Present(cell) if cell.lhs() == &overlap.peak
             && cell.orient() == A::derived_orientation() && cell.provenance() == A::derived_provenance()
-            && matches!(overlap.composite(&before), Ok(ref composite) if cell.rhs() == composite && fused.1.joins_at == *composite)
-            && usize::from(store.len()) == usize::from(before.len()).saturating_add(usize::from(!before.iter().any(|(_, old)| old == cell))))
+            && matches!(overlap.composite(store), Ok(ref composite) if cell.rhs() == composite && fused.1.joins_at == *composite))
         && fused.1.overlap == *overlap && fused.1.path_a.len() == 2 && fused.1.path_b.len() == 1
         && fused.1.path_a.first().is_some_and(|step| step.cell == overlap.left && step.at == A::root_position())
         && fused.1.path_a.get(1).is_some_and(|step| step.cell == overlap.right && step.at == overlap.seam)

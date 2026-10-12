@@ -114,6 +114,13 @@ impl Recipe
     ///   counts.
     /// - witness: `tests::normal_form::recipe_closes_open_wires_and_preserves_isolated_roles`
     /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the recipe is bounded by the property generator, and the check is the fixture's own oracle for the diagram it builds"
+        )
+    )]
     #[spec(requires: !self.closings.is_empty() && self.steps.iter().try_fold(0_usize, |count, step| count.checked_add(match *step { Step::IsolatedWire | Step::Input => 1, Step::Generator { produces, .. } => produces })).is_some(),
     ensures: |ref built| built.wires == self.steps.iter().fold(0_usize, |count, step| count.saturating_add(match *step { Step::IsolatedWire | Step::Input => 1, Step::Generator { produces, .. } => produces }))
         && built.inputs.iter().chain(&built.outputs).all(|wire| usize::from(*wire) < built.wires)
@@ -215,6 +222,13 @@ impl Built
     ///   reordering a record changes the certificate or form; malformed parts
     ///   are outside the helper domain.
     /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every part into the assembled diagram; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ref diagram| usize::from(diagram.wire_count()) == self.wires && diagram.generators() == self.generators && diagram.boundary().inputs() == self.inputs && diagram.boundary().outputs() == self.outputs)]
     fn assemble(&self) -> Wiring
     {
@@ -244,6 +258,13 @@ impl Built
     ///   that evidence. The predicate states ordered correspondence without
     ///   canonicalizing a second time; inputs are bijections.
     /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the diagram is bounded by the property generator, and the check is the fixture's own oracle for the relisting it applies"
+        )
+    )]
     #[spec(requires: relisting.wires.len() == self.wires && relisting.edges.len() == self.generators.len()
         && relisting.wires.iter().enumerate().all(|entry| *entry.1 < self.wires && !relisting.wires.iter().take(entry.0).any(|prior| prior == entry.1))
         && relisting.edges.iter().enumerate().all(|entry| *entry.1 < self.generators.len() && !relisting.edges.iter().take(entry.0).any(|prior| prior == entry.1))

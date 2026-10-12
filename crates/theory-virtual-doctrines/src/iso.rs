@@ -75,6 +75,13 @@ impl IsoWitness
     /// - hypothesis: L3 — both directions exchange, and the law suite checks
     ///   validity rather than code equality of the witnesses.
     /// - witness: `tests::laws::tests::the_inverse_of_a_valid_iso_is_valid`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies both derivations once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |out| out.fwd == self.bwd && out.bwd == self.fwd)]
     pub fn inverse(&self) -> Self
     {
@@ -102,6 +109,13 @@ impl IsoWitness
     ///   codomains. Grafting and replay laws establish the engine composition,
     ///   not endpoint agreement alone.
     /// - witness: `tests::laws::tests::cell_grafting_matches_engine_composition`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies all four derivations to graft them; the check reads two codomains"
+        )
+    )]
     #[spec(ensures: |out| out.fwd.cod() == other.fwd.cod() && out.bwd.cod() == self.bwd.cod())]
     pub fn compose(
         &self,
@@ -134,6 +148,13 @@ impl IsoWitness
     /// - witness: `tests::laws::tests::the_inverse_of_a_valid_iso_is_valid`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's two elaborations and round trips once"
+        )
+    )]
     #[spec(ensures: |out| bool::from(out) == (bool::from(round_trips_to_identity(&self.fwd.elaborate(), &self.bwd.elaborate(), cells)) && bool::from(round_trips_to_identity(&self.bwd.elaborate(), &self.fwd.elaborate(), cells))))]
     pub fn is_valid(
         &self,

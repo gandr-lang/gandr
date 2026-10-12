@@ -425,6 +425,13 @@ impl CellMeta
     /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body classifies by one walk over the same metadata the check walks at most three times"
+        )
+    )]
     #[spec(ensures: |output| match output {
         StepGrowth::Duplicating => self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated),
         StepGrowth::Erasing => !self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated)
@@ -671,10 +678,11 @@ impl CellAlphabet for SequentAlphabet
     /// # Adequacy
     /// - hypothesis: L3 — successful matching reconstructs the target and
     ///   clashes preserve prior bindings. Reversed matching and eager partial
-    ///   commits change these observations.
+    ///   commits change these observations. The delegate's predicate checks the
+    ///   reconstruction; this one reads the binding count on refusal.
     /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
-    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_cmd(pattern) == *target } else { *subst == before })]
+    #[spec(captures: before = subst.len(), ensures: |output| bool::from(output) || subst.len() == before)]
     fn match_cmd(
         pattern: &Self::Cmd,
         target: &Self::Cmd,
@@ -694,10 +702,12 @@ impl CellAlphabet for SequentAlphabet
     /// # Adequacy
     /// - hypothesis: L3 — two different patterns unify to the same instantiated
     ///   command, while incompatible heads preserve existing bindings. Missing
-    ///   bindings and partial failure commits change the observations.
+    ///   bindings and partial failure commits change the observations. The
+    ///   delegate's predicate checks the unified sides; this one reads the
+    ///   binding count on refusal.
     /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
-    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_cmd(lhs) == subst.apply_cmd(rhs) } else { *subst == before })]
+    #[spec(captures: before = subst.len(), ensures: |output| bool::from(output) || subst.len() == before)]
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,

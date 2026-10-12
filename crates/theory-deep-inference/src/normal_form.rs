@@ -273,6 +273,13 @@ impl<A: CellAlphabet> TraceletNf<A>
     ///   repeats or accepting an unresolved factor changes these observations.
     /// - witness: `normal_form::tests::the_canonical_path_replays_to_the_recorded_join`
     /// - witness: `normal_form::tests::raw_schedules_resolve_empty_repeated_and_absent_factors`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body resolves every scheduled address up to the first unfactored one, as the check does"
+        )
+    )]
     #[spec(ensures: |output| match output {
         Maybe::Present(ref path) => path.len() == self.schedule.len()
             && path.iter().zip(&self.schedule).all(|(step, address)|
@@ -402,6 +409,13 @@ impl<A: CellAlphabet> ReplayWitness<A>
     /// - witness: `normal_form::tests::a_replay_witness_carries_its_own_boundary_and_order`
     /// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
     /// - witness: `tests::normal_form::a_reversed_independent_schedule_is_the_canonical_one`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check reads the canonical order's events as the body does"
+        )
+    )]
     #[spec(ensures: |output| output.iter().eq(self.order.canonical_order().into_iter().filter_map(|index|
         match self.order.event(index) {
             Maybe::Present(event) => Some(event.step()),
@@ -585,6 +599,13 @@ impl<A: CellAlphabet> ReplayPlan<A>
     /// - witness: `tests::normal_form::a_two_member_replay_level_reaches_one_term_in_both_permitted_orders`
     /// - witness: `normal_form::tests::empty_certificates_replay_skolemized_peaks_without_fuel`
     /// - witness: `normal_form::tests::replay_refusals_prioritize_fuel_and_level_bounds`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check replays the levels the body replays"
+        )
+    )]
     #[spec(ensures: |output| output == if fuel < self.critical_path {
         Ok(Maybe::Absent(replay_fuel::Absent::InsufficientFuel))
     } else {

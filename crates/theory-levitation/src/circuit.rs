@@ -274,11 +274,23 @@ impl CircuitBody
     /// # Adequacy
     /// - hypothesis: L3 — distinct and duplicate bound ports are observed
     ///   through both boundary readings; choosing the later duplicate changes
-    ///   its constructor and losing a port leaves an unexpected variable.
+    ///   its constructor and losing a port leaves an unexpected variable. The
+    ///   predicate reads each node and entry once: every entry is a node of
+    ///   this body bound to its port, and the producer of each node's port sits
+    ///   at or before that node, which for the port's first binder means the
+    ///   binder itself.
     /// - witness: `circuit::tests::duplicate_producers_keep_the_first_source_binding`
-    #[spec(ensures: |ref producers| self.nodes.iter().all(|node| producers.contains_key(node.out()))
-        && producers.iter().all(|(port, node)| self.nodes.iter().find(|candidate| candidate.out() == *port)
-            .is_some_and(|first| core::ptr::eq(core::ptr::from_ref(*node), core::ptr::from_ref(first)))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body inserts every node once; the check reads every node and every entry once"
+        )
+    )]
+    #[spec(ensures: |ref producers| producers.iter().all(|(port, producer)| producer.out() == *port
+            && self.nodes.as_ptr_range().contains(&core::ptr::from_ref(*producer)))
+        && self.nodes.iter().all(|node| producers.get(node.out())
+            .is_some_and(|producer| core::ptr::from_ref(*producer) <= core::ptr::from_ref(node))))]
     fn producers(&self) -> BTreeMap<&Name, &CircuitNode>
     {
         let mut producers: BTreeMap<&Name, &CircuitNode> = BTreeMap::new();

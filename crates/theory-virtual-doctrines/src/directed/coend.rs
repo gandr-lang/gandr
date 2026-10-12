@@ -47,6 +47,13 @@ impl Diagram
     /// - hypothesis: L3 — the first matching carrier entry and the off-carrier
     ///   boundary are observed, including the actual component value.
     /// - witness: `tests::directed::tests::coyoneda_collapses_to_the_diagonal_component`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the entries once, as the check does"
+        )
+    )]
     #[spec(ensures: |out| match out { Maybe::Present(value) => self.entries.iter().find(|entry| entry.0 == *object).is_some_and(|entry| &entry.1 == value), Maybe::Absent(_) => self.entries.iter().all(|entry| entry.0 != *object) })]
     pub fn component(
         &self,
@@ -197,6 +204,13 @@ impl BiDiagram
     /// - hypothesis: L3 — the carrier payloads are preserved with order and
     ///   multiplicity.
     /// - witness: `tests::directed::tests::fubini_preserves_the_iterated_end`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every payload once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |out| out.iter().eq(self.entries.iter().map(|entry| &entry.1)))]
     pub fn payloads(&self) -> Vec<TermRef>
     {
@@ -218,6 +232,13 @@ impl BiDiagram
     /// - hypothesis: L3 — every index pair is observed in carrier order, not
     ///   merely the number of indices.
     /// - witness: `tests::directed::tests::fubini_swap_is_an_involution`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every index pair once; the check compares each once"
+        )
+    )]
     #[spec(ensures: |out| out.iter().eq(self.entries.iter().map(|entry| &entry.0)))]
     pub fn index_pairs(&self) -> Vec<(TermRef, TermRef)>
     {

@@ -93,6 +93,13 @@ impl Context
     /// - hypothesis: L3 — names declared on either side are admitted; absent
     ///   names inside nested terms are rejected.
     /// - witness: `tests::constructor_menu::formation_observes_names_generators_and_both_seam_boundaries`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches both sides once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == self.dom.iter().chain(&self.cod).any(|entry| entry.0.as_ref() == name.as_ref()))]
     pub fn declares(
         &self,
@@ -685,6 +692,13 @@ impl PartialEq for Synthesized<'_>
     ///   distinguish the borrowed and reflexive representations.
     /// - witness: `tests::constructor_menu::every_constructor_has_an_accepted_and_nearest_invalid_judgment`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the two types node for node; the check compares owned copies of the same two types"
+        )
+    )]
     #[spec(ensures: |result| result == ((*self).to_owned() == (*other).to_owned()))]
     fn eq(
         &self,

@@ -495,11 +495,82 @@ impl PotentialMaintenance
     /// - witness: `potential::tests::the_valuation_stays_feasible`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body checks every admitted constraint once, as the check does; this is the whole-system query the probe reads"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == self.constraints.iter().enumerate().all(|(index, row)| self.values.get(index).is_some_and(|source| row.iter().all(|constraint| match self.value(constraint.target) { Maybe::Present(target) => source.0.checked_add(constraint.offset.0).is_some_and(|demand| target.0 >= demand), Maybe::Absent(_) => false }))))]
     pub fn valuation_is_feasible(&self) -> FeasibilityStatus
     {
         for (index, row) in self.constraints.iter().enumerate() {
             let Some(&source_value) = self.values.get(index)
+            else {
+                return FeasibilityStatus(false);
+            };
+            for constraint in row {
+                let Maybe::Present(target_value) = self.value(constraint.target)
+                else {
+                    return FeasibilityStatus(false);
+                };
+                let Some(demanded) = source_value.0.checked_add(constraint.offset.0)
+                else {
+                    return FeasibilityStatus(false);
+                };
+                if target_value.0 < demanded {
+                    return FeasibilityStatus(false);
+                }
+            }
+        }
+        return FeasibilityStatus(true);
+    }
+
+    /// Whether the standing valuation satisfies every admitted constraint
+    /// leaving a node `raised` records: the invariant around the nodes a
+    /// propagation journalled.
+    ///
+    /// A propagation only raises values, and a raise can break only the
+    /// constraints leaving the raised node, so checking those re-establishes
+    /// the whole invariant from the one that held before.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when every node `raised` records addresses a
+    ///   maintained slot and `value(target) >= value(node) + offset` holds,
+    ///   representably, for every admitted constraint leaving it.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads the outgoing constraints of the recorded nodes alone, one
+    ///   comparison each; the rest of the system is never read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value lowered below one constraint's demand is
+    ///   caught around that constraint's source and missed around its target
+    ///   and around an untouched node; reading the incoming constraints, or the
+    ///   whole system, changes one of those answers.
+    /// - witness: `potential::tests::the_feasibility_around_raised_nodes_reads_only_their_constraints`
+    #[spec(ensures: |ret| ret.0 == raised.iter().all(|&(node, _)| Self::index_of(node).is_ok_and(|index|
+        self.values.get(usize::from(index)).is_some_and(|source| self.constraints.get(usize::from(index)).is_some_and(|row|
+            row.iter().all(|constraint| match self.value(constraint.target) {
+                Maybe::Present(target) => source.0.checked_add(constraint.offset.0).is_some_and(|demand| target.0 >= demand),
+                Maybe::Absent(_) => false,
+            }))))))]
+    fn valuation_is_feasible_around(
+        &self,
+        raised: &[(NodeId, Potential)],
+    ) -> FeasibilityStatus
+    {
+        for &(node, _) in raised {
+            let Ok(index) = Self::index_of(node)
+            else {
+                return FeasibilityStatus(false);
+            };
+            let (Some(&source_value), Some(row)) = (
+                self.values.get(usize::from(index)),
+                self.constraints.get(usize::from(index)),
+            )
             else {
                 return FeasibilityStatus(false);
             };
@@ -562,13 +633,24 @@ impl PotentialMaintenance
     ///   the valuation satisfies every admitted constraint after every offer,
     ///   and a refutation's witness is a closed walk whose offsets sum
     ///   positive. Boundary: the same cycle is `Refuted` when its offsets sum
-    ///   to one and `SatisfiedAfterRaise` when they sum to zero.
+    ///   to one and `SatisfiedAfterRaise` when they sum to zero. Only the
+    ///   journalled nodes rise, so the predicate checks the offered constraint
+    ///   and the constraints leaving those nodes; a refutation's restore checks
+    ///   its own journal, and the probe checks the whole valuation.
     /// - witness: `potential::tests::a_zero_weight_cycle_is_satisfiable`
     /// - witness: `potential::tests::a_positive_weight_cycle_is_refuted`
     /// - witness: `potential::tests::a_refuted_offer_restores_the_valuation`
     /// - witness: `dynamic_graphs::probe::tests::acyclicity_refuses_a_superset_of_what_offsets_refute`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.valuation_is_feasible()))]
+    #[spec(ensures: |ret| {
+        let offered = matches!((self.value(edge.source), self.value(edge.target)),
+            (Maybe::Present(source), Maybe::Present(target)) if source.0.checked_add(offset.0).is_some_and(|demand| target.0 >= demand));
+        ret.as_ref().map_or(true, |verdict| match *verdict {
+            ConstraintVerdict::Satisfied => offered,
+            ConstraintVerdict::SatisfiedAfterRaise => offered && bool::from(self.valuation_is_feasible_around(&self.scratch.journal)),
+            ConstraintVerdict::Refuted(_) => true,
+        })
+    })]
     pub fn insert_constraint(
         &mut self,
         edge: EdgeId,
@@ -712,7 +794,8 @@ impl PotentialMaintenance
     ///   graphs.
     /// - witness: `potential::tests::the_valuation_stays_feasible`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || self.constraints.iter().flatten().any(|constraint| constraint.target == edge.target && constraint.offset == offset))]
+    #[spec(ensures: |ret| ret.is_err() || Self::index_of(edge.source).is_ok_and(|index| self.constraints.get(usize::from(index))
+        .is_some_and(|row| row.contains(&Constraint { target: edge.target, offset }))))]
     fn record(
         &mut self,
         edge: EdgeId,
@@ -756,10 +839,14 @@ impl PotentialMaintenance
     /// # Adequacy
     /// - hypothesis: L2 differential streams and L3 boundaries distinguish
     ///   wrong verdicts, lost edges and invalid maintained state on finite
-    ///   graphs.
+    ///   graphs. Only the journalled nodes rise, so the predicate checks the
+    ///   constraints leaving them.
     /// - witness: `potential::tests::the_valuation_stays_feasible`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|outcome| match *outcome { Propagation::Satisfied => bool::from(self.valuation_is_feasible()), Propagation::Refuted(ref cycle) => cycle.edges.contains(&edge) }))]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|outcome| match *outcome {
+        Propagation::Satisfied => bool::from(self.valuation_is_feasible_around(&scratch.journal)),
+        Propagation::Refuted(ref cycle) => cycle.edges.contains(&edge),
+    }))]
     fn propagate(
         &mut self,
         scratch: &mut Scratch,
@@ -1010,6 +1097,7 @@ impl core::error::Error for PotentialError
 mod tests
 {
     use alloc::vec;
+    use alloc::vec::Vec;
 
     use gandr_theory_graphs::EdgeId;
     use gandr_theory_graphs::NodeId;
@@ -1241,6 +1329,45 @@ mod tests
         assert!(
             !bool::from(structure.valuation_is_feasible()),
             "lowering a constrained value below its demand is caught"
+        );
+    }
+
+    #[test]
+    fn the_feasibility_around_raised_nodes_reads_only_their_constraints()
+    {
+        // Node 2 drops to zero, below the demand of the constraint 1 -> 2 and
+        // clear of the constraint 0 -> 1.
+        let mut structure = admit(&[constraint(0, 1, 2), constraint(1, 2, 3)]);
+        let around = |nodes: &[u32]| -> Vec<(NodeId, Potential)> {
+            nodes
+                .iter()
+                .map(|&index| (node(index), Potential::default()))
+                .collect()
+        };
+        assert!(
+            bool::from(structure.valuation_is_feasible_around(&around(&[0, 1, 2]))),
+            "the structure starts sound around every node"
+        );
+        let index = PotentialMaintenance::index_of(node(2u32)).expect("the node is addressable");
+        *structure
+            .values
+            .get_mut(usize::from(index))
+            .expect("the node has a slot") = Potential::from(0i64);
+        assert!(
+            !bool::from(structure.valuation_is_feasible_around(&around(&[1]))),
+            "the broken constraint is caught from its source"
+        );
+        assert!(
+            bool::from(structure.valuation_is_feasible_around(&around(&[2]))),
+            "a raise cannot break a constraint entering the raised node, so its target reads none"
+        );
+        assert!(
+            bool::from(structure.valuation_is_feasible_around(&around(&[0]))),
+            "an untouched node reads only its own constraints"
+        );
+        assert!(
+            !bool::from(structure.valuation_is_feasible_around(&around(&[9]))),
+            "a node with no maintained slot is refused"
         );
     }
 }

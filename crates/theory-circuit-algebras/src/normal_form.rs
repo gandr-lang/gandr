@@ -158,9 +158,12 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::interface::ComponentIndex;
@@ -327,6 +330,13 @@ impl CanonicalDiagram
     ///   canonicalization must return the same form with the identity
     ///   relabelling on wires and on generators, which is the fixed-point law.
     /// - witness: `normal_form::tests::canonicalization_is_idempotent`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the generators and the interface and reassembles them; the check compares each once"
+        )
+    )]
     #[spec(ensures: |ref result| result.as_ref().is_ok_and(|wiring| wiring.wire_count() == self.wires && wiring.generators() == &*self.generators && wiring.boundary() == &self.boundary))]
     #[inline]
     pub fn to_wiring(&self) -> Result<Wiring, WiringObstruction>
@@ -491,20 +501,28 @@ impl Relabelling
     ///   port on each leg of a generator; a wrong arity and a wrong port on
     ///   each interface leg. The acceptance arm runs on every fixture the
     ///   module canonicalizes, and on every generated diagram and its
-    ///   permutation.
+    ///   permutation. The predicate decides each map's injectivity by the
+    ///   number of distinct images, as the body does by building preimages.
     /// - witness: `normal_form::tests::the_verifier_refuses_a_defective_wire_map`
     /// - witness: `normal_form::tests::the_verifier_refuses_a_defective_generator_map`
     /// - witness: `normal_form::tests::the_verifier_refuses_a_record_that_does_not_correspond`
     /// - witness: `normal_form::tests::the_verifier_refuses_a_boundary_that_does_not_commute`
     /// - witness: `normal_form::tests::canonicalization_is_total_and_its_witness_verifies`
     /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks both maps once, building their preimages, and every generator's ports; the check reads each the same way"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(()) => (source).wire_count() == (form).wire_count() && (source).edge_count() == (form).edge_count()
     && (self).wires.len() == usize::from((source).wire_count()) && (self).generators.len() == (source).generators().len()
-    && (self).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((source).wire_count()) && usize::from(*image) < usize::from((form).wire_count())
-        && (self).wires.range(..*wire).all(|(_, prior)| prior != image))
-    && (self).generators.iter().all(|(edge, image)| usize::from(*edge) < (source).generators().len() && usize::from(*image) < (form).generators().len()
-        && (self).generators.range(..*edge).all(|(_, prior)| prior != image))
+    && (self).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((source).wire_count()) && usize::from(*image) < usize::from((form).wire_count()))
+    && (self).wires.values().collect::<BTreeSet<_>>().len() == (self).wires.len()
+    && (self).generators.iter().all(|(edge, image)| usize::from(*edge) < (source).generators().len() && usize::from(*image) < (form).generators().len())
+    && (self).generators.values().collect::<BTreeSet<_>>().len() == (self).generators.len()
     && (source).generators().iter().enumerate().all(|entry| (self).generators.get(&Edge::from(entry.0)).and_then(|image| (form).generators().get(usize::from(*image))).is_some_and(|found|
         entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
             declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (self).wires.get(wire) == Some(image)))))
@@ -1597,14 +1615,15 @@ impl<'diagram> Linearization<'diagram>
     /// # Adequacy
     /// - hypothesis: L3 — an isolated wire declared on both legs is numbered
     ///   once, and the boundary fixtures pin the first numbers to the input leg
-    ///   and then the output leg.
+    ///   and then the output leg. A call appends at most one wire, numbered by
+    ///   its position, so the predicate checks that wire alone: the numbering
+    ///   of the earlier ones is unchanged.
     /// - witness: `normal_form::tests::an_isolated_wire_is_numbered_from_the_boundary_alone`
     /// - witness: `normal_form::tests::the_boundary_is_numbered_before_the_interior`
     #[spec(captures: [prior = self.wire_image.get(&wire).copied(), count = self.wire_order.len()],
     ensures: |_| self.wire_order.len() == count.saturating_add(usize::from(prior.is_none()))
         && self.wire_image.get(&wire) == Some(&prior.unwrap_or_else(|| Wire::from(count)))
-        && (prior.is_some() || self.wire_order.last() == Some(&wire))
-        && self.wire_order.iter().enumerate().all(|entry| self.wire_image.get(entry.1) == Some(&Wire::from(entry.0))))]
+        && (prior.is_some() || self.wire_order.last() == Some(&wire)))]
     fn assign_wire(
         &mut self,
         wire: Wire,
@@ -1681,11 +1700,13 @@ impl<'diagram> Linearization<'diagram>
     /// - hypothesis: L3 — a spine whose boundary reaches the generator its
     ///   labels sort last separates draining from the boundary from seeding by
     ///   minimization, and the chain and branching fixtures pin the traversal
-    ///   order of their interior generators.
+    ///   order of their interior generators. The wires before the cursor were
+    ///   drained by an earlier call and visits are never undone, so the
+    ///   predicate checks the wires this call drained.
     /// - witness: `normal_form::tests::an_anchored_component_is_ordered_by_the_boundary_and_not_by_its_labels`
     /// - witness: `normal_form::tests::the_boundary_is_numbered_before_the_interior`
-    #[spec(requires: self.cursor <= self.wire_order.len(),
-    ensures: |_| self.cursor == self.wire_order.len() && self.wire_order.iter().all(|wire|
+    #[spec(requires: self.cursor <= self.wire_order.len(), captures: start = Mark::from(self.cursor),
+    ensures: |_| self.cursor == self.wire_order.len() && appended(&self.wire_order, start).iter().all(|wire|
         match self.diagram.producer_of(*wire) { Maybe::Present(edge) => self.edge_image.contains_key(&edge), Maybe::Absent(_) => true }
         && match self.diagram.consumer_of(*wire) { Maybe::Present(edge) => self.edge_image.contains_key(&edge), Maybe::Absent(_) => true }))]
     fn drain(&mut self)
@@ -1753,6 +1774,13 @@ impl<'diagram> Linearization<'diagram>
     /// - witness: `normal_form::tests::the_least_linearization_is_compared_past_its_first_record`
     /// - witness: `normal_form::tests::two_isomorphic_anchorless_components_still_have_one_form`
     /// - witness: `normal_form::tests::record_comparison_resolves_equal_prefixes_by_length`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks both record sequences to the first difference, as the check does"
+        )
+    )]
     #[spec(requires: self.cursor == self.wire_order.len() && other.cursor == other.wire_order.len(),
     ensures: |order| order == self.visited.iter().zip(&other.visited).find_map(|(mine, theirs)| {
         let difference = mine.label().cmp(theirs.label())

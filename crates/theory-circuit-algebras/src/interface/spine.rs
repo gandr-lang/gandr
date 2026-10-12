@@ -55,6 +55,8 @@ use gandr_theory_cell_complexes::MetaVar;
 use gandr_theory_cell_complexes::ProdRef;
 use gandr_theory_cell_complexes::ProdView;
 use gandr_theory_cell_complexes::Sym;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::interface::Generator;
@@ -147,13 +149,12 @@ impl SpineReading
     /// # Adequacy
     /// - hypothesis: L3 — the seam shape's producer and consumer `r` are
     ///   asserted on their two legs, and a name absent from the pattern is
-    ///   absent.
+    ///   absent. A reading is immutable once built, and [`read_spine`] checks
+    ///   there that every port sits on the leg its category names, so the
+    ///   predicate reads the port map alone.
     /// - witness: `interface::spine::tests::a_hole_at_both_polarities_reads_as_one_input_and_one_output`
     #[spec(ensures: |ref result| match *result {
-        Maybe::Present(wire) => self.ports.get(hole) == Some(&wire) && match hole.cat() {
-            Cat::Producer => self.wiring.boundary().inputs().contains(&wire),
-            Cat::Consumer => self.wiring.boundary().outputs().contains(&wire),
-        },
+        Maybe::Present(wire) => self.ports.get(hole) == Some(&wire),
         Maybe::Absent(spine_port::Absent::NotInPattern) => !self.ports.contains_key(hole),
     })]
     #[inline]
@@ -429,8 +430,8 @@ impl Reader
         reader.next == next.saturating_add(nodes.saturating_sub(1))
             && reader.generators.len() == generators.saturating_add(nodes.saturating_sub(holes))
             && reader.inputs.len() == inputs.saturating_add(holes)
-            && reader.generators.iter().skip(generators).all(|generator| generator.label().sort() == GeneratorSort::Value)
-            && reader.inputs.iter().skip(inputs).zip(root.metavars()).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && appended(&reader.generators, Mark::from(generators)).iter().all(|generator| generator.label().sort() == GeneratorSort::Value)
+            && appended(&reader.inputs, Mark::from(inputs)).iter().zip(root.metavars()).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
             && match root.view() {
                 ProdView::Meta(hole) => reader.ports.get(hole) == Some(&out),
                 ProdView::Ctor { ctor, args } => reader.generators.get(generators).is_some_and(|generator|
@@ -513,8 +514,8 @@ fn read_producer(
             && reader.generators.len() == generators.saturating_add(nodes.saturating_sub(holes))
             && reader.inputs.len() == inputs.saturating_add(holes.saturating_sub(consumer_holes))
             && reader.outputs.len() == outputs.saturating_add(consumer_holes)
-            && reader.inputs.iter().skip(inputs).zip(root.metavars().filter(|hole| hole.cat() == Cat::Producer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
-            && reader.outputs.iter().skip(outputs).zip(root.metavars().filter(|hole| hole.cat() == Cat::Consumer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && appended(&reader.inputs, Mark::from(inputs)).iter().zip(root.metavars().filter(|hole| hole.cat() == Cat::Producer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
+            && appended(&reader.outputs, Mark::from(outputs)).iter().zip(root.metavars().filter(|hole| hole.cat() == Cat::Consumer)).all(|(wire, hole)| reader.ports.get(hole) == Some(wire))
             && match root.view() {
                 ConsView::Meta(hole) => reader.ports.get(hole) == Some(&arriving),
                 ConsView::Top => reader.generators.get(generators).is_some_and(|generator| generator.label().sort() == GeneratorSort::Terminal && generator.sources() == [arriving] && generator.targets().is_empty()),

@@ -1421,6 +1421,13 @@ mod tests
     ///   graphs.
     /// - witness: `composition::tests::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
 
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches `edges` for the same edge before it pushes"
+        )
+    )]
     #[spec(ensures: |ret| edges.contains(&edge))]
     fn push_edge(
         edges: &mut Vec<EdgeId>,

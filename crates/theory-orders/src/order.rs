@@ -2033,6 +2033,13 @@ impl<T> OrderMaintenance<T>
     ///   buffer contents are replaced, and a dangling link yields the exact
     ///   refusal.
     /// - witness: `order::tests::window_collection_respects_contiguous_bounds`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check walks the window this call cleared and refilled, a constant number of reads per element the body pushed"
+        )
+    )]
     #[spec(ensures: |ret| ret.map_or_else(
         |error| error == OrderError::Inconsistent,
         |()| window.contains(&anchor)

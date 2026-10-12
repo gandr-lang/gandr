@@ -158,6 +158,13 @@ impl FreeTerm
     /// - witness: `rule::tests::free_variables_are_collected_in_order_with_repeats`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the term's variables once, as the check does"
+        )
+    )]
     #[spec(ensures: |ref vars| vars.iter().eq(self.to_node().vars()))]
     pub fn collect_vars(&self) -> Vec<Name>
     {

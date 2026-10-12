@@ -127,6 +127,13 @@ impl<T> PatternContext<T>
     /// - witness: `typed_rule::tests::signature_context_decodes_field_codes`
     /// - witness: `typed_rule::tests::context_lookup_selects_the_first_duplicate`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the bindings once, as the check does"
+        )
+    )]
     #[spec(ensures: |ref found| match *found {
         | Maybe::Present(ty) => self.vars.iter().find(|binding| binding.0.as_ref() == var.as_ref())
             .is_some_and(|binding| core::ptr::eq(core::ptr::from_ref(ty), &raw const binding.1)),
@@ -193,6 +200,13 @@ impl<T> TypedRuleFace<T>
     /// - witness: `typed_rule::tests::an_empty_face_context_is_total`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the context once per declared variable, as the check does"
+        )
+    )]
     #[spec(ensures: |total| bool::from(total) == self.face.vars.iter().all(|meta| {
         self.context.vars.iter().any(|binding| binding.0 == meta.var)
     }))]

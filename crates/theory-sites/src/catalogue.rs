@@ -179,12 +179,14 @@ impl Catalogue
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a relabelled shape found at its class and a shape
-    ///   past the bound refused.
+    ///   past the bound refused. The builder keys every shape it lists in the
+    ///   class index, one entry each, so the predicate reads absence from that
+    ///   index.
     /// - witness: `tests::maps::the_catalogue_serves_pinned_hom_sets`
     #[inline]
     #[spec(ensures: |ref answer| match *answer {
         Maybe::Present(index) => self.shapes.get(index.0).is_some_and(|found| found.key() == shape.key()),
-        Maybe::Absent(_) => self.shapes.iter().all(|found| found.key() != shape.key()),
+        Maybe::Absent(_) => !self.classes.contains_key(&shape.key()),
     })]
     pub fn find(
         &self,

@@ -563,6 +563,13 @@ impl<N, T> Walk<N, T>
     ///   private malformed representations are not public inputs.
     /// - witness: `tests::walk::query_orientation_filters_direct_rows`
     /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every swing's height up to the first rising one, as the check does"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(equal) => self.swings.iter().find(|swing| swing.nonterminals.len() != 1).map_or_else(|| bool::from(equal), |swing| !bool::from(equal) && swing.nonterminals.len() > 1 && u32::try_from(swing.nonterminals.len()).is_ok()),
         Err(WalkBuildError::ArithmeticOverflow) => self.swings.iter().find(|swing| swing.nonterminals.len() != 1).is_some_and(|swing| u32::try_from(swing.nonterminals.len()).is_err()),
@@ -634,6 +641,13 @@ impl<N, T> Walk<N, T>
     ///   number of allocated swings itself is not materialized.
     /// - witness: `tests::walk::canonical_height_counts_nonzero_swings_only`
     /// - witness: `tests::walk::zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every swing's height once, as the check does"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(height) => self.swings.iter().all(|swing| !swing.nonterminals.is_empty() && u32::try_from(swing.nonterminals.len()).is_ok()) && usize::try_from(u32::from(height)).ok() == Some(self.swings.iter().filter(|swing| swing.nonterminals.len() > 1).count()),
         Err(WalkBuildError::ArithmeticOverflow) => self.swings.iter().any(|swing| u32::try_from(swing.nonterminals.len()).is_err()) || u32::try_from(self.swings.iter().filter(|swing| swing.nonterminals.len() > 1).count()).is_err(),
@@ -709,6 +723,13 @@ impl<N, T> Walk<N, T>
     ///   ends.
     /// - witness: `tests::walk::insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable`
     /// - witness: `walk::tests::append_preserves_parts_and_rejects_the_root`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every swing of both walks once; the check reads each once more"
+        )
+    )]
     #[spec(ensures: |ref result| result.as_ref().map_or_else(
         |error| *error == WalkBuildError::InvalidWalkShape && matches!(*mid, End::Root),
         |walk| matches!(*mid, End::Node(_)) && walk.swings.iter().map(|swing| swing.nonterminals.len()).eq(self.swings.iter().chain(&right.swings).map(|swing| swing.nonterminals.len())) && walk.stances.len() == self.stances.len().saturating_add(1).saturating_add(right.stances.len()),
@@ -1864,6 +1885,13 @@ where
 ///   cardinality without cloning unconstrained elements; arbitrary comparator
 ///   laws and complete membership remain witness boundaries.
 /// - witness: `walk::tests::canonicalization_preserves_distinct_values`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body sorts the values, which costs more than the check's one pass"
+    )
+)]
 #[spec(captures: count = values.len(), ensures: values.len() <= count && values.is_empty() == (count == 0) && values.iter().is_sorted_by(|left, right| left < right))]
 fn canonicalize<T>(values: &mut Vec<T>)
 where
@@ -1975,6 +2003,13 @@ impl<N: Clone, T: Clone> PartialWalk<N, T>
     ///   clone-only bounds; arbitrary payload equality and precondition
     ///   violations are outside its observer.
     /// - witness: `walk::tests::partial_advances_preserve_payload_and_current_state`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clones the whole partial walk; the check reads each swing's length once"
+        )
+    )]
     #[spec(requires: !self.swings.is_empty(), ensures: |ref result| result.as_ref().is_ok_and(|next| match *advance {
         SwingAdvance::Stay => next.stances.len() == self.stances.len() && next.swings.iter().map(|swing| swing.nonterminals.len()).eq(self.swings.iter().map(|swing| swing.nonterminals.len())),
         SwingAdvance::Extend(_) => next.swings.len() == self.swings.len() && next.stances.len() == self.stances.len() && next.swings.iter().zip(&self.swings).enumerate().all(|(index, (after, before))| after.nonterminals.len() == before.nonterminals.len().saturating_add(usize::from(index.saturating_add(1) == self.swings.len()))),

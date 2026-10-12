@@ -319,6 +319,13 @@ impl InterfacePair
     /// - witness: `elaborate::tests::a_target_endpoint_no_wire_supplies_declines`
     /// - witness: `elaborate::tests::instantiation_observes_zero_arity_and_first_occurrence_order`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the decline arm reads the port's own source and target terms, which the rule declaration fixes; the body walks both to find the endpoints"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         | Ok(ref redex) => redex.rewrite == self.rewrite,
         | Err(PortInstantiationError::SourceArity { ref rewrite, expected, supplied }) => rewrite == &self.rewrite && expected != supplied,
@@ -556,6 +563,13 @@ impl WhiskeredCell
     /// - witness: `elaborate::tests::an_identity_composite_has_no_active_position`
     /// - witness: `elaborate::tests::a_redex_at_the_root_needs_no_whisker`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body maps every whisker once, as the check does"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         | Maybe::Absent(_) => matches!(self.active, ActiveCell::Here(_)),
         | Maybe::Present(ref position) => matches!(self.active, ActiveCell::Redex(_))

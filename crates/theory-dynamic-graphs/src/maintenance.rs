@@ -582,6 +582,13 @@ impl AcyclicityMaintenance
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares every admitted edge once, as the check does; this is the whole-graph query the differential reads"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == self.successors.iter().enumerate().all(|(source, row)| u32::try_from(source).is_ok_and(|source| row.iter().all(|&target| self.compare(NodeId::from(source), target) == Ok(Ordering::Less)))))]
     pub fn order_is_topological(&self) -> TopologicalOrderStatus
     {
@@ -593,6 +600,64 @@ impl AcyclicityMaintenance
             let source = NodeId::from(raw);
             for &target in row {
                 if self.compare(source, target) != Ok(Ordering::Less) {
+                    return TopologicalOrderStatus(false);
+                }
+            }
+        }
+        return TopologicalOrderStatus(true);
+    }
+
+    /// Whether every admitted edge touching one of `nodes` runs forward in the
+    /// maintained order: the invariant around the nodes a repair moved.
+    ///
+    /// A relocation moves only the nodes it arranges, so an edge between two
+    /// unmoved nodes keeps its direction; checking the edges of the moved nodes
+    /// re-establishes the whole invariant from the one that held before.
+    ///
+    /// # Specification
+    /// - ensures: positive exactly when every node of `nodes` addresses a
+    ///   maintained slot and every admitted edge with its source or its target
+    ///   among them has its source strictly before its target.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: reads the successor and predecessor rows of `nodes` alone, one
+    ///   order comparison per edge read; the rest of the graph is never read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an order rewritten so one edge runs backwards is
+    ///   caught around its source, through the successor row, and around its
+    ///   target, through the predecessor row, and missed around a node the edge
+    ///   does not touch; reading one row kind only, or the whole graph, changes
+    ///   one of those answers.
+    /// - witness: `maintenance::tests::the_invariant_around_nodes_reads_only_their_edges`
+    #[spec(ensures: |ret| ret.0 == nodes.iter().all(|&node| Self::index_of(node).is_ok_and(|index|
+        self.successors.get(usize::from(index)).is_some_and(|row| row.iter().all(|&target| self.compare(node, target) == Ok(Ordering::Less)))
+        && self.predecessors.get(usize::from(index)).is_some_and(|row| row.iter().all(|&source| self.compare(source, node) == Ok(Ordering::Less))))))]
+    fn order_is_topological_around(
+        &self,
+        nodes: &[NodeId],
+    ) -> TopologicalOrderStatus
+    {
+        for &node in nodes {
+            let Ok(index) = Self::index_of(node)
+            else {
+                return TopologicalOrderStatus(false);
+            };
+            let (Some(outgoing), Some(incoming)) = (
+                self.successors.get(usize::from(index)),
+                self.predecessors.get(usize::from(index)),
+            )
+            else {
+                return TopologicalOrderStatus(false);
+            };
+            for &target in outgoing {
+                if self.compare(node, target) != Ok(Ordering::Less) {
+                    return TopologicalOrderStatus(false);
+                }
+            }
+            for &source in incoming {
+                if self.compare(source, node) != Ok(Ordering::Less) {
                     return TopologicalOrderStatus(false);
                 }
             }
@@ -640,14 +705,21 @@ impl AcyclicityMaintenance
     ///   plus the offered one, and the maintained order stays topological after
     ///   every admission. Boundary: the same edge is `Admitted` when the order
     ///   already witnesses it and `AdmittedAfterRepair` when it does not, and a
-    ///   self loop is `Refused` where a parallel edge is not.
+    ///   self loop is `Refused` where a parallel edge is not. A refusal moves
+    ///   nothing and a repair moves only the nodes it arranges, so the
+    ///   predicate checks the admitted edge or the edges around those nodes;
+    ///   the differential checks the whole order.
     /// - witness: `maintenance::tests::an_edge_the_order_witnesses_is_admitted_without_moving_anything`
     /// - witness: `maintenance::tests::a_violating_edge_is_repaired_locally`
     /// - witness: `maintenance::tests::a_cycle_closing_edge_is_refused_with_its_walk`
     /// - witness: `maintenance::tests::a_self_loop_is_refused`
     /// - witness: `dynamic_graphs::differential::tests::incremental_verdicts_equal_the_batch_answer`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |verdict| match *verdict {
+        EdgeVerdict::Admitted => self.compare(edge.source, edge.target) == Ok(Ordering::Less),
+        EdgeVerdict::AdmittedAfterRepair => bool::from(self.order_is_topological_around(&self.scratch.arrangement)),
+        EdgeVerdict::Refused(_) => true,
+    }))]
     pub fn insert_edge(
         &mut self,
         edge: EdgeId,
@@ -858,10 +930,13 @@ impl AcyclicityMaintenance
     /// # Adequacy
     /// - hypothesis: L2 differential streams and L3 boundaries distinguish
     ///   wrong verdicts, lost edges and invalid maintained state on finite
-    ///   graphs.
+    ///   graphs. The relocation moves only the arranged nodes, which the
+    ///   scratch buffers return holding, so the predicate checks the edges
+    ///   around them.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |discovery| !matches!(*discovery, Discovery::Repaired)
+        || bool::from(self.order_is_topological_around(&self.scratch.arrangement))))]
     fn repair(
         &mut self,
         edge: EdgeId,
@@ -888,10 +963,12 @@ impl AcyclicityMaintenance
     /// # Adequacy
     /// - hypothesis: L2 differential streams and L3 boundaries distinguish
     ///   wrong verdicts, lost edges and invalid maintained state on finite
-    ///   graphs.
+    ///   graphs. The relocation moves only the arranged nodes, so the predicate
+    ///   checks the edges around them.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |discovery| !matches!(*discovery, Discovery::Repaired)
+        || bool::from(self.order_is_topological_around(&scratch.arrangement))))]
     fn search(
         &mut self,
         scratch: &mut Scratch,
@@ -941,7 +1018,17 @@ impl AcyclicityMaintenance
     ///   graphs.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological()))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the check walks the region this call cleared and refilled, one comparison per node the body pushed"
+        )
+    )]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |discovery| match *discovery {
+        ForwardDiscovery::Reached => scratch.forward_region.iter().all(|&node| self.compare(node, edge.source) == Ok(Ordering::Less)),
+        ForwardDiscovery::Cycle(ref witness) => witness.edges.contains(&edge),
+    }))]
     fn search_forward(
         &mut self,
         scratch: &mut Scratch,
@@ -1012,6 +1099,13 @@ impl AcyclicityMaintenance
     ///   graphs.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the check walks the region this call cleared and refilled, one comparison per node the body pushed"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || scratch.backward_region.iter().all(|&node| self.compare(node, edge.target) == Ok(Ordering::Greater)))]
     fn search_backward(
         &mut self,
@@ -1143,6 +1237,13 @@ impl AcyclicityMaintenance
     ///   graphs.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "the check walks the buffer this call cleared and refilled from `region`, one comparison per entry"
+        )
+    )]
     #[spec(ensures: |ret| ret.is_err() || (sorted.len() == region.len() && sorted.windows(2).all(|pair| match *pair { [(_, left), (_, right)] => self.order.cmp(left, right).is_some_and(core::cmp::Ordering::is_le), _ => true })))]
     fn sorted_by_order(
         &self,
@@ -1187,10 +1288,11 @@ impl AcyclicityMaintenance
     /// # Adequacy
     /// - hypothesis: L2 differential streams and L3 boundaries distinguish
     ///   wrong verdicts, lost edges and invalid maintained state on finite
-    ///   graphs.
+    ///   graphs. Only the arranged nodes move, so the predicate checks the
+    ///   edges around them.
     /// - witness: `maintenance::tests::the_maintained_order_is_topological`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological()))]
+    #[spec(ensures: |ret| ret.is_err() || bool::from(self.order_is_topological_around(&scratch.arrangement)))]
     fn relocate(
         &mut self,
         scratch: &mut Scratch,
@@ -1400,6 +1502,35 @@ mod tests
         structure
     }
 
+    /// Moves the head of the maintained order behind its tail, leaving the
+    /// admitted edges alone, and returns the moved node.
+    ///
+    /// # Specification
+    /// trivial.
+    fn displace_head(structure: &mut AcyclicityMaintenance) -> NodeId
+    {
+        let head = structure.order.first().expect("the order is non-empty");
+        let displaced = structure
+            .order
+            .remove(head)
+            .expect("removal succeeds")
+            .expect("the head is removable");
+        let tail = structure
+            .order
+            .last()
+            .expect("the order is still non-empty");
+        let moved = structure
+            .order
+            .insert_after(tail, displaced)
+            .expect("reinsertion succeeds");
+        let index = AcyclicityMaintenance::index_of(displaced).expect("the node is addressable");
+        *structure
+            .positions
+            .get_mut(usize::from(index))
+            .expect("the node has a slot") = moved;
+        displaced
+    }
+
     #[test]
     fn an_edge_the_order_witnesses_is_admitted_without_moving_anything()
     {
@@ -1565,29 +1696,51 @@ mod tests
             "the structure starts sound"
         );
 
-        let head = structure.order.first().expect("the order is non-empty");
-        let displaced = structure
-            .order
-            .remove(head)
-            .expect("removal succeeds")
-            .expect("the head is removable");
-        let tail = structure
-            .order
-            .last()
-            .expect("the order is still non-empty");
-        let moved = structure
-            .order
-            .insert_after(tail, displaced)
-            .expect("reinsertion succeeds");
-        let index = AcyclicityMaintenance::index_of(displaced).expect("the node is addressable");
-        *structure
-            .positions
-            .get_mut(usize::from(index))
-            .expect("the node has a slot") = moved;
-
+        assert_eq!(
+            node(0u32),
+            displace_head(&mut structure),
+            "the source of the first edge moves"
+        );
         assert!(
             !bool::from(structure.order_is_topological()),
             "moving a source behind its target is caught"
+        );
+    }
+
+    #[test]
+    fn the_invariant_around_nodes_reads_only_their_edges()
+    {
+        // Node 0 moves behind node 2, so the edge 0 -> 1 runs backwards and the
+        // edge 1 -> 2 stays forward.
+        let mut structure = admit(&[edge(0u32, 1u32), edge(1u32, 2u32)]);
+        assert!(
+            bool::from(structure.order_is_topological_around(&[
+                node(0u32),
+                node(1u32),
+                node(2u32)
+            ])),
+            "the structure starts sound around every node"
+        );
+        displace_head(&mut structure);
+        assert!(
+            !bool::from(structure.order_is_topological_around(&[node(0u32)])),
+            "the broken edge is caught from its source's successor row"
+        );
+        assert!(
+            !bool::from(structure.order_is_topological_around(&[node(1u32)])),
+            "the broken edge is caught from its target's predecessor row"
+        );
+        assert!(
+            bool::from(structure.order_is_topological_around(&[node(2u32)])),
+            "a node the broken edge does not touch reads only its own edges"
+        );
+        assert!(
+            bool::from(structure.order_is_topological_around(&[])),
+            "no node reads no edge"
+        );
+        assert!(
+            !bool::from(structure.order_is_topological_around(&[node(9u32)])),
+            "a node with no maintained slot is refused"
         );
     }
 

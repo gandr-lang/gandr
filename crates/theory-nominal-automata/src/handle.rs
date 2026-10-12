@@ -367,6 +367,13 @@ impl<A: Copy + Ord> Store<A>
     /// - witness: `tests::handle::injective_partial_store_is_accepted`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the registers once, as the check does"
+        )
+    )]
     #[spec(ensures: |result| (result == Freshness::Fresh) != self.slots.contains(&Some(atom)))]
     pub fn freshness(
         &self,

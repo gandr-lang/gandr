@@ -1216,6 +1216,13 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   another arm or skipping an unbound entry.
     /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
     /// - witness: `tests::template::a_certificate_outside_the_template_is_refused_by_name`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clones the carrier and applies each entry's arm, as the check does; the check scans one entry's arms where the body keys them"
+        )
+    )]
     #[spec(ensures: |output| {
         let expected = self.entries.iter().enumerate().try_fold(
             (self.carrier.overlap.peak.clone(), self.carrier.joins_at.clone()),
@@ -1291,6 +1298,13 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   verdict, omitting reconstruction or accepting a failed leg.
     /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
     /// - witness: `tests::template::a_poisoned_inheritance_entry_is_caught_at_admission`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check matches, instantiates and replays as the body does"
+        )
+    )]
     #[spec(ensures: |output| output == self.peak_substitution(peak)
         .and_then(|substitution| self.instantiate(&substitution))
         .map(|instance| instance.replay(store)))]
@@ -1321,6 +1335,13 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   both member legs with the carrier, rejecting projection of one leg
     ///   only or substitution-dependent family identity.
     /// - witness: `tests::template::a_template_has_one_flow_for_its_family`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check projects the carrier's flow as the body does"
+        )
+    )]
     #[spec(ensures: |output| output == tracelet_flow(&self.carrier, store))]
     #[inline]
     pub fn flow(
@@ -1348,6 +1369,13 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     ///   admitted.
     /// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
     /// - witness: `tests::template::empty_input_and_report_inputs_do_not_rewrite_production_counts`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check admits every family member and sums its paths as the body does"
+        )
+    )]
     #[spec(ensures: |output| (
         output.members, output.plain_size, output.template_size, output.expansion_factor,
         output.triples_checked, output.cache_hits, output.replayed_steps,

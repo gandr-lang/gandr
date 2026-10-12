@@ -139,7 +139,7 @@ impl Subst
     /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
     #[spec(ensures: |output| match output {
-        Maybe::Present(image) => self.prods.iter().any(|(held, value)| held == var && value == image),
+        Maybe::Present(image) => self.prods.get(var).is_some_and(|value| value == image),
         Maybe::Absent(_) => !self.prods.contains_key(var),
     })]
     pub fn get_prod(
@@ -167,7 +167,7 @@ impl Subst
     /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
     #[spec(ensures: |output| match output {
-        Maybe::Present(image) => self.conss.iter().any(|(held, value)| held == var && value == image),
+        Maybe::Present(image) => self.conss.get(var).is_some_and(|value| value == image),
         Maybe::Absent(_) => !self.conss.contains_key(var),
     })]
     pub fn get_cons(
@@ -196,6 +196,13 @@ impl Subst
     /// - witness: `subst::tests::binding_refusals_preserve_both_category_maps`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body filters every binding against `vars`, as the check does"
+        )
+    )]
     #[spec(ensures: |output| output.prods.iter().eq(self.prods.iter().filter(|&(var, _)| vars.contains(var)))
         && output.conss.iter().eq(self.conss.iter().filter(|&(var, _)| vars.contains(var))))]
     pub fn restricted(
@@ -351,6 +358,13 @@ impl Subst
     /// - witness: `tests::subst::every_unifier_equates_its_two_sides`
     /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: each of the body's passes tests every image with `mentions_bound`; the check is one more such pass"
+        )
+    )]
     #[spec(ensures: self.prods.values().all(|image| !self.mentions_bound(image.to_ref().metavars()).0)
         && self.conss.values().all(|image| !self.mentions_bound(image.to_ref().metavars()).0))]
     pub fn resolve(&mut self)
@@ -684,16 +698,26 @@ type Step = Result<(), Refusal>;
 /// - hypothesis: L3 — valid positive cuts with constructor, arity, frame,
 ///   polarity or binding clashes preserve a nonempty substitution despite
 ///   staged bindings; successful matches reproduce their targets. L1 —
-///   generated instances reject skipped matching or commitment.
+///   generated instances reject skipped matching or commitment. The walk writes
+///   `subst` only through the commit after success, which adds keys it lacks,
+///   so on refusal the predicate reads the binding count; the transactional
+///   witness compares whole substitutions.
 /// - witness: `subst::tests::matching_binds_a_ground_configuration`
 /// - witness: `subst::tests::a_polarity_clash_blocks_a_match`
 /// - witness: `tests::subst::every_match_reproduces_its_target`
 /// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
 #[inline]
 #[must_use]
-#[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) {
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "on success the check instantiates `pattern` and compares it with `target`, the walk the match made over both"
+    )
+)]
+#[spec(captures: before = subst.len(), ensures: |output| if bool::from(output) {
     subst.apply_cmd(pattern) == *target
-} else { *subst == before })]
+} else { subst.len() == before })]
 pub fn match_cmd(
     pattern: &CmdPat,
     target: &CmdPat,
@@ -877,6 +901,9 @@ fn match_cons_step<'pattern, 'target>(
 ///   images, clashes and cyclic dereferences. Exact equations and unchanged
 ///   refusal states reject false success, skipped resolution and early
 ///   commitment. L1 — generated successful pairs are equated by their unifier.
+///   The walk writes `subst` only after it succeeds, with keys `subst` lacks,
+///   so on refusal the predicate reads the binding count; the transactional
+///   witness compares whole substitutions.
 /// - witness: `subst::tests::unification_finds_a_most_general_unifier`
 /// - witness: `subst::tests::the_occurs_check_rejects_a_cycle`
 /// - witness: `subst::tests::unification_resolves_triangular_bindings`
@@ -885,9 +912,16 @@ fn match_cons_step<'pattern, 'target>(
 /// - witness: `subst::tests::walks_refuse_cycles_and_occurs_checks`
 #[inline]
 #[must_use]
-#[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) {
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "on success the check instantiates both sides with the images `resolve` has just rewritten in full"
+    )
+)]
+#[spec(captures: before = subst.len(), ensures: |output| if bool::from(output) {
     subst.apply_cmd(a) == subst.apply_cmd(b)
-} else { *subst == before })]
+} else { subst.len() == before })]
 pub fn unify_cmd(
     a: &CmdPat,
     b: &CmdPat,

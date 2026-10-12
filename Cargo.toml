@@ -698,6 +698,20 @@ default-features = false
 path = "crates/theory-orders"
 default-features = false
 
+# Bounded checks a specification clause makes over state a function has
+# accumulated: what a sequence gained since a mark, one push, order around
+# an insertion point.
+# features:
+# - none: core-only checks.
+# consumers:
+# - theory-cell-complexes
+# - theory-circuit-algebras
+# - theory-coherent-resolutions
+# - theory-graphs
+# - theory-levitation
+[workspace.dependencies.gandr-theory-spec-combinators]
+path = "crates/theory-spec-combinators"
+
 # Recent merge-queue test durations: the specification-cost ranking profiles
 # the slowest enforcing tests the stored reports name.
 # consumers:

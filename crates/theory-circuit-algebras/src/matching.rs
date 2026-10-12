@@ -423,6 +423,13 @@ impl Embedding
     /// - witness: `matching::tests::a_certificate_with_a_forged_seam_is_refused`
     /// - witness: `matching::tests::a_certificate_with_an_unearned_warrant_is_refused`
     /// - witness: `matching::tests::a_non_convex_certificate_is_refused_with_the_offending_path`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the image pairwise and sweeps the target for convexity; the check's pairwise and membership reads of the image stay within that"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(warrant) => warrant == self.convexity && self.image.len() == pattern.generators().len()
             && usize::from(self.wires.pair_count()) == usize::from(pattern.wire_count())

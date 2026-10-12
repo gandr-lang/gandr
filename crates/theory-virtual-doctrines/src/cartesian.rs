@@ -70,6 +70,13 @@ impl WCartesianAction
     ///   are refused by the law suite. The predicate observes status coherence
     ///   and nominal-boundary refusal, not the coordinate laws alone.
     /// - witness: `tests::laws::tests::w_cartesian_action_preserves_projections_diagonal_and_structure`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads both boundaries' factor lists through the same `parts` call"
+        )
+    )]
     #[spec(ensures: |out| match out { Ok(witness) | Err(CartesianLawError::Violation(witness)) => bool::from(witness.structure) == (bool::from(witness.projections) && bool::from(witness.diagonal)) && out.is_ok() == bool::from(witness.structure), Err(CartesianLawError::SourceNotProduct) => matches!(self.source.parts(), quenchant_shape::shape::Maybe::Absent(_)), Err(CartesianLawError::TargetNotProduct) => matches!(self.source.parts(), quenchant_shape::shape::Maybe::Present(_)) && matches!(self.target.parts(), quenchant_shape::shape::Maybe::Absent(_)) })]
     pub fn checked_witness(&self) -> Result<CartesianWitness, CartesianLawError>
     {
