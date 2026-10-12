@@ -27,6 +27,7 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_corpus::Surviving;
+use gandr_surface_dispatcher::Spellings;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_syntax::ByteSpan;
@@ -37,7 +38,9 @@ use crate::culprit::Culprit;
 use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
+use crate::locus::Comparison;
 use crate::locus::Label;
+use crate::locus::PrimaryLabel;
 use crate::locus::report_context;
 use crate::style::RenderStyle;
 use crate::style::Rendered;
@@ -187,6 +190,8 @@ pub enum Subject<'step>
         refusal: Refusal<'step>,
         /// The table its core nodes are located through.
         origins: &'step OriginTable,
+        /// The spellings of the types it compares.
+        spellings: &'step Spellings,
     },
     /// A declaration unsettled with no refusal produced.
     Unsettled
@@ -450,9 +455,10 @@ impl<'step> Report<'step>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the label [`Report::render`] writes under the primary locus:
-    ///   what the refused bytes are for a refusal, what the unsettlement rests
-    ///   on for a declaration unsettled with no refusal, the surviving
-    ///   obligations for a goal; absent exactly when [`Report::span`] is.
+    ///   what the refused bytes are for a refusal, with the types a checker
+    ///   refusal compares, what the unsettlement rests on for a declaration
+    ///   unsettled with no refusal, the surviving obligations for a goal;
+    ///   absent exactly when [`Report::span`] is.
     /// - provides: the label a face shows beside the title, for a face that
     ///   does not draw the underline.
     /// - fails: never; an unlocated report is the [`report_span::Absent`]
@@ -461,15 +467,54 @@ impl<'step> Report<'step>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a type mismatch and an unresolved type head, both
-    ///   malformed source, carry different labels; a run refusal carries none.
+    ///   malformed source, carry different labels; a mismatch carries its
+    ///   types; a run refusal carries none.
     /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
-    #[spec(ensures: |ret| matches!((ret, self.span()), (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_))))]
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    #[spec(ensures: |ret| matches!((ret, self.span()), (Maybe::Present(_), Maybe::Present(_)) | (Maybe::Absent(_), Maybe::Absent(_)))
+        && match ret { Maybe::Present(label) => label.comparison == self.comparison(), Maybe::Absent(_) => true })]
     #[inline]
-    pub fn label(&self) -> Maybe<Label, report_span::Absent>
+    pub fn label(&self) -> Maybe<PrimaryLabel<'step>, report_span::Absent>
     {
         match self.annotations().primary {
-            | Maybe::Present(primary) => Maybe::Present(primary.label),
+            | Maybe::Present(primary) => Maybe::Present(PrimaryLabel {
+                label: primary.label,
+                comparison: self.comparison(),
+            }),
             | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The types the report's refusal compares.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a refused declaration compares what [`Comparison::of`] reads
+    ///   for its refusal; every other report compares no types.
+    /// - provides: the expected and found types a face spells beside the
+    ///   primary locus.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type mismatch compares both of its types; a goal
+    ///   compares none.
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    #[spec(ensures: |ret| match self.subject {
+        Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => ret == Comparison::none(),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn comparison(&self) -> Comparison<'step>
+    {
+        match self.subject {
+            | Subject::Refused {
+                refusal, spellings, ..
+            } => Comparison::of(refusal, spellings),
+            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
+                Comparison::none()
+            },
         }
     }
 
@@ -580,7 +625,10 @@ impl<'step> Report<'step>
             self.path.display().to_string()
         };
         let [first, second] = annotations.context;
-        let primary_label = labelled(annotations.primary);
+        let primary_label = match self.label() {
+            | Maybe::Present(label) => label.to_string(),
+            | Maybe::Absent(_) => String::new(),
+        };
         let first_label = labelled(first);
         let second_label = labelled(second);
         let range = |annotation: Annotation| {
@@ -669,6 +717,7 @@ impl<'step> Report<'step>
                 declaration,
                 refusal,
                 origins,
+                ..
             } => Annotations::refusal(refusal, declaration.span(), origins),
             | Subject::Unsettled {
                 declaration,

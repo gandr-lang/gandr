@@ -9,6 +9,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Examples](#examples)
 - [What a report shows](#what-a-report-shows)
 - [The label says what the locus is](#the-label-says-what-the-locus-is)
+- [A label names the types its refusal compares](#a-label-names-the-types-its-refusal-compares)
 - [Native universe-path diagnostics](#native-universe-path-diagnostics)
 - [The one input is the step](#the-one-input-is-the-step)
 - [Every span is the producer's](#every-span-is-the-producers)
@@ -34,7 +35,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 | Entry streams | Declaration order, verb filtering and persistent exhaustion. Witnesses: `diagnostics::diagnostics::each_verb_prints_its_entries`, `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`. |
 | Ledger entries | Borrow the source path and add no framing terminator; literal path controls remain. The verb witness checks prefixes and semantic payloads through real walks. |
 | Classification and loci | Producer classes and origin families remain distinct. Witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`. |
-| Metadata | Refusal identifiers, title payloads and labelled context are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`. |
+| Metadata | Refusal identifiers, title payloads, labelled context and the types a refusal compares are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`, `diagnostics::diagnostics::a_mismatch_label_spells_both_types`. |
 | Rendering | Refusal, unsettled and goal layouts have consumer-visible golden witnesses; pathless sources and duplicate-signature context have location assertions. |
 | Styling | Both terminal capabilities have exact style observations; forced styling preserves plain glyphs after removing backend SGR controls. Witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`. |
 
@@ -87,7 +88,7 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
 1 │ def wrong : Integer ;
   │             ─────── the type it is checked against
 2 │ def wrong = "text" ;
-  │             ━━━━━━ its type does not convert
+  │             ━━━━━━ its type does not convert: expected `Integer`, found `String`
   │
   ╰ note: unsettled `wrong` states checks owing 0
 ```
@@ -96,9 +97,15 @@ The checker's refusals are worded here; the lowering's and the corpus root's use
 
 ## The label says what the locus is
 
-The title names the refusal and the class sorts it, so the primary label spends the underline on the bytes themselves: `not found in this scope` under a name nothing binds, `its type does not convert` under a mismatched term, `missing }` where a closer was never written. `Culprit` holds one label per refusal variant, chosen by an exhaustive match, so a new refusal cannot render until it says what its locus is. `Report::label` exposes the primary label and `Report::note` the declaration note, so a face that lays out its own message — the language server's — composes the same parts the terminal prints.
+The title names the refusal and the class sorts it, so the primary label spends the underline on the bytes themselves: `not found in this scope` under a name nothing binds, `its type does not convert` under a mismatched term, `missing }` where a closer was never written. `Culprit` holds one label per refusal variant, chosen by an exhaustive match, so a new refusal cannot render until it says what its locus is. `Report::label` exposes the primary label as a `PrimaryLabel` and `Report::note` the declaration note, so a face that lays out its own message — the language server's — composes the same parts the terminal prints.
 
 The alternative was the failure class as the label, which repeats what the title already sorted and gives every malformed-source refusal one underline whatever its cause. Reversal: when refusals carry their own per-site labels, the table gives way to them.
+
+## A label names the types its refusal compares
+
+A checker refusal that sets a type against another — a type, sort, level or family-argument mismatch — or meets a type of the wrong shape names those types as nodes, and a type the checker synthesised has no origin to mark. The primary label therefore carries them after its text: ``its type does not convert: expected `Integer`, found `String` ``, ``its type is not of the required shape: found `Integer` ``. The types are the ones the dispatcher spelled at the judgement, through the printer the REPL and the language server's hover share, and `Report::comparison` exposes them as a `Comparison` of an expected and a found side, each absent when the refusal names no type there or none could be spelled on one line. A refusal that compares nothing keeps its label as it was.
+
+The alternatives were a note after the snippet, which the reader meets after the underline it explains, and the types in the title, which the checker's `Display` words without the spellings. Reversal: when nested reasons carry their own types, each reason's label spells its own and the primary label keeps only the failing comparison.
 
 ## Native universe-path diagnostics
 
@@ -108,7 +115,7 @@ A checker `PathCode` refusal retains its code-node locus and malformed-source cl
 
 ## The one input is the step
 
-`entries` reads the whole `Step` under its verb. A declaration and the refusal it produced are one `DeclarationReport`, so every refusal the walk carries reaches the renderer with its declaration; a face reading refusals from a list kept beside the declarations could drop one. The step carries the two things rendering needs and the composition already had: the source's text, borrowed, and the lowering's origin table, moved out of the lowered module once checking is done.
+`entries` reads the whole `Step` under its verb. A declaration and the refusal it produced are one `DeclarationReport`, so every refusal the walk carries reaches the renderer with its declaration; a face reading refusals from a list kept beside the declarations could drop one. The step carries the three things rendering needs and the composition already had: the source's text, borrowed; the lowering's origin table, moved out of the lowered module once checking is done; and the spellings of the types its checker refusals compare, made while the arena was at hand.
 
 Passing text separately while exposing the composed module would split one fact across calls that must agree. The choice reverses if a consumer needs to render a source it never walked; such a consumer needs a constructor taking text and origins together.
 

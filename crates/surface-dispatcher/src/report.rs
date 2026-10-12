@@ -875,6 +875,7 @@ def broken = missing ;"#,
             unstatable: Vec::new(),
             kernel: quenchant_shape::shape::Maybe::Present(kernel),
             origins: module.into_origins(),
+            spellings: crate::spelled::Spellings::default(),
             program,
         };
         let mut engine = RunReport::default();

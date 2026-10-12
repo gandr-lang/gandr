@@ -359,6 +359,48 @@ def wrong = "text" ;
     }
 
     #[test]
+    fn a_mismatch_label_spells_both_types()
+    {
+        let mismatch = SourceText::from(MISMATCH);
+        let shape = SourceText::from("def a : +U (-F Integer) ;\ndef a = thunk { force 1 } ;\n");
+        let head = SourceText::from("def f(xs: List(Integer)) -> -F Integer {\n  ret 1\n}\n");
+        let steps = [mismatch, shape, head]
+            .map(|text| unsettled(Path::new("spelled.gandr"), SourceRoot::Strict, text));
+        let [ref mismatched, ref shaped, ref unresolved] = steps;
+        let only = |step| {
+            let [report] = *reports(step, Verb::Check(Goals::Gated)).as_slice()
+            else {
+                panic!("one refusal, one report");
+            };
+            report
+        };
+        let (mismatch, shape, head) = (only(mismatched), only(shaped), only(unresolved));
+        let labelled = |report: Report<'_>| match report.label() {
+            | Maybe::Present(label) => label.to_string(),
+            | Maybe::Absent(reason) => panic!("a located refusal carries a label: {reason:?}"),
+        };
+        assert_eq!(
+            (mismatch.comparison().expected, mismatch.comparison().found),
+            (Maybe::Present("Integer"), Maybe::Present("String")),
+            "a mismatch expects its signature's type and found its body's"
+        );
+        assert_eq!(
+            labelled(mismatch),
+            "its type does not convert: expected `Integer`, found `String`"
+        );
+        assert_eq!(
+            labelled(shape),
+            "its type is not of the required shape: found `Integer`",
+            "a shape mismatch expects a former, which its title names, and spells what it found"
+        );
+        assert!(
+            !labelled(head).contains(": "),
+            "a refusal that compares no types carries none: {}",
+            labelled(head)
+        );
+    }
+
+    #[test]
     fn refusals_of_one_class_label_what_their_locus_is()
     {
         let mismatch = SourceText::from(MISMATCH);

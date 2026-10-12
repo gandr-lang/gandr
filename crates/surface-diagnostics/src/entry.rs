@@ -21,6 +21,7 @@ use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Shown;
+use gandr_surface_dispatcher::Spellings;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
@@ -141,6 +142,8 @@ enum Cursor<'step>
         declarations: slice::Iter<'step, DeclarationReport<'step>>,
         /// The table their core nodes are located through.
         origins: &'step OriginTable,
+        /// The spellings of the types their checker refusals compare.
+        spellings: &'step Spellings,
     },
     /// The declarations still to visit.
     Declarations
@@ -149,6 +152,8 @@ enum Cursor<'step>
         declarations: slice::Iter<'step, DeclarationReport<'step>>,
         /// The table their core nodes are located through.
         origins: &'step OriginTable,
+        /// The spellings of the types their checker refusals compare.
+        spellings: &'step Spellings,
     },
     /// The refusals of a pending source still to print.
     Unstatable(slice::Iter<'step, LoweringRefusal<'step>>),
@@ -259,12 +264,14 @@ pub fn entries<'step>(
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(refusal), &Cursor::Last(Entry::Report(report))) =>
         core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)) && report.class() == crate::Class::Refusal(refusal.classify()),
-    (Standing::Lowered, &Composed::Settled { ref report, origins: ref expected, .. },
-        &Cursor::Lowered { ref declarations, origins })
+    (Standing::Lowered, &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, .. },
+        &Cursor::Lowered { ref declarations, origins, spellings })
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
-        &Composed::Settled { ref report, origins: ref expected, .. },
-        &Cursor::Declarations { ref declarations, origins }) =>
-        core::ptr::eq(core::ptr::from_ref(declarations.as_slice()), core::ptr::from_ref(report.declarations())) && core::ptr::eq(core::ptr::from_ref(origins), core::ptr::from_ref(expected)),
+        &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, .. },
+        &Cursor::Declarations { ref declarations, origins, spellings }) =>
+        core::ptr::eq(core::ptr::from_ref(declarations.as_slice()), core::ptr::from_ref(report.declarations()))
+            && core::ptr::eq(core::ptr::from_ref(origins), core::ptr::from_ref(expected))
+            && core::ptr::eq(core::ptr::from_ref(spellings), core::ptr::from_ref(spelled)),
     _ => false,
 })]
 fn cursor<'step>(
@@ -300,22 +307,26 @@ fn cursor<'step>(
             &Composed::Settled {
                 ref report,
                 ref origins,
+                ref spellings,
                 ..
             },
         ) => Cursor::Lowered {
             declarations: report.declarations().iter(),
             origins,
+            spellings,
         },
         | (
             Standing::Settled | Standing::Unsettled | Standing::Refused,
             &Composed::Settled {
                 ref report,
                 ref origins,
+                ref spellings,
                 ..
             },
         ) => Cursor::Declarations {
             declarations: report.declarations().iter(),
             origins,
+            spellings,
         },
     }
 }
@@ -325,7 +336,8 @@ impl<'step> Entries<'step>
     /// The entry `declaration` prints, when its verb prints one.
     ///
     /// # Specification
-    /// - requires: the declaration and origins belong to this entry stream.
+    /// - requires: the declaration, origins and spellings belong to this entry
+    ///   stream.
     /// - ensures: counted declarations have no entry; goals are goal reports. A
     ///   shown settled declaration is a fixture ledger entry; an unsettled
     ///   declaration is a refusal report when one was produced, otherwise an
@@ -361,6 +373,7 @@ impl<'step> Entries<'step>
         &self,
         declaration: &'step DeclarationReport<'step>,
         origins: &'step OriginTable,
+        spellings: &'step Spellings,
     ) -> Maybe<Entry<'step>, unshown::Absent>
     {
         let subject = match (shown(declaration, self.verb), declaration.settlement()) {
@@ -377,6 +390,7 @@ impl<'step> Entries<'step>
                     declaration,
                     refusal,
                     origins,
+                    spellings,
                 },
                 | Maybe::Absent(produced_refusal::Absent::Unrefused) => Subject::Unsettled {
                     declaration,
@@ -456,10 +470,12 @@ impl<'step> Iterator for Entries<'step>
             | Cursor::Lowered {
                 declarations,
                 origins,
+                spellings,
             } => {
                 self.cursor = Cursor::Declarations {
                     declarations,
                     origins,
+                    spellings,
                 };
                 Some(Entry::Line(Line {
                     path: self.path,
@@ -479,12 +495,15 @@ impl<'step> Iterator for Entries<'step>
             | Cursor::Declarations {
                 mut declarations,
                 origins,
+                spellings,
             } => {
                 while let Some(declaration) = declarations.next() {
-                    if let Maybe::Present(entry) = self.declaration(declaration, origins) {
+                    if let Maybe::Present(entry) = self.declaration(declaration, origins, spellings)
+                    {
                         self.cursor = Cursor::Declarations {
                             declarations,
                             origins,
+                            spellings,
                         };
                         return Some(entry);
                     }

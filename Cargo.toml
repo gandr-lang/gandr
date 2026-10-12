@@ -477,6 +477,7 @@ path = "crates/surface-parser"
 # The presentation printer: checked core types and normal-form values laid
 # out at a page width through the layout engine.
 # consumers:
+# - surface-dispatcher
 # - surface-lsp
 # - surface-repl
 # - surface-session

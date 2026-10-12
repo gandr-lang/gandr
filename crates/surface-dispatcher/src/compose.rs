@@ -65,6 +65,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::evaluate::Program;
 use crate::exercised::Exercised;
+use crate::spelled::Spellings;
 
 /// How many sources a run has lowered.
 #[repr(transparent)]
@@ -167,6 +168,9 @@ pub enum Composed<'source>
         /// that produced it: the table a checker refusal's node is located
         /// through.
         origins: OriginTable,
+        /// The types the checker refusals compare, spelled while the arena
+        /// was at hand: the table a refusal's types are read from.
+        spellings: Spellings,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -230,6 +234,7 @@ impl Composed<'_>
                 exercised,
                 unstatable,
                 origins,
+                spellings,
                 program,
                 ..
             } => Self::Settled {
@@ -237,6 +242,7 @@ impl Composed<'_>
                 exercised,
                 unstatable,
                 origins,
+                spellings,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -717,10 +723,10 @@ pub fn lower_parsed<'source>(
 ///   report per declared name, the exercised rows its settled declarations
 ///   carry, the refusals of the declarations refused at their own form, which
 ///   no expectation can state, the lowering's origin table, moved rather than
-///   copied, the program, and no kernel artifact yet
-///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
-///   The admission holds the arena the verdicts were judged over, the verdicts
-///   and the module's structured names.
+///   copied, the spellings of the types its checker refusals compare, the
+///   program, and no kernel artifact yet ([`admitted::Absent::Pending`]); a
+///   settle fault is carried in its place. The admission holds the arena the
+///   verdicts were judged over, the verdicts and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -764,11 +770,13 @@ pub fn judge(
         | Ok(report) => {
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = unstatable(&module);
+            let spellings = Spellings::of(&arena, &module, &report);
             Ok(Composed::Settled {
                 report,
                 exercised,
                 unstatable,
                 origins: module.into_origins(),
+                spellings,
                 kernel: Maybe::Absent(admitted::Absent::Pending),
                 program,
             })
@@ -1631,11 +1639,13 @@ def h = 1 ;"#,
             .expect("the verdicts settle");
             let exercised = Exercised::of(&arena, &module, &report);
             let unstatable = super::unstatable(&module);
+            let spellings = super::Spellings::of(&arena, &module, &report);
             let readmitted_first = Composed::Settled {
                 report,
                 exercised,
                 unstatable,
                 origins: module.into_origins(),
+                spellings,
                 kernel: Maybe::Present(kernel),
                 program,
             };

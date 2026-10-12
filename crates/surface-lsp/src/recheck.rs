@@ -728,6 +728,12 @@ mod tests
                 "gandr"
             )
         );
+        assert_eq!(
+            diagnostic.message.lines().nth(1),
+            Some("its type does not convert: expected `Integer`, found `String`"),
+            "the editor's message spells both types under the title: {:?}",
+            diagnostic.message
+        );
         let [ref related] = *diagnostic.related_information.as_slice()
         else {
             panic!("one causal location");

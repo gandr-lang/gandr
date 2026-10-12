@@ -29,6 +29,7 @@ gandr-surface-corpus.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true
