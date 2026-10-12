@@ -236,12 +236,15 @@ Former::Unreadable) | (Some(&Value::Reify(_)), Former::Reify) | (Some(&Value::Li
         | (Some(&ValueType::Stack { input, output }), Former::Stack(a, b)) => a == CoreNode::CompType(input) && b == CoreNode::CompType(output),
         | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
         (Some(&ValueType::Data { .. } | &ValueType::Record(_) | &ValueType::Unknown) | None,
-Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
+Former::Unreadable) |
 (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
+        | (Some(&ValueType::Product(ref parts)), Former::UnitType) => parts.is_empty(),
+        | (Some(&ValueType::Product(ref parts)), Former::Unreadable) => !matches!(parts.len(), 0 | 2),
+        | (Some(&ValueType::Sum(ref parts)), Former::Unreadable) => parts.len() != 2,
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
-        | (Some(&ValueType::Product(first, second)), Former::Product(actual_first, actual_second))
-        | (Some(&ValueType::Sum(first, second)), Former::Sum(actual_first, actual_second)) =>
-            actual_first == CoreNode::ValueType(first) && actual_second == CoreNode::ValueType(second),
+        | (Some(&ValueType::Product(ref parts)), Former::Product(actual_first, actual_second))
+        | (Some(&ValueType::Sum(ref parts)), Former::Sum(actual_first, actual_second)) =>
+            [actual_first, actual_second].into_iter().eq(parts.iter().map(|&part| CoreNode::ValueType(part))),
         | (Some(&ValueType::List(element)), Former::List(actual)) => actual == CoreNode::ValueType(element),
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
@@ -268,6 +271,21 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
             | ValueType::Data { .. } | ValueType::Record(_) | ValueType::Unknown => {
                 Former::Unreadable
             },
+            | ValueType::Product(ref parts) => match **parts {
+                | [] => Former::UnitType,
+                | [first, second] => {
+                    Former::Product(CoreNode::ValueType(first), CoreNode::ValueType(second))
+                },
+                // A product of any other arity has no spelling yet.
+                | _ => Former::Unreadable,
+            },
+            | ValueType::Sum(ref parts) => match **parts {
+                | [first, second] => {
+                    Former::Sum(CoreNode::ValueType(first), CoreNode::ValueType(second))
+                },
+                // A sum of any other arity has no spelling yet.
+                | _ => Former::Unreadable,
+            },
             | ValueType::Stack { input, output } => {
                 Former::Stack(CoreNode::CompType(input), CoreNode::CompType(output))
             },
@@ -275,14 +293,7 @@ Former::Unreadable) | (Some(&ValueType::Unit), Former::UnitType) |
                 Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
             },
             | ValueType::Base(base) => Former::BaseType(base),
-            | ValueType::Unit => Former::UnitType,
             | ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
-            | ValueType::Product(first, second) => {
-                Former::Product(CoreNode::ValueType(first), CoreNode::ValueType(second))
-            },
-            | ValueType::Sum(first, second) => {
-                Former::Sum(CoreNode::ValueType(first), CoreNode::ValueType(second))
-            },
             | ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
             | ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
             | ValueType::Lift { .. } => Former::TypeLift,

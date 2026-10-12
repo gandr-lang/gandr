@@ -26,7 +26,7 @@ mod tests
     {
         let mut core = CoreArena::new();
         let unit = core.value_type_unit();
-        let sum = core.value_type_sum(unit, unit);
+        let sum = core.value_type_sum(&[unit, unit]);
         let hole = HoleId::from(0_u32);
         let scrutinee = core.value_hole(hole);
         let chain = LoweredChain::new();

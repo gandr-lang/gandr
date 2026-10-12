@@ -5582,11 +5582,12 @@ mod tests
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
               ValueType::Stack { .. } => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
-              ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
+              ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
+              ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
               ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
               ValueType::List(inner) | ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
               ValueType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
-              ValueType::Base(_) | ValueType::Unit | ValueType::Universe{..} | ValueType::Abstract(_) | ValueType::Unknown => ret.is_empty(),
+              ValueType::Base(_) | ValueType::Universe{..} | ValueType::Abstract(_) | ValueType::Unknown => ret.is_empty(),
              }),
              Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
               CompType::With(..) => false,
@@ -5740,8 +5741,9 @@ mod tests
                         | ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
-                        | ValueType::Product(first, second)
-                        | ValueType::Sum(first, second)
+                        | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
+                            parts.iter().copied().map(Node::ValueType).collect()
+                        },
                         | ValueType::StaticPi {
                             domain: first,
                             codomain: second,
@@ -5752,7 +5754,6 @@ mod tests
                         },
                         | ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
                         | ValueType::Base(_)
-                        | ValueType::Unit
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
                         | ValueType::Unknown => Vec::new(),
@@ -6060,20 +6061,26 @@ mod tests
                             self.arena.value_type_path_universe(source, target)
                         },
                         | ValueType::Base(base) => self.arena.value_type_base(base),
-                        | ValueType::Unit => self.arena.value_type_unit(),
                         | ValueType::List(inner) => {
                             let inner = value_type(self, inner);
                             self.arena.value_type_list(inner)
                         },
-                        | ValueType::Product(first, second) => {
-                            let (first, second) =
-                                (value_type(self, first), value_type(self, second));
-                            self.arena.value_type_product(first, second)
+                        | ValueType::Product(ref components) => match **components {
+                            | [] => self.arena.value_type_unit(),
+                            | [first, second] => {
+                                let (first, second) =
+                                    (value_type(self, first), value_type(self, second));
+                                self.arena.value_type_product(first, second)
+                            },
+                            | _ => panic!("the kernel's products are nullary or binary"),
                         },
-                        | ValueType::Sum(first, second) => {
-                            let (first, second) =
-                                (value_type(self, first), value_type(self, second));
-                            self.arena.value_type_sum(first, second)
+                        | ValueType::Sum(ref summands) => match **summands {
+                            | [first, second] => {
+                                let (first, second) =
+                                    (value_type(self, first), value_type(self, second));
+                                self.arena.value_type_sum(first, second)
+                            },
+                            | _ => panic!("the kernel's sums are binary"),
                         },
                         | ValueType::Thunk(body) => {
                             let body = comp_type(self, body);
@@ -6556,7 +6563,7 @@ mod tests
     {
         let mut core = CoreArena::new();
         let unit_type = core.value_type_unit();
-        let boolean = core.value_type_sum(unit_type, unit_type);
+        let boolean = core.value_type_sum(&[unit_type, unit_type]);
         let unit = core.value_unit();
         let yes = core.value_injection(gandr_kernel_term::Side::Left, unit);
         let no = core.value_injection(gandr_kernel_term::Side::Right, unit);

@@ -134,11 +134,11 @@ mod static_normalization
                 Some(&Value::Quote(quoted)) => ret.as_slice() == [Position::ValueType(quoted)],
                 _ => ret.is_empty(),
             },
-            Position::ValueType(id) => match core.value_type(id) {
-                Some(&ValueType::Product(first, second)) => ret.as_slice() == [Position::ValueType(first), Position::ValueType(second)],
-                Some(&ValueType::Element { code, .. }) => ret.as_slice() == [Position::Value(code)],
+            Position::ValueType(id) => core.value_type(id).map_or_else(|| ret.is_empty(), |held| match *held {
+                ValueType::Product(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Position::ValueType)),
+                ValueType::Element { code, .. } => ret.as_slice() == [Position::Value(code)],
                 _ => ret.is_empty(),
-            },
+            }),
         }
     )]
     fn children(
@@ -156,8 +156,8 @@ mod static_normalization
                 | _ => Vec::new(),
             },
             | Position::ValueType(id) => match core.value_type(id) {
-                | Some(&ValueType::Product(first, second)) => {
-                    Vec::from([Position::ValueType(first), Position::ValueType(second)])
+                | Some(&ValueType::Product(ref parts)) => {
+                    parts.iter().copied().map(Position::ValueType).collect()
                 },
                 | Some(&ValueType::Element { code, .. }) => Vec::from([Position::Value(code)]),
                 | _ => Vec::new(),
@@ -362,12 +362,16 @@ mod static_normalization
                 },
                 | (Position::ValueType(id), Position::ValueType(child)) => {
                     match *core.value_type(id).expect("an ancestor resolves") {
-                        | ValueType::Product(first, second) => {
+                        | ValueType::Product(ref parts) => {
+                            let [first, second] = **parts
+                            else {
+                                panic!("the fixture's products are binary");
+                            };
                             Position::ValueType(if slot == Slot(0) {
-                                core.value_type_product(child, second)
+                                core.value_type_product(&[child, second])
                             }
                             else {
-                                core.value_type_product(first, child)
+                                core.value_type_product(&[first, child])
                             })
                         },
                         | ref other => panic!("no type child below {other:?}"),
@@ -757,7 +761,7 @@ mod static_normalization
                 | Shape::Product => {
                     let first = core.value_type_element(child(0), Level::zero());
                     let second = core.value_type_element(child(1), Level::zero());
-                    let product = core.value_type_product(first, second);
+                    let product = core.value_type_product(&[first, second]);
                     core.value_quote(product)
                 },
             };
@@ -774,7 +778,7 @@ mod static_normalization
         let pair = ConstantIndex::from(0_usize);
         let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = core.value_type_element(bound, Level::zero());
-        let doubled = core.value_type_product(decoded, decoded);
+        let doubled = core.value_type_product(&[decoded, decoded]);
         let quote = core.value_quote(doubled);
         let body = core.value_static_lambda(quote);
         let integer = core.value_type_base(BaseType::Integer);
@@ -793,8 +797,8 @@ mod static_normalization
         let normal = normal_form(&mut core, &chain, outer);
         let mut ground = CoreArena::new();
         let ground_integer = ground.value_type_base(BaseType::Integer);
-        let square = ground.value_type_product(ground_integer, ground_integer);
-        let fourth = ground.value_type_product(square, square);
+        let square = ground.value_type_product(&[ground_integer, ground_integer]);
+        let fourth = ground.value_type_product(&[square, square]);
         let expected = ground.value_quote(fourth);
         let mut pending = Vec::from([(Position::Value(normal), Position::Value(expected))]);
         while let Some((read, wanted)) = pending.pop() {
@@ -809,9 +813,15 @@ mod static_normalization
                 },
                 | (Position::ValueType(read), Position::ValueType(wanted)) => {
                     match (core.value_type(read), ground.value_type(wanted)) {
-                        | (Some(&ValueType::Product(a, b)), Some(&ValueType::Product(c, d))) => {
-                            pending.push((Position::ValueType(a), Position::ValueType(c)));
-                            pending.push((Position::ValueType(b), Position::ValueType(d)));
+                        | (
+                            Some(&ValueType::Product(ref left)),
+                            Some(&ValueType::Product(ref right)),
+                        ) if left.len() == right.len() => {
+                            pending.extend(
+                                left.iter().zip(right.iter()).map(|(&a, &b)| {
+                                    (Position::ValueType(a), Position::ValueType(b))
+                                }),
+                            );
                         },
                         | (Some(&ValueType::Base(a)), Some(&ValueType::Base(b))) => {
                             assert_eq!(a, b, "every leaf is the instance's ground type");
@@ -859,7 +869,7 @@ mod static_normalization
         let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = core.value_type_element(variable, Level::zero());
         let integer = core.value_type_base(BaseType::Integer);
-        let product = core.value_type_product(decoded, integer);
+        let product = core.value_type_product(&[decoded, integer]);
         let body = core.value_quote(product);
         let operator = core.value_static_lambda(body);
         let identity = core.value_static_lambda(variable);
@@ -875,7 +885,7 @@ mod static_normalization
             first_redex(&core, root, Order::Innermost),
             Some((vec![(Position::Value(root), Slot(1))], variable, argument))
         );
-        let product = core.value_type_product(unit, integer);
+        let product = core.value_type_product(&[unit, integer]);
         let expected = core.value_quote(product);
         for order in [Order::Outermost, Order::Innermost] {
             let actual = reduced(&mut core, root, order);

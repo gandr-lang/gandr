@@ -634,7 +634,8 @@ impl Walker<'_, '_, '_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the kind of `column`'s former; a type no pattern head
-    ///   inhabits is opaque.
+    ///   inhabits, a product of neither zero nor two components and a sum of
+    ///   other than two summands are opaque.
     /// - fails: a dangling type.
     /// - panics: none.
     ///
@@ -656,9 +657,15 @@ impl Walker<'_, '_, '_>
             | None => Err(CoverageFault::Refused(CheckRefusal::DanglingNode {
                 node: CoreNode::Type(TypeNode::Value(column)),
             })),
-            | Some(&ValueType::Unit) => Ok(Kind::Unit),
-            | Some(&ValueType::Product(first, second)) => Ok(Kind::Product(first, second)),
-            | Some(&ValueType::Sum(left, right)) => Ok(Kind::Sum(left, right)),
+            | Some(&ValueType::Product(ref parts)) => match **parts {
+                | [] => Ok(Kind::Unit),
+                | [first, second] => Ok(Kind::Product(first, second)),
+                | _ => Ok(Kind::Opaque),
+            },
+            | Some(&ValueType::Sum(ref parts)) => match **parts {
+                | [left, right] => Ok(Kind::Sum(left, right)),
+                | _ => Ok(Kind::Opaque),
+            },
             | Some(&ValueType::Data { .. }) => Ok(Kind::Data),
             | Some(&ValueType::Base(_)) => Ok(Kind::Literals),
             | Some(&ValueType::Unknown) => Ok(Kind::Unknown),
@@ -1154,7 +1161,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit, unit);
+        let sum = arena.value_type_sum(&[unit, unit]);
         let mut patterns = Patterns::new();
         let wildcard = patterns.mint(Pattern::Wildcard);
         let left = patterns.mint(Pattern::Injection(Side::Left, wildcard));
@@ -1192,7 +1199,7 @@ mod tests
 
         let mut short = CoreArena::new();
         let unit = short.value_type_unit();
-        let sum = short.value_type_sum(unit, unit);
+        let sum = short.value_type_sum(&[unit, unit]);
         let mut context = CheckingContext::new(&mut short, CheckBudget::from(1_usize));
         let sum = crate::formation::FormedValueType::derived(sum);
         assert_eq!(
@@ -1220,8 +1227,8 @@ mod tests
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
-        let sum = arena.value_type_sum(unit, unit);
-        let product = arena.value_type_product(integer, sum);
+        let sum = arena.value_type_sum(&[unit, unit]);
+        let product = arena.value_type_product(&[integer, sum]);
         let mut patterns = Patterns::new();
         let wildcard = patterns.mint(Pattern::Wildcard);
         let zero = patterns.mint(Pattern::Literal(integer_literal()));
@@ -1354,8 +1361,8 @@ mod tests
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(unit, unit);
-        let mixed = arena.value_type_sum(integer, unit);
+        let sum = arena.value_type_sum(&[unit, unit]);
+        let mixed = arena.value_type_sum(&[integer, unit]);
         let mut patterns = Patterns::new();
         let wildcard = patterns.mint(Pattern::Wildcard);
         let left = patterns.mint(Pattern::Injection(Side::Left, wildcard));

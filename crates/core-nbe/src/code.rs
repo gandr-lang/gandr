@@ -1012,7 +1012,6 @@ _ => ret == Ok(Atom::Other(node)),
                     | ValueType::Record(_)
                     | ValueType::Stack { .. }
                     | ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Product(..)
                     | ValueType::Sum(..)
                     | ValueType::List(_)
@@ -1094,6 +1093,8 @@ if a != b || left.len() != right.len() { Ok((Alike::Different,0,0)) }
 else { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.iter().zip(right).map(|(a,b)| (Node::Code(*a,here),Node::Code(*b,there))))); Ok((Alike::Same,left.len(),0)) }
 } else if let ValueType::Record(ref left) = *left && let ValueType::Record(ref right) = *right {
 if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().copied().eq(left.values().zip(right.values()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
+} else if let (&ValueType::Product(ref left), &ValueType::Product(ref right)) | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) = (left, right) {
+if left.len() == right.len() { children_correct = pending.get(entry_nodes..).is_some_and(|added| added.iter().rev().copied().eq(left.iter().zip(right.iter()).map(|(a,b)| (Node::ValueType(*a,here),Node::ValueType(*b,there))))); Ok((Alike::Same,left.len(),0)) } else { Ok((Alike::Different,0,0)) }
 } else { match (left, right) {
                         (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) =>
                             self.atom(Node::Code(a, here)).and_then(|first_left| {
@@ -1103,10 +1104,9 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                                 Ok([(first_left, first_right), (second_left, second_right)])
                             }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 2) }),
                         (&ValueType::Base(a), &ValueType::Base(b)) => Ok((Alike::between(&a, &b), 0, 0)),
-                        (&ValueType::Unit, &ValueType::Unit) => Ok((Alike::Same, 0, 0)),
                         (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
                         (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
-                        (&ValueType::Stack { .. }, &ValueType::Stack { .. }) | (&ValueType::Product(..), &ValueType::Product(..)) | (&ValueType::Sum(..), &ValueType::Sum(..))
+                        (&ValueType::Stack { .. }, &ValueType::Stack { .. })
                         | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. }) => Ok((Alike::Same, 2, 0)),
                         (&ValueType::List(_), &ValueType::List(_)) | (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
                         (&ValueType::Lift { inner, ref target }, &ValueType::Lift { inner: other_inner, target: ref other_target }) => {
@@ -1259,9 +1259,18 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                     {
                         Ok(Alike::between(&a, &b))
                     }
-                    else if (matches!(*matched_left_value, ValueType::Unit)
-                        && matches!(*matched_right_value, ValueType::Unit))
+                    else if let (&ValueType::Product(ref left), &ValueType::Product(ref right))
+                    | (&ValueType::Sum(ref left), &ValueType::Sum(ref right)) =
+                        (matched_left_value, matched_right_value)
                     {
+                        if left.len() != right.len() {
+                            return Ok(Alike::Different);
+                        }
+                        pending.extend(
+                            left.iter().zip(right.iter()).rev().map(|(a, b)| {
+                                (Node::ValueType(*a, here), Node::ValueType(*b, there))
+                            }),
+                        );
                         Ok(Alike::Same)
                     }
                     else if let ValueType::Abstract(a) = *matched_left_value
@@ -1279,24 +1288,6 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                         } = *matched_right_value
                     {
                         Ok(Alike::between(&(sort, level), &(other_sort, other_level)))
-                    }
-                    else if let ValueType::Product(a, b) = *matched_left_value
-                        && let ValueType::Product(c, d) = *matched_right_value
-                    {
-                        {
-                            pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
-                            pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
-                            Ok(Alike::Same)
-                        }
-                    }
-                    else if let ValueType::Sum(a, b) = *matched_left_value
-                        && let ValueType::Sum(c, d) = *matched_right_value
-                    {
-                        {
-                            pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
-                            pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
-                            Ok(Alike::Same)
-                        }
                     }
                     else if let ValueType::StaticPi {
                         domain: a,
@@ -1363,7 +1354,6 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                                 | ValueType::Base(_)
                                 | ValueType::List(_)
                                 | ValueType::Stack { .. }
-                                | ValueType::Unit
                                 | ValueType::Product(..)
                                 | ValueType::Sum(..)
                                 | ValueType::Thunk(_)
@@ -1514,7 +1504,8 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
         Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
         Ok(Atom::Quote(id, _)) => match self.core.value_type(id) {
             None => ret == Err(ConversionFault::MachineInvariant),
-            Some(&(ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_))) => ret == Ok(Rigidity::Rigid),
+            Some(&(ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_))) => ret == Ok(Rigidity::Rigid),
+            Some(held) if matches!(*held, ValueType::Product(ref components) if components.is_empty()) => ret == Ok(Rigidity::Rigid),
             Some(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
         },
         Ok(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
@@ -1931,15 +1922,19 @@ if left.keys().eq(right.keys()) { children_correct = pending.get(entry_nodes..).
                             atoms.push(self.atom(Node::Code(source, place))?);
                             atoms.push(self.atom(Node::Code(target, place))?);
                         },
+                        | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                            types.extend(
+                                components
+                                    .iter()
+                                    .map(|component| Node::ValueType(*component, place)),
+                            );
+                        },
                         | ValueType::Base(_)
-                        | ValueType::Unit
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
                         // An unknown type is what a fill may still decide, so
                         // nothing that holds one is apart from anything.
                         | ValueType::Unknown => return Ok(Rigidity::Flexible),
-                        | ValueType::Product(first, second)
-                        | ValueType::Sum(first, second)
                         | ValueType::StaticPi {
                             domain: first,
                             codomain: second,
@@ -2452,14 +2447,14 @@ mod tests
         let action_quote = core.value_quote_computation(returns);
         let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = core.value_type_element(bound, Level::zero());
-        let squared = core.value_type_product(decoded, decoded);
+        let squared = core.value_type_product(&[decoded, decoded]);
         let squared_quote = core.value_quote(squared);
-        let written = core.value_type_product(integer, integer);
+        let written = core.value_type_product(&[integer, integer]);
         let written_quote = core.value_quote(written);
         let acting = core.comp_type_element(bound, Level::zero());
         let acting_quote = core.value_quote_computation(acting);
         let string = core.value_type_base(BaseType::String);
-        let other = core.value_type_product(integer, string);
+        let other = core.value_type_product(&[integer, string]);
         let other_quote = core.value_quote(other);
 
         let mut domain = DomainArena::new();

@@ -753,7 +753,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer, integer);
+        let product = arena.value_type_product(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let unit = arena.value_unit();
         let pair = arena.value_pair(zero, unit);
@@ -799,7 +799,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer, integer);
+        let product = arena.value_type_product(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let unit = arena.value_unit();
         let pair = arena.value_pair(zero, unit);
@@ -971,10 +971,17 @@ mod tests
         else {
             panic!("a program with an unfilled hole gets a type");
         };
-        let Some(&ValueType::Product(first, second)) =
-            context.arena().value_type(synthesised.produced().id())
+        let Some(held) = context.arena().value_type(synthesised.produced().id())
         else {
             panic!("the pair synthesises a product");
+        };
+        let ValueType::Product(ref parts) = *held
+        else {
+            panic!("the pair synthesises a product");
+        };
+        let [first, second] = **parts
+        else {
+            panic!("the pair's product is binary");
         };
         assert_eq!(
             context.arena().value_type(first),

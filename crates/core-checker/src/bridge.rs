@@ -5345,7 +5345,7 @@ mod tests
 
         let mut arena = CoreArena::new();
         let unit_type = arena.value_type_unit();
-        let boolean = arena.value_type_sum(unit_type, unit_type);
+        let boolean = arena.value_type_sum(&[unit_type, unit_type]);
         let code = arena.value_quote(boolean);
         let path_type = arena.value_type_path_universe(code, code);
         let unit = arena.value_unit();
@@ -5367,7 +5367,7 @@ mod tests
         });
         let path = arena.value_path_equiv(path_type, not, not, evidence);
         let refl = arena.value_path_refl(code);
-        let product_type = arena.value_type_product(boolean, boolean);
+        let product_type = arena.value_type_product(&[boolean, boolean]);
         let product_code = arena.value_quote(product_type);
         let product_path_type = arena.value_type_path_universe(product_code, product_code);
         let product_path = arena.value_path_product(path, refl);
@@ -5556,7 +5556,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(integer, integer);
+        let sum = arena.value_type_sum(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let injection = arena.value_injection(Side::Left, zero);
         let text = arena.value_literal(text_literal());
@@ -5655,7 +5655,7 @@ mod tests
         // def hidden : Integer = mark "" ;           a mark around a bad body
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer, integer);
+        let product = arena.value_type_product(&[integer, integer]);
         let zero = arena.value_literal(integer_literal());
         let text = arena.value_literal(text_literal());
         let hole = HoleId::from(0_u32);
@@ -6131,7 +6131,9 @@ mod tests
     #[spec(ensures: |ret| {
         let Some(&gandr_core_term::Value::StaticLambda(body)) = arena.value(ret) else { return false; };
         let Some(&gandr_core_term::Value::Quote(product)) = arena.value(body) else { return false; };
-        let Some(&ValueType::Product(first,second)) = arena.value_type(product) else { return false; };
+        let Some(held) = arena.value_type(product) else { return false; };
+        let ValueType::Product(ref parts) = *held else { return false; };
+        let [first, second] = **parts else { return false; };
         first == second && matches!(arena.value_type(first), Some(ValueType::Element { code, target })
             if bool::from(target.is_zero()) && matches!(arena.value(*code), Some(gandr_core_term::Value::Variable { zone: Zone::Intuitionistic, index }) if *index == DeBruijnIndex::from(0_u32)))
     })]
@@ -6139,7 +6141,7 @@ mod tests
     {
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = arena.value_type_element(bound, Level::zero());
-        let product = arena.value_type_product(decoded, decoded);
+        let product = arena.value_type_product(&[decoded, decoded]);
         let code = arena.value_quote(product);
         arena.value_static_lambda(code)
     }
@@ -6273,7 +6275,7 @@ mod tests
         let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let first = arena.value_type_element(outer, Level::zero());
         let second = arena.value_type_element(inner, Level::zero());
-        let product = arena.value_type_product(first, second);
+        let product = arena.value_type_product(&[first, second]);
         let code = arena.value_quote(product);
         let inner_lambda = arena.value_static_lambda(code);
         let operator = arena.value_static_lambda(inner_lambda);
@@ -6393,7 +6395,7 @@ mod tests
         let head = arena.value_constant(ConstantIndex::from(0_usize));
         let partial = arena.value_static_application(head, operator);
         let applied = arena.value_static_application(partial, integer_code);
-        let product = arena.value_type_product(integer, integer);
+        let product = arena.value_type_product(&[integer, integer]);
         let written = arena.value_quote(product);
         let (report, readmission) = judge_and_readmit(&mut arena, &[
             declaration(At(0), Maybe::Present(apply_type), Maybe::Present(apply)),
@@ -6523,8 +6525,8 @@ mod tests
         let first = arena.value_type_element(at_integer, Level::zero());
         let second = arena.value_type_element(at_string, Level::zero());
         let repeated = arena.value_type_element(at_again, Level::zero());
-        let both = arena.value_type_product(first, second);
-        let twice = arena.value_type_product(first, repeated);
+        let both = arena.value_type_product(&[first, second]);
+        let twice = arena.value_type_product(&[first, repeated]);
         let both_code = arena.value_quote(both);
         let twice_code = arena.value_quote(twice);
         let (report, readmission) = judge_and_readmit(&mut arena, &[
@@ -6731,7 +6733,7 @@ mod tests
         let bind_tail = arena.comp_type_arrow(continuation, acts_on_result);
         let bind_arrow = arena.comp_type_arrow(suspended_carrier, bind_tail);
         let bind_thunk = arena.value_type_thunk(bind_arrow);
-        let monad_product = arena.value_type_product(unit_thunk, bind_thunk);
+        let monad_product = arena.value_type_product(&[unit_thunk, bind_thunk]);
         let monad_code = arena.value_quote(monad_product);
         let over_result = arena.value_static_lambda(monad_code);
         let over_carrier = arena.value_static_lambda(over_result);
@@ -6739,7 +6741,7 @@ mod tests
 
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded = arena.value_type_element(bound, Level::zero());
-        let squared = arena.value_type_product(decoded, decoded);
+        let squared = arena.value_type_product(&[decoded, decoded]);
         let returns_squared = arena.comp_type_returner(squared);
         let squared_code = arena.value_quote_computation(returns_squared);
         let squaring = arena.value_static_lambda(squared_code);
@@ -6751,7 +6753,7 @@ mod tests
         let at_carrier_code = arena.value_static_application(at_family, carrier_code);
         let witness = arena.value_static_application(at_carrier_code, result_code);
 
-        let pair = arena.value_type_product(integer, integer);
+        let pair = arena.value_type_product(&[integer, integer]);
         let returns_pair = arena.comp_type_returner(pair);
         let unit_spelled = arena.comp_type_arrow(integer, returns_pair);
         let unit_spelled = arena.value_type_thunk(unit_spelled);
@@ -6761,7 +6763,7 @@ mod tests
         let bind_tail_spelled = arena.comp_type_arrow(continuation_spelled, returns_pair);
         let bind_spelled = arena.comp_type_arrow(suspended_pair, bind_tail_spelled);
         let bind_spelled = arena.value_type_thunk(bind_spelled);
-        let elided_product = arena.value_type_product(unit_spelled, bind_spelled);
+        let elided_product = arena.value_type_product(&[unit_spelled, bind_spelled]);
         let elided = arena.value_quote(elided_product);
         let witness_constant = arena.value_constant(ConstantIndex::from(1_usize));
         let decoded_witness = arena.value_type_element(witness_constant, Level::zero());

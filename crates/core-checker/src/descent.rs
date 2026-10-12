@@ -532,14 +532,17 @@ fn walk(
                             .map(|&field| (AnyNode::ValueType(field), depth, results)),
                     );
                 },
-                | Some(
-                    &(ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
-                    | ValueType::StaticPi {
-                        domain: first,
-                        codomain: second,
-                    }),
-                ) => {
+                | Some(&(ValueType::Product(ref parts) | ValueType::Sum(ref parts))) => {
+                    pending.extend(
+                        parts
+                            .iter()
+                            .map(|&part| (AnyNode::ValueType(part), depth, results)),
+                    );
+                },
+                | Some(&ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                }) => {
                     pending.push((AnyNode::ValueType(first), depth, results));
                     pending.push((AnyNode::ValueType(second), depth, results));
                 },
@@ -565,7 +568,6 @@ fn walk(
                 },
                 | Some(
                     &(ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown),

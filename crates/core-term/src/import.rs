@@ -143,7 +143,8 @@ impl Image
             | Self::Computation(Computation::Hole(_))
             | Self::ValueType(
                 ValueType::Base(_)
-                | ValueType::Unit
+                | ValueType::Product(_)
+                | ValueType::Sum(_)
                 | ValueType::Universe { .. }
                 | ValueType::Abstract(_)
                 | ValueType::Unknown,
@@ -271,14 +272,10 @@ impl Image
                 Some(C(on_nil)),
                 Some(C(on_cons)),
             ],
-            | Self::ValueType(
-                ValueType::Product(ref mut first, ref mut second)
-                | ValueType::Sum(ref mut first, ref mut second)
-                | ValueType::StaticPi {
-                    domain: ref mut first,
-                    codomain: ref mut second,
-                },
-            ) => [Some(VT(first)), Some(VT(second)), None, None, None],
+            | Self::ValueType(ValueType::StaticPi {
+                domain: ref mut first,
+                codomain: ref mut second,
+            }) => [Some(VT(first)), Some(VT(second)), None, None, None],
             | Self::CompType(
                 CompType::Arrow {
                     ref mut domain,
@@ -489,6 +486,13 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&ty| Task::Open(Node::ValueType(ty))),
                                 ),
+                                | ValueType::Product(ref components)
+                                | ValueType::Sum(ref components) => self.pending.extend(
+                                    components
+                                        .iter()
+                                        .rev()
+                                        .map(|&ty| Task::Open(Node::ValueType(ty))),
+                                ),
                                 | _ => {},
                             }
                         },
@@ -543,6 +547,14 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                         },
                         | Image::ValueType(ValueType::Record(ref mut fields)) => {
                             for ty in fields.values_mut() {
+                                *ty = map_type(*ty)?;
+                            }
+                        },
+                        | Image::ValueType(
+                            ValueType::Product(ref mut components)
+                            | ValueType::Sum(ref mut components),
+                        ) => {
+                            for ty in components.iter_mut() {
                                 *ty = map_type(*ty)?;
                             }
                         },
@@ -649,7 +661,7 @@ mod tests
             source.value_variable(crate::Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let dependent = source.value_type_element(variable, Level::zero());
         let list = source.value_type_list(dependent);
-        let pair = source.value_type_product(list, list);
+        let pair = source.value_type_product(&[list, list]);
         let mut target = CoreArena::new();
         let unit = target.value_type_unit();
         let _occupied = target.value_quote(unit);
@@ -658,7 +670,7 @@ mod tests
         let list_image = importer.value_type(list).expect("shared child is imported");
         assert_eq!(
             importer.target.value_type(copied),
-            Some(&ValueType::Product(list_image, list_image))
+            Some(&ValueType::Product([list_image, list_image].into()))
         );
         let ValueType::List(element) = *importer.target.value_type(list_image).expect("list")
         else {

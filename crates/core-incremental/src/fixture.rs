@@ -411,8 +411,8 @@ pub fn every_former(noise: Noise) -> Program
     let integer_type = arena.value_type_base(BaseType::Integer);
     let string_type = arena.value_type_base(BaseType::String);
     let numeric_type = arena.value_type_base(BaseType::Numeric);
-    let sum = arena.value_type_sum(string_type, numeric_type);
-    let product = arena.value_type_product(integer_type, sum);
+    let sum = arena.value_type_sum(&[string_type, numeric_type]);
+    let product = arena.value_type_product(&[integer_type, sum]);
     let negative = arena.value_literal(Literal::Integer(IntegerLiteral::new(
         Sign::Negative,
         Magnitude::from_decimal_text(String::from("7")).expect("decimal digits"),
@@ -455,7 +455,7 @@ pub fn every_former(noise: Noise) -> Program
 
     // 3: U (Π (x : 1 + 1). F 1) with a case: the dependent former.
     let unit_type = arena.value_type_unit();
-    let unit_sum = arena.value_type_sum(unit_type, unit_type);
+    let unit_sum = arena.value_type_sum(&[unit_type, unit_type]);
     let unit_returner = arena.comp_type_returner(unit_type);
     let pi = arena.comp_type_pi(unit_sum, unit_returner);
     let pi_type = arena.value_type_thunk(pi);
@@ -670,7 +670,7 @@ pub fn every_former(noise: Noise) -> Program
     let pair = arena.value_pair(unit, unit);
     let transport = arena.computation_transport(path, pair);
     let thunk = arena.value_thunk(transport);
-    let product = arena.value_type_product(unit_type, unit_type);
+    let product = arena.value_type_product(&[unit_type, unit_type]);
     let returned = arena.comp_type_returner(product);
     let suspended = arena.value_type_thunk(returned);
     push(

@@ -730,7 +730,7 @@ mod tests
         assert!(matches!(ended, Ended::Completed));
         let integer = base(BaseType::Integer);
         let string = base(BaseType::String);
-        let unit = spell(&[ContentNode::UnitType], NodeIndex::from(0))
+        let unit = spell(&[ContentNode::Product(Vec::new())], NodeIndex::from(0))
             .expect("the unit type lays out")
             .to_string();
         let expected = [

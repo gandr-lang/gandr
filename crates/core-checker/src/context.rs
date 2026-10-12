@@ -1230,8 +1230,8 @@ mod tests
             let node = context.arena().value_type(declared.id()).cloned();
             assert_eq!(
                 node,
-                Some(base.map_or(
-                    gandr_core_term::ValueType::Unit,
+                Some(base.map_or_else(
+                    gandr_core_term::ValueType::unit,
                     gandr_core_term::ValueType::Base
                 )),
                 "the context mints {atom:?} as the rigid atom of its name"

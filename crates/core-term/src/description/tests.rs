@@ -73,7 +73,7 @@ fn decode_interprets_the_first_order_fragment()
     let types = BTreeMap::new();
     let context = context(carrier, &types);
     let unit = decode(&mut arena, &Code::<()>::unit(), context).unwrap();
-    assert_eq!(arena.value_type(unit), Some(&ValueType::Unit));
+    assert_eq!(arena.value_type(unit), Some(&ValueType::unit()));
     assert_eq!(
         decode(&mut arena, &Code::<()>::var("Self"), context),
         Ok(carrier)
@@ -83,19 +83,35 @@ fn decode_interprets_the_first_order_fragment()
         Code::sum(Code::unit(), Code::var("Self")),
     );
     let result = decode(&mut arena, &code, context).unwrap();
-    let Some(&ValueType::Product(integer, sum)) = arena.value_type(result)
+    let Some(held) = arena.value_type(result)
     else {
-        panic!("product")
+        panic!("product");
+    };
+    let ValueType::Product(ref components) = *held
+    else {
+        panic!("product");
+    };
+    let [integer, sum] = **components
+    else {
+        panic!("a product of two components")
     };
     assert_eq!(
         arena.value_type(integer),
         Some(&ValueType::Base(BaseType::Integer))
     );
-    let Some(&ValueType::Sum(unit, recursive)) = arena.value_type(sum)
+    let Some(held) = arena.value_type(sum)
     else {
-        panic!("sum")
+        panic!("sum");
     };
-    assert_eq!(arena.value_type(unit), Some(&ValueType::Unit));
+    let ValueType::Sum(ref summands) = *held
+    else {
+        panic!("sum");
+    };
+    let [unit, recursive] = **summands
+    else {
+        panic!("a sum of two summands")
+    };
+    assert_eq!(arena.value_type(unit), Some(&ValueType::unit()));
     assert_eq!(recursive, carrier);
 }
 
@@ -151,12 +167,20 @@ fn decode_boolean_retrofits_to_one_plus_one()
         context(carrier, &BTreeMap::new()),
     )
     .unwrap();
-    let Some(&ValueType::Sum(left, right)) = arena.value_type(result)
+    let Some(held) = arena.value_type(result)
     else {
-        panic!("boolean sum")
+        panic!("boolean sum");
     };
-    assert_eq!(arena.value_type(left), Some(&ValueType::Unit));
-    assert_eq!(arena.value_type(right), Some(&ValueType::Unit));
+    let ValueType::Sum(ref summands) = *held
+    else {
+        panic!("boolean sum");
+    };
+    let [left, right] = **summands
+    else {
+        panic!("a sum of two summands")
+    };
+    assert_eq!(arena.value_type(left), Some(&ValueType::unit()));
+    assert_eq!(arena.value_type(right), Some(&ValueType::unit()));
 }
 
 #[test]
@@ -211,11 +235,19 @@ fn decode_desc_is_the_constructor_coproduct()
     let context = context(carrier, &types);
     let maybe = description(vec![Code::unit(), field(PrimTy::Integer)]);
     let result = decode_desc(&mut arena, &maybe, context).unwrap();
-    let Some(&ValueType::Sum(left, right)) = arena.value_type(result)
+    let Some(held) = arena.value_type(result)
     else {
-        panic!("constructor sum")
+        panic!("constructor sum");
     };
-    assert_eq!(arena.value_type(left), Some(&ValueType::Unit));
+    let ValueType::Sum(ref summands) = *held
+    else {
+        panic!("constructor sum");
+    };
+    let [left, right] = **summands
+    else {
+        panic!("a sum of two summands")
+    };
+    assert_eq!(arena.value_type(left), Some(&ValueType::unit()));
     assert_eq!(
         arena.value_type(right),
         Some(&ValueType::Base(BaseType::Integer))

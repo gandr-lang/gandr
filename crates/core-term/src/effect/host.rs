@@ -69,11 +69,11 @@ impl HostSignatures
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
         let strings = arena.value_type_list(string);
-        let args_mode = arena.value_type_product(strings, string);
-        let command = arena.value_type_product(string, args_mode);
-        let error_status = arena.value_type_product(string, integer);
-        let output = arena.value_type_product(string, error_status);
-        let write = arena.value_type_product(string, string);
+        let args_mode = arena.value_type_product(&[strings, string]);
+        let command = arena.value_type_product(&[string, args_mode]);
+        let error_status = arena.value_type_product(&[string, integer]);
+        let output = arena.value_type_product(&[string, error_status]);
+        let write = arena.value_type_product(&[string, string]);
         let stat = error_status;
         let exec = EffectSig::new(EXEC.into(), [EffectOp {
             name: "exec".into(),
@@ -172,11 +172,11 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
         let strings = arena.value_type_list(string);
-        let args_mode = arena.value_type_product(strings, string);
-        let command = arena.value_type_product(string, args_mode);
-        let status = arena.value_type_product(string, integer);
-        let output = arena.value_type_product(string, status);
-        let write = arena.value_type_product(string, string);
+        let args_mode = arena.value_type_product(&[strings, string]);
+        let command = arena.value_type_product(&[string, args_mode]);
+        let status = arena.value_type_product(&[string, integer]);
+        let output = arena.value_type_product(&[string, status]);
+        let write = arena.value_type_product(&[string, string]);
         let expected = [
             (&host.exec, EXEC, alloc::vec![("exec", command, output)]),
             (&host.fs, FS, alloc::vec![

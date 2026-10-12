@@ -1137,68 +1137,74 @@ impl CoreArena
         self.alloc_value_type(ValueType::Base(base))
     }
 
-    /// Mint the unit value type.
+    /// Mint the unit value type, the product of no components.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: appends `Product([])` and returns its fresh id.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the unit is the empty product, not a former of its
+    ///   own, so the two spellings mint equal nodes.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Product(ref components) if components.is_empty())))]
     #[inline]
     pub fn value_type_unit(&mut self) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Unit)
+        self.value_type_product(&[])
     }
 
-    /// Mint a product over two already-allocated value types.
+    /// Mint a product over already-allocated value types, in order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` name value-type nodes already allocated
-    ///   in this arena.
-    /// - ensures: appends the product and returns a fresh id strictly above
-    ///   both children.
+    /// - requires: every component names a value-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the product of `components`, in order, and returns a
+    ///   fresh id strictly above every component.
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
-    ///   injection sides distinguish swapped or dropped children and confused
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three
+    ///   distinguish swapped, dropped or merged components and confused
     ///   formers. Readback observes the minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Product(first, second)))]
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Product(ref minted) if **minted == *components)))]
     #[inline]
     pub fn value_type_product(
         &mut self,
-        first: ValueTypeId,
-        second: ValueTypeId,
+        components: &[ValueTypeId],
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Product(first, second))
+        self.alloc_value_type(ValueType::Product(components.into()))
     }
 
-    /// Mint a sum over two already-allocated value types.
+    /// Mint a sum over already-allocated value types, in order.
     ///
     /// # Specification
-    /// - requires: `first` and `second` name value-type nodes already allocated
-    ///   in this arena.
-    /// - ensures: appends the sum and returns a fresh id strictly above both
-    ///   children.
+    /// - requires: every summand names a value-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the sum of `summands`, in order, and returns a fresh
+    ///   id strictly above every summand.
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct child ids, unequal branch bodies and both
-    ///   injection sides distinguish swapped or dropped children and confused
-    ///   formers. Readback observes the minted node rather than merely its id.
+    /// - hypothesis: L3 — distinct child ids at arities zero, two and three
+    ///   distinguish swapped, dropped or merged summands and confused formers.
+    ///   Readback observes the minted node rather than merely its id.
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
-    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::Sum(first, second)))]
+    #[spec(ensures: |ret| self.value_type(ret).is_some_and(|held| matches!(*held, ValueType::Sum(ref minted) if **minted == *summands)))]
     #[inline]
     pub fn value_type_sum(
         &mut self,
-        first: ValueTypeId,
-        second: ValueTypeId,
+        summands: &[ValueTypeId],
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Sum(first, second))
+        self.alloc_value_type(ValueType::Sum(summands.into()))
     }
 
     /// Mint a thunk type over an already-allocated computation type.
@@ -1998,7 +2004,7 @@ mod tests
         let returned = arena.computation_return(unit);
         let returner = arena.comp_type_returner(unit_type);
         let before = arena.watermark();
-        let product = arena.value_type_product(unit_type, unit_type);
+        let product = arena.value_type_product(&[unit_type, unit_type]);
         let pair = arena.value_pair(unit, unit);
         let bound = arena.computation_bind(returned, returned);
         let thunked = arena.value_type_thunk(returner);
@@ -2176,7 +2182,7 @@ mod tests
         );
         arena.truncate_to(mark);
         assert_eq!(Some(&Value::Unit), arena.value(kept_value));
-        assert_eq!(Some(&ValueType::Unit), arena.value_type(kept_type));
+        assert_eq!(Some(&ValueType::unit()), arena.value_type(kept_type));
         assert_eq!(
             Some(&crate::Computation::Return(kept_value)),
             arena.computation(kept_comp)
@@ -2299,12 +2305,25 @@ mod tests
         }
         let types = [
             (
-                arena.value_type_product(domain, other),
-                ValueType::Product(domain, other),
+                arena.value_type_product(&[domain, other]),
+                ValueType::Product([domain, other].into()),
             ),
             (
-                arena.value_type_sum(domain, other),
-                ValueType::Sum(domain, other),
+                arena.value_type_product(&[other, domain, other]),
+                ValueType::Product([other, domain, other].into()),
+            ),
+            (arena.value_type_unit(), ValueType::unit()),
+            (
+                arena.value_type_sum(&[domain, other]),
+                ValueType::Sum([domain, other].into()),
+            ),
+            (
+                arena.value_type_sum(&[other, other, domain]),
+                ValueType::Sum([other, other, domain].into()),
+            ),
+            (
+                arena.value_type_sum(&[]),
+                ValueType::Sum(alloc::boxed::Box::default()),
             ),
             (arena.value_type_thunk(result), ValueType::Thunk(result)),
             (

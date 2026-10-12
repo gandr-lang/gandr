@@ -16,6 +16,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Native prelude](#native-prelude)
 - [Native runtime assumptions](#native-runtime-assumptions)
 - [Nominal data and structural records](#nominal-data-and-structural-records)
+- [N-ary products and sums](#n-ary-products-and-sums)
 - [Description decoding](#description-decoding)
 - [Native universe paths](#native-universe-paths)
 - [Universe families](#universe-families)
@@ -207,6 +208,14 @@ Record types and values use ordered field maps. Labels identify fields, not offs
 **Choice.** Dedicated native forms rather than abstract atoms or a structural sum/product encoding. Typed code parameters and value indices share term-valued slots; the checker keeps every slot invariant. **Reversal.** Certified definitional index conversion requires its own evidence reader. The current checker/kernel boundary and the named [parity floor](../core-checker/README.md#data-and-record-floor) are recorded together.
 
 A field may name its own declaration's family: the syntax is an ordinary `ValueType::Data` at the declaration's own position, and whether that occurrence is admissible is the checker's question, not the arena's. `Computation::Fixpoint { body, evidence }` is `fix x. M`: its body stands under one intuitionistic binder, the self thunk, so binder rewrites, shifts and substitutions treat it as they treat a lambda. `FixpointEvidence` is the kernel's own, `Partial` or `StructuralDescent`; the arena records the claim and grants nothing, and syntax equality distinguishes the two claims.
+
+## N-ary products and sums
+
+`ValueType::Product` and `ValueType::Sum` hold their components and summands as an ordered list. The unit type is the empty product, `ValueType::unit()`; no separate unit former exists. Syntax equality, rewriting, import and every walk compare and visit the list in order, so a product of three components is a node of its own, not a nest of binary products.
+
+Values and the case eliminator remain binary: a pair inhabits a two-component product and a case splits a two-summand sum. The kernel's products and sums are binary, so the checker's view admits the empty product as the kernel's unit, a two-component product and a two-summand sum, and refuses any other arity at the kernel boundary as `UnadmittedFormer::ProductArity` or `UnadmittedFormer::SumArity`.
+
+**Choice.** One n-ary former per connective, with the unit as its empty instance, rather than a binary former, a separate unit and nesting for wider shapes. Nesting fixes an association the source never wrote and makes the unit a special case of every walk. **Alternatives.** A binary former with a distinct unit, the current kernel shape, which keeps every walk two-child but leaves arity to an encoding; a record-only encoding, which loses the positional reading. **Reversal.** If n-ary values and the n-way case cannot be checked without per-arity rules that nesting avoids, return to binary formers and spell wider shapes by nesting.
 
 ## Description decoding
 

@@ -1311,9 +1311,9 @@ mod tests
         let decode_hole = arena.value_type_element(hole, Level::zero());
         let decode_variable = arena.value_type_element(variable, Level::zero());
         let decode_marked = arena.value_type_element(marked, Level::zero());
-        let known_left = arena.value_type_product(integer, integer);
-        let unknown_left = arena.value_type_product(unknown, integer);
-        let unknown_left_string = arena.value_type_product(unknown, string);
+        let known_left = arena.value_type_product(&[integer, integer]);
+        let unknown_left = arena.value_type_product(&[unknown, integer]);
+        let unknown_left_string = arena.value_type_product(&[unknown, string]);
         let unit_code = arena.value_unit();
         let consistent = [
             Pairing::Values(unknown, integer),
@@ -1421,7 +1421,7 @@ mod tests
         let operator_type = arena.value_type_static_pi(small, small);
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let decoded_bound = arena.value_type_element(bound, Level::zero());
-        let squared = arena.value_type_product(decoded_bound, decoded_bound);
+        let squared = arena.value_type_product(&[decoded_bound, decoded_bound]);
         let squared_code = arena.value_quote(squared);
         let pair_body = arena.value_static_lambda(squared_code);
         let pair = arena.value_constant(ConstantIndex::from(0_usize));
@@ -1429,7 +1429,7 @@ mod tests
         let string_code = arena.value_quote(string);
         let instance = arena.value_static_application(pair, integer_code);
         let decoded_instance = arena.value_type_element(instance, Level::zero());
-        let written = arena.value_type_product(integer, integer);
+        let written = arena.value_type_product(&[integer, integer]);
         let rigid = |arena: &mut CoreArena, head: u32, argument| {
             let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(head));
             let applied = arena.value_static_application(head, argument);

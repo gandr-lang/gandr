@@ -600,6 +600,8 @@ enum ExtraChildren<'arena>
     RecordTypes(
         alloc::collections::btree_map::Values<'arena, gandr_core_term::FieldLabel, ValueTypeId>,
     ),
+    /// Product components or sum summands, in order.
+    Types(core::slice::Iter<'arena, ValueTypeId>),
 }
 
 impl Iterator for ExtraChildren<'_>
@@ -626,6 +628,9 @@ impl Iterator for ExtraChildren<'_>
             | Self::RecordTypes(ref mut values) => values
                 .next()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            | Self::Types(ref mut types) => types
+                .next()
+                .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
         }
     }
 }
@@ -650,6 +655,9 @@ impl DoubleEndedIterator for ExtraChildren<'_>
                 .next_back()
                 .map(|id| (Reached::Term(CoreTerm::Value(*id)), Lowering::NONE)),
             | Self::RecordTypes(ref mut values) => values
+                .next_back()
+                .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
+            | Self::Types(ref mut types) => types
                 .next_back()
                 .map(|id| (Reached::ValueType(*id), Lowering::NONE)),
         }
@@ -955,13 +963,14 @@ Err(_) => false,
                     | ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },
+                    | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
+                        extra = ExtraChildren::Types(components.iter());
+                        [None, None, None, None, None]
+                    },
                     | ValueType::Base(_)
-                    | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown => [None, None, None, None, None],
-                    | ValueType::Product(first, second)
-                    | ValueType::Sum(first, second)
                     | ValueType::StaticPi {
                         domain: first,
                         codomain: second,
@@ -1129,7 +1138,7 @@ mod tests
         let far = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
         let domain = core.value_type_element(far, Level::zero());
         let bound = core.value_type_element(near, Level::zero());
-        let product = core.value_type_product(bound, domain);
+        let product = core.value_type_product(&[bound, domain]);
         let result = core.comp_type_returner(product);
         let arrow = core.comp_type_pi(domain, result);
         let quote = core.value_quote_computation(arrow);

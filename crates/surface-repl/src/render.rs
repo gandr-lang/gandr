@@ -50,7 +50,7 @@ pub const TRANSCRIPT_WIDTH: u32 = 100;
 #[spec(ensures: |ret| match nodes.get(usize::from(root)) {
     None | Some(&ContentNode::Unresolved(_)) => ret.as_ref().is_ok_and(|shown|
         shown.as_ref() == "?" && shown.fidelity() == gandr_surface_pretty::Fidelity::Approximate),
-    Some(&ContentNode::UnitType) => ret.as_ref().is_ok_and(|shown|
+    Some(held) if matches!(*held, ContentNode::Product(ref parts) if parts.is_empty()) => ret.as_ref().is_ok_and(|shown|
         shown.as_ref() == "Unit" && shown.fidelity() == gandr_surface_pretty::Fidelity::Faithful),
     Some(_) => ret.is_err() || ret.as_ref().is_ok_and(|shown| !AsRef::<str>::as_ref(shown).is_empty()),
 })]

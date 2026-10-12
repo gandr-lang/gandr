@@ -982,7 +982,7 @@ impl AtomType
     #[spec(ensures: |ret| match self {
         Self::Integer => arena.value_type(ret) == Some(&ValueType::Base(BaseType::Integer)),
         Self::String => arena.value_type(ret) == Some(&ValueType::Base(BaseType::String)),
-        Self::Unit => arena.value_type(ret) == Some(&ValueType::Unit),
+        Self::Unit => arena.value_type(ret) == Some(&ValueType::unit()),
     })]
     fn mint(
         self,

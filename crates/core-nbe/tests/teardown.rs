@@ -421,7 +421,7 @@ mod teardown
                 }
             }
             matches!(ret.0.value(top), Some(Value::Unit))
-                && matches!(ret.0.value_type(lifted), Some(ValueType::Unit))
+                && ret.0.value_type(lifted).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty()))
         }
     )]
     fn unshared_chain() -> (CoreArena, ValueId, ValueTypeId)

@@ -1845,9 +1845,9 @@ mod tests
         else {
             panic!("native fold");
         };
-        assert_eq!(core.value_type(element), Some(&ValueType::Unit));
+        assert_eq!(core.value_type(element), Some(&ValueType::unit()));
         assert!(
-            matches!(core.value_type(result), Some(&ValueType::List(inner)) if core.value_type(inner) == Some(&ValueType::Unit))
+            matches!(core.value_type(result), Some(&ValueType::List(inner)) if core.value_type(inner) == Some(&ValueType::unit()))
         );
         let &Computation::Return(cell) = core.computation(on_cons).expect("cons branch")
         else {
