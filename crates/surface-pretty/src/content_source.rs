@@ -14,6 +14,8 @@ use gandr_core_incremental::Reference;
 
 use crate::Name;
 use crate::Source;
+use crate::former::Arity;
+use crate::former::Component;
 use crate::former::Former;
 
 /// A checkpoint's content table, read by the presentation printer.
@@ -144,13 +146,9 @@ impl Source for ContentSource<'_>
         (Some(&ContentNode::Returner { result, ref effects }), Former::Returner(actual)) => result == actual && effects.signatures().len() == 0,
         (Some(&ContentNode::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => result == actual && effects.signatures().len() != 0,
         (Some(&ContentNode::Base(a)), Former::BaseType(b)) => a == b,
-        (Some(held), Former::UnitType) => matches!(*held, ContentNode::Product(ref parts) if parts.is_empty()),
-        (Some(&ContentNode::Product(ref parts)), Former::Product(c, d)) | (Some(&ContentNode::Sum(ref parts)), Former::Sum(c, d)) => **parts == [c, d],
-        (Some(held), Former::Unreadable) if matches!(*held, ContentNode::Product(_) | ContentNode::Sum(_)) => match *held {
-            ContentNode::Product(ref parts) => !matches!(parts.len(), 0 | 2),
-            ContentNode::Sum(ref parts) => parts.len() != 2,
-            _ => false,
-        },
+        (Some(&ContentNode::Product(ref parts)), Former::Product(arity)) | (Some(&ContentNode::Sum(ref parts)), Former::Sum(arity)) =>
+            parts.len() != 1 && usize::from(arity) == parts.len(),
+        (Some(&ContentNode::Product(ref parts) | &ContentNode::Sum(ref parts)), Former::Unreadable) => parts.len() == 1,
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
 
@@ -217,17 +215,12 @@ impl Source for ContentSource<'_>
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
             | ContentNode::Base(base) => Former::BaseType(base),
-            | ContentNode::Product(ref parts) => match **parts {
-                | [] => Former::UnitType,
-                | [first, second] => Former::Product(first, second),
-                // A product of any other arity has no spelling yet.
-                | _ => Former::Unreadable,
+            // The 1-ary product and sum have no spelling yet.
+            | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) if parts.len() == 1 => {
+                Former::Unreadable
             },
-            | ContentNode::Sum(ref parts) => match **parts {
-                | [first, second] => Former::Sum(first, second),
-                // A sum of any other arity has no spelling yet.
-                | _ => Former::Unreadable,
-            },
+            | ContentNode::Product(ref parts) => Former::Product(Arity::from(parts.len())),
+            | ContentNode::Sum(ref parts) => Former::Sum(Arity::from(parts.len())),
             | ContentNode::List(element) => Former::List(element),
             | ContentNode::ThunkType(body) => Former::ThunkType(body),
             | ContentNode::Universe { sort, ref level } => Former::Universe { sort, level },
@@ -264,6 +257,40 @@ impl Source for ContentSource<'_>
             | ContentNode::ComputationMark { .. }
             | ContentNode::UnknownType
             | ContentNode::UnknownComputationType => Former::Unreadable,
+        }
+    }
+
+    /// The index of component `index` of the product or the sum at `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the index at `index` among a product's or a sum's components;
+    ///   none past them, for another node, or past the table.
+    /// - provides: the printer's reading of an n-ary product or sum.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the table fixture's products and sums of arity zero,
+    ///   two and three read every component in order and nothing past them; a
+    ///   base type reads none.
+    /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
+    #[spec(ensures: |ret| ret == match self.0.get(usize::from(node)) {
+        | Some(&(ContentNode::Product(ref parts) | ContentNode::Sum(ref parts))) => parts.get(usize::from(index)).copied(),
+        | _ => None,
+    })]
+    #[inline]
+    fn component(
+        &self,
+        node: NodeIndex,
+        index: Component,
+    ) -> Option<NodeIndex>
+    {
+        match *self.0.get(usize::from(node))? {
+            | ContentNode::Product(ref parts) | ContentNode::Sum(ref parts) => {
+                parts.get(usize::from(index)).copied()
+            },
+            | _ => None,
         }
     }
 }
@@ -424,6 +451,39 @@ mod tests
                 ContentNode::Base(BaseType::Integer),
             ]),
             approximate("Path_U(Unit, Integer)".into())
+        );
+        // One 3-ary chain, its nested product parenthesized; the empty sum;
+        // the sum of two units; and the 1-ary product, which has no spelling.
+        assert_eq!(
+            spelled(&[
+                ContentNode::Product(Vec::from([n1, n2, n3])),
+                ContentNode::Base(BaseType::Integer),
+                ContentNode::Product(Vec::from([n1, n1])),
+                ContentNode::Sum(Vec::new()),
+            ]),
+            faithful("Integer * (Integer * Integer) * Void".into())
+        );
+        assert_eq!(
+            spelled(&[
+                ContentNode::Sum(Vec::from([n1, n1])),
+                ContentNode::Product(Vec::new()),
+            ]),
+            faithful("Bool".into())
+        );
+        assert_eq!(
+            spelled(&[
+                ContentNode::Product(Vec::from([n1])),
+                ContentNode::Base(BaseType::Integer),
+            ]),
+            approximate("?".into())
+        );
+        // A component the table does not hold spells `?`.
+        assert_eq!(
+            spelled(&[
+                ContentNode::Sum(Vec::from([n1, n4])),
+                ContentNode::Base(BaseType::Integer),
+            ]),
+            approximate("Integer + ?".into())
         );
     }
 

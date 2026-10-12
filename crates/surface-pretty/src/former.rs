@@ -76,6 +76,68 @@ impl Borrow<str> for Name<'_>
     }
 }
 
+/// How many components a product or a sum has.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Arity(usize);
+
+impl From<usize> for Arity
+{
+    /// The arity of `count` components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: usize) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<Arity> for usize
+{
+    /// The number of components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(arity: Arity) -> Self
+    {
+        arity.0
+    }
+}
+
+/// The position of one component of a product or a sum, counting from zero.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Component(usize);
+
+impl From<usize> for Component
+{
+    /// The component at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<Component> for usize
+{
+    /// The position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(component: Component) -> Self
+    {
+        component.0
+    }
+}
+
 /// One node as the printer reads it: the former, its children as handles of
 /// the same source, and the leaf payloads it carries.
 ///
@@ -124,12 +186,12 @@ pub enum Former<'source, Node>
     PathProduct(Node, Node),
     /// A rigid base type: `Integer`, `String`, or the numeric atom.
     BaseType(BaseType),
-    /// The unit type, `Unit`.
-    UnitType,
-    /// The product `A * B` of two value types.
-    Product(Node, Node),
-    /// The sum `A + B` of two value types.
-    Sum(Node, Node),
+    /// The product of a value type's components, which the source answers by
+    /// [`Source::component`]: `Unit` at arity zero, `A * B * …` from two.
+    Product(Arity),
+    /// The sum of a value type's components, which the source answers by
+    /// [`Source::component`]: `Void` at arity zero, `A + B + …` from two.
+    Sum(Arity),
     /// The suspension `+U C` of a computation type.
     ThunkType(Node),
     /// The universe of one sort at a level.
@@ -261,4 +323,35 @@ pub trait Source
         &self,
         node: Self::Node,
     ) -> Former<'_, Self::Node>;
+
+    /// The handle of component `index` of the product or the sum `node` names.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle and any position are admissible.
+    /// - ensures: the handle of the component at `index` when [`read`] answers
+    ///   a [`Former::Product`] or a [`Former::Sum`] for `node` and `index` is
+    ///   below its arity; none otherwise.
+    /// - provides: the children of an n-ary former, which a [`Former`] counts
+    ///   but does not hold.
+    /// - fails: never; a missing component is an absence, which the printer
+    ///   spells `?`.
+    /// - panics: none.
+    /// - executable: none — as for [`read`], the trait exposes no observer of
+    ///   the stored node independent of its own answers.
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — core-backed and table-backed readers answer the
+    ///   components of products and sums of arity zero, two and three in order,
+    ///   and none past the arity or for another former; a reversed or shifted
+    ///   component changes a golden spelling.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
+    /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
+    fn component(
+        &self,
+        node: Self::Node,
+        index: Component,
+    ) -> Option<Self::Node>;
 }

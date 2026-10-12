@@ -39,6 +39,7 @@ use crate::DEPTH_LIMIT;
 use crate::Fidelity;
 use crate::ValueDepth;
 use crate::error::PresentationError;
+use crate::former::Component;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Source;
@@ -160,9 +161,9 @@ enum Kind
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::UnitType | Former::Product(..)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::Product(_)
         | Former::Stack(..) | Former::List(_)
-        | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
+        | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..)),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_)),
@@ -180,9 +181,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Stack(..)
         | Former::PathUniverse(..)
         | Former::BaseType(_)
-        | Former::UnitType
-        | Former::Product(..)
-        | Former::Sum(..)
+        | Former::Product(_)
+        | Former::Sum(_)
         | Former::List(_)
         | Former::ThunkType(_)
         | Former::Universe { .. }
@@ -316,20 +316,30 @@ enum Children<Node>
     One(Slot<Node>),
     /// Two children, first then second.
     Two(Slot<Node>, Slot<Node>),
+    /// The value-type components of the product or the sum `of` names, which
+    /// the source answers one by one ([`Source::component`]).
+    Components
+    {
+        /// The product or the sum.
+        of: Node,
+        /// How many components it has.
+        arity: Arity,
+    },
 }
 
 /// The children `former` reads, each with what its position admits.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a product's and a sum's operands and a static Pi's domain and
-///   codomain admit value types; a thunk type's body and a quoted computation
-///   type admit computation types; a returner's result, an arrow's and a
-///   dependent arrow's domain and a quoted value type admit value types, the
-///   arrows' codomains computation types; a decode's code, a pair's items, an
-///   injection's body, a static abstraction's body and a static application's
-///   operator and argument admit values; native path endpoints, maps and
-///   component paths admit values; every other former is a leaf.
+/// - ensures: a product's and a sum's components, each a value type, are
+///   answered by the source for `node`; a static Pi's domain and codomain admit
+///   value types; a thunk type's body and a quoted computation type admit
+///   computation types; a returner's result, an arrow's and a dependent arrow's
+///   domain and a quoted value type admit value types, the arrows' codomains
+///   computation types; a decode's code, a pair's items, an injection's body, a
+///   static abstraction's body and a static application's operator and argument
+///   admit values; native path endpoints, maps and component paths admit
+///   values; every other former is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -346,7 +356,9 @@ enum Children<Node>
 #[spec(ensures: |ret| match *former {
     | Former::Stack(..) | Former::With(..) => matches!(ret,
         Children::Two(Slot { admits: Admits::CompType, .. }, Slot { admits: Admits::CompType, .. })),
-    | Former::Product(..) | Former::Sum(..) | Former::StaticPi { .. } => matches!(ret,
+    | Former::Product(arity) | Former::Sum(arity) => matches!(ret,
+        Children::Components { arity: Arity(count), .. } if count == usize::from(arity)),
+    | Former::StaticPi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::ValueType, .. })),
     | Former::Arrow { .. } | Former::Pi { .. } => matches!(ret,
         Children::Two(Slot { admits: Admits::ValueType, .. }, Slot { admits: Admits::CompType, .. })),
@@ -360,7 +372,10 @@ enum Children<Node>
         Children::One(Slot { admits: Admits::Value, .. })),
     | _ => matches!(ret, Children::None),
 })]
-fn children<Node>(former: &Former<'_, Node>) -> Children<Node>
+fn children<Node>(
+    node: Node,
+    former: &Former<'_, Node>,
+) -> Children<Node>
 where
     Node: Copy,
 {
@@ -370,8 +385,10 @@ where
             slot(first, Admits::CompType),
             slot(second, Admits::CompType),
         ),
-        | Former::Product(first, second)
-        | Former::Sum(first, second)
+        | Former::Product(arity) | Former::Sum(arity) => Children::Components {
+            of: node,
+            arity: Arity(usize::from(arity)),
+        },
         | Former::StaticPi {
             domain: first,
             codomain: second,
@@ -404,7 +421,6 @@ where
         | Former::Injection(_, child)
         | Former::StaticLambda(child) => Children::One(slot(child, Admits::Value)),
         | Former::BaseType(_)
-        | Former::UnitType
         | Former::Universe { .. }
         | Former::TypeLift
         | Former::Abstract(_)
@@ -494,7 +510,8 @@ enum Prefix
     Returner,
 }
 
-/// The two infix value-type formers, both right-associative.
+/// The two infix value-type formers, each written as one chain of its
+/// components.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Infix
 {
@@ -550,24 +567,27 @@ impl Infix
         }
     }
 
-    /// The loosest left operand that stands bare.
+    /// The loosest component that stands bare.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one step tighter than the former itself, so a left operand of
-    ///   the same former is parenthesized.
-    /// - provides: the left half of right association.
+    /// - ensures: one step tighter than the former itself, so a component of
+    ///   the same former, on either side, is parenthesized.
+    /// - provides: a chain is one n-ary former, so a written nesting is real
+    ///   nesting and keeps its parentheses.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — left- and right-nested product and sum fixtures
-    ///   distinguish a missing left parenthesis and lost right association.
+    /// - hypothesis: L3 — left- and right-nested product and sum fixtures and a
+    ///   3-ary chain distinguish a missing parenthesis on either side from one
+    ///   around a tighter component.
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::n_ary_products_and_sums_spell_as_one_chain`
     #[spec(ensures: |ret| matches!((self, ret),
         (Self::Product, Binding::Prefix) | (Self::Sum, Binding::Product)
     ))]
-    const fn left(self) -> Binding
+    const fn operand(self) -> Binding
     {
         match self {
             | Self::Product => Binding::Prefix,
@@ -610,8 +630,8 @@ enum Join
     Prefix(Prefix),
     /// A returner prefixed by the rendered effect names.
     EffectReturner(DocId),
-    /// An infix former over two operands.
-    Infix(Infix),
+    /// An infix former over this many components, written as one chain.
+    Infix(Infix, Arity),
     /// An arrow over its domain and codomain.
     Arrow,
     /// A dependent arrow over its domain and codomain, its binder named by the
@@ -646,6 +666,8 @@ enum Task<Node>
     Bind,
     /// Close that binder.
     Unbind,
+    /// Spell a component the source did not answer, as `?`.
+    Missing,
     /// Combine finished pieces.
     Join(Join),
 }
@@ -856,8 +878,18 @@ where
             let _fresh = names.insert(name);
         }
         let below = below(depth, kind);
-        match children(&former) {
+        match children(node, &former) {
             | Children::None => {},
+            | Children::Components {
+                of,
+                arity: Arity(count),
+            } => {
+                for index in (0_usize .. count).rev() {
+                    if let Some(component) = source.component(of, Component::from(index)) {
+                        pending.push((component, Admits::ValueType, below));
+                    }
+                }
+            },
             | Children::One(only) => pending.push((only.node, only.admits, below)),
             | Children::Two(first, second) => {
                 pending.push((second.node, second.admits, below));
@@ -1391,16 +1423,18 @@ impl Walk<'_, '_, '_>
     ///
     /// # Specification
     /// - requires: `tasks` is the walk's stack, and `former` is what `source`
-    ///   reads at the node.
+    ///   reads at `node`.
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
     ///   sort its position does not admit, an unreadable node and a former
     ///   without a surface spelling finish as `?`; a thunk finishes as
-    ///   `<thunk>`; a leaf former finishes as its spelling; a composite former
-    ///   pushes its join below its children's visits, a dependent arrow's
-    ///   codomain and a static abstraction's body between the opening and the
-    ///   closing of its binder; a static application schedules its spine as
-    ///   [`Self::spine`] does; a decode and a quote push their child's visit
-    ///   alone, so the child's piece is theirs.
+    ///   `<thunk>`; a leaf former finishes as its spelling, the 0-ary product
+    ///   as `Unit`, the 0-ary sum as `Void` and the sum of two 0-ary products
+    ///   as `Bool`; a composite former pushes its join below its children's
+    ///   visits, a dependent arrow's codomain and a static abstraction's body
+    ///   between the opening and the closing of its binder; a static
+    ///   application schedules its spine as [`Self::spine`] does; a decode and
+    ///   a quote push their child's visit alone, so the child's piece is
+    ///   theirs.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -1432,6 +1466,7 @@ impl Walk<'_, '_, '_>
     fn visit<S>(
         &mut self,
         source: &S,
+        node: S::Node,
         former: Former<'_, S::Node>,
         admits: Admits,
         depth: ValueDepth,
@@ -1449,7 +1484,24 @@ impl Walk<'_, '_, '_>
         let join = match former {
             | Former::BaseType(BaseType::Integer) => return self.atom(Glyphs("Integer")),
             | Former::BaseType(BaseType::String) => return self.atom(Glyphs("String")),
-            | Former::UnitType => return self.atom(Glyphs("Unit")),
+            | Former::Product(arity) if usize::from(arity) == 0 => {
+                return self.atom(Glyphs("Unit"));
+            },
+            | Former::Sum(arity) if usize::from(arity) == 0 => return self.atom(Glyphs("Void")),
+            // `Bool` is the sum of two units, a fixed name as the lowering
+            // reads it.
+            | Former::Sum(arity)
+                if usize::from(arity) == 2
+                    && [0_usize, 1_usize].into_iter().all(|index| {
+                        source
+                            .component(node, Component::from(index))
+                            .is_some_and(|part| {
+                                matches!(source.read(part), Former::Product(inner) if usize::from(inner) == 0)
+                            })
+                    }) =>
+            {
+                return self.atom(Glyphs("Bool"));
+            },
             | Former::Unit => return self.atom(Glyphs("unit")),
             | Former::ListNil => return self.approximate(Glyphs("nil")),
             | Former::Abstract(name) | Former::Constant(name) => return self.name(name),
@@ -1504,8 +1556,8 @@ impl Walk<'_, '_, '_>
                 self.fidelity = Fidelity::Approximate;
                 Some(Join::Bracket(Bracket::PathProduct))
             },
-            | Former::Product(..) => Some(Join::Infix(Infix::Product)),
-            | Former::Sum(..) => Some(Join::Infix(Infix::Sum)),
+            | Former::Product(arity) => Some(Join::Infix(Infix::Product, Arity(usize::from(arity)))),
+            | Former::Sum(arity) => Some(Join::Infix(Infix::Sum, Arity(usize::from(arity)))),
             | Former::List(_) => Some(Join::Prefix(Prefix::List)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
@@ -1544,8 +1596,23 @@ impl Walk<'_, '_, '_>
             depth: below,
         };
         let binds_last = matches!(join, Some(Join::Pi | Join::StaticLambda));
-        match children(&former) {
+        match children(node, &former) {
             | Children::None => {},
+            | Children::Components {
+                of,
+                arity: Arity(count),
+            } => {
+                for index in (0_usize .. count).rev() {
+                    tasks.push(source.component(of, Component::from(index)).map_or(
+                        Task::Missing,
+                        |component| Task::Visit {
+                            node: component,
+                            admits: Admits::ValueType,
+                            depth: below,
+                        },
+                    ));
+                }
+            },
             | Children::One(only) => {
                 if binds_last {
                     tasks.push(Task::Unbind);
@@ -1696,15 +1763,15 @@ impl Walk<'_, '_, '_>
     /// - requires: available operands are the top finished pieces in operand
     ///   order, last on top; application arity comes from a bounded spine.
     /// - ensures: `+U C` and `-F A` with the operand parenthesized unless it is
-    ///   an atom; `A * B` and `A + B`, right-associative, the left operand
-    ///   parenthesized when it binds as loosely as the former, the right when
-    ///   it binds looser, a break after the symbol; `A -> C` with the domain
-    ///   bare up to a sum and the codomain bare, a break after the arrow; `(x :
-    ///   A) -> C` naming the binder by the binders open outside it, a break
-    ///   after the arrow; `\a. v` naming its binder so, a break after the dot;
-    ///   `f(a1, …, an)` with the operator parenthesized unless it is an atom;
-    ///   `(a, b)`, `Inl(v)` and `Inr(v)`; every list with a break after each
-    ///   comma and before the closer.
+    ///   an atom; `A * B * …` and `A + B + …` as one chain of the components,
+    ///   each parenthesized when it binds as loosely as the former, a break
+    ///   after each symbol; `A -> C` with the domain bare up to a sum and the
+    ///   codomain bare, a break after the arrow; `(x : A) -> C` naming the
+    ///   binder by the binders open outside it, a break after the arrow; `\a.
+    ///   v` naming its binder so, a break after the dot; `f(a1, …, an)` with
+    ///   the operator parenthesized unless it is an atom; `(a, b)`, `Inl(v)`
+    ///   and `Inr(v)`; every list with a break after each comma and before the
+    ///   closer.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -1730,15 +1797,16 @@ impl Walk<'_, '_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Bracket(Bracket::Left | Bracket::Right | Bracket::PathRefl) => Some(1_usize),
-            Join::Infix(_) | Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::Pair | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
+            Join::Infix(_, Arity(components)) => Some(components),
+            Join::Arrow | Join::Pi | Join::Bracket(Bracket::Stack | Bracket::With | Bracket::ListCons | Bracket::Pair | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct) => Some(2_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
                     Join::Prefix(_) | Join::EffectReturner(_) => Binding::Prefix,
-                    Join::Infix(Infix::Product) => Binding::Product,
-                    Join::Infix(Infix::Sum) => Binding::Sum,
+                    Join::Infix(Infix::Product, _) => Binding::Product,
+                    Join::Infix(Infix::Sum, _) => Binding::Sum,
                     Join::Arrow | Join::Pi | Join::StaticLambda => Binding::Arrow,
                     Join::Apply(_) | Join::Bracket(_) => Binding::Atom,
                 }),
@@ -1767,15 +1835,25 @@ impl Walk<'_, '_, '_>
                 })?;
                 (self.builder.concat(head, operand)?, Binding::Prefix)
             },
-            | Join::Infix(infix) => {
-                let right = self.pop()?;
-                let left = self.pop()?;
-                let left = self.bare_up_to(left, infix.left())?;
-                let right = self.bare_up_to(right, infix.binding())?;
-                let symbol = self.leaf(infix.glyphs())?;
-                let head = self.builder.concat(left, symbol)?;
-                let head = self.space_or_break(head)?;
-                (self.builder.concat(head, right)?, infix.binding())
+            | Join::Infix(infix, Arity(count)) => {
+                let mut components = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    components.push(self.pop()?);
+                }
+                let mut chain = None;
+                for component in components.into_iter().rev() {
+                    let component = self.bare_up_to(component, infix.operand())?;
+                    chain = Some(match chain {
+                        | None => component,
+                        | Some(head) => {
+                            let symbol = self.leaf(infix.glyphs())?;
+                            let head = self.builder.concat(head, symbol)?;
+                            let head = self.space_or_break(head)?;
+                            self.builder.concat(head, component)?
+                        },
+                    });
+                }
+                (chain.ok_or(PresentationError::Unbalanced)?, infix.binding())
             },
             | Join::Arrow => {
                 let codomain = self.pop()?;
@@ -1959,10 +2037,11 @@ where
                     return Ok(Walked::OverBudget);
                 };
                 remaining = left;
-                walk.visit(source, source.read(node), admits, depth, &mut tasks)?;
+                walk.visit(source, node, source.read(node), admits, depth, &mut tasks)?;
             },
             | Task::Bind => walk.open = OpenBinders(walk.open.0.saturating_add(1_usize)),
             | Task::Unbind => walk.open = OpenBinders(walk.open.0.saturating_sub(1_usize)),
+            | Task::Missing => walk.approximate(Glyphs("?"))?,
             | Task::Join(join) => walk.join(join)?,
         }
     }
@@ -1984,6 +2063,7 @@ mod tests
     use anodized::spec;
     use gandr_surface_layout::units::PageWidth;
 
+    use super::Component;
     use super::Fidelity;
     use super::Former;
     use super::Source;
@@ -2026,7 +2106,8 @@ mod tests
         #[spec(
             captures: [entry = self.reads.get()],
             ensures: |ret| self.reads.get() == entry.saturating_add(1_u32)
-                && matches!(ret, Former::UnitType | Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable),
+                && (matches!(ret, Former::Product(arity) if usize::from(arity) == 0)
+                    || matches!(ret, Former::ThunkType(_) | Former::Returner(_) | Former::Unreadable)),
         )]
         fn read(
             &self,
@@ -2036,7 +2117,7 @@ mod tests
             let entry = self.reads.get();
             self.reads.set(entry.saturating_add(1_u32));
             if entry == 0_u32 {
-                Former::UnitType
+                Former::Product(crate::former::Arity::from(0_usize))
             }
             else if entry >= VISIT_BUDGET.saturating_add(4_u32) {
                 Former::Unreadable
@@ -2047,6 +2128,19 @@ mod tests
             else {
                 Former::Returner(ChangingNode)
             }
+        }
+
+        /// No component: the fixture's only n-ary reading is the unit.
+        ///
+        /// # Specification
+        /// trivial.
+        fn component(
+            &self,
+            _node: ChangingNode,
+            _index: Component,
+        ) -> Option<ChangingNode>
+        {
+            None
         }
     }
 

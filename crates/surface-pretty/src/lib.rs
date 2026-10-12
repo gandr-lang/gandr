@@ -66,6 +66,8 @@ pub use crate::content_source::ContentSource;
 pub use crate::core_source::CoreNode;
 pub use crate::core_source::CoreSource;
 pub use crate::error::PresentationError;
+pub use crate::former::Arity;
+pub use crate::former::Component;
 pub use crate::former::Former;
 pub use crate::former::Name;
 pub use crate::former::Source;
