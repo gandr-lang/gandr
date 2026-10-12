@@ -15,6 +15,10 @@ publish.workspace = true
 name = "spec-cost"
 path = "src/main.rs"
 
+[[bin]]
+name = "spec-cost-ratio"
+path = "src/bin/spec-cost-ratio.rs"
+
 # The pinned anodized facade supplies the specification attribute; the shape
 # crate the `Maybe` a lookup outside every specification returns.
 [dependencies]

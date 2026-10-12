@@ -57,6 +57,19 @@ pub enum CostError
         /// The argument.
         text: String,
     },
+    /// A `--threshold` argument is not a ratio written with at most two
+    /// decimals.
+    Factor
+    {
+        /// The argument.
+        text: String,
+    },
+    /// A `--floor` argument is not a non-negative number of seconds.
+    Seconds
+    {
+        /// The argument.
+        text: String,
+    },
     /// No stored run names an enforcing test to profile.
     NoWorkloads
     {
@@ -126,6 +139,12 @@ impl fmt::Display for CostError
                     f,
                     "`{text}` is not a test binary and a test separated by a space"
                 )
+            },
+            | Self::Factor { ref text } => {
+                write!(f, "`{text}` is not a ratio with at most two decimals")
+            },
+            | Self::Seconds { ref text } => {
+                write!(f, "`{text}` is not a non-negative number of seconds")
             },
             | Self::NoWorkloads { ref dir } => write!(
                 f,
@@ -209,6 +228,16 @@ mod tests
                     text: "slow::t".into(),
                 },
                 "`slow::t` is not a test binary and a test separated by a space",
+            ),
+            (
+                CostError::Factor {
+                    text: "2.505".into(),
+                },
+                "`2.505` is not a ratio with at most two decimals",
+            ),
+            (
+                CostError::Seconds { text: "-1".into() },
+                "`-1` is not a non-negative number of seconds",
             ),
             (
                 CostError::NoWorkloads {

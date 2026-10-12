@@ -230,6 +230,19 @@ impl FromStr for RankLimit
     }
 }
 
+impl From<RankLimit> for usize
+{
+    /// The count the limit carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(limit: RankLimit) -> Self
+    {
+        limit.0.get()
+    }
+}
+
 /// One profiled test's samples.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct TestTally

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="7" skipped="0" failures="0" errors="0" uuid="1b244169-7540-4e38-92e8-9a19c7d94c46" timestamp="2026-10-12T16:41:38.840-06:00" time="3.232">
+    <testsuite name="gandr-core-incremental::tests" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="incremental::incremental_equals_from_scratch" classname="gandr-core-incremental::tests" timestamp="2026-10-12T16:41:38.845-06:00" time="0.025"/>
+    </testsuite>
+    <testsuite name="gandr-core-nbe::teardown" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="teardown::a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack" classname="gandr-core-nbe::teardown" timestamp="2026-10-12T16:41:39.025-06:00" time="0.980"/>
+    </testsuite>
+    <testsuite name="gandr-lang::cli" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="cli::lsp_clients_share_one_engine_hub" classname="gandr-lang::cli" timestamp="2026-10-12T16:41:39.221-06:00" time="2.117"/>
+    </testsuite>
+    <testsuite name="gandr-surface-parser" tests="2" skipped="0" errors="0" failures="0">
+        <testcase name="parse::tests::arbitrary_source_parses_by_form_as_whole" classname="gandr-surface-parser" timestamp="2026-10-12T16:41:38.845-06:00" time="0.128"/>
+        <testcase name="parse::tests::hostile_edits_reuse_only_equal_units" classname="gandr-surface-parser" timestamp="2026-10-12T16:41:38.845-06:00" time="0.303"/>
+    </testsuite>
+    <testsuite name="gandr-surface-parser::tests" tests="2" skipped="0" errors="0" failures="0">
+        <testcase name="acceptance::run_binder_annotation_molds_clean" classname="gandr-surface-parser::tests" timestamp="2026-10-12T16:41:39.537-06:00" time="0.009"/>
+        <testcase name="acceptance::corpus_files_cold_parse_within_p99_latency_budget" classname="gandr-surface-parser::tests" timestamp="2026-10-12T16:41:39.531-06:00" time="0.216"/>
+    </testsuite>
+</testsuites>

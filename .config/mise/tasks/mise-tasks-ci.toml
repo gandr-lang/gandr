@@ -263,6 +263,18 @@ mv "$root/coverage.merged.lcov" "$root/coverage.lcov"
 rm -f "$root/coverage-plain.lcov"
 '''
 
+# Each test's enforcing time over its plain time, from a run's enforcing JUnit
+# report and a plain baseline's; the enforcing lane reports it on every run
+# (crates/workflow-spec-cost/README.md). Flags and target directory match the
+# enforcing test build, which already compiled most of the binary. Arguments
+# pass through to it: `--plain`, `--enforcing`, `--baseline-commit`,
+# `--baseline-age-hours`, and optionally `--threshold`, `--floor`, `--top`.
+["ci:spec-cost-ratio"]
+description = "Compare each test's enforcing time with a plain baseline's"
+env.RUSTFLAGS = "--cfg anodized_panic"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+run = "cargo run --locked --quiet --profile test --package gandr-workflow-spec-cost --bin spec-cost-ratio --"
+
 # Head checks and merge-group checks are separate runs. Watch the queue entry
 # as well as the pull request; green head checks alone do not prove landing.
 ["pr:land"]
