@@ -272,6 +272,13 @@ pub enum RefusalName
     DependentStack,
     /// A native path endpoint is not a closed first-order code.
     PathCode,
+    /// Reflexivity met a path type whose endpoints its point does not both
+    /// convert to.
+    EndpointMismatch,
+    /// A transport along a path whose carrier exposes no structure.
+    IdentityAtOpenType,
+    /// A compound endpoint whose computation returns no pure value.
+    CompoundEndpoint,
     /// A term name no binder or earlier declaration answers.
     UnresolvedName,
     /// A documentation link to a name nothing declares.
@@ -320,6 +327,8 @@ pub enum RefusalName
     MissingExit,
     /// Code after a statement every path of which exits.
     Unreachable,
+    /// A path matched against reflexivity, `here`: axiom K.
+    WithoutK,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -381,7 +390,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 66_usize] = [
+    pub const VOCABULARY: [Self; 70_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -399,6 +408,9 @@ impl RefusalName
         Self::CrossBlockReference,
         Self::DescentNotReplayed,
         Self::PathCode,
+        Self::EndpointMismatch,
+        Self::IdentityAtOpenType,
+        Self::CompoundEndpoint,
         Self::UnresolvedName,
         Self::UnresolvedDocLink,
         Self::UnresolvedTypeHead,
@@ -423,6 +435,7 @@ impl RefusalName
         Self::UnmarkedSelfReference,
         Self::MissingExit,
         Self::Unreachable,
+        Self::WithoutK,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -486,8 +499,8 @@ impl RefusalName
         b"UnreadAscription") | (Self::LowercaseModuleName, b"LowercaseModuleName") |
         (Self::NonExhaustiveMatch, b"NonExhaustiveMatch") |
         (Self::UnmarkedSelfReference, b"UnmarkedSelfReference") |
-        (Self::MissingExit, b"MissingExit") |
-        (Self::Unreachable, b"Unreachable") |
+        (Self::MissingExit, b"MissingExit") | (Self::Unreachable, b"Unreachable") |
+        (Self::WithoutK, b"WithoutK") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -521,6 +534,9 @@ impl RefusalName
         | (Self::EffectSignatureConflict, b"EffectSignatureConflict")
         | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
+        | (Self::EndpointMismatch, b"EndpointMismatch")
+        | (Self::IdentityAtOpenType, b"IdentityAtOpenType")
+        | (Self::CompoundEndpoint, b"CompoundEndpoint")
     )
 },
     )]
@@ -557,6 +573,9 @@ impl RefusalName
             | Self::DuplicateDefinition => "DuplicateDefinition",
             | Self::DuplicateImportAlias => "DuplicateImportAlias",
             | Self::PathCode => "PathCode",
+            | Self::EndpointMismatch => "EndpointMismatch",
+            | Self::IdentityAtOpenType => "IdentityAtOpenType",
+            | Self::CompoundEndpoint => "CompoundEndpoint",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::GradedBridge => "GradedBridge",
@@ -575,6 +594,7 @@ impl RefusalName
             | Self::UnmarkedSelfReference => "UnmarkedSelfReference",
             | Self::MissingExit => "MissingExit",
             | Self::Unreachable => "Unreachable",
+            | Self::WithoutK => "WithoutK",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -759,6 +779,8 @@ impl Refusal<'_>
         RefusalName::MissingExit) |
         (Self::Lowering(LoweringRefusal::Unreachable { .. }),
         RefusalName::Unreachable) |
+        (Self::Lowering(LoweringRefusal::WithoutK { .. }),
+        RefusalName::WithoutK) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -808,6 +830,9 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::HandlerCoverage { .. }), RefusalName::HandlerCoverage)
         | (Self::Checking(CheckRefusal::ShiftWithoutReset { .. }), RefusalName::ShiftWithoutReset)
         | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
+        | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
+        | (Self::Checking(CheckRefusal::IdentityAtOpenType { .. }), RefusalName::IdentityAtOpenType)
+        | (Self::Checking(CheckRefusal::CompoundEndpoint { .. }), RefusalName::CompoundEndpoint)
     )
 },
     )]
@@ -904,7 +929,8 @@ impl Refusal<'_>
         RefusalName::NonExhaustiveMatch) | (LoweringRefusal::UnmarkedSelfReference { .. },
         RefusalName::UnmarkedSelfReference) | (LoweringRefusal::MissingExit { .. },
         RefusalName::MissingExit) | (LoweringRefusal::Unreachable { .. },
-        RefusalName::Unreachable) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::Unreachable) | (LoweringRefusal::WithoutK { .. },
+        RefusalName::WithoutK) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold)
@@ -938,6 +964,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::UnmarkedSelfReference { .. } => RefusalName::UnmarkedSelfReference,
         | LoweringRefusal::MissingExit { .. } => RefusalName::MissingExit,
         | LoweringRefusal::Unreachable { .. } => RefusalName::Unreachable,
+        | LoweringRefusal::WithoutK { .. } => RefusalName::WithoutK,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
@@ -999,6 +1026,9 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
         | (CheckRefusal::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
         | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
+        | (CheckRefusal::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
+        | (CheckRefusal::IdentityAtOpenType { .. }, RefusalName::IdentityAtOpenType)
+        | (CheckRefusal::CompoundEndpoint { .. }, RefusalName::CompoundEndpoint)
     )
 },
 )]
@@ -1021,6 +1051,9 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::DependentStack { .. } => RefusalName::DependentStack,
         | CheckRefusal::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
         | CheckRefusal::PathCode(_) => RefusalName::PathCode,
+        | CheckRefusal::EndpointMismatch { .. } => RefusalName::EndpointMismatch,
+        | CheckRefusal::IdentityAtOpenType { .. } => RefusalName::IdentityAtOpenType,
+        | CheckRefusal::CompoundEndpoint { .. } => RefusalName::CompoundEndpoint,
         | CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,
         | CheckRefusal::ShapeMismatch { .. } => RefusalName::ShapeMismatch,
         | CheckRefusal::NotSynthesisable { .. } => RefusalName::NotSynthesisable,
@@ -1110,3 +1143,5 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/surface-corpus/src/refusal.rs' for per-hunk
+// detail, 'weave check' to verify your resolution

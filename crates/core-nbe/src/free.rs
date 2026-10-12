@@ -855,7 +855,7 @@ Err(_) => false,
                         None,
                         None,
                     ],
-                    | Value::PathRefl(code) => one(value(code), Lowering::NONE),
+                    | Value::PathRefl(code) | Value::Here(code) => one(value(code), Lowering::NONE),
                     | Value::PathProduct(first, second)
                     | Value::ListCons(first, second)
                     | Value::StaticApplication(first, second) => {
@@ -865,7 +865,9 @@ Err(_) => false,
                     | Value::Injection(_, body) | Value::Lift { body, .. } => {
                         one(value(body), Lowering::NONE)
                     },
-                    | Value::Thunk(body) => one(computation(body), Lowering::NONE),
+                    | Value::Returned(body) | Value::Thunk(body) => {
+                        one(computation(body), Lowering::NONE)
+                    },
                     | Value::Quote(quoted) => one(Reached::ValueType(quoted), Lowering::NONE),
                     | Value::QuoteComputation(quoted) => {
                         one(Reached::CompType(quoted), Lowering::NONE)
@@ -948,6 +950,17 @@ Err(_) => false,
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },
+                    | Computation::PathTransport {
+                        motive,
+                        path,
+                        value: operand,
+                    } => [
+                        Some((Reached::ValueType(motive), Lowering::ONE)),
+                        Some((value(path), Lowering::NONE)),
+                        Some((value(operand), Lowering::NONE)),
+                        None,
+                        None,
+                    ],
                     | Computation::Fixpoint { body, .. } => one(computation(body), Lowering::ONE),
                     | Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
@@ -989,6 +1002,17 @@ Err(_) => false,
                     | ValueType::PathUniverse(source, target) => {
                         two(value(source), value(target), Lowering::NONE)
                     },
+                    | ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    } => [
+                        Some((Reached::ValueType(carrier), Lowering::NONE)),
+                        Some((value(left), Lowering::NONE)),
+                        Some((value(right), Lowering::NONE)),
+                        None,
+                        None,
+                    ],
                     | ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]

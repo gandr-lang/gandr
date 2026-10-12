@@ -170,8 +170,9 @@ pub enum FragmentBoundary
     /// which the fragment does not read.
     Indexed,
     /// The form needs a type the source does not state: a match over nominal
-    /// data with no answer type written or known from its function, or a
-    /// constructor of a parameterized family with no classifier.
+    /// data with no answer type written or known from its function, a
+    /// constructor of a parameterized family with no classifier, or `back`,
+    /// `then` or `cong` standing where no written path type is answered.
     Unannotated,
     /// The form is a recursive call passing, where one of the definition's
     /// unchanging parameters stands, something other than that parameter: only
@@ -631,6 +632,15 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A pattern matching a path against reflexivity, `here`: axiom K where
+    /// the endpoints are fixed, and in every case a second eliminator beside
+    /// transport, which is the only way a path is used.
+    WithoutK
+    {
+        /// The bytes the pattern covers.
+        span: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -769,6 +779,10 @@ impl fmt::Display for LoweringRefusal<'_>
             | Self::Unreachable { .. } => f.write_str(
                 "no path reaches this code: every path through the statement before it exits",
             ),
+            | Self::WithoutK { .. } => f.write_str(
+                "a path is matched against `here`, which is axiom K; a path is used by \
+                 transport, and `back`, `then` and `cong` derive what a match would",
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -849,6 +863,7 @@ impl LoweringRefusal<'_>
             | Self::UnmarkedSelfReference { span, .. }
             | Self::MissingExit { span }
             | Self::Unreachable { span }
+            | Self::WithoutK { span }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -1104,3 +1119,5 @@ mod tests
         }
     }
 }
+// weave: run 'weave explain crates/surface-lowering/src/error.rs' for per-hunk
+// detail, 'weave check' to verify your resolution

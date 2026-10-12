@@ -1052,6 +1052,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
                     | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
                     | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Path { .. }
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
@@ -1070,6 +1071,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
             | Value::PathRefl(_)
+            | Value::Here(_)
+            | Value::Returned(_)
             | Value::Constructor { .. }
             | Value::Record(_)
             | Value::Reify(_)

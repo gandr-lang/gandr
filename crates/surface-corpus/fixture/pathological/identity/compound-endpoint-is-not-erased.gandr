@@ -1,9 +1,9 @@
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def dbl(x: Integer) -> -F Integer {
-  return (x + x)
+  become x + x
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("TypeMismatch") ]
 def refuted(x: Integer) -> -F Path(Integer, dbl(x), x) {
   return 5
 }

@@ -80,6 +80,12 @@ pub enum Form
     PathProduct,
     /// Native equivalence.
     PathEquiv,
+    /// Element reflexivity.
+    Here,
+    /// A compound endpoint.
+    Returned,
+    /// Element-path transport.
+    ElementTransport,
     /// A term hole: an incomplete program has no image.
     Hole,
     /// A mark: the record of a refusal has no image.
@@ -141,6 +147,9 @@ impl core::fmt::Display for Form
             | Self::PathRefl => "path reflexivity",
             | Self::PathProduct => "a product path",
             | Self::PathEquiv => "an equivalence path",
+            | Self::Here => "element reflexivity",
+            | Self::Returned => "a compound endpoint",
+            | Self::ElementTransport => "element-path transport",
             | Self::Hole => "a term hole",
             | Self::Mark => "a mark",
             | Self::Fixpoint => "a fixpoint",
@@ -405,6 +414,9 @@ pub fn lower_computation(
                     | Computation::Transport(..) => {
                         return Err(LowerError::OutsideSlice(Form::Transport));
                     },
+                    | Computation::PathTransport { .. } => {
+                        return Err(LowerError::OutsideSlice(Form::ElementTransport));
+                    },
                     | Computation::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
                     | Computation::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),
                     | Computation::Fixpoint { .. } => {
@@ -494,6 +506,10 @@ pub fn lower_computation(
                     },
                     | Value::PathEquiv { .. } => {
                         return Err(LowerError::OutsideSlice(Form::PathEquiv));
+                    },
+                    | Value::Here(_) => return Err(LowerError::OutsideSlice(Form::Here)),
+                    | Value::Returned(_) => {
+                        return Err(LowerError::OutsideSlice(Form::Returned));
                     },
                     | Value::Hole(_) => return Err(LowerError::OutsideSlice(Form::Hole)),
                     | Value::Mark { .. } => return Err(LowerError::OutsideSlice(Form::Mark)),

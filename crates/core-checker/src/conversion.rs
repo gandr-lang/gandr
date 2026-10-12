@@ -206,6 +206,9 @@ enum Pairing
     Codes(ValueId, ValueId),
     /// Invariant term-valued indices, with the kernel's structural equality.
     Terms(ValueId, ValueId),
+    /// Two path endpoints: the same term up to the normaliser's conversion,
+    /// every admitted definition unfolding.
+    Endpoints(ValueId, ValueId),
     /// A value type used where the second type is permitted.
     SubValues(ValueTypeId, ValueTypeId),
     /// A computation type used where the second row is permitted.
@@ -467,6 +470,7 @@ pub fn decode_bridge(
         },
         | ValueTypeView::Unknown => Ok(()),
         | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -532,8 +536,8 @@ pub fn decode_bridge(
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) | Pairing::Assignable(left, right) | Pairing::SubValues(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) | Pairing::SubComps(left, right) if left == right => ret == Ok(Agreement::Convertible),
-    | Pairing::Codes(left, right) | Pairing::Terms(left,right) if left == right => ret == Ok(Agreement::Convertible),
-    | Pairing::Values(..) | Pairing::Assignable(..) | Pairing::SubValues(..) | Pairing::Comps(..) | Pairing::SubComps(..) | Pairing::Codes(..) | Pairing::Terms(..) => true,
+    | Pairing::Codes(left, right) | Pairing::Terms(left,right) | Pairing::Endpoints(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Values(..) | Pairing::Assignable(..) | Pairing::SubValues(..) | Pairing::Comps(..) | Pairing::SubComps(..) | Pairing::Codes(..) | Pairing::Terms(..) | Pairing::Endpoints(..) => true,
 })]
 fn convert(
     context: &mut CheckingContext<'_>,
@@ -548,7 +552,9 @@ fn convert(
             | Pairing::Assignable(left, right)
             | Pairing::SubValues(left, right) => left == right,
             | Pairing::Comps(left, right) | Pairing::SubComps(left, right) => left == right,
-            | Pairing::Codes(left, right) | Pairing::Terms(left, right) => left == right,
+            | Pairing::Codes(left, right)
+            | Pairing::Terms(left, right)
+            | Pairing::Endpoints(left, right) => left == right,
         };
         if reflexive || !met.insert(pairing) {
             continue;
@@ -576,6 +582,16 @@ fn convert(
                     || root_knowledge(context, right)? == Knowledge::Unknown
                     || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
+            },
+            | Pairing::Endpoints(left, right) => {
+                root_knowledge(context, left)? == Knowledge::Unknown
+                    || root_knowledge(context, right)? == Knowledge::Unknown
+                    || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+                        == gandr_core_term::CertificateEquality::Equal
+                    || context
+                        .definitions()
+                        .convert_terms(context.arena(), left, right)?
+                        == gandr_core_nbe::MachineVerdict::Convertible
             },
             | Pairing::Assignable(left, right) => {
                 let left = context.whnf_value_type(left)?;
@@ -647,6 +663,23 @@ fn convert(
                     | (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
                         pending.push(Pairing::Codes(a, c));
                         pending.push(Pairing::Codes(b, d));
+                        true
+                    },
+                    | (
+                        ValueTypeView::Path {
+                            carrier: a,
+                            left: first,
+                            right: second,
+                        },
+                        ValueTypeView::Path {
+                            carrier: b,
+                            left: third,
+                            right: fourth,
+                        },
+                    ) => {
+                        pending.push(Pairing::Endpoints(second, fourth));
+                        pending.push(Pairing::Endpoints(first, third));
+                        pending.push(values(a, b));
                         true
                     },
                     | (ValueTypeView::List(left), ValueTypeView::List(right)) => {
@@ -727,6 +760,7 @@ fn convert(
                     },
                     | (
                         ValueTypeView::PathUniverse(..)
+                        | ValueTypeView::Path { .. }
                         | ValueTypeView::Data { .. }
                         | ValueTypeView::Record(_)
                         | ValueTypeView::Sum(..)
@@ -989,6 +1023,8 @@ fn convert(
                                 {
                                     match *matched_left_value {
                                         | Value::PathRefl(_)
+                                        | Value::Here(_)
+                                        | Value::Returned(_)
                                         | Value::Constructor { .. }
                                         | Value::Record(_)
                                         | Value::Primitive { .. }
@@ -1300,6 +1336,8 @@ mod tests
         let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
         let decode_inner = arena.value_type_element(inner, Level::zero());
         let decode_outer = arena.value_type_element(outer, Level::zero());
+        let loop_path = arena.value_type_path(integer, inner, inner);
+        let open_path = arena.value_type_path(integer, inner, outer);
         let pairs = [
             Pairing::Values(integer, string),
             Pairing::Values(unit, thunk_integer),
@@ -1311,6 +1349,8 @@ mod tests
             Pairing::Values(lifted_once, lifted_twice),
             Pairing::Values(lifted_once, integer),
             Pairing::Values(decode_inner, decode_outer),
+            Pairing::Values(loop_path, open_path),
+            Pairing::Endpoints(inner, outer),
         ];
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         for pairing in pairs {
@@ -1320,6 +1360,7 @@ mod tests
                 | Pairing::Comps(left, right) => Pairing::Comps(right, left),
                 | Pairing::Codes(left, right) => Pairing::Codes(right, left),
                 | Pairing::Terms(left, right) => Pairing::Terms(right, left),
+                | Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
                 | Pairing::SubValues(left, right) => Pairing::SubValues(right, left),
                 | Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
             };
@@ -1363,6 +1404,7 @@ mod tests
             Pairing::Comps(unknown_computation, returns_integer),
             Pairing::Codes(hole, variable),
             Pairing::Terms(hole, variable),
+            Pairing::Endpoints(hole, variable),
         ];
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         for pairing in consistent {
@@ -1374,6 +1416,7 @@ mod tests
                 | Pairing::SubComps(left, right) => Pairing::SubComps(right, left),
                 | Pairing::Codes(left, right) => Pairing::Codes(right, left),
                 | Pairing::Terms(left, right) => Pairing::Terms(right, left),
+                | Pairing::Endpoints(left, right) => Pairing::Endpoints(right, left),
             };
             assert_eq!(
                 convert(&mut context, pairing),

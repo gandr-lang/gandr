@@ -393,6 +393,15 @@ fn worst(
                     pending.push((AnyNode::Value(source), term(reach)));
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
+                | Some(&ValueType::Path {
+                    carrier,
+                    left,
+                    right,
+                }) => {
+                    pending.push((AnyNode::ValueType(carrier), nest(reach)));
+                    pending.push((AnyNode::Value(left), term(reach)));
+                    pending.push((AnyNode::Value(right), term(reach)));
+                },
                 | Some(&ValueType::Thunk(body)) => {
                     pending.push((AnyNode::CompType(body), thunked(reach)));
                 },
@@ -509,6 +518,7 @@ fn worst(
                 },
                 | Some(
                     &(Value::PathRefl(body)
+                    | Value::Here(body)
                     | Value::Injection(_, body)
                     | Value::Lift { body, .. }
                     | Value::StaticLambda(body)
@@ -516,7 +526,9 @@ fn worst(
                 ) => {
                     pending.push((AnyNode::Value(body), reach));
                 },
-                | Some(&Value::Thunk(body)) => pending.push((AnyNode::Computation(body), reach)),
+                | Some(&(Value::Thunk(body) | Value::Returned(body))) => {
+                    pending.push((AnyNode::Computation(body), reach));
+                },
                 | Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
                 | Some(&Value::QuoteComputation(quoted)) => {
                     pending.push((AnyNode::CompType(quoted), reach));
@@ -648,6 +660,15 @@ fn worst(
                     );
                 },
                 | Some(&Computation::Transport(path, value)) => {
+                    pending.push((AnyNode::Value(path), reach));
+                    pending.push((AnyNode::Value(value), reach));
+                },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    pending.push((AnyNode::ValueType(motive), term(reach)));
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
                 },

@@ -1,0 +1,11 @@
+@[ checks ]
+def p = here(7);
+
+@[ checks ]
+def join(a: Integer, b: Integer, c: Integer, q: Path(Integer, a, b), r: Path(Integer, b, c)) -> -F Path(Integer, a, c) {
+  become q then r
+}
+
+@[ checks ]
+def joined : +U (-F Path(Integer, 7, 7));
+def joined = thunk { become join(7, 7, 7, p, p) };

@@ -207,6 +207,33 @@ pub enum Refusal
     },
     /// A native path endpoint is not a closed first-order code.
     PathCode(Site),
+    /// Reflexivity met a path type whose endpoints its point does not both
+    /// convert to.
+    EndpointMismatch
+    {
+        /// The reflexivity.
+        at: Site,
+        /// The path type's left endpoint.
+        left: Site,
+        /// The path type's right endpoint.
+        right: Site,
+    },
+    /// A transport along a path whose carrier exposes no structure.
+    IdentityAtOpenType
+    {
+        /// The transport.
+        at: Site,
+        /// The open carrier.
+        carrier: TypeContent,
+    },
+    /// A compound endpoint whose computation returns no pure value.
+    CompoundEndpoint
+    {
+        /// The compound endpoint.
+        at: Site,
+        /// The type its computation synthesised.
+        synthesised: TypeContent,
+    },
     /// A synthesised type did not convert to the expected one.
     TypeMismatch
     {
@@ -634,6 +661,9 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::HandlerCoverage { at } = matched_left_value && let Refusal::HandlerCoverage { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::ShiftWithoutReset { at } = matched_left_value && let Refusal::ShiftWithoutReset { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::EndpointMismatch { at, left, right } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) }
+ else if let CheckRefusal::IdentityAtOpenType { at, .. } = matched_left_value && let Refusal::IdentityAtOpenType { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::CompoundEndpoint { at, .. } = matched_left_value && let Refusal::CompoundEndpoint { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }) = matched_left_value && let Refusal::TypeMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::SortMismatch { at, .. } = matched_left_value && let Refusal::SortMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::LevelMismatch { at, .. } = matched_left_value && let Refusal::LevelMismatch { at: projected, .. } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
@@ -796,6 +826,19 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
                 }
             },
             | CheckRefusal::PathCode(at) => Refusal::PathCode(self.site(ArenaNode::Value(at))),
+            | CheckRefusal::EndpointMismatch { at, left, right } => Refusal::EndpointMismatch {
+                at: self.site(ArenaNode::Value(at)),
+                left: self.site(ArenaNode::Value(left)),
+                right: self.site(ArenaNode::Value(right)),
+            },
+            | CheckRefusal::IdentityAtOpenType { at, carrier } => Refusal::IdentityAtOpenType {
+                at: self.site(ArenaNode::Computation(at)),
+                carrier: self.value_type(carrier),
+            },
+            | CheckRefusal::CompoundEndpoint { at, synthesised } => Refusal::CompoundEndpoint {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.type_node(TypeNode::Computation(synthesised)),
+            },
             | CheckRefusal::TypeMismatch(Mismatch::Value {
                 at,
                 synthesised,

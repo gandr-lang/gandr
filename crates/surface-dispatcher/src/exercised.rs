@@ -535,7 +535,8 @@ fn checking_row(
                 | ExpectedShape::Thunk
                 | ExpectedShape::Arrow
                 | ExpectedShape::Product
-                | ExpectedShape::StaticPi,
+                | ExpectedShape::StaticPi
+                | ExpectedShape::Path,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -555,6 +556,9 @@ fn checking_row(
                 | CheckingForm::Fixpoint(_),
         }
         | CheckRefusal::PathCode(_)
+        | CheckRefusal::EndpointMismatch { .. }
+        | CheckRefusal::IdentityAtOpenType { .. }
+        | CheckRefusal::CompoundEndpoint { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -665,6 +669,7 @@ fn lowering_row(
                 | FragmentBoundary::Unannotated
                 | FragmentBoundary::NonUniform
                 | FragmentBoundary::NotInTail
+// refused_by: statement_fold · collision: none (1 contested hunk(s), neither side deleted the other's lines)
                 | FragmentBoundary::JoinsBlock
                 | FragmentBoundary::EmptyList,
             ..
@@ -690,6 +695,7 @@ fn lowering_row(
         | LoweringRefusal::UnmarkedSelfReference { .. }
         | LoweringRefusal::MissingExit { .. }
         | LoweringRefusal::Unreachable { .. }
+        | LoweringRefusal::WithoutK { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},
@@ -768,10 +774,17 @@ fn formers(
                 | Some(&Value::Tuple(ref components)) => {
                     worklist.extend(components.iter().map(|&component| Node::Value(component)));
                 },
-                | Some(&(Value::PathRefl(injected) | Value::Injection(_, injected))) => {
+                | Some(
+                    &(Value::PathRefl(injected)
+                    | Value::Here(injected)
+                    | Value::Injection(_, injected)),
+                ) => {
                     worklist.push(Node::Value(injected));
                 },
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
+                | Some(&Value::Returned(computation)) => {
+                    worklist.push(Node::Computation(computation));
+                },
                 // A quote carries a type, and a static operator and its
                 // application build one, whose codes are values that hold no
                 // computation former, so they mark no row. A hole holds
@@ -850,7 +863,10 @@ fn formers(
                 | Some(&Computation::Primitive { ref arguments, .. }) => {
                     worklist.extend(arguments.iter().copied().map(Node::Value));
                 },
-                | Some(&Computation::Transport(path, value)) => {
+                | Some(
+                    &(Computation::Transport(path, value)
+                    | Computation::PathTransport { path, value, .. }),
+                ) => {
                     worklist.extend([Node::Value(path), Node::Value(value)]);
                 },
                 | Some(&Computation::Lambda(under)) => {
@@ -1232,3 +1248,5 @@ def d : Integer ;
         }
     }
 }
+// weave: run 'weave explain crates/surface-dispatcher/src/exercised.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

@@ -280,6 +280,10 @@ fn lowered(
         | LoweringRefusal::Unreachable { .. } => {
             f.write_str("this code never runs: every path before it leaves the body")
         },
+        | LoweringRefusal::WithoutK { .. } => f.write_str(
+            "a path cannot be matched against `here`; use it by transport, through `back`, \
+             `then` or `cong`",
+        ),
         | LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
             "the source is too large to read within the allowance of {budget} steps"
@@ -358,6 +362,16 @@ fn checked(
         },
         | CheckRefusal::PathCode(_) => {
             f.write_str("a universe path needs a quoted, closed, first-order code at each end")
+        },
+        | CheckRefusal::EndpointMismatch { .. } => {
+            f.write_str("`here` needs both endpoints of the path to equal its point")
+        },
+        | CheckRefusal::IdentityAtOpenType { .. } => f.write_str(
+            "a path at a type with no visible structure cannot be transported along; the type's \
+             owner supplies its identity",
+        ),
+        | CheckRefusal::CompoundEndpoint { .. } => {
+            f.write_str("a path endpoint must compute a value without effects")
         },
         | CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
         | CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
@@ -610,6 +624,7 @@ mod tests
             LoweringRefusal::UnmarkedSelfReference { span, name },
             LoweringRefusal::MissingExit { span },
             LoweringRefusal::Unreachable { span },
+            LoweringRefusal::WithoutK { span },
             LoweringRefusal::BudgetExceeded {
                 budget: 0_usize.into(),
             },
@@ -736,6 +751,19 @@ mod tests
             CheckRefusal::DescentNotReplayed {
                 at: computation,
                 reason: DescentRefusal::NotOverData,
+            },
+            CheckRefusal::EndpointMismatch {
+                at: value,
+                left: value,
+                right: value,
+            },
+            CheckRefusal::IdentityAtOpenType {
+                at: computation,
+                carrier: value_type,
+            },
+            CheckRefusal::CompoundEndpoint {
+                at: value,
+                synthesised: comp_type,
             },
         ]
         .map(Refusal::Checking);

@@ -1,14 +1,14 @@
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def path_var(a : Type, x : a) -> -F Path(a, x, x) {
   return here(x)
 }
 
-@[ refuses("OutOfFragment") ]
-def path_fun(f : (Integer -> -F Integer)) -> -F Path((Integer -> -F Integer), f, f) {
+@[ checks ]
+def path_fun(f : Integer => Integer) -> -F Path(Integer => Integer, f, f) {
   return here(f)
 }
 
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def path_app(n : Integer) -> -F Path(Integer, n + 1, n + 1) {
   return here(n + 1)
 }

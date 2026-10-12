@@ -47,6 +47,9 @@
 //!   [`fill_and_resume`] writes a hole of a result and runs what the fill
 //!   unblocked, and [`match_pattern`] and [`select_arm`] classify a match's
 //!   arms in three values against a scrutinee that may hold a hole.
+//! - [`identity`] is the identity recursion: what the paths of a path type are,
+//!   carrier by carrier, read against evaluated endpoints, and the clause a
+//!   carrier's head selects, which names identity at an open type.
 //!
 //! What a caller must guarantee is listed in this crate's `README.md`, §
 //! Expected features; each module's documentation states its mechanism and its
@@ -330,6 +333,7 @@ mod duplicate;
 mod eval;
 mod free;
 mod guard;
+pub mod identity;
 mod live;
 mod machine;
 mod measure;

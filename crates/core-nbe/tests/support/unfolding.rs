@@ -128,7 +128,7 @@ pub struct Unfolded(pub u64);
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
                     Value::ListCons(..) | Value::PathProduct(..) | Value::StaticApplication(_, _) => 3,
                     Value::PathEquiv { .. } => 4,
-                    Value::PathRefl(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
+                    Value::PathRefl(_) | Value::Here(_) | Value::Returned(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
             },
             CoreNode::Computation(id) => {
@@ -142,7 +142,7 @@ pub struct Unfolded(pub u64);
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
-                    Computation::Case { .. } => 4,
+                    Computation::Case { .. } | Computation::PathTransport { .. } => 4,
                 }
             },
             CoreNode::ValueType(id) => {
@@ -153,6 +153,7 @@ pub struct Unfolded(pub u64);
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
                     ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown => 1,
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } => 3,
+                    ValueType::Path { .. } => 4,
                     ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } => 2,
                 }
             },
@@ -245,12 +246,15 @@ pub fn unfolded(
                 },
                 | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
                 | Value::PathRefl(body)
+                | Value::Here(body)
                 | Value::Injection(_, body)
                 | Value::Lift { body, .. }
                 | Value::Mark { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
-                | Value::Thunk(body) => pending.push(CoreNode::Computation(body)),
+                | Value::Thunk(body) | Value::Returned(body) => {
+                    pending.push(CoreNode::Computation(body));
+                },
                 | Value::Quote(quoted) => pending.push(CoreNode::ValueType(quoted)),
                 | Value::QuoteComputation(quoted) => pending.push(CoreNode::CompType(quoted)),
             },
@@ -329,6 +333,15 @@ pub fn unfolded(
                     | Computation::Transport(path, value) => {
                         pending.extend([CoreNode::Value(path), CoreNode::Value(value)]);
                     },
+                    | Computation::PathTransport {
+                        motive,
+                        path,
+                        value,
+                    } => pending.extend([
+                        CoreNode::ValueType(motive),
+                        CoreNode::Value(path),
+                        CoreNode::Value(value),
+                    ]),
                     | Computation::Mark { body, .. } | Computation::Fixpoint { body, .. } => {
                         pending.push(CoreNode::Computation(body));
                     },
@@ -371,6 +384,15 @@ pub fn unfolded(
                     | ValueType::PathUniverse(source, target) => {
                         pending.extend([CoreNode::Value(source), CoreNode::Value(target)]);
                     },
+                    | ValueType::Path {
+                        carrier,
+                        left,
+                        right,
+                    } => pending.extend([
+                        CoreNode::ValueType(carrier),
+                        CoreNode::Value(left),
+                        CoreNode::Value(right),
+                    ]),
                     | ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
                         pending.extend(parts.iter().map(|&part| CoreNode::ValueType(part)));
                     },

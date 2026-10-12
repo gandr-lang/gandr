@@ -98,6 +98,8 @@ pub enum Label
     Synthesised,
     /// The type a rule met where it required a former of another shape.
     Met(ExpectedShape),
+    /// An endpoint of the path type a reflexivity was checked against.
+    Endpoint,
     /// A declared name or a binder over a builtin: the primary locus of a
     /// shadowing warning.
     Shadows,
@@ -139,6 +141,7 @@ impl fmt::Display for Label
             | Self::Expected => f.write_str("the type it is checked against"),
             | Self::Synthesised => f.write_str("the type it synthesises"),
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
+            | Self::Endpoint => f.write_str("an endpoint the point does not convert to"),
             | Self::Shadows => f.write_str("shadows a builtin"),
         }
     }
@@ -602,7 +605,9 @@ impl Annotations
             | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::UnmarkedSelfReference { .. }
             | LoweringRefusal::MissingExit { .. }
+// refused_by: container_member · collision: none (1 contested hunk(s), neither side deleted the other's lines)
             | LoweringRefusal::Unreachable { .. }
+            | LoweringRefusal::WithoutK { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }
             | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(report_context::Absent::Unnamed),
@@ -709,10 +714,12 @@ impl Annotations
         CheckRefusal::TypeMismatch(_) | CheckRefusal::SortMismatch { .. }
             | CheckRefusal::LevelMismatch { .. } | CheckRefusal::FamilyArgumentClassifier { .. } =>
             role(&ret.context[0_usize], Label::Expected) && role(&ret.context[1_usize], Label::Synthesised),
-        CheckRefusal::DependentBind { .. } => role(&ret.context[0_usize], Label::Synthesised)
+        CheckRefusal::DependentBind { .. } | CheckRefusal::CompoundEndpoint { .. } => role(&ret.context[0_usize], Label::Synthesised)
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
         CheckRefusal::ShapeMismatch { wanted, .. } => role(&ret.context[0_usize], Label::Met(wanted))
             && ret.context[1_usize] == Maybe::Absent(report_context::Absent::Unnamed),
+        CheckRefusal::EndpointMismatch { .. } => role(&ret.context[0_usize], Label::Endpoint)
+            && role(&ret.context[1_usize], Label::Endpoint),
         CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(_) }
             | CheckRefusal::NotADataType(_)
             | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_)
@@ -747,10 +754,16 @@ fn checked(
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
-        | CheckRefusal::DependentStack { at, synthesised } => (spanned(origins.value(at)), [
+        | CheckRefusal::DependentStack { at, synthesised }
+        | CheckRefusal::CompoundEndpoint { at, synthesised } => (spanned(origins.value(at)), [
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
             Maybe::Absent(report_context::Absent::Unnamed),
         ]),
+        | CheckRefusal::EndpointMismatch { at, left, right } => (spanned(origins.value(at)), [
+            annotated(spanned(origins.value(left)), Label::Endpoint),
+            annotated(spanned(origins.value(right)), Label::Endpoint),
+        ]),
+        | CheckRefusal::IdentityAtOpenType { at, .. }
         | CheckRefusal::EffectSignatureConflict { at, .. } => {
             (spanned(origins.computation(at)), UNNAMED)
         },
@@ -1032,6 +1045,9 @@ impl fmt::Display for Checked
             | CheckRefusal::DependentStack { .. } => f.write_str("the stack frame's result type mentions its discharged value binder"),
             | CheckRefusal::EffectSignatureConflict { .. } => f.write_str("two accumulated effect rows disagree on the operation types of a shared interface"),
             | CheckRefusal::PathCode(_) => f.write_str("a universe path requires a quoted closed first-order code"),
+            | CheckRefusal::EndpointMismatch { .. } => f.write_str("reflexivity requires its point to convert to both endpoints of the path type"),
+            | CheckRefusal::IdentityAtOpenType { .. } => f.write_str("identity at an open type: transport needs a carrier with structure"),
+            | CheckRefusal::CompoundEndpoint { .. } => f.write_str("a compound endpoint must return a value without effects"),
             | CheckRefusal::TypeMismatch(_) => f.write_str(
                 "the type this term synthesises does not convert to the type it is checked against",
             ),
@@ -1194,6 +1210,7 @@ impl fmt::Display for Shape
             | ExpectedShape::Arrow => "an arrow `A → C`",
             | ExpectedShape::Product => "an eager product `A * B`",
             | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
+            | ExpectedShape::Path => "an element path type `Path(A, a, b)`",
         })
     }
 }
@@ -1757,3 +1774,5 @@ mod tests
         assert!(ordinals(&titles[5]).is_empty(), "no node id: {}", titles[5]);
     }
 }
+// weave: run 'weave explain crates/surface-diagnostics/src/locus.rs' for
+// per-hunk detail, 'weave check' to verify your resolution

@@ -99,8 +99,10 @@ use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
 const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x09";
+
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x07";
+
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1427,6 +1429,34 @@ where
             write_index(writer, path)?;
             write_index(writer, value)?;
         },
+        | ContentNode::PathType {
+            carrier,
+            left,
+            right,
+        } => {
+            writer.tag(Tag(0x45));
+            write_index(writer, carrier)?;
+            write_index(writer, left)?;
+            write_index(writer, right)?;
+        },
+        | ContentNode::Here(point) => {
+            writer.tag(Tag(0x46));
+            write_index(writer, point)?;
+        },
+        | ContentNode::ElementTransport {
+            motive,
+            path,
+            value,
+        } => {
+            writer.tag(Tag(0x47));
+            write_index(writer, motive)?;
+            write_index(writer, path)?;
+            write_index(writer, value)?;
+        },
+        | ContentNode::Returned(computation) => {
+            writer.tag(Tag(0x48));
+            write_index(writer, computation)?;
+        },
         | ContentNode::Variable { zone, index } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
@@ -2011,6 +2041,7 @@ fn read_effect_row(
     }
     EffectRow::from_signatures(signatures).map_err(|_duplicate_interface| CodecError::Corrupt)
 }
+
 /// Read one content node.
 ///
 /// # Specification
@@ -2060,6 +2091,10 @@ fn read_effect_row(
                     | ContentNode::PathEquiv { .. } => tag == 0x42,
                     | ContentNode::PathProduct(..) => tag == 0x43,
                     | ContentNode::Transport(..) => tag == 0x44,
+                    | ContentNode::PathType { .. } => tag == 0x45,
+                    | ContentNode::Here(_) => tag == 0x46,
+                    | ContentNode::ElementTransport { .. } => tag == 0x47,
+                    | ContentNode::Returned(_) => tag == 0x48,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Literal(_) => tag == 0x04,
@@ -2472,6 +2507,18 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         | 0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),
         | 0x44 => ContentNode::Transport(read_index(reader)?, read_index(reader)?),
+        | 0x45 => ContentNode::PathType {
+            carrier: read_index(reader)?,
+            left: read_index(reader)?,
+            right: read_index(reader)?,
+        },
+        | 0x46 => ContentNode::Here(read_index(reader)?),
+        | 0x47 => ContentNode::ElementTransport {
+            motive: read_index(reader)?,
+            path: read_index(reader)?,
+            value: read_index(reader)?,
+        },
+        | 0x48 => ContentNode::Returned(read_index(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
@@ -3669,6 +3716,25 @@ where
             writer.tag(Tag(18));
             write_site(writer, site)?;
         },
+        | Refusal::EndpointMismatch { at, left, right } => {
+            writer.tag(Tag(40));
+            write_site(writer, at)?;
+            write_site(writer, left)?;
+            write_site(writer, right)?;
+        },
+        | Refusal::IdentityAtOpenType { at, ref carrier } => {
+            writer.tag(Tag(41));
+            write_site(writer, at)?;
+            write_type(writer, carrier)?;
+        },
+        | Refusal::CompoundEndpoint {
+            at,
+            ref synthesised,
+        } => {
+            writer.tag(Tag(42));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -3989,6 +4055,9 @@ where
                     | Refusal::ShiftWithoutReset { .. } => 37,
                     | Refusal::DependentStack { .. } => 38,
                     | Refusal::AbsentTupleComponent(_) => 39,
+                    | Refusal::EndpointMismatch { .. } => 40,
+                    | Refusal::IdentityAtOpenType { .. } => 41,
+                    | Refusal::CompoundEndpoint { .. } => 42,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -4172,6 +4241,19 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             Refusal::StaticClassifierExpected { at, found }
         },
         | 18 => Refusal::PathCode(read_site(reader)?),
+        | 40 => Refusal::EndpointMismatch {
+            at: read_site(reader)?,
+            left: read_site(reader)?,
+            right: read_site(reader)?,
+        },
+        | 41 => Refusal::IdentityAtOpenType {
+            at: read_site(reader)?,
+            carrier: read_type(reader)?,
+        },
+        | 42 => Refusal::CompoundEndpoint {
+            at: read_site(reader)?,
+            synthesised: read_type(reader)?,
+        },
         | 28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         | 29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         | 30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),

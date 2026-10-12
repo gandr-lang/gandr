@@ -2524,7 +2524,7 @@ where
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))
                         .map(|node| match node.head() {
                             NeutralHead::Constant(constant) => self.definitions.height(constant),
-                            NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => DefinitionHeight::default(),
+                            NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => DefinitionHeight::default(),
                         }))
             };
             ret == height(pair.0).and_then(|left| height(pair.1).map(|right| left.max(right)))
@@ -2654,6 +2654,16 @@ where
                         depth,
                     )
                 },
+                | Subgoal::Motives(left, right) => {
+                    let depth = deeper(goal.depth)?;
+                    let variable = self.variable(goal.depth)?;
+                    let left = self.transport_motive(left, variable)?;
+                    let right = self.transport_motive(right, variable)?;
+                    (
+                        SupportSides::Heads(Glued::Value(left), Glued::Value(right)),
+                        depth,
+                    )
+                },
                 | Subgoal::CaseBranch { left, right, tag } => {
                     let left = self.case_branch(left, tag)?;
                     let right = self.case_branch(right, tag)?;
@@ -2731,6 +2741,39 @@ where
         let quoted = self
             .domain
             .value_closure_node(crate::ValueBody::CompType(motive), environment);
+        Ok(self.domain.value_code(quoted, TermFace::Reduced))
+    }
+
+    /// Quote a transport motive under the same fresh endpoint on both sides.
+    ///
+    /// # Specification
+    /// - requires: the supplied variable is fresh at the parent goal's depth.
+    /// - ensures: a code whose type is the motive, reading that variable at
+    ///   index zero and its capture beyond it.
+    /// - fails: a dangling motive closure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two stuck transports along one path compare by their
+    ///   motives under the fresh endpoint; a motive read without the binder
+    ///   would name the capture's innermost entry instead and change the
+    ///   verdict.
+    /// - witness: `identity::tests::stuck_transports_compare_by_motive_and_operand`
+    #[spec(ensures:|ret| ret.is_err() || ret.as_ref().is_ok_and(|value| matches!(self.domain.value(*value),Some(DomainValue::Code { .. }))))]
+    fn transport_motive(
+        &mut self,
+        motive: crate::arena::ValueClosureId,
+        variable: DomainValueId,
+    ) -> Result<DomainValueId, ConversionFault>
+    {
+        let closure = self
+            .domain
+            .value_closure(motive)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let body = closure.body();
+        let mut environment = closure.environment().clone();
+        environment.extend(Zone::Intuitionistic, variable);
+        let quoted = self.domain.value_closure_node(body, environment);
         Ok(self.domain.value_code(quoted, TermFace::Reduced))
     }
 
@@ -2911,7 +2954,7 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))
             .and_then(|held| match held.head() {
                 NeutralHead::Constant(constant) => Ok(constant),
-                NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } => Err(ConversionFault::MachineInvariant),
+                NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => Err(ConversionFault::MachineInvariant),
             })
     )]
     fn head_constant(
@@ -2928,7 +2971,8 @@ where
             | NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
-            | NeutralHead::Mark { .. } => Err(ConversionFault::MachineInvariant),
+            | NeutralHead::Mark { .. }
+            | NeutralHead::Returned(_) => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -3107,6 +3151,7 @@ where
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::ListNil { .. }
@@ -3852,7 +3897,8 @@ where
             | NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
             | NeutralHead::Hole { .. }
-            | NeutralHead::Mark { .. } => {
+            | NeutralHead::Mark { .. }
+            | NeutralHead::Returned(_) => {
                 return Err(ConversionFault::MachineInvariant);
             },
         };
@@ -4765,7 +4811,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
-          Value::Reify(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -4778,7 +4824,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
@@ -4804,7 +4850,9 @@ mod tests
                 | Value::Record(ref fields) => {
                     fields.values().copied().map(CoreTerm::Value).collect()
                 },
-                | Value::Reify(_) => panic!("the pure fixture language has no reified stacks"),
+                | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
+                    panic!("the pure fixture language has no reified stacks")
+                },
                 | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
@@ -4847,6 +4895,7 @@ mod tests
                     | Computation::TupleProjection(record, _) => {
                         Vec::from([CoreTerm::Value(record)])
                     },
+                    | Computation::PathTransport { .. }
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Resume(..)
@@ -4985,7 +5034,7 @@ mod tests
                                         }
                                         Value::Record(fields)
                                     },
-                                    | Value::Reify(_) => {
+                                    | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
                                         panic!("the pure fixture language has no reified stacks")
                                     },
                                     | value @ Value::Primitive { .. } => value,
@@ -5068,6 +5117,7 @@ mod tests
                                 | Computation::TupleProjection(tuple, component) => {
                                     Computation::TupleProjection(value(tuple), component)
                                 },
+                                | Computation::PathTransport { .. }
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
@@ -5178,7 +5228,7 @@ mod tests
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
-          Value::Reify(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -5191,7 +5241,7 @@ mod tests
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
@@ -5418,7 +5468,7 @@ mod tests
                     let made = match node {
                         | CoreTerm::Value(id) => {
                             let graft = match *core.value(id).expect("a reached value resolves") {
-                                | Value::Reify(_) => {
+                                | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
                                     panic!("the pure fixture language has no reified stacks")
                                 },
                                 | Value::Primitive { .. } => {
@@ -5479,6 +5529,7 @@ mod tests
                                 | Computation::TupleProjection(..) => {
                                     panic!("native eliminators are outside the duplication fixture")
                                 },
+                                | Computation::PathTransport { .. }
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
@@ -5777,7 +5828,7 @@ mod tests
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
-          Value::Reify(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Returned(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -5792,7 +5843,7 @@ mod tests
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
-          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
+          Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } => false,
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
@@ -5806,7 +5857,7 @@ mod tests
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
-              ValueType::Stack { .. } => false,
+              ValueType::Stack { .. } | ValueType::Path { .. } => false,
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
               ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
@@ -5846,7 +5897,7 @@ mod tests
                         | Value::Record(ref fields) => {
                             fields.values().copied().map(Node::Value).collect()
                         },
-                        | Value::Reify(_) => {
+                        | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
                         | Value::PathRefl(code) => Vec::from([Node::Value(code)]),
@@ -5900,6 +5951,7 @@ mod tests
                         | Computation::TupleProjection(ref record, _) => {
                             Vec::from([Node::Value(*record)])
                         },
+                        | Computation::PathTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)
@@ -5964,6 +6016,9 @@ mod tests
                             fields.values().copied().map(Node::ValueType).collect()
                         },
                         | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        | ValueType::Path { .. } => {
+                            panic!("the pure fixture language has no element identity")
+                        },
                         | ValueType::PathUniverse(source, target) => {
                             Vec::from([Node::Value(source), Node::Value(target)])
                         },
@@ -6077,7 +6132,7 @@ mod tests
                                 .collect();
                             self.arena.value_record(fields)
                         },
-                        | Value::Reify(_) => {
+                        | Value::Here(_) | Value::Returned(_) | Value::Reify(_) => {
                             panic!("the pure fixture language has no reified stacks")
                         },
                         | Value::Primitive { .. } => panic!("the kernel has no native operation"),
@@ -6189,6 +6244,7 @@ mod tests
                             let tuple = value(self, tuple);
                             self.arena.computation_tuple_projection(tuple, component)
                         },
+                        | Computation::PathTransport { .. }
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
                         | Computation::Resume(..)
@@ -6290,6 +6346,9 @@ mod tests
                             self.arena.value_type_record(fields)
                         },
                         | ValueType::Stack { .. } => panic!("the kernel has no stack type"),
+                        | ValueType::Path { .. } => {
+                            panic!("the pure fixture language has no element identity")
+                        },
                         | ValueType::PathUniverse(source, target) => {
                             let (source, target) = (value(self, source), value(self, target));
                             self.arena.value_type_path_universe(source, target)

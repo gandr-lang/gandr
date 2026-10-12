@@ -345,9 +345,9 @@ enum Task
 /// - ensures: zero for an atom, the unit type and the unknown type, whichever
 ///   spelling it has; the successor of its level for a universe; its own level
 ///   for a lift and a decode; its child's level for a thunk type and a
-///   returner; the join of its children's for an eager product, a static Pi, an
-///   arrow and a dependent arrow, whose codomain's level does not depend on the
-///   binder.
+///   returner, and its carrier's for a path type; the join of its children's
+///   for an eager product, a static Pi, an arrow and a dependent arrow, whose
+///   codomain's level does not depend on the binder.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -429,7 +429,10 @@ pub fn level_of(
                 | ValueTypeView::Unknown => {
                     levels.push(Level::zero());
                 },
-                | ValueTypeView::List(element) => tasks.push(Task::Enter(TypeNode::Value(element))),
+                | ValueTypeView::List(element)
+                | ValueTypeView::Path {
+                    carrier: element, ..
+                } => tasks.push(Task::Enter(TypeNode::Value(element))),
                 | ValueTypeView::Thunk(body) => {
                     tasks.push(Task::Enter(TypeNode::Computation(body)));
                 },
@@ -541,6 +544,7 @@ pub fn path_code(
     }
     Ok(root)
 }
+
 #[cfg(test)]
 mod tests
 {
@@ -694,10 +698,17 @@ mod tests
         let code = arena.value_constant(ConstantIndex::from(0_usize));
         let closed = arena.value_quote(unit);
         let path = arena.value_type_path_universe(closed, closed);
+        let point = arena.value_unit();
+        let element_path = arena.value_type_path(unit, point, point);
         let one = LevelConstant::from(1_u64);
         let zero = LevelConstant::from(0_u64);
-        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 13] = [
+        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 15] = [
             (path, Ok(value_at(zero))),
+            (element_path, Ok(value_at(zero))),
+            (
+                arena.value_type_path(small, closed, closed),
+                Ok(value_at(one)),
+            ),
             (arena.value_type_base(BaseType::Integer), Ok(value_at(zero))),
             (arena.value_type_base(BaseType::String), Ok(value_at(zero))),
             (

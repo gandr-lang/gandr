@@ -1,22 +1,22 @@
 @[ runs("0") ]
 def neutral = 0;
 
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def mul(x: Integer, y: Integer) -> -F Integer {
-  return x + y
+  become x + y
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("EndpointMismatch") ]
 def unitL(x: Integer) -> -F Path(Integer, mul(neutral, x), x) {
   return here(x)
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("EndpointMismatch") ]
 def unitR(x: Integer) -> -F Path(Integer, mul(x, neutral), x) {
   return here(x)
 }
 
-@[ refuses("OutOfFragment") ]
+@[ refuses("EndpointMismatch") ]
 def assoc(x: Integer, y: Integer, z: Integer) -> -F Path(Integer, mul(mul(x, y), z), mul(x, mul(y, z))) {
   return here(mul(mul(x, y), z))
 }

@@ -103,10 +103,11 @@ impl Source for ContentSource<'_>
 &ContentNode::Constructor { .. } | &ContentNode::Record(_) |
 &ContentNode::Unresolved(_) | &ContentNode::Hole(_) | &ContentNode::ValueMark { .. } |
 &ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
-&ContentNode::UnknownType | &ContentNode::UnknownComputationType) | None, Former::Unreadable) |
+&ContentNode::UnknownType | &ContentNode::UnknownComputationType |
+&ContentNode::PathType { .. } | &ContentNode::Here(_) | &ContentNode::Returned(_)) | None, Former::Unreadable) |
 (Some(&ContentNode::Reify(_)), Former::Reify) |
 (Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
-&ContentNode::Primitive(..) | &ContentNode::Transport(..) |
+&ContentNode::Primitive(..) | &ContentNode::Transport(..) | &ContentNode::ElementTransport { .. } |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Split(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
 &ContentNode::Return(_) | &ContentNode::Bind(..) | &ContentNode::Force(_) |
@@ -190,6 +191,7 @@ impl Source for ContentSource<'_>
             | ContentNode::With(..)
             | ContentNode::Project(..)
             | ContentNode::Transport(..)
+            | ContentNode::ElementTransport { .. }
             | ContentNode::Lambda(_)
             | ContentNode::Application(..)
             | ContentNode::Return(_)
@@ -265,6 +267,11 @@ impl Source for ContentSource<'_>
             | ContentNode::ComputationMark { .. }
             | ContentNode::UnknownType
             | ContentNode::UnknownComputationType => Former::Unreadable,
+            // The printer spells element identity as unknown: its brackets
+            // carry at most two children, and `Path` carries three.
+            | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) => {
+                Former::Unreadable
+            },
         }
     }
 

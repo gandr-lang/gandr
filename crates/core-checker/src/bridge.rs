@@ -40,6 +40,18 @@
 //! by name. Each distinct node is erased once per declaration, so the kernel
 //! sees the sharing the producer built and no more.
 //!
+//! Element identity has rules in the judgement and none in erasure: a path
+//! type, reflexivity, a compound endpoint and element transport are each
+//! [`Refusal::ElementIdentity`], naming the former, while the kernel has no
+//! tag to receive them. The core's path type, reflexivity and transport
+//! mirror the kernel's identity tags one for one, so encoding them is a
+//! mapping rather than a translation; a compound endpoint has no kernel tag.
+//! The alternative, erasing reflexivity to its point and a path type to the
+//! fibre the recursion classifies, has the kernel re-derive a program other
+//! than the one the judgement accepted. The choice reverses when the kernel
+//! carries identity: its tags receive the three, and the compound endpoint
+//! waits for the kernel's reading of a returned value.
+//!
 //! The bridge builds the position map from the admissions themselves, the only
 //! map that cannot disagree with the environment it indexes. The alternative to
 //! remapping was keeping module positions verbatim and admitting a placeholder
@@ -401,6 +413,23 @@ fn fault(refusal: CheckRefusal) -> Refusal
     }
 }
 
+/// An element-identity former the kernel's term vocabulary does not encode
+/// yet: its wire tags are reserved, and its checking has not landed beside
+/// them.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum IdentityFormer
+{
+    /// The path type `Path(A, a, b)`.
+    Path,
+    /// Reflexivity `here(a)`.
+    Here,
+    /// Transport `tr(P, p, x)` along an element path.
+    Transport,
+    /// A compound endpoint: a computation standing for the value it returns.
+    /// The kernel's vocabulary has no such node, so it never crosses.
+    CompoundEndpoint,
+}
+
 /// Why the bridge offered the kernel nothing for a declaration the judgement
 /// accepted.
 ///
@@ -498,6 +527,15 @@ pub enum Refusal
         /// The type's node.
         at: CoreNode,
     },
+    /// An element-identity former, refused by name until the kernel encodes
+    /// it: the judgement admits it, and the kernel has no tag to receive it.
+    ElementIdentity
+    {
+        /// The node carrying the former.
+        at: CoreNode,
+        /// The former.
+        former: IdentityFormer,
+    },
 }
 
 impl Refusal
@@ -509,11 +547,12 @@ impl Refusal
     /// - ensures: the class is a function of the variant alone. A withheld
     ///   constant is malformed source, since the declaration it names was
     ///   turned away for a reason its own entry reports; a former outside the
-    ///   fragment is unrepresentable; a linear variable, a dangling id, a
-    ///   cyclic node, a declined certificate and a machine invariant are engine
-    ///   faults, because a judged term from the judged arena holds none of them
-    ///   and an unfolding holds by definition; a term hole and the unknown type
-    ///   are user absences.
+    ///   fragment and an element-identity former the kernel does not encode are
+    ///   unrepresentable; a linear variable, a dangling id, a cyclic node, a
+    ///   declined certificate and a machine invariant are engine faults,
+    ///   because a judged term from the judged arena holds none of them and an
+    ///   unfolding holds by definition; a term hole and the unknown type are
+    ///   user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -528,7 +567,7 @@ impl Refusal
     /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
-        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::OutOfFragment { .. } | Self::ElementIdentity { .. } => matches!(ret, FailureClass::Unrepresentable),
         | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
@@ -539,7 +578,9 @@ impl Refusal
     {
         match *self {
             | Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
+            | Self::OutOfFragment { .. } | Self::ElementIdentity { .. } => {
+                FailureClass::Unrepresentable
+            },
             | Self::LinearVariable { .. }
             | Self::DanglingNode { .. }
             | Self::Cyclic { .. }
@@ -2904,7 +2945,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
     ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
     ///   literal, an injection, a value lift, and a static lambda read
-    ///   normalizing or open.
+    ///   normalizing or open; [`Refusal::ElementIdentity`] for reflexivity and
+    ///   a compound endpoint.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3022,6 +3064,18 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             | Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            | Value::Here(_) => {
+                return Err(Refusal::ElementIdentity {
+                    at: node,
+                    former: IdentityFormer::Here,
+                });
+            },
+            | Value::Returned(_) => {
+                return Err(Refusal::ElementIdentity {
+                    at: node,
+                    former: IdentityFormer::CompoundEndpoint,
+                });
+            },
             | Value::Mark { body, .. } => (
                 Frame::UnmarkedValue { at },
                 CoreNode::Term(TermNode::Value(body)),
@@ -3191,6 +3245,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Transport(path, value) => {
                 (Frame::TransportPath { at, value }, TermNode::Value(path))
             },
+            | Computation::PathTransport { .. } => {
+                return Err(Refusal::ElementIdentity {
+                    at: node,
+                    former: IdentityFormer::Transport,
+                });
+            },
             | Computation::Lambda(body) => (Frame::Lambda { at }, TermNode::Computation(body)),
             | Computation::Fixpoint { body, evidence } => (
                 Frame::Fixpoint { at, evidence },
@@ -3286,6 +3346,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
             ),
+            | ValueTypeView::Path { .. } => {
+                return Err(Refusal::ElementIdentity {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: IdentityFormer::Path,
+                });
+            },
             | ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
             },
@@ -3533,6 +3599,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
                     Value::PathRefl(_)
+                    | Value::Here(_)
+                    | Value::Returned(_)
                     | Value::Constructor { .. }
                     | Value::Record(_)
                     | Value::Primitive { .. }
@@ -4277,6 +4345,7 @@ mod tests
 
     use super::Erasure;
     use super::Frame;
+    use super::IdentityFormer;
     use super::Mode as Reading;
     use super::Outcome;
     use super::Positions;
@@ -5673,6 +5742,43 @@ mod tests
                 erase(&mut arena, at).1,
                 Err(Refusal::OutOfFragment { at, former }),
                 "{former:?} is refused by name, at its node"
+            );
+        }
+    }
+
+    #[test]
+    fn element_identity_is_refused_by_name_until_the_kernel_checks_it()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let zero = arena.value_literal(integer_literal());
+        let here = arena.value_here(zero);
+        let returned = arena.computation_return(zero);
+        let compound = arena.value_returned(returned);
+        let path = arena.value_type_path(integer, zero, zero);
+        let transport = arena.computation_path_transport(integer, here, zero);
+        let rows = [
+            (CoreNode::Type(TypeNode::Value(path)), IdentityFormer::Path),
+            (CoreNode::Term(TermNode::Value(here)), IdentityFormer::Here),
+            (
+                CoreNode::Term(TermNode::Value(compound)),
+                IdentityFormer::CompoundEndpoint,
+            ),
+            (
+                CoreNode::Term(TermNode::Computation(transport)),
+                IdentityFormer::Transport,
+            ),
+        ];
+        for (at, former) in rows {
+            let refusal = erase(&mut arena, at).1;
+            assert_eq!(
+                refusal,
+                Err(Refusal::ElementIdentity { at, former }),
+                "{former:?} is refused by name, at its node"
+            );
+            assert!(
+                refusal.is_err_and(|refused| refused.classify() == FailureClass::Unrepresentable),
+                "the kernel's tags have not landed, so the former is unrepresentable there"
             );
         }
     }

@@ -159,6 +159,8 @@ pub enum GuardTag
     ListCons,
     /// A sum injection.
     Injection,
+    /// Reflexivity of an element path.
+    Here,
     /// A universe lift.
     Lift,
     /// A neutral standing in a value position.

@@ -749,7 +749,7 @@ impl<'run> Walk<'run>
     #[spec(ensures: |ret| self.domain.neutral(neutral).map_or_else(
         || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
         |node| ret == Ok(match (node.head(), node.unfolding()) {
-            (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Context::Flexible(Deferral::Indeterminate),
+            (NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_), _) => Context::Flexible(Deferral::Indeterminate),
             (_, Unfolding::Rigid) => Context::Rigid,
             (_, Unfolding::Unforced(_) | Unfolding::Forced(_)) => Context::Flexible(Deferral::Unfolding),
         }),
@@ -764,9 +764,10 @@ impl<'run> Walk<'run>
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         Ok(match (held.head(), held.unfolding()) {
-            | (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => {
-                Context::Flexible(Deferral::Indeterminate)
-            },
+            | (
+                NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_),
+                _,
+            ) => Context::Flexible(Deferral::Indeterminate),
             | (
                 NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
                 Unfolding::Rigid,
@@ -1106,6 +1107,18 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             | (
+                DomainValue::Here {
+                    point: left_point, ..
+                },
+                DomainValue::Here {
+                    point: right_point, ..
+                },
+            ) => {
+                self.goals
+                    .push(Goal::Values(left_point, right_point, context));
+                Ok(Local::Agree)
+            },
+            | (
                 DomainValue::Thunk {
                     body: left_body, ..
                 },
@@ -1213,6 +1226,7 @@ impl<'run> Walk<'run>
                 | DomainValue::Constructor { .. }
                 | DomainValue::Record { .. }
                 | DomainValue::PathProduct { .. }
+                | DomainValue::Here { .. }
                 | DomainValue::Tuple { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::ListNil { .. }
@@ -1373,10 +1387,11 @@ impl<'run> Walk<'run>
     ///   ids are equal, or when the heads agree and the spines have one length
     ///   and one elimination kind at every position — each operand pair then
     ///   queued beneath the head, flexible for unfolding when the head has a
-    ///   body; [`Local::Disagree`] when the guards separate the neutrals, or
-    ///   when rigid heads differ or a rigid head's spines disagree in shape;
-    ///   [`Local::Defer`] for unfolding when either head has a body and the
-    ///   heads or the spine shapes differ.
+    ///   body; two returned heads agree as heads with their stuck computations
+    ///   queued beneath; [`Local::Disagree`] when the guards separate the
+    ///   neutrals, or when rigid heads differ or a rigid head's spines disagree
+    ///   in shape; [`Local::Defer`] for unfolding when either head has a body
+    ///   and the heads or the spine shapes differ.
     /// - provides: Courant–Leroy's `var-1`, `var-2`, `var-3` and `const` rules,
     ///   with `var-2` the head-mismatch fast-fail.
     /// - fails: [`ConversionFault::Domain`] for a neutral that does not
@@ -1398,7 +1413,8 @@ impl<'run> Walk<'run>
     #[spec(ensures: |ret| if self.domain.neutral(left).is_some() && self.domain.neutral(right).is_some() {
         ret.is_ok() && (left != right || ret == Ok(Local::Agree))
             && (ret != Ok(Local::Agree) || self.domain.neutral(left).zip(self.domain.neutral(right)).is_some_and(|(one, other)|
-                one.head() == other.head() && one.spine().len() == other.spine().len()
+                (one.head() == other.head() || matches!((one.head(), other.head()), (NeutralHead::Returned(_), NeutralHead::Returned(_))))
+                    && one.spine().len() == other.spine().len()
                     && one.spine().iter().zip(other.spine()).all(|(a, b)| core::mem::discriminant(a) == core::mem::discriminant(b))))
     } else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) })]
     fn neutrals(
@@ -1438,10 +1454,17 @@ impl<'run> Walk<'run>
         else {
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
-        if one.head() != other.head() || one.spine().len() != other.spine().len() {
+        if one.spine().len() != other.spine().len() {
             return Ok(mismatch);
         }
         let mut queued = Vec::new();
+        match (one.head(), other.head()) {
+            | (NeutralHead::Returned(left_head), NeutralHead::Returned(right_head)) => {
+                queued.push(Goal::Comps(left_head, right_head, beneath));
+            },
+            | (left_head, right_head) if left_head != right_head => return Ok(mismatch),
+            | _ => {},
+        }
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
                 | (Elimination::DataCase(left), Elimination::DataCase(right)) => {
@@ -1465,6 +1488,31 @@ impl<'run> Walk<'run>
                     {
                         return Ok(mismatch);
                     }
+                },
+                | (
+                    Elimination::PathTransport {
+                        motive: left_motive,
+                        value: left_value,
+                    },
+                    Elimination::PathTransport {
+                        motive: right_motive,
+                        value: right_value,
+                    },
+                ) => match crate::identity::motives(self.domain, left_motive, right_motive)
+                    .map_err(ConversionFault::Domain)?
+                {
+                    | crate::identity::Motives::Alike(bindings) => {
+                        let flexible = Context::Flexible(Deferral::Binder);
+                        queued.extend(
+                            bindings
+                                .into_iter()
+                                .map(|(one, other)| Goal::Values(one, other, flexible)),
+                        );
+                        queued.push(Goal::Values(left_value, right_value, beneath));
+                    },
+                    | crate::identity::Motives::Unlike => {
+                        return Ok(Local::Defer(Deferral::Binder));
+                    },
                 },
                 | (
                     Elimination::Transport(left_argument),
@@ -1523,6 +1571,7 @@ impl<'run> Walk<'run>
                     | Elimination::Split(_)
                     | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
+                    | Elimination::PathTransport { .. }
                     | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)

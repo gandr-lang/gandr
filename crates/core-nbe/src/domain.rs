@@ -246,6 +246,10 @@ pub enum NeutralHead
         /// The mark itself, closed over the environment its body reads.
         closure: Suspended,
     },
+    /// The value a stuck computation would return: a compound path endpoint
+    /// whose computation stopped short of a returner. The head is the stuck
+    /// computation itself, so two such endpoints compare by what they run.
+    Returned(DomainCompId),
 }
 
 /// A hole or a mark held with its environment: what a hole-headed or a
@@ -281,6 +285,17 @@ pub enum Elimination
     Transport(DomainValueId),
     /// Product transport waiting for a neutral pair operand.
     ProductTransport(DomainValueId),
+    /// Transport along a neutral element path: the motive, a value type under
+    /// one binder closed over the environment it reads, and the value
+    /// transported.
+    PathTransport
+    {
+        /// The motive, closed over its environment; its own binder is not in
+        /// the capture.
+        motive: ValueClosureId,
+        /// The transported value.
+        value: DomainValueId,
+    },
     /// `M v`: applied to a domain value argument.
     Apply(DomainValueId),
     /// `force v`: the forced thunk was itself stuck.
@@ -545,6 +560,14 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// Reflexivity `here(a)` at an evaluated point.
+    Here
+    {
+        /// The point the path stays at.
+        point: DomainValueId,
+        /// The term face.
+        face: TermFace,
+    },
     /// A base-type literal.
     ///
     /// The payload stays in the core arena rather than being copied here, so
@@ -680,6 +703,7 @@ impl DomainValue
         | Self::Constructor { face, .. }
         | Self::Record { face, .. }
         | Self::PathProduct { face, .. }
+        | Self::Here { face, .. }
         | Self::Literal { face, .. }
         | Self::Tuple { face, .. }
         | Self::ListNil { face } | Self::ListCons { face, .. }
@@ -697,6 +721,7 @@ impl DomainValue
             | Self::Constructor { face, .. }
             | Self::Record { face, .. }
             | Self::PathProduct { face, .. }
+            | Self::Here { face, .. }
             | Self::Literal { face, .. }
             | Self::Tuple { face, .. }
             | Self::ListNil { face }
