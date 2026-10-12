@@ -1,4 +1,4 @@
-@[ refuses("UnresolvedTypeHead") ]
+@[ checks ]
 def absurd(x: Void) -> -F Integer {
   case x {}
 }

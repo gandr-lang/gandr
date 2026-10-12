@@ -1150,7 +1150,9 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a match in term position.
-    /// - ensures: the match stands as a computation, its arms' patterns read
+    /// - ensures: a match of no arms, `case e {}`, is planned as the case of no
+    ///   branches over its scrutinee, the eliminator of the empty sum `Void`;
+    ///   otherwise the match stands as a computation, its arms' patterns read
     ///   and compiled to a decision tree over the scrutinee, read as a value
     ///   under the site's frame; the written answer is read where a result is
     ///   read, and else the answer the position states is taken; each arm body
@@ -1158,10 +1160,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   binders and its own variables, and answers what the match does.
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
-    ///   form `case … with` and the absurd match `case e {}`, which no pattern
-    ///   names the family of, by the view's name; a pattern the fragment does
-    ///   not read by its own name; a pattern of the wrong kind for its column
-    ///   as the wrong sort; a variable bound twice in one pattern; a
+    ///   form `case … with` by the view's name; a written answer on a match of
+    ///   no arms, which checks at any type; a pattern the fragment does not
+    ///   read by its own name; a pattern of the wrong kind for its column as
+    ///   the wrong sort; a variable bound twice in one pattern; a
     ///   non-exhaustive match; a match whose tree eliminates native data with
     ///   no answer as unannotated; and the tiles' and holes' own faults.
     /// - panics: none.
@@ -1176,7 +1178,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_non_exhaustive_match_is_refused`
     /// - witness: `lower::native::tests::a_match_without_an_answer_is_unannotated`
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Case(_))))]
+    /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
         site: Site,
@@ -1213,12 +1216,17 @@ impl<'source> Lowerer<'_, 'source>
         }
         exhausted(site, &cursor)?;
         if arms.is_empty() {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: site.at.span,
-                form: FormName::CASE_WITH_VIEW,
-                sort: site.reading.sort(),
-                boundary: FragmentBoundary::Unadmitted,
-            });
+            if let Maybe::Present(stated) = written {
+                return Err(LoweringRefusal::OutOfFragment {
+                    span: stated.span,
+                    form: FormName::CASE,
+                    sort: site.reading.sort(),
+                    boundary: FragmentBoundary::Unadmitted,
+                });
+            }
+            self.read(scrutinee.node, Reading::Value(frame));
+            self.plan(site, Plan::EmptyCase(scrutinee.node));
+            return Ok(());
         }
         let mut patterns = Written::default();
         let mut rows = Vec::new();

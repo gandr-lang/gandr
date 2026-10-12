@@ -1110,7 +1110,7 @@ fn patterns_outside_the_fragment_are_declined_by_name()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}def text(s : String) -> -F Integer {{ case s {{ \"a\" => return 0, _ => return 1 }} }}\ndef mixed(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\ndef bound(c : Color) -> -F Integer {{ case c {{ Red | x => return 0 }} }}\ndef absurd(c : Color) -> -F Integer {{ case c {{}} }}\n"
+        "{COLOR}def text(s : String) -> -F Integer {{ case s {{ \"a\" => return 0, _ => return 1 }} }}\ndef mixed(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\ndef bound(c : Color) -> -F Integer {{ case c {{ Red | x => return 0 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(matches!(
@@ -1136,14 +1136,44 @@ fn patterns_outside_the_fragment_are_declined_by_name()
             ..
         }
     ));
+}
+
+#[test]
+fn a_match_of_no_arms_eliminates_the_empty_sum()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "def absurd(x : Void) -> -F Integer { case x {} }\ndef stated(x : Void) -> -F Integer { case x -> -F Integer {} }\n",
+        ),
+        &mut arena,
+    );
+    assert!(
+        arena
+            .computation(tail_of(&arena, body_named(&module, SurfaceName::from("absurd"))))
+            .is_some_and(|held| matches!(*held, Computation::Case { ref branches, .. } if branches.is_empty()))
+    );
     assert!(matches!(
-        refusal_of(&module, SurfaceName::from("absurd")),
+        refusal_of(&module, SurfaceName::from("stated")),
         LoweringRefusal::OutOfFragment {
-            form: FormName::CASE_WITH_VIEW,
+            form: FormName::CASE,
             boundary: FragmentBoundary::Unadmitted,
             ..
         }
     ));
+    assert_accepted(&judged(&module, &mut arena));
+
+    let mut arena = CoreArena::new();
+    let source = alloc::format!("{COLOR}def nominal(c : Color) -> -F Integer {{ case c {{}} }}\n");
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .any(|judged| matches!(judged.verdict(), Verdict::Refused(_))),
+        "a match of no arms eliminates the empty sum, not a nominal family: {report:?}"
+    );
 }
 
 #[test]
