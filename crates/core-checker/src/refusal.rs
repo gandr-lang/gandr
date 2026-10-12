@@ -35,6 +35,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckBudget;
 
@@ -647,5 +648,225 @@ impl CheckRefusal
             | Self::MachineInvariant
             | Self::Undecided { .. } => FailureClass::EngineFault,
         }
+    }
+
+    /// The types the refusal sets against each other.
+    ///
+    /// # Specification
+    /// - requires: nothing; the function is total over the vocabulary.
+    /// - ensures: a type, sort, level or family-argument mismatch expects the
+    ///   type it was checked at and found the type it synthesised; a shape
+    ///   mismatch found the type it met, a dependent bind or stack the type its
+    ///   body synthesised, and a static Pi over no classifier of codes the
+    ///   child it stands over, each expecting a former the refusal names rather
+    ///   than a type; every other refusal compares no types.
+    /// - provides: the type nodes a face spells beside the refusal's locus.
+    /// - fails: never; a side the refusal sets no type on is the
+    ///   [`compared::Absent::Unnamed`] absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value mismatch, a computation mismatch, a shape
+    ///   mismatch and a refusal comparing nothing expose each side's node and
+    ///   its absence, distinguishing swapped, dropped and invented sides.
+    /// - witness: `refusal::tests::a_refusal_compares_the_types_it_names`
+    #[spec(ensures: |ret| match *self {
+        | Self::TypeMismatch(Mismatch::Value { synthesised, expected, .. })
+        | Self::SortMismatch { synthesised, expected, .. }
+        | Self::LevelMismatch { synthesised, expected, .. }
+        | Self::FamilyArgumentClassifier { synthesised, expected, .. } =>
+            ret == Compared { expected: Maybe::Present(TypeNode::Value(expected)), found: Maybe::Present(TypeNode::Value(synthesised)) },
+        | Self::TypeMismatch(Mismatch::Computation { synthesised, expected, .. }) =>
+            ret == Compared { expected: Maybe::Present(TypeNode::Computation(expected)), found: Maybe::Present(TypeNode::Computation(synthesised)) },
+        | Self::ShapeMismatch { found, .. } => ret.found == Maybe::Present(found) && ret.expected == UNNAMED,
+        | Self::DependentBind { synthesised, .. } | Self::DependentStack { synthesised, .. } =>
+            ret.found == Maybe::Present(TypeNode::Computation(synthesised)) && ret.expected == UNNAMED,
+        | Self::StaticClassifierExpected { found, .. } =>
+            ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
+        | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
+    })]
+    #[inline]
+    #[must_use]
+    pub fn compared(&self) -> Compared
+    {
+        let (expected, found) = match *self {
+            | Self::TypeMismatch(Mismatch::Value {
+                synthesised,
+                expected,
+                ..
+            })
+            | Self::SortMismatch {
+                synthesised,
+                expected,
+                ..
+            }
+            | Self::LevelMismatch {
+                synthesised,
+                expected,
+                ..
+            }
+            | Self::FamilyArgumentClassifier {
+                synthesised,
+                expected,
+                ..
+            } => (
+                Maybe::Present(TypeNode::Value(expected)),
+                Maybe::Present(TypeNode::Value(synthesised)),
+            ),
+            | Self::TypeMismatch(Mismatch::Computation {
+                synthesised,
+                expected,
+                ..
+            }) => (
+                Maybe::Present(TypeNode::Computation(expected)),
+                Maybe::Present(TypeNode::Computation(synthesised)),
+            ),
+            | Self::ShapeMismatch { found, .. } => (UNNAMED, Maybe::Present(found)),
+            | Self::DependentBind { synthesised, .. }
+            | Self::DependentStack { synthesised, .. } => {
+                (UNNAMED, Maybe::Present(TypeNode::Computation(synthesised)))
+            },
+            | Self::StaticClassifierExpected { found, .. } => {
+                (UNNAMED, Maybe::Present(TypeNode::Value(found)))
+            },
+            | Self::NotADataType(_)
+            | Self::DataKindNotUniverse(_)
+            | Self::DataFieldLevel { .. }
+            | Self::DataArgumentArity(_)
+            | Self::UnknownConstructor { .. }
+            | Self::ConstructorArity(_)
+            | Self::NonExhaustiveDataCase(_)
+            | Self::AbsentRecordField(_)
+            | Self::MissingRecordField { .. }
+            | Self::UnknownOperation { .. }
+            | Self::HandlerCoverage { .. }
+            | Self::ShiftWithoutReset { .. }
+            | Self::PathCode(_)
+            | Self::EffectSignatureConflict { .. }
+            | Self::NotSynthesisable { .. }
+            | Self::UnknownConstant { .. }
+            | Self::OutOfFragment { .. }
+            | Self::UnboundIndex { .. }
+            | Self::BudgetExceeded { .. }
+            | Self::DanglingNode { .. }
+            | Self::AdmissionOrder { .. }
+            | Self::MachineInvariant
+            | Self::Undecided { .. }
+            | Self::FamilyArity { .. }
+            | Self::StaticLambdaArgument { .. }
+            | Self::NegativeOccurrence(_)
+            | Self::NestedOccurrence(_)
+            | Self::IndexOccurrence(_)
+            | Self::NonUniformOccurrence(_)
+            | Self::CrossBlockReference { .. }
+            | Self::DescentNotReplayed { .. } => (UNNAMED, UNNAMED),
+        };
+        Compared { expected, found }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a refusal names no type on one side of a comparison.
+    pub mod compared {
+        /// The reason a side is empty.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The refusal sets no type on this side: it names a former, or
+            /// nothing to compare.
+            Unnamed,
+        }
+    }
+}
+
+/// No type on a side of a comparison.
+const UNNAMED: Maybe<TypeNode, compared::Absent> = Maybe::Absent(compared::Absent::Unnamed);
+
+/// The types a refusal sets against each other: the one its rule expected and
+/// the one it found.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Compared
+{
+    /// The type the rule required.
+    pub expected: Maybe<TypeNode, compared::Absent>,
+    /// The type the rule met.
+    pub found: Maybe<TypeNode, compared::Absent>,
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_term::CoreArena;
+    use quenchant_shape::shape::Maybe;
+
+    use super::CheckRefusal;
+    use super::CheckingForm;
+    use super::Compared;
+    use super::ExpectedShape;
+    use super::Mismatch;
+    use super::TermNode;
+    use super::TypeNode;
+    use super::compared;
+
+    #[test]
+    fn a_refusal_compares_the_types_it_names()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_type_unit();
+        let list = arena.value_type_list(unit);
+        let returns_unit = arena.comp_type_returner(unit);
+        let returns_list = arena.comp_type_returner(list);
+        let term = arena.value_unit();
+        let body = arena.computation_return(term);
+        let unnamed = Maybe::Absent(compared::Absent::Unnamed);
+        assert_eq!(
+            CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: term,
+                synthesised: list,
+                expected: unit,
+            })
+            .compared(),
+            Compared {
+                expected: Maybe::Present(TypeNode::Value(unit)),
+                found: Maybe::Present(TypeNode::Value(list)),
+            },
+            "a value mismatch expects the checked type and found the synthesised one"
+        );
+        assert_eq!(
+            CheckRefusal::TypeMismatch(Mismatch::Computation {
+                at: body,
+                synthesised: returns_list,
+                expected: returns_unit,
+            })
+            .compared(),
+            Compared {
+                expected: Maybe::Present(TypeNode::Computation(returns_unit)),
+                found: Maybe::Present(TypeNode::Computation(returns_list)),
+            },
+            "a computation mismatch compares computation types"
+        );
+        assert_eq!(
+            CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(term),
+                wanted: ExpectedShape::Thunk,
+                found: TypeNode::Value(unit),
+            }
+            .compared(),
+            Compared {
+                expected: unnamed,
+                found: Maybe::Present(TypeNode::Value(unit)),
+            },
+            "a shape mismatch expects a former, not a type"
+        );
+        assert_eq!(
+            CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Thunk(term),
+            }
+            .compared(),
+            Compared {
+                expected: unnamed,
+                found: unnamed,
+            },
+            "a checking-only form compares nothing"
+        );
     }
 }

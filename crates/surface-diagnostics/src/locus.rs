@@ -9,6 +9,12 @@
 //! itself, such as a type it synthesised, has no origin, and its annotation is
 //! left out rather than guessed. A refusal the checker raises about a
 //! declaration as a whole is located at the declaration.
+//!
+//! # A type without a locus is still spelled
+//!
+//! The types a checker refusal compares were spelled when its module was
+//! judged; a [`Comparison`] reads them back by node, so a synthesised type the
+//! label cannot point at is still named in it.
 
 use core::fmt;
 
@@ -21,6 +27,7 @@ use gandr_core_checker::Mismatch;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
+use gandr_core_checker::compared;
 use gandr_kernel_term::DescentRefusal;
 use gandr_kernel_term::OccurrenceSite;
 use gandr_surface_corpus::CorpusRefusal;
@@ -28,6 +35,8 @@ use gandr_surface_corpus::ExpectationFault;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::Stated;
 use gandr_surface_corpus::Surviving;
+use gandr_surface_dispatcher::Spellings;
+use gandr_surface_dispatcher::spelling;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
@@ -117,6 +126,165 @@ impl fmt::Display for Label
             | Self::Synthesised => f.write_str("the type it synthesises"),
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
         }
+    }
+}
+
+/// The types a checker refusal compares, as the composition spelled them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Comparison<'step>
+{
+    /// The type the rule required.
+    pub expected: Maybe<&'step str, spelling::Absent>,
+    /// The type the rule met.
+    pub found: Maybe<&'step str, spelling::Absent>,
+}
+
+/// A comparison of no types.
+const UNCOMPARED: Comparison<'static> = Comparison {
+    expected: Maybe::Absent(spelling::Absent::Unspelled),
+    found: Maybe::Absent(spelling::Absent::Unspelled),
+};
+
+impl<'step> Comparison<'step>
+{
+    /// The types `refusal` compares, read from `spellings`.
+    ///
+    /// # Specification
+    /// - requires: `spellings` was spelled over the arena `refusal` names.
+    /// - ensures: a checker refusal's expected and found sides are the
+    ///   spellings of the nodes [`CheckRefusal::compared`] names, each absent
+    ///   where it names none or the spellings hold none; a lowering or corpus
+    ///   refusal compares no types.
+    /// - provides: the comparison a primary label carries.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value mismatch reads both spellings in their roles,
+    ///   and a lowering refusal reads none.
+    /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    #[spec(ensures: |ret| match refusal {
+        Refusal::Checking(checked) => {
+            let side = |node: Maybe<TypeNode, _>| match node {
+                Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
+                Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
+            };
+            ret.expected == side(checked.compared().expected) && ret.found == side(checked.compared().found)
+        },
+        Refusal::Lowering(_) | Refusal::Corpus(_) => ret == UNCOMPARED,
+    })]
+    pub(crate) fn of(
+        refusal: Refusal<'_>,
+        spellings: &'step Spellings,
+    ) -> Self
+    {
+        let Refusal::Checking(checked) = refusal
+        else {
+            return UNCOMPARED;
+        };
+        let compared = checked.compared();
+        let side = |node: Maybe<TypeNode, compared::Absent>| match node {
+            | Maybe::Present(node) => spellings.get(node).map(AsRef::as_ref),
+            | Maybe::Absent(_) => Maybe::Absent(spelling::Absent::Unspelled),
+        };
+        Self {
+            expected: side(compared.expected),
+            found: side(compared.found),
+        }
+    }
+
+    /// A comparison of no types: the one every report but a checker
+    /// refusal's carries.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn none() -> Self
+    {
+        UNCOMPARED
+    }
+}
+
+impl fmt::Display for Comparison<'_>
+{
+    /// Writes the types compared: `expected` and `found`, either alone, or
+    /// nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes ``expected `E`, found `F` `` for both sides, the one
+    ///   side alone when only it is spelled, and nothing when neither is;
+    ///   propagates a destination failure.
+    /// - provides: the comparison clause of a primary label.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value mismatch shows both sides in their roles and
+    ///   a shape mismatch the found side alone.
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match (self.expected, self.found) {
+            | (Maybe::Present(expected), Maybe::Present(found)) => {
+                write!(f, "expected `{expected}`, found `{found}`")
+            },
+            | (Maybe::Present(expected), Maybe::Absent(_)) => write!(f, "expected `{expected}`"),
+            | (Maybe::Absent(_), Maybe::Present(found)) => write!(f, "found `{found}`"),
+            | (Maybe::Absent(_), Maybe::Absent(_)) => Ok(()),
+        }
+    }
+}
+
+/// The label under a report's primary locus: what its bytes are, and the types
+/// its refusal compares.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PrimaryLabel<'step>
+{
+    /// What the bytes are.
+    pub label: Label,
+    /// The types the refusal compares.
+    pub comparison: Comparison<'step>,
+}
+
+impl fmt::Display for PrimaryLabel<'_>
+{
+    /// Writes the label, then the comparison after a colon when it compares
+    /// any type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes the label's text, followed by `: ` and the comparison
+    ///   when either side is spelled; propagates a destination failure.
+    /// - provides: the one text a terminal underline and an editor message both
+    ///   show.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer or
+    ///   independent observation of the destination's failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mismatch label carries its types after its text,
+    ///   and an unresolved name's label carries none.
+    /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
+    /// - witness: `diagnostics::diagnostics::refusals_of_one_class_label_what_their_locus_is`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.label, f)?;
+        if self.comparison == UNCOMPARED {
+            return Ok(());
+        }
+        write!(f, ": {}", self.comparison)
     }
 }
 
