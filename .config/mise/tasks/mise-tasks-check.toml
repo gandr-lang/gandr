@@ -150,6 +150,61 @@ run = "cargo doc --workspace --all-features --locked --no-deps --document-privat
 description = "Spelling"
 run = "typos"
 
+# Documentation shape. `README.md` is a crate's only document: an overview
+# linking into the crate's rustdoc, where mechanism, decisions and
+# specification detail live. The first command refuses tracked markdown
+# outside the allowlist, matched by Git's glob pathspec so `*` stays within
+# one directory, which sizelint's patterns cannot express. The second holds
+# every tracked markdown file to its budget in `sizelint.toml`; treefmt's
+# sizelint pass leaves markdown to this gate.
+# Burn-down: the `:(exclude)` entries after the allowlist name the files
+# outside it when the gate landed. Entries only leave, as their prose moves
+# into rustdoc; an entry never enters.
+["check:markdown"]
+description = "Tracked markdown on the README allowlist and within its budgets"
+run = [
+  '''
+outside=$(git ls-files -- '*.md' \
+  ':(exclude,glob)README.md' \
+  ':(exclude,glob)CHANGELOG.md' \
+  ':(exclude,glob)crates/README.md' \
+  ':(exclude,glob)crates/*/README.md' \
+  ':(exclude,glob)contrib/*/README.md' \
+  ':(exclude)AGENTS.md' \
+  ':(exclude)crates/core-checker/data-record-floor.md' \
+  ':(exclude)crates/core-checker/docs/effects.md' \
+  ':(exclude)crates/core-checker/docs/holes.md' \
+  ':(exclude)crates/core-checker/docs/recursive-data.md' \
+  ':(exclude)crates/core-checker/docs/refusals.md' \
+  ':(exclude)crates/core-checker/docs/split.md' \
+  ':(exclude)crates/core-checker/docs/staging.md' \
+  ':(exclude)crates/core-nbe/docs/live.md' \
+  ':(exclude)crates/core-nbe/docs/native-data.md' \
+  ':(exclude)crates/core-nbe/docs/sharing.md' \
+  ':(exclude)crates/core-nbe/docs/staging.md' \
+  ':(exclude)crates/core-nbe/docs/trace-pairing.md' \
+  ':(exclude)crates/kernel-core/docs/admission.md' \
+  ':(exclude)crates/kernel-core/docs/conversion-replay.md' \
+  ':(exclude)crates/kernel-core/docs/identity-recursion.md' \
+  ':(exclude)crates/kernel-core/docs/native-list.md' \
+  ':(exclude)crates/kernel-core/docs/recursive-data.md' \
+  ':(exclude)crates/kernel-core/docs/session-certificates.md' \
+  ':(exclude)crates/kernel-core/docs/staging.md' \
+  ':(exclude)crates/surface-lowering/docs/attributes.md' \
+  ':(exclude)crates/surface-lowering/docs/descriptions.md' \
+  ':(exclude)crates/surface-lowering/docs/modules.md' \
+  ':(exclude)crates/surface-lowering/docs/namespace.md' \
+  ':(exclude)crates/surface-lowering/docs/native.md')
+if [ -n "$outside" ]; then
+  printf '%s\n' "$outside" >&2
+  echo 'markdown check FAILED: tracked markdown outside the README allowlist; move its prose into rustdoc' >&2
+  exit 1
+fi
+echo 'markdown check OK: every tracked markdown file is on the README allowlist'
+''',
+  "git ls-files -z -- '*.md' | xargs -0 sizelint check",
+]
+
 ["check:tests"]
 description = "Unit and integration tests over every target"
 run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
