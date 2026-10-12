@@ -1,0 +1,10 @@
+/// Squares its argument.
+/// Twice over, in fact.
+@[ refuses("UnknownAttribute"), note("a note long enough to break the block at a narrow page") ]
+@[doc("Squares its argument.")]
+def square(x: Integer) -> -F Integer {
+  ret (x * x)
+}
+
+@[ checks ]
+def greet = "hello, ${ name }!" ;

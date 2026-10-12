@@ -1,0 +1,30 @@
+[package]
+name = "gandr-surface-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The source formatter: a parsed gandr source laid out at a page width, its tokens and comments kept, its meaning checked unchanged"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["formatter", "gandr", "pretty-printing"]
+categories = ["text-processing"]
+publish.workspace = true
+
+# The layout engine lays each top-level form out; the parser reads the
+# formatted text back for the meaning check; the grammar names the forms
+# kept verbatim; the syntax tree is the input.
+[dependencies]
+anodized.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-layout.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+# Golden layouts at two widths.
+[dev-dependencies]
+expect-test.workspace = true
+
+[lints]
+workspace = true

@@ -21,6 +21,7 @@ members = [
   "crates/surface-diagnostics",
   "crates/surface-dispatcher",
   "crates/surface-driver",
+  "crates/surface-format",
   "crates/surface-grammar",
   "crates/surface-layout",
   "crates/surface-lowering",
@@ -110,6 +111,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
+# - surface-format
 # - surface-grammar
 # - surface-layout
 # - surface-lowering
@@ -198,6 +200,7 @@ features = ["std"]
 # layout goldens: a file compared whole, a diff on mismatch, and a rewrite
 # under `UPDATE_EXPECT=1`. It has no features to leave off.
 # consumers:
+# - surface-format (dev)
 # - surface-grammar (dev)
 # - surface-pretty (dev)
 [workspace.dependencies.expect-test]
@@ -422,12 +425,21 @@ path = "crates/surface-diagnostics"
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
+# The source formatter: a parsed source laid out at a page width, its tokens
+# and comments kept and its meaning checked unchanged.
+# consumers:
+# - surface-driver
+# - surface-lsp
+[workspace.dependencies.gandr-surface-format]
+path = "crates/surface-format"
+
 # The checked precedence-bounded grammar: its mold table, its precedence
 # DAG and the built-in surface the melder pushes over.
 # consumers:
 # - surface-corpus (dev)
 # - surface-diagnostics (dev)
 # - surface-dispatcher
+# - surface-format
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
@@ -440,6 +452,7 @@ path = "crates/surface-grammar"
 # The document-layout engine: the sealed document arena, Pareto resolution
 # under width taint, the plan arena and the first-order render machine.
 # consumers:
+# - surface-format
 # - surface-pretty
 [workspace.dependencies.gandr-surface-layout]
 path = "crates/surface-layout"
@@ -466,6 +479,7 @@ path = "crates/surface-lsp"
 # consumers:
 # - surface-corpus (dev)
 # - surface-dispatcher
+# - surface-format
 # - surface-grammar (dev)
 # - surface-lowering (dev)
 # - surface-lsp
@@ -518,6 +532,7 @@ path = "crates/surface-session"
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-format
 # - surface-grammar
 # - surface-lowering
 # - surface-lsp
@@ -784,6 +799,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
+# - surface-format
 # - surface-layout
 # - surface-lowering
 # - surface-lsp

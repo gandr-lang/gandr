@@ -709,6 +709,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-format"
+version = "0.0.0"
+dependencies = [
+ "expect-test",
+ "gandr-surface-grammar",
+ "gandr-surface-layout",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "quenchant-anodized",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-surface-grammar"
 version = "0.0.0"
 dependencies = [
