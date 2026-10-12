@@ -588,6 +588,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-format",
  "gandr-surface-lsp",
+ "gandr-surface-mcp",
  "gandr-surface-repl",
  "gandr-surface-tui",
  "quenchant-anodized",
@@ -790,6 +791,16 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-surface-mcp"
+version = "0.0.0"
+dependencies = [
+ "gandr-surface-lsp",
+ "quenchant-anodized",
+ "quenchant-shape",
  "serde_json",
 ]
 

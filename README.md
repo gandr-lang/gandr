@@ -19,6 +19,8 @@ cargo run -p gandr-lang -- check --jobs 1 crates/surface-corpus/strict   # one s
 
 `gandr lsp` serves the Language Server Protocol over standard input and output; on Unix it reaches the engine hub `gandr serve` runs for the current directory's workspace, starting one when none runs, so every editor on a workspace shares its open documents. [`contrib/gandr-vscode`](contrib/gandr-vscode/README.md) is the Visual Studio Code extension that connects to it.
 
+`gandr mcp` serves the Model Context Protocol over standard input and output through the same hub: a model reads the diagnostics, outline and types of the documents the workspace's editors hold open, at the version the editor shows.
+
 ## Crates
 
 `crates/README.md` names every crate, its package and its layer.

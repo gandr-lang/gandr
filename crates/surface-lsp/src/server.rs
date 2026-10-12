@@ -39,6 +39,7 @@ use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::Answer;
 use crate::protocol::ContentChange;
+use crate::protocol::Diagnostic;
 use crate::protocol::DidChangeParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
@@ -108,6 +109,8 @@ struct Document
     text: String,
     /// The session holding its forms between synchronisations.
     session: DocumentSession,
+    /// The diagnostics last published at its version.
+    published: Vec<Diagnostic>,
 }
 
 /// How a session ended.
@@ -232,9 +235,11 @@ impl From<u64> for Peer
     }
 }
 
-/// What every connection to one server shares: the open documents, which
-/// connections hold each open, and where to send a connection what another's
-/// synchronisation published.
+/// What every connection to one server shares.
+///
+/// The open documents with the diagnostics last published for each, which
+/// connections hold each open, where to send a connection what another's
+/// synchronisation published, and which watchers hear of each change.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -259,6 +264,8 @@ pub struct Workspace
     holders: BTreeMap<DocumentUri, BTreeSet<Peer>>,
     /// Where each joined connection takes messages another's handling made.
     outboxes: BTreeMap<Peer, Sender<Outgoing>>,
+    /// Where each watching connection hears which document changed.
+    watchers: BTreeMap<Peer, Sender<DocumentUri>>,
 }
 
 impl Workspace
@@ -278,6 +285,102 @@ impl Workspace
         let _prior = self.outboxes.insert(peer, outbox);
     }
 
+    /// Admit `peer` as a watcher: the URI of each document a synchronisation
+    /// publishes, and of each document forgotten, goes to `watcher`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn watch(
+        &mut self,
+        peer: Peer,
+        watcher: Sender<DocumentUri>,
+    )
+    {
+        let _prior = self.watchers.insert(peer, watcher);
+    }
+
+    /// The open documents and the version each is at, in URI order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn held(&self) -> impl Iterator<Item = (&DocumentUri, DocumentVersion)>
+    {
+        self.documents
+            .iter()
+            .map(|(uri, document)| (uri, document.version))
+    }
+
+    /// The diagnostics last published for the document at `uri`, and the
+    /// version they were published at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` for a document no connection holds; otherwise the last
+    ///   diagnostics published at the document's held version, empty until its
+    ///   first synchronisation publishes.
+    /// - provides: a cheap read of what an editor shows, for another face.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused change's diagnostics are read back at its
+    ///   version; a closed document reads `None`.
+    /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    #[spec(ensures: |ret| ret.is_some() == self.documents.contains_key(uri))]
+    #[inline]
+    #[must_use]
+    pub fn published(
+        &self,
+        uri: &DocumentUri,
+    ) -> Option<(DocumentVersion, &[Diagnostic])>
+    {
+        self.documents
+            .get(uri)
+            .map(|document| (document.version, document.published.as_slice()))
+    }
+
+    /// The response a running connection gives the request `request`, read
+    /// off the documents held, as JSON.
+    ///
+    /// # Specification
+    /// - requires: nothing; any body is admitted.
+    /// - ensures: a request is answered as [`Server::handle`] answers it on a
+    ///   running connection, under its own identifier; `initialize` and
+    ///   `shutdown` are refused as a running connection refuses or answers
+    ///   them, and change nothing here. A notification or a response is
+    ///   answered `null`; a body that is not a message, with the error the
+    ///   protocol owes it.
+    /// - provides: every read-only request of the language server, for a face
+    ///   that speaks another protocol over the same documents.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a hover and an outline answer as a connection's
+    ///   would; a notification answers `null`.
+    /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    #[spec(ensures: |ret| ret.is_null() || ret.get("jsonrpc").is_some())]
+    #[inline]
+    #[must_use]
+    pub fn query(
+        &self,
+        request: &Body,
+    ) -> Value
+    {
+        let mut reader = Server {
+            phase: Phase::Running,
+            peer: Peer(u64::MAX),
+        };
+        let answer = match classify(request) {
+            | Err(malformed) => malformed.response(),
+            | Ok(Incoming::Request { id, method, params }) => {
+                reader.request(self, id, &method, params)
+            },
+            | Ok(Incoming::Notification { .. } | Incoming::Response) => return Value::Null,
+        };
+        serde_json::to_value(answer).unwrap_or(Value::Null)
+    }
+
     /// Let `peer` go: it holds nothing open any more, takes no message, and a
     /// document no other connection holds is forgotten with its session.
     ///
@@ -293,7 +396,7 @@ impl Workspace
     /// - hypothesis: L3 — one of two connections holding a document leaving,
     ///   then the other, observe the document kept, then forgotten.
     /// - witness: `server::tests::a_departing_connection_leaves_the_others_served`
-    #[spec(ensures: !self.outboxes.contains_key(&peer)
+    #[spec(ensures: !self.outboxes.contains_key(&peer) && !self.watchers.contains_key(&peer)
         && self.holders.values().all(|holders| !holders.contains(&peer) && !holders.is_empty())
         && self.documents.keys().all(|uri| self.holders.contains_key(uri)))]
     #[inline]
@@ -303,36 +406,63 @@ impl Workspace
     )
     {
         let _outbox = self.outboxes.remove(&peer);
+        let _watcher = self.watchers.remove(&peer);
+        let mut forgotten = Vec::new();
         self.holders.retain(|uri, holders| {
             let _held = holders.remove(&peer);
             if holders.is_empty() {
-                let _forgotten = self.documents.remove(uri);
+                forgotten.push(uri.clone());
                 false
             }
             else {
                 true
             }
         });
+        for uri in forgotten {
+            self.forget(&uri);
+        }
     }
 
-    /// Send `message`, a publication, to every connection but `peer` that
-    /// holds its document open.
+    /// Forget the document at `uri`, with its session, and tell every
+    /// watcher.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forget(
+        &mut self,
+        uri: &DocumentUri,
+    )
+    {
+        let _released = self.holders.remove(uri);
+        if self.documents.remove(uri).is_some() {
+            for watcher in self.watchers.values() {
+                let _gone = watcher.send(uri.clone());
+            }
+        }
+    }
+
+    /// Record `message`, a publication `peer`'s handling made, as its
+    /// document's last diagnostics, send it to every connection but `peer`
+    /// that holds the document open, and tell every watcher.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a diagnostic notification is sent once to the outbox of each
-    ///   other holder of its URI that has one; anything else is sent nowhere.
-    ///   An outbox whose connection is gone takes nothing, silently.
+    /// - ensures: a diagnostic notification at a held document's held version
+    ///   becomes that document's published diagnostics, is sent once to the
+    ///   outbox of each other holder of its URI that has one, and its URI to
+    ///   every watcher; anything else is recorded and sent nowhere. A channel
+    ///   whose connection is gone takes nothing, silently.
     /// - panics: none.
     /// - executable: none — the sends land in channels whose receiving ends
     ///   this call does not hold, so nothing it can read states them.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a change by one of two holders publishes to the other
-    ///   and not back to itself.
+    ///   and not back to itself; the diagnostics read back are the change's.
     /// - witness: `server::tests::two_connections_share_one_document`
-    fn tell_others(
-        &self,
+    /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    fn published_by(
+        &mut self,
         peer: Peer,
         message: &Outgoing,
     )
@@ -341,14 +471,23 @@ impl Workspace
         else {
             return;
         };
-        let Some(holders) = self.holders.get(&params.uri)
+        let Some(document) = self
+            .documents
+            .get_mut(&params.uri)
+            .filter(|document| params.version == Some(document.version))
         else {
             return;
         };
-        for holder in holders.iter().filter(|&&holder| holder != peer) {
-            if let Some(outbox) = self.outboxes.get(holder) {
-                let _gone = outbox.send(message.clone());
+        document.published.clone_from(&params.diagnostics);
+        if let Some(holders) = self.holders.get(&params.uri) {
+            for holder in holders.iter().filter(|&&holder| holder != peer) {
+                if let Some(outbox) = self.outboxes.get(holder) {
+                    let _gone = outbox.send(message.clone());
+                }
             }
+        }
+        for watcher in self.watchers.values() {
+            let _gone = watcher.send(params.uri.clone());
         }
     }
 }
@@ -532,7 +671,7 @@ impl Server
                     version: Some(logged.version),
                     diagnostics: vec![fault],
                 });
-                workspace.tell_others(self.peer, &correction);
+                workspace.published_by(self.peer, &correction);
                 corrections.push(correction);
             }
         }
@@ -815,13 +954,14 @@ impl Server
                         version: text_document.version,
                         text: String::new(),
                         session: open(&uri),
+                        published: Vec::new(),
                     });
                 document.version = text_document.version;
                 document.text = text_document.text;
                 let outcome = synchronised(&uri, document);
                 let _first = workspace.holders.entry(uri).or_default().insert(self.peer);
                 for message in &outcome.messages {
-                    workspace.tell_others(self.peer, message);
+                    workspace.published_by(self.peer, message);
                 }
                 outcome
             },
@@ -843,7 +983,7 @@ impl Server
                 }
                 let outcome = synchronised(&text_document.uri, document);
                 for message in &outcome.messages {
-                    workspace.tell_others(self.peer, message);
+                    workspace.published_by(self.peer, message);
                 }
                 outcome
             },
@@ -855,8 +995,7 @@ impl Server
                 if let Some(holders) = workspace.holders.get_mut(&text_document.uri) {
                     let _held = holders.remove(&self.peer);
                     if holders.is_empty() {
-                        let _released = workspace.holders.remove(&text_document.uri);
-                        let _closed = workspace.documents.remove(&text_document.uri);
+                        workspace.forget(&text_document.uri);
                     }
                 }
                 Outcome::say(publish(PublishParams {
@@ -2351,6 +2490,70 @@ mod tests
         assert!(
             workspace.outboxes.is_empty(),
             "a stranger's departure changes nothing"
+        );
+    }
+
+    #[test]
+    fn a_workspace_answers_queries_off_its_documents()
+    {
+        let (mut workspace, [(mut first, _first_inbox), (_second, _second_inbox)]) =
+            two_connections();
+        let (watcher, changes) = channel();
+        workspace.watch(Peer::from(9_u64), watcher);
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        assert!(workspace.published(&uri).is_none(), "nothing is held yet");
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(r#","version":4,"text":"def g = missing ;\n"}"#),
+            ),
+        ));
+        let (version, diagnostics) = workspace
+            .published(&uri)
+            .expect("the opened document is held");
+        assert_eq!(version.to_string(), "4", "read at the version published");
+        assert_eq!(diagnostics.len(), 1, "the refusal is what was published");
+        assert_eq!(
+            changes.try_iter().collect::<Vec<_>>(),
+            vec![uri.clone()],
+            "a watcher hears which document changed"
+        );
+        let hover = Body::from(
+            br#"{"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{
+                "textDocument":{"uri":"file:///tmp/shared.gandr"},"position":{"line":0,"character":4}}}"#
+                .to_vec(),
+        );
+        let answered = workspace.query(&hover);
+        assert_eq!(answered.get("id"), Some(&serde_json::json!(3_i32)));
+        assert_eq!(
+            Some(answered),
+            serde_json::to_value(&first.handle(&mut workspace, &hover).messages)
+                .expect("a message encodes")
+                .get(0_usize)
+                .cloned(),
+            "a query answers as a connection answers"
+        );
+        assert!(
+            workspace
+                .query(&Body::from(
+                    br#"{"jsonrpc":"2.0","method":"exit"}"#.to_vec()
+                ))
+                .is_null(),
+            "a notification is answered null"
+        );
+        drop(first.handle(
+            &mut workspace,
+            &shared(Json("textDocument/didClose"), Json("}")),
+        ));
+        assert!(
+            workspace.published(&uri).is_none(),
+            "a closed document reads nothing"
+        );
+        assert_eq!(
+            changes.try_iter().collect::<Vec<_>>(),
+            vec![uri],
+            "a watcher hears a document forgotten"
         );
     }
 }

@@ -182,13 +182,13 @@ enum Command
         #[arg(long, value_name = "MILLISECONDS", conflicts_with = "standalone")]
         linger_ms: Option<u64>,
     },
-    /// Run the engine hub: serve the Language Server Protocol to every client
-    /// of one workspace over a Unix socket, the clients sharing the documents
-    /// they open.
+    /// Run the engine hub: serve the Language Server Protocol to every editor
+    /// of one workspace, and the Model Context Protocol to every model, over
+    /// one Unix socket, all of them sharing the documents the editors open.
     ///
-    /// `gandr lsp` starts one when none runs. Exits 0 when the hub has had no
-    /// client for its linger or another hub already serves the socket, and 2
-    /// when the socket cannot be bound or served.
+    /// `gandr lsp` and `gandr mcp` start one when none runs. Exits 0 when the
+    /// hub has had no client for its linger or another hub already serves the
+    /// socket, and 2 when the socket cannot be bound or served.
     #[cfg(unix)]
     Serve
     {
@@ -198,6 +198,24 @@ enum Command
         socket: Option<PathBuf>,
         /// How long to wait for a client, once the last has left, before
         /// exiting. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+    },
+    /// Serve the Model Context Protocol over standard input and output: tools
+    /// and resources reading the documents the workspace's editors hold open.
+    ///
+    /// The session is carried to the engine hub serving the current
+    /// directory's workspace, started when none runs. Exits 0 when the client
+    /// closes its input and the hub has answered, and 2 when a stream fails or
+    /// no hub can be reached.
+    #[cfg(unix)]
+    Mcp
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
     },
@@ -494,6 +512,13 @@ fn main() -> ExitCode
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
             );
         },
+        #[cfg(unix)]
+        | Some(Command::Mcp { socket, linger_ms }) => {
+            return mcp(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+            );
+        },
         | Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput });
         },
@@ -626,11 +651,9 @@ fn hub_fault(error: &std::io::Error) -> ExitCode
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the session runs against the hub as `gandr_surface_lsp::relay`
-///   carries it, and ends as [`ended`] states. With no hub answering, this
-///   executable is started detached as `gandr serve` on the socket, and the
-///   socket is tried every 20 ms for five seconds; a hub never reached is noted
-///   on standard error and exits `2`.
+/// - ensures: the session runs against the hub [`reach_hub`] reaches as
+///   `gandr_surface_lsp::relay` carries it, and ends as [`ended`] states; a hub
+///   never reached is noted on standard error and exits `2`.
 /// - provides: the editor's entry point on Unix.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -646,37 +669,7 @@ fn relayed(
     linger: Duration,
 ) -> ExitCode
 {
-    use std::os::unix::net::UnixStream;
-    use std::os::unix::process::CommandExt as _;
-
-    let reached = hub_socket(socket).and_then(|socket| {
-        if let Ok(stream) = UnixStream::connect(&socket) {
-            return Ok(stream);
-        }
-        let child = std::process::Command::new(std::env::current_exe()?)
-            .arg("serve")
-            .arg("--socket")
-            .arg(&socket)
-            .arg("--linger-ms")
-            .arg(linger.as_millis().to_string())
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .process_group(0_i32)
-            .spawn()?;
-        // The hub outlives this client by its linger; it is never waited on.
-        drop(child);
-        let started = Instant::now();
-        loop {
-            std::thread::sleep(Duration::from_millis(20));
-            match UnixStream::connect(&socket) {
-                | Ok(stream) => return Ok(stream),
-                | Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
-                | Err(_) => {},
-            }
-        }
-    });
-    match reached {
+    match reach_hub(socket, linger) {
         | Ok(stream) => ended(gandr_surface_lsp::relay(
             std::io::stdin(),
             &mut std::io::stdout().lock(),
@@ -686,15 +679,109 @@ fn relayed(
     }
 }
 
+/// Carry the Model Context Protocol session on the standard streams to the
+/// hub at `socket`, starting one lingering `linger` when none answers, and
+/// choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the session runs against the hub [`reach_hub`] reaches as
+///   `gandr_surface_mcp::relay` carries it and exits `0` once the hub has
+///   answered all of standard input; a hub never reached or a failed stream is
+///   noted on standard error and exits `2`.
+/// - provides: `gandr mcp`, a model's entry point.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model session reads the diagnostics an editor's session
+///   published through the same hub.
+/// - witness: `cli::cli::mcp_reads_what_an_editor_holds_open`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+fn mcp(
+    socket: Option<PathBuf>,
+    linger: Duration,
+) -> ExitCode
+{
+    let carried = reach_hub(socket, linger).and_then(|stream| {
+        gandr_surface_mcp::relay(std::io::stdin(), &mut std::io::stdout().lock(), stream)
+    });
+    match carried {
+        | Ok(()) => ExitCode::SUCCESS,
+        | Err(error) => hub_fault(&error),
+    }
+}
+
+/// A connection to the hub at `socket`, started lingering `linger` when none
+/// answers.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a hub answering at once is connected; otherwise this executable
+///   is started detached as `gandr serve` on the socket, and the socket is
+///   tried every 20 ms for five seconds.
+/// - provides: one way every client reaches its workspace's hub.
+/// - fails: when the socket cannot be named, the hub cannot be started, or it
+///   never answers within five seconds.
+/// - panics: none.
+/// - executable: none — the result is a socket connection to another process.
+///
+/// # Errors
+/// The error naming the socket, starting the hub or connecting last.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a client finding no hub starts one, and the next client
+///   connects to it.
+/// - witness: `cli::cli::lsp_clients_share_one_engine_hub`
+/// - witness: `cli::cli::mcp_reads_what_an_editor_holds_open`
+#[cfg(unix)]
+fn reach_hub(
+    socket: Option<PathBuf>,
+    linger: Duration,
+) -> std::io::Result<std::os::unix::net::UnixStream>
+{
+    use std::os::unix::net::UnixStream;
+    use std::os::unix::process::CommandExt as _;
+
+    let socket = hub_socket(socket)?;
+    if let Ok(stream) = UnixStream::connect(&socket) {
+        return Ok(stream);
+    }
+    let child = std::process::Command::new(std::env::current_exe()?)
+        .arg("serve")
+        .arg("--socket")
+        .arg(&socket)
+        .arg("--linger-ms")
+        .arg(linger.as_millis().to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .process_group(0_i32)
+        .spawn()?;
+    // The hub outlives this client by its linger; it is never waited on.
+    drop(child);
+    let started = Instant::now();
+    loop {
+        std::thread::sleep(Duration::from_millis(20));
+        match UnixStream::connect(&socket) {
+            | Ok(stream) => return Ok(stream),
+            | Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
+            | Err(_) => {},
+        }
+    }
+}
+
 /// Run the engine hub on `socket`, lingering `linger` once its last client
 /// leaves, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the hub runs as `gandr_surface_lsp::run_hub` states, its timing
-///   lines on standard error, and exits `0` when it lingers out; a socket
-///   another hub serves exits `0` at once, noted on standard error. A socket
-///   that cannot be bound or served is noted and exits `2`.
+/// - ensures: the hub runs as `gandr_surface_lsp::run_hub` states, with this
+///   crate's Model Context Protocol face (`gandr_surface_mcp::serve`), its
+///   timing lines on standard error, and exits `0` when it lingers out; a
+///   socket another hub serves exits `0` at once, noted on standard error. A
+///   socket that cannot be bound or served is noted and exits `2`.
 /// - provides: `gandr serve`.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -716,7 +803,13 @@ fn hub(
     };
     match gandr_surface_lsp::bind(&socket) {
         | Ok(Maybe::Present(listener)) => {
-            match gandr_surface_lsp::run_hub(&listener, &socket, linger, std::io::stderr()) {
+            match gandr_surface_lsp::run_hub(
+                &listener,
+                &socket,
+                linger,
+                std::io::stderr(),
+                Some(gandr_surface_mcp::serve),
+            ) {
                 | Ok(()) => ExitCode::SUCCESS,
                 | Err(error) => hub_fault(&error),
             }

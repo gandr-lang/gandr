@@ -962,6 +962,111 @@ mod cli
         );
     }
 
+    #[test]
+    fn mcp_reads_what_an_editor_holds_open()
+    {
+        use std::ffi::OsStr;
+        use std::io::BufReader;
+
+        // The name is short: a socket path must fit the platform's limit.
+        let scratch = Scratch::new(Path::new("mcp"));
+        let socket = scratch.0.join("hub.sock");
+        let mut editor = gandr(&[
+            OsStr::new("lsp"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--linger-ms"),
+            OsStr::new("200"),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the editor's server starts");
+        let mut to_editor = editor.stdin.take().expect("standard input is piped");
+        let mut from_editor =
+            BufReader::new(editor.stdout.take().expect("standard output is piped"));
+        to_editor
+            .write_all(
+                frames(&[
+                    Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#),
+                    Text::from(
+                        r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/held.gandr","languageId":"gandr","version":1,"text":"def g = missing ;\n"}}}"#,
+                    ),
+                ])
+                .as_ref(),
+            )
+            .expect("the editor's session is written");
+        let mut published = String::new();
+        for _frame in 0_u8 .. 2_u8 {
+            let Maybe::Present(body) = read_frame(&mut from_editor).expect("a frame")
+            else {
+                panic!("the editor's server ended early");
+            };
+            published = String::from_utf8(body.as_ref().to_vec()).expect("UTF-8");
+        }
+        assert!(
+            published.contains("UnresolvedName"),
+            "the editor sees the refusal first: {published}"
+        );
+        let model = piped(
+            &[
+                OsStr::new("mcp"),
+                OsStr::new("--socket"),
+                socket.as_os_str(),
+            ],
+            Text::from(concat!(
+                r#"{"jsonrpc":"2.0","id":1,"method":"server/discover"}"#,
+                "\n",
+                r#"{"jsonrpc":"2.0","id":2,"method":"resources/list"}"#,
+                "\n",
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"diagnostics","arguments":{"uri":"file:///tmp/held.gandr"}}}"#,
+                "\n",
+            )),
+        );
+        assert_eq!(code(&model), Code(0_i32), "{}", stderr(&model));
+        let transcript = stdout(&model);
+        let replies: Vec<&str> = transcript.lines().collect();
+        assert_eq!(replies.len(), 3_usize, "one line per request: {transcript}");
+        assert!(
+            replies[1].contains(r#""uri":"gandr:///tmp/held.gandr/diagnostics""#),
+            "the held document is a resource: {transcript}"
+        );
+        assert!(
+            replies[2].contains(r#""code":"UnresolvedName""#)
+                && replies[2].contains(r#""version":1"#),
+            "the model reads the editor's refusal at its version: {transcript}"
+        );
+        to_editor
+            .write_all(
+                frames(&[
+                    Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#),
+                    Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#),
+                ])
+                .as_ref(),
+            )
+            .expect("the editor's session is ended");
+        drop(to_editor);
+        // The shutdown reply is read, so the editor's last write finds a
+        // reader.
+        let mut rest = Vec::new();
+        std::io::Read::read_to_end(&mut from_editor, &mut rest).expect("the editor's output ends");
+        assert!(
+            String::from_utf8_lossy(&rest).contains(r#""id":2"#),
+            "shutdown is answered"
+        );
+        let ended = editor.wait_with_output().expect("the editor's server runs");
+        assert_eq!(code(&ended), Code(0_i32), "{}", stderr(&ended));
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+        while socket.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(core::time::Duration::from_millis(50));
+        }
+        assert!(
+            !socket.exists(),
+            "the hub exits after its linger, removing its socket"
+        );
+    }
+
     /// The finished run of `gandr` with `arguments` and `input` on standard
     /// input, its output captured.
     ///

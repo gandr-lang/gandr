@@ -26,6 +26,7 @@ members = [
   "crates/surface-layout",
   "crates/surface-lowering",
   "crates/surface-lsp",
+  "crates/surface-mcp",
   "crates/surface-parser",
   "crates/surface-pretty",
   "crates/surface-render-remote",
@@ -116,6 +117,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lsp
+# - surface-mcp
 # - surface-parser
 # - surface-pretty
 # - surface-render-remote
@@ -471,11 +473,20 @@ path = "crates/surface-layout"
 path = "crates/surface-lowering"
 
 # The language server: diagnostics and semantic tokens over the Language
-# Server Protocol, each request rechecking the whole document.
+# Server Protocol, each request rechecking the whole document; the engine
+# hub's shared workspace.
 # consumers:
 # - surface-driver
+# - surface-mcp
 [workspace.dependencies.gandr-surface-lsp]
 path = "crates/surface-lsp"
+
+# The Model Context Protocol server: the hub's documents and queries served
+# to models.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-mcp]
+path = "crates/surface-mcp"
 
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
@@ -806,6 +817,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lsp
+# - surface-mcp (dev)
 # - surface-pretty
 # - surface-repl
 # - surface-session
@@ -916,9 +928,10 @@ version = "1.0.229"
 default-features = false
 features = ["alloc", "derive"]
 
-# JSON: the language server's wire format, the diagnostics' JSON verbosity
-# level, the format the render-bus codec witnesses round-trip through, and
-# nextest's machine-readable test list.
+# JSON: the language server's and the Model Context Protocol server's wire
+# format, the diagnostics' JSON verbosity level, the format the render-bus
+# codec witnesses round-trip through, and nextest's machine-readable test
+# list.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
@@ -926,6 +939,7 @@ features = ["alloc", "derive"]
 # - surface-diagnostics
 # - surface-driver
 # - surface-lsp
+# - surface-mcp
 # - surface-render-remote (dev)
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]
