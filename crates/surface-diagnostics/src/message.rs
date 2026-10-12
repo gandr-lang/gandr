@@ -180,6 +180,11 @@ fn lowered(
                     "a recursive call must pass the earlier parameters unchanged; only the last \
                      one descends",
                 ),
+                | FragmentBoundary::NotInTail => write!(
+                    f,
+                    "a {form} leaves a function only where its body ends; early exits are not \
+                     supported yet"
+                ),
             }
         },
         | LoweringRefusal::GradedBridge { grade, .. } => write!(

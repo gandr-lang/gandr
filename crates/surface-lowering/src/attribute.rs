@@ -535,6 +535,8 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Thunk
         | Former::Lambda
         | Former::Return
+        | Former::Exit
+        | Former::Become
         | Former::Block
         | Former::Force
         | Former::Call

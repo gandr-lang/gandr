@@ -661,7 +661,8 @@ fn lowering_row(
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed
                 | FragmentBoundary::Unannotated
-                | FragmentBoundary::NonUniform,
+                | FragmentBoundary::NonUniform
+                | FragmentBoundary::NotInTail,
             ..
         }
         | LoweringRefusal::UnresolvedDocLink { .. }

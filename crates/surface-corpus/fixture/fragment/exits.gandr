@@ -1,0 +1,38 @@
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+@[ checks ]
+def rec down(n : Nat) -> -F Nat {
+  case n {
+    Zero => return n,
+    Succ(p) => become down[<](p)
+  }
+}
+
+@[ checks ]
+def twice(n : Nat) -> -F Nat {
+  run once <- down(n) ;
+  become down(once)
+}
+
+@[ checks ]
+def identity : +U (Nat -> -F Nat) ;
+def identity = thunk { fn (n) { return n } } ;
+
+@[ refuses("OutOfFragment") ]
+def early(n : Nat) -> -F Nat {
+  run m <- return n ;
+  return m
+}
+
+@[ refuses("OutOfFragment") ]
+def local(n : Nat) -> -F Nat {
+  run m <- become down(n) ;
+  return m
+}
+
+@[ refuses("OutOfFragment") ]
+def returned = return Zero ;

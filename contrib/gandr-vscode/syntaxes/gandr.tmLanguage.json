@@ -66,9 +66,9 @@
           "match": "\\b(def)\\b"
         },
         {
-          "comment": "ret",
+          "comment": "ret, return, become",
           "name": "keyword.control.gandr",
-          "match": "\\b(ret)\\b"
+          "match": "\\b(ret|return|become)\\b"
         },
         {
           "comment": "sign",
