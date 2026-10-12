@@ -280,18 +280,19 @@ fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
 ///   before `offer.chunk` is the accepted text `prior` was taken from, and
 ///   `resume` is the session's latest resume, read after that answer.
 /// - ensures: the block echoes `offer.echo`. Its lines are, in order: the
-///   diagnostics renderer's report, under `style`, for every refusal `gandr
-///   check --goals` would print for the revision, each its own line; then, when
-///   nothing was refused, one line per declaration the chunk introduced or
-///   whose outcome differs from `prior` — `name : T` as a type line when it
-///   checks owing nothing, as a goal line when it owes — and, after the type
-///   line of a declaration the session evaluates, the line of what its run came
-///   to: a value line spelling the value, a blame line naming the goal reached,
-///   or a note line for a run that stopped short or never reached the machine;
-///   then a warning line per parse repair inside the chunk. A probe answers
-///   instead with the one type line `: T`. The disposition keeps the chunk,
-///   with the standings of the whole revision, exactly when the subject is
-///   declarations and nothing was refused.
+///   diagnostics renderer's report, under `style`, for every refusal and every
+///   shadowing warning `gandr check --goals` would print for the revision, each
+///   its own line, a warning refusing nothing; then, when nothing was refused,
+///   one line per declaration the chunk introduced or whose outcome differs
+///   from `prior` — `name : T` as a type line when it checks owing nothing, as
+///   a goal line when it owes — and, after the type line of a declaration the
+///   session evaluates, the line of what its run came to: a value line spelling
+///   the value, a blame line naming the goal reached, or a note line for a run
+///   that stopped short or never reached the machine; then a warning line per
+///   parse repair inside the chunk. A probe answers instead with the one type
+///   line `: T`. The disposition keeps the chunk, with the standings of the
+///   whole revision, exactly when the subject is declarations and nothing was
+///   refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
@@ -358,6 +359,10 @@ pub fn encode_submission(
         match entry {
             | Entry::Report(report) => match report.class() {
                 | Class::Goal => {},
+                | Class::Warning => {
+                    let rendered = report.render(style).to_string();
+                    lines.push((OutKind::Diag, String::from(rendered.trim_end())));
+                },
                 | Class::Refusal(_) | Class::Unsettled(_) => {
                     refused = true;
                     let rendered = report.render(style).to_string();

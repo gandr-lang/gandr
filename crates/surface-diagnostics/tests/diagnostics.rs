@@ -497,6 +497,76 @@ def wrong = "text" ;
     }
 
     #[test]
+    fn a_shadowed_builtin_renders_as_a_warning()
+    {
+        let text = SourceText::from(
+            "def add : Integer ;\ndef add = 1 ;\ndef f(int: Integer) -> -F Integer { ret int \
+             }\ndef g : Integer ;\ndef g = missing ;\n",
+        );
+        let step = unsettled(Path::new("shadow.gandr"), SourceRoot::Strict, text);
+        let checked = reports(&step, Verb::Check(Goals::Gated));
+        assert_eq!(
+            checked.iter().map(Report::class).collect::<Vec<_>>(),
+            [
+                Class::Warning,
+                Class::Warning,
+                Class::Refusal(FailureClass::MalformedSource),
+            ],
+            "each shadowed builtin is a warning, printed before the declarations' reports"
+        );
+        assert_eq!(
+            checked.iter().map(Report::span).collect::<Vec<_>>(),
+            [
+                Maybe::Present(span_of(text, SourceText::from("add"))),
+                Maybe::Present(span_of(text, SourceText::from("int"))),
+                Maybe::Present(span_of(text, SourceText::from("missing"))),
+            ],
+            "a declaration's warning sits at its name, a binder's at the binder"
+        );
+        let [ref declared, ref bound, _] = *checked.as_slice()
+        else {
+            panic!("three reports");
+        };
+        for report in [declared, bound] {
+            assert!(
+                matches!(report.identifier(), Maybe::Present(spelling) if spelling.as_ref() == "ShadowedBuiltin"),
+                "a warning is named as the refusal the reject policy files"
+            );
+            assert_eq!(
+                report.label().map(|label| label.to_string()),
+                Maybe::Present("shadows a builtin".to_owned())
+            );
+        }
+        assert_eq!(
+            bound.title().to_string(),
+            "`int` shadows a builtin name; the source's binding wins"
+        );
+        assert_eq!(
+            format!("{}\n", declared.render(RenderStyle::Plain)),
+            include_str!("golden/shadowed-builtin.txt"),
+            "the terminal layout is a public surface"
+        );
+        assert!(
+            entries(&step, Verb::Test).all(
+                |entry| !matches!(entry, Entry::Report(report) if report.class() == Class::Warning)
+            ),
+            "`test` prints settlements, never a warning"
+        );
+        let Composed::Settled { ref report, .. } = composed(
+            SourceRoot::Strict,
+            SourceText::from("def add : Integer ;\ndef add = 1 ;\n"),
+        )
+        else {
+            panic!("the source is read as a module");
+        };
+        assert_eq!(
+            report.tally().settlement(),
+            gandr_surface_corpus::Settlement::Settled,
+            "a warning unsettles nothing"
+        );
+    }
+
+    #[test]
     fn refusals_of_one_class_label_what_their_locus_is()
     {
         let mismatch = SourceText::from(MISMATCH);

@@ -316,13 +316,13 @@ pub struct Rechecked
 ///   vocabulary name as its code, its title, primary label and note as its
 ///   message, each context locus as a related location carrying its label, then
 ///   each nested reason, outermost first, as a related location carrying the
-///   judgement it stands for, and the severity of a goal as information and of
-///   every other report as an error; a report the renderer leaves unlocated,
-///   and a ledger line, at the document's origin. A fault that keeps the
-///   document from composing, and a grammar that did not build, is one error at
-///   the origin naming it. The timing carries the judgement's form census, the
-///   incremental checker's census, and the wall of the whole recheck; its
-///   admission is pending when the judgement left one.
+///   judgement it stands for, and the severity of a goal as information, of a
+///   warning as a warning and of every other report as an error; a report the
+///   renderer leaves unlocated, and a ledger line, at the document's origin. A
+///   fault that keeps the document from composing, and a grammar that did not
+///   build, is one error at the origin naming it. The timing carries the
+///   judgement's form census, the incremental checker's census, and the wall of
+///   the whole recheck; its admission is pending when the judgement left one.
 /// - provides: the one recheck every synchronisation publishes.
 /// - fails: never; a fault is a diagnostic.
 /// - panics: none.
@@ -339,10 +339,11 @@ pub struct Rechecked
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
+/// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 #[spec(ensures: |ret| ret.diagnostics.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
-        && matches!(diagnostic.severity, Severity::ERROR | Severity::INFORMATION)
+        && matches!(diagnostic.severity, Severity::ERROR | Severity::WARNING | Severity::INFORMATION)
         && diagnostic.related_information.iter().all(|related|
             related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
 #[must_use]
@@ -561,9 +562,10 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::nested_reasons_become_lsp_related_information`
 /// - witness: `recheck::tests::a_refusal_publishes_its_label_and_note`
+/// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 #[spec(ensures: |ret| ret.source == "gandr"
-    && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, _ => Severity::ERROR }
+    && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, Class::Warning => Severity::WARNING, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
     && ret.message.starts_with(&report.title().to_string())
     && ret.related_information.len() == report.context().into_iter()
@@ -589,6 +591,7 @@ fn diagnostic(
     };
     let severity = match report.class() {
         | Class::Goal => Severity::INFORMATION,
+        | Class::Warning => Severity::WARNING,
         | Class::Refusal(_) | Class::Unsettled(_) => Severity::ERROR,
     };
     let mut message = report.title().to_string();
@@ -792,6 +795,32 @@ mod tests
             ],
             "the thunk and the force it holds, outermost first"
         );
+    }
+
+    #[test]
+    fn a_shadowed_builtin_is_published_as_a_warning()
+    {
+        let uri = DocumentUri::from("file:///strict/shadow.gandr");
+        let text = "def add : Integer ;\ndef add = 1 ;\n";
+        let diagnostics = checked(&uri, SourceText::from(text));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one shadowing warning, and the module checks");
+        };
+        assert_eq!(
+            (
+                diagnostic.range,
+                diagnostic.severity,
+                diagnostic.code.as_deref()
+            ),
+            (
+                range(Span(0, 4, 0, 7)),
+                Severity::WARNING,
+                Some("ShadowedBuiltin")
+            ),
+            "a warning at the shadowing name, never an error"
+        );
+        assert!(diagnostic.related_information.is_empty());
     }
 
     #[test]

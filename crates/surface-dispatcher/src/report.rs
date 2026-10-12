@@ -877,6 +877,7 @@ def broken = missing ;"#,
             origins: module.into_origins(),
             spellings: crate::spelled::Spellings::default(),
             trails: crate::spelled::Trails::default(),
+            shadowed: Vec::new(),
             program,
         };
         let mut engine = RunReport::default();

@@ -29,6 +29,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::shown;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -139,6 +140,9 @@ enum Cursor<'step>
     /// The note on a pending source the lowering read, then its declarations.
     Lowered
     {
+        /// The builtins the source shadowed, warned of before its
+        /// declarations; none under `test`.
+        shadowed: slice::Iter<'step, ShadowedBuiltin>,
         /// The declarations, in admission order.
         declarations: slice::Iter<'step, DeclarationReport<'step>>,
         /// The table their core nodes are located through.
@@ -148,9 +152,12 @@ enum Cursor<'step>
         /// The judgements each refused body stood inside.
         trails: &'step Trails,
     },
-    /// The declarations still to visit.
+    /// The shadowing warnings and then the declarations still to visit.
     Declarations
     {
+        /// The builtins the source shadowed, warned of before its
+        /// declarations; none under `test`.
+        shadowed: slice::Iter<'step, ShadowedBuiltin>,
         /// The declarations, in admission order.
         declarations: slice::Iter<'step, DeclarationReport<'step>>,
         /// The table their core nodes are located through.
@@ -187,10 +194,12 @@ pub struct Entries<'step>
 ///   refusal report. A pending source prints its refusals under `test`, as
 ///   ledger lines, and nothing under `check`. A pending source the lowering
 ///   read prints its ledger line, then its declarations as any source does.
-///   Each declaration is printed as [`shown`] decides under `verb`: nothing
-///   when it is counted; a goal report when it is a goal; when it has a line, a
-///   ledger line if it settled, a refusal report if it produced a refusal, and
-///   an unsettled report otherwise. Declarations keep admission order.
+///   Under `check`, a source the lowering read first prints a warning for each
+///   builtin it shadowed, in the order shadowed; `test` prints none. Each
+///   declaration is printed as [`shown`] decides under `verb`: nothing when it
+///   is counted; a goal report when it is a goal; when it has a line, a ledger
+///   line if it settled, a refusal report if it produced a refusal, and an
+///   unsettled report otherwise. Declarations keep admission order.
 /// - provides: the one pass a face prints a step through, so no refusal a step
 ///   carries can reach the walk without reaching the renderer.
 /// - fails: never.
@@ -205,6 +214,7 @@ pub struct Entries<'step>
 ///   fixtures.
 /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
 /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+/// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
 #[spec(ensures: |ref ret| ret.verb == verb && match *step {
@@ -243,8 +253,9 @@ pub fn entries<'step>(
 /// - requires: nothing; any standing and composition are admissible.
 /// - ensures: pending refusals are ledger entries only under test; other
 ///   whole-source refusals are reports. A lowered source starts with its ledger
-///   entry; other settled compositions start at their declarations. Borrowed
-///   declaration and refusal slices retain their complete order.
+///   entry; other settled compositions start at their declarations, after their
+///   shadowing warnings under `check`. Borrowed declaration, warning and
+///   refusal slices retain their complete order.
 /// - provides: the first state of a lazy entry traversal.
 /// - fails: never.
 /// - panics: none.
@@ -256,6 +267,7 @@ pub fn entries<'step>(
 ///   standing/composition pairs are outside the produced-step witnesses.
 /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
+/// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
 #[spec(ensures: |ref ret| match (standing, composed, ret) {
     (Standing::Pending, _, &Cursor::Done) => matches!(verb, Verb::Check(_)),
     (Standing::Pending, &Composed::Refused(expected), &Cursor::Last(Entry::Line(Line {
@@ -269,12 +281,16 @@ pub fn entries<'step>(
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(refusal), &Cursor::Last(Entry::Report(report))) =>
         core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)) && report.class() == crate::Class::Refusal(refusal.classify()),
-    (Standing::Lowered, &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, trails: ref traced, .. },
-        &Cursor::Lowered { ref declarations, origins, spellings, trails })
+    (Standing::Lowered, &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, trails: ref traced, shadowed: ref warned, .. },
+        &Cursor::Lowered { ref shadowed, ref declarations, origins, spellings, trails })
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
-        &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, trails: ref traced, .. },
-        &Cursor::Declarations { ref declarations, origins, spellings, trails }) =>
+        &Composed::Settled { ref report, origins: ref expected, spellings: ref spelled, trails: ref traced, shadowed: ref warned, .. },
+        &Cursor::Declarations { ref shadowed, ref declarations, origins, spellings, trails }) =>
         core::ptr::eq(core::ptr::from_ref(declarations.as_slice()), core::ptr::from_ref(report.declarations()))
+            && match verb {
+                Verb::Check(_) => core::ptr::eq(core::ptr::from_ref(shadowed.as_slice()), core::ptr::from_ref(warned.as_slice())),
+                Verb::Test => shadowed.as_slice().is_empty(),
+            }
             && core::ptr::eq(core::ptr::from_ref(origins), core::ptr::from_ref(expected))
             && core::ptr::eq(core::ptr::from_ref(spellings), core::ptr::from_ref(spelled))
             && core::ptr::eq(core::ptr::from_ref(trails), core::ptr::from_ref(traced)),
@@ -315,9 +331,11 @@ fn cursor<'step>(
                 ref origins,
                 ref spellings,
                 ref trails,
+                ref shadowed,
                 ..
             },
         ) => Cursor::Lowered {
+            shadowed: warned(verb, shadowed),
             declarations: report.declarations().iter(),
             origins,
             spellings,
@@ -330,14 +348,32 @@ fn cursor<'step>(
                 ref origins,
                 ref spellings,
                 ref trails,
+                ref shadowed,
                 ..
             },
         ) => Cursor::Declarations {
+            shadowed: warned(verb, shadowed),
             declarations: report.declarations().iter(),
             origins,
             spellings,
             trails,
         },
+    }
+}
+
+/// The shadowing warnings `verb` prints of `shadowed`: every one under
+/// `check`, none under `test`, whose ledger records settlements alone.
+///
+/// # Specification
+/// trivial.
+fn warned(
+    verb: Verb,
+    shadowed: &[ShadowedBuiltin],
+) -> slice::Iter<'_, ShadowedBuiltin>
+{
+    match verb {
+        | Verb::Check(_) => shadowed.iter(),
+        | Verb::Test => [].iter(),
     }
 }
 
@@ -455,16 +491,16 @@ impl<'step> Iterator for Entries<'step>
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
             Cursor::Last(_) => 1_usize,
-            Cursor::Lowered { ref declarations, .. } => declarations.len().saturating_add(1_usize),
-            Cursor::Declarations { ref declarations, .. } => declarations.len(),
+            Cursor::Lowered { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()).saturating_add(1_usize),
+            Cursor::Declarations { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()),
             Cursor::Unstatable(ref refusals) => refusals.len(),
         }],
         ensures: |ref ret| {
             let remaining = match self.cursor {
                 Cursor::Done => 0_usize,
                 Cursor::Last(_) => 1_usize,
-                Cursor::Lowered { ref declarations, .. } => declarations.len().saturating_add(1_usize),
-                Cursor::Declarations { ref declarations, .. } => declarations.len(),
+                Cursor::Lowered { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()).saturating_add(1_usize),
+                Cursor::Declarations { ref shadowed, ref declarations, .. } => shadowed.len().saturating_add(declarations.len()),
                 Cursor::Unstatable(ref refusals) => refusals.len(),
             };
             ret.as_ref().map_or(remaining == 0_usize, |entry| remaining < before && match *entry {
@@ -480,12 +516,14 @@ impl<'step> Iterator for Entries<'step>
             | Cursor::Done => None,
             | Cursor::Last(entry) => Some(entry),
             | Cursor::Lowered {
+                shadowed,
                 declarations,
                 origins,
                 spellings,
                 trails,
             } => {
                 self.cursor = Cursor::Declarations {
+                    shadowed,
                     declarations,
                     origins,
                     spellings,
@@ -507,16 +545,32 @@ impl<'step> Iterator for Entries<'step>
                 })
             },
             | Cursor::Declarations {
+                mut shadowed,
                 mut declarations,
                 origins,
                 spellings,
                 trails,
             } => {
+                if let Some(warned) = shadowed.next() {
+                    self.cursor = Cursor::Declarations {
+                        shadowed,
+                        declarations,
+                        origins,
+                        spellings,
+                        trails,
+                    };
+                    return Some(Entry::Report(Report::new(
+                        self.path,
+                        self.text,
+                        Subject::Shadowed(warned),
+                    )));
+                }
                 while let Some(declaration) = declarations.next() {
                     if let Maybe::Present(entry) =
                         self.declaration(declaration, origins, spellings, trails)
                     {
                         self.cursor = Cursor::Declarations {
+                            shadowed,
                             declarations,
                             origins,
                             spellings,

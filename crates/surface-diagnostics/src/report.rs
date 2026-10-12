@@ -1,15 +1,23 @@
-//! One report — a refusal, an unsettled declaration or a goal — at the source
-//! it sits in, and the snippet it renders as.
+//! One report — a refusal, an unsettled declaration, a goal or a warning — at
+//! the source it sits in, and the snippet it renders as.
 //!
 //! # The class says whose fact the report is; the label says what the bytes are
 //!
 //! A refusal is classed by the [`FailureClass`] its producer's classifier
 //! gives it, a declaration unsettled with no refusal produced by what its
-//! unsettlement rests on, and a goal as a goal. The class sorts reports; the
-//! primary locus is labelled with what its bytes are, never with the class.
-//! The title is the producer's message, which names no byte offsets, and a
-//! refusal's vocabulary name is the report's identifier, spelled as a
-//! `refuses` payload spells it.
+//! unsettlement rests on, a goal as a goal, and a builtin the source shadowed
+//! as a warning. The class sorts reports; the primary locus is labelled with
+//! what its bytes are, never with the class. The title is the producer's
+//! message, which names no byte offsets, and a refusal's vocabulary name is
+//! the report's identifier, spelled as a `refuses` payload spells it.
+//!
+//! # A shadowed builtin is a warning, named as the refusal it would be
+//!
+//! Under the warn-and-allow shadow policy, the default, a declaration or a
+//! binder over a builtin name wins and the lowering records the shadowing; the
+//! report on it is a warning, which settles nothing and fails no run. Its
+//! identifier is `ShadowedBuiltin`, the refusal the reject policy files for
+//! the same bytes, so one name reads the same fact under either policy.
 
 use core::fmt;
 use std::path::Path;
@@ -26,11 +34,13 @@ use gandr_core_checker::Pending;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_corpus::Surviving;
 use gandr_surface_dispatcher::Spellings;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -96,11 +106,13 @@ pub enum Class
     /// A declaration unsettled by its obligations alone, shown as a goal
     /// under `check --goals`.
     Goal,
+    /// A builtin name the source shadowed, which the source's binding won.
+    Warning,
 }
 
 impl fmt::Display for Class
 {
-    /// Writes the failure class, the unsettlement, or `goal`.
+    /// Writes the failure class, the unsettlement, `goal` or `warning`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -128,6 +140,7 @@ impl fmt::Display for Class
             | Self::Refusal(class) => fmt::Display::fmt(&class, f),
             | Self::Unsettled(unsettlement) => fmt::Display::fmt(&unsettlement, f),
             | Self::Goal => f.write_str("goal"),
+            | Self::Warning => f.write_str("warning"),
         }
     }
 }
@@ -211,6 +224,9 @@ pub enum Subject<'step>
     /// A source the lowering refused as a whole, where its root expects
     /// declarations.
     Source(LoweringRefusal<'step>),
+    /// A builtin the source's declaration or binder shadowed, under the
+    /// warn-and-allow policy.
+    Shadowed(&'step ShadowedBuiltin),
 }
 
 /// One refusal, unsettled declaration or goal, at the source it sits in.
@@ -264,7 +280,8 @@ impl<'step> Report<'step>
     /// - ensures: a refused declaration and a source refused as a whole are
     ///   [`Class::Refusal`] with the class their producer's classifier gives; a
     ///   declaration unsettled with no refusal is [`Class::Unsettled`] with
-    ///   what it rests on; a goal is [`Class::Goal`].
+    ///   what it rests on; a goal is [`Class::Goal`]; a shadowed builtin is
+    ///   [`Class::Warning`].
     /// - provides: the class a reader sorts reports by and a face chooses a
     ///   severity from.
     /// - fails: never.
@@ -279,11 +296,13 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
+    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
     #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
         Subject::Goal(_) => Class::Goal,
         Subject::Source(refusal) => Class::Refusal(refusal.classify()),
+        Subject::Shadowed(_) => Class::Warning,
     })]
     #[inline]
     #[must_use]
@@ -294,6 +313,7 @@ impl<'step> Report<'step>
             | Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
             | Subject::Goal(_) => Class::Goal,
             | Subject::Source(refusal) => Class::Refusal(refusal.classify()),
+            | Subject::Shadowed(_) => Class::Warning,
         }
     }
 
@@ -345,9 +365,10 @@ impl<'step> Report<'step>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a refused declaration names the refusal it produced, and a
-    ///   source refused as a whole the lowering's refusal, each spelled as a
-    ///   `refuses` payload spells it.
+    /// - ensures: a refused declaration names the refusal it produced, a source
+    ///   refused as a whole the lowering's refusal, and a shadowed builtin
+    ///   `ShadowedBuiltin`, the refusal the reject policy files for it, each
+    ///   spelled as a `refuses` payload spells it.
     /// - provides: the identifier [`Report::render`] writes, for a face that
     ///   carries it beside the message rather than in a snippet.
     /// - fails: never; an unsettled declaration and a goal carry no refusal to
@@ -363,6 +384,7 @@ impl<'step> Report<'step>
     #[spec(ensures: |ret| match (self.subject, ret) {
         (Subject::Refused { refusal, .. }, Maybe::Present(spelling)) => spelling == refusal.name().spelling(),
         (Subject::Source(refusal), Maybe::Present(spelling)) => spelling == Refusal::Lowering(refusal).name().spelling(),
+        (Subject::Shadowed(_), Maybe::Present(spelling)) => spelling == RefusalName::ShadowedBuiltin.spelling(),
         (Subject::Unsettled { .. } | Subject::Goal(_), Maybe::Absent(report_identifier::Absent::Statement)) => true,
         _ => false,
     })]
@@ -374,6 +396,7 @@ impl<'step> Report<'step>
             | Subject::Source(refusal) => {
                 Maybe::Present(Refusal::Lowering(refusal).name().spelling())
             },
+            | Subject::Shadowed(_) => Maybe::Present(RefusalName::ShadowedBuiltin.spelling()),
             | Subject::Unsettled { .. } | Subject::Goal(_) => {
                 Maybe::Absent(report_identifier::Absent::Statement)
             },
@@ -387,8 +410,8 @@ impl<'step> Report<'step>
     /// - requires: nothing.
     /// - ensures: the title [`Report::render`] writes: the producer's message
     ///   for a refusal, what the declaration states and produced for an
-    ///   unsettled declaration or a goal, and the lowering's refusal for a
-    ///   source refused as a whole.
+    ///   unsettled declaration or a goal, the lowering's refusal for a source
+    ///   refused as a whole, and the path a shadowed builtin is bound at.
     /// - provides: the message a face shows beside the report's span.
     /// - fails: never.
     /// - panics: none.
@@ -399,11 +422,13 @@ impl<'step> Report<'step>
     ///   stated/produced counts expose lost or swapped payloads. Other subjects
     ///   and natural-language wording are excluded.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
+    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
     /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
     #[spec(ensures: |ret| matches!((self.subject, ret.0),
         (Subject::Refused { .. }, Subject::Refused { .. })
             | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
             | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
+            | (Subject::Shadowed(_), Subject::Shadowed(_))
     ))]
     #[inline]
     #[must_use]
@@ -444,7 +469,7 @@ impl<'step> Report<'step>
         Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
         Maybe::Absent(_) => true,
     }) && match self.subject {
-        Subject::Goal(_) | Subject::Unsettled { unsettlement: Unsettlement::Obligations | Unsettlement::Unproduced | Unsettlement::RunOutcome, .. } =>
+        Subject::Goal(_) | Subject::Shadowed(_) | Subject::Unsettled { unsettlement: Unsettlement::Obligations | Unsettlement::Unproduced | Unsettlement::RunOutcome, .. } =>
             ret == [Maybe::Absent(report_context::Absent::Unnamed); 2_usize],
         Subject::Refused { .. } | Subject::Source(_) | Subject::Unsettled { unsettlement: Unsettlement::Malformed, .. } => true,
     })]
@@ -506,7 +531,7 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::a_mismatch_label_spells_both_types`
     #[spec(ensures: |ret| match self.subject {
         Subject::Refused { refusal, spellings, .. } => ret == Comparison::of(refusal, spellings),
-        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => ret == Comparison::none(),
+        Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) => ret == Comparison::none(),
     })]
     #[inline]
     #[must_use]
@@ -516,9 +541,10 @@ impl<'step> Report<'step>
             | Subject::Refused {
                 refusal, spellings, ..
             } => Comparison::of(refusal, spellings),
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
-                Comparison::none()
-            },
+            | Subject::Unsettled { .. }
+            | Subject::Goal(_)
+            | Subject::Source(_)
+            | Subject::Shadowed(_) => Comparison::none(),
         }
     }
 
@@ -542,7 +568,7 @@ impl<'step> Report<'step>
     #[spec(ensures: |ret| ret.iter().all(|reason| self.text.fragment(reason.span).is_ok())
         && match self.subject {
             Subject::Refused { .. } => true,
-            Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => ret.is_empty(),
+            Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) | Subject::Shadowed(_) => ret.is_empty(),
         })]
     #[inline]
     #[must_use]
@@ -559,7 +585,10 @@ impl<'step> Report<'step>
                 reasons.retain(|reason| self.text.fragment(reason.span).is_ok());
                 reasons
             },
-            | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => Vec::new(),
+            | Subject::Unsettled { .. }
+            | Subject::Goal(_)
+            | Subject::Source(_)
+            | Subject::Shadowed(_) => Vec::new(),
         }
     }
 
@@ -573,7 +602,8 @@ impl<'step> Report<'step>
     /// - provides: the note [`Report::render`] writes, for a face that carries
     ///   it beside the message.
     /// - fails: never; a report that states what a declaration states and
-    ///   produced is the [`report_note::Absent::Statement`] absence.
+    ///   produced is the [`report_note::Absent::Statement`] absence, and a
+    ///   warning the [`report_note::Absent::Warning`] absence.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -589,6 +619,7 @@ impl<'step> Report<'step>
             | Subject::Unsettled { .. } | Subject::Goal(_) | Subject::Source(_) => {
                 Maybe::Absent(report_note::Absent::Statement)
             },
+            | Subject::Shadowed(_) => Maybe::Absent(report_note::Absent::Warning),
         }
     }
 
@@ -596,20 +627,21 @@ impl<'step> Report<'step>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the first line is the level — `error`, or `goal` for a goal —
-    ///   with a refusal's vocabulary name as its identifier, and the title: the
-    ///   producer's message for a refusal, what the declaration states and
-    ///   produced otherwise. A located report then quotes the lines its loci
-    ///   cover under the source's path, line and column, the primary locus
-    ///   underlined and labelled with what its bytes are or with the surviving
-    ///   obligations, each context locus marked with what it explains, and each
-    ///   nested reason marked with the judgement it stands for; an unlocated
-    ///   report names the source's path alone. A refused declaration closes
-    ///   with a note naming it and what it states. A source with an empty path
-    ///   is named `<input>`. Plain adds no styling; styled adds the backend's
-    ///   colour sequences. Caller path controls remain literal in both modes.
-    ///   No framing terminator is appended, but a trailing path line ending can
-    ///   end an unlocated rendering.
+    /// - ensures: the first line is the level — `error`, `goal` for a goal,
+    ///   `warning` for a shadowed builtin — with a refusal's vocabulary name as
+    ///   its identifier, and the title: the producer's message for a refusal,
+    ///   what the declaration states and produced for a declaration, the
+    ///   shadowed path for a warning. A located report then quotes the lines
+    ///   its loci cover under the source's path, line and column, the primary
+    ///   locus underlined and labelled with what its bytes are or with the
+    ///   surviving obligations, each context locus marked with what it
+    ///   explains, and each nested reason marked with the judgement it stands
+    ///   for; an unlocated report names the source's path alone. A refused
+    ///   declaration closes with a note naming it and what it states. A source
+    ///   with an empty path is named `<input>`. Plain adds no styling; styled
+    ///   adds the backend's colour sequences. Caller path controls remain
+    ///   literal in both modes. No framing terminator is appended, but a
+    ///   trailing path line ending can end an unlocated rendering.
     /// - provides: the plain text the driver prints and the tests compare.
     /// - fails: never.
     /// - panics: none; every span reaches the snippet backend checked against
@@ -633,11 +665,13 @@ impl<'step> Report<'step>
     /// - witness: `report::tests::literal_path_controls_are_not_styling_or_framing`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
     /// - witness: `diagnostics::diagnostics::a_refusal_names_the_judgements_it_stood_inside`
+    /// - witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`
     #[spec(ensures: |ref ret| match style {
         RenderStyle::Plain => match self.subject {
             Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
             Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
             Subject::Refused { .. } | Subject::Source(_) => ret.as_ref().starts_with("error["),
+            Subject::Shadowed(_) => ret.as_ref().starts_with("warning["),
         },
         RenderStyle::Styled => ret.as_ref().contains("\u{1b}["),
     })]
@@ -657,6 +691,7 @@ impl<'step> Report<'step>
         let title = self.title().to_string();
         let level = match self.subject {
             | Subject::Goal(_) => Level::INFO.with_name("goal"),
+            | Subject::Shadowed(_) => Level::WARNING,
             | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                 Level::ERROR
             },
@@ -761,6 +796,7 @@ impl<'step> Report<'step>
                 Subject::Unsettled { declaration, unsettlement: Unsettlement::Obligations }
                     | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
                 Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
+                Subject::Shadowed(_) => annotation.label == Label::Shadows,
             },
             Maybe::Absent(_) => true,
         };
@@ -795,6 +831,7 @@ impl<'step> Report<'step>
                 unsettlement: unsettlement @ (Unsettlement::Unproduced | Unsettlement::RunOutcome),
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             | Subject::Source(refusal) => Annotations::lowering(refusal),
+            | Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
         };
         let inside = |annotation: &Annotation| self.text.fragment(annotation.span).is_ok();
         let primary = match annotations.primary {
@@ -823,6 +860,9 @@ quenchant_shape::reason_enum! {
             /// The report states what a declaration states and produced: it
             /// carries no refusal to name, and its title is its statement.
             Statement,
+            /// The report is a warning: no declaration's settlement rests on
+            /// it, so it names none.
+            Warning,
         }
     }
 }
@@ -916,6 +956,11 @@ impl fmt::Display for Title<'_>
             | Subject::Source(refusal) => {
                 write!(f, "the lowering refused the source as a whole: {refusal}")
             },
+            | Subject::Shadowed(shadowed) => write!(
+                f,
+                "`{}` shadows a builtin name; the source's binding wins",
+                shadowed.path
+            ),
         }
     }
 }
@@ -1012,6 +1057,7 @@ mod tests
             Class::Unsettled(Unsettlement::RunOutcome),
             Class::Unsettled(Unsettlement::Malformed),
             Class::Goal,
+            Class::Warning,
         ];
         let labels = classes.map(|class| class.to_string());
         for (index, label) in labels.iter().enumerate() {

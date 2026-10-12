@@ -56,6 +56,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
+use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::ParseResult;
@@ -176,6 +177,10 @@ pub enum Composed<'source>
         /// The judgements each refused body stood inside, outermost first, by
         /// position: a refusal's nested reasons.
         trails: Trails,
+        /// Every builtin the source's declarations and binders shadowed, in
+        /// the order shadowed: under the warn-and-allow policy the source's
+        /// binding wins and each is a warning, not a refusal.
+        shadowed: Vec<ShadowedBuiltin>,
         /// The kernel artifact of every declaration that crossed into the
         /// kernel, in kernel admission order, each under its structured name,
         /// once the module's admission ran; a composition read before its
@@ -241,6 +246,7 @@ impl Composed<'_>
                 origins,
                 spellings,
                 trails,
+                shadowed,
                 program,
                 ..
             } => Self::Settled {
@@ -250,6 +256,7 @@ impl Composed<'_>
                 origins,
                 spellings,
                 trails,
+                shadowed,
                 kernel: Maybe::Present(kernel),
                 program,
             },
@@ -731,10 +738,11 @@ pub fn lower_parsed<'source>(
 ///   carry, the refusals of the declarations refused at their own form, which
 ///   no expectation can state, the lowering's origin table, moved rather than
 ///   copied, the spellings of the types its checker refusals compare and its
-///   trails were checked against, the trails themselves, the program, and no
-///   kernel artifact yet ([`admitted::Absent::Pending`]); a settle fault is
-///   carried in its place. The admission holds the arena the verdicts were
-///   judged over, the verdicts and the module's structured names.
+///   trails were checked against, the trails themselves, every builtin the
+///   source shadowed, the program, and no kernel artifact yet
+///   ([`admitted::Absent::Pending`]); a settle fault is carried in its place.
+///   The admission holds the arena the verdicts were judged over, the verdicts
+///   and the module's structured names.
 /// - provides: the composition a face renders before the kernel has been
 ///   offered anything; the readmission mints nothing the settle comparison or
 ///   the program reads.
@@ -780,6 +788,7 @@ pub fn judge(
             let unstatable = unstatable(&module);
             let trails = Trails::of(&verdicts);
             let spellings = Spellings::of(&arena, &module, &report, &trails);
+            let shadowed = module.recognition().shadowed().to_vec();
             Ok(Composed::Settled {
                 report,
                 exercised,
@@ -787,6 +796,7 @@ pub fn judge(
                 origins: module.into_origins(),
                 spellings,
                 trails,
+                shadowed,
                 kernel: Maybe::Absent(admitted::Absent::Pending),
                 program,
             })
@@ -1651,6 +1661,7 @@ def h = 1 ;"#,
             let unstatable = super::unstatable(&module);
             let trails = super::Trails::of(&verdicts);
             let spellings = super::Spellings::of(&arena, &module, &report, &trails);
+            let shadowed = module.recognition().shadowed().to_vec();
             let readmitted_first = Composed::Settled {
                 report,
                 exercised,
@@ -1658,6 +1669,7 @@ def h = 1 ;"#,
                 origins: module.into_origins(),
                 spellings,
                 trails,
+                shadowed,
                 kernel: Maybe::Present(kernel),
                 program,
             };
