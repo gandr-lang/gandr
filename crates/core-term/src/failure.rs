@@ -17,6 +17,19 @@
 //! crate both depend on, so neither names the other and there is one enum
 //! rather than two that agree by convention. Each producer's classifier is its
 //! own `const`, wildcard-free match over its own refusals.
+//!
+//! # One failure vocabulary
+//!
+//! `FailureClass` lives here because this is the lowest crate both the lowering
+//! and the checker depend on: each classifies its own refusals with its own
+//! `const`, wildcard-free match, and a report groups both under one enum
+//! without either crate naming the other. The type carries no behaviour beyond
+//! its name; which refusal falls in which class is decided by the crate that
+//! owns the refusal. The alternative was a copy of the enum in each producer,
+//! kept equal by convention, which is two vocabularies a report would have to
+//! reconcile. Reversal: a producer whose failures need a class the others do
+//! not have, at which point that class is argued here rather than added in the
+//! producer.
 
 use core::fmt;
 

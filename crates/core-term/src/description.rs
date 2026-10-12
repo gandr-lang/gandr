@@ -2,6 +2,38 @@
 //!
 //! Description syntax stays in the theory tier. This module supplies its
 //! core interpretation, retaining nominal heads and explicit value arguments.
+//!
+//! # Description decoding
+//!
+//! `description::decode` interprets first-order description codes in a
+//! `DecodeContext`. Unit, products, coproducts, parameters and a selected
+//! recursive sort have core readings. `decode_desc` selects a positive,
+//! inhabited, single-sorted description; negative descriptions, empty
+//! coproducts, foreign recursive sorts and unsupported leaves return typed
+//! `DecodeError` values instead of substitute types. Grades and descriptive
+//! attributes do not change the decoded type.
+//!
+//! `decode_signature` instead retains a family as a native `DataSignature`:
+//! constructor order fixes tags, parameter classifiers retain their telescope
+//! and field products become ordered field lists. An empty constructor list
+//! remains an empty native family. `TypeBinding::Nominal` retains the
+//! declaration identity. Type-valued arguments are quoted; `TypeBinding::Value`
+//! and `TypeBinding::Parameter` arguments retain their values, so a value index
+//! in a type slot is not changed into a quoted type. Local bindings shadow the
+//! ambient type table without copying it.
+//!
+//! **Choice.** Keep structural description interpretation and native nominal
+//! family formation distinct; a coproduct encoding must not erase a declared
+//! family's identity or turn its value indices into types. **Reversal.** Widen
+//! the decoding boundary only when the corresponding core former supplies its
+//! formation and checking rules. Recursive constructors remain outside native
+//! signature checking: strict positivity and recursive constructors are the
+//! former's next generation (`recursive-data`).
+//!
+//! Witnesses: `description::tests`, including
+//! `native_indices_remain_values_under_telescope_scope`; the source-to-checker
+//! boundary is exercised by `gandr-surface-lowering`'s
+//! `description::tests::native_data_keeps_telescope_and_nominal_heads`.
 
 use alloc::collections::BTreeMap;
 use alloc::vec;

@@ -18,6 +18,12 @@
 //! read in both directions — under a signature it absorbs the declared type
 //! and owes it, and with no signature it is refused, because nothing hands it a
 //! type.
+//!
+//! A [`DeclarationContent`] distinguishes the optional value halves from a
+//! complete native `DataSignature`. Reading a lowering's outcome type directly
+//! would couple independent layers; the adapter is revisited only if a shared
+//! producer-neutral declaration vocabulary replaces it. Names enter only at
+//! export, through `bridge::Readmission::export`.
 
 use anodized::spec;
 use gandr_core_term::ValueId;

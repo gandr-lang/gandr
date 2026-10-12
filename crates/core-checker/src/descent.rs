@@ -7,6 +7,17 @@
 //! constructor or the value a function field returns — the `t` of
 //! `t ← (force f) ȳ`. The walk replays it over one explicit stack; it
 //! searches for nothing, and the kernel replays the same claim on its own.
+//!
+//! A fixpoint checks against any computation type `C`, its body checked at `C`
+//! under a binder of `U C`; in synthesis position it is refused, naming the
+//! form. A structural-descent claim is replayed by this walk before the body is
+//! checked. A claim that fails is `DescentNotReplayed`, naming the fixpoint and
+//! the kernel's `DescentRefusal`, and readmission re-derives the same verdict.
+//! A partial fixpoint carries no claim and is checked at any computation type.
+//! Witnesses:
+//! `recursive_data::recursive_data::descent_claims_replay_or_are_refused_by_name`
+//! and
+//! `recursive_data::recursive_data::a_fixpoint_checks_at_every_computation_type`.
 
 use alloc::vec::Vec;
 

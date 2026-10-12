@@ -30,6 +30,17 @@
 //! A view refuses for two reasons and no others, so its refusal is its own
 //! two-variant type; the judgement and the bridge each convert it into their
 //! own vocabulary, and neither handles a refusal a view cannot give.
+//!
+//! # The fragment
+//!
+//! The judgement admits integer and string atoms, unit, products, sums, native
+//! Lists, nominal data, structural records, thunks, effect-qualified returners,
+//! arrows, dependent arrows, static operators, universes, raising type lifts
+//! and decodes, and effects and control. Injection checks against its sum; case
+//! checks both payload-bound branches against one expected computation type.
+//! Numeric atoms and literals, value lifts, abstract atoms, non-raising lifts,
+//! sort-parameter universes and top-level universes are named `OutOfFragment`
+//! refusals.
 
 use anodized::spec;
 use gandr_core_term::CompType;

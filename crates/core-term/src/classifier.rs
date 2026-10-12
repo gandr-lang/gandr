@@ -17,6 +17,27 @@
 //! and formation answers it with a named refusal rather than a guess. No
 //! producer writes a parameter sort until the prenex sort binders land; the
 //! variant is the one place their absence is stated.
+//!
+//! # Universe families
+//!
+//! A type is classified by a `Classifier`: a ground sort, `GroundSort::Value`
+//! (`+`) or `GroundSort::Computation` (`-`), and a level from
+//! `gandr-kernel-strata`. There are two towers, `ValueType::Universe { sort,
+//! level }` for each sort, and both are value types: a universe classifies
+//! codes, and a code is a value whichever sort the type it names has, so
+//! `Type[+, l]` and `Type[-, l]` each live in `Type[+, l + 1]`. The ground sort
+//! is the kernel's, from `gandr-kernel-term`, so the two languages read one
+//! alphabet; the core's `Sort` adds `Sort::Parameter`, a sort variable, so that
+//! abstracting over a sort raises the exact variant the term would have needed.
+//! No producer writes a sort parameter, and the checker refuses one: it is the
+//! seat sort polymorphism arrives through, monomorphized away before the
+//! kernel.
+//!
+//! Alternatives: one universe tower with a polarity bit on each code, which
+//! makes every code-reading rule ask which side it is on and hides the sort
+//! from the level; and a kind layer above the two towers, which ∂CBPV shows is
+//! not needed. Reversal: a computation type that classifies codes, which would
+//! put a universe in the computation family.
 
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::GroundSort;

@@ -18,6 +18,47 @@
 //! that does not name the scrutinee. The fold is untrusted: the eliminator is
 //! an ordinary declaration the checker judges and the kernel readmits, its
 //! fixpoint's structural-descent claim replayed by both.
+//!
+//! A function field's hypothesis ranges over the function's results, where no
+//! scrutinee is in scope, so a motive naming its scrutinee at such a
+//! declaration is `DerivationRefusal::DependentMotiveAtFunctionField`. The
+//! eliminator is stated over an explicit motive (`McBride`, *Elimination with a
+//! Motive*, TYPES 2000, doi:10.1007/3-540-45842-5_13) and written over the
+//! guarded fixpoint (Giménez, *Structural recursive definitions in type
+//! theory*, ICALP 1998, doi:10.1007/BFb0055070).
+//!
+//! # Definitions by eliminator
+//!
+//! A definition by eliminator is an application `force (elim_T[C]) p̄ m̄ x`.
+//! `length`, `append` and `map` over `List A`, and `plus` over Nat, each:
+//!
+//! - check, and normalise through `gandr-core-nbe` to the expected numeral or
+//!   list;
+//! - readmit through the kernel with an empty axiom audit;
+//! - export to the same bytes on every run;
+//! - carry a conversion whose trace the kernel replays, both the convertible
+//!   and the apart verdict.
+//!
+//! A Tree with a function field derives its eliminator too, and a depth defined
+//! through it checks, readmits and normalises.
+//!
+//! # Decision
+//!
+//! **Choice.** The eliminator is derived source over the kernel's one fixpoint,
+//! with the motive explicit, rather than a checker-native recursor former.
+//! **Alternatives.** A native recursor needs a kernel rule per signature.
+//! Compiling pattern-matching definitions to case trees belongs to the
+//! lowering, which this fold serves rather than replaces. **Reversal.** A
+//! derivation the descent replay cannot follow, such as a nested occurrence's
+//! hypothesis through another family's eliminator, needs a generalised descent
+//! rule first.
+//!
+//! Witnesses:
+//! `recursive_data::recursive_data::recursive_blocks_are_admitted_in_both_checkers`,
+//! `recursive_data::recursive_data::derived_eliminators_are_admitted_and_readmitted`,
+//! `recursive_data::recursive_data::definitions_by_eliminator_normalise`,
+//! `recursive_data::recursive_data::the_kernel_replays_a_conversion_through_a_definition_by_eliminator`
+//! and `recursive_data::recursive_data::the_export_is_deterministic`.
 
 use alloc::vec::Vec;
 

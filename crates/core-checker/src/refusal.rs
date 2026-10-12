@@ -16,6 +16,23 @@
 //! binds no payload, so a classification cannot vary with a node id and a
 //! refusal added without a class does not compile.
 //!
+//! A type mismatch, a shape mismatch, a checking form in synthesis position, an
+//! unknown constant, a universe of the wrong sort or level, a bind whose type
+//! mentions its binder, a static application past its head's arity or at an
+//! argument of the wrong classifier, a static lambda handed to a dynamic
+//! parameter and a static Pi over a classifier that holds no codes are
+//! malformed source, the author's mistake. A former outside the fragment is
+//! unrepresentable. An unbound index, an exhausted allowance, a dangling id, an
+//! admission out of order, a machine invariant and an unfolding the normaliser
+//! did not certify are engine faults: a producer that resolves binders and
+//! positions never hands the checker an unbound index or an out-of-order
+//! admission, so either one is the producer's fault, not the author's; the
+//! machine invariant reports a miscount of the machine's own frames instead of
+//! asserting it. The alternative for the unbound index — classing it as the
+//! author's — would hide a resolution bug in the producer behind a source
+//! diagnostic; it reverses if a producer ever hands over unresolved author
+//! text.
+//!
 //! # The absence class has no refusal, and that is the point
 //!
 //! The obligation ledger is fed by a declaration's shape — a signature whose

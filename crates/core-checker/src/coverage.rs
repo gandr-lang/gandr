@@ -56,6 +56,17 @@
 //! constructors in practice, the shrinking bound reads a headless column as
 //! empty, at the price of answering possibly for every arm over an unknown
 //! field.
+//!
+//! # Coverage takes a pattern table
+//!
+//! The core calculus has no match former, so [`cover`] takes a pattern table
+//! and a scrutinee type rather than a term; a core match former would bring the
+//! same answers into the judgement's own rule. Witnesses:
+//! `coverage::tests::usefulness_decides_exhaustiveness_and_redundancy`,
+//! `coverage::tests::literals_never_complete_and_nested_columns_specialise`,
+//! `coverage::tests::a_nominal_type_is_complete_when_every_constructor_stands`,
+//! `coverage::tests::a_pattern_hole_is_answered_possibly` and
+//! `coverage::tests::an_unknown_scrutinee_reads_the_least_and_the_widest_signature`.
 
 use alloc::sync::Arc;
 use alloc::vec;

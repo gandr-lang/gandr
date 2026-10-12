@@ -29,6 +29,46 @@
 //! and the node where the sum passed it. A wrapped size would be wrong, and a
 //! saturated one would report a cost the unshared pipeline cannot pay as if it
 //! could.
+//!
+//! # Sharing measure
+//!
+//! `SharingMeasure::of` validates an overlay root, then walks it once in
+//! post-order on a heap task stack and reports five quantities, each its own
+//! counter type: `ShareCount`, the share nodes the root reaches;
+//! `OccurrenceCount`, their arities summed; `ShareDepth`, the most shares on
+//! one path down from the root, through legs and bodies alike; `NodeCount`, the
+//! nodes the root reaches; and `ExpansionSize`, the node count of the term the
+//! root stands for with every share's leg inlined at each of its occurrences,
+//! where a graft is one node over its children, an opaque node is one node, and
+//! a share and an occurrence are nothing of their own. The expansion is the
+//! part of the unshared machines' walk that sharing changes: what evaluation
+//! walks when it takes each occurrence of an erased leg's id as a copy. The
+//! quantities are He's strong-normalisation measure for sharing reductions,
+//! read over the overlay. The duplication walk prices the copying stance by
+//! them before it mints, since that stance's output is the root's whole
+//! expansion.
+//!
+//! The walk measures each leg once, keeps its measure on a stack of the legs in
+//! scope, and reads it at every occurrence, so it enters each node once and
+//! costs the reachable overlay, never its expansion: validation's refusal of a
+//! node reached twice is what makes one visit per node enough. A chain of
+//! sixty-three shares whose expansion doubles per link holds 253 nodes and
+//! measures exactly `u64::MAX`. Every addition is checked, and a sum past its
+//! 64-bit counter is refused as `MeasureFault::Overflow`, naming the
+//! `MeasuredQuantity` and the node where the sum passed it, so the same chain
+//! one link longer is refused at that link's pair. A validation refusal arrives
+//! unchanged as `MeasureFault::Refused`, before anything is counted. The
+//! measure is a function of the structure its root reaches: no id, other root
+//! or later parent changes it.
+//!
+//! Alternatives: index arithmetic over one arena minted child before parent,
+//! which the overlay's four family vectors, with no order across them, cannot
+//! support; a walk over the expansion, which costs what it measures on a
+//! doubling chain; a saturating counter, which reports a cost the unshared
+//! pipeline cannot pay as if it could; and a weakening count beside the shares,
+//! which has nothing to count, since validation refuses a share of arity zero
+//! and a weakening is therefore an absent share. Reversal: the overlay admits
+//! shares of arity zero, and the weakening count returns beside the five.
 
 use alloc::vec::Vec;
 

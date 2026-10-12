@@ -25,8 +25,76 @@
 //!   pipeline answers to, whichever crate produced it.
 //!
 //! The crate holds syntax and contexts; evaluation and readback live in
-//! `gandr-core-nbe`, which consumes this vocabulary. The design is stated in
-//! this crate's `README.md`, § Synopsis, and in the sections it links.
+//! `gandr-core-nbe`, which consumes this vocabulary. Each module's
+//! documentation states its mechanism and its decisions.
+//!
+//! # Specification attributes
+//!
+//! Nontrivial operations carry executable `#[spec(...)]` predicates and `#
+//! Adequacy` hypotheses linked to runnable witnesses. The predicates observe
+//! allocation indices and family lengths, lookup identity, the selected context
+//! slot, and rewrite scheduling and reconstruction. `Context::open` and
+//! `Context::occurrence` capture only bounded entry state: depth and
+//! selected-slot observations are executable without cloning the context.
+//! Finite transition witnesses distinguish changes to neighbouring slots.
+//!
+//! The choice is constant-size captures and local observations rather than
+//! whole-arena or whole-context snapshots, which would allocate and can turn a
+//! linear walk into a quadratic one. The variable rule checks the
+//! below/equal/above-depth boundaries, including saturated arithmetic and
+//! substitution beneath a binder. Independent level-based construction checks
+//! 600 deterministic bounded codomains; fixed asymmetric goldens constrain that
+//! reference observer, and the small-stack integration witness walks 50,000
+//! static applications. These are scoped witnesses, not a proof of equivalence
+//! for ungenerated terms.
+//!
+//! Run the crate with executable specifications enabled:
+//!
+//! ```sh
+//! RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-core-term --all-targets
+//! ```
+//!
+//! # References
+//!
+//! - Paul Blain Levy. _Call-By-Push-Value: A Functional/Imperative Synthesis_.
+//!   Semantics Structures in Computation 2, Kluwer Academic Publishers, 2003.
+//!   `isbn:978-1-4020-1730-8`, `doi:10.1007/978-94-007-0954-6` — the polarity
+//!   split that makes values and computations two vocabularies.
+//! - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility
+//!   Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL),
+//!   Article 53, January 2026. `doi:10.1145/3776695` — §6.4's hash-consed
+//!   subterm DAG, whose entry index the definition chain carries as an
+//!   arena-independent name for a body.
+//! - Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix
+//!   Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM
+//!   on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV's
+//!   two levelled universe towers, and no kind layer above them.
+//! - Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot,
+//!   Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are
+//!   Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the
+//!   ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the
+//!   sort separated from the level and quantified over, which `Sort::Parameter`
+//!   leaves room for.
+//! - Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A.
+//!   Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus."
+//!   _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — the hole and mark
+//!   formers, the unknown type and the matched-type operations.
+//! - Cyrus Omar, Ian Voysey, Ravi Chugh and Matthew A. Hammer. "Live Functional
+//!   Programming with Typed Holes." _Proceedings of the ACM on Programming Languages_
+//!   3 (POPL), 2019. <https://doi.org/10.1145/3290327> — filling as
+//!   substitution of the hole by its fill, the syntactic half `fill_hole`
+//!   provides.
+//! - Yongwei Yuan et al. "Live Pattern Matching with Typed Holes." _Proceedings
+//!   of the ACM on Programming Languages_ 7 (OOPSLA1), 2023. <https://doi.org/10.1145/3586048>
+//!   — the pattern hole and the three answers a branch can get.
+//! - Eric Zhao et al. "Total Type Error Localization and Recovery with Holes."
+//!   _Proceedings of the ACM on Programming Languages_ 8 (POPL), 2024.
+//!   <https://doi.org/10.1145/3632910> — the mark former as the place an error
+//!   stands, and `wrap_marks` as the elaboration's last step.
+//! - Luc Maranget. "Warnings for pattern matching." _Journal of Functional
+//!   Programming_ 17(3) (2007). <https://doi.org/10.1017/S0956796807006223> —
+//!   the coverage questions the pattern table is read for, answered in
+//!   `gandr-core-checker`.
 
 #![no_std]
 

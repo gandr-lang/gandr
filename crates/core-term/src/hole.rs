@@ -42,6 +42,37 @@
 //! absence where the type is another former. They read the node as it stands:
 //! unfolding a definition to reach the weak head is the judgement's, which
 //! holds the definitions.
+//!
+//! # Typed holes, marks and the unknown type
+//!
+//! `Value::Hole` and `Computation::Hole` are holes the author left in a body,
+//! named by a `HoleId`; `Value::Mark` and `Computation::Mark` wrap a term an
+//! elaboration found ill-typed, naming the entry of its mark table by a
+//! `MarkIndex`. `ValueType::Unknown` and `CompType::Unknown` are the types a
+//! hole and a mark have when nothing hands them one (Hazelnut, POPL 2017). All
+//! six are elaboration-only: the kernel's closed vocabulary has none of them,
+//! so the bridge that erases a core term refuses a hole and the unknown type
+//! and erases a mark to its body.
+//!
+//! A rule that demands a former of a type reads it through the matched-type
+//! operations in `hole`: a known type answers its former's components or that
+//! it has another former, and the unknown type answers its former with unknown
+//! components, so an introduction checks against the unknown type and an
+//! elimination of a term of the unknown type goes on. A decode of a hole or a
+//! mark is the unknown type too, read through `value_type_knowledge` and
+//! `comp_type_knowledge`, without minting a node. A matched dependent arrow
+//! reports whether its codomain stands under the argument's binder, so the
+//! checker shifts only what the scoping requires.
+//!
+//! `fill_hole` replaces every hole of a name by its fill, written in the
+//! context the hole stands in, so a fill is a substitution of syntax rather
+//! than of a value under binders (Live Functional Programming with Typed Holes,
+//! POPL 2019); `wrap_marks` wraps each named node once, which is how a total
+//! elaboration returns its marked term (Zhao et al., POPL 2024). Both run on
+//! the binder machines' heap task stack and reuse every subterm they do not
+//! change. The alternative was a hole carrying its expected type, which ties
+//! the term to one elaboration; the type is the judgement's answer, and the
+//! hole is only its name.
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;

@@ -13,6 +13,17 @@
 //! would read as a submission with no matches. The stream reads its inputs
 //! and computes nothing, so a run that adopted and a run that judged publish
 //! the same events but for the adoption marks.
+//!
+//! # The stream's shape
+//!
+//! A stream opens with the item count, carries one event per item in source
+//! order — its handle, typing and adoption — then the match liveness its
+//! producer computed, by origin, and closes. Liveness follows the items because
+//! a match is addressed by source coordinates and one source item may lower to
+//! several core items. A submission whose source records are gone is named by
+//! an event of its own, because silence would read as a submission without
+//! matches. The stream is a function of its inputs: a run that adopted and one
+//! that judged publish the same events but for the adoption marks.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

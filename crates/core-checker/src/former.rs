@@ -1,4 +1,43 @@
 //! Native nominal signature formation and capture-free telescope instantiation.
+//!
+//! # Nominal data
+//!
+//! A data declaration admits a nominal identity with a parameter telescope, an
+//! ordered constructor table and a positive universe bound. Its signature is
+//! not a value type for the declaration's constant: `Verdict::Data` is distinct
+//! from a checked value, and a term reference to that position is refused. A
+//! `Data` application checks each explicit argument against its instantiated
+//! parameter classifier. Constructors retain that complete application and
+//! their tag; fields check against the declaration's instantiated field types.
+//! A case supplies exactly one branch per tag and a computation motive under
+//! one scrutinee binder. Branches are ambient functions over their constructor
+//! fields, not syntax under implicit field binders.
+//!
+//! **Choice.** Nominal identity stays separate from structural records; neither
+//! is an abstract atom or a product encoding. Type parameters are quoted codes
+//! and value indices are ordinary terms in one typed telescope. All arguments
+//! are invariant: declaration formation proves no variance property that would
+//! justify covariance. Constructor fields may use parameters and the
+//! declaration's own family, but do not bind subsequent fields, and a
+//! declaration cannot see a later declaration.
+//!
+//! **Conversion boundary.** Index equality is structural in both checkers,
+//! including under thunks, and ignores only candidate path evidence as ordinary
+//! kernel conversion does. It does not reduce beta, delta or eta redexes.
+//! General definitional index conversion waits for a certified kernel
+//! conversion reader; frontend conversion alone cannot authorize it.
+//! `term_indices_are_structural_in_both_checkers` witnesses separately
+//! allocated equal function indices and constant references, and refuses beta-
+//! and delta-related indices rather than accepting a declaration the kernel
+//! rejects. **Reversal.** Widen this boundary only with replay-checked index
+//! conversion and independent readmission witnesses.
+//!
+//! The programmatic forms cross ordinary checked kernel admission, canonical
+//! artifacts, incremental support and edit snapshots, and
+//! `gandr-core-sequent`'s machine runs nominal constructors, cases and
+//! fixpoints. There is no parser notation, description decoder or graded thunk
+//! former for them. Native declarations export as data declarations, not
+//! axioms.
 
 use alloc::sync::Arc;
 

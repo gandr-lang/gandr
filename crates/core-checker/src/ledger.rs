@@ -7,6 +7,20 @@
 //! hole meets a declared type, and only then. A refusal therefore cannot be
 //! spelled as an obligation — not by the checker, not by a caller — and the
 //! ledger's count is the number of holes owed, never a count of errors.
+//!
+//! The alternatives were a runtime assertion, a lint, and an audit of
+//! construction sites; each is weaker than the type, and none would survive a
+//! caller outside the crate. There is no reversal: a weaker enforcement is what
+//! the type replaces.
+//!
+//! The producer of an obligation is a signature no definition completes, which
+//! is the shape a lowering hands over as an uncompleted declaration. A term
+//! hole owes nothing: it is no declaration's contract, and the bridge refuses
+//! the declaration that holds it, so the ledger and the kernel's audit agree
+//! without it. The alternative was an obligation per term hole, abstracted over
+//! its binders; it comes with the axiom that would discharge it at the bridge.
+//! `ObligationEntry`'s compile-fail examples show that no caller forges an
+//! obligation.
 
 use alloc::vec::Vec;
 use core::fmt;

@@ -75,6 +75,160 @@
 //! over untrusted input. The machine takes a fuel budget and refuses when it
 //! runs out. Refusing is the fail-closed posture; a decline is a correct answer
 //! at this surface and a divergence is not.
+//!
+//! # Evaluation
+//!
+//! A composite keeps its source face exactly when every child's face is
+//! `Source(c)` for the very `c` the source node names; a variable resolved out
+//! of the environment makes its parent `Reduced`. A closure keeps its source
+//! face only when it captured the empty environment. A stuck computation spine
+//! is marked `Reduced` even where nothing reduced. A constant becomes a neutral
+//! whose unfolding face reads the definition through the scope's transparency;
+//! nothing is expanded, because eager unfolding would defeat the face
+//! evaluation fills. Extending a neutral's spine carries the unfolding along,
+//! since forcing means unfolding the head and re-applying the spine.
+//!
+//! A resumable slice checks its budget before removing a task: a zero slice
+//! pauses without losing work, and a task that finishes on the final available
+//! step finishes rather than pauses. Missing operands in a malformed re-applied
+//! spine are named `EvalFault::MachineInvariant` refusals in both build modes,
+//! not assumptions that contract enforcement may turn into panics. Witnesses:
+//! `eval::tests::a_zero_slice_preserves_work_and_exact_completion_is_not_a_pause`
+//! and `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`.
+//!
+//! ### Pure normalization boundary
+//!
+//! Conversion refuses all eight runtime-control formers with
+//! `EvalFault::RuntimeControl(ControlFormer)`; it never invokes a host.
+//! Stack/With type codes still compare and read back structurally with captured
+//! scope and effect-operation types intact.
+//!
+//! **Choice.** The sequent machine executes control; conversion stays pure.
+//! Host interpretation makes equality state-dependent; erasure certifies
+//! another program. Revisit only for a pure equational theory with
+//! independently checked evidence, not an adapter.
+//!
+//! Witnesses: `runtime_control_is_refused_by_former`,
+//! `control_type_codes_read_back_their_captured_scope`,
+//! `control_scopes_keep_only_ambient_indices`,
+//! `control_type_codes_compare_distinct_inputs_and_outputs`.
+//!
+//! # Lowered definition bodies
+//!
+//! The chain carries a body as a canonical subterm-table entry index rather
+//! than as a core node, because a core id means something only in the arena
+//! that minted it and a chain is cloned into every run. A run therefore lowers
+//! the chain into its own arena in one pass, in admission order:
+//! `LoweredChain::lower` asks for each distinct index once, so definitions the
+//! canonical table gave one body share one lowering, and every body the chain
+//! holds has a lowering before any run reads it. A caller that admits
+//! definitions one at a time, as the checker's code table does, appends each
+//! with `LoweredChain::define`: one chain entry and one map insertion, where
+//! lowering the extended chain again per admission costs a module of n
+//! definitions n² map operations. Evaluation still unfolds nothing — a manifest
+//! constant stays a neutral carrying its index unforced.
+//! `ReadbackMode::Unfolding` forces a body when it meets one: it evaluates the
+//! lowering in the empty environment from the readback's own budget and records
+//! the result with `DomainArena::force_neutral`, so a neutral met twice
+//! evaluates its body once and its neutral form stays readable beside the
+//! unfolding.
+//!
+//! Alternatives: lowering at evaluation time, which is eager unfolding under
+//! another name and defeats the term face; a table the caller fills one body at
+//! a time and attaches, which leaves `ReadbackFault::UnloweredBody` reachable
+//! for every definition the caller missed; and decoding the subterm table here,
+//! which needs a lookup by entry index that the decoded artifact does not
+//! expose and a kernel-to-core reading that no crate owns. Reversal: the
+//! decoded artifact gains a lookup by entry index and a crate owns reading a
+//! table entry as a core term; the per-entry lowering then moves behind that
+//! crate and the pass keeps its shape.
+//!
+//! # Native data and records
+//!
+//! Constructors and records keep lazy field closures, a case or projection
+//! demands only what it selects, a split of a tuple binds each component in
+//! order and enters its body while a split of a neutral suspends whole as
+//! `Elimination::Split`, compared by arity and by its bodies opened under one
+//! fresh variable per component (`Opening::Many`), and `fix x. M` is its own
+//! weak head until an application at a canonical argument or a bind unfolds it
+//! once; evaluation unfolds a partial fixpoint as readily as a structurally
+//! descending one and leaves the difference to the kernel's replay.
+//!
+//! # Constructors, cases and records
+//!
+//! Constructors and records retain ordered lazy field closures in flat arena
+//! spans. Projection demands only the selected field; data case selects exactly
+//! its tag's branch and supplies only that constructor's fields. A neutral head
+//! retains the elimination until unfolding exposes its constructor or record.
+//! Readback reconstructs every native child and classifier. Arena truncation
+//! restores the field-span watermark as well as the node tables.
+//!
+//! The sequent machine's command IL runs native constructors and cases and
+//! refuses records by name. The structural index-conversion boundary and
+//! deferred readers are in the [checker
+//! floor](https://github.com/gandr-lang/gandr/issues/199).
+//!
+//! # Two gates unfold a fixpoint
+//!
+//! `fix x. M` evaluates to `DomainComp::Fixpoint`, a computation closure over
+//! the fixpoint node itself, and is its own weak head until something observes
+//! it. Two gates unfold it once, `M[thunk (fix x. M)/x]`, with the self thunk
+//! bound innermost in the closure's environment: an application at a canonical
+//! argument, and a bind that runs it. At a neutral argument the application
+//! sticks, and the fixpoint waits on the neutral's spine as
+//! `Elimination::Fixpoint` until the head unfolds and the application resumes.
+//!
+//! # Native readback and conversion
+//!
+//! Readback opens the self binder and rebuilds the fixpoint with its evidence.
+//! Conversion compares two fixpoints, and two stuck fixpoint eliminations, by
+//! their bodies under one self variable, whatever their evidence.
+//!
+//! # Evaluation does not read the evidence
+//!
+//! A partial fixpoint unfolds at the same gates, and a loop is bounded by the
+//! fuel every task is charged, not by the claim. Certification is where the
+//! claim matters. The kernel replays a structural-descent unfolding at a
+//! constructor and declines a partial one, so a decision the machine reached
+//! through a partial unfolding is computed but never certified.
+//!
+//! # The fixpoint decision
+//!
+//! **Choice.** A self-closure unfolded on demand, which keeps the domain arena
+//! acyclic and append-only and costs one closure per fixpoint.
+//!
+//! **Alternatives.** A cyclic environment that ties the self binder to its own
+//! closure, which breaks acyclic minting; and eager unrolling to a depth, which
+//! guesses the depth.
+//!
+//! **Reversal.** A measured workload whose cost is dominated by re-minting the
+//! self thunk at each unfolding, which would cache that thunk on the closure.
+//!
+//! # Native data witnesses
+//!
+//! - Native data and records: `eval::tests::native_records_and_cases_compute`
+//!   distinguishes all five constructor arguments, selected module components
+//!   and poisoned unselected thunks;
+//!   `eval::tests::native_cases_reapply_when_head_unfolds` covers delayed
+//!   elimination; `machine::tests::native_records_cases_and_traces_agree`
+//!   checks independently replayed native comparisons.
+//! - Fixpoints:
+//!   `eval::tests::a_fixpoint_unfolds_at_a_constructor_and_sticks_at_a_neutral`,
+//!   `eval::tests::an_observed_loop_runs_out_of_fuel`,
+//!   `readback::tests::a_fixpoint_reads_back_with_its_self_binder` and
+//!   `machine::tests::stuck_fixpoints_compare_by_their_bodies`.
+//!
+//! # Source sharing
+//!
+//! A core term is a DAG, and both machines walk it as a tree: evaluation
+//! evaluates a node reached twice twice, and readback mints a fresh core node
+//! per rebuilt domain node. A term with deep sharing costs its expansion,
+//! bounded by the fuel budget. Removing that cost is the duplication
+//! parameter's job, over the sharing overlay: the evaluator remembers a leg's
+//! evaluation only when the installed stance handed the leg over as a share
+//! (see `traced`), and readback and conversion still walk the expansion. A
+//! cache keyed on the source node inside a machine would make the sharing
+//! decision behind the parameter's back.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;

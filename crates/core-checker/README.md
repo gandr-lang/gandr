@@ -4,47 +4,10 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 <!-- toc -->
 - [Synopsis](#synopsis)
-- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [The former decides the mode](#the-former-decides-the-mode)
-- [Types meet at three bridges](#types-meet-at-three-bridges)
-- [A code unfolds through the normaliser](#a-code-unfolds-through-the-normaliser)
-- [A type has one classifier](#a-type-has-one-classifier)
-- [Universes, quotes and decodes](#universes-quotes-and-decodes)
-- [Smallness is a lift at the value bridge](#smallness-is-a-lift-at-the-value-bridge)
-- [The dependent arrow, and the bind that is not](#the-dependent-arrow-and-the-bind-that-is-not)
-- [Effects and control](#effects-and-control)
-- [Eager products and static operators](#eager-products-and-static-operators)
-- [A static lambda normalizes away, or is refused](#a-static-lambda-normalizes-away-or-is-refused)
-- [An accepted body is a definition](#an-accepted-body-is-a-definition)
-- [Holes, marks and coverage](#holes-marks-and-coverage)
-- [Only an absence is owed](#only-an-absence-is-owed)
-- [A declaration input owned here](#a-declaration-input-owned-here)
-- [Resolution by admission position](#resolution-by-admission-position)
-- [Every declaration gets a verdict](#every-declaration-gets-a-verdict)
-- [Out of the fragment, by name](#out-of-the-fragment-by-name)
-- [Nominal data and structural records](#nominal-data-and-structural-records)
-  - [Data and record floor](#data-and-record-floor)
-- [Recursive data, fixpoints and derived eliminators](#recursive-data-fixpoints-and-derived-eliminators)
-- [Native universe paths](#native-universe-paths)
-- [Refusals](#refusals)
-- [The checker owns its context](#the-checker-owns-its-context)
-- [The support is what the judgement read](#the-support-is-what-the-judgement-read)
-- [One machine, one allowance, no memo](#one-machine-one-allowance-no-memo)
-- [The kernel re-derives what the judgement accepted](#the-kernel-re-derives-what-the-judgement-accepted)
-- [Erasure is a remapping of ids](#erasure-is-a-remapping-of-ids)
-- [Native runtime assumptions](#native-runtime-assumptions)
-- [An uncompleted signature crosses as an axiom](#an-uncompleted-signature-crosses-as-an-axiom)
-- [A mark crosses as nothing](#a-mark-crosses-as-nothing)
-- [The ledger and the kernel's audit agree](#the-ledger-and-the-kernels-audit-agree)
-- [The bridge owns its rollback](#the-bridge-owns-its-rollback)
-- [One erasure machine, guarded against cycles](#one-erasure-machine-guarded-against-cycles)
-- [A lift and an unfolding cross as the kernel's own](#a-lift-and-an-unfolding-cross-as-the-kernels-own)
-- [A split crosses as its projection binds](#a-split-crosses-as-its-projection-binds)
-- [The export carries the producer's names](#the-export-carries-the-producers-names)
-- [Experimental stage readmission](#experimental-stage-readmission)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 <!-- tocstop -->
 
@@ -56,52 +19,38 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. A mode per former and comparison only at mode changes are enforced by lint and module visibility, not review. Kernel readmission independently checks pure acceptances.
 
-**How.** One goal-and-frame machine charges each transition to `CheckBudget`. Checking receives formed types and dispatches on the term former. Synthesis crosses a private conversion bridge when checking needs it. Formation computes the natural classifier. Code unfolding is certified before comparison; readmission replays those certificates. The sections below specify each boundary.
-
-## References
-
-- Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." _Typed Lambda Calculi and Applications (TLCA 1999)_, LNCS 1581, Springer (1999). <https://doi.org/10.1007/3-540-48959-2_17> — the value and computation sorts, the thunk and returner shifts `U` and `F`, and the arrow as a computation type, which fix every rule's premises.
-- Jana Dunfield and Neel Krishnaswami. "Bidirectional Typing." _ACM Computing Surveys_ 54(5) (2021). <https://doi.org/10.1145/3450952> — the discipline the rules follow: introductions check, eliminations synthesise, and the subsumption rule is the one place a synthesised type meets an expected one.
-- Zanzi Mihejevs and Jules Hedges. "Canonical bidirectional typechecking." arXiv:2512.07511 (2025). <https://arxiv.org/abs/2512.07511> — the checkable/synthesisable split read as a polarity duality whose seams are the shifts, the background for confining type comparison to the change of direction.
-- Cyrus Omar, Ian Voysey, Michael Hilton, Jonathan Aldrich and Matthew A. Hammer. "Hazelnut: A Bidirectionally Typed Structure Editor Calculus." _POPL 2017_. <https://doi.org/10.1145/3009837.3009900> — holes with the unknown type, consistency in place of equality around it, the matched-type operations, and mark erasure; see [Holes, marks and coverage](docs/holes.md).
-- Cyrus Omar, Ian Voysey, Ravi Chugh and Matthew A. Hammer. "Live Functional Programming with Typed Holes." _Proceedings of the ACM on Programming Languages_ 3 (POPL), 2019. <https://doi.org/10.1145/3290327> — evaluation around holes to indeterminate results, which `gandr-core-nbe` performs on the terms this judgement types.
-- Yongwei Yuan et al. "Live Pattern Matching with Typed Holes." _Proceedings of the ACM on Programming Languages_ 7 (OOPSLA1), 2023. <https://doi.org/10.1145/3586048> — exhaustiveness and irredundancy decided only when every filling of the pattern holes agrees.
-- Eric Zhao et al. "Total Type Error Localization and Recovery with Holes." _Proceedings of the ACM on Programming Languages_ 8 (POPL), 2024. <https://doi.org/10.1145/3632910> — the marked lambda calculus: every term elaborates, each error a mark where it stands.
-- Luc Maranget. "Warnings for pattern matching." _Journal of Functional Programming_ 17(3) (2007). <https://doi.org/10.1017/S0956796807006223> — the usefulness relation both coverage questions reduce to.
-- Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV: a universe of value types and a universe of computation types, both classified in the value sort, dependency on values only, and the bind whose type may not mention its binder.
-- Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot, Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the sort carried apart from the level, so a universe names both and a sort parameter is a separate question this crate refuses by name.
-- Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §9's trace of the checker's decisions rechecked sequentially, which is how every unfolding the judgement takes reaches the kernel.
-- N. G. de Bruijn. "Lambda calculus notation with nameless dummies." _Indagationes Mathematicae_ 75(5) (1972). <https://doi.org/10.1016/1385-7258(72)90034-0> — the binder indices a variable is resolved by.
-- Henk Barendregt and Freek Wiedijk. "The challenge of computer mathematics." _Philosophical Transactions of the Royal Society A_ 363(1835) (2005). <https://doi.org/10.1098/rsta.2005.1650> — the de Bruijn criterion: a result is trusted when a small independent checker re-derives it, the posture of the kernel bridge.
+**How.** One goal-and-frame machine charges each transition to `CheckBudget`. Checking receives formed types and dispatches on the term former. Synthesis crosses a private conversion bridge when checking needs it. Formation computes the natural classifier. Code unfolding is certified before comparison; readmission replays those certificates. The module documentation specifies each boundary.
 
 ## Provided features
 
-- `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces. Witnesses: `judgement::tests::every_value_former_is_answered_in_both_modes`, `judgement::tests::every_comp_former_is_answered_in_both_modes`, `judgement::tests::the_faces_agree_on_free_terms`, `judgement::tests::well_typed_terms_synthesise_and_check_their_type`, `judgement::tests::a_bind_synthesises_its_continuations_type`, `judgement::tests::a_bind_checks_against_the_expected_computation`, `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`.
-- Pairs, static lambdas and static applications in the faces: a pair synthesises the eager product of its components or checks against one; a static lambda checks only against a static Pi; a static application synthesises its head's last codomain. Witnesses: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`, `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`, `bridge::tests::a_static_lambda_at_a_static_parameter_normalizes_away`.
-- Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions. Witness: `bridge::tests::native_lists_check_and_round_trip`.
-- `ConversionCount`: the declared projection of the conversion boundary, returned by every face. Witnesses: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`, `judgement::tests::the_faces_agree_on_free_terms`.
-- `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take. Witnesses: `formation::tests::every_value_type_constructor_has_a_formation_rule`, `formation::tests::every_comp_type_constructor_has_a_formation_rule`, `formation::tests::universe_families_form_one_level_up_in_the_value_sort`, `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`, `formation::tests::an_unadmitted_former_beneath_an_arrow_is_found`, `formation::tests::weakening_preserves_formation`, `context::tests::the_producer_declares_the_rigid_base_atoms`, `context::tests::a_universe_typed_hypothesis_becomes_a_type_variable`, `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`, `context::tests::an_undeclared_type_name_is_refused_by_name`.
-- `classify_value_type`, `classify_comp_type` and `level_of`: the unique classifier of each formed type. Witnesses: `formation::tests::every_type_has_exactly_one_classifier`, `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`.
-- `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts. Witnesses: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`, `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`.
-- `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`. Witnesses: `module::tests::each_combination_of_halves_gets_its_verdict`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
-- `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts. Witnesses: `module::tests::a_refusal_does_not_stop_the_run`, `native_formers::native_formers::dependent_data_parameters_and_case_motives`.
-- `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix. Witness: `native_formers::native_formers::native_signature_support_and_adoption`.
-- `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance. Witnesses: `judgement::tests::a_refusal_under_binders_leaves_the_context_as_found`, `module::tests::a_later_declaration_reads_an_earlier_type`.
-- `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger. Witnesses: `module::tests::every_owed_hole_enters_the_ledger_in_order`, `module::tests::a_refusal_never_enters_the_ledger`; `ObligationEntry` compile-fail examples prevent forged obligations.
-- `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes. Witnesses: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
-- `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity. Witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`.
+- `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
+- Pairs, static lambdas and static applications in the faces: a pair synthesises the eager product of its components or checks against one; a static lambda checks only against a static Pi; a static application synthesises its head's last codomain.
+- Native list introductions check against `List A`; the pure fold synthesises `F B` from explicit element and result annotations. Nil and cons branches are checked in their zero- and two-binder contexts, and readmission preserves the native kernel syntax without assumptions.
+- `ConversionCount`: the declared projection of the conversion boundary, returned by every face.
+- `form_value_type`, `form_comp_type`, `FormedValueType` and `FormedCompType`: formation as a judgement, and the types the check faces take.
+- `classify_value_type`, `classify_comp_type` and `level_of`: the unique classifier of each formed type.
+- `CodeDefinitions`, `Certificate`, `Unfolded`, `unfolding::Absent` and `Lift`: static definitions, certified reductions and recorded universe lifts.
+- `Declaration`, `DeclarationContent` and `OriginToken`: name-free value/data input. Values retain optional signature/body halves; data retain a `DataSignature`.
+- `check_declaration`, `check_module`, `Verdict`, `Judged` and `ModuleReport`: one verdict per declaration, retaining accepted value definitions, native data signatures and recorded lifts.
+- `check_declaration_supported`, `Supported`, `Support`, `Consulted` and `CheckingContext::adopt`: query-specific value/data answers and adoption into the new prefix.
+- `CheckingContext`, `CheckBudget` and `signature_table::Absent`: context, admission tables and judgment allowance.
+- `Absence`, `ObligationEntry`, `ObligationLedger` and `ObligationCount`: the absence-only ledger.
+- `CheckRefusal`, `Mismatch`, `CheckingForm`, `ExpectedShape`, `UnadmittedFormer`, `TermNode`, `TypeNode` and `CoreNode`: named refusals and responsible nodes.
+- `StaticArity`, `ArgumentPosition` and family refusals preserve the failing argument or arity.
 - `CheckRefusal::classify` assigns producer-failure classes; actual judgments, rather than a duplicate variant-to-class table, witness their refusals.
-- `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells. Witness: `refusal::tests::a_refusal_compares_the_types_it_names`.
-- `trace_value`, `Pending`, `pending::Absent` and `ModuleReport::pending`: the value and computation judgements a refusal stood inside, outermost first, each a term and the type it was checked against, and `check_module`'s trail of each refused body by position. Witnesses: `judgement::elaboration::tests::a_traced_run_keeps_the_judgements_a_refusal_stood_in`, `module::tests::a_refused_body_keeps_the_judgements_it_was_refused_inside`.
-- `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment. Witnesses: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
-- `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome. Witnesses: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
-- `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations. Witnesses: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`, `bridge::tests::native_operations_cross_as_audited_assumptions`.
-- `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances. Witnesses: `bridge::tests::every_readmission_certificate_replays`, `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`.
-- `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names. Witnesses: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`, `native_formers::native_formers::data_declarations_and_refusals_agree_with_kernel`.
-- `bridge::Refusal` and its classification retain why an accepted declaration did not cross. Witnesses: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`, `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`, `bridge::tests::a_declining_certificate_faults_the_declaration`.
-- The [hole surface](docs/holes.md): term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`. Witnesses are listed on that page.
-- `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference. Witnesses: `fork::tests::serial_runs_each_item_in_order_from_one_state`, `staging::tests::every_width_checks_the_serial_program`.
-- `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork. Witnesses: `staging::tests::every_width_checks_the_serial_program`, `staging::tests::the_merged_arena_is_one_arena_normalization`, `staging::tests::exhausted_allowances_refuse_alike_at_every_width`, `template::tests::grouping_by_certificate_keeps_first_occurrence_and_member_order`, `template::tests::forked_families_equal_one_by_one_admission_across_the_edit_traces`.
+- `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
+- `trace_value`, `Pending`, `pending::Absent` and `ModuleReport::pending`: the value and computation judgements a refusal stood inside, outermost first, each a term and the type it was checked against, and `check_module`'s trail of each refused body by position.
+- `bridge::readmit` and `bridge::Readmission`: independent admission of accepted declarations into a fresh kernel environment.
+- `bridge::Readmitted` and `bridge::Outcome`: each origin and its defined-value, admitted-data, assumed-hole, static-definition, marked, refused or rejected outcome.
+- `bridge::ArtifactAudit`: owed-hole and native-runtime assumptions used by admitted declarations.
+- `bridge::Replayed` and `bridge::Readmitted::certificates`: kernel replay results for distinct reduction instances.
+- `bridge::Readmission::export`: canonical artifacts with crossed declarations and producer names.
+- `bridge::Refusal` and its classification retain why an accepted declaration did not cross.
+- The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
+- `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference.
+- `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork.
+- `stage::compile`, `stage::Program::admit` and `stage::Program::execute`: certified first-order residual readmission for the experimental stage universe.
+- `template`: guarded families of staging equations with ordinary replay as authority, the `template::Memo` that drafts a family from its key's last template, and the adapter into the kernel's guarded admission.
 
 ## Expected features
 
@@ -157,220 +106,35 @@ assert!(matches!(
 assert_eq!(readmission.audit().axioms().len(), 1_usize);
 ```
 
-## The former decides the mode
-
-Every former but the bind, pair and record has one intrinsic direction. Variables, constants, constructors, nominal cases, record and tuple projections, the unit value and integer and string literals synthesise; a force synthesises the body of its value's thunk type; an application synthesises the codomain of its head's arrow, after checking its argument against the domain; a static application synthesises the last codomain of the static Pis its head opens, one per argument, after checking each argument against its domain. A thunk checks against `U C`, a lambda against `A → C`, a static lambda against a static Pi `K ⇒ J`, a return against `F A`, and a fixpoint against any computation type `C`, its body checked at `C` under a binder of `U C`. A bind takes the direction it is met in: its bound computation synthesises a returner `F A`, a binder of `A` opens, and the body is judged in the bind's own direction, so the bind synthesises what its body synthesises and checks against what it is checked against. A pair synthesises the eager product of its components' types when each synthesises, and checks against an eager product's factors otherwise. A synthesising term in checking position synthesises and then crosses a bridge; a checking form in synthesis position is refused, naming the form. The direction is a crate-local type declared as the judgement's direction, and the `mode_dispatch_wildcard` lint from the workspace's policy library refuses any match on it, or on a parameter declared to carry the expected type, that answers a case through a fallback arm. A rule added in one direction and forgotten in the other does not compile.
-
-The alternatives were a mode register with a type-directed default, which is what the earlier implementation had; the same constraint as a review convention; and a workflow gate matching source text, which cannot tell a match on a direction from any other match. The choice reverses when the judgement is restated so that a term's syntactic class is itself a type, at which point the arm the lint looks for cannot be written.
-
-The bind is answered in both directions because its type is its body's: a bind fixed to synthesis would refuse every block that ends in a return, which only checks, and a bind fixed to checking would refuse a block standing where a type is wanted from it, as the head of an application. Its bound computation must synthesise, so a bare return as a statement is refused as a checking form; this reverses when a statement can state its returner, by an annotation or a metavariable, and the bound computation then checks against it.
-
-The pair is answered in both directions for the same reason at its components: a pair fixed to checking would refuse every unsigned definition of a pair, and one fixed to synthesis would refuse a pair holding a thunk, which only checks. The alternative was the checking-only pair of a bidirectional system without products in synthesis position; it reverses with the dependent pair, whose second factor reads its first component, and which then checks only.
-
-## Types meet at three bridges
-
-The judgement compares types in exactly three places: a synthesising value in checking position crosses the value bridge, a synthesising computation in checking position crosses the computation bridge, and the code of a decode crosses the decode bridge when formation checks it against the universe the decode names. The bridges live in one module beside the private decision they call, and nothing else in the crate can reach that decision, so the sites are a visibility fact rather than a count someone asserts. Each crossing increments the run's `ConversionCount`, saturating at its maximum, which every face returns: the projection through which a test observes that a check converted where it should and nowhere else. The fixture `def f : U (Integer → F Integer) = thunk { λx. (force g) x }`, with `g` of the same type, crosses the value and computation bridges once each and reports two.
-
-The alternatives were rebuilding and comparing a synthesised type at every rule, which is how the earlier implementation came to compare types at three dozen sites; and a counting lint, which needs a whole-crate pass and a declared expected number where a visibility rule needs neither. The decode bridge is the third site because a decode's code is a term whose type is a universe, and formation, which runs in the judgement's machine, is where that term is checked. The choice reverses when a former brings a cover merge — a sum elimination whose branches synthesise — at which point the merge joins the module and the projection's expected values change with it.
-
-## A code unfolds through the normaliser
-
-Types embed terms in decode codes `El(c, l)` and native path endpoints. Path endpoints are closed first-order quoted codes; their decoded types compare structurally. Elsewhere the type walk compares shared trees with a worklist and accepts equal ids without revisiting them. At a decode, `CodeDefinitions::certify` asks `core-nbe` to certify each unfolding step before the walk compares the resulting types. Accepted code definitions therefore participate in type conversion without adding a second reducer to the checker.
-
-This is the reversal the crate recorded before universes entered: conversion stayed structural while no type embedded a term, and was to call the normaliser's conversion once a former that does — the dependent arrow, the type a code denotes — entered the fragment. Both have entered, `gandr-core-nbe` is a dependency, and the decision the bridges call reaches the machine at every code it unfolds. The recorded design hands each code comparison to the machine whole. Here the machine certifies one δ-step at a time — a constant against its own body — and the walk compares what remains former by former. The machine compares quotes whole and declines a pair of codes when anything inside them could still unfold, so a whole comparison of `⌜U El(Num)⌝` against `⌜U Integer⌝` would be refused where the stepwise one succeeds; and a certificate of one δ-step is exactly what the kernel's replay re-derives by its own unfolding rule.
-
-The alternatives were keeping the comparison structural and refusing code constants with bodies, which leaves `def Num : Type = Integer` unusable in a type, and a reducer local to the checker beside the machine, a second conversion the kernel oracle exists to rule out. The stepwise certificate was to reverse when the machine decides codes under quotes or when static application enters and a code reduces by β as well as δ. Static application has entered without reversing it: the machine still compares quotes whole and declines a pair of codes with anything left to unfold inside them, so a static step is certified the same way — one saturated instance of a static definition against its δβ-reduct, one static lambda's redex against its β-reduct — and the walk compares the rest former by former, a rigid instance by its head and its arguments. The choice reverses when the machine decides codes under quotes, at which point the walk hands the machine each code pair whole and a comparison carries one certificate.
-
-## A type has one classifier
-
-Formation is a judgement: a decode's code must synthesise the universe the decode names, and a dependent arrow's codomain is formed under a binder of its domain, so formation runs as goals of the judgement's own machine — one machine, one allowance, no recursion between the two. A formed type has exactly one classifier, read off it by `level_of`: the sort is the type's family — the value universe for a value type, the computation universe for a computation type — and the level is computed compositionally, an atom's zero, a universe's successor, a lift's or a decode's own level, and the join of a former's children. Formation never asks whether a type fits a larger universe; that question belongs to the value bridge.
-
-The earlier implementation formed types in a walker of its own beside the judgement, over a formation context kept in step with the judgement's by hand. The alternatives were that walker, which is two contexts where one suffices, and a classifier cached on each arena node at mint time, which puts a judgement's answer into the vocabulary crate and charges every mint for a reading only formed types need. The choice reverses if formation ever needs a context the judgement does not have, which no former in sight does.
-
-## Universes, quotes and decodes
-
-`Type[+, l]` classifies value types and `Type[-, l]` computation types, and each is itself a value type at `Type[+, l+1]`: universes are values, both towers sit in the value sort, and a universe of computation types is something a value can be. A quote `⌜A⌝` is the code of a value type and synthesises the value universe at `A`'s level; a computation quote does the same for a computation type in the computation universe. A decode `El(c, l)` turns a code back into a type, and a decode of a quote is never stored: minting it returns the quoted type, so a decode in the arena always stands over a variable or a constant, and type comparison stays structural everywhere but there. A variable whose binder has a universe type is a type variable; a variable bound at any other type is not, and its decode is refused at the decode bridge.
-
-Two universe forms are refused by name. A universe over a sort parameter has no ground reading until sort binders exist to bind it, and a universe at the greatest representable level has no level for its own universe to stand at. The alternatives were a single universe with the sort read off context, which loses the classifier's one-answer property, and a separate kind layer above the universes, which ∂CBPV shows is unnecessary. The sort parameter reverses with prenex sort quantification.
-
-## Smallness is a lift at the value bridge
-
-A code that synthesised the value universe at level `k` checks at the value universe at any `l` at or above `k`: the value bridge records a `Lift` from `k` to `l` at the code, and the report carries it to the kernel bridge, which writes the kernel's explicit lift there. A computation universe admits no such crossing — the core has no lift of a computation type, so a computation code checked one level up is `LevelMismatch` — and no universe crosses to the other sort, which is `SortMismatch`. The rule fires only at the head of the two types; beneath a former universes compare exactly, so cumulativity never hides inside a thunk type or an arrow.
-
-The alternatives were full cumulativity as subtyping, which the kernel would have to rediscover at every comparison instead of checking one lift at a recorded site, and no cumulativity, which makes every small type unusable at a larger universe without an annotation the author cannot write in the surface. A lift the author writes is accepted only when it raises; one that does not is the unadmitted `TypeLift`. This reverses if the kernel gains cumulativity of its own, at which point the recorded lift is redundant and the bridge stops writing it.
-
-## The dependent arrow, and the bind that is not
-
-A dependent arrow `Π(x : A). C` forms when its domain forms and its codomain forms under a binder of `A`; it is a computation type at the join of the two levels. A lambda checked against it opens the binder and checks its body against the codomain as written; one checked against a plain arrow shifts the codomain past the new binder. An application of a dependent arrow synthesises the codomain instantiated at the argument — at the argument as the recorded lift wrote it when the argument crossed a value bridge one universe up — so the type the caller sees names the type the caller passed.
-
-A bind is not dependent. Its continuation is judged under a binder of the returned value, and when the bind synthesises, the continuation's type is strengthened out from under that binder; a type that mentions the bound value is `DependentBind`. A returned value is a computation's result, and a type that names it would depend on an effect having run, which is the substitution the fire triangle forbids alongside dependent elimination. The alternatives were a dependent bind, sound only for a thunkable continuation, and dependency on computations, which needs the linearity discipline the core does not have. Either reverses only with that discipline.
-
-## Effects and control
-
-A perform synthesises its reply under its singleton interface row; a deep handler covers its interface exactly once and retains residual effects; stacks, resumptions, resets and shifts check under bidirectional rules with named refusals, and returner rows and stacks subsume by variance. The [effects and control page](docs/effects.md) states each rule, the unknown-type readings, the decision with its reversal, the witnesses, and the floor of prior conformance rows by name.
-
-## Eager products and static operators
-
-An eager product `A × B` forms when both factors form, a value type at the join of their levels; its factors are value types, so a computation type stands in one only under a thunk. A static Pi `K ⇒ J` forms when both classifiers form and each, at its weak head, is a universe or a static Pi: a static operator ranges over codes and over operators on codes, and a static Pi over any other classifier is `StaticClassifierExpected`, naming the classifier. A static lambda checks against a static Pi, its body against the codomain beneath a binder of the domain. A static application is judged as a spine: its root head synthesises, and each argument, first to last, checks against the domain of the next static Pi the head's type opens, so the application has the last codomain. A spine longer than the head's static Pis is `FamilyArity`, naming the Pis opened and the arguments given; an argument whose classifier does not cross to its domain is `FamilyArgumentClassifier`, naming its position and both classifiers, so a universe of the wrong sort or level reads as a mistake in the family's use, not an anonymous mismatch. A saturated instance of a static definition unfolds as a code constant does, one certified δβ-step at a time, and two rigid instances convert when their heads and arguments do.
-
-The recorded design names the family refusals and asks a family's sort and level mismatches to read as such; the alternatives were the plain `TypeMismatch` at the argument, which loses which argument of which family failed, and a classifier check at formation only, which misses an application whose head is a variable. The static Pi is non-dependent, its codomain closed: every operator the relative monad needs is non-dependent, and a dependent static Pi waits for a family that needs it.
-
-## A static lambda normalizes away, or is refused
-
-A static lambda is not a value the kernel types: the kernel's terms have no static lambda, and every static application reduces before the kernel sees it. So a static lambda, a static definition, or an instance of one short of saturation, handed to a static parameter, normalizes away with the application that receives it; handed to a dynamic application — a computation applied at a value whose type is a static Pi — it would survive into the kernel's terms, and it is refused as `StaticLambdaArgument` at the argument. An opaque operator, the one a hole owes, is rigid and crosses as a kernel constant, so it passes. `a_static_lambda_at_a_static_parameter_normalizes_away` and `a_static_lambda_at_a_dynamic_parameter_is_refused_by_name` assert the two sides.
-
-The alternatives were defunctionalising each static lambda into a kernel constant at its use, which hands the kernel an operator it can only treat as opaque and certifies nothing about it, and a static lambda in the kernel, which widens the trusted base by a binder and its β-rule for terms that normalize away anyway. The refusal reverses if the kernel gains static abstraction, at which point a static lambda crosses at a dynamic parameter as itself.
-
-## An accepted body is a definition
-
-A declaration whose body was accepted defines its constant: a later decode of a code naming it unfolds to that body. A refused or owed declaration leaves its constant rigid. The definition is elaborated: when the declared type is a value universe above the body's own level, the definition is the body lifted to the declared universe, so `El(T, l)` unfolds to a code at the level it is decoded at, and whnf never has to insert a lift itself. The kernel admits the same lifted body, so the two sides unfold one constant to one term. `CheckingContext::adopt` admits an earlier verdict's body the same way, so an incremental run unfolds what a batch run would.
-
-An adopted body becomes a definition only with a supplied formed signature; an untyped adopted body stays unavailable to synthesis and rigid to unfolding. The definition table accepts strictly increasing positions: a repeated or earlier position leaves every existing body intact rather than replacing or erasing it.
-
-The alternatives were defining the constant as the body as written, which makes a decode at the declared level unfold to a code at a smaller one and forces a lift into every unfolding, and unfolding only within the declaration that made the definition, which makes a type alias unusable from the next declaration. The choice reverses with transparency control: an opaque definition then stays rigid by request, and the support log grows a read per unfolding.
-
-## Holes, marks and coverage
-
-A hole written inside a body has the unknown type, consistent with every type; a total elaboration marks each refusal where it stands and goes on; coverage is three-valued over pattern holes; and the bridge refuses a term hole and erases a mark. The [hole surface page](docs/holes.md) states each decision with its alternatives and reversal, and what the unknown type cannot do. A declaration with no body stays the hole the next section owes.
-
-## Only an absence is owed
-
-An `ObligationEntry` is built from an `Absence` and from nothing else, and an `Absence` has no public constructor: the hole rule makes one when a hole meets a declared type, and only then. A refusal therefore cannot be spelled as an obligation, by the checker or by a caller, and the ledger's count is the number of holes owed. The alternatives were a runtime assertion, a lint, and an audit of construction sites; each is weaker than the type, and none would survive a caller outside the crate. There is no reversal: a weaker enforcement is what the choice replaced.
-
-The producer of an obligation is a signature no definition completes, which is the shape a lowering hands over as an uncompleted declaration. A term hole owes nothing: it is no declaration's contract, and the bridge refuses the declaration that holds it, so the ledger and the kernel's audit agree without it. The alternative was an obligation per term hole, abstracted over its binders; it comes with the axiom that would discharge it at the bridge.
-
-## A declaration input owned here
-
-`Declaration` is defined in this crate and carries no name, span or syntax node. Its `DeclarationContent` distinguishes optional value signature/body halves from a complete native `DataSignature`. Producers construct this input downstream of both their syntax and the checker, without a surface dependency in the judgment. `OriginToken` returns beside each verdict for the producer to resolve; names enter only at [export](#the-export-carries-the-producers-names). Reading a lowering's outcome type directly would couple independent layers. Revisit the adapter only if a shared producer-neutral declaration vocabulary replaces it.
-
-## Resolution by admission position
-
-A declaration's type enters the signature table only after its own body was judged, and a declaration is admitted only above every position admitted before it, so a body sees exactly the declarations strictly before it: self-reference and mutual reference find no type, whatever the producer resolved. A declared type is the contract and enters the table whether or not the body met it, so one wrong body does not turn every later reference into an unknown constant; an unsigned body supplies a type only when it synthesised one. The alternative was withholding a signed declaration whose body was refused, which cascades a single mistake into every later reference. Recursion keeps this order: a fixpoint binds its own thunk as a variable, as the [recursive data page](docs/recursive-data.md#recursion-keeps-admission-order) states with the reason.
-
-## Every declaration gets a verdict
-
-A declaration reports its first refusal, and the run continues with the next declaration: `check_module` returns one `Judged` per declaration, in the order given. Every error of a term in one pass is the [total elaboration](docs/holes.md#a-total-elaboration-marks-and-goes-on)'s, at the term's grain; the module report keeps the strict verdicts.
-
-## Out of the fragment, by name
-
-The judgement admits integer and string atoms, unit, products, sums, native Lists, nominal data, structural records, thunks, effect-qualified returners, arrows, dependent arrows, static operators, universes, raising type lifts and decodes, plus [effects and control](#effects-and-control). Injection checks against its sum; case checks both payload-bound branches against one expected computation type. A split only checks, and crosses as projection binds; the [split page](docs/split.md) states both rules. Numeric atoms and literals, value lifts, abstract atoms, non-raising lifts, sort-parameter universes and top-level universes remain named `OutOfFragment` refusals.
-
-## Nominal data and structural records
-
-A data declaration admits a nominal identity with a parameter telescope, an ordered constructor table and a positive universe bound. Its signature is not a value type for the declaration's constant: `Verdict::Data` is distinct from a checked value, and a term reference to that position is refused. A `Data` application checks each explicit argument against its instantiated parameter classifier. Constructors retain that complete application and their tag; fields check against the declaration's instantiated field types. A case supplies exactly one branch per tag and a computation motive under one scrutinee binder. Branches are ambient functions over their constructor fields, not syntax under implicit field binders.
-
-Records infer exact label sets. Checking admits width and recursive depth subtyping: every expected field must exist and its value must check at the expected classifier. Projection returns the named field's type. Equality remains exact in its labels; assignability is directional. Empty records are the record top, not a top for arbitrary values.
-
-**Choice.** Keep nominal identity separate from structural records; neither is an abstract atom or a product encoding. Type parameters are quoted codes and value indices are ordinary terms in one typed telescope. All arguments are invariant: declaration formation proves no variance property that would justify covariance. Constructor fields may use parameters and the declaration's own family, but do not bind subsequent fields, and a declaration cannot see a later declaration.
-
-**Conversion boundary.** Index equality is structural in both checkers, including under thunks, and ignores only candidate path evidence as ordinary kernel conversion does. It does not reduce beta, delta or eta redexes. General definitional index conversion is deferred to a certified kernel conversion reader; frontend conversion alone cannot authorize it. `term_indices_are_structural_in_both_checkers` witnesses separately allocated equal function indices and constant references, and refuses beta- and delta-related indices rather than accepting a declaration the kernel rejects. **Reversal.** Widen this boundary only with replay-checked index conversion and independent readmission witnesses.
-
-The programmatic forms cross ordinary checked kernel admission, canonical artifacts, incremental support and edit snapshots, and the [sequent machine](../core-sequent/README.md) runs nominal constructors, cases and fixpoints. No parser notation, description decoder or graded thunk former is introduced. Native declarations export as data declarations, not axioms.
-
-### Data and record floor
-
-The [named parity floor](data-record-floor.md) maps each prior witness to its native counterpart or missing reader.
-
-## Recursive data, fixpoints and derived eliminators
-
-Both checkers refuse an inadmissible self occurrence by the kernel's names, check a fixpoint against any computation type and replay its structural-descent claim, and `eliminator::derive` writes the eliminator a recursive declaration is consumed by as an ordinary, untrusted definition. The [recursive data page](docs/recursive-data.md) states each rule, the fold, the definitions written through it and the decision with its alternatives, reversal and witnesses.
-
-## Native universe paths
-
-`PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport` are programmatic core forms. `Path_U` is a type of certified equivalences, not equality decided by running its maps. Endpoint codes must be closed first-order quotes; map types are opposite CBPV arrows. `PathCode` classifies a malformed endpoint as malformed source. The judgement checks shape and typing but does not certify round-trip evidence: export remaps every native child and carries candidate dialogues unchanged to ordinary kernel admission.
-
-`bridge::tests::native_path_module_round_trips` exports all five forms, persists and imports four declarations, then replays imported product transport. The surface parser gains no path syntax. Element identity, the bridge mode, higher fields, funext, `Flow_U` and guarded List inhabitants stay at their kernel rule-language boundaries.
-
-**Choice.** Preserve untrusted native evidence across the existing export boundary instead of treating successful frontend checking as certification. `CheckBudget` bounds the frontend machine; the kernel’s formation and replay allowances remain separate and their exhaustion is not a negative equality verdict. **Reversal.** Broader endpoint codes or a source notation must acquire their own typing and kernel replay rules before this boundary widens.
-
-## Refusals
-
-Every refusal is classified by whose fact it is — the author's malformed source, an unrepresentable former, or an engine fault — and a refused body keeps the judgements it was refused inside, its nested reasons. The [refusals page](docs/refusals.md) states both, with the decisions' alternatives and reversals.
-
-## The checker owns its context
-
-`CheckingContext` wraps `gandr-core-term`'s flat, de Bruijn binder stack rather than extending it: the signature table, the highest admission position, the atoms and the allowance live here, and the binder stack is empty between judgements and restored to where it stood whenever a run is refused. The alternative was adding the signature table to the core crate; the wrapper moves down when a second consumer needs the same one.
-
-## The support is what the judgement read
-
-An incremental caller reuses a verdict only when its recorded signature answers still hold. Context lookups log value-signature and data-signature queries separately, in position/query order, including absent answers. Data support retains the complete schema rather than its universe alone. A refusal stops the log where it stops the judgment. A term scan would include constants never reached and cannot replace this dynamic support; the incremental checker's conservative footprint serves that different purpose. Native signature support and adoption are exercised by `native_formers::native_formers::native_signature_support_and_adoption`.
-
-## One machine, one allowance, no memo
-
-Every face runs one machine of goals and frames, charged one step per transition against the context's `CheckBudget`, so a term as deep as memory holds is judged without a native stack and every run is bounded whatever its sharing. A subterm reached twice is judged twice: the fragment's terms come from source text, whose sharing is the author's repetition, and the allowance bounds the rest. The alternative is a check memo keyed by node and context, the seam `gandr-kernel-check-memo` already provides; it becomes worth its bookkeeping when a producer starts sharing aggressively, which an elaborator's output will.
-
-## The kernel re-derives what the judgement accepted
-
-`bridge::readmit` offers every declaration the judgement accepted to `gandr-kernel-core` through `Environment::add_decl`, the kernel's one checked entry, in a fresh environment per module. The kernel re-derives every typing obligation from the erased terms and takes nothing on the bridge's word: the judgement and the bridge both sit outside the trusted base, and the kernel is their oracle. A judgement that agrees only with itself is blind to a fault it shares with its own reference; the kernel is a separate checker over a separate vocabulary, so an acceptance it does not repeat surfaces as `Outcome::Rejected` at the declaration's origin instead of being trusted. The property `every_fixture_the_checker_accepts_is_readmitted` asks the kernel to repeat every acceptance over the checker's own fixture set, and `every_checked_function_definition_is_readmitted` over generated function definitions in the shape a lowered function tail takes: a thunked chain of lambdas over a chain of binds, declared at `U` over the arrows into a returner. The verdict carries the body it judged, so the bridge reads the report alone and never pairs a verdict with a declaration it could disagree with.
-
-The alternatives were a second checker over the core vocabulary, which doubles what must be trusted instead of reducing it to the kernel, and differential testing against the earlier implementation, which shares the earlier design's mistakes. The choice reverses only in scope: when the fragment gains a former whose erasure needs machinery the bridge lacks — the binding of a sealed atom, a level parameter — that erasure lands as its own change with its own witnesses, and the oracle stays. Universes did, and their erasure is [A lift and an unfolding cross as the kernel's own](#a-lift-and-an-unfolding-cross-as-the-kernels-own).
-
-## Erasure is a remapping of ids
-
-The core vocabulary shares the kernel's leaves — literals, base types, de Bruijn indices, admission positions — so erasure mints, for each core node, the kernel node of the same former over its children's images. Two maps are kept: node to image, and module position to the kernel position the declaration took, which part ways as soon as an earlier declaration did not cross. Types are read through the fragment views the judgement reads them through, so the two cannot disagree about which formers exist, and every other former is `OutOfFragment` by name. Each distinct node is erased once per declaration, so the kernel arena receives the sharing the producer built and no more.
-
-The earlier implementation lowered surface terms, erasing annotations and grades the core vocabulary does not have, and resolved a free name through a map its caller supplied. Here the bridge builds the position map from the admissions themselves, the only map that cannot disagree with the environment it indexes. The alternative to remapping was keeping module positions verbatim and admitting a placeholder axiom for each declaration that did not cross, which puts assumptions in the audit that the ledger never owed. The choice reverses when declarations are admitted into an environment shared across modules, where the environment assigns positions and the map becomes its own.
-
-## Native runtime assumptions
-
-The [native runtime boundary](../core-term/README.md#native-runtime-assumptions) records the table-derived signatures, ordinary kernel erasure, exported assumptions and their audit witness.
-
-## An uncompleted signature crosses as an axiom
-
-An owed hole is a declared type with no body, which is the kernel's bodiless declaration: the bridge stages it through `Staging::axiom`, and the hole never becomes a term. The kernel then reports the assumption in the audit of the hole and of every declaration that reads it. The earlier implementation refused holes at the bridge as a class, because its holes carried an unknown type the kernel cannot state; a hole here owes a formed type, so the kernel can assume it. A hole in synthesis position has no type to assume, and the judgement has refused it already.
-
-The alternatives were refusing a module until its ledger is empty, which withholds the kernel's verdict on every complete declaration until the last hole is filled, and a placeholder term in the hole, which the kernel would check as if the author had written it. A term hole inside a body is [refused where it stands](docs/holes.md#a-term-hole-is-refused-where-it-stands-and-a-mark-erased) rather than assumed.
-
-## A mark crosses as nothing
-
-A refused declaration crosses as neither a body nor an assumed signature. A later declaration reading a marked one is `Refusal::Withheld`, even when it checked against that declaration's stated contract. Only genuinely owed, well-typed source holes cross as source axioms; native-runtime assumptions are recorded separately from source declarations.
-
-The alternative was offering a marked declaration's signature as an axiom so its dependents cross, which makes the audit disagree with the ledger. The choice reverses only together with the next one.
-
-## The ledger and the kernel's audit agree
-
-The kernel audits each admitted declaration with the axioms it transitively rests on, an axiom's own position included. `ArtifactAudit` unions those reports over the source module. Without native operations, its axioms are exactly the positions the owed holes took, and it is empty exactly when the ledger is. With native operations it also records their typed runtime assumptions, even when no source hole is owed. The union introduces no kernel-side audit mechanism and never hides a native assumption. Sealedness and runtime trust are therefore separate observations.
-
-The alternatives were gating readmission on an empty ledger, which hides the kernel's verdict on complete declarations behind incomplete ones, and an artifact audit inside the kernel, which widens the trusted surface for a fold any caller can compute. The choice reverses when a publishing or dependency boundary arrives: a module offered to another then needs its audit empty, and that boundary gates on this report.
-
-## The bridge owns its rollback
-
-Each declaration is erased into a staging session the bridge opened, so the bridge is the owner that rolls it back: a refused erasure discards the session, and a rejected admission is truncated by the kernel's choke point. Either way the environment is as the declaration found it, which `a_refused_declaration_leaves_the_environment_unchanged` asserts by the kernel arena's watermark against the same module without the refused declaration. The alternative was leaving partially erased content in the arena as unreachable nodes, which every later reader of the arena would have to step over; there is no reversal while staging has an explicit discard.
-
-## One erasure machine, guarded against cycles
-
-Erasure runs one machine of goals and frames over an explicit stack, as the judgement does. A node is open while its frame waits for its children, so a node that is its own descendant — constructible only by minting ids of another arena — is `Refusal::Cyclic` rather than erased forever. Erasure charges no allowance: each distinct node is erased once and refused if revisited while open, so a run is bounded by the arena it reads. The alternative was charging the judgement's `CheckBudget`, which bounds work the memo bounds already; the choice reverses if erasure ever erases one node under two contexts, as a level instantiation would.
-
-## A lift and an unfolding cross as the kernel's own
-
-The kernel has no cumulativity and no reducible decode, so the bridge hands it neither. A code the judgement checked at a universe above its own carries a recorded lift, and its image is the kernel's explicit lift, quoted: the code decoded at its own level, lifted to the universe it was checked at, which the kernel checks raises. A decode of a code constant that crossed with a body is erased as the type its body denotes, read back through the same `CodeDefinitions::certify` the judgement used, so every unfolding is a certificate. A code constant passed as an application's argument unfolds the same way, to the quote its chain of bodies reaches: the kernel instantiates a dependent arrow by substitution, and an instantiation at the constant itself would mint the decode of a constant that no export reaches, which the kernel cannot convert with the type the judgement unfolded it to. Only the argument position unfolds — a constant elsewhere in a term, a code alias's own body among them, crosses as the constant, so the certificate for an alias of an alias still compares the constant it names. Before a declaration is staged, the kernel replays each certificate against its own image of the constant and of the body, unfolding only what it admitted itself, by its own δ-step at that constant; a certificate that does not replay to convertible refuses the declaration as `Refusal::CertificateDeclined { unfolded, reason }`, preserving the kernel's `ReplayDecline` while remaining an engine fault, and the staging is discarded. A certification that produces no dialogue records `ReplayDecline::EngineDeclined`. The replayed verdicts travel on the declaration's `Readmitted`. The kernel admits a code constant's lifted, elaborated body, read back to normal form, so the constant it unfolds is the constant the judgement unfolded. `every_checked_universe_declaration_is_readmitted` and `every_readmission_certificate_replays` ask this of generated modules of universe declarations, codes, aliases and lifts; `a_code_constant_argument_unfolds_at_export` asks it of a polymorphic identity instantiated at a code alias.
-
-The alternatives were giving the kernel cumulativity and static δ-reduction in its own conversion, which widens the trusted base for what a replayed trace already certifies, and trusting the normaliser's readback unreplayed, which leaves the exported declaration related to its source by an unchecked step. Unfolding every constant in term position was tried for the instantiation and dropped: it rewrites a code alias's body to its target, and the alias's certificate then compares the wrong pair. The certificate records one step for the reason the judgement's does — a δ-step, or a static instance's δβ- or β-step; one trace per code replaces the steps when the machine decides codes under quotes, and the argument unfolding goes when the kernel's conversion unfolds what it admitted.
-
-## A split crosses as its projection binds
-
-The kernel has no split. Erasure mints the split's reduct into the core arena and erases it in the splneither. A definition whose type is a static Pi is `Outcome::Static`: the kernel is offered nothing, and the body stays on the checker's side for the instances that name it; a hole of static Pi type is an opaque operator and crosses as an axiom. Erasure reduces every static application it meets — a saturated instance of a static definition by δ then β, a static lambda's redex by β — mints the reduct into the core arena, and erases it in the instance's place, until what the kernel receives is a static normal form: a rigid head, an opaque operator or a variable, applied to normal arguments, which is the kernel's neutral static application. Each step is a `Certificate` the kernel replays before the declaration is staged, and one is kept per distinct instance the declaration meets, keyed by what the step unfolded and the content digest of the kernel's image of its redex: `Replayed::unfolded` names the definition, `Replayed::redex` addresses the instance, the same instance written twice is replayed once, and one definition at two instances is replayed twice. `one_static_definition_at_two_instances_records_two_certificates` and `every_checked_static_declaration_is_readmitted` assert it, the second over the relative monad's operators written with and without the static spelling.
-
-A static step names operators the kernel's terms cannot hold. Each one a step names is numbered as a constant above the module's positions and given its body, erased verbatim, for that replay alone, so the kernel replays the step by its own δ- and β-rules. A static lambda that reaches a binder outside itself stands for no closed constant and is refused as `OutOfFragment` naming the static lambda; `a_static_lambda_crosses_only_as_a_closed_operator` asserts both arms. The unfolding of a definition that crossed replays as the kernel's own δ-step at the constant it admitted, closed on the two normal forms, because the body the kernel admitted is already normal while the normaliser's trace walks the unnormalized body and names operators the normal form no longer holds.
-
-The recorded design reads each code back to static normal form with one trace per code; the machine does not yet produce a trace under a quote, so here each step is certified and replayed on its own, which the kernel re-derives by rules it already has. The alternatives were static reduction in the kernel's conversion, which widens the trusted base for what a replayed step certifies; a certificate per occurrence rather than per instance, which replays one derivation once per mention; and refusing static definitions at the bridge, which leaves every declaration that names one uncrossed. The per-step certificates give way to one trace per code when the machine decides codes under quotes; the open-lambda refusal lifts with lambda lifting over the binders the lambda reaches, which numbers it as an operator closed over them.
-
-## The export carries the producer's names
-
-`Readmission::export` encodes the environment the kernel built: each declaration that crossed, in kernel admission order, marked checked and carrying the `StructuredName` the producer gives its module position. The bridge keeps each declaration as it staged it, because the kernel's environment exposes an admitted declaration's audit and not its content, and names it only when it is written out. A flattened structure member is therefore exported as one declaration named by its segments, a declaration that did not cross is not in the artifact, and every reference in it is still the kernel position its target took; the name is never read.
-
-The alternatives were names on the checker's `Declaration`, which makes the judgement carry a surface fact it never reads, and a name table beside the artifact, which leaves the exported members nameless to anything reading the artifact alone. The choice reverses if a renamed module must export a byte-identical artifact; the names then move to that side table and the export writes none.
-
-## Experimental stage readmission
-
-`stage::compile`, `Program::admit` and `Program::execute` implement
-[certified first-order residual readmission](../kernel-core/src/stage.rs).
-
-`template` implements [guarded equation families](docs/staging.md).
-
-The [adapter](src/template/admission.rs) exposes families to guarded admission; its [observer](docs/staging.md#guarded-admission-observer) is measurement scaffolding.
-
-`staging::check` checks a whole staged program — normalization, merge, harvest, readmission and family admission — on a fork the caller supplies; [a staged program checks on every core](docs/staging.md#a-staged-program-checks-on-every-core) records how each stage forks and why.
+## Where the detail lives
+
+Mechanism, rules, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
+
+| Topic | Module |
+| ----- | ------ |
+| Modes, static operators, the dependent arrow and the bind, splits, holes in the faces, effects and control, native universe paths | [`judgement`](src/judgement.rs) |
+| Total elaboration and the traced run | [`judgement::elaboration`](src/judgement/elaboration.rs) |
+| Records | [`judgement::native`](src/judgement/native.rs) |
+| The three bridges, consistency, smallness and variance | [`conversion`](src/conversion.rs) |
+| Formation, the classifier, universes, quotes and decodes | [`formation`](src/formation.rs) |
+| Code unfolding and its certificates | [`code`](src/code.rs) |
+| The fragment's type views | [`view`](src/view.rs) |
+| The context, resolution by admission position, adoption | [`context`](src/context.rs) |
+| Declaration input | [`declaration`](src/declaration.rs) |
+| Verdicts, holes at the declaration grain, definitions, refused-body trails | [`module`](src/module.rs) |
+| The ledger | [`ledger`](src/ledger.rs) |
+| Refusal classes | [`refusal`](src/refusal.rs) |
+| Support | [`support`](src/support.rs) |
+| Coverage | [`coverage`](src/coverage.rs) |
+| Nominal data | [`former`](src/former.rs) |
+| Strict positivity, structural descent, derived eliminators | [`occurrence`](src/occurrence.rs), [`descent`](src/descent.rs), [`eliminator`](src/eliminator.rs) |
+| Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits and export | [`bridge`](src/bridge.rs) |
+| Staged programs and their forks | [`staging`](src/staging.rs), [`fork`](src/fork.rs), [`stage`](src/stage.rs) |
+| Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |
+| Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
+| References | [`src/lib.rs`](src/lib.rs) |
+
+The behavioural floor — each conformance row this crate holds, its witness, and the rows still deferred — is tracked in [#199](https://github.com/gandr-lang/gandr/issues/199).
 
 ## License
 

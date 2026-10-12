@@ -11,6 +11,11 @@
 //! judgement decided, and the step allowance. A later synthesised context
 //! lands in this wrapper too, so no checking concern widens the core crate.
 //!
+//! The binder stack is empty between judgements and restored to where it stood
+//! whenever a run is refused. The alternative was adding the signature table to
+//! the core crate; the wrapper moves down when a second consumer needs the same
+//! one.
+//!
 //! # The context mints
 //!
 //! A dependent type is rewritten as it is read — a binder's type shifted to
@@ -26,6 +31,21 @@
 //! admitted. A body therefore sees exactly the declarations strictly before
 //! it: self-reference and mutual reference find no type, whatever the producer
 //! resolved.
+//!
+//! A declared type is the contract and enters the table whether or not the body
+//! met it, so one wrong body does not turn every later reference into an
+//! unknown constant; an unsigned body supplies a type only when it synthesised
+//! one. The alternative was withholding a signed declaration whose body was
+//! refused, which cascades a single mistake into every later reference.
+//!
+//! Recursion keeps this order. A fixpoint binds its own thunk as a variable,
+//! `fix x. M` with `x : U C`, so a recursive body refers to that binder, never
+//! to its own admission position, and erases to the kernel's former without a
+//! self-referential constant. One resolution rule then serves the checker, the
+//! bridge and the kernel's admission prefix, and a `rec { … }` form that admits
+//! a body referring to its own declaration is not needed. A data declaration's
+//! self occurrence is the one exception, read through the declaration's own
+//! signature while that declaration forms.
 //!
 //! # Adopted answers
 //!

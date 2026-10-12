@@ -28,6 +28,55 @@
 //! the type's family; the level is [`level_of`] — an atom's zero, a universe's
 //! successor, a lift's or a decode's own level, and the join of a former's
 //! children.
+//!
+//! The alternatives were a formation walker beside the judgement, over a
+//! formation context kept in step with the judgement's by hand, which is two
+//! contexts where one suffices, and a classifier cached on each arena node at
+//! mint time, which puts a judgement's answer into the vocabulary crate and
+//! charges every mint for a reading only formed types need. The choice reverses
+//! if formation ever needs a context the judgement does not have.
+//!
+//! # Universes, quotes and decodes
+//!
+//! `Type[+, l]` classifies value types and `Type[-, l]` computation types, and
+//! each is itself a value type at `Type[+, l+1]`: universes are values, both
+//! towers sit in the value sort, and a universe of computation types is
+//! something a value can be. A quote `⌜A⌝` is the code of a value type and
+//! synthesises the value universe at `A`'s level; a computation quote does the
+//! same for a computation type in the computation universe. A decode `El(c, l)`
+//! turns a code back into a type, and a decode of a quote is never stored:
+//! minting it returns the quoted type, so a decode in the arena always stands
+//! over a variable or a constant, and type comparison stays structural
+//! everywhere but there. A variable whose binder has a universe type is a type
+//! variable; a variable bound at any other type is not, and its decode is
+//! refused at the decode bridge. Witnesses:
+//! `context::tests::a_universe_typed_hypothesis_becomes_a_type_variable` and
+//! `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`.
+//!
+//! Two universe forms are refused by name. A universe over a sort parameter has
+//! no ground reading until sort binders exist to bind it, and a universe at the
+//! greatest representable level has no level for its own universe to stand at.
+//! The alternatives were a single universe with the sort read off context,
+//! which loses the classifier's one-answer property, and a separate kind layer
+//! above the universes, which ∂CBPV shows is unnecessary. The sort parameter
+//! reverses with prenex sort quantification.
+//!
+//! # Arrows, products and static Pis
+//!
+//! A dependent arrow `Π(x : A). C` forms when its domain forms and its codomain
+//! forms under a binder of `A`; it is a computation type at the join of the two
+//! levels. An eager product `A × B` forms when both factors form, a value type
+//! at the join of their levels; its factors are value types, so a computation
+//! type stands in one only under a thunk. A static Pi `K ⇒ J` forms when both
+//! classifiers form and each, at its weak head, is a universe or a static Pi: a
+//! static operator ranges over codes and over operators on codes, and a static
+//! Pi over any other classifier is `StaticClassifierExpected`, naming the
+//! classifier. The static Pi is non-dependent, its codomain closed: every
+//! operator the relative monad needs is non-dependent, and a dependent static
+//! Pi waits for a family that needs it.
+//!
+//! Effect operation types take part in formation's levels and scope:
+//! `formation::tests::effect_operation_types_participate_in_formation_levels_and_scope`.
 
 use alloc::vec::Vec;
 

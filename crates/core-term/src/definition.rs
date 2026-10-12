@@ -39,6 +39,28 @@
 //! The empty environment costs what a flat table costs — one root scope, no
 //! overrides, one scan that finds nothing and answers with the declaration's
 //! own stance.
+//!
+//! # Definition heights
+//!
+//! A definition's height is one above the tallest definition its body mentions;
+//! a definition that mentions none has height one. Zero means not unfoldable,
+//! and nothing in the chain has it: an axiom or a sealed atom has no body and
+//! is not in the chain. `DefinitionChain::define` refuses an entry out of
+//! admission order and a mention at or above its own position, so every
+//! mention's height is recorded before the mentioning entry and the height is
+//! one forward pass rather than a fixed point. A height is a scheduling prior:
+//! it weights which side of a conversion to unfold and never decides which
+//! unfoldings are attempted.
+//!
+//! # Per-scope transparency
+//!
+//! Transparent ascription makes the same atom manifest inside a sealed module
+//! and opaque outside it, so transparency is a property of a scope rather than
+//! of a definition. `DefinitionalEnvironment` is a flat forest of scopes;
+//! `transparency` walks outward from a scope and answers the innermost
+//! override, or the declaration's own stance when no scope states one. The
+//! empty environment, one root scope with no override, answers like a single
+//! global table.
 
 use alloc::vec::Vec;
 

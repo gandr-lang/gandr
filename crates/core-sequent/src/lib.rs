@@ -28,8 +28,65 @@
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`, the core language's
 //! syntax, the kernel's leaf vocabularies and the cell substrate's
-//! [`Polarity`](gandr_theory_cell_complexes::Polarity). The design and the
-//! papers it draws on are in its `README.md`.
+//! [`Polarity`](gandr_theory_cell_complexes::Polarity). Each module's
+//! documentation states its mechanism and its decisions.
+//!
+//! # The differential against normalisation by evaluation
+//!
+//! `gandr-core-nbe` is the oracle: it evaluates the core itself, by closures
+//! over a glued domain, and shares no step with the machine. Each case in
+//! `tests/differential.rs` runs both ways, and the machine's terminal, read
+//! back, is compared node for node with the normaliser's normal form. A
+//! first-order answer agrees exactly. The machine reads a suspended body back
+//! as written, its environment substituted, where the normaliser reduces under
+//! the binder, so a thunk or a function still holding a redex agrees once the
+//! machine's reading is normalised too; the hand-built cases pin which of the
+//! two each answer needs, which shows the comparison telling terms apart. An
+//! ill-typed redex stops both at the same elimination, a nominal match on
+//! anything but a constructor it has a branch for included. Recursive
+//! definitions over Nat, List and a Tree with a function field compute the same
+//! answer on both. Over generated closed, well-typed computations every run
+//! halts, two runs read back alike, and the normalised reading is the normal
+//! form.
+//!
+//! Outcome expectations live with the run verb `gandr run`, which lowers,
+//! checks, focuses and runs a corpus source in one place: a corpus declaration
+//! states `runs("…")`, and the dispatcher's corpus suite runs every one.
+//! Outcome snapshots frozen from a run are not carried here: a snapshot is
+//! evidence only while its source lowers to the term it was frozen from, and
+//! checking that needs the lowering itself, an edge into the surface tier this
+//! crate never takes. The alternative was core declarations transcribed by hand
+//! and tied to their sources by digest, rejected because it asserts a lowering
+//! the tree does not perform.
+//!
+//! # References
+//!
+//! - Pierre-Louis Curien and Hugo Herbelin. "The Duality of Computation." In
+//!   _Proceedings of the Fifth ACM SIGPLAN International Conference on
+//!   Functional Programming (ICFP '00)_, pages 233–243, September 2000.
+//!   `doi:10.1145/351240.351262` — the command `⟨p | c⟩`, the binders `μα` and
+//!   `μ̃x`, and the critical pair a cut's polarity resolves.
+//! - Paul Downen and Zena M. Ariola. "A Tutorial on Computational Classical
+//!   Logic and the Sequent Calculus." _Journal of Functional Programming_ 28
+//!   (2018), e3. `doi:10.1017/S0956796818000023` — data and codata as
+//!   constructor applications and copattern objects, pattern matches and
+//!   destructor frames, and the polarized cut.
+//! - Paul Blain Levy. "Call-by-Push-Value: A Subsuming Paradigm." In _Typed
+//!   Lambda Calculi and Applications (TLCA '99)_, Lecture Notes in Computer
+//!   Science 1581, pages 228–243, 1999. `doi:10.1007/3-540-48959-2_17` — the
+//!   value/computation split the IL's two polarities carry, and the thunk as
+//!   the positive suspension of a computation.
+//! - John Launchbury. "A Natural Semantics for Lazy Evaluation." In
+//!   _Proceedings of the 20th ACM SIGPLAN-SIGACT Symposium on Principles of
+//!   Programming Languages (POPL '93)_, pages 144–154, 1993.
+//!   `doi:10.1145/158511.158618` — call-by-need as a heap of updatable
+//!   suspensions, and the black hole a re-entered suspension shows.
+//! - Peter O'Hearn, John Reynolds and Hongseok Yang. "Local Reasoning about
+//!   Programs that Alter Data Structures." In _Computer Science Logic (CSL
+//!   2001)_, Lecture Notes in Computer Science 2142, pages 1–19, 2001.
+//!   `doi:10.1007/3-540-44802-0_1` — the heap as a partial commutative monoid
+//!   under disjoint union, and the frame rule the memo-cell suite states its
+//!   four conditions in.
 
 #![no_std]
 

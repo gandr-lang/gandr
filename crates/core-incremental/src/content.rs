@@ -21,6 +21,130 @@
 //! as [`ContentNode::Unresolved`] with its sort, so encoding stays total, and
 //! a table holding one is opaque: its item is never adopted and never
 //! persisted.
+//!
+//! # Content, not ids
+//!
+//! An item's content is its reference, declaration category and every node
+//! reachable from its `DeclarationRoots`. Value roots retain the signature and
+//! body; Data roots retain the kind, parameter telescope and constructor field
+//! types. A breadth-first walk numbers each reachable node once and needs no
+//! stack. Sharing is part of the content: different sharing costs a reuse,
+//! never a wrong answer. An unresolved arena id is listed by sort and makes the
+//! item opaque: never recalled, never persisted, and a reader of everything
+//! once anything changes.
+//!
+//! # Native universe-path content
+//!
+//! The content table preserves universe sorts and levels, quotes, static
+//! operators and native universe paths. Native path tags occupy `0x40–0x44` in
+//! this cache codec; they are not kernel artifact tags. Candidate evidence is
+//! exact content, including ordered direction and dialogue boundaries, and
+//! never a cached admission receipt. Type-only signature content refuses
+//! term-bearing path classifiers just as it refuses quotes and decodes.
+//!
+//! Checkpoint sets use `GCKPT\0\0\x07`; programs use `GPROG\0\0\x05`. Their
+//! identities bind the checker, native declaration categories, effect and
+//! control content, support queries and refusal vocabulary. Identities of
+//! another version are rejected rather than reusing answers from a different
+//! fragment. Static family, universe and native-former round-trip witnesses
+//! exercise their distinct tags and payloads.
+//!
+//! **Choice.** Preserve native classifiers, maps and candidate evidence as
+//! content instead of caching a certificate verdict. Structural path conversion
+//! may erase evidence, but checkpoint identity must not. **Reversal.**
+//! Persisting `Flow_U`, element identity, the bridge mode, higher fields,
+//! funext or guarded List inhabitants requires its own versioned content
+//! vocabulary and validated dependency support; none is inferred from a native
+//! path entry.
+//!
+//! # Native declaration content and support
+//!
+//! A declaration's roots are `DeclarationRoots::Value` or
+//! `DeclarationRoots::Data`; the latter retains the kind, every parameter and
+//! every constructor field. Cache node tags `0x50–0x55` represent the six
+//! native data/record forms independently of kernel artifact tags, `0x5A` the
+//! positional tuple projection, its component a count after its tuple child,
+//! and `0x5B` the split, its arity a count between its scrutinee and body
+//! children. Field labels and arbitrary child counts survive persistence.
+//!
+//! Support keys distinguish a value-signature query from a data-signature query
+//! at the same reference. A data answer contains the complete nominal schema or
+//! its absence, not merely its universe. Adoption reforms a retained data
+//! declaration in the new context. Term-bearing nominal type content remains
+//! outside the type-only adoption reader and is conservatively rechecked; it is
+//! never promoted to an authority-bearing cache hit.
+//!
+//! **Choice.** Extend ordinary declaration content and query-specific support
+//! instead of treating data as a value signature. **Reversal.** A wider
+//! adoption reader must validate term-valued indices and their dependencies
+//! before reusing them.
+//! `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
+//! round-trips accepted and refused items, adopts an unchanged module,
+//! invalidates a constructor after a schema-only change, and compares
+//! incremental results with fresh checking.
+//!
+//! # Recursive data and fixpoints
+//!
+//! A fixpoint persists as cache node tag `0x19` with its evidence and its body;
+//! it is a term, never a seatable type. A data declaration's fields may name
+//! it: the self reference resolves to the item's own reference, and the checker
+//! reads the forming block without a support query, so a recursive
+//! declaration's footprint holds no query of itself. The occurrence refusals
+//! keep their parameter or field site, a reference past the block keeps the
+//! reference it names, and a descent refusal keeps its fixpoint's site and the
+//! rule of the walk that failed.
+//!
+//! **Choice.** Persist the evidence as content, so a partial and a structurally
+//! descending fixpoint never share an address. **Reversal.** A mutual block
+//! would add a block reference to the support vocabulary; until then one block
+//! is one item.
+//! `tests::recursive_data::recursive_data_checkpoints_round_trip_and_resume`
+//! round-trips a recursive family, a fixpoint and each new refusal and adopts
+//! the unchanged program.
+//!
+//! # Effect and control content
+//!
+//! Pure returners retain tag `0x30`; row-qualified returners use `0x70`. Inline
+//! interfaces store canonical operation names and ordered payload/reply type
+//! edges. The List former and its control content use the following cache tags,
+//! independent of kernel artifact tags.
+//!
+//! | Tag | Former |
+//! | --- | ------ |
+//! | `0x56` | List classifier |
+//! | `0x57` | Empty list |
+//! | `0x58` | Cons |
+//! | `0x59` | List fold |
+//! | `0x71` | Reify |
+//! | `0x72` | Stack classifier |
+//! | `0x73` | With classifier |
+//! | `0x74` | Perform |
+//! | `0x75` | Handle |
+//! | `0x76` | Resume |
+//! | `0x77` | Reset |
+//! | `0x78` | Shift |
+//! | `0x79` | With computation |
+//! | `0x7A` | Project |
+//!
+//! A handler retains source clause order and branch-local de Bruijn indices.
+//! Stack frames retain execution order and projection side. Fixed children
+//! precede interface type edges, which precede clause bodies; frames contribute
+//! their Apply and Bind children in order. Unknown-operation, coverage,
+//! undelimited-shift and dependent-stack refusals retain their sites and type
+//! payloads. Closed Stack/With type tables can be reminted into another arena;
+//! runtime term graphs are not invented by the type-only reminting path.
+//!
+//! **Choice.** Preserve typed interfaces and control syntax as content, not
+//! runtime heap addresses or captured delimiter stacks. Omitting annotations
+//! permits stale adoption; persisting a runtime continuation would require a
+//! separate heap and capability protocol. Revisit only when that protocol and
+//! its dependency validation are specified.
+//!
+//! Witnesses:
+//! `content::tests::control_graphs_preserve_scopes_and_signature_edges`,
+//! `codec::tests::control_nodes_persist_names_frames_and_branch_order` and
+//! `edit::tests::control_edits_preserve_names_scopes_and_frame_order` in
+//! `gandr-surface-session`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;

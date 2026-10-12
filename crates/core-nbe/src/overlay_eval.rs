@@ -21,6 +21,18 @@
 //! evaluated once per configuration however many times the abstraction is
 //! applied. The duplicate is scratch: the overlay is truncated back to its
 //! entry watermark whatever the outcome.
+//!
+//! # Overlay evaluation
+//!
+//! `eval_overlay_value` and `eval_overlay_computation` are the reference: erase
+//! the root into the core arena, then run the unshared machine over the erasure
+//! in the empty environment. The reference is pinned before any stance enters.
+//! The core and domain arenas it mints equal node for node those erasure
+//! followed by `eval_value` or `eval_computation` mints, with the same result
+//! and the same unspent fuel, on every deep evaluation case and, through
+//! readback, on every deep readback case. A refusal arrives in its own
+//! vocabulary as `OverlayEvalFault`: erasure's leaves the core arena as it
+//! found it, and the machine's keeps the erasure.
 
 use alloc::collections::BTreeMap;
 

@@ -12,6 +12,15 @@
 //! twice is present once. A caller compares the answers pointwise against the
 //! answers its own table would give now; equal answers mean the judgement
 //! would read exactly what it read before.
+//!
+//! Context lookups log value-signature and data-signature queries separately,
+//! in position and query order, absent answers included, and data support
+//! retains the complete schema rather than its universe alone. A refusal stops
+//! the log where it stops the judgement. A term scan would include constants
+//! never reached and cannot replace this dynamic support; the incremental
+//! checker's conservative footprint serves a different purpose. Native
+//! signature support and adoption are exercised by
+//! `native_formers::native_formers::native_signature_support_and_adoption`.
 
 use alloc::vec::Vec;
 

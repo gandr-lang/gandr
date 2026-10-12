@@ -20,6 +20,37 @@
 //!
 //! Decoding writes into a caller's [`CoreArena`] and truncates it to its entry
 //! watermark when refused.
+//!
+//! # Unfocusing is the left inverse
+//!
+//! `unfocus_command` and `unfocus_value` read the image of focusing back into a
+//! core arena, rule by rule in reverse: a cut against the return point is a
+//! `return`, a force frame a `force`, an application frame an application, a
+//! copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the two
+//! injections a `case`, a nominal match a `case_D` over its branch thunks'
+//! bodies, a recursive thunk under a force frame the fixpoint, and a `μ` cut
+//! the bind or case it names, under the frame it was named for. The IL carries
+//! no types, so a datatype's constructor reads back at the unknown value type
+//! and a nominal match at the unknown motive. The return point is `★` at the
+//! root and `α0` under the nearest covariable binder; a covariable reaching
+//! past it is a jump the core cannot state and is refused as
+//! `UnfocusRefusal::EscapingContinuation`. A `μ` in value position, a match on
+//! anything but the two injections and every other node outside the image is
+//! refused by name, and a refused reading truncates the core arena to its mark.
+//! Over closed well-typed terms `unfocus ∘ focus` is the identity up to the
+//! core's structure and the types focusing erases, which the round-trip
+//! properties check node by node across the two arenas.
+//!
+//! The walk is a loop over an explicit task stack, and its one implementation
+//! serves both the public inverse and the machine's readback, which closes a
+//! terminal's free variables by index from its environment. The alternative was
+//! a readback of its own for the machine, which would be a second decoder for
+//! the same image to keep in step. The choice reverses if the machine's
+//! terminals grow a form focusing never produces.
+//!
+//! Unfocusing a native List fold closes the ambient variables of the type
+//! annotations the command arena imported rather than copying foreign ids:
+//! `unfocus::tests::closing_fold_annotations_substitutes_captured_codes`.
 
 use alloc::vec::Vec;
 use core::fmt;

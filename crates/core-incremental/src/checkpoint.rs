@@ -32,6 +32,85 @@
 //! relation through reverse edges with a worklist: every edge is crossed at
 //! most once, so the closure is linear in the program's reads. An opaque
 //! item, whose reads are unknown, reads everything once anything changed.
+//!
+//! # The incremental specification
+//!
+//! **Support is an output of the judgement.** Each consultation records its
+//! query kind, reference and answer. A value-signature answer is type content
+//! or absence; a data-signature answer is the kind, parameter telescope and
+//! constructor field types, or absence. A checkpoint retains both kinds. Reuse
+//! compares each recorded answer with the edited table at the same point of the
+//! pass. Neither a footprint, a name nor an edit's location licenses reuse: a
+//! footprint over-approximates what an item could read; support records what it
+//! did read.
+//!
+//! **The entry answers one item.** The pass interleaves judging and adopting in
+//! source order through `CheckingContext::adopt` and
+//! `CheckingContext::adopt_data`. A signed value's signature forms in the
+//! edited context; an unsigned value's cached synthesised type is seated and
+//! forms there. A data item seats and forms its complete signature. Formation
+//! establishes that a classifier or schema is usable in that context, not that
+//! an arbitrary cached result truthfully records an earlier judgement.
+//!
+//! **Incremental equals batch for faithful records.** `check_program` is the
+//! pass at a memo that recalls nothing; `resume` is the same pass at a memo
+//! that recalls base checkpoints. Batch equivalence assumes that each recorded
+//! typing and complete support truthfully describes a prior judgement of that
+//! content under the recorded allowance. Raw constructors and mutation helpers
+//! admit arbitrary records: reuse checks establish applicability, not the truth
+//! of a cached judgement. The differential suite compares faithful resumes with
+//! the checker's module entry and deliberately forges typing and support to
+//! witness this boundary. Canonical bytes and integrity digests do not
+//! authenticate judgement provenance.
+//!
+//! **One memo, two machines.** Recall goes through `gandr-kernel-check-memo`'s
+//! `OrderedMemo`, the memo the checking kernel uses: an item's identity is its
+//! content, bucketed by the first sixteen bytes of the content's BLAKE3 digest
+//! and confirmed by content equality, so a digest collision costs a comparison
+//! and never a wrong recall.
+//!
+//! # Validated resume
+//!
+//! A recalled checkpoint is adopted when four things hold, checked in this
+//! order; the first that fails names the reason (`recall::Absent`):
+//!
+//! 1. The item is transparent.
+//! 2. Every recorded answer equals the edited table's answer for the same
+//!    reference **and query kind** at this point of the pass: the answer the
+//!    preceding item supplied, or absence otherwise.
+//! 3. No reference in a type position of the item, nor in the type of any
+//!    recorded answer, names a definition in the value-changed set. A type
+//!    former's own reference is in a type position, including an abstract type
+//!    under quotation.
+//! 4. The adopted classifier or schema seats and forms in the edited context: a
+//!    signed value's signature, an unsigned value's cached synthesised type, or
+//!    a Data declaration's complete signature.
+//!
+//! **The value-changed set.** A definition inserted, deleted, or whose content
+//! differs between the revisions seeds the set; the set closes over the read
+//! relation of the edited footprints through reverse edges and a worklist, so
+//! every edge is crossed at most once. Once the set is non-empty every opaque
+//! item joins it. The closure guards answers that depend on a definition's
+//! _value_ while the support compares types: the checker unfolds a decode
+//! `El(c)` of a code constant to the body `c` was defined with, and logs the
+//! constant's signature answer, not its body, so a declaration whose type names
+//! `c` can change meaning while every recorded answer holds. The closure blocks
+//! exactly those reuses. When the checker records the bodies it unfolds in the
+//! support, the closure can retire.
+//!
+//! **Linear by construction.** Each item is encoded once, recalled at most
+//! once, adopted or judged once; the closure crosses each read edge at most
+//! once; the splice is one map build and one patience walk. `ResumeCensus`
+//! counts each of these, and a test pins the counts for a head edit of chains
+//! from 250 to 2,000 items.
+//!
+//! | Decision | Alternatives | Reversal |
+//! | -------- | ------------ | -------- |
+//! | Pointwise support recorded by the judgement | compare bindings by name; compare footprints; re-judge every reader of an edited item | none: this is the soundness argument |
+//! | Mint an unsigned item's synthesised type into the edited arena before the pass | judge every unsigned item a recalled reader depends on | minting dominates a measured profile |
+//! | Close value changes over footprint reads, blocking type-position reads | no closure, trusting the signature answers alone, which reuses a declaration across an edit to a code it unfolds | the checker records the bodies it unfolds in the support |
+//! | Derive supplied answers from the formed signature or seated cached type | store a second answer beside the typing | a consumer needs an independently certified answer |
+//! | Trust faithful checker results, then validate their applicability | re-judge every cached item; proof-carrying judgement certificates | checkpoints must be accepted from an untrusted producer |
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

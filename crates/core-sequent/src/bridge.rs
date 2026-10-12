@@ -11,6 +11,31 @@
 //! operation frame — the opaque boundary of the host and fusion fragment —
 //! are refused by name, and a refused reification leaves the arena at its
 //! mark.
+//!
+//! # The bridge from cells
+//!
+//! A cell pattern names constructors by symbol; the caller supplies a
+//! `ConstructorResolver` from those symbols to IL tags. `reify_command` lowers
+//! a ground cut and expands a return-side constructor frame to its
+//! binding-and-rewrapping command. Cell operation frames carry no inline typed
+//! interface, so they remain `OperationFrame` refusals; they are not core
+//! effect requests. Metavariables, unresolved constructors and arity mismatches
+//! are also named refusals, with the arena restored to its entry mark.
+//!
+//! The bridge lives here because the core tier depends on the theory tier, not
+//! conversely. A built-in resolver would fix a symbol table that belongs to the
+//! producer. Revisit when constructor names have a shared declaration protocol,
+//! so the resolver can be derived rather than supplied.
+//!
+//! # The polarity is the cell substrate's
+//!
+//! A cut's `ε` is `gandr_theory_cell_complexes::Polarity`, the type a cell
+//! pattern's cut carries. A cell elaborated by the rewriting stack and a
+//! command focused from a core term then cut at one polarity vocabulary, and
+//! reading a cell into a command copies its polarity rather than translating
+//! it. The alternative was a polarity of this crate's own with a conversion at
+//! the bridge, which is two names for one distinction. The choice reverses only
+//! if the core tier is reordered below the theory tier.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

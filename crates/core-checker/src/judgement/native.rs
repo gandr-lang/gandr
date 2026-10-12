@@ -1,4 +1,10 @@
-//! Native variable-arity judgments on the existing explicit frame machine.
+//! Native variable-arity judgments on the explicit frame machine.
+//!
+//! Records infer exact label sets. Checking admits width and recursive depth
+//! subtyping: every expected field must exist and its value must check at the
+//! expected classifier. Projection returns the named field's type. Equality
+//! stays exact in its labels; assignability is directional. The empty record
+//! is the record top, not a top for arbitrary values.
 
 use anodized::spec;
 use gandr_core_term::Computation;

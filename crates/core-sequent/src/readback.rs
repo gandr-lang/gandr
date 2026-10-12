@@ -13,6 +13,24 @@
 //! allocates names only values allocated before it, so each value's
 //! dependencies are read before it, and the readback is a loop with no
 //! recursion; a value naming a later one is refused as dangling.
+//!
+//! # Readback refuses rather than approximates
+//!
+//! `Machine::read_back` reads a positive terminal as `return v` and a copattern
+//! object as the function it is; a literal reads as itself, a constructed value
+//! over its fields — a datatype's constructor at the unknown value type — an
+//! opaque constant as the constant, and a thunk, a recursive thunk or a
+//! function as its suspended command decoded by the unfocusing walk with its
+//! captured environment's readbacks substituted. Values are read in increasing
+//! address order, since every value the machine allocates names only earlier
+//! ones, so the readback is a loop. A value with no core reading — a suspended
+//! `μ`, a copattern object standing as a value — is refused by name with the
+//! core arena at its mark.
+//!
+//! A placeholder of the right kind is not a readback: it could let a
+//! differential pass on a value it never observed. Unsupported readings
+//! therefore return a named refusal and restore the destination arena. This
+//! boundary does not reverse merely to make an observation succeed.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
