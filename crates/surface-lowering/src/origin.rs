@@ -8,12 +8,13 @@
 //! resolve a derived type without recovering its origin from a second walk.
 //! Each minting operation records its node in the corresponding family.
 //!
-//! # An origin carries both identities
+//! # An origin carries a position
 //!
-//! A [`NodeIndex`] resolves fast inside the tree in hand; a [`NodeDigest`]
-//! survives the tree. A diagnostic wants the first, a checkpoint keyed across
-//! runs wants the second, and an origin that carried only one would force the
-//! other consumer back to the tree.
+//! A [`NodeIndex`] resolves fast inside the tree in hand, which is what a
+//! diagnostic wants. A table keyed across runs reads the node's cross-tree key
+//! from that tree ([`SyntaxTree::key`](gandr_surface_syntax::SyntaxTree::key)):
+//! the key is a form's digest and a rank in it, so an origin carrying one
+//! would be one more copy of what the tree already answers.
 //!
 //! # An inserted node says so
 //!
@@ -53,7 +54,6 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -148,13 +148,13 @@ pub enum Provenance
 ///
 /// # Specification
 /// - requires: nothing; the fields are admitted as supplied metadata.
-/// - ensures: the syntax position, content identity, span and provenance are
-///   carried together, without certifying that they describe one real node.
+/// - ensures: the syntax position, span and provenance are carried together,
+///   without certifying that they describe one real node.
 /// - provides: the metadata a diagnostic resolves for a minted core node.
 /// - fails: not applicable to the record itself.
 /// - panics: not applicable to the record itself.
 /// - executable: none — the record does not retain the tree needed to verify
-///   the association between its position, digest and span.
+///   the association between its position and span.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — distinct complete origin values survive multi-entry
@@ -166,8 +166,6 @@ pub struct Origin
 {
     /// The arena position of the syntax node that produced it.
     node: NodeIndex,
-    /// That node's content identity, which survives the tree.
-    digest: NodeDigest,
     /// The bytes of the source that node covers.
     span: ByteSpan,
     /// Whether the source wrote the core node or the lowering inserted it.
@@ -176,8 +174,7 @@ pub struct Origin
 
 impl Origin
 {
-    /// The origin of a node the source wrote at `node`, identified by
-    /// `digest`, covering `span`.
+    /// The origin of a node the source wrote at `node`, covering `span`.
     ///
     /// # Specification
     /// trivial.
@@ -185,13 +182,11 @@ impl Origin
     #[must_use]
     pub const fn new(
         node: NodeIndex,
-        digest: NodeDigest,
         span: ByteSpan,
     ) -> Self
     {
         Self {
             node,
-            digest,
             span,
             provenance: Provenance::Written,
         }
@@ -224,17 +219,6 @@ impl Origin
     pub const fn node(&self) -> NodeIndex
     {
         self.node
-    }
-
-    /// The content identity of that syntax node.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn digest(&self) -> NodeDigest
-    {
-        self.digest
     }
 
     /// The bytes of the source that syntax node covers.

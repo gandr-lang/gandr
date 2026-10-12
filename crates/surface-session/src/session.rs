@@ -109,7 +109,7 @@ use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeDigest;
+use gandr_surface_syntax::NodeKey;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -1201,8 +1201,8 @@ pub struct Session<Store, Blocks>
     /// The lowered core of the latest accepted revision.
     snapshot: Snapshot,
     /// The documentation of the latest accepted revision, by the documented
-    /// form's content identity.
-    documentation: BTreeMap<NodeDigest, DocumentationText>,
+    /// form's cross-tree key.
+    documentation: BTreeMap<NodeKey, DocumentationText>,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
     /// Every form of the latest parsed revision, by identity.
@@ -1931,15 +1931,14 @@ impl<Store, Blocks> Session<Store, Blocks>
     }
 
     /// The documentation of the latest accepted revision's declaration form
-    /// whose content identity is `key`.
+    /// whose key is `key`.
     ///
     /// # Specification
-    /// - requires: nothing — any digest is admissible input.
+    /// - requires: nothing — any key is admissible input.
     /// - ensures: the text the lowering filed under `key` for the latest
     ///   accepted revision, or the undocumented absence when it filed none. A
-    ///   form's identity excludes its documentation, so the key is the same
-    ///   whichever spelling the documentation took; a revision refused whole
-    ///   keeps the accepted one's.
+    ///   key excludes documentation, so it is the same whichever spelling the
+    ///   documentation took; a revision refused whole keeps the accepted one's.
     /// - provides: the documentation a hover shows beside a declaration.
     /// - fails: never.
     /// - panics: none.
@@ -1956,7 +1955,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     #[inline]
     pub fn documentation(
         &self,
-        key: NodeDigest,
+        key: NodeKey,
     ) -> Maybe<&DocumentationText, documentation::Absent>
     {
         self.documentation.get(&key).map_or(
@@ -2348,7 +2347,7 @@ const fn unrestored(reason: restored::Absent) -> reopened::Absent
 ///
 /// # Specification
 /// trivial.
-fn documentation_of(module: &LoweredModule<'_>) -> BTreeMap<NodeDigest, DocumentationText>
+fn documentation_of(module: &LoweredModule<'_>) -> BTreeMap<NodeKey, DocumentationText>
 {
     module
         .documentations()

@@ -16,7 +16,6 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::MoldId;
-use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
@@ -178,8 +177,8 @@ pub fn registered(name: SurfaceName<'_>) -> RegisteredAttribute
 /// # Adequacy
 /// - hypothesis: L3 — zero, the ceiling predecessor and the ceiling separate a
 ///   fixed endpoint, ordinary increment and saturation. The observer checks
-///   node identity, both endpoints and written provenance; no digest identity
-///   or association with a real syntax tree is claimed.
+///   node identity, both endpoints and written provenance; no association with
+///   a real syntax tree is claimed.
 /// - witness: `fixture::tests::synthetic_origins_saturate_only_at_the_position_ceiling`
 #[spec(
     ensures: |ret| {
@@ -197,7 +196,7 @@ pub fn origin_at(position: NodeIndex) -> Origin
         ByteOffset::from(start.saturating_add(1_usize)),
     );
 
-    Origin::new(position, NodeDigest::from([0_u8; 32_usize]), covered)
+    Origin::new(position, covered)
 }
 
 /// A molded tree built node by node, for shapes the parser never emits.

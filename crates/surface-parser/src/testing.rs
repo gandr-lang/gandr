@@ -59,7 +59,7 @@ pub fn label(
 /// trivial.
 pub fn root_digest(tree: &SyntaxTree<'_>) -> Option<NodeDigest>
 {
-    tree.node(tree.root()).map(Node::digest)
+    tree.digest()
 }
 
 /// The texts of the tiles under the node at `at`, in source order.

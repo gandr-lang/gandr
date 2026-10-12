@@ -4,14 +4,15 @@
 //!
 //! # The side table is keyed by content identity
 //!
-//! An entry is filed under the content digest of the declaration form the
-//! attribute decorates, never under that declaration's position in a list. A
-//! position is invalidated by an edit anywhere earlier in the file; a digest
-//! is invalidated only by an edit inside the declaration it is about. The
-//! molded tree makes a leading attribute block part of the declaration form it
-//! precedes, so the digest folds the declaration's own attributes: editing an
-//! attribute re-keys that declaration's entries, and an edit anywhere else
-//! leaves the key alone.
+//! An entry is filed under the [`NodeKey`] of the declaration form the
+//! attribute decorates — the digest of the top-level form holding it and its
+//! rank there — never under that declaration's position in a list. A position
+//! is invalidated by an edit anywhere earlier in the file; a key is
+//! invalidated only by an edit inside the top-level form holding the
+//! declaration. The molded tree makes a leading attribute block part of the
+//! declaration form it precedes, so the key reads the declaration's own
+//! attributes: editing an attribute re-keys that form's entries, and an edit
+//! to another form leaves the key alone.
 //!
 //! # Every schema here is inert
 //!
@@ -35,7 +36,7 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::NodeDigest;
+use gandr_surface_syntax::NodeKey;
 use quenchant_shape::shape::Maybe;
 
 use crate::form::Former;
@@ -731,11 +732,10 @@ impl AttributeEntry
 }
 
 /// Every attributed declaration's entries, keyed by the declaration form's
-/// content identity.
+/// cross-tree key.
 ///
 /// # Specification
-/// - requires: producers file entries under the intended declaration content
-///   digest.
+/// - requires: producers file entries under the intended declaration's key.
 /// - ensures: every stored key has a nonempty ordered entry list; no lookup
 ///   synthesizes an attribute and a repeated key appends rather than replaces.
 /// - provides: attribute metadata separated from core terms.
@@ -753,9 +753,9 @@ impl AttributeEntry
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AttributeTable
 {
-    /// Declaration content identity to that declaration's entries, in the
-    /// order the source wrote them.
-    entries: BTreeMap<NodeDigest, Vec<AttributeEntry>>,
+    /// Declaration key to that declaration's entries, in the order the source
+    /// wrote them.
+    entries: BTreeMap<NodeKey, Vec<AttributeEntry>>,
 }
 
 impl AttributeTable
@@ -773,11 +773,11 @@ impl AttributeTable
         }
     }
 
-    /// File `entry` under the declaration whose content identity is `key`.
+    /// File `entry` under the declaration whose key is `key`.
     ///
     /// # Specification
-    /// - requires: `key` is the content digest of a declaration form of the
-    ///   module being lowered.
+    /// - requires: `key` is the key of a declaration form of the module being
+    ///   lowered.
     /// - ensures: the entry is appended to that declaration's list, after every
     ///   entry already filed under it, so one declaration's entries stay in the
     ///   order the source wrote them.
@@ -808,7 +808,7 @@ impl AttributeTable
     #[inline]
     pub fn file(
         &mut self,
-        key: NodeDigest,
+        key: NodeKey,
         entry: AttributeEntry,
     )
     {
@@ -818,8 +818,8 @@ impl AttributeTable
     /// The entries filed under `key`, in source order.
     ///
     /// # Specification
-    /// - requires: nothing — a digest this table holds nothing for is
-    ///   admissible input, which is the unattributed declaration's case.
+    /// - requires: nothing — a key this table holds nothing for is admissible
+    ///   input, which is the unattributed declaration's case.
     /// - ensures: exactly the entries filed under `key`, in the order they were
     ///   filed; the empty slice for a declaration carrying no attributes, so
     ///   absence and emptiness are one answer.
@@ -843,7 +843,7 @@ impl AttributeTable
     #[must_use]
     pub fn entries(
         &self,
-        key: NodeDigest,
+        key: NodeKey,
     ) -> &[AttributeEntry]
     {
         self.entries.get(&key).map_or(&[], Vec::as_slice)
@@ -898,7 +898,9 @@ mod tests
     use alloc::vec;
 
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::FormRank;
     use gandr_surface_syntax::NodeDigest;
+    use gandr_surface_syntax::NodeKey;
     use quenchant_shape::shape::Maybe;
 
     use super::AttributeEntry;
@@ -1194,7 +1196,7 @@ mod tests
     fn entries_keep_the_order_they_were_filed_in()
     {
         let mut table = AttributeTable::new();
-        let key = NodeDigest::from([1_u8; 32_usize]);
+        let key = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
         let first = AttributeEntry::new(
             registered(SurfaceName::from("checks")),
             AttributeSchema::Marker,
@@ -1226,8 +1228,8 @@ mod tests
     fn two_declarations_keep_separate_entry_lists()
     {
         let mut table = AttributeTable::new();
-        let first_key = NodeDigest::from([1_u8; 32_usize]);
-        let second_key = NodeDigest::from([2_u8; 32_usize]);
+        let first_key = NodeKey::new(NodeDigest::from([1_u8; 32_usize]), FormRank::default());
+        let second_key = NodeKey::new(NodeDigest::from([2_u8; 32_usize]), FormRank::default());
         let first = AttributeEntry::new(
             registered(SurfaceName::from("checks")),
             AttributeSchema::Marker,
@@ -1266,8 +1268,13 @@ mod tests
         let table = AttributeTable::new();
 
         assert!(
-            table.entries(NodeDigest::from([9_u8; 32_usize])).is_empty(),
-            "a digest the table holds nothing for reads as the empty list"
+            table
+                .entries(NodeKey::new(
+                    NodeDigest::from([9_u8; 32_usize]),
+                    FormRank::default()
+                ))
+                .is_empty(),
+            "a key the table holds nothing for reads as the empty list"
         );
     }
 }

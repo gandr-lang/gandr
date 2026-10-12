@@ -35,7 +35,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 **Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` refinement, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
-**How.** Attributes are read off the lowering's side table under each declared name's digests; the four schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in. One equality decides each declaration; the tally counts it once.
+**How.** Attributes are read off the lowering's side table under each declared name's form keys; the four schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in. One equality decides each declaration; the tally counts it once.
 
 ## References
 

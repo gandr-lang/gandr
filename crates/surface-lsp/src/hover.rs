@@ -126,8 +126,8 @@ pub fn hover<Store, Blocks>(
         }
     };
     let documented = tree
-        .node(form)
-        .and_then(|node| match session.documentation(node.digest()) {
+        .key(form)
+        .and_then(|key| match session.documentation(key) {
             | Maybe::Present(text) => Some(text),
             | Maybe::Absent(_) => None,
         });

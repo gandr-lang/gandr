@@ -131,7 +131,7 @@ pub fn text(
 /// trivial.
 pub fn root_digest(tree: &SyntaxTree<'_>) -> Option<NodeDigest>
 {
-    tree.node(tree.root()).map(Node::digest)
+    tree.digest()
 }
 
 /// The language's source corpus, which the corpus crate owns: the strict

@@ -44,7 +44,6 @@ use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
-use gandr_surface_syntax::Node;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
@@ -495,10 +494,7 @@ fn verify(
 ) -> Result<(), FormatError>
 {
     let reparsed = parse(grammar, text).map_err(FormatError::Reparse)?;
-    let digest = |result: &ParseResult<'_>| {
-        let tree = result.tree();
-        tree.node(tree.root()).map(Node::digest)
-    };
+    let digest = |result: &ParseResult<'_>| result.tree().digest();
     if digest(&reparsed) != digest(parsed) {
         return Err(FormatError::Changed(Change::Meaning));
     }

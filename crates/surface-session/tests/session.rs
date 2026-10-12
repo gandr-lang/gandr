@@ -935,21 +935,23 @@ fn a_dependent_signature_is_an_abstention_not_a_refusal()
     )]);
 }
 
-/// The content identity of the first declaration form of `text`.
+/// The cross-tree key of the first declaration form of `text`.
 ///
 /// # Specification
 /// trivial.
-fn first_declaration(text: gandr_surface_syntax::SourceText<'_>)
--> gandr_surface_syntax::NodeDigest
+fn first_declaration(text: gandr_surface_syntax::SourceText<'_>) -> gandr_surface_syntax::NodeKey
 {
     let grammar = crate::common::grammar();
     let tree = gandr_surface_parser::parse(&grammar, text)
         .expect("the text parses")
         .into_tree();
     tree.children(tree.root())
-        .filter_map(|child| tree.node(child))
-        .find(|node| matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(_)))
-        .map(gandr_surface_syntax::Node::digest)
+        .find(|&child| {
+            tree.node(child).is_some_and(|node| {
+                matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(_))
+            })
+        })
+        .and_then(|child| tree.key(child))
         .expect("the text declares a form")
 }
 
