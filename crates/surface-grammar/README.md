@@ -13,6 +13,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Gates](#gates)
 - [Molds and contexts](#molds-and-contexts)
 - [Successor runs and dense membership flags](#successor-runs-and-dense-membership-flags)
+- [A lookup builds its refusal only on a miss](#a-lookup-builds-its-refusal-only-on-a-miss)
 - [Closing class](#closing-class)
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
@@ -142,6 +143,13 @@ The table keeps same-form adjacency as one list of `(left, right)` pairs sorted 
 
 - Alternatives: a hash set of pairs costs a hasher and `std`; a dense mold-by-mold bit matrix is quadratic in a table of over two thousand molds.
 - Reversal: a grammar whose successor runs grow long enough that a per-run search costs more than the list search did.
+
+## A lookup builds its refusal only on a miss
+
+The lookups by mold and context id — `Pbg::mold`, `Pbg::bounds`, `Pbg::step` and `Pbg::rule_of` — run on every candidate of every token and almost never miss. `PbgError` has a variant that owns a vector, so a refusal built eagerly and dropped on the hit path (`Option::ok_or`) ran the error's drop glue on every call; it was 4% of a parse's self time, and building the refusal only on a miss takes a tenth off parsing the corpus. Each lookup matches on the hit and builds the refusal in the miss arm; `RoleTable::role_of` and `PrecTable::prec` take the same shape.
+
+- Alternatives: `ok_or_else` is the same code behind a closure the lint wall flags as needless for a variant of plain fields; making `PbgError` trivially droppable would move its owned diagnostics behind indices into a side table.
+- Reversal: a `PbgError` with no owning variant has no drop glue, and the eager form costs nothing again.
 
 ## Closing class
 

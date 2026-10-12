@@ -1128,7 +1128,10 @@ impl PrecTable
         name: PrecName,
     ) -> Result<Prec, PbgError>
     {
-        self.get(name).ok_or(PbgError::MissingPrec { name: name.0 })
+        match self.get(name) {
+            | Some(prec) => Ok(prec),
+            | None => Err(PbgError::MissingPrec { name: name.0 }),
+        }
     }
 }
 

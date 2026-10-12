@@ -368,10 +368,10 @@ impl RoleTable
     {
         let index = usize::try_from(u32::from(mold))
             .map_err(|_overflow| PbgError::UnknownMold { id: mold })?;
-        self.roles
-            .get(index)
-            .copied()
-            .ok_or(PbgError::UnknownMold { id: mold })
+        match self.roles.get(index) {
+            | Some(&role) => Ok(role),
+            | None => Err(PbgError::UnknownMold { id: mold }),
+        }
     }
 
     /// The highlight spans of `tree`, in source order.
