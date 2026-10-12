@@ -812,6 +812,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-syntax",
  "gandr-theory-graphs",
+ "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
 ]

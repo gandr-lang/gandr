@@ -726,6 +726,13 @@ impl<Label> Modifier<Label>
     /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
     /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body runs the modifier's constructors from its root over the namespace; the check reads each constructor's references once"
+        )
+    )]
     #[spec(
         requires: !self.constructors.is_empty()
             && self.constructors.iter().enumerate().all(

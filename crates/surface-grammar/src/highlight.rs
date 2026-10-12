@@ -206,6 +206,13 @@ impl Side<'_>
     ///   hole as a tile; the built-in role matrix covers its use in context.
     /// - witness: `highlight::tests::role_of_pins_context_free_classes`
     /// - witness: `highlight::tests::crossings_distinguish_tiles_from_holes`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the side's steps once; the check scans them once"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == self.0.iter().any(|step| matches!(step.crossed, StepSym::Tile(label) if label == tile.0)))]
     fn crosses(
         self,

@@ -159,6 +159,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a codata family is refused at its own span by the
     ///   decoder while the data family beside it keeps its native signature.
     /// - witness: `description::tests::codata_is_refused_by_the_decoder_and_data_beside_it_is_native`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every collected slot; the check reads the slot of each described position once"
+        )
+    )]
     #[spec(
         captures: before = self.data.len(),
         ensures: |result| result.is_err() || (self.data.len() >= before && self.described.keys().all(|position| self.collected.slots.get(usize::from(*position)).is_some())),

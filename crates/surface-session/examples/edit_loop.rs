@@ -218,9 +218,10 @@ fn fresh(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — odd, even and empty sample sets, each asserted at the
-///   sample it names.
+///   sample it names. The predicate reads the middle slot of the samples the
+///   body sorted.
 /// - witness: `tests::the_median_is_the_middle_sample`
-#[spec(ensures: |ret| if samples.is_empty() { ret == Duration::ZERO } else { samples.contains(&ret) })]
+#[spec(ensures: |ret| if samples.is_empty() { ret == Duration::ZERO } else { samples.get(samples.len().div_euclid(2)) == Some(&ret) })]
 fn median(samples: &mut [Duration]) -> Duration
 {
     samples.sort_unstable();

@@ -52,6 +52,8 @@ use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecIndex;
+use gandr_theory_spec_combinators::Holds;
+use gandr_theory_spec_combinators::sorted_around;
 
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
@@ -59,6 +61,7 @@ use crate::mold::TokenRun;
 use crate::oblig::Delta;
 use crate::oblig::Oblig;
 use crate::oblig::ObligationInstance;
+use crate::spec::indexed_from;
 
 /// Define a transparent copyable newtype over a primitive payload.
 ///
@@ -1601,11 +1604,13 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — no frontier, an open bracket and its completed form
     ///   expose the optional mold; stale caches or selecting a closed frontier
-    ///   change the answer.
+    ///   change the answer. The clause reads the frontier cache's top, which
+    ///   every cache mutation's clause proves exact from the position it
+    ///   touched.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret == self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }))]
+    #[spec(ensures: |ret| ret.is_some() != self.frontiers.is_empty() && ret.is_none_or(|mold| self.frontiers.last().and_then(|&index| self.stack.get(index)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold: open, open: true, .. } if open == mold))))]
     pub fn open_form_mold(&self) -> Option<MoldId>
     {
         let index = self.nearest_open_form()?;
@@ -1644,7 +1649,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.open == self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }) && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort())]
+    #[spec(ensures: |ret| ret.open == self.open_form_mold() && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort())]
     pub fn admissibility_frontier(&self) -> Frontier
     {
         let open = self.open_form_mold();
@@ -1677,11 +1682,12 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — fresh, opened and closed bracket states expose the
     ///   presence flag. Counting closed form tiles or missing an open frontier
-    ///   changes it.
+    ///   changes it. The clause reads the frontier cache's top, which every
+    ///   cache mutation's clause proves exact from the position it touched.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == self.stack.iter().any(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))]
+    #[spec(ensures: |ret| bool::from(ret) == self.frontiers.last().is_some_and(|&index| self.stack.get(index).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. }))))]
     pub fn has_open_form(&self) -> OpenFormPresence
     {
         OpenFormPresence::from(self.nearest_open_form().is_some())
@@ -1834,7 +1840,14 @@ impl<'pbg> MeldState<'pbg>
     ///   nested damaged value syntax, exposes the repair floor. Looking only at
     ///   the current tile instead of its form start absorbs following siblings.
     /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
-    #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.contains(&index.0) && self.form_start_index(StackIndex::from(index)).and_then(|start| self.stack.get(start.0)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold))))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body resolves the form start of every frontier down to the one it returns"
+        )
+    )]
+    #[spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.binary_search(&index.0).is_ok() && self.form_start_index(StackIndex::from(index)).and_then(|start| self.stack.get(start.0)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold))))))]
     fn open_declaration_frontier(&self) -> Option<FrontierIndex>
     {
         self.frontiers.iter().rev().find_map(|&index| {
@@ -1866,12 +1879,15 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — fresh, open-form and operand snapshots distinguish a
     ///   closer, a form-first mid and a binary operator. Stale context,
     ///   removing the unknown fallback or admitting a stray closer changes the
-    ///   decision.
+    ///   decision. The precondition rechecks the context's open frontier and
+    ///   head fields; the expected sort is the scan the context hoists out of
+    ///   the candidate loop, checked once per token by
+    ///   [`admissibility_frontier`](Self::admissibility_frontier)'s clause.
     /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     /// - witness: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`
     #[inline]
     #[must_use]
-    #[spec(requires: *frontier == self.admissibility_frontier(), ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (frontier.open.is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
+    #[spec(requires: frontier.open == self.open_form_mold() && bool::from(frontier.head_operand) == bool::from(self.head_is_operand()) && frontier.head_sort == self.head_operand_sort(), ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (frontier.open.is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
     pub fn admits_at(
         &self,
         mold: MoldId,
@@ -2150,6 +2166,10 @@ impl<'pbg> MeldState<'pbg>
     ///   no sort or a missing mold.
     /// - panics: none.
     ///
+    /// # Clause cost
+    /// - bound: reads one mold's right step list from the grammar, whose length
+    ///   the grammar fixes; the slope is never read.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a missing mold and open expression versus pattern
     ///   slots expose absence and the expected hole sort. Inventing a default
@@ -2417,6 +2437,13 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Termination
     /// One step per mold a label of the token may take.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu of the token's labels"
+        )
+    )]
     #[spec(ensures: |ret| {
         let context = self.stack.get(usize::from(frontier)).and_then(|cell| match cell.role {
             Role::FormTile { mold, .. } => Some((self.pbg.mold(mold).ok()?.prec, self.frontier_hole_sort(mold)?)),
@@ -2641,6 +2668,13 @@ impl<'pbg> MeldState<'pbg>
     ///   frontier expose continuation. Crossing to another form or accepting
     ///   any label with the same prefix changes whether the hole remains open.
     /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: walks the grammar's candidate menus of `labels`, which the grammar fixes; the slope is never read"
+        )
+    )]
     #[spec(ensures: |ret| bool::from(ret) == <&[&'static str]>::from(labels).iter().any(|&label| self.pbg.candidates(TileLabel(label)).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,
@@ -2817,9 +2851,18 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — closing and reopening nearest and older frontiers,
     ///   repeated flags and an absent index expose role bits and nearest
     ///   positions. Duplicate cache entries, lost older entries or an unsorted
-    ///   reinsert changes subsequent queries.
+    ///   reinsert changes subsequent queries. The clause checks the flipped
+    ///   cell, the cache's length, and the flipped position's membership and
+    ///   order among its neighbours; the entries it leaves rest on the clauses
+    ///   of the mutations that wrote them.
     /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
-    #[spec(ensures: |_| self.frontiers.iter().copied().eq(self.stack.iter().enumerate().filter_map(|(index, cell)| matches!(cell.role, Role::FormTile { open: true, .. }).then_some(index))) && self.stack.get(index.0).is_none_or(|cell| match cell.role { Role::FormTile { open: actual, .. } => actual == bool::from(open), _ => true }))]
+    #[spec(captures: before = (self.frontiers.len(), self.stack.get(index.0).and_then(|cell| match cell.role { Role::FormTile { open: was, .. } => Some(was), Role::Operand | Role::Operator { .. } => None })),
+        ensures: |_| before.1.map_or_else(|| self.frontiers.len() == before.0, |was| {
+            let open = bool::from(open);
+            self.frontiers.len() == before.0.saturating_add(usize::from(open && !was)).saturating_sub(usize::from(was && !open))
+                && self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: actual, .. } if actual == open))
+                && self.frontiers.binary_search(&index.0).map_or_else(|_| !open, |at| open && bool::from(sorted_around(&self.frontiers, gandr_theory_spec_combinators::Mark::from(at))))
+        }))]
     fn set_form_open(
         &mut self,
         index: StackIndex,
@@ -3084,7 +3127,7 @@ impl<'pbg> MeldState<'pbg>
     ///   nothing.
     /// - witness: `meld::tests::documentation_reaches_no_digest`
     /// - witness: `meld::tests::a_malformed_doc_entry_stays_an_attribute`
-    #[spec(captures: before = relabels.len(), ensures: |ret| ret.iter().all(|&(first, last)| children.contains(&first) && children.contains(&last)) && relabels.iter().skip(before).all(|&(target, template)| children.contains(&target) && children.contains(&template)))]
+    #[spec(captures: before = relabels.len(), ensures: |ret| ret.iter().all(|&(first, last)| children.contains(&first) && children.contains(&last)) && relabels.get(before ..).is_some_and(|since| since.iter().all(|&(target, template)| children.contains(&target) && children.contains(&template))))]
     fn doc_entries(
         &self,
         children: &[EmitId],
@@ -3247,10 +3290,16 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — nested form starts, the base boundary and a closed
     ///   inner form expose the repair floor and final sibling ownership.
     ///   Selecting an outer start or skipping the boundary index changes child
-    ///   order.
+    ///   order. The clause reads the barrier cache between the start and
+    ///   `end_index`, the entries the body walks.
     /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
-    #[spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().enumerate().rev().find_map(|(index, cell)| (index <= end_index.0 && matches!(cell.role, Role::FormTile { start: true, .. })).then_some(index)))]
+    #[spec(ensures: |ret| {
+        let upto = self.barriers.partition_point(|&index| index <= end_index.0);
+        let from = ret.map_or(0, |start| self.barriers.partition_point(|&index| index <= start.0));
+        ret.is_none_or(|start| start.0 <= end_index.0 && self.stack.get(start.0).is_some_and(|cell| matches!(cell.role, Role::FormTile { start: true, .. })))
+            && self.barriers.get(from .. upto).is_some_and(|between| between.iter().all(|&index| self.stack.get(index).is_some_and(|cell| matches!(cell.role, Role::FormTile { start: false, .. }))))
+    })]
     fn form_start_index(
         &self,
         end_index: StackIndex,
@@ -3457,10 +3506,11 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — an operator below and above a form barrier and a
     ///   completed operand expose the reducible head position. Crossing a
     ///   barrier or skipping the top operator changes reduction and child
-    ///   ownership.
+    ///   ownership. The clause reads the operator and barrier cache tops and
+    ///   the cell they name.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
-    #[spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().enumerate().rev().take_while(|&(_, cell)| !matches!(cell.role, Role::FormTile { .. })).find_map(|(index, cell)| matches!(cell.role, Role::Operator { .. }).then_some(index)))]
+    #[spec(ensures: |ret| ret.map_or_else(|| self.operators.last().is_none_or(|&operator| self.barriers.last().is_some_and(|&barrier| barrier > operator)), |operator| self.operators.last() == Some(&usize::from(operator)) && self.barriers.last().is_none_or(|&barrier| barrier < usize::from(operator)) && self.stack.get(usize::from(operator)).is_some_and(|cell| matches!(cell.role, Role::Operator { .. }))))]
     fn topmost_operator_index(&self) -> Option<OperatorIndex>
     {
         let operator = self.operators.last().copied()?;
@@ -3676,9 +3726,18 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — a floor at, below and above nested reducible heads
     ///   exposes the selected action and index. Reversing priority, including a
-    ///   closed form or using a strict floor comparison changes the action.
+    ///   closed form or using a strict floor comparison changes the action. The
+    ///   clause reads the operator and frontier cache tops at or above the
+    ///   floor and the cell the answer names.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
-    #[spec(ensures: |ret| ret == self.stack.iter().enumerate().rev().take_while(|&(index, _)| index >= floor.0).find_map(|(index, cell)| match cell.role { Role::Operator { .. } => Some(CollapseStep::ReduceOperator(OperatorIndex::from(index))), Role::FormTile { open: true, .. } => Some(CollapseStep::ForceCloseForm(FrontierIndex::from(index))), _ => None }))]
+    #[spec(ensures: |ret| {
+        let operator = self.operators.last().copied().filter(|&index| index >= floor.0);
+        let frontier = self.frontiers.last().copied().filter(|&index| index >= floor.0);
+        ret.map_or_else(|| operator.is_none() && frontier.is_none(), |step| match step {
+            CollapseStep::ReduceOperator(index) => operator == Some(usize::from(index)) && frontier.is_none_or(|open| open < usize::from(index)) && self.stack.get(usize::from(index)).is_some_and(|cell| matches!(cell.role, Role::Operator { .. })),
+            CollapseStep::ForceCloseForm(index) => frontier == Some(usize::from(index)) && operator.is_none_or(|reducible| reducible < usize::from(index)) && self.stack.get(usize::from(index)).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. })),
+        })
+    })]
     fn highest_reducible(
         &self,
         floor: StackFloor,
@@ -3869,16 +3928,7 @@ impl<'pbg> MeldState<'pbg>
     ///   role cache or shifted identity changes the selected reduction.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
-    #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last() == Some(&cell) && {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+    #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last() == Some(&cell) && bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(before)))))]
     fn push_cell(
         &mut self,
         cell: Cell,
@@ -3941,8 +3991,9 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — top and middle splices and floors at retained indices
     ///   expose exact lower prefixes and shifted survivor caches. Removing the
     ///   cell below the floor or retaining the boundary entry changes a query.
+    ///   The caches ascend, so a top below the floor bounds every entry.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
-    #[spec(captures: before = (self.frontiers.partition_point(|index| *index < floor.0), self.operators.partition_point(|index| *index < floor.0), self.barriers.partition_point(|index| *index < floor.0)), ensures: |_| self.frontiers.len() == before.0 && self.operators.len() == before.1 && self.barriers.len() == before.2 && self.frontiers.iter().chain(self.operators.iter()).chain(self.barriers.iter()).all(|index| *index < floor.0))]
+    #[spec(captures: before = (self.frontiers.partition_point(|index| *index < floor.0), self.operators.partition_point(|index| *index < floor.0), self.barriers.partition_point(|index| *index < floor.0)), ensures: |_| self.frontiers.len() == before.0 && self.operators.len() == before.1 && self.barriers.len() == before.2 && self.frontiers.last().is_none_or(|index| *index < floor.0) && self.operators.last().is_none_or(|index| *index < floor.0) && self.barriers.last().is_none_or(|index| *index < floor.0))]
     fn unindex_from(
         &mut self,
         floor: StackFloor,
@@ -3975,16 +4026,7 @@ impl<'pbg> MeldState<'pbg>
     ///   shifted entries change the nearest frontier or reducible operator.
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
-    #[spec(ensures: |_| {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(0)))))]
     fn rebuild_head_caches(&mut self)
     {
         self.reindex_from(StackFloor::from(StackIndex::from(0)));
@@ -4007,16 +4049,7 @@ impl<'pbg> MeldState<'pbg>
     ///   stale entry and changes the nearest frontier or reducible operator.
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
-    #[spec(ensures: |_| {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(floor)))]
     fn reindex_from(
         &mut self,
         floor: StackFloor,
@@ -4028,6 +4061,52 @@ impl<'pbg> MeldState<'pbg>
                 self.index_cell(StackIndex::from(index), &cell);
             }
         }
+    }
+
+    /// Whether the head caches list exactly the role positions of the slope's
+    /// cells at or above `floor`.
+    ///
+    /// # Specification
+    /// - requires: each cache ascends.
+    /// - ensures: holds exactly when, at or above `floor`, the frontier cache
+    ///   lists the open form tiles, the operator cache the operators and the
+    ///   barrier cache every form tile; when it holds, each cache's top at or
+    ///   above `floor` names a cell of its role.
+    /// - provides: the exactness claim a cache mutation's clause makes from the
+    ///   lowest slope position it touched; the entries below it rest on the
+    ///   clauses of the mutations that wrote them.
+    /// - panics: none.
+    ///
+    /// # Clause cost
+    /// - bound: three [`indexed_from`] checks: three binary searches, then each
+    ///   cell at or above `floor` read once per cache, with the cache entries
+    ///   at or above `floor` when their clauses are checked.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pushes of every role, splices at the top and in the
+    ///   middle, frontier flips, rollbacks and resumed checkpoints check the
+    ///   caches from the position each touched; a missing, stale or shifted
+    ///   entry fails the mutation's clause and changes a head query.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[spec(ensures: |ret| !bool::from(ret) || (self.frontiers.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))
+        && self.operators.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::Operator { .. })))
+        && self.barriers.last().filter(|&&top| top >= floor.0).is_none_or(|&top| self.stack.get(top).is_some_and(|cell| matches!(cell.role, Role::FormTile { .. })))))]
+    fn caches_exact_from(
+        &self,
+        floor: StackFloor,
+    ) -> Holds
+    {
+        let floor = gandr_theory_spec_combinators::Mark::from(usize::from(floor));
+        Holds::from(
+            bool::from(indexed_from(&self.stack, &self.frontiers, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::FormTile { open: true, .. }))
+            })) && bool::from(indexed_from(&self.stack, &self.operators, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::Operator { .. }))
+            })) && bool::from(indexed_from(&self.stack, &self.barriers, floor, |cell| {
+                Holds::from(matches!(cell.role, Role::FormTile { .. }))
+            })),
+        )
     }
 
     /// TEST ONLY: assert the incremental head caches equal a fresh role scan
@@ -4050,16 +4129,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
     #[cfg(test)]
-    #[spec(ensures: |_| {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+    #[spec(ensures: |_| bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(0)))))]
     fn assert_head_caches_exact(&self)
     {
         let mut frontiers = Vec::new();
@@ -4100,16 +4170,7 @@ impl<'pbg> MeldState<'pbg>
     ///   rejecting instead of appending changes the resulting stack.
     /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
     #[spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == if range.low.0 >= range.high_exclusive.0 || range.high_exclusive.0 > before { before.saturating_add(1) } else { before.saturating_sub(range.high_exclusive.0.saturating_sub(range.low.0)).saturating_add(1) }
-        && {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+        && bool::from(self.caches_exact_from(StackFloor::from(if range.low.0 >= range.high_exclusive.0 || range.high_exclusive.0 > before { StackIndex::from(before) } else { range.low }))))]
     fn replace_range(
         &mut self,
         range: StackRange,
@@ -4371,6 +4432,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same obligation buffer"
+        )
+    )]
     #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.iter().filter(|obligation| obligation.class == class).count()).unwrap_or(u32::MAX)))]
     pub fn delta(&self) -> Delta
     {
@@ -4487,6 +4555,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same shortfalls `finalize` collects"
+        )
+    )]
     #[spec(ensures: |ret| { let mut delta = base; for obligation in self.finalize().obligations() { delta.insert(obligation.class); } ret == delta })]
     pub(crate) fn completion_delta(
         &self,
@@ -4687,6 +4762,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the same assembled source against `source` before it commits"
+        )
+    )]
     #[spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(tree) => before.0 && tree.source() == source && tree.grammar() == before.1 && tree.node(tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
     pub fn commit(
         self,
@@ -4730,6 +4812,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the same assembled source against `source` before it commits"
+        )
+    )]
     #[spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(pair) => before.0 && pair.0.source() == source && pair.0.grammar() == before.1 && pair.0.node(pair.0.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
     pub fn commit_with_obligations(
         mut self,
@@ -4760,6 +4849,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same slope and layout list to order the root's children"
+        )
+    )]
     #[spec(captures: before = self.emit.len(), ensures: |ret| ret.0 == u32::try_from(before).unwrap_or(u32::MAX) && self.emit.last().is_some_and(|op| matches!(op, EmitOp::Interior { label: NodeLabel::Wald, start: 0, end, children } if *end == u32::try_from(self.source.len()).unwrap_or(u32::MAX).max(self.stack.iter().map(|cell| cell.end).max().unwrap_or(0)) && children.len() == self.stack.len().saturating_add(self.spaces.len()) && children.windows(2).all(|pair| matches!(pair, &[left, right] if self.emit_start(left) <= self.emit_start(right))))))]
     fn wrap_root(&mut self) -> EmitId
     {
@@ -4893,6 +4989,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
     /// - witness: `meld::tests::documentation_reaches_no_digest`
     /// - witness: `tests::acceptance::comments_reach_no_digest_and_lose_no_byte`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: runs once per commit, which then replays the whole emission log to build the tree; the clause's two passes over the log add a constant factor to that replay"
+        )
+    )]
     #[spec(captures: before = (self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>(), self.emit.len()),
         ensures: |_| self.emit.iter().map(|op| match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { ref children, .. } => children.len() }).sum::<usize>() == before.0.saturating_add(self.emit.len().saturating_sub(before.1)))]
     fn attach_comments(
@@ -5231,6 +5334,13 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::checkpoint_bytes_round_trip`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the same buffers the clause compares"
+        )
+    )]
     #[spec(ensures: |ret| ret.fingerprint == self.pbg.fingerprint() && ret.source == self.source && ret.emit == self.emit && ret.stack == self.stack && ret.obligations == self.obligations && ret.spaces == self.spaces)]
     pub fn checkpoint(&self) -> Checkpoint
     {
@@ -5564,20 +5674,16 @@ impl<'pbg> MeldState<'pbg>
     ///   nested marks roll back inside an outer one. Exact checkpoint and
     ///   continuation equality detect a forgotten buffer, a missed edit or a
     ///   stale cache; same-state provenance remains a caller obligation beyond
-    ///   the checked lengths and UTF-8 boundary.
+    ///   the checked lengths and UTF-8 boundary. The clause checks the caches
+    ///   from the lowest position an overwrite or splice since the mark
+    ///   touched, or from the restored top, the region the body re-indexes.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
-    #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len() && mark.edits_len <= self.edits.len() && mark.removed_len <= self.removed.len(), captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth), ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty())) && {
-            let mut frontiers = self.frontiers.iter();
-            let mut operators = self.operators.iter();
-            let mut barriers = self.barriers.iter();
-            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
-                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
-                Role::Operator { .. } => operators.next() == Some(&index),
-                Role::Operand => true,
-            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
-        })]
+    #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len() && mark.edits_len <= self.edits.len() && mark.removed_len <= self.removed.len(),
+        captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth, self.edits.get(mark.edits_len ..).map_or(usize::MAX, |since| since.iter().filter_map(|edit| match *edit { SlopeEdit::Overwritten { index, .. } => Some(index), SlopeEdit::Spliced { low, .. } => Some(low), SlopeEdit::Pushed => None }).min().unwrap_or(usize::MAX))),
+        ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty()))
+            && bool::from(self.caches_exact_from(StackFloor::from(StackIndex::from(marked.5.min(self.stack.len()))))))]
     pub fn rollback_to(
         &mut self,
         mark: &Mark,
@@ -5641,6 +5747,8 @@ impl<'pbg> MeldState<'pbg>
     ///   delta.
     /// - panics: none.
     ///
+    /// # Clause cost
+    /// - bound: reads only the obligations flagged since `mark`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a nonempty prefix, a candidate adding two repair
@@ -5650,7 +5758,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::delta_since_reads_only_the_candidate_tail`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.iter().skip(mark.oblig_len).filter(|obligation| obligation.class == class).count()).unwrap_or(u32::MAX)))]
+    #[spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.get(mark.oblig_len ..).map_or(0, |since| since.iter().filter(|obligation| obligation.class == class).count())).unwrap_or(u32::MAX)))]
     pub fn delta_since(
         &self,
         mark: &Mark,
@@ -5932,6 +6040,13 @@ impl<'pbg> FormUnit<'pbg>
     /// - witness: `meld::tests::a_parked_unit_keeps_whether_it_reached_its_stand_in`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body takes the same checkpoint the clause compares"
+        )
+    )]
     #[spec(ensures: |ret| ret.base == self.base && ret.checkpoint == self.state.checkpoint()
         && (ret.reach == StandInReach::Reached) == (self.state.low_water == 0))]
     pub fn park(&self) -> ParkedUnit

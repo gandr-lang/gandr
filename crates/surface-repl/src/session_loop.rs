@@ -414,6 +414,13 @@ impl SessionLoop
     ///   each answer asserted exactly.
     /// - witness: `loop::tests::the_meta_commands_answer`
     /// - witness: `loop::tests::a_loaded_file_is_one_chunk`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: the standings are compared with the empty default, which map equality settles at the length"
+        )
+    )]
     #[spec(requires: self.pending.is_empty(),
         captures: [accepted = self.accepted.len()],
         ensures: |ret| self.pending.is_empty() && match ret {

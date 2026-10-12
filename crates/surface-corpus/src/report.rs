@@ -928,6 +928,13 @@ impl<'source> SettleReport<'source>
     /// - witness: `report::tests::the_tally_counts_every_declaration_once`
     /// - witness: `report::tests::the_run_is_settled_only_when_every_declaration_is`
     /// - witness: `report::tests::sealed_is_reported_never_gated`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body counts every declaration once; the check recounts them once per tallied quantity and refusal class, a fixed number of passes"
+        )
+    )]
     #[spec(
         ensures: |ret| {
     let settled = self

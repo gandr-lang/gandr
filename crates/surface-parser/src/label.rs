@@ -1247,6 +1247,13 @@ impl Labeling
     /// - witness: `label::tests::a_relabel_restarts_before_what_a_token_read`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: labels `before` and `after` whole, linear in the source like the split, join and commit every relabeled revision feeds"
+        )
+    )]
     #[spec(requires: self == Self::new(before), ensures: |ret| ret.eq(&Self::new(after)))]
     pub fn relabel(
         self,

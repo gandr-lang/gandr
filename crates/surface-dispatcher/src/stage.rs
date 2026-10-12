@@ -725,6 +725,13 @@ impl StageRun
     /// - witness: `stage::tests::a_fault_outranks_a_refusal`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every program's admissions and readmissions once; the check walks the admissions once"
+        )
+    )]
     #[spec(ensures: |output| (output == StageVerdict::Faulted) == self.programs.iter().any(|staged|
         staged.outcome.as_ref().map_or(true, |checked| checked.admissions.iter().any(Result::is_err))))]
     pub fn verdict(&self) -> StageVerdict

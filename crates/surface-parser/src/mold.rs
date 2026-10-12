@@ -1109,6 +1109,13 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::identifier_menu_is_wide`
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers and sorts the same candidate buffer"
+        )
+    )]
     #[spec(ensures: |ret| ret.0 == self.candidates.len() && self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     pub fn candidate_count(
         &mut self,
@@ -1561,6 +1568,13 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers and sorts the same candidate buffer"
+        )
+    )]
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather(
         &mut self,
@@ -1617,6 +1631,13 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "bounded: walks the token's candidate menu, which the gather that calls it has just built and sorted"
+        )
+    )]
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_reserved_fallback(
         &mut self,
@@ -1666,6 +1687,13 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers and sorts the same candidate buffer"
+        )
+    )]
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_menu(
         &mut self,
@@ -1702,6 +1730,13 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers and sorts the same candidate buffer"
+        )
+    )]
     #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_labels(
         &mut self,
@@ -1823,9 +1858,11 @@ impl<'pbg> Molder<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — the dry-run of a valid and an invalid mold over a
     ///   state with prior obligations; checkpoint bytes before and after expose
-    ///   leakage, and the unmolded class exposes the delta.
+    ///   leakage, and the unmolded class exposes the delta. The clause reads
+    ///   the frontier cache's top and the obligation count;
+    ///   [`MeldState::rollback_to`]'s clause checks the rest of the restore.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
-    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
+    #[spec(captures: before = (state.open_form_mold(), state.obligations().len()), ensures: |_| state.open_form_mold() == before.0 && state.obligations().len() == before.1)]
     fn push_delta(
         state: &mut MeldState<'_>,
         mold: MoldId,
@@ -1864,7 +1901,14 @@ impl<'pbg> Molder<'pbg>
     ///   moldings expose a skipped candidate that could have tied or won.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
-    #[spec(captures: before = state.obligations().len(), ensures: |_| state.obligations().len() == before && self.tied.iter().all(|mold| self.eligible.contains(mold)) && self.tied.is_empty() == self.eligible.is_empty() && self.tied.iter().zip(self.tied.iter().skip(1)).all(|(left, right)| left < right))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body ranks every eligible candidate and pushes each tie; the clause walks the ties, searching the eligible list"
+        )
+    )]
+    #[spec(captures: before = state.obligations().len(), ensures: |_| state.obligations().len() == before && self.tied.iter().all(|mold| self.eligible.binary_search(mold).is_ok()) && self.tied.is_empty() == self.eligible.is_empty() && self.tied.iter().zip(self.tied.iter().skip(1)).all(|(left, right)| left < right))]
     fn least_candidates(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1937,9 +1981,11 @@ impl<'pbg> Molder<'pbg>
     /// - hypothesis: L3 — a live state with prior obligations is dry-run
     ///   through a valid and invalid mold. Checkpoint bytes before and after
     ///   expose source, slope, cache or obligation leakage; streaming and
-    ///   completion deltas distinguish their scoring boundaries.
+    ///   completion deltas distinguish their scoring boundaries. The clause
+    ///   reads the frontier cache's top and the obligation count;
+    ///   [`MeldState::rollback_to`]'s clause checks the rest of the restore.
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
-    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
+    #[spec(captures: before = (state.open_form_mold(), state.obligations().len()), ensures: |_| state.open_form_mold() == before.0 && state.obligations().len() == before.1)]
     fn completion(
         state: &mut MeldState<'_>,
         mold: MoldId,
@@ -1988,6 +2034,13 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::a_window_reads_the_token_after_a_tied_separator`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
@@ -2196,6 +2249,13 @@ impl<'pbg> Molder<'pbg>
     ///   mutations change the checkpoint bytes.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same candidate menu to filter it by admissibility"
+        )
+    )]
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
@@ -2402,6 +2462,13 @@ impl<'pbg> Molder<'pbg>
     ///   the form-last check refutes the closer, dropping the successor check
     ///   refutes the parameter comma before a name.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same successor or candidate menus"
+        )
+    )]
     #[spec(ensures: |ret| (ret == Follow::Refuted) == if matches!(self.pbg.bounds(mold), Ok((_, Bound::Root))) {
         !bool::from(self.pbg.mold_is_form_last(mold)) && !self.pbg.mold_successors(mold).iter().any(|&(_, right)| self.pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))))
     } else {
@@ -2458,6 +2525,13 @@ impl<'pbg> Molder<'pbg>
     ///   comma beside the open one, and a closer refuting both or the stream's
     ///   end keeps both.
     /// - witness: `mold::tests::the_next_token_keeps_only_the_molds_it_can_follow`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body tests every mold against the next token"
+        )
+    )]
     #[spec(captures: before = molds.clone(), ensures: |_| molds.iter().all(|mold| before.contains(mold)) && (before.is_empty() || !molds.is_empty()))]
     fn drop_refuted<'src>(
         &self,
@@ -2518,6 +2592,13 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::a_continued_opener_beats_a_one_tile_form`
     /// - witness: `mold::tests::a_long_type_application_is_read_whole`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same openers and their successor menus"
+        )
+    )]
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
         let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
@@ -2580,6 +2661,13 @@ impl<'pbg> Molder<'pbg>
     ///   the windows the rule skips.
     /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the same openers and their successor menus"
+        )
+    )]
     #[spec(ensures: |ret| {
         let pbg = self.pbg;
         let continued = |mold: MoldId| pbg.mold_successors(mold).iter().any(|&(_, right)| pbg.mold(right).is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label))));
@@ -2633,6 +2721,13 @@ impl<'pbg> Molder<'pbg>
     ///   skips.
     /// - witness: `mold::tests::interchangeable_openers_keep_only_the_least`
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares every opener against the classes kept before it"
+        )
+    )]
     #[spec(captures: before = self.openers.clone(), ensures: |()| self.openers.iter().all(|mold| before.contains(mold)) && before.iter().all(|&mold| self.openers.iter().any(|&kept| kept <= mold && self.pbg.least_interchangeable(kept) == self.pbg.least_interchangeable(mold))) && self.openers.iter().zip(self.openers.iter().skip(1)).all(|(left, right)| left < right && self.pbg.least_interchangeable(*left) != self.pbg.least_interchangeable(*right)))]
     fn drop_interchangeable(&mut self)
     {

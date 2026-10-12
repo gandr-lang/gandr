@@ -561,7 +561,9 @@ impl OriginTable
     /// # Adequacy
     /// - hypothesis: L3 — one search, separated by a recorded id asserted as an
     ///   exact origin and an unrecorded id asserted absent, over a family
-    ///   holding more than one entry so the search cannot pass by accident.
+    ///   holding more than one entry so the search cannot pass by accident. The
+    ///   predicate re-asks the logarithmic search over this family; the shared
+    ///   lookup's own clause holds the linear oracle.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     /// - witness: `origin::tests::an_unrecorded_id_has_no_origin`
     /// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
@@ -569,8 +571,9 @@ impl OriginTable
         ensures: |ret| {
             ret == self
                 .values
-                .iter()
-                .find(|&&(held, _)| held == id)
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.values.get(at))
                 .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
                     Maybe::Present(origin)
                 })
@@ -597,14 +600,16 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
-    ///   family's recorded entry is separated from the other families.
+    ///   family's recorded entry is separated from the other families. The
+    ///   predicate re-asks the logarithmic search over this family.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     #[spec(
         ensures: |ret| {
             ret == self
                 .computations
-                .iter()
-                .find(|&&(held, _)| held == id)
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.computations.get(at))
                 .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
                     Maybe::Present(origin)
                 })
@@ -631,14 +636,16 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
-    ///   family's recorded entry is separated from the other families.
+    ///   family's recorded entry is separated from the other families. The
+    ///   predicate re-asks the logarithmic search over this family.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     #[spec(
         ensures: |ret| {
             ret == self
                 .value_types
-                .iter()
-                .find(|&&(held, _)| held == id)
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.value_types.get(at))
                 .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
                     Maybe::Present(origin)
                 })
@@ -665,14 +672,16 @@ impl OriginTable
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
-    ///   family's recorded entry is separated from the other families.
+    ///   family's recorded entry is separated from the other families. The
+    ///   predicate re-asks the logarithmic search over this family.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     #[spec(
         ensures: |ret| {
             ret == self
                 .comp_types
-                .iter()
-                .find(|&&(held, _)| held == id)
+                .binary_search_by_key(&id, |&(held, _)| held)
+                .ok()
+                .and_then(|at| self.comp_types.get(at))
                 .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
                     Maybe::Present(origin)
                 })
@@ -738,10 +747,13 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the predicate checks the four-family sum and strict
-    ///   order. Multi-family and declaration-bearing tables separate omitted
-    ///   families and accidentally counting a declaration as a core node.
-    ///   Saturation is expressed, not allocated up to in these fixtures.
+    /// - hypothesis: L3 — the predicate checks the four-family sum and the
+    ///   order at each family's tail, where every record appends under a
+    ///   requirement that keeps the family ascending. Multi-family and
+    ///   declaration-bearing tables separate omitted families and accidentally
+    ///   counting a declaration as a core node; a two-entry family disordered
+    ///   after recording is refused. Saturation is expressed, not allocated up
+    ///   to in these fixtures.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     /// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
     /// - witness: `origin::tests::census_rejects_a_disordered_family`
@@ -754,22 +766,10 @@ impl OriginTable
                     .saturating_add(self.computations.len())
                     .saturating_add(self.value_types.len())
                     .saturating_add(self.comp_types.len())
-                && self
-                    .values
-                    .windows(2)
-                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
-                && self
-                    .computations
-                    .windows(2)
-                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
-                && self
-                    .value_types
-                    .windows(2)
-                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
-                && self
-                    .comp_types
-                    .windows(2)
-                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
+                && self.values.last_chunk::<2>().is_none_or(|pair| pair.first().map(|entry| entry.0) < pair.last().map(|entry| entry.0))
+                && self.computations.last_chunk::<2>().is_none_or(|pair| pair.first().map(|entry| entry.0) < pair.last().map(|entry| entry.0))
+                && self.value_types.last_chunk::<2>().is_none_or(|pair| pair.first().map(|entry| entry.0) < pair.last().map(|entry| entry.0))
+                && self.comp_types.last_chunk::<2>().is_none_or(|pair| pair.first().map(|entry| entry.0) < pair.last().map(|entry| entry.0))
         },
     )]
     #[inline]
@@ -832,9 +832,11 @@ impl OriginTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::record_case`].
+    /// - hypothesis: L3 — as [`Self::record_case`]. The predicate re-asks the
+    ///   logarithmic search over the ascending match roots.
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == self.cases.iter().any(|&(held, _)| held == root))]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_))
+        == self.cases.binary_search_by_key(&root, |&(held, _)| held).is_ok())]
     #[inline]
     pub fn case(
         &self,

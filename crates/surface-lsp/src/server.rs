@@ -587,6 +587,13 @@ impl Workspace
     /// - hypothesis: L3 — one of two connections holding a document leaving,
     ///   then the other, observe the document kept, then forgotten.
     /// - witness: `server::tests::a_departing_connection_leaves_the_others_served`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body retains over every holder entry and forgets each unheld document; the check reads each holder entry and each document once"
+        )
+    )]
     #[spec(ensures: !self.outboxes.contains_key(&peer) && !self.watchers.contains_key(&peer)
         && self.holders.values().all(|holders| !holders.contains(&peer) && !holders.is_empty())
         && self.documents.keys().all(|uri| self.holders.contains_key(uri)))]
@@ -837,13 +844,24 @@ impl Server
     /// # Adequacy
     /// - hypothesis: L3 — a change's logged line gains the admission's wall and
     ///   publishes nothing more when the kernel agrees; a line naming a closed
-    ///   document is left as it was.
+    ///   document is left as it was. Corrections are made in log order, so the
+    ///   predicate matches them against the log in one ordered pass.
     /// - witness: `server::tests::an_admission_follows_its_synchronisation`
     /// - witness: `session::session::an_edit_to_a_large_document_rechecks_its_forms`
-    #[spec(ensures: |ret| ret.len() <= log.len() && ret.iter().all(|message| matches!(*message,
-        Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
-            if params.diagnostics.len() == 1 && log.iter().any(|logged|
-                logged.uri == params.uri && Some(logged.version) == params.version))))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every logged line once; the check walks them once more in order beside the corrections"
+        )
+    )]
+    #[spec(ensures: |ret| ret.len() <= log.len() && {
+        let mut lines = log.iter();
+        ret.iter().all(|message| matches!(*message,
+            Outgoing::Notification { method: "textDocument/publishDiagnostics", ref params, .. }
+                if params.diagnostics.len() == 1 && lines.any(|logged|
+                    logged.uri == params.uri && Some(logged.version) == params.version)))
+    })]
     #[inline]
     #[must_use]
     pub fn admit(

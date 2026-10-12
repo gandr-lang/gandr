@@ -283,6 +283,13 @@ impl NamePath
     ///   composition through the namespace consumer rather than another path
     ///   helper's implementation.
     /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every segment of both paths once; the check compares each once"
+        )
+    )]
     #[spec(
         ensures: |ret| ret.0.iter().eq(self.0.iter().chain(&suffix.0)),
     )]
@@ -315,6 +322,13 @@ impl NamePath
     /// - witness: `namespace::path::tests::stripping_an_exact_match_yields_the_root`
     /// - witness: `namespace::path::tests::stripping_a_proper_prefix_yields_the_remainder`
     /// - witness: `namespace::path::tests::a_near_miss_segment_is_not_a_prefix`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares the prefix and copies the remainder; the check compares each segment once"
+        )
+    )]
     #[spec(
         ensures: |ret| match ret {
             | Maybe::Present(ref suffix) => prefix.0.iter().chain(&suffix.0).eq(self.0.iter()),

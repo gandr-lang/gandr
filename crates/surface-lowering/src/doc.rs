@@ -181,15 +181,17 @@ impl<'source> Documentation<'source>
 /// # Adequacy
 /// - hypothesis: L3 — `///` lines and the equivalent entry read to equal
 ///   documentation, two pieces join with one line break, and a link in each
-///   spelling is found at its exact span.
+///   spelling is found at its exact span. The body writes `into` only after its
+///   last refusal and only by appending, so the predicate checks the text and
+///   link counts against the ones captured on entry rather than copying the
+///   documentation read so far; the witnesses assert the joined text.
 /// - witness: `doc::tests::both_spellings_read_to_one_text`
 /// - witness: `doc::tests::links_are_found_where_they_are_written`
 #[spec(
-    captures: before = into.clone(),
+    captures: before = (into.text.0.len(), into.links.len()),
     ensures: |ret| match ret {
-        | Ok(()) => into.links.starts_with(&before.links)
-            && into.text.0.starts_with(before.text.0.as_str()),
-        | Err(_) => *into == before,
+        | Ok(()) => into.text.0.len() >= before.0 && into.links.len() >= before.1,
+        | Err(_) => into.text.0.len() == before.0 && into.links.len() == before.1,
     },
 )]
 pub fn read_doc<'source>(

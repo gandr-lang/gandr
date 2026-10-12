@@ -914,6 +914,13 @@ mod modules
     ///   verdicts.
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
     /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the body walks every lowered declaration and checks the module; the check walks the declarations once"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             ret.judged()
@@ -994,6 +1001,13 @@ mod modules
     ///   results.
     /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
     /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the body checks every lowered declaration; the check walks the declarations once beside the judgements"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             let mut actual = ret.iter();

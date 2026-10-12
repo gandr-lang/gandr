@@ -2274,12 +2274,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a declaration over a builtin under each policy and
     ///   over nothing, asserted as the exact record, outcome and resolution; a
     ///   module exporting a component, hiding a member and exporting a nested
-    ///   module, each path asserted as the exact resolution.
+    ///   module, each path asserted as the exact resolution. Every exported
+    ///   member is checked here once, after the last module, rather than by
+    ///   each module's declaration.
     /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
     /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
     /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
     /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every slot and every module's exports; the check reads each appended slot and each exported member once"
+        )
+    )]
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.structures.len()),
         ensures: |_| {
@@ -2296,6 +2305,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             )
                     },
                 )
+                && self.exported.values().all(|slot| {
+                    self.collected
+                        .slots
+                        .get(usize::from(*slot))
+                        .is_some_and(|entry| entry.role == Role::Declared)
+                })
         },
     )]
     fn declare(&mut self)
@@ -2345,7 +2360,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — only exported value paths enter the module namespace,
     ///   while a hidden member stays absent and nested namespaces govern their
-    ///   own paths.
+    ///   own paths. The predicate reads only the slot this call may append;
+    ///   [`Self::declare`] checks every exported member once, after the last
+    ///   module.
     /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
     #[spec(
@@ -2354,18 +2371,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.exported.len() >= before.0
                 && self.collected.slots.len() >= before.1
                 && self.collected.slots.len() <= before.1.saturating_add(1)
-                && self.exported.values().all(|slot| {
-                    self.collected
-                        .slots
-                        .get(usize::from(*slot))
-                        .is_some_and(|entry| entry.role == Role::Declared)
-                })
-                && self.collected.slots.iter().skip(before.1).all(|slot| {
-                    slot.role == Role::Held
-                        && matches!(
-                            slot.refusal,
-                            Maybe::Present((_, LoweringRefusal::ShadowedBuiltin { .. }))
-                        )
+                && self.collected.slots.get(before.1 ..).is_some_and(|appended| {
+                    appended.iter().all(|slot| {
+                        slot.role == Role::Held
+                            && matches!(
+                                slot.refusal,
+                                Maybe::Present((_, LoweringRefusal::ShadowedBuiltin { .. }))
+                            )
+                    })
                 })
         },
     )]
@@ -2528,6 +2541,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body visits every slot and each of its attributes; the check reads each attribute's payload flag once"
+        )
+    )]
     #[spec(
         captures: before = (self.readings.len(), self.payload.len(), self.scopes.len()),
         ensures: |ret| {
@@ -4334,7 +4354,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — ordinary run binders introduce the spelled name, a
     ///   wildcard binds a name nothing reads, and other patterns are refused
-    ///   rather than becoming ordinary names.
+    ///   rather than becoming ordinary names. The predicate asks for the
+    ///   binder's own source bytes, by address and length, rather than reading
+    ///   the name.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::a_discarded_statement_splits_its_unit`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
@@ -4346,7 +4368,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Ok(Shape::Form {
                             former: Former::Name,
                             ..
-                        }) => *name == self.name_at(binder),
+                        }) => core::ptr::eq(
+                            core::ptr::from_ref::<str>(name.as_ref()),
+                            core::ptr::from_ref::<str>(self.name_at(binder).as_ref()),
+                        ),
                         | Ok(Shape::Form { name: form, .. }) => {
                             form == FormName::WILDCARD && name.as_ref().is_empty()
                         },
@@ -4548,7 +4573,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the argument count is separated by none, one and two,
     ///   each asserted as the exact application chain read back out of the
-    ///   arena.
+    ///   arena. The predicate reads only the operands this call appended.
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
@@ -4568,8 +4593,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             || (descends && arguments.start == end.saturating_sub(1).max(start)))
                             && arguments.end == end
                             && self.reading(head) == Reading::Head(site.reading.frame())
-                            && self.operands.iter().skip(arguments.start).all(|&argument| {
-                                self.reading(argument) == Reading::Value(site.reading.frame())
+                            && self.operands.get(arguments.start ..).is_some_and(|appended| {
+                                appended.iter().all(|&argument| {
+                                    self.reading(argument) == Reading::Value(site.reading.frame())
+                                })
                             })
                     },
                     | Some(&Plan::Constructor(constructed)) => {
@@ -6299,6 +6326,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body takes the plan of every node once; the check reads each plan once"
+        )
+    )]
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7909,6 +7943,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   refusal.
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body drains every slot's attributes; the check reads each slot once"
+        )
+    )]
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| {
@@ -7957,6 +7998,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body resolves every slot's attributes; the capture counts them once"
+        )
+    )]
     #[spec(
         captures: before = (
             self.fuel.remaining,
@@ -8030,6 +8078,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   declaration at the link's span.
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body drains every slot's documentation; the check reads each slot once"
+        )
+    )]
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: |ret| {
@@ -8070,6 +8125,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — as [`Self::document`].
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
     /// - witness: `lower::tests::a_link_to_a_missing_name_is_refused_at_the_link`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body drains every slot's documentation; the check reads each slot once"
+        )
+    )]
     #[spec(
         captures: before = self.fuel.remaining,
         ensures: |ret| self.fuel.remaining <= before
@@ -8367,6 +8429,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
     /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
     /// - witness: `modules::modules::module_members_admit_in_source_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body assembles a row from every slot once; the check rebuilds each row once and compares it"
+        )
+    )]
     #[spec(
         captures: before = usize::from(origins.declaration_count()),
         ensures: |ret| {
@@ -8621,6 +8690,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   failed; the unrelated following declaration still lowers.
     /// - witness: `modules::modules::manifest_refusals_propagate_transitively_before_minting`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body sorts the manifest references and visits each once; the check reads each once and its neighbour once"
+        )
+    )]
     #[spec(
         captures: before = (self.manifests.len(), self.collected.slots.len()),
         ensures: |_| {
@@ -9227,16 +9303,17 @@ fn statement_form(
 /// - hypothesis: L3 — empty, multi-argument and comma-closed calls append their
 ///   own ordered operand range; a failure preserves the already-read prefix and
 ///   locates the unexpected operand or tile instead of silently accepting a
-///   suffix.
+///   suffix. The predicate re-reads the list as the body did and compares it
+///   with only the operands this call appended.
 /// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
 /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
 #[spec(
     captures: before = (written.len(), cursor.clone()),
     ensures: |ret| {
         written.len() >= before.0
-            && ret.as_ref().map_or(true, |&()| {
+            && ret.as_ref().map_or(true, |&()| written.get(before.0 ..).is_some_and(|appended| {
                 let mut input = before.1.clone();
-                let mut appended = written.iter().skip(before.0);
+                let mut appended = appended.iter();
                 if matches!(input.tile(TileName::PAREN_OPEN), Maybe::Absent(_)) {
                     return false;
                 }
@@ -9264,7 +9341,7 @@ fn statement_form(
                 appended.next().is_none()
                     && matches!(input.peek(), Maybe::Absent(_))
                     && cursor.peek() == input.peek()
-            })
+            }))
     },
 )]
 fn arguments<'source>(

@@ -1584,6 +1584,13 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
     /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
     /// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body composes and judges the whole revision; the check recomputes its standing from that composition once"
+        )
+    )]
     #[spec(
         captures: before = (
     usize::from(self.lowerings),
@@ -1771,14 +1778,15 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   declaration, are refused whole and repeat one another are each judged
     ///   as a fresh session judges them and ranked in that order, at one thread
     ///   and at several; the session's next submission resumes, molds and diffs
-    ///   as if no trial had run.
+    ///   as if no trial had run. The receiver is shared, so the snapshot cannot
+    ///   change through it; the predicate does not copy it, and the second
+    ///   witness observes the session afterwards.
     /// - witness: `tests::trial::each_candidate_is_judged_as_a_fresh_session_judges_it`
     /// - witness: `tests::trial::a_trial_leaves_the_session_as_it_was`
     #[spec(
-        captures: before = (usize::from(self.lowerings), self.snapshot.clone()),
+        captures: before = usize::from(self.lowerings),
         ensures: |ret| ret.len() == candidates.len()
-            && usize::from(self.lowerings) == before.0
-            && self.snapshot == before.1
+            && usize::from(self.lowerings) == before
             && ret.iter().all(|trial| trial.outcome.as_ref().is_err()
                 || trial.outcome.as_ref().is_ok_and(|submission|
                     candidates.get(usize::from(trial.candidate)) == Some(&submission.text)

@@ -715,6 +715,7 @@ default-features = false
 # - none: core-only checks.
 # consumers:
 # - core-nbe
+# - surface-parser
 # - theory-cell-complexes
 # - theory-circuit-algebras
 # - theory-coherent-resolutions

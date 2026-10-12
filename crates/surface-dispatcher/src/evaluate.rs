@@ -584,6 +584,13 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::each_outcome_class_has_its_status`
     /// - witness: `evaluate::tests::a_constructed_terminal_blames_its_first_opaque_field`
     /// - witness: `evaluate::tests::structured_values_keep_repeated_references_and_field_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's reachability walk marks every declaration; the check scans the declarations once for the reported name"
+        )
+    )]
     #[spec(
         captures: [declarations = self.declarations.len(), definitions = self.definitions.len(),
             watermark = self.arena.watermark(), blocked = match self.declarations.get(usize::from(constant)) {
@@ -692,6 +699,13 @@ impl<'source> Program<'source>
     ///   by these admitted source fixtures.
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body allocates a mark per declaration for its walk; the check scans the declarations once for the reported name"
+        )
+    )]
     #[spec(ensures: |ret| {
         let root = match self.declarations.get(usize::from(constant)) {
             None => ret == Maybe::Present(Unrunnable::Undeclared(constant)),
@@ -1494,6 +1508,13 @@ mod tests
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     /// - witness: `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test fixture: the body searches the declarations for the name once; the check searches them once"
+        )
+    )]
     #[spec(
         requires: program.declarations.iter().any(|declared| declared.name == name),
         captures: [declarations = program.declarations.len()],

@@ -399,6 +399,13 @@ impl Admission
     /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
     /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body readmits every judged declaration; the capture copies each one's constant once"
+        )
+    )]
     #[spec(
         captures: [judged = self.verdicts.judged().iter().map(gandr_core_checker::Judged::constant)
             .collect::<alloc::vec::Vec<_>>()],
