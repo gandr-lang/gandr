@@ -1,4 +1,6 @@
-//! Native nominal and structural formers at the kernel boundary.
+//! Native nominal and structural formers at the kernel boundary: data, records,
+//! and the n-ary tuples, cases, products and sums, whose children cross in
+//! order before the former is assembled.
 
 use anodized::spec;
 use gandr_core_term::ValueType;
@@ -72,6 +74,9 @@ impl Erasure<'_, '_>
                     | Value::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value)),
+                    | Value::Tuple(ref components) => self
+                        .frames
+                        .extend(components.iter().rev().copied().map(value)),
                     | _ => return Err(Refusal::MachineInvariant),
                 }
             },
@@ -93,6 +98,14 @@ impl Erasure<'_, '_>
                     | Computation::RecordProjection(ref record, _) => {
                         self.frames.push(value(*record));
                     },
+                    | Computation::Case {
+                        ref scrutinee,
+                        ref branches,
+                    } => {
+                        self.frames
+                            .extend(branches.iter().rev().copied().map(computation));
+                        self.frames.push(value(*scrutinee));
+                    },
                     | _ => return Err(Refusal::MachineInvariant),
                 }
             },
@@ -104,6 +117,9 @@ impl Erasure<'_, '_>
                     | ValueType::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value_type)),
+                    | ValueType::Product(ref components) | ValueType::Sum(ref components) => self
+                        .frames
+                        .extend(components.iter().rev().copied().map(value_type)),
                     | _ => return Err(Refusal::MachineInvariant),
                 }
             },
@@ -185,6 +201,14 @@ impl Erasure<'_, '_>
                             .collect::<Result<_, _>>()?;
                         target.value_record(fields)
                     },
+                    | Value::Tuple(ref components) => {
+                        let components = components.iter().copied().map(value).collect::<Result<
+                            alloc::vec::Vec<_>,
+                            _,
+                        >>(
+                        )?;
+                        target.value_tuple(&components)
+                    },
                     | _ => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value(at, image))
@@ -207,6 +231,18 @@ impl Erasure<'_, '_>
                     },
                     | Computation::RecordProjection(ref record, ref label) => {
                         target.computation_record_projection(value(*record)?, label.clone())
+                    },
+                    | Computation::Case {
+                        ref scrutinee,
+                        ref branches,
+                    } => {
+                        let scrutinee = value(*scrutinee)?;
+                        let branches = branches.iter().copied().map(computation).collect::<Result<
+                            alloc::vec::Vec<_>,
+                            _,
+                        >>(
+                        )?;
+                        target.computation_case(scrutinee, &branches)
                     },
                     | _ => return Err(Refusal::MachineInvariant),
                 };
@@ -245,6 +281,22 @@ impl Erasure<'_, '_>
                             })
                             .collect::<Result<_, _>>()?;
                         target.value_type_record(fields)
+                    },
+                    | ValueType::Product(ref components) => {
+                        let components = components
+                            .iter()
+                            .copied()
+                            .map(value_type)
+                            .collect::<Result<alloc::vec::Vec<_>, _>>()?;
+                        target.value_type_product(&components)
+                    },
+                    | ValueType::Sum(ref summands) => {
+                        let summands = summands.iter().copied().map(value_type).collect::<Result<
+                            alloc::vec::Vec<_>,
+                            _,
+                        >>(
+                        )?;
+                        target.value_type_sum(&summands)
                     },
                     | _ => return Err(Refusal::MachineInvariant),
                 };

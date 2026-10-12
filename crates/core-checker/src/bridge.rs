@@ -1228,7 +1228,7 @@ impl Positions
                 | PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
                 | PrimitiveType::Boolean => {
                     let unit = arena.value_type_unit();
-                    arena.value_type_sum(unit, unit)
+                    arena.value_type_sum(&[unit, unit])
                 },
             };
             let result = classifier(arena, primitive.result());
@@ -1657,59 +1657,13 @@ enum Frame
         /// The source code image.
         source: gandr_kernel_term::ValueId,
     },
-    /// Await the first summand.
-    SumFirst
-    {
-        /// The sum.
-        at: ValueTypeId,
-        /// The second summand.
-        second: ValueTypeId,
-    },
-    /// Await the second summand.
-    SumSecond
-    {
-        /// The sum.
-        at: ValueTypeId,
-        /// The first summand image.
-        first: gandr_kernel_term::ValueTypeId,
-    },
     /// Await a sum injection payload.
     Injection
     {
         /// The injection.
         at: ValueId,
-        /// The injection side.
-        side: gandr_kernel_term::Side,
-    },
-    /// Await a sum case scrutinee.
-    CaseScrutinee
-    {
-        /// The case.
-        at: ComputationId,
-        /// The left branch.
-        on_left: ComputationId,
-        /// The right branch.
-        on_right: ComputationId,
-    },
-    /// Await the left branch.
-    CaseLeft
-    {
-        /// The case.
-        at: ComputationId,
-        /// The scrutinee image.
-        scrutinee: gandr_kernel_term::ValueId,
-        /// The right branch.
-        on_right: ComputationId,
-    },
-    /// Await the right branch.
-    CaseRight
-    {
-        /// The case.
-        at: ComputationId,
-        /// The scrutinee image.
-        scrutinee: gandr_kernel_term::ValueId,
-        /// The left branch image.
-        on_left: gandr_kernel_term::ComputationId,
+        /// The summand injected into.
+        summand: gandr_kernel_term::Summand,
     },
     /// A thunk, awaiting its body's computation.
     Thunk
@@ -1892,38 +1846,6 @@ enum Frame
         at: ValueId,
         /// The head's image.
         head: gandr_kernel_term::ValueId,
-    },
-    /// A pair, awaiting its first component's value.
-    PairFirst
-    {
-        /// The pair.
-        at: ValueId,
-        /// The second component, erased next.
-        second: ValueId,
-    },
-    /// A pair, awaiting its second component's value.
-    PairSecond
-    {
-        /// The pair.
-        at: ValueId,
-        /// The first component's image.
-        first: gandr_kernel_term::ValueId,
-    },
-    /// An eager product, awaiting its first factor.
-    ProductFirst
-    {
-        /// The product.
-        at: ValueTypeId,
-        /// The second factor, erased next.
-        second: ValueTypeId,
-    },
-    /// An eager product, awaiting its second factor.
-    ProductSecond
-    {
-        /// The product.
-        at: ValueTypeId,
-        /// The first factor's image.
-        first: gandr_kernel_term::ValueTypeId,
     },
     /// A static Pi, awaiting its domain.
     StaticPiDomain
@@ -2905,20 +2827,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::QuoteComputation { at },
                 CoreNode::Type(TypeNode::Computation(quoted)),
             ),
-            | Value::Tuple(ref components) => match **components {
-                | [] => return Ok(self.erased_value(at, target.value_unit())),
-                | [first, second] => (
-                    Frame::PairFirst { at, second },
-                    CoreNode::Term(TermNode::Value(first)),
-                ),
-                | _ => return Err(unadmitted(UnadmittedFormer::ProductArity)),
-            },
+            | Value::Tuple(_) => return self.prepare_native(target, node),
             | Value::Injection(summand, body) => (
-                Frame::Injection {
-                    at,
-                    side: gandr_kernel_term::Side::try_from(summand)
-                        .map_err(|_beyond| unadmitted(UnadmittedFormer::SumArity))?,
-                },
+                Frame::Injection { at, summand },
                 CoreNode::Term(TermNode::Value(body)),
             ),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
@@ -3008,7 +2919,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: ordinary computations open one continuation; a native case
-    ///   queues its motive and every branch after the scrutinee.
+    ///   queues its motive and every branch after the scrutinee; a sum case
+    ///   queues every branch after the scrutinee.
     /// - fails: [`Refusal::Cyclic`] for an open computation or
     ///   [`Refusal::DanglingNode`] for an absent source.
     /// - panics: none.
@@ -3023,7 +2935,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `native_formers::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `native_formers::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if let Some(node) = self.arena.computation(at) && let Computation::DataCase { ref branches, .. } = *node { branches.len().checked_add(2) } else { Some(1_usize) }],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), _ => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -3107,23 +3019,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | Computation::Bind(bound, body) => {
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
-            | Computation::Case {
-                scrutinee,
-                ref branches,
-            } => {
-                let &[on_left, on_right] = &**branches
-                else {
-                    return Err(unadmitted(UnadmittedFormer::SumArity));
-                };
-                (
-                    Frame::CaseScrutinee {
-                        at,
-                        on_left,
-                        on_right,
-                    },
-                    TermNode::Value(scrutinee),
-                )
-            },
+            | Computation::Case { .. } => return self.prepare_native(target, node),
             | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -3176,7 +3072,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | None => {},
         }
         let (frame, child) = match value_type_view(self.arena, at)? {
-            | ValueTypeView::Data { .. } | ValueTypeView::Record(_) => {
+            | ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::Product(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
             | ValueTypeView::Stack { .. } => {
@@ -3192,10 +3091,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | ValueTypeView::PathUniverse(source, target_code) => (
                 Frame::PathSource { at, target_code },
                 CoreNode::Term(TermNode::Value(source)),
-            ),
-            | ValueTypeView::Sum(first, second) => (
-                Frame::SumFirst { at, second },
-                CoreNode::Type(TypeNode::Value(first)),
             ),
             | ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
@@ -3235,10 +3130,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 });
                 return self.decode(target, code, level, GroundSort::Value);
             },
-            | ValueTypeView::Product(first, second) => (
-                Frame::ProductFirst { at, second },
-                CoreNode::Type(TypeNode::Value(first)),
-            ),
             | ValueTypeView::StaticPi { domain, codomain } => (
                 Frame::StaticPiDomain { at, codomain },
                 CoreNode::Type(TypeNode::Value(domain)),
@@ -3717,15 +3608,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
                 self.erased_value_type(at, target.value_type_path_universe(source, target_code))
             ),
-            | (Frame::SumFirst { at, second }, AnyNode::ValueType(first)) => {
-                self.frames.push(Frame::SumSecond { at, first });
-                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
-            },
-            | (Frame::SumSecond { at, first }, AnyNode::ValueType(second)) => {
-                Ok(self.erased_value_type(at, target.value_type_sum(first, second)))
-            },
-            | (Frame::Injection { at, side }, AnyNode::Value(body)) => {
-                Ok(self.erased_value(at, target.value_injection(side, body)))
+            | (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
+                Ok(self.erased_value(at, target.value_injection(summand, body)))
             },
             | (Frame::TransportPath { at, value }, AnyNode::Value(path)) => {
                 self.frames.push(Frame::TransportValue { at, path });
@@ -3733,51 +3617,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             | (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_transport(path, value)))
-            },
-            | (
-                Frame::CaseScrutinee {
-                    at,
-                    on_left,
-                    on_right,
-                },
-                AnyNode::Value(scrutinee),
-            ) => {
-                self.frames.push(Frame::CaseLeft {
-                    at,
-                    scrutinee,
-                    on_right,
-                });
-                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
-                    on_left,
-                ))))
-            },
-            | (
-                Frame::CaseLeft {
-                    at,
-                    scrutinee,
-                    on_right,
-                },
-                AnyNode::Computation(on_left),
-            ) => {
-                self.frames.push(Frame::CaseRight {
-                    at,
-                    scrutinee,
-                    on_left,
-                });
-                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
-                    on_right,
-                ))))
-            },
-            | (
-                Frame::CaseRight {
-                    at,
-                    scrutinee,
-                    on_left,
-                },
-                AnyNode::Computation(on_right),
-            ) => {
-                Ok(self
-                    .erased_computation(at, target.computation_case(scrutinee, on_left, on_right)))
             },
             | (Frame::Thunk { at }, AnyNode::Computation(body)) => {
                 Ok(self.erased_value(at, target.value_thunk(body)))
@@ -3879,20 +3718,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::StaticArgument { at, head }, AnyNode::Value(argument)) => {
                 Ok(self.erased_value(at, target.value_static_application(head, argument)))
             },
-            | (Frame::PairFirst { at, second }, AnyNode::Value(first)) => {
-                self.frames.push(Frame::PairSecond { at, first });
-                Ok(Step::Descend(CoreNode::Term(TermNode::Value(second))))
-            },
-            | (Frame::PairSecond { at, first }, AnyNode::Value(second)) => {
-                Ok(self.erased_value(at, target.value_pair(first, second)))
-            },
-            | (Frame::ProductFirst { at, second }, AnyNode::ValueType(first)) => {
-                self.frames.push(Frame::ProductSecond { at, first });
-                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
-            },
-            | (Frame::ProductSecond { at, first }, AnyNode::ValueType(second)) => {
-                Ok(self.erased_value_type(at, target.value_type_product(first, second)))
-            },
             | (Frame::ListType { at }, AnyNode::ValueType(element)) => {
                 Ok(self.erased_value_type(at, target.value_type_list(element)))
             },
@@ -3907,9 +3732,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Ok(Step::Ascend(decoded(target, code, level, sort)))
             },
             | (
-                Frame::CaseLeft { .. }
-                | Frame::CaseRight { .. }
-                | Frame::ListNil { .. }
+                Frame::ListNil { .. }
                 | Frame::ListCons { .. }
                 | Frame::Thunk { .. }
                 | Frame::ApplicationHead { .. }
@@ -3941,7 +3764,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::TransportPath { .. }
                 | Frame::TransportValue { .. }
                 | Frame::Injection { .. }
-                | Frame::CaseScrutinee { .. }
                 | Frame::ListHead { .. }
                 | Frame::ListTail { .. }
                 | Frame::ListInput { .. }
@@ -3953,15 +3775,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::UnmarkedValue { .. }
                 | Frame::StaticHead { .. }
                 | Frame::StaticArgument { .. }
-                | Frame::PairFirst { .. }
-                | Frame::PairSecond { .. }
                 | Frame::DecodeOf { .. },
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
                 Frame::PathEquivType { .. }
-                | Frame::SumFirst { .. }
-                | Frame::SumSecond { .. }
                 | Frame::ListType { .. }
                 | Frame::ListElement { .. }
                 | Frame::ListResult { .. }
@@ -3972,8 +3790,6 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Returner { .. }
                 | Frame::ArrowDomain { .. }
                 | Frame::PiDomain { .. }
-                | Frame::ProductFirst { .. }
-                | Frame::ProductSecond { .. }
                 | Frame::StaticPiDomain { .. }
                 | Frame::StaticPiCodomain { .. }
                 | Frame::Decoded {
@@ -4884,6 +4700,67 @@ mod tests
         }
     }
 
+    /// Products, sums, tuples, injections and cases of any arity cross into
+    /// the kernel as the one n-ary former each is, and the kernel admits
+    /// them: a triple, an injection into the last of three summands, a case
+    /// of three branches and the empty sum's case of none.
+    #[test]
+    fn n_ary_formers_cross_the_kernel_at_their_arity()
+    {
+        // def t : Integer * String * Unit = (0, "a", unit) ;
+        // def i : Integer + String + Unit = Inj2(unit) ;
+        // def p : U (Integer + String + Unit -> F Integer) =
+        //     thunk λ. case x { y => return y ; _ => return 0 ; _ => return 0 } ;
+        // def v : U (Void -> F Integer) = thunk λ. case x {} ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let unit_type = arena.value_type_unit();
+        let triple_type = arena.value_type_product(&[integer, string, unit_type]);
+        let three = arena.value_type_sum(&[integer, string, unit_type]);
+        let void = arena.value_type_sum(&[]);
+        let returns_integer = arena.comp_type_returner(integer);
+        let picks = arena.comp_type_arrow(three, returns_integer);
+        let picks = arena.value_type_thunk(picks);
+        let absurd_type = arena.comp_type_arrow(void, returns_integer);
+        let absurd_type = arena.value_type_thunk(absurd_type);
+        let zero = arena.value_literal(integer_literal());
+        let text = arena.value_literal(text_literal());
+        let unit = arena.value_unit();
+        let triple = arena.value_tuple(&[zero, text, unit]);
+        let injected = arena.value_injection(gandr_core_term::Summand::from(2_usize), unit);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let payload = arena.computation_return(bound);
+        let constant = arena.computation_return(zero);
+        let case = arena.computation_case(bound, &[payload, constant, constant]);
+        let pick = arena.computation_lambda(case);
+        let pick = arena.value_thunk(pick);
+        let absurd = arena.computation_case(bound, &[]);
+        let absurd = arena.computation_lambda(absurd);
+        let absurd = arena.value_thunk(absurd);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(triple_type), Maybe::Present(triple)),
+            declaration(At(1), Maybe::Present(three), Maybe::Present(injected)),
+            declaration(At(2), Maybe::Present(picks), Maybe::Present(pick)),
+            declaration(At(3), Maybe::Present(absurd_type), Maybe::Present(absurd)),
+        ]);
+        for judged in report.judged() {
+            assert!(
+                matches!(judged.verdict(), Verdict::Checked { .. }),
+                "the n-ary former checks in the core: {:?}",
+                judged.verdict()
+            );
+        }
+        assert_eq!(readmission.readmitted().len(), 4);
+        for entry in readmission.readmitted() {
+            assert!(
+                matches!(*entry.outcome(), Outcome::Defined { .. }),
+                "the kernel admits the n-ary former: {:?}",
+                entry.outcome()
+            );
+        }
+    }
+
     #[test]
     fn a_code_constant_argument_unfolds_at_export()
     {
@@ -5426,8 +5303,8 @@ mod tests
         };
         let mut kernel = imported.arena().clone();
         let unit = kernel.value_unit();
-        let truth = kernel.value_injection(Side::Left, unit);
-        let output = kernel.value_pair(truth, truth);
+        let truth = kernel.value_injection(Side::Left.into(), unit);
+        let output = kernel.value_tuple(&[truth, truth]);
         let expected = kernel.computation_return(output);
         assert_eq!(
             replay_transport(

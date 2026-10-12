@@ -1244,12 +1244,6 @@ impl fmt::Display for Former
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
             | UnadmittedFormer::StaticLambda => "a type operator",
             | UnadmittedFormer::EffectRow => "a nonempty effect row at the pure kernel boundary",
-            | UnadmittedFormer::ProductArity => {
-                "a product or tuple of neither zero nor two components at the kernel boundary"
-            },
-            | UnadmittedFormer::SumArity => {
-                "a sum, injection or case of other than two summands at the kernel boundary"
-            },
         })
     }
 }
@@ -1638,8 +1632,6 @@ mod tests
             UnadmittedFormer::SortParameter,
             UnadmittedFormer::TopUniverse,
             UnadmittedFormer::StaticLambda,
-            UnadmittedFormer::ProductArity,
-            UnadmittedFormer::SumArity,
         ];
         let titles = formers.map(|former| {
             Checked(CheckRefusal::OutOfFragment {

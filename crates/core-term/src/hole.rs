@@ -350,56 +350,67 @@ pub fn matched_thunk(
     }
 }
 
-/// Match a value type against the eager product: `A ▸ A₁ × A₂`.
+/// The components a product or a sum matched: the former's own, in order, or,
+/// for the unknown type, one unknown type every component stands at, however
+/// many the introduction or the elimination has.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Components
+{
+    /// A known former's components, in order.
+    Known(alloc::boxed::Box<[ValueTypeId]>),
+    /// The unknown type: every component is this freshly minted unknown type.
+    Unknown(ValueTypeId),
+}
+
+/// Match a value type against the eager product: `A ▸ A₁ × … × Aₙ`.
 ///
 /// # Specification
 /// - requires: `subject` is read at its weak head.
-/// - ensures: both factors of a product of two components; two freshly minted
-///   unknown value types when `subject` is unknown.
-/// - provides: what a pair checks its components against.
-/// - fails: [`matching::Absent::Mismatched`] for another known former or a
-///   product of another arity, [`matching::Absent::Dangling`] for an id naming
-///   no node.
+/// - ensures: the components of a product of any arity, the empty one the unit
+///   type's; one freshly minted unknown value type when `subject` is unknown.
+/// - provides: what a tuple checks its components against.
+/// - fails: [`matching::Absent::Mismatched`] for another known former,
+///   [`matching::Absent::Dangling`] for an id naming no node.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`matched_thunk`], over the product former.
+/// - hypothesis: L3 — as [`matched_thunk`], over the product former; the unit
+///   type separates a product of no components from a mismatch.
 /// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
 /// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present((first, second)) => arena.value_type(first).is_some() && arena.value_type(second).is_some(),
+    | Maybe::Present(Components::Known(ref parts)) => matches!(arena.value_type(subject), Some(ValueType::Product(held)) if held == parts),
+    | Maybe::Present(Components::Unknown(unknown)) => arena.value_type(unknown) == Some(&ValueType::Unknown),
     | Maybe::Absent(_) => true,
 })]
 #[inline]
 pub fn matched_product(
     arena: &mut CoreArena,
     subject: ValueTypeId,
-) -> Maybe<(ValueTypeId, ValueTypeId), matching::Absent>
+) -> Maybe<Components, matching::Absent>
 {
     if value_type_knowledge(arena, subject) == Knowledge::Unknown {
-        let unknown = arena.value_type_unknown();
-        return Maybe::Present((unknown, unknown));
+        return Maybe::Present(Components::Unknown(arena.value_type_unknown()));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Product(ref components)) => match **components {
-            | [first, second] => Maybe::Present((first, second)),
-            | _ => mismatched(),
+        | Some(&ValueType::Product(ref components)) => {
+            Maybe::Present(Components::Known(components.clone()))
         },
         | Some(_) => mismatched(),
         | None => dangling(),
     }
 }
 
-/// Match a value type against the sum: `A ▸ A₁ + A₂`.
+/// Match a value type against the sum: `A ▸ A₁ + … + Aₙ`.
 ///
 /// # Specification
 /// - requires: `subject` is read at its weak head.
-/// - ensures: both summands of a sum of two summands; two freshly minted
-///   unknown value types when `subject` is unknown.
+/// - ensures: the summands of a sum of any arity, the empty one the empty
+///   type's; one freshly minted unknown value type when `subject` is unknown.
 /// - provides: what an injection checks its payload against and what a case
 ///   binds in each branch.
-/// - fails: [`matching::Absent::Mismatched`] for another known former or a sum
-///   of another arity, [`matching::Absent::Dangling`] for an id naming no node.
+/// - fails: [`matching::Absent::Mismatched`] for another known former,
+///   [`matching::Absent::Dangling`] for an id naming no node.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -407,23 +418,22 @@ pub fn matched_product(
 /// - witness: `hole::tests::the_unknown_type_matches_every_former_with_unknown_components`
 /// - witness: `hole::tests::a_known_type_matches_only_its_own_former`
 #[spec(ensures: |ret| match ret {
-    | Maybe::Present((left, right)) => arena.value_type(left).is_some() && arena.value_type(right).is_some(),
+    | Maybe::Present(Components::Known(ref parts)) => matches!(arena.value_type(subject), Some(ValueType::Sum(held)) if held == parts),
+    | Maybe::Present(Components::Unknown(unknown)) => arena.value_type(unknown) == Some(&ValueType::Unknown),
     | Maybe::Absent(_) => true,
 })]
 #[inline]
 pub fn matched_sum(
     arena: &mut CoreArena,
     subject: ValueTypeId,
-) -> Maybe<(ValueTypeId, ValueTypeId), matching::Absent>
+) -> Maybe<Components, matching::Absent>
 {
     if value_type_knowledge(arena, subject) == Knowledge::Unknown {
-        let unknown = arena.value_type_unknown();
-        return Maybe::Present((unknown, unknown));
+        return Maybe::Present(Components::Unknown(arena.value_type_unknown()));
     }
     match arena.value_type(subject) {
-        | Some(&ValueType::Sum(ref summands)) => match **summands {
-            | [left, right] => Maybe::Present((left, right)),
-            | _ => mismatched(),
+        | Some(&ValueType::Sum(ref summands)) => {
+            Maybe::Present(Components::Known(summands.clone()))
         },
         | Some(_) => mismatched(),
         | None => dangling(),
@@ -676,6 +686,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::CodomainScope;
+    use super::Components;
     use super::HoleId;
     use super::Knowledge;
     use super::MarkIndex;
@@ -692,6 +703,7 @@ mod tests
     use super::matching;
     use super::value_type_knowledge;
     use crate::arena::CoreArena;
+    use crate::arena::ValueTypeId;
     use crate::classifier::Sort;
     use crate::syntax::CompType;
     use crate::syntax::ValueType;
@@ -753,15 +765,19 @@ mod tests
             for matched in [
                 matched_product(&mut arena, subject),
                 matched_sum(&mut arena, subject),
-                matched_static_pi(&mut arena, subject),
             ] {
-                let Maybe::Present((first, second)) = matched
+                let Maybe::Present(Components::Unknown(component)) = matched
                 else {
-                    panic!("the unknown type matches every binary former");
+                    panic!("the unknown type matches a product and a sum of unknowns");
                 };
-                assert_eq!(arena.value_type(first), Some(&ValueType::Unknown));
-                assert_eq!(arena.value_type(second), Some(&ValueType::Unknown));
+                assert_eq!(arena.value_type(component), Some(&ValueType::Unknown));
             }
+            let Maybe::Present((first, second)) = matched_static_pi(&mut arena, subject)
+            else {
+                panic!("the unknown type matches a static Pi");
+            };
+            assert_eq!(arena.value_type(first), Some(&ValueType::Unknown));
+            assert_eq!(arena.value_type(second), Some(&ValueType::Unknown));
             let Maybe::Present(element) = matched_list(&mut arena, subject)
             else {
                 panic!("the unknown type matches a List");
@@ -819,11 +835,27 @@ mod tests
         let stack = arena.value_type_stack(returner, arrow);
         let with = arena.comp_type_with(returner, arrow);
         assert_eq!(matched_thunk(&mut arena, thunk), Maybe::Present(returner));
+        let known = |parts: &[ValueTypeId]| Maybe::Present(Components::Known(parts.into()));
+        assert_eq!(matched_product(&mut arena, product), known(&[atom, text]));
+        assert_eq!(matched_sum(&mut arena, sum), known(&[text, atom]));
+        let triple = arena.value_type_product(&[atom, text, atom]);
+        let unit = arena.value_type_unit();
+        let empty = arena.value_type_sum(&[]);
         assert_eq!(
-            matched_product(&mut arena, product),
-            Maybe::Present((atom, text))
+            matched_product(&mut arena, triple),
+            known(&[atom, text, atom]),
+            "a product of three matches with its three components"
         );
-        assert_eq!(matched_sum(&mut arena, sum), Maybe::Present((text, atom)));
+        assert_eq!(
+            matched_product(&mut arena, unit),
+            known(&[]),
+            "the unit type is the product of no components"
+        );
+        assert_eq!(
+            matched_sum(&mut arena, empty),
+            known(&[]),
+            "the empty type is the sum of no summands"
+        );
         assert_eq!(
             matched_static_pi(&mut arena, static_pi),
             Maybe::Present((universe, universe))

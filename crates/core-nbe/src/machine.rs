@@ -5901,19 +5901,16 @@ mod tests
                                 alloc::sync::Arc::clone(evidence),
                             )
                         },
-                        | Value::Tuple(ref components) => match **components {
-                            | [] => self.arena.value_unit(),
-                            | [first, second] => {
-                                let (first, second) = (value(self, first), value(self, second));
-                                self.arena.value_pair(first, second)
-                            },
-                            | _ => panic!("the kernel's products are binary"),
+                        | Value::Tuple(ref components) => {
+                            let components: Vec<_> = components
+                                .iter()
+                                .map(|&component| value(self, component))
+                                .collect();
+                            self.arena.value_tuple(&components)
                         },
                         | Value::Injection(summand, body) => {
                             let body = value(self, body);
-                            let side = gandr_kernel_term::Side::try_from(summand)
-                                .expect("the kernel's sums are binary");
-                            self.arena.value_injection(side, body)
+                            self.arena.value_injection(summand, body)
                         },
                         | Value::Thunk(body) => {
                             let body = computation(self, body);
@@ -6029,14 +6026,12 @@ mod tests
                             scrutinee,
                             ref branches,
                         } => {
-                            let &[on_left, on_right] = &**branches
-                            else {
-                                panic!("the kernel's cases are binary")
-                            };
                             let scrutinee = value(self, scrutinee);
-                            let (on_left, on_right) =
-                                (computation(self, on_left), computation(self, on_right));
-                            self.arena.computation_case(scrutinee, on_left, on_right)
+                            let branches: Vec<_> = branches
+                                .iter()
+                                .map(|&branch| computation(self, branch))
+                                .collect();
+                            self.arena.computation_case(scrutinee, &branches)
                         },
                         | Computation::Hole(_) | Computation::Mark { .. } => {
                             panic!("the kernel admits no hole or mark: a replay fixture has none")
@@ -6079,22 +6074,19 @@ mod tests
                             let inner = value_type(self, inner);
                             self.arena.value_type_list(inner)
                         },
-                        | ValueType::Product(ref components) => match **components {
-                            | [] => self.arena.value_type_unit(),
-                            | [first, second] => {
-                                let (first, second) =
-                                    (value_type(self, first), value_type(self, second));
-                                self.arena.value_type_product(first, second)
-                            },
-                            | _ => panic!("the kernel's products are nullary or binary"),
+                        | ValueType::Product(ref components) => {
+                            let components: Vec<_> = components
+                                .iter()
+                                .map(|&component| value_type(self, component))
+                                .collect();
+                            self.arena.value_type_product(&components)
                         },
-                        | ValueType::Sum(ref summands) => match **summands {
-                            | [first, second] => {
-                                let (first, second) =
-                                    (value_type(self, first), value_type(self, second));
-                                self.arena.value_type_sum(first, second)
-                            },
-                            | _ => panic!("the kernel's sums are binary"),
+                        | ValueType::Sum(ref summands) => {
+                            let summands: Vec<_> = summands
+                                .iter()
+                                .map(|&summand| value_type(self, summand))
+                                .collect();
+                            self.arena.value_type_sum(&summands)
                         },
                         | ValueType::Thunk(body) => {
                             let body = comp_type(self, body);

@@ -125,15 +125,15 @@ pub enum ValueTypeView<'arena>
     },
     /// A native universe-path classifier over two codes.
     PathUniverse(ValueId, ValueId),
-    /// A sum of two value types.
-    Sum(ValueTypeId, ValueTypeId),
+    /// A sum of its summands, in order; the empty sum is the empty type.
+    Sum(&'arena [ValueTypeId]),
     /// Finite lists over one element type.
     List(ValueTypeId),
     /// The integer atom.
     Integer,
     /// The string atom.
     String,
-    /// The unit type.
+    /// The unit type, the product of no components.
     Unit,
     /// The thunk type `U C` of the computation type held.
     Thunk(CompTypeId),
@@ -161,8 +161,8 @@ pub enum ValueTypeView<'arena>
         /// The level of the universe the code inhabits.
         target: &'arena Level,
     },
-    /// The eager product `A × B` of two value types.
-    Product(ValueTypeId, ValueTypeId),
+    /// The eager product `A₁ × … × Aₙ` of one or more value types, in order.
+    Product(&'arena [ValueTypeId]),
     /// The static Pi: the classifier of a type operator from codes of its
     /// domain to codes of its codomain, which stands in the ambient context.
     StaticPi
@@ -228,15 +228,15 @@ pub enum CompTypeView<'arena>
 ///   both admissible input and both refused.
 /// - ensures: the node's view when its former is the integer atom, the string
 ///   atom, the empty product (the unit type), a thunk type, a universe of a
-///   ground sort, a lift, a decode, a binary product, a binary sum or a static
-///   Pi; the children are the node's own. The unknown type, and a decode whose
-///   code is a hole or a mark, view as [`ValueTypeView::Unknown`].
+///   ground sort, a lift, a decode, a product of one or more components, a sum
+///   of any number of summands or a static Pi; the children are the node's own.
+///   The unknown type, and a decode whose code is a hole or a mark, view as
+///   [`ValueTypeView::Unknown`].
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
 ///   `arena`; [`FragmentRefusal::OutOfFragment`], naming the former, for the
-///   numeric atom, a product of neither zero nor two components, a sum of other
-///   than two summands, an abstract atom and a universe over a sort parameter.
+///   numeric atom, an abstract atom and a universe over a sort parameter.
 /// - panics: none.
 ///
 /// # Errors
@@ -253,7 +253,7 @@ pub enum CompTypeView<'arena>
 /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::abstract_sort_raises_the_exact_variant`
 /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
-/// - witness: `view::tests::products_and_sums_view_only_at_the_kernel_arities`
+/// - witness: `view::tests::products_and_sums_view_at_every_arity`
 /// - witness: `view::tests::the_unknown_type_and_the_decode_of_a_hole_view_alike`
 #[spec(ensures: |ret| match ret {
     | Ok(ValueTypeView::Data { declaration, arguments }) => matches!(arena.value_type(value_type), Some(ValueType::Data { declaration: actual, arguments: args }) if *actual == declaration && args == arguments),
@@ -264,9 +264,9 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Unit) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if parts.is_empty())),
     | Ok(ValueTypeView::Thunk(held)) => matches!(arena.value_type(value_type), Some(ValueType::Thunk(inner)) if *inner == held),
     | Ok(ValueTypeView::PathUniverse(first, second)) => matches!(arena.value_type(value_type), Some(ValueType::PathUniverse(left, right)) if *left == first && *right == second),
-    | Ok(ValueTypeView::Sum(first, second)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == [first, second])),
+    | Ok(ValueTypeView::Sum(summands)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if **parts == *summands)),
     | Ok(ValueTypeView::List(element)) => matches!(arena.value_type(value_type), Some(ValueType::List(found)) if *found == element),
-    | Ok(ValueTypeView::Product(first, second)) => arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == [first, second])),
+    | Ok(ValueTypeView::Product(components)) => !components.is_empty() && arena.value_type(value_type).is_some_and(|held| matches!(*held, ValueType::Product(ref parts) if **parts == *components)),
     | Ok(ValueTypeView::Universe { sort, level }) => matches!(arena.value_type(value_type), Some(ValueType::Universe { sort: Sort::Ground(found), level: found_level }) if *found == sort && found_level == level),
     | Ok(ValueTypeView::Lift { inner, target }) => matches!(arena.value_type(value_type), Some(ValueType::Lift { inner: found, target: found_target }) if *found == inner && found_target == target),
     | Ok(ValueTypeView::Element { code, target }) => matches!(arena.value_type(value_type), Some(ValueType::Element { code: found, target: found_target }) if *found == code && found_target == target)
@@ -279,8 +279,6 @@ pub enum CompTypeView<'arena>
             | (Some(&ValueType::Base(BaseType::Numeric)), UnadmittedFormer::NumericAtom)
             | (Some(&ValueType::Abstract(_)), UnadmittedFormer::Abstract)
             | (Some(&ValueType::Universe { sort: Sort::Parameter(_), .. }), UnadmittedFormer::SortParameter) => true,
-            | (Some(&ValueType::Product(ref parts)), UnadmittedFormer::ProductArity) => !matches!(parts.len(), 0 | 2),
-            | (Some(&ValueType::Sum(ref parts)), UnadmittedFormer::SumArity) => parts.len() != 2,
             | _ => false,
         },
 })]
@@ -312,15 +310,9 @@ pub fn value_type_view(
         | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
-        | ValueType::Product(ref parts) => match **parts {
-            | [] => Ok(ValueTypeView::Unit),
-            | [first, second] => Ok(ValueTypeView::Product(first, second)),
-            | _ => Err(unadmitted(UnadmittedFormer::ProductArity)),
-        },
-        | ValueType::Sum(ref parts) => match **parts {
-            | [first, second] => Ok(ValueTypeView::Sum(first, second)),
-            | _ => Err(unadmitted(UnadmittedFormer::SumArity)),
-        },
+        | ValueType::Product(ref parts) if parts.is_empty() => Ok(ValueTypeView::Unit),
+        | ValueType::Product(ref parts) => Ok(ValueTypeView::Product(parts)),
+        | ValueType::Sum(ref parts) => Ok(ValueTypeView::Sum(parts)),
         | ValueType::List(element) => Ok(ValueTypeView::List(element)),
         | ValueType::Universe {
             sort: Sort::Ground(sort),
@@ -423,7 +415,6 @@ mod tests
     use super::value_type_view;
     use crate::refusal::CoreNode;
     use crate::refusal::TypeNode;
-    use crate::refusal::UnadmittedFormer;
 
     #[test]
     fn the_unknown_type_and_the_decode_of_a_hole_view_alike()
@@ -483,7 +474,7 @@ mod tests
     }
 
     #[test]
-    fn products_and_sums_view_only_at_the_kernel_arities()
+    fn products_and_sums_view_at_every_arity()
     {
         let mut arena = CoreArena::new();
         let a = arena.value_type_unit();
@@ -499,26 +490,29 @@ mod tests
         assert_eq!(value_type_view(&arena, unit), Ok(ValueTypeView::Unit));
         assert_eq!(
             value_type_view(&arena, pair),
-            Ok(ValueTypeView::Product(a, b))
+            Ok(ValueTypeView::Product(&[a, b]))
         );
         assert_eq!(
             value_type_view(&arena, either),
-            Ok(ValueTypeView::Sum(b, a)),
+            Ok(ValueTypeView::Sum(&[b, a])),
             "the summands keep their order"
         );
-        for (at, former) in [
-            (single, UnadmittedFormer::ProductArity),
-            (triple, UnadmittedFormer::ProductArity),
-            (empty, UnadmittedFormer::SumArity),
-            (three, UnadmittedFormer::SumArity),
-        ] {
-            assert_eq!(
-                value_type_view(&arena, at),
-                Err(FragmentRefusal::OutOfFragment {
-                    at: CoreNode::Type(TypeNode::Value(at)),
-                    former,
-                })
-            );
-        }
+        assert_eq!(
+            value_type_view(&arena, single),
+            Ok(ValueTypeView::Product(&[a]))
+        );
+        assert_eq!(
+            value_type_view(&arena, triple),
+            Ok(ValueTypeView::Product(&[a, b, c]))
+        );
+        assert_eq!(
+            value_type_view(&arena, empty),
+            Ok(ValueTypeView::Sum(&[])),
+            "the empty sum is the empty type"
+        );
+        assert_eq!(
+            value_type_view(&arena, three),
+            Ok(ValueTypeView::Sum(&[a, b, c]))
+        );
     }
 }
