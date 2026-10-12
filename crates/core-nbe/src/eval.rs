@@ -227,6 +227,10 @@ pub enum EvalFault
     ProjectedNonRecord,
     /// The exact projection label is absent from the record.
     AbsentRecordField,
+    /// Tuple projection received a non-tuple, non-neutral value.
+    ProjectedNonTuple,
+    /// The projected component is past the tuple's last.
+    AbsentTupleComponent,
 }
 
 /// A definition chain with every body lowered into the core arena a run
@@ -575,8 +579,9 @@ enum Task
     },
     /// Reapply a suspended nominal case after its head unfolds.
     DataCaseClosure(CompClosureId),
-    /// Select the exact source label from an evaluated record.
-    RecordProjection(ComputationId),
+    /// Select the source's field or component from an evaluated record or
+    /// tuple.
+    Projection(ComputationId),
     /// Enter a source or native computation body.
     Body
     {
@@ -2038,14 +2043,14 @@ impl<'run> Evaluation<'run>
     /// - witness: `eval::tests::ill_shaped_reapplied_spines_return_machine_faults`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
     #[spec(
-        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::RecordProjection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
+        requires: matches!(spine.first(), Some(Elimination::ListFold { .. } | Elimination::DataCase(_) | Elimination::Projection(_) | Elimination::Transport(_) | Elimination::ProductTransport(_) | Elimination::Force | Elimination::Case(_) | Elimination::StaticApply(_) | Elimination::Fixpoint(_))),
         ensures: |ret| ret.machine.values.as_slice() == [head] && ret.machine.comps.is_empty()
             && ret.machine.fuel.0 == 0_u32 && {
                 let mut tasks = ret.machine.tasks.iter().rev();
                 let mut answer = Answer::Value;
                 let ordered = spine.iter().all(|elimination| match *elimination {
                     Elimination::DataCase(closure) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::DataCaseClosure(held)) if *held == closure) },
-                    Elimination::RecordProjection(term) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::RecordProjection(held)) if *held == term) },
+                    Elimination::Projection(term) => { answer = Answer::Computation; matches!(tasks.next(),Some(Task::Projection(held)) if *held == term) },
                     Elimination::Transport(value) => { answer = Answer::Computation;
                         matches!(tasks.next(), Some(Task::Supply(held)) if *held == value) && matches!(tasks.next(), Some(Task::Transport)) },
                     Elimination::ProductTransport(path) => { answer = Answer::Computation;
@@ -2085,9 +2090,9 @@ impl<'run> Evaluation<'run>
                     answer = Answer::Computation;
                     machine.tasks.push(Task::DataCaseClosure(closure));
                 },
-                | Elimination::RecordProjection(term) => {
+                | Elimination::Projection(term) => {
                     answer = Answer::Computation;
-                    machine.tasks.push(Task::RecordProjection(term));
+                    machine.tasks.push(Task::Projection(term));
                 },
                 | Elimination::ListFold {
                     element,
@@ -2437,7 +2442,7 @@ fn run(
     ensures: |ret| machine.fuel == entry_fuel && ret != Err(EvalFault::OutOfFuel)
         && (ret.is_err() || match task {
             Task::Constructor { .. } | Task::Record(_) => machine.comps.len() == entry_comps && machine.tasks.len() == entry_tasks && machine.values.last().is_some_and(|id| domain.value(*id).is_some()),
-            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::RecordProjection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
+            Task::DataCase { .. } | Task::DataCaseClosure(_) | Task::Projection(_) | Task::Force | Task::Apply | Task::StaticApply | Task::Bind { .. } | Task::Case { .. }
             | Task::BindClosure(_) | Task::CaseBranches(_) | Task::Transport | Task::ProductTransport(_) | Task::FixpointClosure(_) | Task::ListFold { .. } => machine.tasks.len() >= entry_tasks,
             Task::Value { .. } => machine.comps.len() == entry_comps
                 && ((machine.values.len() == entry_values.saturating_add(1_usize) && machine.tasks.len() >= entry_tasks)
@@ -2496,7 +2501,7 @@ fn step(
         | Task::Constructor { term, env } => step_constructor(core, domain, machine, term, env),
         | Task::Record(term) => step_record(core, domain, machine, term),
         | Task::DataCase { term, env } => step_data_case(core, domain, machine, term, env),
-        | Task::RecordProjection(term) => step_record_projection(core, domain, machine, term),
+        | Task::Projection(term) => step_projection(core, domain, machine, term),
         | Task::DataCaseClosure(closure) => {
             let closure = domain
                 .comp_closure(closure)
@@ -3101,8 +3106,8 @@ fn step_comp(
             });
             Ok(())
         },
-        | Computation::RecordProjection(record, _) => {
-            machine.tasks.push(Task::RecordProjection(term));
+        | Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
+            machine.tasks.push(Task::Projection(term));
             machine.tasks.push(Task::Value { term: record, env });
             Ok(())
         },
@@ -4226,24 +4231,29 @@ fn step_data_case(
     }
 }
 
-/// Select the exact label from a record, or suspend projection on a neutral.
+/// Select a record's field by its label or a tuple's component by its
+/// position, or suspend the projection on a neutral.
 ///
 /// # Specification
-/// - requires: the record operand is the top value.
-/// - ensures: returns the selected field, never a positional substitute for a
-///   missing label.
-/// - fails: absent labels, non-records, dangling domains or malformed state.
+/// - requires: the projected operand is the top value.
+/// - ensures: returns the selected field or component, never a positional
+///   substitute for a missing label or position.
+/// - fails: absent labels or components, a record projection of anything but a
+///   record, a tuple projection of anything but a tuple, dangling domains or
+///   malformed state.
 /// - panics: none.
 ///
 /// # Errors
-/// Returns the typed record, domain, term or machine refusal.
+/// Returns the typed record, tuple, domain, term or machine refusal.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — unequal fields and an absent label distinguish exact
-///   lookup.
+///   lookup; each component of a three-component tuple and a component past its
+///   last distinguish positional lookup.
 /// - witness: `eval::tests::native_records_and_cases_compute`
+/// - witness: `eval::tests::a_tuple_projection_reads_each_component`
 #[spec(ensures: |ret| ret != Err(EvalFault::OutOfFuel))]
-fn step_record_projection(
+fn step_projection(
     core: &CoreArena,
     domain: &mut DomainArena,
     machine: &mut Machine<'_>,
@@ -4254,16 +4264,15 @@ fn step_record_projection(
     else {
         return Err(EvalFault::DanglingTerm);
     };
-    let Computation::RecordProjection(_, ref label) = *matched_native_node
-    else {
-        return Err(EvalFault::DanglingTerm);
-    };
-    let record = machine.pop_value()?;
-    match *domain
-        .value(record)
-        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
-    {
-        | DomainValue::Record { source, fields, .. } => {
+    let projected = machine.pop_value()?;
+    let operand = *domain
+        .value(projected)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    let (fields, position) = match (matched_native_node, operand) {
+        | (
+            &Computation::RecordProjection(_, ref label),
+            DomainValue::Record { source, fields, .. },
+        ) => {
             let Some(matched_native_node) = core.value(source)
             else {
                 return Err(EvalFault::DanglingTerm);
@@ -4276,25 +4285,37 @@ fn step_record_projection(
                 .keys()
                 .position(|field| field == label)
                 .ok_or(EvalFault::AbsentRecordField)?;
-            let value = *domain
-                .fields(fields)
-                .map_err(EvalFault::Domain)?
-                .get(position)
-                .ok_or(EvalFault::MachineInvariant)?;
-            machine
-                .comps
-                .push(domain.comp_return(value, CompTermFace::Reduced));
-            Ok(())
+            (fields, position)
         },
-        | DomainValue::Neutral { neutral, .. } => {
-            let grown = extend_spine(domain, neutral, Elimination::RecordProjection(term))?;
+        | (&Computation::TupleProjection(_, component), DomainValue::Tuple { fields, .. }) => {
+            (fields, usize::from(component))
+        },
+        | (
+            &(Computation::RecordProjection(..) | Computation::TupleProjection(..)),
+            DomainValue::Neutral { neutral, .. },
+        ) => {
+            let grown = extend_spine(domain, neutral, Elimination::Projection(term))?;
             machine
                 .comps
                 .push(domain.comp_neutral(grown, CompTermFace::Reduced));
-            Ok(())
+            return Ok(());
         },
-        | _ => Err(EvalFault::ProjectedNonRecord),
-    }
+        | (&Computation::RecordProjection(..), _) => return Err(EvalFault::ProjectedNonRecord),
+        | (&Computation::TupleProjection(..), _) => return Err(EvalFault::ProjectedNonTuple),
+        | _ => return Err(EvalFault::DanglingTerm),
+    };
+    let value = *domain
+        .fields(fields)
+        .map_err(EvalFault::Domain)?
+        .get(position)
+        .ok_or(match *matched_native_node {
+            | Computation::TupleProjection(..) => EvalFault::AbsentTupleComponent,
+            | _ => EvalFault::MachineInvariant,
+        })?;
+    machine
+        .comps
+        .push(domain.comp_return(value, CompTermFace::Reduced));
+    Ok(())
 }
 #[cfg(test)]
 mod tests
@@ -6421,6 +6442,80 @@ mod tests
         assert!(
             matches!(fields.as_slice(),[field] if matches!(core.value(*field),Some(Value::Record(record)) if record.keys().eq(labels.iter())))
         );
+    }
+
+    /// Each component of a three-component tuple projects to itself; a
+    /// component past the last, a tuple projection of a record and a record
+    /// projection of a tuple each refuse by name.
+    #[test]
+    fn a_tuple_projection_reads_each_component()
+    {
+        use alloc::collections::BTreeMap;
+        use alloc::string::String;
+
+        use gandr_core_term::Component;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let left = core.value_injection(Side::Left.into(), unit);
+        let pair = core.value_tuple(&[unit, unit]);
+        let tuple = core.value_tuple(&[unit, left, pair]);
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let mut read = Vec::new();
+        for position in 0 .. 3_usize {
+            let projection = core.computation_tuple_projection(tuple, Component::from(position));
+            let evaluated =
+                eval_computation(&core, &mut domain, definitions, ample(), projection).unwrap();
+            let Some(&DomainComp::Return { value, .. }) = domain.computation(evaluated)
+            else {
+                panic!("a projection returns its component");
+            };
+            read.push(
+                readback_value(
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ReadbackMode::Unfolding,
+                    ample(),
+                    value,
+                )
+                .unwrap(),
+            );
+        }
+        let &[first, second, third] = read.as_slice()
+        else {
+            panic!("three components read back");
+        };
+        assert!(
+            core.value(first)
+                .and_then(Value::components)
+                .is_some_and(<[_]>::is_empty)
+        );
+        assert!(matches!(
+            core.value(second),
+            Some(&Value::Injection(summand, _)) if summand == Side::Left.into()
+        ));
+        assert!(matches!(
+            core.value(third).and_then(Value::components),
+            Some(&[_, _])
+        ));
+        let past = core.computation_tuple_projection(tuple, Component::from(3_usize));
+        let label = FieldLabel::from(String::from("a"));
+        let record = core.value_record(BTreeMap::from([(label.clone(), unit)]));
+        let of_record = core.computation_tuple_projection(record, Component::from(0_usize));
+        let of_tuple = core.computation_record_projection(tuple, label);
+        for (term, fault) in [
+            (past, EvalFault::AbsentTupleComponent),
+            (of_record, EvalFault::ProjectedNonTuple),
+            (of_tuple, EvalFault::ProjectedNonRecord),
+        ] {
+            assert_eq!(
+                eval_computation(&core, &mut domain, definitions, ample(), term),
+                Err(fault)
+            );
+        }
     }
 
     #[test]

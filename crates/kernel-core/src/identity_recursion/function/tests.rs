@@ -194,7 +194,9 @@ fn children(
                 .chain(branches.iter().copied().map(AnyNode::Computation))
                 .collect(),
             | Computation::Transport(..) => panic!("no native transport in fixtures"),
-            | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+            | Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..) => {
                 panic!("no nominal or record eliminator in this fixture")
             },
             | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
@@ -287,7 +289,9 @@ fn translate(
                             .collect::<Vec<_>>(),
                     ),
                     | Computation::Transport(..) => panic!("no native transport in fixtures"),
-                    | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
+                    | Computation::DataCase { .. }
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")
                     },
                     | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),

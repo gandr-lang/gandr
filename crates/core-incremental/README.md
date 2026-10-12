@@ -187,7 +187,7 @@ Checkpoint sets use `GCKPT\0\0\x07`; programs use `GPROG\0\0\x05`. Their identit
 
 ## Native declaration content and support
 
-A declaration's roots are `DeclarationRoots::Value` or `DeclarationRoots::Data`; the latter retains the kind, every parameter and every constructor field. Cache node tags `0x50–0x55` represent the six native data/record forms independently of kernel artifact tags. Field labels and arbitrary child counts survive persistence.
+A declaration's roots are `DeclarationRoots::Value` or `DeclarationRoots::Data`; the latter retains the kind, every parameter and every constructor field. Cache node tags `0x50–0x55` represent the six native data/record forms independently of kernel artifact tags, and `0x5A` the positional tuple projection, its component a count after its tuple child. Field labels and arbitrary child counts survive persistence.
 
 Support keys distinguish a value-signature query from a data-signature query at the same reference. A data answer contains the complete nominal schema or its absence, not merely its universe. Adoption reforms a retained data declaration in the new context. Term-bearing nominal type content remains outside the type-only adoption reader and is conservatively rechecked; it is never promoted to an authority-bearing cache hit.
 

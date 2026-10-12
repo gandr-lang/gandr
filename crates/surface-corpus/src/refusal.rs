@@ -246,6 +246,8 @@ pub enum RefusalName
     NonExhaustiveDataCase,
     /// The checker reports `AbsentRecordField`.
     AbsentRecordField,
+    /// The checker reports `AbsentTupleComponent`.
+    AbsentTupleComponent,
     /// The checker reports `MissingRecordField`.
     MissingRecordField,
     /// A data declaration's own family occurs under a function's domain.
@@ -377,7 +379,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 64_usize] = [
+    pub const VOCABULARY: [Self; 65_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -386,6 +388,7 @@ impl RefusalName
         Self::ConstructorArity,
         Self::NonExhaustiveDataCase,
         Self::AbsentRecordField,
+        Self::AbsentTupleComponent,
         Self::MissingRecordField,
         Self::NegativeOccurrence,
         Self::NestedOccurrence,
@@ -503,6 +506,7 @@ impl RefusalName
         | (Self::ConstructorArity, b"ConstructorArity")
         | (Self::NonExhaustiveDataCase, b"NonExhaustiveDataCase")
         | (Self::AbsentRecordField, b"AbsentRecordField")
+        | (Self::AbsentTupleComponent, b"AbsentTupleComponent")
         | (Self::MissingRecordField, b"MissingRecordField")
         | (Self::NegativeOccurrence, b"NegativeOccurrence")
         | (Self::NestedOccurrence, b"NestedOccurrence")
@@ -529,6 +533,7 @@ impl RefusalName
             | Self::ConstructorArity => "ConstructorArity",
             | Self::NonExhaustiveDataCase => "NonExhaustiveDataCase",
             | Self::AbsentRecordField => "AbsentRecordField",
+            | Self::AbsentTupleComponent => "AbsentTupleComponent",
             | Self::MissingRecordField => "MissingRecordField",
             | Self::NegativeOccurrence => "NegativeOccurrence",
             | Self::NestedOccurrence => "NestedOccurrence",
@@ -781,6 +786,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::ConstructorArity(_)), RefusalName::ConstructorArity)
         | (Self::Checking(CheckRefusal::NonExhaustiveDataCase(_)), RefusalName::NonExhaustiveDataCase)
         | (Self::Checking(CheckRefusal::AbsentRecordField(_)), RefusalName::AbsentRecordField)
+        | (Self::Checking(CheckRefusal::AbsentTupleComponent(_)), RefusalName::AbsentTupleComponent)
         | (Self::Checking(CheckRefusal::MissingRecordField { .. }), RefusalName::MissingRecordField)
         | (Self::Checking(CheckRefusal::NegativeOccurrence(_)), RefusalName::NegativeOccurrence)
         | (Self::Checking(CheckRefusal::NestedOccurrence(_)), RefusalName::NestedOccurrence)
@@ -971,6 +977,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::ConstructorArity(_), RefusalName::ConstructorArity)
         | (CheckRefusal::NonExhaustiveDataCase(_), RefusalName::NonExhaustiveDataCase)
         | (CheckRefusal::AbsentRecordField(_), RefusalName::AbsentRecordField)
+        | (CheckRefusal::AbsentTupleComponent(_), RefusalName::AbsentTupleComponent)
         | (CheckRefusal::MissingRecordField { .. }, RefusalName::MissingRecordField)
         | (CheckRefusal::NegativeOccurrence(_), RefusalName::NegativeOccurrence)
         | (CheckRefusal::NestedOccurrence(_), RefusalName::NestedOccurrence)
@@ -997,6 +1004,7 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::ConstructorArity(_) => RefusalName::ConstructorArity,
         | CheckRefusal::NonExhaustiveDataCase(_) => RefusalName::NonExhaustiveDataCase,
         | CheckRefusal::AbsentRecordField(_) => RefusalName::AbsentRecordField,
+        | CheckRefusal::AbsentTupleComponent(_) => RefusalName::AbsentTupleComponent,
         | CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,
         | CheckRefusal::UnknownOperation { .. } => RefusalName::UnknownOperation,
         | CheckRefusal::HandlerCoverage { .. } => RefusalName::HandlerCoverage,

@@ -138,7 +138,7 @@ pub struct Unfolded(pub u64);
                     Computation::Perform { ref signature, .. } => 2_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).expect("walkable interface arity"),
                     Computation::Handle { ref signature, ref clauses, .. } => 3_u64.checked_add(u64::try_from(signature.types().count()).expect("walkable interface arity")).and_then(|count| count.checked_add(u64::try_from(clauses.len()).expect("walkable clause arity"))).expect("walkable handler arity"),
                     Computation::Resume(..) | Computation::With(..) | Computation::Transport(..) | Computation::Application(_, _) | Computation::Bind(_, _) => 3,
-                    Computation::RecordProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
+                    Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 2,
                     Computation::Hole(_) => 1,
                     Computation::ListFold { .. } => 6,
                     Computation::Primitive { arguments, .. } => if arguments.len() == 1 { 2 } else { 3 },
@@ -267,7 +267,8 @@ pub fn unfolded(
                         pending.extend([CoreNode::Value(scrutinee), CoreNode::CompType(motive)]);
                         pending.extend(branches.iter().copied().map(CoreNode::Computation));
                     },
-                    | Computation::RecordProjection(record, _) => {
+                    | Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _) => {
                         pending.push(CoreNode::Value(record));
                     },
                     | Computation::Perform {

@@ -2277,6 +2277,7 @@ enum Agreement
                 ContentNode::RecordType(ref fields) => matches!(*new,ContentNode::RecordType(ref other) if fields.keys().eq(other.keys())),
                 ContentNode::DataCase {ref branches,..} => matches!(*new,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
                 ContentNode::RecordProjection(_,ref label) => matches!(*new,ContentNode::RecordProjection(_,ref other) if label == other),
+                ContentNode::TupleProjection(_,component) => matches!(*new,ContentNode::TupleProjection(_,other) if component == other),
                 ContentNode::Reify(ref left) => matches!(*new, ContentNode::Reify(ref right) if left.iter().zip(right.iter()).all(|(left, right)| match (*left, *right) { (gandr_core_term::control::StackFrame::Apply(_), gandr_core_term::control::StackFrame::Apply(_)) | (gandr_core_term::control::StackFrame::Bind(_), gandr_core_term::control::StackFrame::Bind(_)) => true, (gandr_core_term::control::StackFrame::Project(left), gandr_core_term::control::StackFrame::Project(right)) => left == right, _ => false }) && left.len() == right.len()),
                 ContentNode::Project(left, _) => matches!(*new, ContentNode::Project(right, _) if left == right),
                 ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
@@ -2449,6 +2450,9 @@ fn agreement(
             &ContentNode::RecordProjection(_, ref left),
             &ContentNode::RecordProjection(_, ref right),
         ) => left == right,
+        | (&ContentNode::TupleProjection(_, left), &ContentNode::TupleProjection(_, right)) => {
+            left == right
+        },
         | (
             &ContentNode::PathEquiv {
                 evidence: ref left, ..
@@ -2867,6 +2871,7 @@ where
             |node| match *node {
                 Computation::DataCase {ref branches,..} => matches!(ret,ContentNode::DataCase {branches:ref other,..} if branches.len() == other.len()),
                 Computation::RecordProjection(_,ref label) => matches!(ret,ContentNode::RecordProjection(_,ref other) if label == other),
+                Computation::TupleProjection(_,component) => matches!(ret,ContentNode::TupleProjection(_,other) if component == other),
                 Computation::Perform { ref operation, ref signature, .. } => matches!(ret, ContentNode::Perform { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Handle { ref signature, .. } => matches!(ret, ContentNode::Handle { signature: ref mapped, .. } if signature.name() == mapped.name()),
                 Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
@@ -2919,6 +2924,9 @@ where
         },
         | Some(&Computation::RecordProjection(record, ref label)) => {
             ContentNode::RecordProjection(child(Root::Value(record)), label.clone())
+        },
+        | Some(&Computation::TupleProjection(tuple, component)) => {
+            ContentNode::TupleProjection(child(Root::Value(tuple)), component)
         },
         | Some(&Computation::Perform {
             ref signature,

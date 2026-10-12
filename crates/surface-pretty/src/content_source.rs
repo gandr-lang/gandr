@@ -105,7 +105,7 @@ impl Source for ContentSource<'_>
 &ContentNode::ComputationHole(_) | &ContentNode::ComputationMark { .. } |
 &ContentNode::UnknownType | &ContentNode::UnknownComputationType) | None, Former::Unreadable) |
 (Some(&ContentNode::Reify(_)), Former::Reify) |
-(Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) |
+(Some(&ContentNode::DataCase { .. } | &ContentNode::RecordProjection(..) | &ContentNode::TupleProjection(..) |
 &ContentNode::Primitive(..) | &ContentNode::Transport(..) |
 &ContentNode::Lambda(_) | &ContentNode::Application(..) |
 &ContentNode::Perform { .. } | &ContentNode::Handle { .. } | &ContentNode::Resume(..) | &ContentNode::Reset(_) | &ContentNode::Shift(_) | &ContentNode::With(..) | &ContentNode::Project(..) | &ContentNode::ListFold { .. } |
@@ -171,15 +171,15 @@ impl Source for ContentSource<'_>
             return Former::Unreadable;
         };
         match *content {
-            | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) => {
-                Former::Computation
-            },
             | ContentNode::Reify(_) => Former::Reify,
             | ContentNode::Stack { input, output } => Former::Stack(input, output),
             | ContentNode::WithType(first, second) => Former::With(first, second),
             | ContentNode::PrimitiveValue(primitive) => {
                 Former::Constant(Name::from(<&'static str>::from(primitive.name())))
             },
+            | ContentNode::DataCase { .. }
+            | ContentNode::RecordProjection(..)
+            | ContentNode::TupleProjection(..)
             | ContentNode::Primitive(..)
             | ContentNode::Perform { .. }
             | ContentNode::Handle { .. }

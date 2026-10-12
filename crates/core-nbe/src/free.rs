@@ -924,9 +924,8 @@ Err(_) => false,
                         extra = ExtraChildren::Computations(branches.iter());
                         two(value(scrutinee), Reached::CompType(motive), Lowering::ONE)
                     },
-                    | Computation::RecordProjection(record, _) => {
-                        one(value(record), Lowering::NONE)
-                    },
+                    | Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _) => one(value(record), Lowering::NONE),
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },

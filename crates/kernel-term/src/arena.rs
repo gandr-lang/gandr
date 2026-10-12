@@ -854,7 +854,7 @@ impl TermArena
     #[spec(
         requires: match computation {
             Computation::DataCase { scrutinee, motive, ref branches } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
-            Computation::RecordProjection(record, _) => self.value(record).is_some(),
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.value(record).is_some(),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
             Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
@@ -2444,7 +2444,7 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
 }),
         AnyNode::Computation(id) => match self.computation(id) {
             Some(&Computation::DataCase { scrutinee, motive, ref branches }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
-            Some(&Computation::RecordProjection(record, _)) => ret.as_slice() == [AnyNode::Value(record)],
+            Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
@@ -2553,7 +2553,10 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
                     children.extend(branches.iter().copied().map(AnyNode::Computation));
                 },
-                | Some(&Computation::RecordProjection(record, _)) => {
+                | Some(
+                    &(Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _)),
+                ) => {
                     children.push(AnyNode::Value(record));
                 },
                 | None => {},
@@ -2819,6 +2822,21 @@ impl TermArena
     ) -> ComputationId
     {
         self.alloc_computation(Computation::RecordProjection(record, label))
+    }
+
+    /// Mint a positional tuple projection without claiming the component
+    /// exists.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_tuple_projection(
+        &mut self,
+        tuple: ValueId,
+        component: crate::Component,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TupleProjection(tuple, component))
     }
 }
 

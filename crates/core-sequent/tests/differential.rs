@@ -377,6 +377,8 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::TransportedNonPath
         | EvalFault::ProjectedNonRecord
         | EvalFault::AbsentRecordField
+        | EvalFault::ProjectedNonTuple
+        | EvalFault::AbsentTupleComponent
         | EvalFault::RuntimeControl(_)
         | EvalFault::FoldedNonList
         | EvalFault::NativePrimitive(_)
@@ -846,8 +848,10 @@ struct Successors(usize);
 
 /// Nat: zero, and successor over one Nat.
 const NAT: Declaration = Declaration(0);
+
 /// List: nil, and cons over a head and a list.
 const LIST: Declaration = Declaration(1);
+
 /// Tree: a leaf, and a node over a function from Nat to Tree.
 const TREE: Declaration = Declaration(2);
 

@@ -20,6 +20,7 @@ use gandr_core_incremental::check_program;
 use gandr_core_incremental::decode_checkpoints;
 use gandr_core_incremental::encode_checkpoints;
 use gandr_core_incremental::resume_from;
+use gandr_core_term::Component;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DataSignature;
 use gandr_core_term::Sort;
@@ -117,12 +118,31 @@ fn program(schema: Schema) -> Program
         Maybe::Present(not_a_value),
         OriginToken::from(4_usize),
     );
+    let pair = arena.value_tuple(&[unit, record]);
+    let first = arena.computation_tuple_projection(pair, Component::from(0_usize));
+    let first = arena.value_thunk(first);
+    let tuple_projection = Declaration::new(
+        ConstantIndex::from(5_usize),
+        Maybe::Present(suspended),
+        Maybe::Present(first),
+        OriginToken::from(5_usize),
+    );
+    let past = arena.computation_tuple_projection(pair, Component::from(2_usize));
+    let past = arena.value_thunk(past);
+    let absent_component = Declaration::new(
+        ConstantIndex::from(6_usize),
+        Maybe::Present(suspended),
+        Maybe::Present(past),
+        OriginToken::from(6_usize),
+    );
     Program::new(arena, vec![
         Item::new(ItemKey::from("Box"), data),
         Item::new(ItemKey::from("value"), value),
         Item::new(ItemKey::from("project"), eliminate),
         Item::new(ItemKey::from("absent"), absent),
         Item::new(ItemKey::from("not_a_value"), misuse),
+        Item::new(ItemKey::from("first"), tuple_projection),
+        Item::new(ItemKey::from("past"), absent_component),
     ])
     .expect("fixture positions ascend")
 }
@@ -149,6 +169,14 @@ fn native_checkpoint_round_trip_and_signature_invalidation()
     assert!(matches!(
         checkpoints.items()[4].typing(),
         Typing::Refused(Refusal::UnknownConstant { .. })
+    ));
+    assert!(matches!(
+        checkpoints.items()[5].typing(),
+        Typing::Checked { .. }
+    ));
+    assert!(matches!(
+        checkpoints.items()[6].typing(),
+        Typing::Refused(Refusal::AbsentTupleComponent(_))
     ));
     let dual = checkpoints.items()[4].support();
     assert_eq!(

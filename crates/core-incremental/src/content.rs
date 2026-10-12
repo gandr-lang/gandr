@@ -199,6 +199,8 @@ pub enum ContentNode
     },
     /// A projection returning the selected record field.
     RecordProjection(NodeIndex, gandr_core_term::FieldLabel),
+    /// A projection returning the selected tuple component.
+    TupleProjection(NodeIndex, gandr_core_term::Component),
     /// A flat literal continuation, in execution order.
     Reify(alloc::sync::Arc<[gandr_core_term::control::StackFrame<NodeIndex, NodeIndex>]>),
     /// A stack classifier with ordered input and output computation types.
@@ -672,6 +674,7 @@ impl ContentNode
         | Self::ValueMark { .. } => matches!(ret, Sort::Value),
         | Self::DataCase { .. }
         | Self::RecordProjection(..)
+        | Self::TupleProjection(..)
         | Self::Perform { .. }
         | Self::Handle { .. }
         | Self::Resume(..)
@@ -747,6 +750,7 @@ impl ContentNode
             | Self::ValueMark { .. } => Sort::Value,
             | Self::DataCase { .. }
             | Self::RecordProjection(..)
+            | Self::TupleProjection(..)
             | Self::Perform { .. }
             | Self::Handle { .. }
             | Self::Resume(..)
@@ -818,7 +822,7 @@ impl ContentNode
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
             Self::Record(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,V))),
             Self::DataCase { scrutinee,motive,ref branches } => ret.iter().eq([(scrutinee,V),(motive,C)].into_iter().chain(branches.iter().map(|&branch| (branch,M)))),
-            Self::RecordProjection(record,_) => ret.iter().eq([(record,V)]),
+            Self::RecordProjection(record,_) | Self::TupleProjection(record,_) => ret.iter().eq([(record,V)]),
             | Self::Reify(ref frames) => ret.iter().eq(frames.iter().filter_map(|frame| match *frame {
                 gandr_core_term::control::StackFrame::Apply(value) => Some((value, V)),
                 gandr_core_term::control::StackFrame::Bind(body) => Some((body, M)),
@@ -908,7 +912,9 @@ impl ContentNode
                 motive,
                 ref branches,
             } => Children::of(&[(scrutinee, V), (motive, C)]).followed_by(branches, M),
-            | Self::RecordProjection(record, _) => Children::of(&[(record, V)]),
+            | Self::RecordProjection(record, _) | Self::TupleProjection(record, _) => {
+                Children::of(&[(record, V)])
+            },
             | Self::Reify(ref frames) => Children {
                 frames,
                 ..Children::default()
@@ -1063,6 +1069,7 @@ impl ContentNode
             | Self::Record(_)
             | Self::DataCase { .. }
             | Self::RecordProjection(..)
+            | Self::TupleProjection(..)
             | Self::Reify(_)
             | Self::Stack { .. }
             | Self::WithType(..)
@@ -2117,6 +2124,9 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 self.discover(ArenaNode::Value(record)),
                 label.clone(),
             ),
+            | Computation::TupleProjection(tuple, component) => {
+                ContentNode::TupleProjection(self.discover(ArenaNode::Value(tuple)), component)
+            },
             | Computation::Perform {
                 ref signature,
                 ref operation,
@@ -2532,6 +2542,9 @@ where
         },
         | ContentNode::RecordProjection(record, ref label) => {
             ContentNode::RecordProjection(image(record), label.clone())
+        },
+        | ContentNode::TupleProjection(tuple, component) => {
+            ContentNode::TupleProjection(image(tuple), component)
         },
         | ContentNode::Reify(ref frames) => {
             let mut mapped = alloc::sync::Arc::clone(frames);
@@ -3173,6 +3186,7 @@ fn mint_node(
         | ContentNode::Record(_)
         | ContentNode::DataCase { .. }
         | ContentNode::RecordProjection(..)
+        | ContentNode::TupleProjection(..)
         | ContentNode::Reify(_)
         | ContentNode::Perform { .. }
         | ContentNode::Handle { .. }

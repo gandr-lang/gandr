@@ -73,7 +73,8 @@ fn children(
             | Computation::ListFold { .. }
             | Computation::Transport(..)
             | Computation::DataCase { .. }
-            | Computation::RecordProjection(..) => {
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..) => {
                 panic!("native elimination is outside the forward-translator fixture")
             },
             | Computation::Fixpoint { .. } => {
@@ -166,7 +167,8 @@ fn translate(
                     | Computation::ListFold { .. }
                     | Computation::Transport(..)
                     | Computation::DataCase { .. }
-                    | Computation::RecordProjection(..) => {
+                    | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..) => {
                         panic!("native elimination is outside the forward-translator fixture")
                     },
                     | Computation::Fixpoint { .. } => {

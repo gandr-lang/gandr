@@ -350,6 +350,8 @@ pub const NODE_C_DATA_CASE: WireTag = WireTag(0x61);
 pub const NODE_C_RECORD_PROJECTION: WireTag = WireTag(0x62);
 /// Node tag: a guarded fixpoint, over one computation under its self binder.
 pub const NODE_C_FIXPOINT: WireTag = WireTag(0x63);
+/// Node tag: positional tuple projection.
+pub const NODE_C_TUPLE_PROJECTION: WireTag = WireTag(0x64);
 /// Node tag: the empty native list.
 pub const NODE_V_LIST_NIL: WireTag = WireTag(0x51);
 /// Node tag: a native cell, over its head and list tail.
@@ -537,7 +539,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -589,7 +591,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_FIXPOINT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -689,7 +691,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -744,6 +746,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 48] = [
     unbounded(NODE_C_DATA_CASE, ChildArity::Counted(2)),
     unbounded(NODE_C_RECORD_PROJECTION, ChildArity::Fixed(1)),
     unbounded(NODE_C_FIXPOINT, ChildArity::Fixed(1)),
+    unbounded(NODE_C_TUPLE_PROJECTION, ChildArity::Fixed(1)),
 ];
 
 #[cfg(test)]
@@ -816,6 +819,7 @@ mod tests
                     AnyNode::Computation(id) => match ret.0.computation(id) {
                         Some(&crate::Computation::DataCase { .. }) => row.tag == super::NODE_C_DATA_CASE,
                         Some(&crate::Computation::RecordProjection(..)) => row.tag == super::NODE_C_RECORD_PROJECTION,
+                        Some(&crate::Computation::TupleProjection(..)) => row.tag == super::NODE_C_TUPLE_PROJECTION,
                         Some(&crate::Computation::Lambda(_)) => row.tag == super::NODE_C_LAMBDA,
                         Some(&crate::Computation::Fixpoint { .. }) => row.tag == super::NODE_C_FIXPOINT,
                         Some(&crate::Computation::Application(_, _)) => row.tag == super::NODE_C_APPLICATION,
@@ -921,6 +925,8 @@ mod tests
         let data_case = arena.computation_data_case(constructor, returner, alloc::vec![ret]);
         let projection = arena.computation_record_projection(record, label);
         let fixpoint = arena.computation_fixpoint(lambda, crate::FixpointEvidence::Partial);
+        let tuple_projection =
+            arena.computation_tuple_projection(pair, crate::Component::from(2_usize));
         let nil = arena.value_list_nil();
         let cons = arena.value_list_cons(unit, nil);
         let fold = arena.computation_list_fold(unit_type, unit_type, cons, ret, ret);
@@ -973,6 +979,7 @@ mod tests
             AnyNode::Computation(data_case),
             AnyNode::Computation(projection),
             AnyNode::Computation(fixpoint),
+            AnyNode::Computation(tuple_projection),
         ];
         (arena, nodes)
     }
@@ -1090,7 +1097,7 @@ mod tests
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
-            .chain(0x5d ..= 0x63)
+            .chain(0x5d ..= 0x64)
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

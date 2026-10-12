@@ -435,6 +435,7 @@ impl Source for CoreSource<'_>
                     | Computation::Primitive { .. }
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
+                    | Computation::TupleProjection(..)
                     | Computation::Perform { .. }
                     | Computation::Handle { .. }
                     | Computation::Resume(..)

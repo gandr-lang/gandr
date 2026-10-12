@@ -332,6 +332,7 @@ fn checked(
             f.write_str("the case must handle every constructor exactly once")
         },
         | CheckRefusal::AbsentRecordField(_) => f.write_str("the record has no such field"),
+        | CheckRefusal::AbsentTupleComponent(_) => f.write_str("the tuple has no such component"),
         | CheckRefusal::MissingRecordField { .. } => f.write_str("the record is missing a field"),
         | CheckRefusal::UnknownOperation { .. } => {
             f.write_str("the interface has no such operation")
@@ -628,6 +629,7 @@ mod tests
             CheckRefusal::ConstructorArity(value),
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::AbsentRecordField(computation),
+            CheckRefusal::AbsentTupleComponent(computation),
             CheckRefusal::MissingRecordField {
                 at: value,
                 expected: value_type,

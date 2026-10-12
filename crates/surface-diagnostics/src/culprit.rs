@@ -154,6 +154,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         | CheckRefusal::ConstructorArity(_) => "the wrong number of fields",
         | CheckRefusal::NonExhaustiveDataCase(_) => "not every constructor once",
         | CheckRefusal::AbsentRecordField(_) => "no field of the record type",
+        | CheckRefusal::AbsentTupleComponent(_) => "no component of the product type",
         | CheckRefusal::MissingRecordField { .. } => "a required field is missing",
         | CheckRefusal::UnknownOperation { .. } => "not an operation of the interface",
         | CheckRefusal::HandlerCoverage { .. } => "not every operation once",

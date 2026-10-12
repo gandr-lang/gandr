@@ -756,6 +756,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
         AnyNode::Computation(id) => match arena.computation(id) {
             Some(&Computation::DataCase { .. }) => tags::NODE_C_DATA_CASE,
             Some(&Computation::RecordProjection(..)) => tags::NODE_C_RECORD_PROJECTION,
+            Some(&Computation::TupleProjection(..)) => tags::NODE_C_TUPLE_PROJECTION,
             Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
@@ -925,6 +926,10 @@ fn encode_entry(
             | Some(&Computation::RecordProjection(_, ref label)) => {
                 out.put_tag(tags::NODE_C_RECORD_PROJECTION);
                 encode_text(&mut out, ArtifactText::from(label.as_ref()));
+            },
+            | Some(&Computation::TupleProjection(_, component)) => {
+                out.put_tag(tags::NODE_C_TUPLE_PROJECTION);
+                out.put_uvarint(WireU64::from(WireUsize::from(usize::from(component))));
             },
             | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
             | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),

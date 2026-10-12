@@ -1269,6 +1269,11 @@ where
             write_index(writer, record)?;
             writer.bytes(Bytes(label.as_ref().as_bytes()))?;
         },
+        | ContentNode::TupleProjection(tuple, component) => {
+            writer.tag(Tag(0x5A));
+            write_index(writer, tuple)?;
+            writer.count(Count(usize::from(component)))?;
+        },
         | ContentNode::Reify(ref frames) => {
             writer.tag(Tag(0x71));
             writer.count(Count(frames.len()))?;
@@ -2016,6 +2021,7 @@ fn read_effect_row(
                     ContentNode::Record(_) => tag == 0x53,
                     ContentNode::DataCase { .. } => tag == 0x54,
                     ContentNode::RecordProjection(..) => tag == 0x55,
+                    ContentNode::TupleProjection(..) => tag == 0x5A,
                     | ContentNode::Reify(_) => tag == 0x71,
                     | ContentNode::Stack { .. } => tag == 0x72,
                     | ContentNode::WithType(..) => tag == 0x73,
@@ -2115,6 +2121,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             branches: read_indices(reader)?,
         },
         | 0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
+        | 0x5A => ContentNode::TupleProjection(
+            read_index(reader)?,
+            gandr_core_term::Component::from(reader.count()?.0),
+        ),
         | 0x71 => {
             let count = reader.count()?;
             let mut frames = Vec::new();
@@ -3590,6 +3600,10 @@ where
             writer.tag(Tag(26));
             write_site(writer, at)?;
         },
+        | Refusal::AbsentTupleComponent(at) => {
+            writer.tag(Tag(39));
+            write_site(writer, at)?;
+        },
         | Refusal::MissingRecordField { at, ref expected } => {
             writer.tag(Tag(27));
             write_site(writer, at)?;
@@ -3944,6 +3958,7 @@ where
                     | Refusal::HandlerCoverage { .. } => 36,
                     | Refusal::ShiftWithoutReset { .. } => 37,
                     | Refusal::DependentStack { .. } => 38,
+                    | Refusal::AbsentTupleComponent(_) => 39,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -3971,6 +3986,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 24 => Refusal::ConstructorArity(read_site(reader)?),
         | 25 => Refusal::NonExhaustiveDataCase(read_site(reader)?),
         | 26 => Refusal::AbsentRecordField(read_site(reader)?),
+        | 39 => Refusal::AbsentTupleComponent(read_site(reader)?),
         | 27 => Refusal::MissingRecordField {
             at: read_site(reader)?,
             expected: read_type(reader)?,

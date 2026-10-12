@@ -4574,7 +4574,7 @@ mod tests
           }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
-          Computation::RecordProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
+          Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
@@ -4640,7 +4640,8 @@ mod tests
                     } => core::iter::once(CoreTerm::Value(scrutinee))
                         .chain(branches.iter().copied().map(CoreTerm::Computation))
                         .collect(),
-                    | Computation::RecordProjection(record, _) => {
+                    | Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _) => {
                         Vec::from([CoreTerm::Value(record)])
                     },
                     | Computation::Perform { .. }
@@ -4860,6 +4861,9 @@ mod tests
                                 | Computation::RecordProjection(record, ref label) => {
                                     Computation::RecordProjection(value(record), label.clone())
                                 },
+                                | Computation::TupleProjection(tuple, component) => {
+                                    Computation::TupleProjection(value(tuple), component)
+                                },
                                 | Computation::Perform { .. }
                                 | Computation::Handle { .. }
                                 | Computation::Resume(..)
@@ -4981,7 +4985,7 @@ mod tests
           }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
-          Computation::RecordProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
+          Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
@@ -5266,7 +5270,8 @@ mod tests
                                 .expect("a reached computation resolves")
                             {
                                 | Computation::DataCase { .. }
-                                | Computation::RecordProjection(..) => {
+                                | Computation::RecordProjection(..)
+                                | Computation::TupleProjection(..) => {
                                     panic!("native eliminators are outside the duplication fixture")
                                 },
                                 | Computation::Perform { .. }
@@ -5573,7 +5578,7 @@ mod tests
               }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
-              Computation::RecordProjection(record,_) => ret.as_slice() == [Node::Value(record)],
+              Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) => false,
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
               Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
@@ -5678,7 +5683,8 @@ mod tests
                             .into_iter()
                             .chain(branches.iter().copied().map(Node::Computation))
                             .collect(),
-                        | Computation::RecordProjection(ref record, _) => {
+                        | Computation::RecordProjection(ref record, _)
+                        | Computation::TupleProjection(ref record, _) => {
                             Vec::from([Node::Value(*record)])
                         },
                         | Computation::Perform { .. }
@@ -5964,6 +5970,10 @@ mod tests
                             let record = value(self, record);
                             self.arena
                                 .computation_record_projection(record, label.clone())
+                        },
+                        | Computation::TupleProjection(tuple, component) => {
+                            let tuple = value(self, tuple);
+                            self.arena.computation_tuple_projection(tuple, component)
                         },
                         | Computation::Perform { .. }
                         | Computation::Handle { .. }
@@ -8840,6 +8850,71 @@ mod tests
                 MachineVerdict::NotConvertible,
             ),
         ] {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(verdict, expected, "{sides:?}");
+            assert_eq!(
+                world.replayed(sides, verdict, &decisions),
+                certified(expected),
+                "{sides:?}: {decisions:?}"
+            );
+        }
+    }
+
+    /// Tuple projections compute to the component at their position, and two
+    /// projections stuck on one neutral compare by component, never as a
+    /// record projection of the same operand; the kernel replays each verdict.
+    #[test]
+    fn tuple_projections_of_one_neutral_compare_by_component()
+    {
+        use alloc::string::String;
+
+        use gandr_core_term::Component;
+        use gandr_core_term::FieldLabel;
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let left = core.value_injection(gandr_core_term::Summand::from(0_usize), unit);
+        let pair = core.value_tuple(&[unit, unit]);
+        let components = [unit, left, pair];
+        let tuple = core.value_tuple(&components);
+        let named_tuple = core.value_constant(Name::Zero.constant());
+        let mut sides = Vec::new();
+        for (position, component) in components.into_iter().enumerate() {
+            let projection =
+                core.computation_tuple_projection(named_tuple, Component::from(position));
+            let returned = core.computation_return(component);
+            sides.push((
+                Sides::Computations(projection, returned),
+                MachineVerdict::Convertible,
+            ));
+        }
+        let first = core.computation_tuple_projection(named_tuple, Component::from(0_usize));
+        let returned_left = core.computation_return(left);
+        sides.push((
+            Sides::Computations(first, returned_left),
+            MachineVerdict::NotConvertible,
+        ));
+        let rigid = core.value_constant(Name::Rigid.constant());
+        let rigid_first = core.computation_tuple_projection(rigid, Component::from(0_usize));
+        let repeated_first = core.computation_tuple_projection(rigid, Component::from(0_usize));
+        let rigid_second = core.computation_tuple_projection(rigid, Component::from(1_usize));
+        let labelled =
+            core.computation_record_projection(rigid, FieldLabel::from(String::from("0")));
+        sides.extend([
+            (
+                Sides::Computations(rigid_first, repeated_first),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Computations(rigid_first, rigid_second),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(rigid_first, labelled),
+                MachineVerdict::NotConvertible,
+            ),
+        ]);
+        let world = World::new(core, &[(Name::Zero, tuple)]);
+        for (sides, expected) in sides {
             let (verdict, decisions) = world.traced(sides);
             assert_eq!(verdict, expected, "{sides:?}");
             assert_eq!(

@@ -22,6 +22,7 @@ mod native_formers
     use gandr_kernel_core::replay;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::Component;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::DeBruijnIndex;
@@ -30,7 +31,9 @@ mod native_formers
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::ValueTypeId;
     use gandr_kernel_term::decode;
     use gandr_kernel_term::encode;
 
@@ -501,5 +504,121 @@ mod native_formers
                 ..
             })
         ));
+    }
+
+    /// Each component of a three-component tuple projects at its own type and
+    /// replays to the component returned; a component past the last and a
+    /// record operand refuse; a projection survives canonical decode.
+    #[test]
+    fn tuple_projection_reads_each_component()
+    {
+        /// The tuple `(0, unit, (unit, unit))` and its three components'
+        /// classifiers, minted in one staging arena.
+        fn fixture(
+            arena: &mut gandr_kernel_term::TermArena
+        ) -> (ValueId, [(ValueId, ValueTypeId); 3])
+        {
+            let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+            let unit_type = arena.value_type_unit();
+            let pair_type = arena.value_type_product(&[unit_type, unit_type]);
+            let unit = arena.value_unit();
+            let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
+                gandr_kernel_term::IntegerLiteral::new(
+                    gandr_kernel_term::Sign::NonNegative,
+                    gandr_kernel_term::Magnitude::zero(),
+                ),
+            ));
+            let pair = arena.value_tuple(&[unit, unit]);
+            let tuple = arena.value_tuple(&[zero, unit, pair]);
+            (tuple, [
+                (zero, integer),
+                (unit, unit_type),
+                (pair, pair_type),
+            ])
+        }
+
+        let mut environment = Environment::new();
+        let mut declarations = Vec::new();
+        for position in 0 .. 3_usize {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let (tuple, components) = fixture(arena);
+            let (component, classifier) = components[position];
+            let projection = arena.computation_tuple_projection(tuple, Component::from(position));
+            let returned = arena.computation_return(component);
+            let returner = arena.comp_type_returner(classifier);
+            let declared = arena.value_type_thunk(returner);
+            let body = arena.value_thunk(projection);
+            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+            declarations.push(MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.declaration().clone(),
+            ));
+            environment
+                .add_decl(declaration)
+                .expect("a projection synthesizes its component's returner");
+            let mut arena = environment.arena().clone();
+            assert_eq!(
+                replay(
+                    &mut arena,
+                    &Unfoldings::default(),
+                    ReplaySides::Computations(projection, returned),
+                    EngineClaim::Convertible,
+                    [ConversionDecision::ComparedShared {
+                        left: ReplayNode::Other,
+                        right: ReplayNode::Other,
+                    }],
+                    ReplayBudget::default()
+                ),
+                KernelVerdict::Convertible
+            );
+        }
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (tuple, [_, (_, unit_type), _]) = fixture(arena);
+        let first = arena.computation_tuple_projection(tuple, Component::from(0_usize));
+        let returner = arena.comp_type_returner(unit_type);
+        let declared = arena.value_type_thunk(returner);
+        let body = arena.value_thunk(first);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(
+            environment.add_decl(declaration).is_err(),
+            "the first component is an integer, not the unit"
+        );
+
+        let past = Component::from(3_usize);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let (tuple, [_, (_, unit_type), _]) = fixture(arena);
+        let projection = arena.computation_tuple_projection(tuple, past);
+        let returner = arena.comp_type_returner(unit_type);
+        let declared = arena.value_type_thunk(returner);
+        let body = arena.value_thunk(projection);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert_eq!(
+            environment.add_decl(declaration),
+            Err(KernelError::AbsentTupleComponent { component: past })
+        );
+
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let unit_type = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let label = FieldLabel::from(String::from("a"));
+        let record = arena.value_record(BTreeMap::from([(label, unit)]));
+        let projection = arena.computation_tuple_projection(record, Component::from(0_usize));
+        let returner = arena.comp_type_returner(unit_type);
+        let declared = arena.value_type_thunk(returner);
+        let body = arena.value_thunk(projection);
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        assert!(matches!(
+            environment.add_decl(declaration),
+            Err(KernelError::ValueShapeMismatch { .. })
+        ));
+
+        let bytes = encode(environment.arena(), &declarations);
+        let decoded = decode(bytes.as_image()).expect("tuple projection canonical reader");
+        assert_eq!(encode(decoded.arena(), decoded.declarations()), bytes);
     }
 }

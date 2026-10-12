@@ -1652,6 +1652,20 @@ impl CoreArena
         self.alloc_computation(Computation::RecordProjection(record, label))
     }
 
+    /// Return the component of a tuple at a position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_tuple_projection(
+        &mut self,
+        tuple: ValueId,
+        component: gandr_kernel_term::Component,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::TupleProjection(tuple, component))
+    }
+
     /// Mint the componentwise product of two paths.
     ///
     /// # Specification

@@ -1407,7 +1407,10 @@ fn push_rewrite_children(
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::Value(scrutinee), depth, rewrite));
             },
-            | Some(&Computation::RecordProjection(record, _)) => {
+            | Some(
+                &(Computation::RecordProjection(record, _)
+                | Computation::TupleProjection(record, _)),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(record), depth, rewrite));
             },
             | None => {},
@@ -2087,6 +2090,15 @@ fn close_computation(
             }
             else {
                 arena.computation_record_projection(value, label.clone())
+            }
+        },
+        | Computation::TupleProjection(tuple, component) => {
+            let value = popped(results, AnyNode::Value(tuple)).value_or(tuple);
+            if value == tuple {
+                id
+            }
+            else {
+                arena.computation_tuple_projection(value, component)
             }
         },
         | Computation::ListFold {

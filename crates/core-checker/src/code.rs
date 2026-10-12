@@ -824,7 +824,8 @@ pub fn loose_reach(
                             }),
                         );
                     },
-                    | Computation::RecordProjection(record, _) => {
+                    | Computation::RecordProjection(record, _)
+                    | Computation::TupleProjection(record, _) => {
                         work.push((CoreNode::Term(TermNode::Value(record)), depth));
                     },
                     | Computation::Perform {

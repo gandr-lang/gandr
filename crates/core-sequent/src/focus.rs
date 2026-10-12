@@ -224,6 +224,9 @@ pub enum FocusRefusal
     Record(ValueId),
     /// A record projection has no command-IL destructor.
     RecordProjection(ComputationId),
+    /// A tuple projection has no command-IL destructor: the IL splits no
+    /// positive tuple.
+    TupleProjection(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -265,6 +268,9 @@ impl fmt::Display for FocusRefusal
             | Self::Record(_) => f.write_str("a record has no command-IL producer"),
             | Self::RecordProjection(_) => {
                 f.write_str("a record projection has no command-IL destructor")
+            },
+            | Self::TupleProjection(_) => {
+                f.write_str("a tuple projection has no command-IL destructor")
             },
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
@@ -1280,6 +1286,8 @@ impl<'run> Focusing<'run>
     /// - fails: [`FocusRefusal::DanglingComputation`],
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
     ///   [`FocusRefusal::RecordProjection`] for a record projection,
+    ///   [`FocusRefusal::TupleProjection`] for a tuple projection,
+    // refused_by: container_member · collision: none (both sides edited, nowhere the same lines)
     ///   [`FocusRefusal::UniverseTransport`] for a transport, or a refused
     ///   mint.
     /// - panics: none.
@@ -1304,6 +1312,7 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
+            | Some(&Computation::TupleProjection(..)) => ret == Err(FocusRefusal::TupleProjection(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1320,6 +1329,9 @@ impl<'run> Focusing<'run>
         match *node {
             | Computation::RecordProjection(..) => {
                 return Err(FocusRefusal::RecordProjection(id));
+            },
+            | Computation::TupleProjection(..) => {
+                return Err(FocusRefusal::TupleProjection(id));
             },
             | Computation::DataCase {
                 scrutinee,
@@ -2188,3 +2200,5 @@ mod tests
         assert_eq!(Err(FocusRefusal::TranslationInvariant), run.pop_command());
     }
 }
+// weave: run 'weave explain crates/core-sequent/src/focus.rs' for per-hunk
+// detail, 'weave check' to verify your resolution
