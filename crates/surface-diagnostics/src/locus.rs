@@ -98,6 +98,9 @@ pub enum Label
     Synthesised,
     /// The type a rule met where it required a former of another shape.
     Met(ExpectedShape),
+    /// A declared name or a binder over a builtin: the primary locus of a
+    /// shadowing warning.
+    Shadows,
 }
 
 impl fmt::Display for Label
@@ -136,6 +139,7 @@ impl fmt::Display for Label
             | Self::Expected => f.write_str("the type it is checked against"),
             | Self::Synthesised => f.write_str("the type it synthesises"),
             | Self::Met(wanted) => write!(f, "the type met, where {} is required", Shape(wanted)),
+            | Self::Shadows => f.write_str("shadows a builtin"),
         }
     }
 }

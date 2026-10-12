@@ -126,6 +126,7 @@ The one input is the dispatcher's step, read by `gandr-surface-diagnostics`' `en
 | a refusal | the primary span | the refusal's vocabulary name | error | the title, the primary label and the note | each context locus, with its label, then each nested reason, outermost first, with its `while` clause |
 | an unsettled declaration | the primary span | none | error | the title and the primary label | each context locus, with its label |
 | a goal | the primary span | none | information | the title and the primary label | none |
+| a shadowing warning | the shadowing name | `ShadowedBuiltin` | warning | the title and the primary label | none |
 | a report the renderer leaves unlocated | the document's origin | as its kind | as its kind | the title, and the note of a refusal | none |
 | a ledger line | the document's origin | none | error | the line | none |
 | a fault before composition | the document's origin | none | error | the fault | none |
@@ -135,6 +136,8 @@ The message carries every line the terminal prints around the snippet: the title
 Every diagnostic's `source` is `gandr`. The code is the spelling a corpus `refuses` attribute states and a snippet's first line carries, so a code copied from the editor is an expectation a test can state. The alternative was the renderer seam's `DiagnosticCode` registry; the pipeline maps no refusal onto a registry code yet, and mapping refusals onto it here would be a second decision made in a face. The choice reverses when the pipeline's session report maps its refusals onto registry codes: the diagnostic's code becomes that spelling.
 
 A goal is published at information severity because `check --goals` prints it as a report that does not fail the run. The alternative was the verb `check`, which withholds goals; an editor showing an open hole's goal beside it is the use the goal report exists for.
+
+A builtin the document shadows is published at warning severity: the source's binding wins under the default policy, the module checks, and `check` prints the report without failing the run. Its code is `ShadowedBuiltin`, the refusal the reject policy files for the same bytes. Witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`.
 
 The standing the renderer reads to choose what a pending source prints is the dispatcher's `Standing::of`, carried into the step by the session's submission: under the pending root, a source refused whole or carrying a refusal no expectation can state is pending, any other lowered; under the strict and fixture roots, a source refused whole is refused, any other settled or unsettled as its report's tally is. The L2 witness over every corpus source holds it to the walk's own reports.
 

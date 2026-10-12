@@ -1,6 +1,6 @@
 # gandr-surface-diagnostics
 
-The renderer for what one step of the dispatcher's walk prints: each refusal, each unsettled declaration and each goal as a located source snippet, and each ledger line a verb prints beside them.
+The renderer for what one step of the dispatcher's walk prints: each refusal, each unsettled declaration, each goal and each shadowing warning as a located source snippet, and each ledger line a verb prints beside them.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -11,6 +11,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [The label says what the locus is](#the-label-says-what-the-locus-is)
 - [A label names the types its refusal compares](#a-label-names-the-types-its-refusal-compares)
 - [A refusal names the judgements it stood inside](#a-refusal-names-the-judgements-it-stood-inside)
+- [A shadowed builtin is a warning](#a-shadowed-builtin-is-a-warning)
 - [Native universe-path diagnostics](#native-universe-path-diagnostics)
 - [The one input is the step](#the-one-input-is-the-step)
 - [Every span is the producer's](#every-span-is-the-producers)
@@ -79,6 +80,7 @@ The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the
 | unsettled declaration | ``error: `<name>` states …; produced …`` | the declaration, labelled with how it is unsettled | none |
 | goal | ``goal: `<name>` states …; produced …`` | the declaration, labelled with its surviving obligations | none |
 | source refused as a whole | `error[<refusal>]: the lowering refused the source as a whole: …` | the refusal's span, labelled with what the bytes there are | none |
+| shadowed builtin | ``warning[ShadowedBuiltin]: `<path>` shadows a builtin name; the source's binding wins`` | the shadowing name, labelled `shadows a builtin` | none |
 
 The refusal name in the title is the spelling the corpus's `refuses` attribute states, so a reader can copy it into an expectation. A type mismatch renders as:
 
@@ -129,6 +131,20 @@ error[ShapeMismatch]: the rule here requires a thunk type `+U C`
 A reason at the primary locus, or at bytes an outer reason already marks, says nothing the snippet does not, and is left out, so a body refused where it stands has none; a term with no origin is left out rather than located at a guess. The language server publishes the same reasons as related information.
 
 The alternatives were a `note: while …` line per reason after the snippet, which repeats the source position in prose where the snippet can point at it, and a reason per machine frame, which names the rule waiting on a subterm but not the subterm's own bytes. Reversal: a reason with no locus worth showing — a term only the lowering minted — becomes a note when a reader needs it.
+
+## A shadowed builtin is a warning
+
+Under the default warn-and-allow shadow policy, a top-level declaration or a binder named after a builtin wins, and the lowering records the shadowing with the bytes of the name. Under `check` each record is a `Report` of class `Class::Warning`, printed before the source's declaration reports in the order shadowed; `test` prints none, because its ledger records settlements. A warning settles nothing and unsettles nothing, so `gandr check` still exits zero on a source whose only reports are warnings:
+
+```text
+warning[ShadowedBuiltin]: `add` shadows a builtin name; the source's binding wins
+  ╭▸ shadow.gandr:1:5
+  │
+1 │ def add : Integer ;
+  ╰╴    ━━━ shadows a builtin
+```
+
+The identifier is `ShadowedBuiltin`, the refusal the reject policy files for the same bytes, so one name reads the same fact under either policy. The recorded design is the prior implementation's: a warning naming the shadowed path at the shadowing site. The change is the identifier: there it was a separate warning code, and a second vocabulary for one fact would have a reader learn two names. Reversal: a warning that is not a would-be refusal gets its own vocabulary. Witness: `diagnostics::diagnostics::a_shadowed_builtin_renders_as_a_warning`.
 
 ## Native universe-path diagnostics
 

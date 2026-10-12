@@ -1,0 +1,5 @@
+warning[ShadowedBuiltin]: `add` shadows a builtin name; the source's binding wins
+  ╭▸ shadow.gandr:1:5
+  │
+1 │ def add : Integer ;
+  ╰╴    ━━━ shadows a builtin

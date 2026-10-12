@@ -792,6 +792,8 @@ impl Severity
 {
     /// An error: the document does not check.
     pub const ERROR: Self = Self(1);
+    /// A warning: a builtin name the document shadows.
+    pub const WARNING: Self = Self(2);
     /// Information: a goal the document leaves open.
     pub const INFORMATION: Self = Self(3);
 }
