@@ -214,8 +214,8 @@ impl<'step> Comparison<'step>
     /// - requires: `spellings` was spelled over the arena `refusal` names.
     /// - ensures: a checker refusal's expected and found sides are the
     ///   spellings of the nodes [`CheckRefusal::compared`] names, each absent
-    ///   where it names none or the spellings hold none; a lowering or corpus
-    ///   refusal compares no types.
+    ///   where it names none or the spellings hold none; a lowering, corpus or
+    ///   readmission refusal compares no types.
     /// - provides: the comparison a primary label carries.
     /// - fails: never.
     /// - panics: none.
@@ -233,7 +233,7 @@ impl<'step> Comparison<'step>
             };
             ret.expected == side(checked.compared().expected) && ret.found == side(checked.compared().found)
         },
-        Refusal::Lowering(_) | Refusal::Corpus(_) => ret == UNCOMPARED,
+        Refusal::Lowering(_) | Refusal::Corpus(_) | Refusal::Readmission { .. } => ret == UNCOMPARED,
     })]
     pub(crate) fn of(
         refusal: Refusal<'_>,
@@ -648,7 +648,6 @@ impl Annotations
             | LoweringRefusal::NonExhaustiveMatch { .. }
             | LoweringRefusal::UnmarkedSelfReference { .. }
             | LoweringRefusal::MissingExit { .. }
-// refused_by: container_member · collision: none (1 contested hunk(s), neither side deleted the other's lines)
             | LoweringRefusal::Unreachable { .. }
             | LoweringRefusal::WithoutK { .. }
             | LoweringRefusal::BudgetExceeded { .. }
@@ -675,8 +674,10 @@ impl Annotations
     ///   context; the checking-only form, the constant, the out-of-fragment
     ///   node, the unbound variable or the dangling node. A hole, an exhausted
     ///   allowance, an admission out of order and a machine invariant are about
-    ///   the declaration as a whole and are located at `declaration`. A node
-    ///   the table holds nothing for leaves its locus absent.
+    ///   the declaration as a whole and are located at `declaration`. A
+    ///   readmission refusal is located at the origin of the node the kernel
+    ///   bridge could not carry, with no context. A node the table holds
+    ///   nothing for leaves its locus absent.
     /// - provides: the primary locus labelled with what the refused bytes are,
     ///   and its context.
     /// - fails: never.
@@ -716,6 +717,18 @@ impl Annotations
                 Self::at(span, Label::Culprit(Culprit::of(refusal)))
             },
             | Refusal::Checking(checking) => checked(checking, declaration, origins),
+            | Refusal::Readmission { at, .. } => Self {
+                primary: match node(origins, at) {
+                    | Maybe::Present(span) => Maybe::Present(Annotation {
+                        span,
+                        label: Label::Culprit(Culprit::of(refusal)),
+                    }),
+                    | Maybe::Absent(node_span::Absent::Unrecorded) => {
+                        Maybe::Absent(report_span::Absent::Unrecorded)
+                    },
+                },
+                context: UNNAMED,
+            },
         }
     }
 }
@@ -1296,8 +1309,6 @@ impl fmt::Display for Former
             | UnadmittedFormer::Resume => "a resumption at the pure kernel boundary",
             | UnadmittedFormer::Reset => "an answer delimiter at the pure kernel boundary",
             | UnadmittedFormer::Shift => "a continuation capture at the pure kernel boundary",
-            | UnadmittedFormer::With => "a lazy pair at the pure kernel boundary",
-            | UnadmittedFormer::Project => "a lazy-pair projection at the pure kernel boundary",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
             | UnadmittedFormer::NumericLiteral => "a numeric literal",
 
@@ -1817,5 +1828,3 @@ mod tests
         assert!(ordinals(&titles[5]).is_empty(), "no node id: {}", titles[5]);
     }
 }
-// weave: run 'weave explain crates/surface-diagnostics/src/locus.rs' for
-// per-hunk detail, 'weave check' to verify your resolution

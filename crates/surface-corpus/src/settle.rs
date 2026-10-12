@@ -65,9 +65,11 @@ use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_checker::CoreNode;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ObligationCount;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::bridge::WireGap;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_lowering::AttributeEntry;
@@ -212,6 +214,16 @@ pub enum Produced<'source>
     /// The root refused an expectation the declaration carries; this stands
     /// in place of whatever the declaration produced.
     Guarded(CorpusRefusal),
+    /// The checker accepted the declaration and its readmission refused it,
+    /// the kernel's wire format having no node for the former at `at`; this
+    /// stands in place of the checker's verdict once the module is admitted.
+    Unwired
+    {
+        /// The node holding the former.
+        at: CoreNode,
+        /// The node the wire format lacks.
+        gap: WireGap,
+    },
 }
 
 impl<'source> Produced<'source>
@@ -220,9 +232,9 @@ impl<'source> Produced<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a refused verdict, a lowering refusal and a corpus refusal
-    ///   are each the refusal of their producer; a checked, synthesised or owed
-    ///   verdict is no refusal.
+    /// - ensures: a refused verdict, a lowering refusal, a corpus refusal and a
+    ///   readmission refusal are each the refusal of their producer; a checked,
+    ///   synthesised or owed verdict is no refusal.
     /// - provides: the produced side of a `refuses` comparison.
     /// - fails: never; an unrefused declaration is the
     ///   [`produced_refusal::Absent::Unrefused`] absence.
@@ -245,7 +257,8 @@ impl<'source> Produced<'source>
         Verdict::Data | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         Maybe::Absent(produced_refusal::Absent::Unrefused)) | (Self::Unlowered(_),
         Maybe::Present(Refusal::Lowering(_))) | (Self::Guarded(_),
-        Maybe::Present(Refusal::Corpus(_)))
+        Maybe::Present(Refusal::Corpus(_))) | (Self::Unwired { .. },
+        Maybe::Present(Refusal::Readmission { .. }))
     )
 },
     )]
@@ -262,6 +275,7 @@ impl<'source> Produced<'source>
             ) => Maybe::Absent(produced_refusal::Absent::Unrefused),
             | Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
             | Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
+            | Self::Unwired { at, gap } => Maybe::Present(Refusal::Readmission { at, gap }),
         }
     }
 }
@@ -667,6 +681,45 @@ impl<'source> DeclarationReport<'source>
             ObligationCount::from(declared.saturating_sub(owed)),
         )
     }
+
+    /// Stand the readmission's refusal of the former at `at`, which the
+    /// kernel's wire format has no node for, in place of the checker's
+    /// verdict.
+    ///
+    /// # Specification
+    /// - requires: the checker accepted the declaration and its readmission
+    ///   refused it at `at` for `gap`.
+    /// - ensures: a guarded declaration is unchanged, since the guard stands in
+    ///   place of whatever it produced; any other produces the readmission
+    ///   refusal and owes nothing, as a refused declaration owes nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lazy record declaration stating the refusal
+    ///   settles, one stating that it checks does not, and a guarded one keeps
+    ///   its guard.
+    /// - witness: `report::tests::an_unwired_declaration_settles_only_as_its_refusal`
+    #[spec(
+        captures: before = self.produced,
+        ensures: if let Produced::Guarded(_) = before {
+            self.produced == before
+        } else {
+            self.produced == Produced::Unwired { at, gap } && usize::from(self.owed) == 0_usize
+        },
+    )]
+    pub(crate) fn unwire(
+        &mut self,
+        at: CoreNode,
+        gap: WireGap,
+    )
+    {
+        if let Produced::Guarded(_) = self.produced {
+            return;
+        }
+        self.produced = Produced::Unwired { at, gap };
+        self.owed = ObligationCount::from(0_usize);
+    }
 }
 
 impl fmt::Display for DeclarationReport<'_>
@@ -903,6 +956,7 @@ impl Error for SettleFault
                             Produced::Judged(_) => {
                                 !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
                             }
+                            Produced::Unwired { .. } => false,
                         }
                         && match declaration.ran {
                             Maybe::Present(_) => {
@@ -1058,7 +1112,8 @@ pub fn settle<'source>(
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Data | Verdict::Owed(_) | Verdict::Refused(_))
                 | Produced::Unlowered(_)
-                | Produced::Guarded(_),
+                | Produced::Guarded(_)
+                | Produced::Unwired { .. },
             ) => Maybe::Absent(ran::Absent::Unaccepted),
             | (
                 &Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | &Stated::Malformed(_),

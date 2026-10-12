@@ -1,0 +1,55 @@
+@[ checks ]
+def one : +{Integer} ;
+def one = +{.0 = 1} ;
+
+@[ checks ]
+def third : +{Integer, String, Unit} ;
+def third = +{.2 = unit} ;
+
+@[ checks ]
+def failed : +{ok : Integer, err : String} ;
+def failed = (+{.err = "no"} : +{ok : Integer, err : String}) ;
+
+@[ checks ]
+def only : +{only : Integer} ;
+def only = (+{.only = 4} : +{only : Integer}) ;
+
+@[ refuses("OutOfFragment") ]
+def unstated = +{.err = "no"} ;
+
+@[ checks ]
+def absurd(x : +{}) -> -F Integer {
+  case x {}
+}
+
+@[ checks ]
+def pick(v : +{ok : Integer, err : String, gone : Unit}) -> -F Integer {
+  case v {
+    +{.ok = n} => return n,
+    +{.err = e} => return 20,
+    +{.gone = u} => return 30
+  }
+}
+
+@[ runs("30") ]
+def gone : +U (-F Integer) ;
+def gone = thunk { become pick(+{.2 = unit}) } ;
+
+@[ checks ]
+def unwrap(v : +{only : Integer}) -> -F Integer {
+  case v {
+    +{.only = n} => return n
+  }
+}
+
+@[ checks ]
+def nested(t : #{+{Integer, Integer}, Integer}) -> -F Integer {
+  case t {
+    #{+{.1 = x}, y} => return x,
+    #{_, y} => return y
+  }
+}
+
+@[ runs("8") ]
+def inner : +U (-F Integer) ;
+def inner = thunk { become nested(#{+{.1 = 8}, 9}) } ;

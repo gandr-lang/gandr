@@ -1,0 +1,21 @@
+@[ checks ]
+def point : #{n : Integer, s : String} ;
+def point = #{.s = "x", .n = 3} ;
+
+@[ checks ]
+def shorthand : #{n : Integer, s : String} ;
+def shorthand = #{n = 3, s = "x"} ;
+
+@[ checks ]
+def punned(r : #{n : Integer, s : String}) -> -F String {
+  case r {
+    #{.n, .s} => return s
+  }
+}
+
+@[ checks ]
+def renamed(r : #{n : Integer, s : String}) -> -F Integer {
+  case r {
+    #{.n = m} => return m
+  }
+}

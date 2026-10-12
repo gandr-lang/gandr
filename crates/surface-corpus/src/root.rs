@@ -33,7 +33,7 @@
 //! | Directory | Holds | Expectations |
 //! | --------- | ----- | ------------ |
 //! | `strict/` | sources in the fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications; under `classifier/`, both universes, quotes, a code constant unfolding, a polymorphic function at several instances, and the relative-monad witness — a type operator over a computation-valued carrier, written with every universe spelled out and with the defaults left off, instantiated, and equated with its instance spelled by hand through `=>`; under `pathological/`, the dependent instantiations whose codomains could capture | none, or `runs` on each declaration the fragment runs: every declaration checks, owing nothing |
-//! | `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, one owed signature, and a run blamed on the goal it reaches; the reserved form's source sets an eager pair, which checks, beside the lazy product, which is refused | `refuses`, `checks`, `owes` or `runs` on each declaration |
+//! | `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, one owed signature, and a run blamed on the goal it reaches | `refuses`, `checks`, `owes` or `runs` on each declaration |
 //! | `fixture/classifier/` | the universe families' refusals: a level too large, a sort mismatch, a graded bridge, and a bind whose body's type needs its binder; the relative-monad witness's sort errors beside the forms that repair them; a static abstraction at a static parameter, normalized away, and at a dynamic one, refused | `refuses` on each refused declaration, `checks` on each that forms, `runs` on each run |
 //! | `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's own surface programs whose declarations the lowering reads, each verdict stated | `refuses`, `checks` or `runs` on each declaration |
 //! | `fixture/pending/` | the language's own surface programs the fragment does not yet cover | none: membership by location (§ The pending set) |
@@ -109,14 +109,16 @@
 //! A source under `fixture/pending/` carries a refusal no expectation can
 //! state: the lowering refuses it as a whole — its root is not a list of
 //! declarations — or refuses one of its declarations at the declaration's own
-//! form, which files no half for an attribute to be read off. The runner counts
+//! form, which files no half for an attribute to be read off; or a declaration
+//! checks but its focusing meets a former the command IL lacks
+//! ([#221](https://github.com/gandr-lang/gandr/issues/221)). The runner counts
 //! such a source as pending and settles none of its declarations; `test` prints
 //! each such refusal, naming the form the fragment lacks — a call or an
-//! operator, a record, a data declaration, a module, an effect — which is the
-//! former the source waits for, and its run outcomes are written when it moves.
-//! A pending source that carries none — the fragment grew, and every
-//! expectation it needs can be stated — is unsettled, and moves to the fixture
-//! root with its expectations written.
+//! operator, a record update, a data declaration, a module, an effect, the
+//! record in the IL — which is the former the source waits for, and its run
+//! outcomes are written when it moves. A pending source that carries none — the
+//! fragment grew, and every expectation it needs can be stated — is unsettled,
+//! and moves to the fixture root with its expectations written.
 //!
 //! Three module sources stay pending for the second reason.
 //! `pathological/module-malformed-recovery` writes a member whose definition

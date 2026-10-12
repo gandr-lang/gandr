@@ -138,7 +138,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 45_usize] = [
+    pub const ALL: [Self; 50_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -173,10 +173,15 @@ impl FormName
         Self::CASE_WITH_VIEW,
         Self::CONSTRUCTOR_PATTERN,
         Self::WILDCARD,
-        Self::TUPLE_PATTERN,
         Self::LITERAL_PATTERN,
         Self::OR_PATTERN,
         Self::AS_PATTERN,
+        Self::TUPLE_PATTERN,
+        Self::TELESCOPE_PATTERN,
+        Self::LABELLED_SUM_PATTERN,
+        Self::RECORD_UPDATE,
+        Self::SELECT_SESSION_TYPE,
+        Self::OFFER_SESSION_TYPE,
         Self::HOLE,
         Self::IDENTIFIER,
         Self::TYPE_VARIABLE,
@@ -271,6 +276,19 @@ impl FormName
     pub const OR_PATTERN: Self = Self("or_pattern");
     /// The as-pattern `p as x`.
     pub const AS_PATTERN: Self = Self("as_pattern");
+    /// The telescope pattern `#{p, …}` or `#{.l = p, …}`.
+    pub const TELESCOPE_PATTERN: Self = Self("telescope_pattern");
+    /// The injection pattern `+{ .l = p }`.
+    pub const LABELLED_SUM_PATTERN: Self = Self("labelled_sum_pattern");
+    /// The record update `#{ e | l = v, … }`, folded into the telescope
+    /// value so it is declined by name.
+    pub const RECORD_UPDATE: Self = Self("record_update_expression");
+    /// The session select: the sum over labels `+{…}` whose entries are
+    /// session types.
+    pub const SELECT_SESSION_TYPE: Self = Self("select_session_type");
+    /// The session offer: the lazy record over labels `&{…}` whose entries
+    /// are session types.
+    pub const OFFER_SESSION_TYPE: Self = Self("offer_session_type");
     /// A hole `?` or `?name`, in a pattern or a term.
     pub const HOLE: Self = Self("hole");
     /// An identifier: a binder where a pattern is read.
@@ -343,6 +361,9 @@ impl TileName
     pub const ARROW: Self = Self("->");
     /// The alias keyword `as` of an import.
     pub const AS: Self = Self("as");
+    /// The lazy product's `&`, and the opener of the lazy record over labels
+    /// and of the copattern block, `&{`.
+    pub const AMPERSAND: Self = Self("&");
     /// The static abstraction's lead `\`.
     pub const BACKSLASH: Self = Self("\\");
     /// The attribute-block opener `@[`.
@@ -564,15 +585,25 @@ pub enum Former
     Force,
     /// The application `c(v)`.
     Call,
-    /// The match `case e -> T? { p => c, … }` over nominal data, integers and
-    /// booleans.
+    /// The match `case e -> T? { p => c, … }` over nominal data, integers,
+    /// booleans, products and sums over labels.
     Case,
+    /// The telescope value `#{…}`: the tuple of its positional entries, or the
+    /// record of its labelled ones.
+    Telescope,
+    /// The injection `+{ .l = v }` into a sum over labels.
+    Injection,
+    /// The copattern block `&{ .l => c, … }`, the computation a lazy record
+    /// over labels holds.
+    LazyRecord,
     /// An infix operation in the native vocabulary.
     Binary,
     /// A prefix operation in the native vocabulary.
     Unary,
-    /// A selection `e.name`: a static path when its head names a module, and
-    /// a record projection the fragment does not admit otherwise.
+    /// A selection `e.name`: a static path when its head names a module, an
+    /// observation of a lazy record over labels when its head is a name whose
+    /// stated type is one, and a record projection the fragment does not
+    /// admit otherwise.
     Projection,
     /// A bare type head: a primitive, a type identifier or a type variable.
     TypeHead,
@@ -591,10 +622,17 @@ pub enum Former
     ArrowType,
     /// The eager product type `A * B`.
     ProductType,
-    /// The reserved lazy product type `C & D`.
+    /// The lazy product type `C & D`, the binary lazy record.
     LazyProductType,
-    /// The value function space `A => B` or `(A, B) => C`, the alias of the
-    /// thunked arrow.
+    /// The telescope type `#{…}`: the product of its positional entries, or
+    /// the record of its labelled ones.
+    TelescopeType,
+    /// The sum over labels `+{…}`, positional or labelled.
+    LabelledSumType,
+    /// The lazy record over labels `&{…}`, positional or labelled.
+    LazyRecordType,
+    /// The value function space `A => B`, `(A, B) => C`, or the telescope
+    /// `(x : A, y : B(x)) => C`: the alias of the thunked arrow.
     ValueFunctionType,
     /// The static abstraction `\A. T`.
     StaticAbstraction,
@@ -640,7 +678,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 38_usize] = [
+    pub const ALL: [Self; 44_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -657,6 +695,9 @@ impl Former
         Self::Force,
         Self::Call,
         Self::Case,
+        Self::Telescope,
+        Self::Injection,
+        Self::LazyRecord,
         Self::Binary,
         Self::Unary,
         Self::Projection,
@@ -668,6 +709,9 @@ impl Former
         Self::ArrowType,
         Self::ProductType,
         Self::LazyProductType,
+        Self::TelescopeType,
+        Self::LabelledSumType,
+        Self::LazyRecordType,
         Self::ValueFunctionType,
         Self::StaticAbstraction,
         Self::ParenthesizedType,
@@ -701,7 +745,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 39_usize] = [
+pub const FORMERS: [(&str, Former); 45_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -718,6 +762,9 @@ pub const FORMERS: [(&str, Former); 39_usize] = [
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
     ("case_expression", Former::Case),
+    ("telescope_expression", Former::Telescope),
+    ("labelled_sum_expression", Former::Injection),
+    ("lazy_record_expression", Former::LazyRecord),
     ("binary_expression", Former::Binary),
     ("unary_expression", Former::Unary),
     ("projection_expression", Former::Projection),
@@ -731,6 +778,9 @@ pub const FORMERS: [(&str, Former); 39_usize] = [
     ("function_type", Former::ArrowType),
     ("product_type", Former::ProductType),
     ("lazy_product_type", Former::LazyProductType),
+    ("telescope_type", Former::TelescopeType),
+    ("labelled_sum_type", Former::LabelledSumType),
+    ("lazy_record_type", Former::LazyRecordType),
     ("value_function_type", Former::ValueFunctionType),
     ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),

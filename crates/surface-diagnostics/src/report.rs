@@ -1329,6 +1329,10 @@ impl fmt::Display for Title<'_>
                 refusal: Refusal::Corpus(refusal),
                 ..
             } => fmt::Display::fmt(&refusal, f),
+            | Subject::Refused {
+                refusal: Refusal::Readmission { gap, .. },
+                ..
+            } => write!(f, "{gap}"),
             | Subject::Unsettled { declaration, .. } | Subject::Goal(declaration) => write!(
                 f,
                 "`{}` states {}; produced {}",

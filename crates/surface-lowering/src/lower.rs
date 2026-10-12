@@ -336,14 +336,12 @@
 //! many components as it writes, each member read where a value is read, so
 //! `(a, b, c)` inhabits `A * B * C` and not `(A * B) * C`. `(a,)` is the tuple
 //! of one component, a type distinct from the type of `a`; the one-component
-//! product type has no spelling yet. `(A1, …, An) => B` is exactly `+U (A1 -> …
-//! -> An -> -F B)`, every former at the alias's origin, so a program spelled
-//! with the alias and one spelled without it lower to one core term and one
-//! content digest; a parenthesised list of types anywhere but before `=>` is
-//! refused as `MisplacedTile` at its first comma. The lazy product `C & D`
-//! stays reserved (the `error` module's § Four ways out of the fragment), the
-//! unrepresentable class's inhabitant, until the core has a product of
-//! computations.
+//! product type is `#{A}`. `(A1, …, An) => B` is exactly `+U (A1 -> … -> An ->
+//! -F B)`, every former at the alias's origin, so a program spelled with the
+//! alias and one spelled without it lower to one core term and one content
+//! digest; a parenthesised list of types anywhere but before `=>` is refused as
+//! `MisplacedTile` at its first comma. The lazy product `C & D` is a
+//! computation type, the core's `With`.
 //!
 //! The alternative was a core former for the alias, which would give one type
 //! two digests by its spelling. It was declined because `=>` is notation for
@@ -443,12 +441,14 @@ use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::FormRank;
@@ -534,6 +534,8 @@ use crate::resolve::TypeFormer;
 use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
+
+mod arity;
 
 mod description;
 
@@ -1084,9 +1086,9 @@ enum Ending
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `return` and `become` are the exit; a block, a match, a grouping,
-///   a lambda and a hole pass the end on; every other former is missing an
-///   exit.
+/// - ensures: `return` and `become` are the exit; a block, a match, a copattern
+///   block, a grouping, a lambda and a hole pass the end on; every other former
+///   is missing an exit.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1096,16 +1098,19 @@ enum Ending
 /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become => ret == Ending::Exit,
-    Former::Block | Former::Case | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
+    Former::Block | Former::Case | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole => ret == Ending::Passes,
     _ => ret == Ending::Missing,
 })]
 fn ending(former: Former) -> Ending
 {
     match former {
         | Former::Exit | Former::Become => Ending::Exit,
-        | Former::Block | Former::Case | Former::Parenthesized | Former::Lambda | Former::Hole => {
-            Ending::Passes
-        },
+        | Former::Block
+        | Former::Case
+        | Former::LazyRecord
+        | Former::Parenthesized
+        | Former::Lambda
+        | Former::Hole => Ending::Passes,
         | Former::Name
         | Former::Constructor
         | Former::Number
@@ -1115,6 +1120,8 @@ fn ending(former: Former) -> Ending
         | Former::Return
         | Former::Force
         | Former::Call
+        | Former::Telescope
+        | Former::Injection
         | Former::Binary
         | Former::Unary
         | Former::Projection
@@ -1127,6 +1134,9 @@ fn ending(former: Former) -> Ending
         | Former::ArrowType
         | Former::ProductType
         | Former::LazyProductType
+        | Former::TelescopeType
+        | Former::LabelledSumType
+        | Former::LazyRecordType
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
@@ -1180,6 +1190,9 @@ fn ending(former: Former) -> Ending
                     | Former::Unary
                     | Former::Projection
                     | Former::Case
+                    | Former::Telescope
+                    | Former::Injection
+                    | Former::LazyRecord
                     | Former::Instantiation,
                 Family::Term
             ) | (
@@ -1191,6 +1204,9 @@ fn ending(former: Former) -> Ending
                     | Former::ArrowType
                     | Former::ProductType
                     | Former::LazyProductType
+                    | Former::TelescopeType
+                    | Former::LabelledSumType
+                    | Former::LazyRecordType
                     | Former::ValueFunctionType
                     | Former::StaticAbstraction
                     | Former::ParenthesizedType
@@ -1230,6 +1246,9 @@ const fn family_of(former: Former) -> Family
         | Former::Unary
         | Former::Projection
         | Former::Case
+        | Former::Telescope
+        | Former::Injection
+        | Former::LazyRecord
         | Former::Instantiation => Family::Term,
         | Former::TypeHead
         | Former::Universe
@@ -1239,6 +1258,9 @@ const fn family_of(former: Former) -> Family
         | Former::ArrowType
         | Former::ProductType
         | Former::LazyProductType
+        | Former::TelescopeType
+        | Former::LabelledSumType
+        | Former::LazyRecordType
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
@@ -1756,15 +1778,37 @@ enum Plan
     /// A static Pi over its domain and codomain.
     StaticPi(NodeIndex, NodeIndex),
     /// One eager product of the value types in the lowerer's operand store,
-    /// in order: an unparenthesized `*` chain is one former.
+    /// in order: an unparenthesized `*` chain is one former, and the
+    /// positional telescope type `#{A, …}` another, of any arity.
     Product(Stretch),
+    /// The record type of the value types its labels name: `#{ l : A, … }`.
+    RecordType(BTreeMap<FieldLabel, NodeIndex>),
+    /// The sum of the value types in the lowerer's operand store, in order.
+    Sum(Stretch),
+    /// The lazy record of the computation types in the lowerer's operand
+    /// store, in order: the binary lazy product nested to the right.
+    With(Stretch),
     /// A case of no arms over its scrutinee: the eliminator of the empty sum.
     EmptyCase(NodeIndex),
     /// One tuple of the values in the lowerer's operand store, in order.
     Tuple(Stretch),
+    /// The record of the values its labels name: `#{ .l = v, … }`.
+    Record(BTreeMap<FieldLabel, NodeIndex>),
+    /// The injection of its value into the summand at this index.
+    Injection(Summand, NodeIndex),
+    /// The copattern block over the computations in the lowerer's operand
+    /// store, in order: the binary lazy pair nested to the right.
+    Copattern(Stretch),
+    /// One entry of the lazy record the thunk at the node holds: the thunk
+    /// forced, then observed along the nesting.
+    Observe(NodeIndex, arity::Observed),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
     ValueFunction(Stretch, NodeIndex),
+    /// The thunked telescope from the entries in the lowerer's parameter
+    /// store, each binding the ones after it, to the returner of the
+    /// codomain.
+    Telescope(Stretch, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// A thunk over its block.
@@ -2339,7 +2383,7 @@ struct Sink<'run>
 /// - witness: `lower::tests::an_undefined_type_head_is_refused`
 /// - witness: `lower::tests::an_applied_nullary_head_is_refused`
 /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
-/// - witness: `lower::tests::the_reserved_lazy_product_is_declined`
+/// - witness: `lower::tests::a_lazy_product_is_a_computation_type`
 /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
 /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
 /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
@@ -3547,6 +3591,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Call => self.call(site, cursor),
             | Former::Case => self.case(site, cursor),
+            | Former::Telescope => self.telescope(site, cursor),
+            | Former::Injection => self.injection(site, cursor),
+            | Former::LazyRecord => self.copattern(site, cursor),
             | Former::Binary | Former::Unary => self.operator(site, pieces),
             | Former::Projection => self.projection(site, pieces),
             | Former::TypeHead => self.type_head(site),
@@ -3555,7 +3602,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             | Former::ArrowType => self.arrow(site, cursor),
             | Former::ProductType => self.product(site, cursor),
-            | Former::LazyProductType => Err(site.out(FragmentBoundary::Reserved)),
+            | Former::LazyProductType => self.lazy_product(site, cursor),
+            | Former::TelescopeType => self.telescope_type(site, cursor),
+            | Former::LabelledSumType => self.labelled_sum_type(site, cursor),
+            | Former::LazyRecordType => self.lazy_record_type(site, cursor),
             | Former::ValueFunctionType => self.value_function(site, cursor),
             | Former::StaticAbstraction => self.static_abstraction(site, cursor),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
@@ -5350,7 +5400,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: a chain of selections whose head is a capitalised name is a
+    /// - ensures: a selection read as a computation off a name whose written
+    ///   type is a thunked lazy record over labels observes the entry its label
+    ///   names. A chain of selections whose head is a capitalised name is a
     ///   path, resolved through the outermost scope at the depth that binds it:
     ///   a path ending at an exported value component stands as that member's
     ///   constant when the member is declared strictly before the declaration
@@ -5379,12 +5431,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
     /// - witness: `modules::modules::a_module_namespace_is_not_a_projectable_record`
     /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
+    /// - witness: `lower::arity::tests::an_observation_projects_along_the_nesting`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..)))
                 )
         },
     )]
@@ -5394,6 +5447,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        if self.observation(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
         let _frame = self.require(site, Produced::Value)?;
         let mut links: Vec<(Placed, Placed)> = Vec::new();
         let (mut target, member) = Self::link(site, &pieces.pieces, site.at.span)?;
@@ -6501,10 +6557,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a value function space in type position, or in
     ///   value position where a type is quoted.
-    /// - ensures: the alias stands as a value type; its domains — each member
-    ///   of a parenthesised list written before `=>`, none for `()`, else the
-    ///   one operand there — and its codomain are each read as value types
-    ///   under its own frame, and it is planned as the thunked arrow over them.
+    /// - ensures: the alias stands as a value type; a domain list naming a
+    ///   binder, `(x : A, …) => B`, is the telescope; else its domains — each
+    ///   member of a parenthesised list written before `=>`, none for `()`,
+    ///   else the one operand there — and its codomain are each read as value
+    ///   types under its own frame, and it is planned as the thunked arrow over
+    ///   them.
     /// - provides: the value function space, the alias of `+U (A1 -> … -> An ->
     ///   -F B)`, which is `+U (-F B)` at no domain.
     /// - fails: yields the wrong-sort refusal where no value type is read,
@@ -6522,12 +6580,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   nested to the right, each asserted as the same core node the thunked
     ///   arrow it stands for lowers to.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::arity::tests::a_telescope_binds_each_entry_in_the_ones_after_it`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(usize::from(site.at.node)),
-                    Some(&Plan::ValueFunction(domains, _)) if domains.start <= domains.end
+                    Some(&(Plan::ValueFunction(..) | Plan::Telescope(..)))
                 )
         },
     )]
@@ -6542,6 +6601,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         closed(site, &mut cursor, TileName::FAT_ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
+        if self.telescope_function(site, frame, domain, codomain)? == arity::Planned(true) {
+            return Ok(());
+        }
         let start = self.operands.len();
         if let Err(refusal) = self.domains(domain) {
             self.operands.truncate(start);
@@ -7169,22 +7231,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Literal(_)
                 | Plan::StaticApplication(..)
                 | Plan::Tuple(_)
+                | Plan::Record(_)
+                | Plan::Injection(..)
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
                 | Plan::Here(_)
                 | Plan::Constructor(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Derived(_) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Block(_) | Plan::Application(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Derived(_) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
                 | Plan::Universe(_)
                 | Plan::ValueFunction(..)
+                | Plan::Telescope(..)
                 | Plan::StaticPi(..)
                 | Plan::Product(..)
+                | Plan::RecordType(_)
+                | Plan::Sum(_)
                 | Plan::Former(TypeFormer::Thunk, _)
                 | Plan::Path(..)
                 | Plan::Data(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::Former(TypeFormer::Returner, _) => {
+                | Plan::Arrow(..) | Plan::With(_) | Plan::Former(TypeFormer::Returner, _) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) => Some(match universe.sort {
@@ -7327,8 +7394,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .mint_code(code, arguments, sink, origin)
                 .map(Lowered::Value),
             | Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
+            | Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
+            | Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
             | Plan::ValueFunction(domains, codomain) => {
                 self.mint_value_function(domains, codomain, sink, origin)
+            },
+            | Plan::Telescope(entries, codomain) => {
+                self.mint_telescope(entries, codomain, sink, origin)
             },
             | Plan::Transparent(child) => self.lowered_at(child),
             | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
@@ -7346,6 +7418,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.computation(id, origin)
             }),
             | Plan::Product(components) => self.mint_product(components, sink, origin),
+            | Plan::RecordType(ref fields) => self.mint_record_type(fields, sink, origin),
+            | Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
+            | Plan::With(entries) => self.mint_with(entries, sink, origin),
+            | Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
+            | Plan::Observe(subject, observed) => {
+                self.mint_observe(subject, observed, sink, origin)
+            },
             | Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             | Plan::Derived(derived) => self.mint_derived(derived, sink, origin),
             | Plan::Arrow(..)
@@ -7920,7 +7999,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Decode(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)
+            | Plan::Record(_)
+            | Plan::Injection(..)
             | Plan::ValueFunction(..)
+            | Plan::Telescope(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -7930,6 +8012,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Case(_)
             | Plan::EmptyCase(_)
             | Plan::Product(_)
+            | Plan::RecordType(_)
+            | Plan::Sum(_)
+            | Plan::With(_)
+            | Plan::Copattern(_)
+            | Plan::Observe(..)
             | Plan::Block(_)
             | Plan::Derived(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
@@ -10237,10 +10324,11 @@ fn halves<'source>(
 /// - requires: nothing; the function is total over the former vocabulary.
 /// - ensures: exactly the value-producing formers answer affirmatively — a
 ///   name, a capitalised name, a number, a string, the unit, a parenthesised
-///   expression and a thunk — the reserved tuple among them, since a reserved
-///   form is a value the fragment declines rather than a form of another sort,
-///   and keeping the two apart is what lets an attribute payload written as a
-///   computation be reported as a non-value rather than as a sort error.
+///   expression, a thunk, a telescope value and an injection — the reserved
+///   tuple among them, since a reserved form is a value the fragment declines
+///   rather than a form of another sort, and keeping the two apart is what lets
+///   an attribute payload written as a computation be reported as a non-value
+///   rather than as a sort error.
 /// - provides: the guard the attribute payload reading takes.
 /// - fails: never.
 /// - panics: none.
@@ -10262,6 +10350,8 @@ fn halves<'source>(
                     | Former::Parenthesized
                     | Former::Unit
                     | Former::Thunk
+                    | Former::Telescope
+                    | Former::Injection
             )
     },
 )]
@@ -10276,6 +10366,8 @@ const fn is_value_form(former: Former) -> ValueForm
             | Former::Parenthesized
             | Former::Unit
             | Former::Thunk
+            | Former::Telescope
+            | Former::Injection
     ))
 }
 
@@ -10400,6 +10492,9 @@ pub fn parse_literal(
         | Former::Force
         | Former::Call
         | Former::Case
+        | Former::Telescope
+        | Former::Injection
+        | Former::LazyRecord
         | Former::Instantiation
         | Former::Projection
         | Former::TypeHead
@@ -10410,6 +10505,9 @@ pub fn parse_literal(
         | Former::ArrowType
         | Former::ProductType
         | Former::LazyProductType
+        | Former::TelescopeType
+        | Former::LabelledSumType
+        | Former::LazyRecordType
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType
@@ -12741,25 +12839,19 @@ mod tests
     }
 
     #[test]
-    fn the_reserved_lazy_product_is_declined()
+    fn a_lazy_product_is_a_computation_type()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let refused = refusal(SourceText::from("def a : -F Integer & -F Integer ;"));
 
         assert_eq!(
-            refused,
+            refusal(SourceText::from("def a : -F Integer & -F Integer ;")),
             LoweringRefusal::OutOfFragment {
                 span: at(8_usize, 31_usize),
                 form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Reserved,
+                boundary: FragmentBoundary::WrongSort,
             },
-            "the lazy product parses and is declined by name"
-        );
-        assert_eq!(
-            refused.classify(),
-            FailureClass::Unrepresentable,
-            "a reserved form is outside the fragment, not the author's mistake"
+            "the lazy product is no value type: it stands under `+U`"
         );
     }
 
@@ -13999,6 +14091,8 @@ mod tests
             Former::Parenthesized,
             Former::Unit,
             Former::Thunk,
+            Former::Telescope,
+            Former::Injection,
         ];
         for former in Former::ALL {
             assert_eq!(
@@ -14401,5 +14495,3 @@ mod tests
         }
     }
 }
-// weave: run 'weave explain crates/surface-lowering/src/lower.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

@@ -1,0 +1,18 @@
+@[ runs("1") ]
+def none : () => Integer ;
+def none = thunk { return 1 } ;
+
+@[ runs("<fun>") ]
+def one : (Integer) => Integer ;
+def one = thunk { fn (x) { return x } } ;
+
+@[ runs("<fun>") ]
+def two : (x : Integer, y : String) => Integer ;
+def two = thunk { fn (x) { fn (y) { return x } } } ;
+
+@[ runs("<fun>") ]
+def dependent : (a : Type, x : a) => a ;
+def dependent = thunk { fn (a) { fn (x) { return x } } } ;
+
+@[ refuses("DuplicateDefinition") ]
+def twice : (x : Integer, x : String) => Integer ;

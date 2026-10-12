@@ -204,10 +204,6 @@ pub enum UnadmittedFormer
     Reset,
     /// Capture of a delimited continuation.
     Shift,
-    /// A lazy computation pair or its classifier.
-    With,
-    /// Observation of a lazy computation pair.
-    Project,
 }
 
 /// A count of static arguments: how many a static application passes, or how

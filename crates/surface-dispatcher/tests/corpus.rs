@@ -31,6 +31,7 @@ mod corpus
     use gandr_surface_dispatcher::Row;
     use gandr_surface_dispatcher::RunReport;
     use gandr_surface_dispatcher::RunVerdict;
+    use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_dispatcher::Step;
     use gandr_surface_dispatcher::Threads;
     use gandr_surface_dispatcher::Verb;
@@ -424,7 +425,8 @@ mod corpus
     /// - requires: the committed corpus remains quiescent during the sweep.
     /// - ensures: visits each source in the selected tree whose composition
     ///   yields a declaration report, including reports with unsettled
-    ///   declarations; whole-source refusals and faulted steps are not visited.
+    ///   declarations; pending sources, whole-source refusals and faulted steps
+    ///   are not visited.
     /// - fails: preserves the walk's exclusion of faulted sources from
     ///   callbacks.
     /// - panics: propagates a callback panic.
@@ -448,7 +450,10 @@ mod corpus
         let mut walk = Walk::new(vec![root(Path::new("strict")), root(Path::new("fixture"))]);
         while let Maybe::Present(step) = walk.step() {
             let Step::Source {
-                path, ref composed, ..
+                path,
+                root,
+                ref composed,
+                ..
             } = step
             else {
                 continue;
@@ -460,7 +465,10 @@ mod corpus
                 | Tree::Model => !pathological,
                 | Tree::Pathological => pathological,
             };
-            if sweeps && matches!(*composed, Composed::Settled { .. }) {
+            if sweeps
+                && root != SourceRoot::Pending
+                && matches!(*composed, Composed::Settled { .. })
+            {
                 visit(path, composed);
             }
         }

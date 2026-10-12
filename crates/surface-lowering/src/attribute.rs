@@ -609,6 +609,9 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Force
         | Former::Call
         | Former::Case
+        | Former::Telescope
+        | Former::Injection
+        | Former::LazyRecord
         | Former::Instantiation
         | Former::Projection
         | Former::TypeHead
@@ -619,6 +622,9 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ArrowType
         | Former::ProductType
         | Former::LazyProductType
+        | Former::TelescopeType
+        | Former::LabelledSumType
+        | Former::LazyRecordType
         | Former::ValueFunctionType
         | Former::StaticAbstraction
         | Former::ParenthesizedType

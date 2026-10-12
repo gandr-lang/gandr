@@ -224,6 +224,8 @@
 //! pattern and body, keyed by the tree's root. A live match and a hole report
 //! read that one seam rather than parsing the tree back.
 
+use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -231,6 +233,7 @@ use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
@@ -250,6 +253,7 @@ use gandr_core_term::primitive::PRELUDE;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
@@ -268,6 +272,7 @@ use super::Reading;
 use super::Sink;
 use super::Site;
 use super::Stretch;
+use super::arity;
 use super::closed;
 use super::exhausted;
 use super::exits;
@@ -298,6 +303,7 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
+use crate::resolve::binder_type;
 
 #[cfg(test)]
 pub(super) mod tests;
@@ -549,8 +555,9 @@ pub(super) struct Constructed
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: a constructor's fields are a stretch of the match's part store; a
-///   binder numbers its arm variable.
+/// - ensures: a constructor's, a tuple's and a record's fields are a stretch of
+///   the match's part store, a record's labels one per field; a binder numbers
+///   its arm variable.
 /// - executable: none — the pattern holds no store to check its stretch
 ///   against.
 ///
@@ -558,6 +565,8 @@ pub(super) struct Constructed
 /// - hypothesis: L3 — the witnesses compile every shape into the tree they
 ///   assert.
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+/// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+/// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Matcher
 {
@@ -581,6 +590,32 @@ enum Matcher
     Boolean(bool),
     /// An integer literal.
     Integer(Literal),
+    /// A positional telescope `#{p, …}` or a tuple `(p, …)`: its components,
+    /// in index order.
+    Tuple
+    {
+        /// The component patterns, in the part store.
+        fields: Stretch,
+    },
+    /// A labelled telescope `#{.l = p, …}`: the fields it names.
+    Record
+    {
+        /// The labels, one per field.
+        labels: Vec<FieldLabel>,
+        /// The field patterns, in the part store.
+        fields: Stretch,
+    },
+    /// An injection `+{ .l = p }` into the summand `summand` of a sum of
+    /// `arity` summands.
+    Injection
+    {
+        /// The summand's index.
+        summand: usize,
+        /// How many summands the sum has.
+        arity: usize,
+        /// The payload's pattern.
+        field: PatternAt,
+    },
 }
 
 /// One row of a pattern matrix.
@@ -624,6 +659,8 @@ struct Row
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::literal_patterns_compare_and_branch`
 /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
+/// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+/// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Test
 {
@@ -678,6 +715,43 @@ enum Test
         yes: TestAt,
         /// The child for any other.
         no: TestAt,
+    },
+    /// Split the tuple at `level` into its `arity` components, component
+    /// zero outermost.
+    Split
+    {
+        /// The scrutinised level.
+        level: TreeLevel,
+        /// The tree binders above the split.
+        depth: Depth,
+        /// How many components it binds.
+        arity: usize,
+        /// The child under them.
+        child: TestAt,
+    },
+    /// Project each of `labels` off the record at `level`, binding them in
+    /// order.
+    Record
+    {
+        /// The scrutinised level.
+        level: TreeLevel,
+        /// The tree binders above the projections.
+        depth: Depth,
+        /// The labels projected, in order.
+        labels: Vec<FieldLabel>,
+        /// The child under them.
+        child: TestAt,
+    },
+    /// Switch on the summand of the sum at `level`: one child per summand,
+    /// under its payload's binder.
+    Sum
+    {
+        /// The scrutinised level.
+        level: TreeLevel,
+        /// The tree binders above the switch.
+        depth: Depth,
+        /// Each summand's child.
+        branches: Vec<TestAt>,
     },
 }
 
@@ -811,6 +885,53 @@ enum Head
     Boolean,
     /// This integer.
     Integer(Literal),
+    /// A tuple of this many components.
+    Tuple(usize),
+    /// A record.
+    Record,
+    /// An injection into a sum of this many summands.
+    Sum(usize),
+}
+
+/// Whether a queued pattern is the label tile a punned telescope entry binds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Punned(bool);
+
+/// How many components a split binds, or how many summands a sum switch
+/// cases on.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Width(usize);
+
+/// A pattern the reader has allocated and not yet read.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the slot is the pattern's place in the match's store.
+/// - executable: none — the record holds no store.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sum pattern nested in a telescope pattern reads its
+///   arity from the component type its scrutinee's type states.
+/// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Queued
+{
+    /// The pattern's syntax: a form, or the label tile a pun binds.
+    at: Placed,
+    /// The slot it fills.
+    slot: PatternAt,
+    /// The type its position states, when the source wrote one.
+    stated: Maybe<NodeIndex, binder_type::Absent>,
+    /// Whether `at` is a punned label.
+    punned: Punned,
 }
 
 /// The column a switch tests, and the refusal a row of another kind there
@@ -1094,7 +1215,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   `cursor` stands at its `:`.
     /// - ensures: an annotation over a constructor standing as a value reads
     ///   `T` as a value type under the same frame, records it as the
-    ///   constructor's classifier, and adopts the constructor.
+    ///   constructor's classifier, and adopts the constructor; an annotation
+    ///   over an injection does the same, the injection reading its summand's
+    ///   label among the sum `T` states.
     /// - fails: the unadmitted annotation refusal for any other annotation; the
     ///   hole's and the tiles' own faults.
     /// - panics: none.
@@ -1106,6 +1229,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — an annotated parameterised constructor lowers over
     ///   the annotation's type, and an annotated name is refused.
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(_))))]
     pub(super) fn annotated(
         &mut self,
@@ -1119,7 +1243,8 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(declined);
         };
-        if let Maybe::Absent(_) = self.applied_constructor(site, inner)? {
+        let injected = matches!(self.form_at(inner)?, Some((_, Former::Injection)));
+        if !injected && let Maybe::Absent(_) = self.applied_constructor(site, inner)? {
             return Err(declined);
         }
         let _colon = cursor.tile(TileName::COLON);
@@ -1373,6 +1498,7 @@ impl<'source> Lowerer<'_, 'source>
             patterns: Patterns::new(),
             arms: Vec::new(),
         };
+        let stated = self.scrutinee_type(frame, scrutinee)?;
         let mut roots = Vec::new();
         for (arm, &(pattern, body)) in arms.iter().enumerate() {
             let arm = ArmAt(arm);
@@ -1381,7 +1507,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut bound = Vec::new();
             for alternative in alternatives {
                 let mut named = Vec::new();
-                let root = self.pattern(site, alternative, &mut patterns, &mut named)?;
+                let root = self.pattern(site, alternative, stated, &mut patterns, &mut named)?;
                 if several && !named.is_empty() {
                     return Err(LoweringRefusal::OutOfFragment {
                         span: pattern.span,
@@ -1507,7 +1633,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the or-free pattern `root` of the match at `site` into
-    /// `patterns`, numbering its variables into `named`.
+    /// `patterns`, numbering its variables into `named`; `stated` is the type
+    /// the scrutinee's position states.
     ///
     /// # Specification
     /// - requires: `root` is an alternative of an arm of the match at `site`.
@@ -1515,7 +1642,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   pattern holding it; each name bound once, numbered in source order.
     /// - fails: a pattern the fragment does not read, by its own name; a
     ///   constructor no earlier family declares, as unresolved; a constructor
-    ///   applied to other than its arity; a variable bound twice; a repair;
+    ///   applied to other than its arity; a sum pattern whose position states
+    ///   no sum, as unannotated; a variable bound twice; a repair;
     ///   [`LoweringRefusal::WithoutK`] for `here`, reflexivity as a pattern.
     /// - panics: none.
     ///
@@ -1527,6 +1655,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   decline the others.
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
     /// - witness: `lower::identity::tests::matching_reflexivity_is_refused_as_k`
     #[spec(
         captures: before = patterns.shapes.len(),
@@ -1536,18 +1665,29 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         site: Site,
         root: Placed,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
         patterns: &mut Written,
         named: &mut Vec<Placed>,
     ) -> Result<PatternAt, LoweringRefusal<'source>>
     {
         let first = PatternAt(patterns.shapes.len());
         patterns.shapes.push((root, Matcher::Wild));
-        let mut work = Vec::from([(root, first)]);
+        let mut work = Vec::from([Queued {
+            at: root,
+            slot: first,
+            stated,
+            punned: Punned(false),
+        }]);
         let mut pieces = Pieces::new();
-        while let Some((at, slot)) = work.pop() {
+        while let Some(queued) = work.pop() {
             self.fuel.spend()?;
-            let shape = self.pattern_shape(site, at, &mut pieces, patterns, named, &mut work)?;
-            if let Some(held) = patterns.shapes.get_mut(slot.0) {
+            let shape = if queued.punned.0 {
+                self.binder(queued.at, named)?
+            }
+            else {
+                self.pattern_shape(site, queued, &mut pieces, patterns, named, &mut work)?
+            };
+            if let Some(held) = patterns.shapes.get_mut(queued.slot.0) {
                 held.1 = shape;
             }
         }
@@ -1555,12 +1695,53 @@ impl<'source> Lowerer<'_, 'source>
         Ok(first)
     }
 
-    /// The shape of the pattern at `at`, its field patterns allocated and
+    /// The binder the name written at `at` makes, numbered into `named`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a pattern name or a punned label of one pattern.
+    /// - ensures: the binder of the next arm variable.
+    /// - fails: [`LoweringRefusal::DuplicateDefinition`] for a name already
+    ///   bound in the pattern.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name and a punned label each bind once.
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    #[spec(captures: before = named.len(), ensures: |ret| ret.is_err() || (named.len() == before.saturating_add(1) && matches!(ret, Ok(Matcher::Binder(variable)) if variable.0 == before)))]
+    fn binder(
+        &self,
+        at: Placed,
+        named: &mut Vec<Placed>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let spelled = self.text_at(at);
+        if let Some(&earlier) = named
+            .iter()
+            .find(|&&binder| self.text_at(binder) == spelled)
+        {
+            return Err(LoweringRefusal::DuplicateDefinition {
+                span: at.span,
+                name: SurfaceName::from(spelled),
+                first: earlier.span,
+            });
+        }
+        named.push(at);
+
+        Ok(Matcher::Binder(VariableAt(named.len().saturating_sub(1))))
+    }
+
+    /// The shape of the queued pattern, its field patterns allocated and
     /// queued on `work`.
     ///
     /// # Specification
     /// - requires: as [`Self::pattern`]; `pieces` is scratch.
-    /// - ensures: as [`Self::pattern`], for one pattern.
+    /// - ensures: as [`Self::pattern`], for one pattern; a telescope or tuple
+    ///   pattern's components and a sum pattern's payload are queued with the
+    ///   component's or summand's type the queued pattern's stated type writes,
+    ///   when it writes one.
     /// - fails: as [`Self::pattern`].
     /// - panics: none.
     ///
@@ -1570,17 +1751,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::pattern`].
     /// - witness: `lower::native::tests::patterns_outside_the_fragment_are_declined_by_name`
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     #[spec(captures: before = patterns.shapes.len(), ensures: patterns.shapes.len() >= before)]
     fn pattern_shape(
-        &self,
+        &mut self,
         site: Site,
-        at: Placed,
+        queued: Queued,
         pieces: &mut Pieces,
         patterns: &mut Written,
         named: &mut Vec<Placed>,
-        work: &mut Vec<(Placed, PatternAt)>,
+        work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
+        let at = queued.at;
         let Some(node) = self.tree.node(at.node)
         else {
             return Ok(Matcher::Wild);
@@ -1613,22 +1797,10 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Hole(HoleId::from(identity)));
         }
         if name == FormName::IDENTIFIER {
-            let spelled = self.text_at(at);
-            if spelled.as_ref() == super::identity::HERE {
+            if self.text_at(at).as_ref() == super::identity::HERE {
                 return Err(LoweringRefusal::WithoutK { span: at.span });
             }
-            if let Some(&earlier) = named
-                .iter()
-                .find(|&&binder| self.text_at(binder) == spelled)
-            {
-                return Err(LoweringRefusal::DuplicateDefinition {
-                    span: at.span,
-                    name: SurfaceName::from(spelled),
-                    first: earlier.span,
-                });
-            }
-            named.push(at);
-            return Ok(Matcher::Binder(VariableAt(named.len().saturating_sub(1))));
+            return self.binder(at, named);
         }
         if name == FormName::NUMBER {
             return integer(here, self.text_at(at));
@@ -1676,6 +1848,29 @@ impl<'source> Lowerer<'_, 'source>
             exhausted(here, &cursor)?;
             return self.constructor_pattern(site, here, head, &fields, patterns, work);
         }
+        if name == FormName::TUPLE_PATTERN {
+            let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            closed(here, &mut cursor, TileName::PAREN_OPEN)?;
+            let entries = Self::tuple_entries(here, &mut cursor)?;
+            return self.components(here, queued.stated, &entries, patterns, work);
+        }
+        if name == FormName::TELESCOPE_PATTERN {
+            let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            closed(here, &mut cursor, TileName::RECORD)?;
+            let entries = self.pattern_entries(here, &mut cursor)?;
+            return self.components(here, queued.stated, &entries, patterns, work);
+        }
+        if name == FormName::LABELLED_SUM_PATTERN {
+            let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            closed(here, &mut cursor, TileName::PLUS)?;
+            closed(here, &mut cursor, TileName::BRACE_OPEN)?;
+            let key = self.dotted(here, &mut cursor)?;
+            closed(here, &mut cursor, TileName::EQUALS)?;
+            let payload = here.one(cursor.operands())?;
+            closed(here, &mut cursor, TileName::BRACE_CLOSE)?;
+            exhausted(here, &cursor)?;
+            return self.injected(here, queued.stated, key, payload, patterns, work);
+        }
 
         Err(here.out(FragmentBoundary::Unadmitted))
     }
@@ -1705,7 +1900,7 @@ impl<'source> Lowerer<'_, 'source>
         head: Placed,
         fields: &[Placed],
         patterns: &mut Written,
-        work: &mut Vec<(Placed, PatternAt)>,
+        work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let name = SurfaceName::from(self.text_at(head));
@@ -1719,23 +1914,191 @@ impl<'source> Lowerer<'_, 'source>
         if fields.len() != constructor.arity {
             return Err(here.out(FragmentBoundary::Arity(OperandCount::from(fields.len()))));
         }
-        let start = patterns.parts.len();
-        for &field in fields {
-            let slot = PatternAt(patterns.shapes.len());
-            patterns.shapes.push((field, Matcher::Wild));
-            patterns.parts.push(slot);
-        }
-        let end = patterns.parts.len();
-        for (offset, &field) in fields.iter().enumerate().rev() {
-            if let Some(&slot) = patterns.parts.get(start.saturating_add(offset)) {
-                work.push((field, slot));
-            }
-        }
+        let queued: Vec<Queued> = fields
+            .iter()
+            .map(|&field| Queued {
+                at: field,
+                slot: UNWRITTEN,
+                stated: Maybe::Absent(binder_type::Absent::Untyped),
+                punned: Punned(false),
+            })
+            .collect();
 
         Ok(Matcher::Constructor {
             form: FormAt(constructor.form),
             tag: constructor.tag,
-            fields: Stretch { start, end },
+            fields: allocated(patterns, work, &queued),
+        })
+    }
+
+    /// The tuple or record shape of a telescope or tuple pattern's
+    /// `entries`, each component queued with the type `stated` writes for
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: `entries` are the entries of the pattern at `here`.
+    /// - ensures: positional entries, in index order, make a tuple; labelled
+    ///   ones a record of their labels; each component queued with the
+    ///   positional type of the same place, or the labelled type of the same
+    ///   label, of the telescope type `stated` writes, when it writes one.
+    /// - fails: the entries' arrangement refusals; the stated type's own
+    ///   malformation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — positional, reordered and labelled telescope
+    ///   patterns, and a tuple pattern.
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Tuple { .. } | Matcher::Record { .. })))]
+    fn components(
+        &mut self,
+        here: Site,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+        entries: &[arity::Entry<'source>],
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let typed = match stated {
+            | Maybe::Present(node) => {
+                self.stated_entries(here, node, Former::TelescopeType, arity::Thunked(false))?
+            },
+            | Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
+        };
+        let untyped = Maybe::Absent(binder_type::Absent::Untyped);
+        let queue = |entry: &arity::Entry<'source>, stated| Queued {
+            at: entry.held.at(),
+            slot: UNWRITTEN,
+            stated,
+            punned: Punned(matches!(entry.held, arity::Held::Punned(_))),
+        };
+        match arity::arrange(here, entries.to_vec())? {
+            | arity::Arranged::Positional(entries) => {
+                let queued: Vec<Queued> = match typed {
+                    | Maybe::Present(ref typed)
+                        if typed.len() == entries.len()
+                            && typed
+                                .iter()
+                                .all(|entry| matches!(entry.key, arity::Key::Positional)) =>
+                    {
+                        entries
+                            .iter()
+                            .zip(typed)
+                            .map(|(entry, component)| {
+                                queue(entry, Maybe::Present(component.held.at().node))
+                            })
+                            .collect()
+                    },
+                    | Maybe::Present(_) | Maybe::Absent(_) => {
+                        entries.iter().map(|entry| queue(entry, untyped)).collect()
+                    },
+                };
+                Ok(Matcher::Tuple {
+                    fields: allocated(patterns, work, &queued),
+                })
+            },
+            | arity::Arranged::Labelled(entries) => {
+                let mut labels = Vec::with_capacity(entries.len());
+                let mut queued = Vec::with_capacity(entries.len());
+                for entry in &entries {
+                    let arity::Key::Label(name, _) = entry.key
+                    else {
+                        continue;
+                    };
+                    let component = match typed {
+                        | Maybe::Present(ref typed) => typed
+                            .iter()
+                            .find(|held| matches!(held.key, arity::Key::Label(label, _) if label == name))
+                            .map_or(untyped, |held| Maybe::Present(held.held.at().node)),
+                        | Maybe::Absent(_) => untyped,
+                    };
+                    labels.push(FieldLabel::from(String::from(name.as_ref())));
+                    queued.push(queue(entry, component));
+                }
+                Ok(Matcher::Record {
+                    labels,
+                    fields: allocated(patterns, work, &queued),
+                })
+            },
+        }
+    }
+
+    /// The injection shape of a sum pattern `+{ key = payload }` whose
+    /// position states the type `stated`.
+    ///
+    /// # Specification
+    /// - requires: `key` and `payload` are the sum pattern's at `here`.
+    /// - ensures: the injection into the summand the key's index names, or its
+    ///   label names among the stated sum's entries, of as many summands as the
+    ///   stated sum has; the payload queued with the summand's type.
+    /// - fails: the unannotated refusal where the position states no sum; a
+    ///   misplaced tile at an index past the sum; the unresolved-name refusal
+    ///   for a label the sum lacks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — labelled and indexed sum patterns under a stated sum,
+    ///   nested in a telescope pattern, and with no stated sum.
+    /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Injection { summand, arity, .. } if summand < arity)))]
+    fn injected(
+        &mut self,
+        here: Site,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+        key: arity::Key<'source>,
+        payload: Placed,
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let summands = match stated {
+            | Maybe::Present(node) => {
+                self.stated_entries(here, node, Former::LabelledSumType, arity::Thunked(false))?
+            },
+            | Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
+        };
+        let Maybe::Present(summands) = summands
+        else {
+            return Err(here.out(FragmentBoundary::Unannotated));
+        };
+        let (summand, entry) = match key {
+            | arity::Key::Index(index, _, written) => {
+                let Some(&entry) = summands.get(index)
+                else {
+                    return Err(here.fault(written.span, FormFault::MisplacedTile));
+                };
+                (index, entry)
+            },
+            | arity::Key::Label(name, written) => {
+                let (arity::Place(index), entry) = Self::labelled_in(&summands, name, written)?;
+                (index, entry)
+            },
+            | arity::Key::Positional => {
+                return Err(here.fault(payload.span, FormFault::MisplacedTile));
+            },
+        };
+        let queued = [Queued {
+            at: payload,
+            slot: UNWRITTEN,
+            stated: Maybe::Present(entry.held.at().node),
+            punned: Punned(false),
+        }];
+        let fields = allocated(patterns, work, &queued);
+
+        Ok(Matcher::Injection {
+            summand,
+            arity: summands.len(),
+            field: patterns
+                .parts
+                .get(fields.start)
+                .copied()
+                .unwrap_or(UNWRITTEN),
         })
     }
 
@@ -1830,6 +2193,11 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Constructor { form, .. } => Head::Data(form),
                     | Matcher::Boolean(_) => Head::Boolean,
                     | Matcher::Integer(ref literal) => Head::Integer(literal.clone()),
+                    | Matcher::Tuple { fields } => {
+                        Head::Tuple(fields.end.saturating_sub(fields.start))
+                    },
+                    | Matcher::Record { .. } => Head::Record,
+                    | Matcher::Injection { arity, .. } => Head::Sum(arity),
                 };
                 Some((Column(column), written, head))
             });
@@ -1852,6 +2220,9 @@ impl<'source> Lowerer<'_, 'source>
             | Head::Data(form) => self.switch_data(patterns, item, switch, form, tree),
             | Head::Boolean => self.switch_boolean(patterns, item, switch, tree),
             | Head::Integer(literal) => self.switch_integer(patterns, item, switch, literal, tree),
+            | Head::Tuple(arity) => self.switch_tuple(patterns, item, switch, Width(arity), tree),
+            | Head::Record => self.switch_record(patterns, item, switch, tree),
+            | Head::Sum(arity) => self.switch_sum(patterns, item, switch, Width(arity), tree),
         }
     }
 
@@ -1927,7 +2298,11 @@ impl<'source> Lowerer<'_, 'source>
                         through(&mut next, held, switch.level);
                         alloc::vec![UNWRITTEN; arity]
                     },
-                    | Matcher::Boolean(_) | Matcher::Integer(_) => return Err(switch.wrong),
+                    | Matcher::Boolean(_)
+                    | Matcher::Integer(_)
+                    | Matcher::Tuple { .. }
+                    | Matcher::Record { .. }
+                    | Matcher::Injection { .. } => return Err(switch.wrong),
                 };
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
@@ -1958,8 +2333,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   `true` and `false`, the column removed, each under the case's one unit
     ///   binder.
     /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
-    ///   column is a constructor or an integer;
-    ///   [`LoweringRefusal::BudgetExceeded`].
+    ///   column is a constructor, an integer, a tuple, a record or an
+    ///   injection; [`LoweringRefusal::BudgetExceeded`].
     /// - panics: none.
     ///
     /// # Errors
@@ -1993,7 +2368,11 @@ impl<'source> Lowerer<'_, 'source>
                     left.push(next.clone());
                     right.push(next);
                 },
-                | Matcher::Constructor { .. } | Matcher::Integer(_) => return Err(switch.wrong),
+                | Matcher::Constructor { .. }
+                | Matcher::Integer(_)
+                | Matcher::Tuple { .. }
+                | Matcher::Record { .. }
+                | Matcher::Injection { .. } => return Err(switch.wrong),
             }
         }
         let without = splice(&item.levels, switch.column, &[]);
@@ -2018,7 +2397,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   admitting another integer, the column kept; both under the
     ///   comparison's binder and the case's unit binder.
     /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
-    ///   column is a constructor or a boolean;
+    ///   column is a constructor, a boolean, a tuple, a record or an injection;
     ///   [`LoweringRefusal::BudgetExceeded`].
     /// - panics: none.
     ///
@@ -2054,7 +2433,11 @@ impl<'source> Lowerer<'_, 'source>
                     equal.push(matched);
                     other.push(row.clone());
                 },
-                | Matcher::Constructor { .. } | Matcher::Boolean(_) => return Err(switch.wrong),
+                | Matcher::Constructor { .. }
+                | Matcher::Boolean(_)
+                | Matcher::Tuple { .. }
+                | Matcher::Record { .. }
+                | Matcher::Injection { .. } => return Err(switch.wrong),
             }
         }
         let depth = Depth(item.depth.0.saturating_add(2));
@@ -2070,6 +2453,258 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// Split the tuple in `switch`'s column into its `arity` components.
+    ///
+    /// # Specification
+    /// - requires: `switch`'s column holds a tuple of `arity` components in the
+    ///   item's first row.
+    /// - ensures: a split whose child holds every row, the column replaced by
+    ///   the components a tuple pattern writes or by wildcards for a pattern
+    ///   matching anything, under `arity` more binders, component zero
+    ///   outermost.
+    /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
+    ///   column is a tuple of another arity or of another kind;
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a positional telescope pattern of three binders and a
+    ///   tuple pattern each reach their arm at the component's level.
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Split { arity: held, .. } if held == width.0)))]
+    fn switch_tuple(
+        &mut self,
+        patterns: &Written,
+        item: &Work,
+        switch: Switch<'source>,
+        width: Width,
+        tree: &mut Compiling,
+    ) -> Result<Test, LoweringRefusal<'source>>
+    {
+        let Width(arity) = width;
+        let mut specialised = Vec::with_capacity(item.rows.len());
+        for row in &item.rows {
+            self.fuel.spend()?;
+            let mut next = row.clone();
+            let held = patterns.entry(row, switch.column);
+            let replacement = match *held {
+                | Matcher::Tuple { fields } if fields.end.saturating_sub(fields.start) == arity => {
+                    patterns
+                        .parts
+                        .get(fields.start .. fields.end)
+                        .map(<[PatternAt]>::to_vec)
+                        .unwrap_or_default()
+                },
+                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                    through(&mut next, held, switch.level);
+                    alloc::vec![UNWRITTEN; arity]
+                },
+                | Matcher::Tuple { .. }
+                | Matcher::Constructor { .. }
+                | Matcher::Boolean(_)
+                | Matcher::Integer(_)
+                | Matcher::Record { .. }
+                | Matcher::Injection { .. } => return Err(switch.wrong),
+            };
+            next.columns = splice(&row.columns, switch.column, &replacement);
+            specialised.push(next);
+        }
+        let child = tree.queue(
+            Depth(item.depth.0.saturating_add(arity)),
+            splice(&item.levels, switch.column, &fresh(item.depth, width)),
+            specialised,
+        );
+
+        Ok(Test::Split {
+            level: switch.level,
+            depth: item.depth,
+            arity,
+            child,
+        })
+    }
+
+    /// Project the fields every row's record pattern in `switch`'s column
+    /// names.
+    ///
+    /// # Specification
+    /// - requires: `switch`'s column holds a record in the item's first row.
+    /// - ensures: the projections of every label any row names, in label order,
+    ///   whose child holds every row, the column replaced by the field each
+    ///   label's pattern writes, a wildcard for a label the row does not name
+    ///   or a pattern matching anything, under one more binder per label.
+    /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
+    ///   column is of another kind; [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two record arms naming different labels each reach
+    ///   their arm with the fields they name.
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Record { ref labels, .. } if labels.is_sorted())))]
+    fn switch_record(
+        &mut self,
+        patterns: &Written,
+        item: &Work,
+        switch: Switch<'source>,
+        tree: &mut Compiling,
+    ) -> Result<Test, LoweringRefusal<'source>>
+    {
+        let mut named = BTreeSet::new();
+        for row in &item.rows {
+            match *patterns.entry(row, switch.column) {
+                | Matcher::Record { ref labels, .. } => named.extend(labels.iter().cloned()),
+                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {},
+                | Matcher::Constructor { .. }
+                | Matcher::Boolean(_)
+                | Matcher::Integer(_)
+                | Matcher::Tuple { .. }
+                | Matcher::Injection { .. } => return Err(switch.wrong),
+            }
+        }
+        let labels: Vec<FieldLabel> = named.into_iter().collect();
+        let mut specialised = Vec::with_capacity(item.rows.len());
+        for row in &item.rows {
+            self.fuel.spend()?;
+            let mut next = row.clone();
+            let held = patterns.entry(row, switch.column);
+            let replacement: Vec<PatternAt> = match *held {
+                | Matcher::Record {
+                    labels: ref written,
+                    fields,
+                } => {
+                    let parts = patterns
+                        .parts
+                        .get(fields.start .. fields.end)
+                        .unwrap_or_default();
+                    labels
+                        .iter()
+                        .map(|label| {
+                            written
+                                .iter()
+                                .zip(parts)
+                                .find_map(|(each, &part)| (each == label).then_some(part))
+                                .unwrap_or(UNWRITTEN)
+                        })
+                        .collect()
+                },
+                | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                    through(&mut next, held, switch.level);
+                    alloc::vec![UNWRITTEN; labels.len()]
+                },
+                | Matcher::Constructor { .. }
+                | Matcher::Boolean(_)
+                | Matcher::Integer(_)
+                | Matcher::Tuple { .. }
+                | Matcher::Injection { .. } => return Err(switch.wrong),
+            };
+            next.columns = splice(&row.columns, switch.column, &replacement);
+            specialised.push(next);
+        }
+        let child = tree.queue(
+            Depth(item.depth.0.saturating_add(labels.len())),
+            splice(
+                &item.levels,
+                switch.column,
+                &fresh(item.depth, Width(labels.len())),
+            ),
+            specialised,
+        );
+
+        Ok(Test::Record {
+            level: switch.level,
+            depth: item.depth,
+            labels,
+            child,
+        })
+    }
+
+    /// Switch on the summand of the sum of `arity` summands in `switch`'s
+    /// column.
+    ///
+    /// # Specification
+    /// - requires: `switch`'s column holds an injection into a sum of `arity`
+    ///   summands in the item's first row.
+    /// - ensures: a sum switch with one child per summand, holding the rows
+    ///   that admit it, the column replaced by the injection's payload or by a
+    ///   wildcard for a pattern matching anything, under the payload's one
+    ///   binder.
+    /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
+    ///   column is an injection into a sum of another arity or of another kind;
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a three-summand match with a catch-all reaches each
+    ///   summand's arm, the catch-all filling the rest.
+    /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::Sum { ref branches, .. } if branches.len() == width.0)))]
+    fn switch_sum(
+        &mut self,
+        patterns: &Written,
+        item: &Work,
+        switch: Switch<'source>,
+        width: Width,
+        tree: &mut Compiling,
+    ) -> Result<Test, LoweringRefusal<'source>>
+    {
+        let Width(arity) = width;
+        let mut branches = Vec::with_capacity(arity);
+        for summand in 0 .. arity {
+            let mut specialised = Vec::new();
+            for row in &item.rows {
+                self.fuel.spend()?;
+                let mut next = row.clone();
+                let held = patterns.entry(row, switch.column);
+                let replacement = match *held {
+                    | Matcher::Injection {
+                        summand: written,
+                        arity: of,
+                        field,
+                    } => {
+                        if of != arity {
+                            return Err(switch.wrong);
+                        }
+                        if written != summand {
+                            continue;
+                        }
+                        field
+                    },
+                    | Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                        through(&mut next, held, switch.level);
+                        UNWRITTEN
+                    },
+                    | Matcher::Constructor { .. }
+                    | Matcher::Boolean(_)
+                    | Matcher::Integer(_)
+                    | Matcher::Tuple { .. }
+                    | Matcher::Record { .. } => return Err(switch.wrong),
+                };
+                next.columns = splice(&row.columns, switch.column, &[replacement]);
+                specialised.push(next);
+            }
+            branches.push(tree.queue(
+                Depth(item.depth.0.saturating_add(1)),
+                splice(&item.levels, switch.column, &fresh(item.depth, Width(1))),
+                specialised,
+            ));
+        }
+
+        Ok(Test::Sum {
+            level: switch.level,
+            depth: item.depth,
+            branches,
+        })
+    }
+
     /// Mint `patterns` into `kept`'s core pattern table and record one arm
     /// alternative per entry of `roots`.
     ///
@@ -2077,15 +2712,22 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every root of `roots` names a pattern of `patterns`.
     /// - ensures: each pattern minted after its parts, in the core's shapes: a
     ///   binder, a wildcard, a hole, a constructor over its fields, a literal,
-    ///   and a boolean as an injection over the unit; one arm record per root,
-    ///   in order.
+    ///   a boolean as an injection over the unit, a tuple of no component as
+    ///   the unit and of two as a pair, and an injection into a sum of two as
+    ///   the injection on its side; any other tuple and a record as a
+    ///   constructor of tag zero over its parts, and any other injection as the
+    ///   constructor tagged with its summand over its payload, which the core's
+    ///   coverage reads as outside its fragment; one arm record per root, in
+    ///   order.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a match over nested constructors, a binder, a hole
-    ///   and an or-pattern keeps each alternative's shape.
+    ///   and an or-pattern keeps each alternative's shape; a pair pattern keeps
+    ///   a pair and a two-summand injection its side.
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+    /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()))]
     fn keep(
         patterns: &Written,
@@ -2096,6 +2738,15 @@ impl<'source> Lowerer<'_, 'source>
         let mut minted: Vec<Option<PatternId>> =
             Vec::from_iter(patterns.shapes.iter().map(|_shape| None));
         for (position, &(_at, ref shape)) in patterns.shapes.iter().enumerate().rev() {
+            let parts = |fields: Stretch| -> Vec<PatternId> {
+                patterns
+                    .parts
+                    .get(fields.start .. fields.end)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|&part| minted.get(part.0).copied().flatten())
+                    .collect()
+            };
             let pattern = match *shape {
                 | Matcher::Wild => Pattern::Wildcard,
                 | Matcher::Binder(_) => Pattern::Binder,
@@ -2107,13 +2758,34 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 | Matcher::Constructor { tag, fields, .. } => Pattern::Constructor {
                     tag: ConstructorTag::from(tag),
-                    fields: patterns
-                        .parts
-                        .get(fields.start .. fields.end)
-                        .unwrap_or_default()
-                        .iter()
-                        .filter_map(|&part| minted.get(part.0).copied().flatten())
-                        .collect(),
+                    fields: parts(fields),
+                },
+                | Matcher::Tuple { fields } => match *parts(fields).as_slice() {
+                    | [] => Pattern::Unit,
+                    | [first, second] => Pattern::Pair(first, second),
+                    | ref several => Pattern::Constructor {
+                        tag: ConstructorTag::from(0_usize),
+                        fields: several.to_vec(),
+                    },
+                },
+                | Matcher::Record { fields, .. } => Pattern::Constructor {
+                    tag: ConstructorTag::from(0_usize),
+                    fields: parts(fields),
+                },
+                | Matcher::Injection {
+                    summand,
+                    arity,
+                    field,
+                } => {
+                    let body = minted.get(field.0).copied().flatten();
+                    match (arity, summand, body) {
+                        | (2_usize, 0_usize, Some(body)) => Pattern::Injection(Side::Left, body),
+                        | (2_usize, 1_usize, Some(body)) => Pattern::Injection(Side::Right, body),
+                        | _ => Pattern::Constructor {
+                            tag: ConstructorTag::from(summand),
+                            fields: body.into_iter().collect(),
+                        },
+                    }
                 },
             };
             let id = kept.patterns.mint(pattern);
@@ -2654,6 +3326,59 @@ fn mint_test(
             let branched = sink.arena.computation_case(answer, &[left, right]);
             Maybe::Present(sink.arena.computation_bind(test, branched))
         },
+        | Test::Split {
+            level,
+            depth,
+            arity,
+            child: at,
+        } => {
+            let Maybe::Present(body) = child(at)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let scrutinee = level_value(sink.arena, scrutinised, depth, level);
+            Maybe::Present(sink.arena.computation_split(
+                scrutinee,
+                ComponentCount::from(arity),
+                body,
+            ))
+        },
+        | Test::Record {
+            level,
+            depth,
+            ref labels,
+            child: at,
+        } => {
+            let Maybe::Present(mut body) = child(at)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            for (offset, label) in labels.iter().enumerate().rev() {
+                let under = Depth(depth.0.saturating_add(offset));
+                let record = level_value(sink.arena, scrutinised, under, level);
+                let projected = sink
+                    .arena
+                    .computation_record_projection(record, label.clone());
+                body = sink.arena.computation_bind(projected, body);
+            }
+            Maybe::Present(body)
+        },
+        | Test::Sum {
+            level,
+            depth,
+            ref branches,
+        } => {
+            let mut lowered_branches = Vec::with_capacity(branches.len());
+            for &at in branches {
+                let Maybe::Present(branch) = child(at)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                lowered_branches.push(branch);
+            }
+            let scrutinee = level_value(sink.arena, scrutinised, depth, level);
+            Maybe::Present(sink.arena.computation_case(scrutinee, &lowered_branches))
+        },
     }
 }
 
@@ -2824,7 +3549,10 @@ fn through(
         | Matcher::Wild
         | Matcher::Constructor { .. }
         | Matcher::Boolean(_)
-        | Matcher::Integer(_) => {},
+        | Matcher::Integer(_)
+        | Matcher::Tuple { .. }
+        | Matcher::Record { .. }
+        | Matcher::Injection { .. } => {},
     }
 }
 
@@ -2855,6 +3583,71 @@ where
     spliced.extend(columns.iter().skip(column.0.saturating_add(1)).copied());
 
     spliced
+}
+
+/// The levels `width` fresh binders under `depth` tree binders introduce,
+/// outermost first.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the levels `depth + 1` through `depth + width`, in order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a split's components and a record's fields each reach
+///   their arm at their own level.
+/// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+#[spec(ensures: |ret| ret.len() == width.0 && ret.iter().enumerate().all(|(offset, level)| level.0 == depth.0.saturating_add(offset).saturating_add(1)))]
+fn fresh(
+    depth: Depth,
+    width: Width,
+) -> Vec<TreeLevel>
+{
+    (0 .. width.0)
+        .map(|offset| TreeLevel(depth.0.saturating_add(offset).saturating_add(1)))
+        .collect()
+}
+
+/// Allocate a slot in `patterns` for each of `queued`, as a fresh stretch
+/// of the part store, and queue each on `work` to be read into its slot.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the stretch of the new parts, one per queued pattern in order,
+///   each queued on `work` with its slot, the first popped first.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constructor's, a tuple's and an injection's parts are
+///   each read into their own slot.
+/// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+/// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+#[spec(
+    captures: before = (patterns.parts.len(), work.len()),
+    ensures: |ret| ret.start == before.0 && ret.end == before.0.saturating_add(queued.len()) && work.len() == before.1.saturating_add(queued.len()),
+)]
+fn allocated(
+    patterns: &mut Written,
+    work: &mut Vec<Queued>,
+    queued: &[Queued],
+) -> Stretch
+{
+    let start = patterns.parts.len();
+    for each in queued {
+        let slot = PatternAt(patterns.shapes.len());
+        patterns.shapes.push((each.at, Matcher::Wild));
+        patterns.parts.push(slot);
+    }
+    let end = patterns.parts.len();
+    for (offset, &each) in queued.iter().enumerate().rev() {
+        if let Some(&slot) = patterns.parts.get(start.saturating_add(offset)) {
+            work.push(Queued { slot, ..each });
+        }
+    }
+
+    Stretch { start, end }
 }
 
 /// Record `origin` for every node minted since `mark`, and the root's own

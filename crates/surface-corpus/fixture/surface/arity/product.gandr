@@ -1,0 +1,46 @@
+@[ checks ]
+def none : #{} ;
+def none = #{} ;
+
+@[ checks ]
+def one : #{Integer} ;
+def one = #{1} ;
+
+@[ checks ]
+def three : #{Integer, String, Unit} ;
+def three = #{1, "a", unit} ;
+
+@[ checks ]
+def reordered : #{Integer, String} ;
+def reordered = #{.1 = "b", .0 = 2} ;
+
+@[ refuses("OutOfFragment") ]
+def bumped = #{reordered | n = 4} ;
+
+@[ refuses("UnresolvedTypeHead") ]
+def sigma : #{k : Integer, v : k} ;
+
+@[ checks ]
+def nothing(t : #{}) -> -F Integer {
+  case t {
+    #{} => return 0
+  }
+}
+
+@[ checks ]
+def only(t : #{Integer}) -> -F Integer {
+  case t {
+    #{x} => return x
+  }
+}
+
+@[ checks ]
+def last(t : #{Integer, Integer, Integer}) -> -F Integer {
+  case t {
+    #{x, y, z} => return z
+  }
+}
+
+@[ runs("3") ]
+def picked : +U (-F Integer) ;
+def picked = thunk { become last(#{1, 2, 3}) } ;

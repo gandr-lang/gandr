@@ -135,7 +135,9 @@ pub enum Standing
     Refused,
     /// A pending source carrying a refusal no expectation can state, as its
     /// root expects: the lowering refused it as a whole, or refused one of its
-    /// declarations at the declaration's own form. Its declarations are not
+    /// declarations at the declaration's own form, or a declaration checks
+    /// but its focusing met a former the command IL lacks
+    /// ([`Awaiting`](crate::compose::Awaiting)). Its declarations are not
     /// counted.
     Pending,
     /// A pending source carrying no such refusal: every expectation it needs
@@ -149,9 +151,10 @@ impl Standing
     ///
     /// # Specification
     /// - requires: `composed` is what a source under `root` became.
-    /// - ensures: a pending source refused whole, or carrying a declaration
-    ///   refused at its own form, is [`Self::Pending`], and one carrying
-    ///   neither [`Self::Lowered`]; a strict or fixture source refused whole is
+    /// - ensures: a pending source refused whole, carrying a declaration
+    ///   refused at its own form, or carrying a declaration awaiting a former
+    ///   of the command IL, is [`Self::Pending`], and one carrying none of
+    ///   these [`Self::Lowered`]; a strict or fixture source refused whole is
     ///   [`Self::Refused`]; otherwise [`Self::Settled`] exactly when every
     ///   declaration settled, and [`Self::Unsettled`] when one did not.
     /// - provides: the standing a walk step and a session submission carry,
@@ -159,9 +162,10 @@ impl Standing
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — whole refusals, refused forms, ordinary declarations
-    ///   and an owed declaration have exact standings under the three roots.
-    ///   These finite cases separate root precedence and settlement, not every
+    /// - hypothesis: L3 — whole refusals, refused forms, a record awaiting the
+    ///   command IL, a code the IL never carries, ordinary declarations and an
+    ///   owed declaration have exact standings under the three roots. These
+    ///   finite cases separate root precedence and settlement, not every
     ///   possible composition or filesystem classification.
     /// - witness: `walk::tests::each_root_stands_its_sources`
     #[inline]
@@ -170,8 +174,8 @@ impl Standing
         Composed::Refused(_) => matches!((root, ret),
             (SourceRoot::Pending, Self::Pending)
                 | (SourceRoot::Strict | SourceRoot::Fixture, Self::Refused)),
-        Composed::Settled { ref report, ref unstatable, .. } => match root {
-            SourceRoot::Pending => ret == if unstatable.is_empty() { Self::Lowered } else { Self::Pending },
+        Composed::Settled { ref report, ref unstatable, ref awaiting, .. } => match root {
+            SourceRoot::Pending => ret == if unstatable.is_empty() && awaiting.is_empty() { Self::Lowered } else { Self::Pending },
             SourceRoot::Strict | SourceRoot::Fixture => ret == match report.tally().settlement() {
                 Settlement::Settled => Self::Settled,
                 Settlement::Unsettled => Self::Unsettled,
@@ -185,8 +189,15 @@ impl Standing
     {
         match (root, composed) {
             | (SourceRoot::Pending, &Composed::Refused(_)) => Self::Pending,
-            | (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
-                if unstatable.is_empty() {
+            | (
+                SourceRoot::Pending,
+                &Composed::Settled {
+                    ref unstatable,
+                    ref awaiting,
+                    ..
+                },
+            ) => {
+                if unstatable.is_empty() && awaiting.is_empty() {
                     Self::Lowered
                 }
                 else {
@@ -1590,6 +1601,14 @@ pub mod tests
                 "def f @[a : Type] (x: a) -> -F a { return x }\ndef broken = missing ;",
             ),
         );
+        scratch.file(
+            Path::new("corpus/fixture/pending/awaiting.gandr"),
+            SourceText::from("def r = #{.n = 1} ;"),
+        );
+        scratch.file(
+            Path::new("corpus/fixture/pending/coded.gandr"),
+            SourceText::from("def small : Type ; def small = Integer ;"),
+        );
         let (seen, walk) = steps(&scratch.0, vec![scratch.0.join("corpus")]);
         assert_eq!(
             seen,
@@ -1597,6 +1616,14 @@ pub mod tests
                 (
                     Path::new("corpus/fixture/owes.gandr"),
                     Seen::Source(Standing::Settled)
+                ),
+                (
+                    Path::new("corpus/fixture/pending/awaiting.gandr"),
+                    Seen::Source(Standing::Pending)
+                ),
+                (
+                    Path::new("corpus/fixture/pending/coded.gandr"),
+                    Seen::Source(Standing::Lowered)
                 ),
                 (
                     Path::new("corpus/fixture/pending/form.gandr"),
@@ -1619,7 +1646,8 @@ pub mod tests
                     Seen::Source(Standing::Unsettled)
                 ),
             ]),
-            "the root each source sits under decides its standing"
+            "the root each source sits under decides its standing; a record waits on the \
+             command IL, a code it never carries does not"
         );
         let report = walk.report();
         let sources = report.sources();
@@ -1628,21 +1656,21 @@ pub mod tests
             (
                 SourceCount::from(1_usize),
                 SourceCount::from(2_usize),
-                SourceCount::from(3_usize)
+                SourceCount::from(5_usize)
             ),
             "each source counted under its root"
         );
         assert_eq!(
             (sources.refused(), sources.lowered_pending()),
-            (SourceCount::from(1_usize), SourceCount::from(1_usize)),
-            "the fixture source refused whole, and the pending source lowered"
+            (SourceCount::from(1_usize), SourceCount::from(2_usize)),
+            "the fixture source refused whole, and the pending sources lowered"
         );
         assert_eq!(
             (
                 usize::from(report.tally().declarations().settled()),
                 usize::from(report.tally().declarations().unsettled())
             ),
-            (2_usize, 1_usize),
+            (3_usize, 1_usize),
             "a pending source's declarations are not counted; a lowered one's are"
         );
         assert_eq!(

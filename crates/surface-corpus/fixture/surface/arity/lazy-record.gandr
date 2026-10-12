@@ -1,0 +1,33 @@
+@[ refuses("Unwired") ]
+def lazy() -> &{get : -F Integer, put : -F String} {
+  &{.put => return "s", .get => return 1}
+}
+
+@[ refuses("Unwired") ]
+def binary : +U (-F Integer & -F String) ;
+def binary = thunk { &{.0 => return 1, .1 => return "s"} } ;
+
+@[ refuses("Unwired") ]
+def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+  become m.get
+}
+
+@[ refuses("Unwired") ]
+def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
+  &{.put => return "s", .get => return n}
+}
+
+@[ refuses("OutOfFragment") ]
+def terminal : +U &{} ;
+
+@[ refuses("OutOfFragment") ]
+def single : +U &{get : -F Integer} ;
+
+@[ refuses("OutOfFragment") ]
+def unthunked : -F Integer & -F Integer ;
+
+@[ refuses("OutOfFragment") ]
+def menu : +U &{get : ! Integer . end, put : ? Integer . end} ;
+
+@[ refuses("OutOfFragment") ]
+def choose : +{ok : ! Integer . end, done : end} ;
