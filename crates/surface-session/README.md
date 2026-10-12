@@ -25,6 +25,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
 - [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
 - [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
+- [A declaration's type and documentation are read off the latest revision](#a-declarations-type-and-documentation-are-read-off-the-latest-revision)
 - [Live match checkpoints](#live-match-checkpoints)
 - [Contract evidence and its limits](#contract-evidence-and-its-limits)
 - [Deferred behavioral floor](#deferred-behavioral-floor)
@@ -57,6 +58,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
 - **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage. Witnesses: `tests::session::integer_literal_types_and_evaluates`, `tests::session::nullary_function_call_evaluates`, `tests::session::holes_decline_evaluation`.
+- **Types and documentation.** `type_of`, `type_at`, `spelled::Absent`, `Session::documentation`: a declaration's type spelled at a page width from the latest resume, by name or by item, and its documentation by its form's identity. Witnesses: `typed::tests::missing_and_refused_types_keep_their_absence_reasons`, `typed::tests::a_synthesised_type_is_spelled`, `typed::tests::each_occurrence_of_a_name_has_its_own_type`, `tests::session::documentation_is_kept_by_declaration_identity`.
 - **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. Witnesses: `tests::edit::apply_of_diff_reproduces_new`, `tests::edit::literal_edit_is_one_set_int`, `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`, `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`, `edit::tests::descent_agrees_with_the_linear_stab_oracle`.
 
 ## Expected features
@@ -206,6 +208,14 @@ The prior implementation's goals were holes inside bodies, each with its expecte
 `Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions. A native data declaration is not a runtime value and returns `evaluation::Absent::DataUnrunnable`.
 
 The prior implementation evaluated a top-level expression and reported a definition with its type alone. The fragment has no top-level expression, so the item evaluated is a declaration, and the loop prints a value line under each checked one. The alternative was evaluating nothing until expressions exist, which leaves the loop unable to show a value. The choice reverses when the surface gains a top-level expression: that item is the one evaluated, and a definition returns to its type line alone.
+
+## A declaration's type and documentation are read off the latest revision
+
+**Choice.** `type_of` spells the type the latest resume gives the last item of a name, the lookup a transcript makes; `type_at` spells the type of the item a `Reference` names, key and occurrence, the lookup a hover makes over one of several declarations of a name. Both read the item's checkpoint: a checked or owed value by its signature, a synthesised value by its produced type, a native declaration by its universe, each laid out through the printer's `ContentSource` at the caller's page width, and an absence names why — no resume, no such item, a refused item, an unsigned one, a refused layout. `Session::documentation` answers the documentation text the latest accepted lowering filed under a declaring form's content identity, which documentation does not reach, so an edit to the documentation alone keeps the key; a revision refused whole keeps the accepted one's, as the import scope does. The session keeps the text owned, so it outlives the revision it was read from.
+
+**Alternatives.** The lookup lived in the REPL's encoder, the one face that spelled a checkpoint's type; a second face, the language server's hover, would otherwise copy it and the two could spell one type differently. Documentation could be read again from the face's own parse, at the cost of a second reading of `///` lines and `doc("…")` entries that could disagree with the lowering's.
+
+**Reversal.** A face that needs the type of a node inside a body, not a whole item, needs a per-node typing the resume does not keep; documentation that must survive a revision refused at the declaration, not whole, needs the lowering to file it for refused forms too.
 
 ## Live match checkpoints
 

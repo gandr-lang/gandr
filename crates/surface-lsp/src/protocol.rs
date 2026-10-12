@@ -221,14 +221,15 @@ pub struct RangeParams
     pub range: Range,
 }
 
-/// The parameters of `textDocument/inlineCompletion`.
+/// The parameters of a request about one position of a document:
+/// `textDocument/inlineCompletion` and `textDocument/hover`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct InlineCompletionParams
+pub struct PositionParams
 {
     /// The document addressed.
     pub text_document: DocumentIdentifier,
-    /// The cursor the completion is shown at.
+    /// The cursor the request is about.
     pub position: Position,
 }
 
@@ -310,6 +311,7 @@ impl InitializeResult
                 document_symbol_provider: Provider::ANSWERED,
                 folding_range_provider: Provider::ANSWERED,
                 selection_range_provider: Provider::ANSWERED,
+                hover_provider: Provider::ANSWERED,
             },
             server_info: ServerInfo {
                 name: SOURCE,
@@ -338,6 +340,8 @@ pub struct ServerCapabilities
     pub folding_range_provider: Provider,
     /// Selection ranges are answered.
     pub selection_range_provider: Provider,
+    /// Hovers are answered.
+    pub hover_provider: Provider,
 }
 
 /// Whether a request is answered, advertised as a provider with no options.
@@ -428,8 +432,10 @@ pub enum Answer
     /// What a selection-range request answers for an open document: one per
     /// position asked about, in order.
     Selections(Vec<SelectionRange>),
-    /// `null`: what `shutdown` answers, and a request about a document that is
-    /// not open.
+    /// What a hover request answers over a declaration's name.
+    Hover(Hover),
+    /// `null`: what `shutdown` answers, a request about a document that is not
+    /// open, and a hover over nothing the server knows.
     Nothing,
 }
 
@@ -618,6 +624,26 @@ impl Serialize for SelectionRange
         }
         built.serialize(serializer)
     }
+}
+
+/// What a hover shows, and the range it is about.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Hover
+{
+    /// The text shown.
+    pub contents: MarkupContent,
+    /// The range the text is about.
+    pub range: Range,
+}
+
+/// Text in a markup the client renders.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MarkupContent
+{
+    /// Always `markdown`.
+    pub kind: &'static str,
+    /// The text.
+    pub value: String,
 }
 
 /// One inline completion: the snippet inserted, and where.

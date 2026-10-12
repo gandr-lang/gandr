@@ -42,6 +42,7 @@
 //! bounded decoder: a manifest whose identity matches never stands in for the
 //! decoder's admission.
 
+use alloc::collections::BTreeMap;
 use core::fmt;
 use std::path::Path;
 
@@ -91,13 +92,16 @@ use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::judge;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportIndex;
 use gandr_surface_lowering::ImportUri;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::documentation;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -1092,6 +1096,9 @@ pub struct Session<Store, Blocks>
     imports: Imports,
     /// The lowered core of the latest accepted revision.
     snapshot: Snapshot,
+    /// The documentation of the latest accepted revision, by the documented
+    /// form's content identity.
+    documentation: BTreeMap<NodeDigest, DocumentationText>,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
     /// Every form of the latest parsed revision, by identity.
@@ -1181,6 +1188,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             blocks,
             imports: Imports::empty(),
             snapshot: Snapshot::default(),
+            documentation: BTreeMap::new(),
             lowerings: LoweringCount::default(),
             forms: FormStore::default(),
             threads: Width::PerformanceCores.threads(),
@@ -1291,10 +1299,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             .map_err(|fault| SessionFault::Compose(ComposeFault::Parse(fault)))?;
         let lowering =
             lower_parsed(&grammar, parsed, &mut lowerings).map_err(SessionFault::Compose)?;
-        let (imports, snapshot, restored) = match lowering.into_lowered() {
+        let (imports, snapshot, documentation, restored) = match lowering.into_lowered() {
             | Lowered::Refused(_) => (
                 Imports::empty(),
                 Snapshot::default(),
+                BTreeMap::new(),
                 Maybe::Absent(reopened::Absent::RefusedWhole),
             ),
             | Lowered::Module { module, arena } => {
@@ -1314,6 +1323,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 (
                     Imports::of(&module),
                     Snapshot::of(&program, module.origins()),
+                    documentation_of(&module),
                     restored,
                 )
             },
@@ -1336,6 +1346,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 blocks,
                 imports,
                 snapshot,
+                documentation,
                 lowerings,
                 forms,
                 threads,
@@ -1569,6 +1580,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         // whole-module judgement and this copy with it.
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module);
+        let documentation = documentation_of(&module);
         let snapshot = Snapshot::of(&items, module.origins());
         let (settled, admission) = judge(self.root.corpus_root(), module, arena).into_parts();
         let composed = match settled {
@@ -1596,6 +1608,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
+        self.documentation = documentation;
         self.admission = Maybe::Present(admission);
         Ok(Submission {
             root: self.root,
@@ -1702,6 +1715,41 @@ impl<Store, Blocks> Session<Store, Blocks>
     pub const fn last(&self) -> Maybe<&Resume, submitted::Absent>
     {
         self.incremental.last()
+    }
+
+    /// The documentation of the latest accepted revision's declaration form
+    /// whose content identity is `key`.
+    ///
+    /// # Specification
+    /// - requires: nothing — any digest is admissible input.
+    /// - ensures: the text the lowering filed under `key` for the latest
+    ///   accepted revision, or the undocumented absence when it filed none. A
+    ///   form's identity excludes its documentation, so the key is the same
+    ///   whichever spelling the documentation took; a revision refused whole
+    ///   keeps the accepted one's.
+    /// - provides: the documentation a hover shows beside a declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a documented declaration answers its exact text, an
+    ///   undocumented one the absence, and an edit to the documentation alone
+    ///   answers the new text under the same key.
+    /// - witness: `tests::session::documentation_is_kept_by_declaration_identity`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(found) => self.documentation.get(&key) == Some(found),
+        | Maybe::Absent(_) => !self.documentation.contains_key(&key),
+    })]
+    #[inline]
+    pub fn documentation(
+        &self,
+        key: NodeDigest,
+    ) -> Maybe<&DocumentationText, documentation::Absent>
+    {
+        self.documentation.get(&key).map_or(
+            Maybe::Absent(documentation::Absent::Undocumented),
+            Maybe::Present,
+        )
     }
 
     /// The synthesis stream of the latest accepted revision.
@@ -1923,4 +1971,18 @@ const fn unrestored(reason: restored::Absent) -> reopened::Absent
         | restored::Absent::NotStored => reopened::Absent::NotStored,
         | restored::Absent::OtherBackend => reopened::Absent::OtherBackend,
     }
+}
+
+/// The text of each documentation `module` filed, by the documented form's
+/// content identity.
+///
+/// # Specification
+/// trivial.
+fn documentation_of(module: &LoweredModule<'_>) -> BTreeMap<NodeDigest, DocumentationText>
+{
+    module
+        .documentations()
+        .iter()
+        .map(|(&key, documented)| (key, documented.text().clone()))
+        .collect()
 }

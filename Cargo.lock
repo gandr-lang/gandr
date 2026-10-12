@@ -761,6 +761,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-parser",
+ "gandr-surface-pretty",
  "gandr-surface-render-remote",
  "gandr-surface-session",
  "gandr-surface-syntax",
@@ -787,6 +788,7 @@ name = "gandr-surface-pretty"
 version = "0.0.0"
 dependencies = [
  "expect-test",
+ "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-strata",
@@ -849,6 +851,7 @@ dependencies = [
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
+ "gandr-surface-pretty",
  "gandr-surface-syntax",
  "proptest",
  "quenchant-anodized",

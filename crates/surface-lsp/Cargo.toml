@@ -14,9 +14,10 @@ publish.workspace = true
 # over the incremental checker's memory checkpoint store and the record
 # plane's memory block store; the dispatcher's root classification and
 # check verb, the renderer's reports, the grammar's highlighter over the
-# parser's tree, the parser's completion query, and the renderer seam's UTF-16
-# projection. The wire is JSON, decoded and encoded through serde; a `file`
-# URI's path is percent-decoded.
+# parser's tree, the parser's completion query, the printer's page width for
+# a hover's type, and the renderer seam's UTF-16 projection. The wire is
+# JSON, decoded and encoded through serde; a `file` URI's path is
+# percent-decoded.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled.
 [dependencies]
@@ -27,6 +28,7 @@ gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
 gandr-surface-render-remote.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true

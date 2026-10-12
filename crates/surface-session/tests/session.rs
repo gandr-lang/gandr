@@ -930,3 +930,47 @@ fn a_dependent_signature_is_an_abstention_not_a_refusal()
         Settlement::Settled
     )]);
 }
+
+/// The content identity of the first declaration form of `text`.
+///
+/// # Specification
+/// trivial.
+fn first_declaration(text: gandr_surface_syntax::SourceText<'_>)
+-> gandr_surface_syntax::NodeDigest
+{
+    let grammar = crate::common::grammar();
+    let tree = gandr_surface_parser::parse(&grammar, text)
+        .expect("the text parses")
+        .into_tree();
+    tree.children(tree.root())
+        .filter_map(|child| tree.node(child))
+        .find(|node| matches!(node.label(), gandr_surface_syntax::NodeLabel::Meld(_)))
+        .map(gandr_surface_syntax::Node::digest)
+        .expect("the text declares a form")
+}
+
+/// The session keeps the accepted revision's documentation under the
+/// documented form's identity, which an edit to the documentation alone
+/// leaves unchanged, and an undocumented form answers the absence.
+#[test]
+fn documentation_is_kept_by_declaration_identity()
+{
+    let mut session = session(SourceRoot::Strict);
+    let first = "/// The answer.\ndef answer = 42 ;\ndef other = 1 ;";
+    let _submitted = submit(&mut session, first);
+    let answer = first_declaration(first.into());
+    assert!(
+        matches!(session.documentation(answer), Maybe::Present(text) if text.as_ref() == "The answer.")
+    );
+    let other = first_declaration("def other = 1 ;".into());
+    assert!(matches!(
+        session.documentation(other),
+        Maybe::Absent(gandr_surface_lowering::documentation::Absent::Undocumented)
+    ));
+    let second = "/// The answer,\n/// twice over.\ndef answer = 42 ;\ndef other = 1 ;";
+    let _submitted = submit(&mut session, second);
+    assert_eq!(first_declaration(second.into()), answer);
+    assert!(
+        matches!(session.documentation(answer), Maybe::Present(text) if text.as_ref() == "The answer,\ntwice over.")
+    );
+}

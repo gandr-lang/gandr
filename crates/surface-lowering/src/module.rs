@@ -5800,6 +5800,17 @@ impl<'source> LoweredModule<'source>
         )
     }
 
+    /// Every declaration form's documentation, by the form's content identity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn documentations(&self) -> &BTreeMap<NodeDigest, Documentation<'source>>
+    {
+        &self.documentation
+    }
+
     /// Every minted core node's origin, and the declarations' own.
     ///
     /// # Specification

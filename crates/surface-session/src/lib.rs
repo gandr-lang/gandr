@@ -51,6 +51,12 @@
 //! reaches a goal is blamed on it rather than declined, because the item run
 //! has no hole of its own.
 //!
+//! # A declaration's type is read off the latest resume
+//!
+//! [`type_of`] spells the type the latest resume gives a declaration at the
+//! caller's page width — its signature, its synthesised type or its declared
+//! universe — so every face names a declaration's type in the same words.
+//!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 
@@ -61,6 +67,7 @@ mod forms;
 mod item_source;
 mod live_match;
 mod session;
+mod typed;
 
 pub use crate::edit::Action;
 pub use crate::edit::ChildSlot;
@@ -104,3 +111,6 @@ pub use crate::session::evaluation;
 pub use crate::session::import;
 pub use crate::session::reopened;
 pub use crate::session::resumed;
+pub use crate::typed::spelled;
+pub use crate::typed::type_at;
+pub use crate::typed::type_of;
