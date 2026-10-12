@@ -246,6 +246,19 @@ pub enum ValueType
     /// Certified equivalences between two quoted closed first-order codes.
     /// Both endpoints form at level zero; formation checks each code.
     PathUniverse(ValueId, ValueId),
+    /// Element identity `Path(A, a, b)` between two values of one value type.
+    /// Formation checks both endpoints at the domain and refuses an open
+    /// domain; an introduction form other than `here` checks against the
+    /// identity fibre the kernel computes at the closed domain.
+    Path
+    {
+        /// The value type the endpoints inhabit.
+        domain: ValueTypeId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+    },
     /// A rigid base-type atom.
     Base(BaseType),
     /// The product of its components, in order: `Product([])` is the unit

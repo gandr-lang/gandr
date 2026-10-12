@@ -51,31 +51,31 @@ use crate::replay::ReplayBudget;
 use crate::replay::ReplayNode;
 
 /// Bool terms and three independently written CBPV functions.
-struct Boolean
+pub struct Boolean
 {
     /// The sum of units.
-    ty: ValueTypeId,
+    pub ty: ValueTypeId,
     /// Bool-to-Bool thunk type.
-    function: ValueTypeId,
+    pub function: ValueTypeId,
     /// Quoted thunk code.
-    code: ValueId,
+    pub code: ValueId,
     /// Left injection.
-    truth: ValueId,
+    pub truth: ValueId,
     /// Right injection.
-    falsity: ValueId,
+    pub falsity: ValueId,
     /// Case-switching function.
-    not: ValueId,
+    pub not: ValueId,
     /// Return its bound argument.
-    identity: ValueId,
+    pub identity: ValueId,
     /// Two sequenced applications of negation.
-    double: ValueId,
+    pub double: ValueId,
 }
 
 /// Construct Bool and actual thunk/force/bind syntax.
 ///
 /// # Specification
 /// trivial.
-fn boolean(arena: &mut TermArena) -> Boolean
+pub fn boolean(arena: &mut TermArena) -> Boolean
 {
     let unit_type = arena.value_type_unit();
     let ty = arena.value_type_sum(&[unit_type, unit_type]);
@@ -193,7 +193,9 @@ fn children(
             } => core::iter::once(AnyNode::Value(scrutinee))
                 .chain(branches.iter().copied().map(AnyNode::Computation))
                 .collect(),
-            | Computation::Transport(..) => panic!("no native transport in fixtures"),
+            | Computation::Transport(..)
+            | Computation::PathTransport { .. }
+            | Computation::RelatedApplication { .. } => panic!("no native transport in fixtures"),
             | Computation::DataCase { .. }
             | Computation::RecordProjection(..)
             | Computation::TupleProjection(..) => {
@@ -288,7 +290,11 @@ fn translate(
                             .map(|branch| computations[branch])
                             .collect::<Vec<_>>(),
                     ),
-                    | Computation::Transport(..) => panic!("no native transport in fixtures"),
+                    | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. } => {
+                        panic!("no native transport in fixtures")
+                    },
                     | Computation::DataCase { .. }
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..) => {
@@ -456,7 +462,7 @@ fn pointwise(
 /// - hypothesis: L3 — omitted, extra and wrong components refuse consumption.
 /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
 #[spec(ensures: |ret| ret.0.len() == outputs.len() && ret.0.iter().zip(outputs).all(|(component, output)| matches!(component, Pointwise::Return { left, right, .. } if left.value == output.0 && right.value == output.1)))]
-fn higher(
+pub fn higher(
     arena: &mut TermArena,
     boolean: &Boolean,
     functions: (ValueId, ValueId),

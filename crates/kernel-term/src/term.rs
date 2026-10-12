@@ -260,6 +260,26 @@ pub enum Value
         /// Untrusted dialogue data, never a formation verdict.
         evidence: alloc::sync::Arc<PathEvidence>,
     },
+    /// The diagonal `here(a)`, inhabiting `Path(A, a, a)`.
+    Here(ValueId),
+    /// A guarded higher field: identity between two identities, observed to
+    /// the program's stated depth.
+    Higher
+    {
+        /// The guarded program, untrusted until replayed.
+        program: alloc::sync::Arc<crate::HigherProgram>,
+        /// One evidence value per guard layer, in layer order.
+        evidence: alloc::boxed::Box<[ValueId]>,
+    },
+    /// Higher evaluation: identity at a thunk code, one replayed component per
+    /// kernel-generated coverage pattern of the argument relation.
+    HigherEvaluation
+    {
+        /// One pair of replay dialogues per component, untrusted.
+        dialogues: alloc::sync::Arc<[crate::EvaluationDialogues]>,
+        /// The returned values and output evidence of each component.
+        components: alloc::boxed::Box<[crate::EvaluationComponent]>,
+    },
     /// A bound value variable.
     Variable(DeBruijnIndex),
     /// A reference to a prior declaration.
@@ -429,6 +449,33 @@ pub enum Computation
     },
     /// Transport a value along a universe path.
     Transport(ValueId, ValueId),
+    /// Dependent transport along an element path: given `path : Path(A, a,
+    /// b)` and `value : P[a]`, computes `F P[b]`.
+    PathTransport
+    {
+        /// The family `P`, a value type under one value binder: the endpoint.
+        motive: ValueTypeId,
+        /// The element path.
+        path: ValueId,
+        /// The value at the source endpoint.
+        value: ValueId,
+    },
+    /// Application of a function identity at related inputs: evaluates both
+    /// functions and continues with both results and their identity bound.
+    RelatedApplication
+    {
+        /// The identity between two functions of one thunk code.
+        path: ValueId,
+        /// The source function's argument.
+        left: ValueId,
+        /// The target function's argument.
+        right: ValueId,
+        /// The identity between the two arguments.
+        evidence: ValueId,
+        /// The continuation, under the left result, the right result and
+        /// their identity, innermost last.
+        body: ComputationId,
+    },
     /// A fixpoint `fix x. M`, checking at any computation type `B` with its
     /// body scoped under one value binder, the fixpoint's own thunk `U B`.
     /// It unfolds only at a constructor argument or under an observation of
@@ -620,7 +667,9 @@ impl PathEvidence
 /// - hypothesis: L3 — wire decoding distinguishes sides and premise positions.
 /// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
 #[spec(ensures: |ret| gandr_kernel_conversion_trace::ConversionDecision::<()>::try_from(ret) == Ok(decision))]
-fn decision_word(decision: gandr_kernel_conversion_trace::ConversionDecision<()>) -> EvidenceWord
+pub fn decision_word(
+    decision: gandr_kernel_conversion_trace::ConversionDecision<()>
+) -> EvidenceWord
 {
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_conversion_trace::ConversionSide;

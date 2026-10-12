@@ -183,6 +183,64 @@ impl Relation
         let root = self.node(relation)?;
         check_value(arena, context, left, root.source)?;
         check_value(arena, context, right, root.target)?;
+        self.evaluate_at(arena, relation, left, right)
+    }
+
+    /// Interpret the root relation at indices the caller has already checked.
+    ///
+    /// # Specification
+    /// - requires: `left` and `right` inhabit the root's source and target
+    ///   types in the caller's context; the checking machine discharges that
+    ///   obligation itself rather than re-entering a nested check.
+    /// - ensures: the same fibre graph [`Self::fiber`] computes at those
+    ///   indices, with no typing side condition of its own.
+    /// - fails: unreadable program addresses, or a list fibre that needs its
+    ///   guarded observation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `Arena` or `RecursiveObservationRequired`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — persisted identity reads the same fibres the checked
+    ///   interpretation computes: cross injections are Empty, products pair
+    ///   their coordinates, and universe indices form native paths.
+    /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibers| fibers.root.0 < fibers.nodes.len()))]
+    #[inline]
+    pub(crate) fn evaluate(
+        &self,
+        arena: &TermArena,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<Fibers, RelationError>
+    {
+        self.evaluate_at(arena, self.root, left, right)
+    }
+
+    /// Interpret a child relation at indices the caller has already checked.
+    ///
+    /// # Specification
+    /// - requires: both indices inhabit the child's source and target types.
+    /// - ensures: the interpreted fibre graph, retaining residual fibres.
+    /// - fails: unreadable program addresses, or a list fibre.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `Arena` or `RecursiveObservationRequired`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::fiber_at`], whose checked wrapper this is.
+    /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibers| fibers.root.0 < fibers.nodes.len()))]
+    pub(super) fn evaluate_at(
+        &self,
+        arena: &TermArena,
+        relation: RelationId,
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<Fibers, RelationError>
+    {
         let mut result = Fibers {
             indices: Vec::new(),
             nodes: Vec::new(),

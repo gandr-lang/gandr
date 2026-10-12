@@ -53,13 +53,13 @@
 //! | `0x2D` | Product path, two path children | Admitted |
 //! | `0x2E` | Transport, path and input children | Admitted |
 //! | `0x2F` | Unassigned | Refused |
-//! | `0x30` | Element `Path`, value-type child and two endpoint value children | Assigned; refused until kernel checking lands |
-//! | `0x31` | `here`, one point value child | Assigned; refused until kernel checking lands |
-//! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Assigned; refused until kernel checking lands |
-//! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Assigned; refused until kernel checking lands |
+//! | `0x30` | Element `Path`, value-type child and two endpoint value children | Admitted |
+//! | `0x31` | `here`, one point value child | Admitted |
+//! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Admitted |
+//! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Admitted |
 //! | `0x34–0x37` | Unassigned element-identity growth | Refused |
-//! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Assigned; refused until kernel checking lands |
-//! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Assigned; refused until kernel checking lands |
+//! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Admitted |
+//! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Admitted |
 //! | `0x3A` | Reserved: quantified higher evaluation | Refused |
 //! | `0x3B` | Reserved: dependent-arrow higher evaluation | Refused |
 //! | `0x3C–0x47` | Held function-identity growth | Refused |
@@ -748,7 +748,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -800,7 +800,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_TUPLE_PROJECTION.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -900,7 +900,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 55] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -942,6 +942,12 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 49] = [
     unbounded(NODE_V_PATH_EQUIV, ChildArity::Fixed(3)),
     unbounded(NODE_V_PATH_PRODUCT, ChildArity::Fixed(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity::Fixed(2)),
+    unbounded(NODE_VT_PATH, ChildArity::Fixed(3)),
+    unbounded(NODE_V_HERE, ChildArity::Fixed(1)),
+    unbounded(NODE_C_PATH_TRANSPORT, ChildArity::Fixed(3)),
+    unbounded(NODE_V_HIGHER, ChildArity::Counted(0)),
+    unbounded(NODE_V_HIGHER_EVALUATION, ChildArity::Counted(0)),
+    unbounded(NODE_C_RELATED_APPLICATION, ChildArity::Fixed(5)),
     unbounded(NODE_VT_LIST, ChildArity::Fixed(1)),
     bounded_alias(NODE_V_LIST_NIL, TokenCount(1)),
     unbounded(NODE_VT_SESSION, ChildArity::Fixed(1)),
@@ -1020,6 +1026,9 @@ mod tests
                         Some(&crate::Value::PathRefl(_)) => row.tag == super::NODE_V_PATH_REFL,
                         Some(&crate::Value::PathProduct(_, _)) => row.tag == super::NODE_V_PATH_PRODUCT,
                         Some(&crate::Value::PathEquiv { .. }) => row.tag == super::NODE_V_PATH_EQUIV,
+                        Some(&crate::Value::Here(_)) => row.tag == super::NODE_V_HERE,
+                        Some(&crate::Value::Higher { .. }) => row.tag == super::NODE_V_HIGHER,
+                        Some(&crate::Value::HigherEvaluation { .. }) => row.tag == super::NODE_V_HIGHER_EVALUATION,
                         Some(&crate::Value::SessionPath { .. }) => row.tag == super::NODE_V_SESSION_PATH,
                         Some(&crate::Value::ListNil) => row.tag == super::NODE_V_LIST_NIL,
                         Some(&crate::Value::ListCons(..)) => row.tag == super::NODE_V_LIST_CONS,
@@ -1037,6 +1046,8 @@ mod tests
                         Some(&crate::Computation::Force(_)) => row.tag == super::NODE_C_FORCE,
                         Some(&crate::Computation::Case { .. }) => row.tag == super::NODE_C_CASE,
                         Some(&crate::Computation::Transport(_, _)) => row.tag == super::NODE_C_TRANSPORT,
+                        Some(&crate::Computation::PathTransport { .. }) => row.tag == super::NODE_C_PATH_TRANSPORT,
+                        Some(&crate::Computation::RelatedApplication { .. }) => row.tag == super::NODE_C_RELATED_APPLICATION,
                         Some(&crate::Computation::ListFold { .. }) => row.tag == super::NODE_C_LIST_FOLD,
                         None => false,
                     },
@@ -1054,6 +1065,7 @@ mod tests
                         Some(&crate::ValueType::StaticPi { .. }) => row.tag == super::NODE_VT_STATIC_PI,
                         Some(&crate::ValueType::Element { .. }) => row.tag == super::NODE_VT_ELEMENT,
                         Some(&crate::ValueType::PathUniverse(_, _)) => row.tag == super::NODE_VT_PATH_UNIVERSE,
+                        Some(&crate::ValueType::Path { .. }) => row.tag == super::NODE_VT_PATH,
                         Some(&crate::ValueType::List(_)) => row.tag == super::NODE_VT_LIST,
                         Some(&crate::ValueType::Session { .. }) => row.tag == super::NODE_VT_SESSION,
                         None => false,
@@ -1113,6 +1125,31 @@ mod tests
         let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
         let product_path = arena.value_path_product(refl, refl);
         let transport = arena.computation_transport(product_path, pair);
+        let element_path = arena.value_type_path(unit_type, unit, unit);
+        let here = arena.value_here(unit);
+        let element_transport = arena.computation_path_transport(unit_type, here, unit);
+        let higher = arena.value_higher(
+            alloc::sync::Arc::new(crate::HigherProgram {
+                depth: crate::HigherDepth(1),
+                root: crate::LayerPosition(0),
+                layers: alloc::vec![
+                    crate::HigherLayer::Guard {
+                        tail: crate::LayerPosition(1),
+                    },
+                    crate::HigherLayer::Redirect(crate::LayerPosition(0)),
+                ],
+            }),
+            alloc::boxed::Box::from([unit]),
+        );
+        let evaluation = arena.value_higher_evaluation(
+            alloc::sync::Arc::from([crate::EvaluationDialogues::default()]),
+            alloc::boxed::Box::from([crate::EvaluationComponent {
+                left: unit,
+                right: literal,
+                evidence: here,
+            }]),
+        );
+        let related = arena.computation_related_application(here, (unit, literal), here, ret);
         let session = arena.value_type_session(
             alloc::sync::Arc::new(crate::session::Graph {
                 nodes: alloc::vec![crate::session::Node::End],
@@ -1175,6 +1212,12 @@ mod tests
             AnyNode::Value(equiv),
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
+            AnyNode::ValueType(element_path),
+            AnyNode::Value(here),
+            AnyNode::Computation(element_transport),
+            AnyNode::Value(higher),
+            AnyNode::Value(evaluation),
+            AnyNode::Computation(related),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
             AnyNode::Value(nil),
             AnyNode::ValueType(session),
@@ -1210,6 +1253,10 @@ mod tests
                         | crate::Value::Constructor { ref fields, .. } => fields.len(),
                         | crate::Value::Record(ref fields) => fields.len(),
                         | crate::Value::Tuple(ref components) => components.len(),
+                        | crate::Value::Higher { ref evidence, .. } => evidence.len(),
+                        | crate::Value::HigherEvaluation { ref components, .. } => {
+                            components.len().saturating_mul(3)
+                        },
                         | _ => 0,
                     },
                     | None => 0,
@@ -1273,9 +1320,16 @@ mod tests
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
             );
+            let identity = matches!(tag, 0x30 ..= 0x33 | 0x38 | 0x39);
             assert!(
-                !(0x30_u8 .. 0x50).contains(&tag),
-                "higher-field, funext and universe-flow reservations have no native formers"
+                identity || !(0x30_u8 .. 0x50).contains(&tag),
+                "only the assigned identity bytes leave the identity, funext and flow ranges"
+            );
+        }
+        for unassigned in (0x34_u8 ..= 0x37).chain(0x3A ..= 0x47).chain(0x48 ..= 0x4F) {
+            assert!(
+                !assigned[usize::from(unassigned)],
+                "the unassigned identity growth and the flow reservation name no former: {unassigned:#04x}"
             );
         }
     }
@@ -1305,6 +1359,7 @@ mod tests
         let expected: Vec<_> = (0_u8 ..= 0x1f)
             .filter(|tag| !matches!(tag, 0x01 | 0x0B))
             .chain(0x2a ..= 0x2e)
+            .chain([0x30, 0x31, 0x32, 0x33, 0x38, 0x39])
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x64)
             .collect();

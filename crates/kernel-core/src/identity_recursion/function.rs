@@ -32,7 +32,7 @@ use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 /// A zero-based position in kernel-generated constructor coverage.
 #[repr(transparent)]
@@ -447,22 +447,7 @@ impl Relation
             (EvaluationSide::Right, right, right_result),
         ] {
             check_value(arena, context, evaluation.value, result_type)?;
-            let mut returned = arena.computation_return(evaluation.value);
-            let mut computation = computation;
-            for _ in context {
-                computation = arena.computation_lambda(computation);
-                returned = arena.computation_lambda(returned);
-            }
-            let computation = arena.value_thunk(computation);
-            let returned = arena.value_thunk(returned);
-            let verdict = crate::replay::replay(
-                arena,
-                &Unfoldings::new(Vec::new()),
-                ReplaySides::Values(computation, returned),
-                EngineClaim::Convertible,
-                evaluation.dialogue.0.iter().copied(),
-                budget,
-            );
+            let verdict = replay_evaluation(arena, context, computation, evaluation, budget);
             if verdict != KernelVerdict::Convertible {
                 return Err(RelationError::Evaluation(component, side, verdict));
             }
@@ -552,6 +537,91 @@ impl Relation
         })();
         arena.truncate_to(mark);
         checked
+    }
+
+    /// Read a higher evaluation as the checking obligations it owes, replaying
+    /// every component's dialogues without a nested check.
+    ///
+    /// # Specification
+    /// - requires: the functions are closed and the caller discharges every
+    ///   returned obligation, in its component's telescope, before trusting the
+    ///   evaluation; the replays here do not depend on those checks for
+    ///   soundness, only for the typing of the values they certify.
+    /// - ensures: one obligation per generated related-input pattern, in
+    ///   coverage order. Each owes the pattern's premise evidence at the
+    ///   argument fibre, both returned values at the result type, and the
+    ///   output evidence at the result fibre of those values; both of its
+    ///   dialogues replayed `force f v = return value` positively.
+    /// - provides: the checking machine's reading of a persisted higher
+    ///   evaluation, sharing coverage and replay with [`Self::check_higher`].
+    /// - fails: Coverage on cardinality; `NeutralFiber` for suspended evidence;
+    ///   Evaluation with its component and side; fibre refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — the persisted not-not and identity functions on
+    ///   Bool relate through both branches; a wrong component refuses.
+    /// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |owed| owed.len() == evidence.0.len()))]
+    pub(crate) fn evaluation_obligations(
+        &self,
+        arena: &mut TermArena,
+        functions: (ValueId, ValueId),
+        evidence: &HigherEvaluation,
+        budget: ReplayBudget,
+    ) -> Result<Vec<ComponentObligation>, RelationError>
+    {
+        let (argument, result) = self.function()?;
+        let result_type = self.node(result)?.source;
+        let patterns = self.related_patterns(arena, budget)?;
+        if patterns.len() != evidence.0.len() {
+            return Err(RelationError::Coverage);
+        }
+        let mut owed = Vec::new();
+        for (position, (pattern, pointwise)) in patterns.into_iter().zip(&evidence.0).enumerate() {
+            let &Pointwise::Return {
+                left: ref left_result,
+                right: ref right_result,
+                proof,
+            } = pointwise
+            else {
+                return Err(RelationError::NeutralFiber);
+            };
+            let premise = self
+                .evaluate_at(arena, argument, pattern.value, pattern.value)?
+                .native(arena)?;
+            for (side, function, evaluation) in [
+                (EvaluationSide::Left, functions.0, left_result),
+                (EvaluationSide::Right, functions.1, right_result),
+            ] {
+                let computation = apply(arena, function, pattern.value);
+                let verdict =
+                    replay_evaluation(arena, &pattern.context, computation, evaluation, budget);
+                if verdict != KernelVerdict::Convertible {
+                    return Err(RelationError::Evaluation(
+                        Component(position),
+                        side,
+                        verdict,
+                    ));
+                }
+            }
+            let output = self
+                .evaluate_at(arena, result, left_result.value, right_result.value)?
+                .native(arena)?;
+            owed.push(ComponentObligation {
+                context: pattern.context,
+                checks: [
+                    (pattern.proof, premise),
+                    (left_result.value, result_type),
+                    (right_result.value, result_type),
+                    (proof, output),
+                ],
+            });
+        }
+        Ok(owed)
     }
 
     /// Introduce function identity by its computed related-input product.
@@ -704,4 +774,53 @@ fn apply(
 {
     let forced = arena.computation_force(function);
     arena.computation_application(forced, argument)
+}
+
+/// Replay one claimed evaluation, closed over its component's telescope.
+///
+/// # Specification
+/// - ensures: the verdict of replaying `computation = return value` under one
+///   lambda per telescope entry, with no unfoldable constants.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — swapping components cannot change the replay goal.
+/// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+#[spec(ensures: |ret| ret != KernelVerdict::NotConvertible
+    && (ret != KernelVerdict::Convertible || u64::from(budget) > 0))]
+fn replay_evaluation(
+    arena: &mut TermArena,
+    context: &[ValueTypeId],
+    computation: ComputationId,
+    evaluation: &Evaluation,
+    budget: ReplayBudget,
+) -> KernelVerdict
+{
+    let mut returned = arena.computation_return(evaluation.value);
+    let mut computation = computation;
+    for _ in context {
+        computation = arena.computation_lambda(computation);
+        returned = arena.computation_lambda(returned);
+    }
+    let computation = arena.value_thunk(computation);
+    let returned = arena.value_thunk(returned);
+    crate::replay::replay(
+        arena,
+        &Unfoldings::new(Vec::new()),
+        ReplaySides::Values(computation, returned),
+        EngineClaim::Convertible,
+        evaluation.dialogue.0.iter().copied(),
+        budget,
+    )
+}
+
+/// The checks one higher-evaluation component owes, in its closed telescope.
+#[derive(Clone, Debug)]
+pub struct ComponentObligation
+{
+    /// The component's pattern telescope, outermost first.
+    pub context: Vec<ValueTypeId>,
+    /// Premise evidence, both returned values, then output evidence, each
+    /// with the type it must inhabit.
+    pub checks: [(ValueId, ValueTypeId); 4],
 }

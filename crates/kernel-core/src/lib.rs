@@ -139,20 +139,34 @@
 //! The certified-equivalence type `Path_U` is native term syntax; conversion
 //! compares its raw classifier and map syntax, never replay-equivalence or
 //! certificate evidence. Transport is computation whose claims the kernel
-//! replays. Identity on elements and the bridge mode share a code fold; the
-//! higher field, funext and forward-only `Flow_U` are bounded in-memory rule
-//! languages. List has a finite native code and guarded, borrowed inhabitants
-//! observed only to a supplied budget. Session codes and their identity
-//! evidence are native; their directional flows transport recorded runs, not
-//! kernel endpoint values.
+//! replays. Identity on elements and the bridge mode share a code fold;
+//! element identity, its guarded higher field and higher evaluation are
+//! persisted syntax, while the bridge mode and forward-only `Flow_U` are
+//! bounded in-memory rule languages. List has a finite native code and
+//! guarded, borrowed inhabitants observed only to a supplied budget. Session
+//! codes and their identity evidence are native; their directional flows
+//! transport recorded runs, not kernel endpoint values.
 //!
 //! The decisions and exhaustion semantics are in [`path_universe`],
-//! [`flow_universe`], [`identity_recursion`], [`higher_field`] and
-//! [`session`]; every assigned and reserved wire byte is in
-//! `gandr-kernel-term`'s tag table. Frontend checking, cached content,
+//! [`flow_universe`], [`identity_recursion`], [`element_identity`],
+//! [`higher_field`] and [`session`]; every assigned and reserved wire byte is
+//! in `gandr-kernel-term`'s tag table. Frontend checking, cached content,
 //! presentation and the command IL each retain their own boundary: none turns
 //! stored candidate evidence into authority or introduces source syntax by
 //! representing it.
+//!
+//! # Element identity
+//!
+//! Element identity is persisted kernel syntax over the one identity fold.
+//! [`element_identity`] forms `Path(A, a, b)` only at a closed `A`, refusing an
+//! open type by name; an introduction checks at the fold's native fibre,
+//! `here` by the kernel's own conversion, transport at its motive instantiated
+//! by substitution, a higher field through its stated depth and a higher
+//! evaluation by replaying every component over kernel-generated coverage. The
+//! checking machine owes every nested check as a goal on its own stack, and the
+//! replay computes transport and related application by the fold's clauses.
+//! Each decision, with its alternatives and reversal, is stated in that
+//! module; the fold's bridge reading has no persisted node.
 //!
 //! # Contract boundaries
 //!
@@ -165,6 +179,7 @@
 //! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
 //! | Guarded local admission | [Admission](crate::admission): schema inheritance, rule-discrimination transparency, guarded substitution and exact instance-side agreement by same-arena identity. |
 //! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
+//! | Element identity | [Element identity](crate::element_identity): open-type refusal, fibre redirection, reflexivity by conversion, guarded higher fields, coverage-replayed higher evaluation and transport by substitution. |
 //! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
 //! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
 //! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
@@ -239,6 +254,7 @@ pub mod admission;
 pub mod census;
 pub mod check;
 pub mod conv;
+pub mod element_identity;
 pub mod encoding;
 pub mod env;
 pub mod error;
@@ -265,6 +281,7 @@ pub use crate::conv::convert_comp_type;
 pub use crate::conv::convert_value_type;
 pub use crate::conv::convertible_comp_types;
 pub use crate::conv::convertible_value_types;
+pub use crate::element_identity::IdentityError;
 pub use crate::encoding::ContentEncoding;
 pub use crate::encoding::ContentId;
 pub use crate::encoding::ContentTable;

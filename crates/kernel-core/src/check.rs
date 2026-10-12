@@ -67,6 +67,7 @@
 //! | `value_type_level` Universe, any sort  | leaf, scope then successor   | —                                                   |
 //! | `value_type_level` Abstract            | leaf, kind lookup            | —                                                   |
 //! | `value_type_level` Element             | leaf, level read, code owed  | —                                                   |
+//! | `value_type_level` Path                | `ValueLevel(domain)`, closed domain, endpoints owed | —                                  |
 //! | `value_type_level` Product / Sum       | `ValueLevel(first)`          | `MaxSecondValue`, then `MaxWith`                    |
 //! | `value_type_level` Thunk               | `CompLevel(body)`            | — (the level passes through)                        |
 //! | `value_type_level` Lift                | `ValueLevel(inner)`          | `LiftCheck`                                         |
@@ -80,12 +81,18 @@
 //! | `synth_value` Thunk                    | `SynthComp(body)`            | `SynthThunk`                                        |
 //! | `synth_value` Lift                     | `SynthValue(body)`           | `SynthLift`                                         |
 //! | `synth_value` Injection                | leaf, not inferable          | —                                                   |
+//! | `synth_value` Here                     | `SynthValue(point)`          | `SynthHere`, closed domain                          |
+//! | `synth_value` Higher / `HigherEvaluation` | leaf, not inferable      | —                                                   |
 //! | `synth_value` Quote, either family     | leaf, formation then universe | —                                                  |
 //! | `synth_comp` Absurd                    | leaf, not inferable          | —                                                   |
 //! | `check_comp` Absurd                    | `CheckValue(body, Empty)`    | —                                                   |
 //! | `check_value` Injection                | `CheckValue(body, summand)`  | —                                                   |
 //! | `check_value` Pair                     | `CheckValue(first, first_t)` | `CheckPairSecond`                                   |
 //! | `check_value` Thunk                    | `CheckComp(body, codomain)`  | —                                                   |
+//! | `check_value` at Path, introduction    | `CheckValue(value, fibre)`   | —                                                   |
+//! | `check_value` Here                     | `CheckValue(point, domain)`  | `CheckHere`                                         |
+//! | `check_value` Higher                   | one `CheckValue` per guard   | `Pending`                                           |
+//! | `check_value` `HigherEvaluation`       | per component, in its telescope | `Components`, then `Pending`                     |
 //! | `check_value` synth fallthrough        | `SynthValue(value)`          | `ConvertValue`                                      |
 //! | `synth_comp` Application, Arrow head   | `SynthComp(head)`            | `SynthApply`, then `ProduceComp`                    |
 //! | `synth_comp` Application, Pi head      | `SynthComp(head)`            | `SynthApply`, then `ProduceComp` at the instance    |
@@ -93,6 +100,8 @@
 //! | `synth_comp` Return                    | `SynthValue(value)`          | `SynthReturn`                                       |
 //! | `synth_comp` Bind                      | `SynthComp(bound)`           | `SynthBind`, `ScopeExit`, then `Strengthen`         |
 //! | `synth_comp` Case                      | `SynthValue(scrutinee)`      | `SynthCaseScrutinee` / `AfterLeft` / `AfterRight`, `ScopeExit`, each branch strengthened |
+//! | `synth_comp` `PathTransport`           | `SynthValue(path)`           | `ElementTransport`, then `ProduceComp` at the target |
+//! | `synth_comp` `RelatedApplication`      | `SynthValue(path)`           | `RelatedPath`, `Pending`, `RelatedBody`, three `ScopeExit` and `Strengthen` |
 //! | `synth_comp` Lambda                    | leaf, not inferable          | —                                                   |
 //! | `check_comp` Lambda, Arrow             | `CheckComp(body, codomain↑)` | `ScopeExit`                                         |
 //! | `check_comp` Lambda, Pi                | `CheckComp(body, codomain)`  | `ScopeExit`                                         |
@@ -274,6 +283,7 @@ use crate::conv::Convertibility;
 use crate::conv::case_branch_mismatch;
 use crate::conv::convert_comp_type;
 use crate::conv::convertible_comp_types;
+use crate::conv::equal_values;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
 use crate::env::projected_atoms;
@@ -287,6 +297,7 @@ use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
+use crate::rewrite::substitute_value_type;
 use crate::support::LooseDepth;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
@@ -594,6 +605,18 @@ enum CodeObligation
         /// Ambient typing telescope.
         context: Vec<ValueTypeId>,
     },
+    /// Endpoint checks deferred by identity formation.
+    Endpoints
+    {
+        /// The domain both endpoints inhabit.
+        domain: ValueTypeId,
+        /// Source endpoint.
+        left: ValueId,
+        /// Target endpoint.
+        right: ValueId,
+        /// Ambient typing telescope.
+        context: Vec<ValueTypeId>,
+    },
 }
 
 /// The ceiling on how many code obligations one declaration's check may drain.
@@ -687,6 +710,7 @@ enum TypeLevelFrame
 /// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
 /// - witness: `session::tests::session_codes_are_closed_and_contractive`
 /// - witness: `check::tests::a_prenex_scope_controls_universe_formation`
+/// - witness: `element_identity::tests::identity_at_an_open_type_is_refused_by_name`
 #[spec(ensures: |ret| {
     let closed_leaf = match root {
         TypeLevelGoal::Value(id) => matches!(arena.value_type(id), Some(&ValueType::Base(_))) || matches!(arena.value_type(id), Some(&ValueType::Product(ref parts) | &ValueType::Sum(ref parts)) if parts.is_empty()),
@@ -801,6 +825,26 @@ where
                             .map_err(KernelError::Path)?;
                             frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
                             goal = TypeLevelGoal::Value(endpoints.source);
+                            continue 'expand;
+                        },
+                        // An identity forms at its domain's level, and only at
+                        // a closed domain: the fold has no reading of a type
+                        // that mentions a binder or reaches a sealed atom. Its
+                        // endpoints are terms, so their checks are owed to the
+                        // checking machine like a decode's code.
+                        | ValueType::Path {
+                            domain,
+                            left,
+                            right,
+                        } => {
+                            crate::element_identity::require_closed(arena, domain)?;
+                            owed.push(CodeObligation::Endpoints {
+                                domain,
+                                left,
+                                right,
+                                context: context.clone(),
+                            });
+                            goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
                         },
                         | ValueType::Base(_) => Level::zero(),
@@ -1038,6 +1082,7 @@ fn abstract_atom_level(
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
         | ValueType::Abstract(_)
+        | ValueType::Path { .. }
         | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
             actual: value_type_witness(arena, kind),
         }),
@@ -1087,7 +1132,8 @@ fn static_classifier(
         | ValueType::Thunk(_)
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
-        | ValueType::Abstract(_) => Err(KernelError::StaticClassifierExpected {
+        | ValueType::Abstract(_)
+        | ValueType::Path { .. } => Err(KernelError::StaticClassifierExpected {
             actual: value_type_witness(arena, classifier),
         }),
     }
@@ -1331,6 +1377,44 @@ enum Frame
     },
     /// Check a transport operand after synthesizing its path classifier.
     Transport(ValueId),
+    /// A `here` synthesis: the point's type is synthesized; the identity is
+    /// its diagonal.
+    SynthHere(ValueId),
+    /// A `here` check: the point checked at the domain; it must convert with
+    /// both held endpoints.
+    CheckHere
+    {
+        /// The reflexivity's point.
+        point: ValueId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+    },
+    /// A higher evaluation's component checks, each in its own pattern
+    /// telescope, then the enclosing context restored.
+    Components
+    {
+        /// The enclosing context.
+        outer: Vec<ValueTypeId>,
+        /// The components still to check, the next one last.
+        remaining: Vec<crate::identity_recursion::ComponentObligation>,
+    },
+    /// An element transport: its path's classifier is synthesized.
+    ElementTransport(ComputationId),
+    /// A related application: its function identity's classifier is
+    /// synthesized.
+    RelatedPath(ComputationId),
+    /// A related application: its premises checked; synthesize the body under
+    /// the two results and their identity, held in binding order.
+    RelatedBody
+    {
+        /// The body source.
+        body: ComputationId,
+        /// The source result's, the target result's, and their identity's
+        /// types, each written in the context its binder extends.
+        binders: [ValueTypeId; 3],
+    },
     /// A tuple synthesis: the component in the register is synthesized; the
     /// rest are held, in reverse order, with the types synthesized so far.
     SynthTuple
@@ -1746,6 +1830,9 @@ fn resolve_constant(
 /// - witness: `check::tests::an_n_way_case_binds_each_summand`
 /// - witness: `check::tests::a_tuple_and_an_injection_read_their_positions`
 /// - witness: `check::tests::a_bind_binds_the_returned_value`
+/// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
+/// - witness: `element_identity::tests::a_dependent_motive_instantiates_by_substitution`
+/// - witness: `element_identity::tests::a_higher_evaluation_proves_function_extensionality`
 #[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
         && match (initial, &ret) {
@@ -2028,6 +2115,37 @@ where
                         goal = Goal::SynthValue(head);
                         continue 'expand;
                     },
+                    // `here(c)` synthesizes the diagonal identity at the type
+                    // `c` synthesizes, which must be closed.
+                    | Value::Here(point) => {
+                        frames.push(Frame::SynthHere(point));
+                        goal = Goal::SynthValue(point);
+                        continue 'expand;
+                    },
+                    | Value::Higher { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::HigherField,
+                        });
+                    },
+                    | Value::HigherEvaluation { .. } => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::HigherEvaluation,
+                        });
+                    },
+                },
+                // An introduction form checked at an identity checks at the
+                // fibre the identity fold computes for its domain and
+                // endpoints; `here`, the higher forms and the neutrals take
+                // their own arms.
+                | Goal::CheckValue(id, expected)
+                    if crate::element_identity::goal_reading(arena, id, expected)
+                        == crate::element_identity::GoalReading::Fibre =>
+                {
+                    let (domain, left, right) =
+                        crate::element_identity::path_parts(arena, expected)?;
+                    let fibre = crate::element_identity::fibre(arena, domain, left, right)?;
+                    goal = Goal::CheckValue(id, fibre);
+                    continue 'expand;
                 },
                 | Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
                     | Value::Record(ref values) => {
@@ -2156,6 +2274,57 @@ where
                             ));
                         },
                     },
+                    | Value::Here(point) => {
+                        let (domain, left, right) =
+                            crate::element_identity::path_parts(arena, expected)?;
+                        frames.push(Frame::CheckHere { point, left, right });
+                        goal = Goal::CheckValue(point, domain);
+                        continue 'expand;
+                    },
+                    // A higher field owes one check per guard, each at the
+                    // fibre its walk computes; none re-enters the machine.
+                    | Value::Higher {
+                        ref program,
+                        ref evidence,
+                    } => {
+                        let program = alloc::sync::Arc::clone(program);
+                        let evidence = evidence.clone();
+                        let mut goals = crate::element_identity::higher_obligations(
+                            arena, expected, &program, &evidence,
+                        )?
+                        .into_iter()
+                        .rev()
+                        .map(|(guard, fibre)| Goal::CheckValue(guard, fibre))
+                        .collect::<Vec<_>>();
+                        if let Some(next) = goals.pop() {
+                            frames.push(Frame::Pending(goals, Produced::Checked));
+                            goal = next;
+                            continue 'expand;
+                        }
+                        Produced::Checked
+                    },
+                    // A higher evaluation replays every component's dialogues
+                    // here and owes each component's checks in that
+                    // component's pattern telescope.
+                    | Value::HigherEvaluation {
+                        ref dialogues,
+                        ref components,
+                    } => {
+                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                        let components = components.clone();
+                        let mut remaining = crate::element_identity::evaluation_obligations(
+                            arena,
+                            expected,
+                            &dialogues,
+                            &components,
+                        )?;
+                        remaining.reverse();
+                        frames.push(Frame::Components {
+                            outer: core::mem::take(&mut context),
+                            remaining,
+                        });
+                        Produced::Checked
+                    },
                     | Value::Constructor { .. }
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
@@ -2220,6 +2389,16 @@ where
                     },
                     | Computation::Transport(path, value) => {
                         frames.push(Frame::Transport(value));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    | Computation::PathTransport { path, .. } => {
+                        frames.push(Frame::ElementTransport(id));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
+                    | Computation::RelatedApplication { path, .. } => {
+                        frames.push(Frame::RelatedPath(id));
                         goal = Goal::SynthValue(path);
                         continue 'expand;
                     },
@@ -2350,6 +2529,8 @@ where
                     | Computation::RecordProjection(..)
                     | Computation::TupleProjection(..)
                     | Computation::Transport(..)
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. }
                     | Computation::ListFold { .. }
                     | Computation::Application(..)
                     | Computation::Force(_) => {
@@ -2588,6 +2769,169 @@ where
                         arena.comp_type_returner(endpoints.target),
                     ));
                     goal = Goal::CheckValue(value, endpoints.source);
+                    continue 'expand;
+                },
+                | Frame::SynthHere(point) => {
+                    let domain = produced.value_type()?;
+                    crate::element_identity::require_closed(arena, domain)?;
+                    produced = Produced::ValueType(arena.value_type_path(domain, point, point));
+                },
+                // Reflexivity is decided by the kernel's own conversion, the
+                // same structural comparison type assignability uses.
+                | Frame::CheckHere { point, left, right } => {
+                    if equal_values(arena, point, left) != Convertibility::Convertible
+                        || equal_values(arena, point, right) != Convertibility::Convertible
+                    {
+                        return Err(crate::element_identity::endpoints_differ(
+                            arena, left, right,
+                        ));
+                    }
+                    produced = Produced::Checked;
+                },
+                | Frame::Components {
+                    outer,
+                    mut remaining,
+                } => {
+                    let Some(component) = remaining.pop()
+                    else {
+                        context = outer;
+                        produced = Produced::Checked;
+                        continue;
+                    };
+                    context = component.context;
+                    frames.push(Frame::Components { outer, remaining });
+                    let [first, rest @ ..] = component.checks;
+                    let goals = rest
+                        .into_iter()
+                        .rev()
+                        .map(|(value, ty)| Goal::CheckValue(value, ty))
+                        .collect::<Vec<_>>();
+                    frames.push(Frame::Pending(goals, Produced::Checked));
+                    goal = Goal::CheckValue(first.0, first.1);
+                    continue 'expand;
+                },
+                // Transport's input checks at the motive instantiated at the
+                // source endpoint, and it returns at the motive instantiated
+                // at the target: instantiation is the rewrite machine's
+                // substitution, so the law holds of every motive.
+                | Frame::ElementTransport(transport) => {
+                    let path_type = produced.value_type()?;
+                    let Some(&Computation::PathTransport { motive, value, .. }) =
+                        arena.computation(transport)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (domain, left, right) =
+                        crate::element_identity::path_parts(arena, path_type)?;
+                    let mut scoped = context.clone();
+                    scoped.push(domain);
+                    let _level = type_level(
+                        arena,
+                        judgement,
+                        TypeLevelGoal::Value(motive),
+                        scoped,
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )?;
+                    let (table, rewrites) = session.rewrite_parts();
+                    let source = substitute_value_type(arena, table, rewrites, motive, left);
+                    let target = substitute_value_type(arena, table, rewrites, motive, right);
+                    frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
+                    goal = Goal::CheckValue(value, source);
+                    continue 'expand;
+                },
+                // A related application reads its function identity's domain
+                // as a pure arrow, checks both arguments and their evidence,
+                // then synthesizes its body under both results and their
+                // identity.
+                | Frame::RelatedPath(application) => {
+                    let path_type = produced.value_type()?;
+                    let Some(&Computation::RelatedApplication {
+                        left,
+                        right,
+                        evidence,
+                        body,
+                        ..
+                    }) = arena.computation(application)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let (functions, ..) = crate::element_identity::path_parts(arena, path_type)?;
+                    let Some(&ValueType::Thunk(arrow)) = arena.value_type(functions)
+                    else {
+                        return Err(value_shape_mismatch(
+                            arena,
+                            ExpectedValueShape::Thunk,
+                            functions,
+                        ));
+                    };
+                    let (argument, result) = match arena.comp_type(arrow) {
+                        | Some(&CompType::Arrow { domain, codomain }) => {
+                            match arena.comp_type(codomain) {
+                                | Some(&CompType::Returner(result)) => (domain, result),
+                                | _ => {
+                                    return Err(comp_shape_mismatch(
+                                        arena,
+                                        ExpectedComputationShape::Returner,
+                                        codomain,
+                                    ));
+                                },
+                            }
+                        },
+                        | _ => {
+                            return Err(comp_shape_mismatch(
+                                arena,
+                                ExpectedComputationShape::Arrow,
+                                arrow,
+                            ));
+                        },
+                    };
+                    let premise = arena.value_type_path(argument, left, right);
+                    let (table, rewrites) = session.rewrite_parts();
+                    let once = shift_value_type(
+                        arena,
+                        table,
+                        rewrites,
+                        result,
+                        BinderDepth::NONE,
+                        BinderDepth::from(1_u32),
+                    );
+                    let twice = shift_value_type(
+                        arena,
+                        table,
+                        rewrites,
+                        result,
+                        BinderDepth::NONE,
+                        BinderDepth::from(2_u32),
+                    );
+                    let source_result = arena.value_variable(DeBruijnIndex::from(1_u32));
+                    let target_result = arena.value_variable(DeBruijnIndex::from(0_u32));
+                    let related = arena.value_type_path(twice, source_result, target_result);
+                    frames.push(Frame::RelatedBody {
+                        body,
+                        binders: [result, once, related],
+                    });
+                    frames.push(Frame::Pending(
+                        Vec::from([
+                            Goal::CheckValue(evidence, premise),
+                            Goal::CheckValue(right, argument),
+                        ]),
+                        Produced::Checked,
+                    ));
+                    goal = Goal::CheckValue(left, argument);
+                    continue 'expand;
+                },
+                | Frame::RelatedBody { body, binders } => {
+                    for binder in binders {
+                        context.push(binder);
+                        frames.push(Frame::Strengthen);
+                        frames.push(Frame::ScopeExit);
+                    }
+                    goal = Goal::SynthComp(body);
                     continue 'expand;
                 },
                 | Frame::SynthTuple {
@@ -3197,6 +3541,7 @@ where
                 | ValueType::Lift { .. }
                 | ValueType::Element { .. }
                 | ValueType::Abstract(_)
+                | ValueType::Path { .. }
                 | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
                     actual: value_type_witness(arena, kind),
                 }),
@@ -3249,6 +3594,7 @@ where
 /// - witness: `check::tests::a_code_that_is_not_of_its_declared_universe_refuses`
 /// - witness: `acceptance::acceptance::draining_code_obligations_reaches_the_checking_machine`
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+/// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
 #[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
@@ -3322,6 +3668,27 @@ where
                         owed: &mut owed,
                     },
                 )?;
+            },
+            | CodeObligation::Endpoints {
+                domain,
+                left,
+                right,
+                context,
+            } => {
+                for endpoint in [left, right] {
+                    let _checked = run(
+                        arena,
+                        judgement,
+                        context.clone(),
+                        Goal::CheckValue(endpoint, domain),
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed: &mut owed,
+                        },
+                    )?;
+                }
             },
             | CodeObligation::Data { datatype, context } => {
                 let Some(matched_native_node) = arena.value_type(datatype)
@@ -3482,6 +3849,7 @@ pub(crate) fn synth_closed_value(
     drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)?;
     Ok(result)
 }
+
 #[cfg(test)]
 mod tests
 {
@@ -5204,5 +5572,7 @@ mod tests
 }
 
 mod descent;
+
 mod former;
+
 mod occurrence;

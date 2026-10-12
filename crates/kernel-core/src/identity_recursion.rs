@@ -13,10 +13,12 @@
 //!
 //! The fold reads a closed code vocabulary with `Mode::Identity` or
 //! `Mode::Bridge`. Identity also reaches the level-zero value universe,
-//! including occurrences beneath the admitted formers. It is an in-memory rule
-//! language beside [`path_universe`], not persisted
-//! element-identity syntax. Endpoints are ordinary typed values in an open
-//! context; unsupported codes are refused before interpretation.
+//! including occurrences beneath the admitted formers. It is the rule set
+//! behind the persisted element-identity nodes: [`crate::element_identity`]
+//! reads its fibres to check `Path`, `here`, the higher forms and transport,
+//! and its clauses become their replay reductions. `Mode::Bridge` has no
+//! persisted node. Endpoints are ordinary typed values in an open context;
+//! unsupported codes are refused before interpretation.
 //!
 //! `Interpretation::path` consumes an ordinary native `ValueId`, synthesizes
 //! it through the declaration checker's closed-value boundary and decodes the
@@ -162,18 +164,17 @@
 //! Code folding, fibre evaluation and proof construction preserve DAG sharing
 //! with call-local tables. Those tables grant no admission capability or
 //! conversion authority. Declaration admission includes the native empty sum,
-//! finite Lists with nil, cons and pure fold, and universe paths; no receipt
-//! admits element-relation, higher-field or function-identity programs or
-//! guarded list inhabitants.
+//! finite Lists with nil, cons and pure fold, universe paths, and the persisted
+//! element-identity nodes: `Path`, `here`, transport, higher fields, higher
+//! evaluation and related application. No receipt admits an in-memory relation
+//! program, a bridge relation or a guarded list inhabitant.
 //!
 //! **Choice.** One code fold produces relation combinators; a shared evaluator
 //! computes both modes, while only identity carries reflexivity and transport.
-//! Separate per-mode recursions would duplicate the former clauses. Native
-//! identity syntax would couple the rule language to persistent declarations
-//! before its dependent substitution laws are checked. **Reversal.**
-//! Integrating element identity requires native syntax, scoped dependent
-//! motives and checked reduction/substitution laws; accepting Abstract
-//! requires its missing interface, not a default relation.
+//! Separate per-mode recursions would duplicate the former clauses. The
+//! persisted syntax over this fold, with its dependent motives and
+//! substitution law, is [`crate::element_identity`]'s. **Reversal.** Accepting
+//! Abstract requires its missing interface, not a default relation.
 //!
 //! # Witnesses
 //!
@@ -208,11 +209,16 @@ use crate::path_universe;
 use crate::replay::ReplayBudget;
 
 mod evaluation;
+
 mod evidence;
+
 mod function;
+
 pub mod recursive;
+
 #[cfg(test)]
 mod tests;
+
 mod universe;
 
 pub use evaluation::Fiber;
@@ -223,12 +229,15 @@ pub use evaluation::IndexId;
 pub use evidence::Transport;
 pub use function::Application;
 pub use function::Component;
+pub(crate) use function::ComponentObligation;
 pub use function::Evaluation;
 pub use function::EvaluationSide;
 pub use function::HigherEvaluation;
 pub use function::Pointwise;
 pub use function::RelatedArguments;
 pub use function::RelatedPattern;
+#[cfg(test)]
+pub(crate) use function::tests as function_fixtures;
 
 /// Element identity with raw evidence rechecked by every consumer.
 ///

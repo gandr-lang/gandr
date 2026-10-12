@@ -1577,6 +1577,9 @@ where
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }
                 | Value::Literal(_)
                 | Value::Tuple(..)
                 | Value::ListNil
@@ -1868,7 +1871,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             if a.keys().eq(b.keys()) { ret == Ok(Structure::of(a.values().zip(b.values()).map(|(a,b)| Premise::values(*a,*b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) }
         } }
  else if (matched_left_value.is_none()) || (matched_right_value.is_none()) { ret == Err(unreadable()) }
- else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+ else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
  else if let (Some(one), Some(other)) = (matched_left_value.and_then(Value::components), matched_right_value.and_then(Value::components)) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
@@ -1954,7 +1957,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
                 | Value::SessionPath { .. }
-                | Value::PathEquiv { .. }),
+                | Value::PathEquiv { .. }
+                | Value::Here(_)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }),
                 _,
             ) => Structure::Leaf(
                 if equal_values(self.arena, left, right) == Convertibility::Convertible {
@@ -2133,14 +2139,14 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
-            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret == Rigidity::Rigid,
+            Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. })) => ret == Rigidity::Rigid,
             Some(held) if held.components() == Some(&[]) => ret == Rigidity::Rigid,
             Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
             Some(&Value::Thunk(_)) | None => ret == Rigidity::Flexible,
             _ => true,
         },
         Term::Computation(computation) => match self.arena.computation(computation) {
-            Some(&(Computation::Transport(..) | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. })) | None => ret == Rigidity::Flexible,
+            Some(&(Computation::Transport(..) | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. })) | None => ret == Rigidity::Flexible,
             _ => true,
         },
     })]
@@ -2174,7 +2180,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
                         | Value::SessionPath { .. }
-                        | Value::PathEquiv { .. }),
+                        | Value::PathEquiv { .. }
+                        | Value::Here(_)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }),
                     ) => {},
                     | Some(
                         &(Value::ListCons(first, second) | Value::StaticApplication(first, second)),
@@ -2207,6 +2216,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     },
                     | Some(
                         &(Computation::Transport(..)
+                        | Computation::PathTransport { .. }
+                        | Computation::RelatedApplication { .. }
                         | Computation::DataCase { .. }
                         | Computation::RecordProjection(..)
                         | Computation::TupleProjection(..)
@@ -2235,6 +2246,17 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     },
                     | Some(&ValueType::PathUniverse(source, target)) => {
                         work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
+                    },
+                    | Some(&ValueType::Path {
+                        domain,
+                        left,
+                        right,
+                    }) => {
+                        work.extend([
+                            AnyNode::ValueType(domain),
+                            AnyNode::Value(left),
+                            AnyNode::Value(right),
+                        ]);
                     },
                     | Some(&ValueType::StaticPi {
                         domain: first,
@@ -2388,7 +2410,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         | Value::Injection(..)
                         | Value::Lift { .. }
                         | Value::Quote(_)
-                        | Value::QuoteComputation(_)),
+                        | Value::QuoteComputation(_)
+                        | Value::Here(_)
+                        | Value::Higher { .. }
+                        | Value::HigherEvaluation { .. }),
                     ) => Ok(Shape::Former),
                     | None => Err(unreadable()),
                 };
@@ -2466,7 +2491,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     let head = self.value_head(scrutinee, frozen, side)?;
                     break head;
                 },
-                | Some(&(Computation::Lambda(_) | Computation::Return(_))) | None => {
+                // A transport or related application that did not reduce has no
+                // trace alphabet of its own: the replay reads it as unreadable.
+                | Some(
+                    &(Computation::Lambda(_)
+                    | Computation::Return(_)
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. }),
+                )
+                | None => {
                     return Err(unreadable());
                 },
             }
@@ -2526,7 +2559,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 | Value::Lift { .. }
                 | Value::Quote(_)
                 | Value::QuoteComputation(_)
-                | Value::StaticApplication(..)),
+                | Value::StaticApplication(..)
+                | Value::Here(_)
+                | Value::Higher { .. }
+                | Value::HigherEvaluation { .. }),
             )
             | None => Err(unreadable()),
         }
@@ -2690,7 +2726,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                     };
                     break self.arena.computation_application(focus, body);
                 },
-                | Some(&(Computation::Lambda(_) | Computation::Return(_))) | None => {
+                | Some(
+                    &(Computation::Lambda(_)
+                    | Computation::Return(_)
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. }),
+                )
+                | None => {
                     return Err(unreadable());
                 },
             }
@@ -2797,10 +2839,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a value unchanged; a computation reduced by β, a forced
-    ///   thunk, a returner met by a bind, an injection met by a case, and a
+    ///   thunk, a returner met by a bind, an injection met by a case, a
     ///   fixpoint carrying replayed structural-descent evidence applied to a
-    ///   constructor, until none fires at its head, and the original id when
-    ///   none fired at all.
+    ///   constructor, and the element-identity transport and related
+    ///   application steps of [`crate::element_identity`], until none fires at
+    ///   its head, and the original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -2945,6 +2988,59 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                         path,
                         value,
                     })
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        | crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        | crate::path_universe::Reduction::Stuck => break,
+                    }
+                },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    let term = crate::element_identity::ElementTransport {
+                        motive,
+                        path,
+                        value,
+                    };
+                    match crate::element_identity::transport_beta(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        term,
+                    )
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        | crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        | crate::path_universe::Reduction::Stuck => break,
+                    }
+                },
+                | Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    body,
+                    ..
+                }) => {
+                    let term = crate::element_identity::RelatedStep {
+                        path,
+                        left,
+                        right,
+                        body,
+                    };
+                    match crate::element_identity::related_beta(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        term,
+                    )
                     .map_err(|_unreadable_term| unreadable())?
                     {
                         | crate::path_universe::Reduction::Reduced(reduct) => {

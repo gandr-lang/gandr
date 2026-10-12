@@ -868,7 +868,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
             Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
                             && self.placed.contains_key(&AnyNode::Value(second)),
-            Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
+            Value::PathRefl(body) | Value::Here(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
+            Value::Higher { ref evidence, .. } => evidence.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
+            Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| [component.left, component.right, component.evidence].iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id)))),
             Value::Thunk(body) => self.placed.contains_key(&AnyNode::Computation(body)),
             Value::Quote(quoted) => self.placed.contains_key(&AnyNode::ValueType(quoted)),
             Value::QuoteComputation(quoted) => self.placed.contains_key(&AnyNode::CompType(quoted)),
@@ -881,6 +883,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL,
             Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
             Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
+            Value::Here(_) => gandr_kernel_term::NODE_V_HERE,
+            Value::Higher { .. } => gandr_kernel_term::NODE_V_HIGHER,
+            Value::HigherEvaluation { .. } => gandr_kernel_term::NODE_V_HIGHER_EVALUATION,
             Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
             Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
@@ -962,6 +967,36 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(forward)));
                 record.put_content(self.content_of(AnyNode::Value(backward)));
             },
+            | Value::Here(point) => {
+                record.put_tag(gandr_kernel_term::NODE_V_HERE);
+                record.put_content(self.content_of(AnyNode::Value(point)));
+            },
+            | Value::Higher {
+                ref program,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_HIGHER);
+                for word in program.words() {
+                    record.put_word(EncodedWord(word.0));
+                }
+                for layer in evidence {
+                    record.put_content(self.content_of(AnyNode::Value(*layer)));
+                }
+            },
+            | Value::HigherEvaluation {
+                ref dialogues,
+                ref components,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_HIGHER_EVALUATION);
+                for word in gandr_kernel_term::evaluation_words(dialogues) {
+                    record.put_word(EncodedWord(word.0));
+                }
+                for component in components {
+                    for child in [component.left, component.right, component.evidence] {
+                        record.put_content(self.content_of(AnyNode::Value(child)));
+                    }
+                }
+            },
             | Value::Variable(index) => {
                 record.put_tag(gandr_kernel_term::NODE_V_VARIABLE);
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
@@ -1033,6 +1068,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
+            Computation::PathTransport { motive, path, value } => self.placed.contains_key(&AnyNode::ValueType(motive)) && self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
+            Computation::RelatedApplication { path, left, right, evidence, body } => [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
             Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
                             && self.placed.contains_key(&AnyNode::Value(argument)),
@@ -1048,6 +1085,8 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::TupleProjection(..) => gandr_kernel_term::NODE_C_TUPLE_PROJECTION,
             Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
+            Computation::PathTransport { .. } => gandr_kernel_term::NODE_C_PATH_TRANSPORT,
+            Computation::RelatedApplication { .. } => gandr_kernel_term::NODE_C_RELATED_APPLICATION,
             Computation::ListFold { .. } => gandr_kernel_term::NODE_C_LIST_FOLD,
             Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
             Computation::Fixpoint { .. } => gandr_kernel_term::NODE_C_FIXPOINT,
@@ -1110,6 +1149,34 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_C_TRANSPORT);
                 record.put_content(self.content_of(AnyNode::Value(path)));
                 record.put_content(self.content_of(AnyNode::Value(value)));
+            },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_PATH_TRANSPORT);
+                record.put_content(self.content_of(AnyNode::ValueType(motive)));
+                record.put_content(self.content_of(AnyNode::Value(path)));
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
+            | Computation::RelatedApplication {
+                path,
+                left,
+                right,
+                evidence,
+                body,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_C_RELATED_APPLICATION);
+                for child in [
+                    AnyNode::Value(path),
+                    AnyNode::Value(left),
+                    AnyNode::Value(right),
+                    AnyNode::Value(evidence),
+                    AnyNode::Computation(body),
+                ] {
+                    record.put_content(self.content_of(child));
+                }
             },
             | Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
@@ -1184,6 +1251,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
             ValueType::PathUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
+            ValueType::Path { domain, left, right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
             ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
             ValueType::StaticPi { domain: first, codomain: second } => self.placed.contains_key(&AnyNode::ValueType(first))
@@ -1198,6 +1266,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
             ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
+            ValueType::Path { .. } => gandr_kernel_term::NODE_VT_PATH,
             ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
             ValueType::Base(..) => gandr_kernel_term::NODE_VT_BASE,
             ValueType::Universe { sort: GroundSort::Value, .. } => gandr_kernel_term::NODE_VT_UNIVERSE,
@@ -1241,6 +1310,16 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
                 record.put_content(self.content_of(AnyNode::Value(source)));
                 record.put_content(self.content_of(AnyNode::Value(target)));
+            },
+            | ValueType::Path {
+                domain,
+                left,
+                right,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_PATH);
+                record.put_content(self.content_of(AnyNode::ValueType(domain)));
+                record.put_content(self.content_of(AnyNode::Value(left)));
+                record.put_content(self.content_of(AnyNode::Value(right)));
             },
             | ValueType::Base(base) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
@@ -1409,7 +1488,9 @@ Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNod
 Value::SessionPath { path_type, payload_paths, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
 Value::PathEquiv { path_type, forward, backward, .. } => opened.eq(([AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)].into_iter()).map(Some)),
 Value::ListCons(a,b) | Value::PathProduct(a,b) | Value::StaticApplication(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
-Value::PathRefl(body) | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
+Value::PathRefl(body) | Value::Here(body) | Value::Injection(_,body) | Value::Lift {body,..} => opened.eq((core::iter::once(AnyNode::Value(body))).map(Some)),
+Value::Higher { ref evidence, .. } => opened.eq((evidence.iter().copied().map(AnyNode::Value)).map(Some)),
+Value::HigherEvaluation { ref components, .. } => opened.eq((components.iter().flat_map(|component| [component.left, component.right, component.evidence]).map(AnyNode::Value)).map(Some)),
 Value::Thunk(body) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
 Value::Quote(quoted) => opened.eq((core::iter::once(AnyNode::ValueType(quoted))).map(Some)),
 Value::QuoteComputation(quoted) => opened.eq((core::iter::once(AnyNode::CompType(quoted))).map(Some)),
@@ -1422,6 +1503,8 @@ None => opened.eq((core::iter::empty()).map(Some)),
             Some(&(Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_))) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
             Some(&Computation::Transport(a,b)) => opened.eq(([AnyNode::Value(a),AnyNode::Value(b)].into_iter()).map(Some)),
+            Some(&Computation::PathTransport { motive, path, value }) => opened.eq(([AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)].into_iter()).map(Some)),
+            Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => opened.eq(([AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].into_iter()).map(Some)),
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => opened.eq((core::iter::once(AnyNode::Computation(body))).map(Some)),
             Some(&Computation::Application(head,argument)) => opened.eq(([AnyNode::Computation(head),AnyNode::Value(argument)].into_iter()).map(Some)),
             Some(&Computation::Return(value) | &Computation::Force(value)) => opened.eq((core::iter::once(AnyNode::Value(value))).map(Some)),
@@ -1434,6 +1517,7 @@ ValueType::Record(ref fields) => opened.eq((fields.values().copied().map(AnyNode
 ValueType::Base(_) | ValueType::Universe {..} | ValueType::Abstract(_) => opened.eq((core::iter::empty()).map(Some)),
 ValueType::Session {payloads: inner,..} | ValueType::List(inner) | ValueType::Lift {inner,..} => opened.eq((core::iter::once(AnyNode::ValueType(inner))).map(Some)),
 ValueType::PathUniverse(a,b) => opened.eq(([AnyNode::Value(a), AnyNode::Value(b)].into_iter()).map(Some)),
+ValueType::Path { domain, left, right } => opened.eq(([AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)].into_iter()).map(Some)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => opened.eq((parts.iter().copied().map(AnyNode::ValueType)).map(Some)),
 ValueType::StaticPi {domain:a,codomain:b} => opened.eq(([AnyNode::ValueType(a),AnyNode::ValueType(b)].into_iter()).map(Some)),
 ValueType::Thunk(body) => opened.eq((core::iter::once(AnyNode::CompType(body))).map(Some)),
@@ -1500,7 +1584,25 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(payload_paths)));
             },
-            | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
+            | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(code)));
+            },
+            | Some(&Value::Higher { ref evidence, .. }) => {
+                tasks.extend(
+                    evidence
+                        .iter()
+                        .copied()
+                        .map(AnyNode::Value)
+                        .map(EncodeTask::Open),
+                );
+            },
+            | Some(&Value::HigherEvaluation { ref components, .. }) => tasks.extend(
+                components
+                    .iter()
+                    .flat_map(|component| [component.left, component.right, component.evidence])
+                    .map(AnyNode::Value)
+                    .map(EncodeTask::Open),
+            ),
             | Some(
                 &Value::PathProduct(first, second)
                 | &Value::ListCons(first, second)
@@ -1559,6 +1661,32 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(path)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
+            | Some(&Computation::PathTransport {
+                motive,
+                path,
+                value,
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(motive)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(path)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(value)));
+            },
+            | Some(&Computation::RelatedApplication {
+                path,
+                left,
+                right,
+                evidence,
+                body,
+            }) => {
+                for child in [
+                    AnyNode::Value(path),
+                    AnyNode::Value(left),
+                    AnyNode::Value(right),
+                    AnyNode::Value(evidence),
+                    AnyNode::Computation(body),
+                ] {
+                    tasks.push(EncodeTask::Open(child));
+                }
+            },
             | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
@@ -1615,6 +1743,15 @@ fn push_children(
             | Some(&ValueType::PathUniverse(source, target)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(source)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(target)));
+            },
+            | Some(&ValueType::Path {
+                domain,
+                left,
+                right,
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(domain)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(left)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(right)));
             },
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));

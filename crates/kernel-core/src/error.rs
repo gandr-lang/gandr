@@ -49,6 +49,8 @@ pub enum ValueTypeHead
     Session,
     /// A universe-path classifier.
     PathUniverse,
+    /// An identity type between two elements.
+    Path,
     /// A rigid base-type atom.
     Base,
     /// A product, the unit type among them.
@@ -87,6 +89,7 @@ impl ValueTypeHead
             | ValueType::Data { .. } => Self::Data,
             | ValueType::Record(_) => Self::Record,
             | ValueType::PathUniverse(..) => Self::PathUniverse,
+            | ValueType::Path { .. } => Self::Path,
             | ValueType::Base(_) => Self::Base,
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
@@ -249,6 +252,9 @@ pub enum ExpectedValueShape
     Record,
     /// A universe path, for transport or a product-path component.
     PathUniverse,
+    /// An element identity, for `here`, a higher form or an identity
+    /// eliminator.
+    Path,
     /// A product, for a pair.
     Product,
     /// A sum, for an injection or a case scrutinee.
@@ -286,6 +292,10 @@ pub enum NonInferableForm
     Fixpoint,
     /// A native list introduction needs its element classifier.
     List,
+    /// A higher field carries no record of the identities it relates.
+    HigherField,
+    /// A higher evaluation carries no record of the functions it relates.
+    HigherEvaluation,
 }
 
 /// Which polarity the checker machine's produced register was expected to hold.
@@ -532,6 +542,8 @@ pub enum KernelError
     Session(crate::session::SessionError),
     /// A native universe-path formation or replay obligation failed.
     Path(crate::path_universe::PathError),
+    /// An element-identity formation, introduction or elimination failed.
+    Identity(crate::element_identity::IdentityError),
     /// A value variable's de Bruijn index escaped the typing context.
     UnboundVariable
     {
@@ -778,6 +790,7 @@ impl core::fmt::Display for KernelError
             },
             | Self::Session(ref error) => error.fmt(f),
             | Self::Path(ref error) => error.fmt(f),
+            | Self::Identity(ref error) => error.fmt(f),
             | Self::UnboundVariable { .. } => f.write_str("a variable escaped its context"),
             | Self::UnboundConstant { .. } => {
                 f.write_str("a constant named no admitted declaration")
@@ -849,6 +862,7 @@ mod tests
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_check_memo::ContentDigest;
     use gandr_kernel_strata::LandmarkConstraint;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -859,6 +873,7 @@ mod tests
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LayerPosition;
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::TableEntryCount;
@@ -872,9 +887,13 @@ mod tests
     use super::NonInferableForm;
     use super::RegisterFault;
     use super::ValueTypeMismatch;
+    use crate::element_identity::IdentityError;
     use crate::env::Environment;
     use crate::env::OutstandingCount;
+    use crate::identity_recursion::Component;
+    use crate::identity_recursion::EvaluationSide;
     use crate::levels::LevelContext;
+    use crate::replay::KernelVerdict;
     use crate::witness::comp_type_witness;
     use crate::witness::value_type_witness;
 
@@ -972,6 +991,32 @@ mod tests
                 above: OutstandingCount::from(usize::MAX),
             },
             KernelError::StaticClassifierExpected { actual: unit },
+            KernelError::Identity(IdentityError::OpenType(unit)),
+            KernelError::Identity(IdentityError::OutsideFold(unit)),
+            KernelError::Identity(IdentityError::EndpointsDiffer {
+                left: ContentDigest::default(),
+                right: ContentDigest::default(),
+            }),
+            KernelError::Identity(IdentityError::NeutralFibre),
+            KernelError::Identity(IdentityError::EmptyFibre),
+            KernelError::Identity(IdentityError::HigherFieldRequired),
+            KernelError::Identity(IdentityError::HigherEvaluationRequired),
+            KernelError::Identity(IdentityError::RecursiveObservation),
+            KernelError::Identity(IdentityError::CertificateOperation),
+            KernelError::Identity(IdentityError::Boundary),
+            KernelError::Identity(IdentityError::ZeroDepth),
+            KernelError::Identity(IdentityError::NonProductive(LayerPosition(0))),
+            KernelError::Identity(IdentityError::DepthBound),
+            KernelError::Identity(IdentityError::UnknownLayer(LayerPosition(0))),
+            KernelError::Identity(IdentityError::GuardEvidence),
+            KernelError::Identity(IdentityError::Coverage),
+            KernelError::Identity(IdentityError::CoverageBudget),
+            KernelError::Identity(IdentityError::Evaluation {
+                component: Component(0),
+                side: EvaluationSide::Left,
+                verdict: KernelVerdict::NotConvertible,
+            }),
+            KernelError::Identity(IdentityError::OpenFunctions),
         ];
         let descriptions = cases.each_ref().map(ToString::to_string);
         for (position, description) in descriptions.iter().enumerate() {

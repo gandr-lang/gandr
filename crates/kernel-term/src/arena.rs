@@ -829,7 +829,9 @@ impl TermArena
             Value::Record(ref fields) => fields.values().all(|field| self.value(*field).is_some()),
             Value::ListCons(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             Value::Tuple(ref components) => components.iter().all(|component| self.value(*component).is_some()),
-            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
+            Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) | Value::Here(body) => self.value(body).is_some(),
+            Value::Higher { ref evidence, .. } => evidence.iter().all(|item| self.value(*item).is_some()),
+            Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| self.value(component.left).is_some() && self.value(component.right).is_some() && self.value(component.evidence).is_some()),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
             Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) => self.computation(body).is_some(),
@@ -883,6 +885,8 @@ impl TermArena
             Computation::Application(head, argument) => self.computation(head).is_some() && self.value(argument).is_some(),
             Computation::Return(value) | Computation::Force(value) => self.value(value).is_some(),
             Computation::Transport(path, value) => self.value(path).is_some() && self.value(value).is_some(),
+            Computation::PathTransport { motive, path, value } => self.value_type(motive).is_some() && self.value(path).is_some() && self.value(value).is_some(),
+            Computation::RelatedApplication { path, left, right, evidence, body } => self.value(path).is_some() && self.value(left).is_some() && self.value(right).is_some() && self.value(evidence).is_some() && self.computation(body).is_some(),
             Computation::Bind(bound, body) => self.computation(bound).is_some() && self.computation(body).is_some(),
             Computation::Case { scrutinee, ref branches } => self.value(scrutinee).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::ListFold { element, result, list, on_nil, on_cons } => self.value_type(element).is_some() && self.value_type(result).is_some() && self.value(list).is_some() && self.computation(on_nil).is_some() && self.computation(on_cons).is_some(),
@@ -932,6 +936,7 @@ impl TermArena
             ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|part| self.value_type(*part).is_some()),
             ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
+            ValueType::Path { domain, left, right } => self.value_type(domain).is_some() && self.value(left).is_some() && self.value(right).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
             ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
@@ -2424,6 +2429,112 @@ impl TermArena
         self.alloc_computation(Computation::Transport(path, value))
     }
 
+    /// Mint element identity `Path(A, a, b)` without claiming that it forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path(
+        &mut self,
+        domain: ValueTypeId,
+        left: ValueId,
+        right: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Path {
+            domain,
+            left,
+            right,
+        })
+    }
+
+    /// Mint the diagonal `here(a)` without claiming that it checks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_here(
+        &mut self,
+        point: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Here(point))
+    }
+
+    /// Mint a guarded higher field over its untrusted program and evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_higher(
+        &mut self,
+        program: alloc::sync::Arc<crate::HigherProgram>,
+        evidence: alloc::boxed::Box<[ValueId]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Higher { program, evidence })
+    }
+
+    /// Mint a higher-evaluation introduction over untrusted dialogues and
+    /// components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_higher_evaluation(
+        &mut self,
+        dialogues: alloc::sync::Arc<[crate::EvaluationDialogues]>,
+        components: alloc::boxed::Box<[crate::EvaluationComponent]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::HigherEvaluation {
+            dialogues,
+            components,
+        })
+    }
+
+    /// Mint dependent transport along an element path; admission derives its
+    /// source and result types from the motive.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_path_transport(
+        &mut self,
+        motive: ValueTypeId,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::PathTransport {
+            motive,
+            path,
+            value,
+        })
+    }
+
+    /// Mint application of a function identity at related inputs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_related_application(
+        &mut self,
+        path: ValueId,
+        arguments: (ValueId, ValueId),
+        evidence: ValueId,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::RelatedApplication {
+            path,
+            left: arguments.0,
+            right: arguments.1,
+            evidence,
+            body,
+        })
+    }
+
     /// The immediate child references of `node`, in the order the format writes
     /// them.
     ///
@@ -2457,7 +2568,9 @@ Value::Tuple(ref components) => ret.iter().copied().eq(components.iter().copied(
 Value::PathEquiv { path_type, forward, backward, .. } =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
 Value::SessionPath { path_type, payload_paths, .. } => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
-Value::PathRefl(code) => ret.as_slice() == [AnyNode::Value(code)],
+Value::PathRefl(code) | Value::Here(code) => ret.as_slice() == [AnyNode::Value(code)],
+Value::Higher { ref evidence, .. } => ret.iter().copied().eq(evidence.iter().copied().map(AnyNode::Value)),
+Value::HigherEvaluation { ref components, .. } => ret.iter().copied().eq(components.iter().flat_map(|component| [AnyNode::Value(component.left), AnyNode::Value(component.right), AnyNode::Value(component.evidence)])),
 Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::StaticApplication(first, second) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
 Value::Injection(_, body) | Value::Lift { body, .. } =>
@@ -2472,6 +2585,8 @@ Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)]
             None => ret.is_empty(),
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => ret.as_slice() == [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)],
             Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&Computation::PathTransport { motive, path, value }) => ret.as_slice() == [AnyNode::ValueType(motive), AnyNode::Value(path), AnyNode::Value(value)],
+            Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)],
             Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
@@ -2491,6 +2606,7 @@ ValueType::StaticPi { domain: first, codomain: second } =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
 ValueType::Session { payloads, .. } => ret.as_slice() == [AnyNode::ValueType(payloads)],
 ValueType::PathUniverse(source, target) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
+ValueType::Path { domain, left, right } => ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::Value(left), AnyNode::Value(right)],
 ValueType::Thunk(body) => ret.as_slice() == [AnyNode::CompType(body)],
 ValueType::Lift { inner, .. } | ValueType::List(inner) => ret.as_slice() == [AnyNode::ValueType(inner)],
 ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
@@ -2550,7 +2666,21 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(payload_paths));
                 },
-                | Some(&Value::PathRefl(code)) => children.push(AnyNode::Value(code)),
+                | Some(&Value::PathRefl(code) | &Value::Here(code)) => {
+                    children.push(AnyNode::Value(code));
+                },
+                | Some(&Value::Higher { ref evidence, .. }) => {
+                    children.extend(evidence.iter().copied().map(AnyNode::Value));
+                },
+                | Some(&Value::HigherEvaluation { ref components, .. }) => {
+                    for component in components {
+                        children.extend([
+                            AnyNode::Value(component.left),
+                            AnyNode::Value(component.right),
+                            AnyNode::Value(component.evidence),
+                        ]);
+                    }
+                },
                 | Some(
                     &Value::PathProduct(first, second)
                     | &Value::ListCons(first, second)
@@ -2603,6 +2733,32 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     children.push(AnyNode::Value(path));
                     children.push(AnyNode::Value(value));
                 },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    children.extend([
+                        AnyNode::ValueType(motive),
+                        AnyNode::Value(path),
+                        AnyNode::Value(value),
+                    ]);
+                },
+                | Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    evidence,
+                    body,
+                }) => {
+                    children.extend([
+                        AnyNode::Value(path),
+                        AnyNode::Value(left),
+                        AnyNode::Value(right),
+                        AnyNode::Value(evidence),
+                        AnyNode::Computation(body),
+                    ]);
+                },
                 | Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => {
                     children.push(AnyNode::Computation(body));
                 },
@@ -2652,6 +2808,17 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                 | Some(&ValueType::PathUniverse(source, target)) => {
                     children.push(AnyNode::Value(source));
                     children.push(AnyNode::Value(target));
+                },
+                | Some(&ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }) => {
+                    children.extend([
+                        AnyNode::ValueType(domain),
+                        AnyNode::Value(left),
+                        AnyNode::Value(right),
+                    ]);
                 },
                 | Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
                 | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {

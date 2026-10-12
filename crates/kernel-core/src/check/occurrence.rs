@@ -335,6 +335,17 @@ fn worst(
                     pending.push((AnyNode::Value(source), term(reach)));
                     pending.push((AnyNode::Value(target), term(reach)));
                 },
+                // An identity over the declaration being formed is no strictly
+                // positive field: every part of a path type is a term position.
+                | Some(&ValueType::Path {
+                    domain,
+                    left,
+                    right,
+                }) => {
+                    pending.push((AnyNode::ValueType(domain), term(reach)));
+                    pending.push((AnyNode::Value(left), term(reach)));
+                    pending.push((AnyNode::Value(right), term(reach)));
+                },
                 | Some(&ValueType::Thunk(body)) => {
                     let inner = match reach {
                         | Reach::Head {
@@ -450,9 +461,21 @@ fn worst(
                     );
                 },
                 | Some(
-                    &(Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. }),
+                    &(Value::PathRefl(body)
+                    | Value::Here(body)
+                    | Value::Injection(_, body)
+                    | Value::Lift { body, .. }),
                 ) => {
                     pending.push((AnyNode::Value(body), reach));
+                },
+                | Some(&Value::Higher { ref evidence, .. }) => {
+                    pending.extend(evidence.iter().map(|&layer| (AnyNode::Value(layer), reach)));
+                },
+                | Some(&Value::HigherEvaluation { ref components, .. }) => {
+                    pending.extend(components.iter().flat_map(|component| {
+                        [component.left, component.right, component.evidence]
+                            .map(|child| (AnyNode::Value(child), reach))
+                    }));
                 },
                 | Some(&Value::Thunk(body)) => pending.push((AnyNode::Computation(body), reach)),
                 | Some(&Value::Quote(quoted)) => pending.push((AnyNode::ValueType(quoted), reach)),
@@ -508,6 +531,27 @@ fn worst(
                 | Some(&Computation::Transport(path, value)) => {
                     pending.push((AnyNode::Value(path), reach));
                     pending.push((AnyNode::Value(value), reach));
+                },
+                | Some(&Computation::PathTransport {
+                    motive,
+                    path,
+                    value,
+                }) => {
+                    pending.push((AnyNode::ValueType(motive), reach));
+                    pending.push((AnyNode::Value(path), reach));
+                    pending.push((AnyNode::Value(value), reach));
+                },
+                | Some(&Computation::RelatedApplication {
+                    path,
+                    left,
+                    right,
+                    evidence,
+                    body,
+                }) => {
+                    pending.extend(
+                        [path, left, right, evidence].map(|child| (AnyNode::Value(child), reach)),
+                    );
+                    pending.push((AnyNode::Computation(body), reach));
                 },
                 | Some(&Computation::ListFold {
                     element,

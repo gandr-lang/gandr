@@ -128,6 +128,9 @@ fn children(
             | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                 panic!("session evidence has a separate finite producer")
             },
+            | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } => {
+                panic!("element identity is outside the universe-path fixture fragment")
+            },
             | Value::PathEquiv {
                 path_type,
                 forward,
@@ -160,6 +163,9 @@ fn children(
             | Computation::ListFold { .. } => {
                 panic!("list elimination is outside the path fixture fragment")
             },
+            | Computation::PathTransport { .. } | Computation::RelatedApplication { .. } => {
+                panic!("element identity is outside the universe-path fixture fragment")
+            },
             | Computation::Fixpoint { .. } => {
                 panic!("recursion is outside the path fixture fragment")
             },
@@ -178,7 +184,7 @@ fn children(
         | A(id) => match *(arena.value_type(id).expect("fixture value type")) {
             | ValueType::Data { ref arguments, .. } => arguments.iter().copied().map(V).collect(),
             | ValueType::Record(ref fields) => fields.values().copied().map(A).collect(),
-            | ValueType::List(_) | ValueType::Session { .. } => {
+            | ValueType::List(_) | ValueType::Session { .. } | ValueType::Path { .. } => {
                 panic!("recursive inhabitants stay outside the first-order path producer")
             },
             | ValueType::PathUniverse(a, b) => vec![V(a), V(b)],
@@ -434,6 +440,9 @@ fn translate(
                     | Value::ListNil | Value::ListCons(..) | Value::SessionPath { .. } => {
                         panic!("session evidence has a separate finite producer")
                     },
+                    | Value::Here(_) | Value::Higher { .. } | Value::HigherEvaluation { .. } => {
+                        panic!("element identity is outside the universe-path fixture fragment")
+                    },
                     | Value::PathRefl(code) => core.value_path_refl(values[&code]),
                     | Value::PathProduct(first, second) => {
                         core.value_path_product(values[&first], values[&second])
@@ -495,6 +504,10 @@ fn translate(
                     | Computation::ListFold { .. } => {
                         panic!("list elimination is outside the path fixture fragment")
                     },
+                    | Computation::PathTransport { .. }
+                    | Computation::RelatedApplication { .. } => {
+                        panic!("element identity is outside the universe-path fixture fragment")
+                    },
                     | Computation::Fixpoint { .. } => {
                         panic!("recursion is outside the path fixture fragment")
                     },
@@ -538,7 +551,7 @@ fn translate(
                             .map(|(label, field)| (label.clone(), types[field]))
                             .collect(),
                     ),
-                    | ValueType::List(_) | ValueType::Session { .. } => {
+                    | ValueType::List(_) | ValueType::Session { .. } | ValueType::Path { .. } => {
                         panic!("recursive inhabitants stay outside the first-order path producer")
                     },
                     | ValueType::PathUniverse(source, target) => {

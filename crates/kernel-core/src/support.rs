@@ -821,7 +821,20 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(path_type));
                             tasks.push(ReachTask::OpenValue(payload_paths));
                         },
-                        | Value::PathRefl(code) => tasks.push(ReachTask::OpenValue(code)),
+                        | Value::PathRefl(code) | Value::Here(code) => {
+                            tasks.push(ReachTask::OpenValue(code));
+                        },
+                        | Value::Higher { ref evidence, .. } => {
+                            tasks.extend(evidence.iter().copied().map(ReachTask::OpenValue));
+                        },
+                        | Value::HigherEvaluation { ref components, .. } => tasks.extend(
+                            components
+                                .iter()
+                                .flat_map(|component| {
+                                    [component.left, component.right, component.evidence]
+                                })
+                                .map(ReachTask::OpenValue),
+                        ),
                         | Value::PathProduct(first, second)
                         | Value::ListCons(first, second)
                         | Value::StaticApplication(first, second) => {
@@ -888,6 +901,30 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(path));
                             tasks.push(ReachTask::OpenValue(value));
                         },
+                        | Computation::PathTransport {
+                            motive,
+                            path,
+                            value,
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(motive));
+                            tasks.push(ReachTask::OpenValue(path));
+                            tasks.push(ReachTask::OpenValue(value));
+                        },
+                        | Computation::RelatedApplication {
+                            path,
+                            left,
+                            right,
+                            evidence,
+                            body,
+                        } => {
+                            tasks.extend([
+                                ReachTask::OpenValue(path),
+                                ReachTask::OpenValue(left),
+                                ReachTask::OpenValue(right),
+                                ReachTask::OpenValue(evidence),
+                                ReachTask::OpenComp(body),
+                            ]);
+                        },
                         | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
                             tasks.push(ReachTask::OpenComp(body));
                         },
@@ -948,6 +985,15 @@ impl LooseDepths
                         | ValueType::PathUniverse(source, target) => {
                             tasks.push(ReachTask::OpenValue(source));
                             tasks.push(ReachTask::OpenValue(target));
+                        },
+                        | ValueType::Path {
+                            domain,
+                            left,
+                            right,
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(domain));
+                            tasks.push(ReachTask::OpenValue(left));
+                            tasks.push(ReachTask::OpenValue(right));
                         },
                         | ValueType::Session {
                             payloads: inner, ..
@@ -1140,6 +1186,7 @@ ValueType::Data { ref arguments, .. } => arguments.iter().fold(LooseDepth(0), |d
 ValueType::Record(ref fields) => fields.values().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => LooseDepth(0),
 ValueType::PathUniverse(a, b) => self.cached_value(a).join(self.cached_value(b)),
+ValueType::Path { domain, left, right } => self.cached_value_type(domain).join(self.cached_value(left)).join(self.cached_value(right)),
 ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value_type(*id))),
 ValueType::StaticPi { domain: a, codomain: b } => self.cached_value_type(a).join(self.cached_value_type(b)),
 ValueType::Session { payloads: inner, .. } | ValueType::Lift { inner, .. } | ValueType::List(inner) => self.cached_value_type(inner),
@@ -1168,6 +1215,14 @@ ValueType::Element { code, .. } => self.cached_value(code),
             | ValueType::PathUniverse(source, target) => {
                 self.cached_value(source).join(self.cached_value(target))
             },
+            | ValueType::Path {
+                domain,
+                left,
+                right,
+            } => self
+                .cached_value_type(domain)
+                .join(self.cached_value(left))
+                .join(self.cached_value(right)),
             | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) => {
                 LooseDepth(0)
             },
@@ -1277,7 +1332,9 @@ Value::ListNil | Value::Constant(_) | Value::Literal(_) => LooseDepth(0),
 Value::Tuple(ref components) => components.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
 Value::PathEquiv { path_type, forward, backward, .. } => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
 Value::SessionPath { path_type, payload_paths, .. } => self.cached_value_type(path_type).join(self.cached_value(payload_paths)),
-Value::PathRefl(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::PathRefl(body) | Value::Here(body) | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
+Value::Higher { ref evidence, .. } => evidence.iter().fold(LooseDepth(0), |depth, id| depth.join(self.cached_value(*id))),
+Value::HigherEvaluation { ref components, .. } => components.iter().fold(LooseDepth(0), |depth, component| depth.join(self.cached_value(component.left)).join(self.cached_value(component.right)).join(self.cached_value(component.evidence))),
 Value::ListCons(a, b) | Value::PathProduct(a, b) | Value::StaticApplication(a, b) => self.cached_value(a).join(self.cached_value(b)),
 Value::Thunk(body) => self.cached_comp(body),
 Value::Quote(ty) => self.cached_value_type(ty),
@@ -1333,7 +1390,20 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             } => self
                 .cached_value_type(path_type)
                 .join(self.cached_value(payload_paths)),
-            | Value::PathRefl(code) => self.cached_value(code),
+            | Value::PathRefl(code) | Value::Here(code) => self.cached_value(code),
+            | Value::Higher { ref evidence, .. } => {
+                evidence.iter().fold(LooseDepth(0), |depth, id| {
+                    depth.join(self.cached_value(*id))
+                })
+            },
+            | Value::HigherEvaluation { ref components, .. } => {
+                components.iter().fold(LooseDepth(0), |depth, component| {
+                    depth
+                        .join(self.cached_value(component.left))
+                        .join(self.cached_value(component.right))
+                        .join(self.cached_value(component.evidence))
+                })
+            },
             | Value::PathProduct(first, second)
             | Value::ListCons(first, second)
             | Value::StaticApplication(first, second) => {
@@ -1380,6 +1450,8 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
         None => LooseDepth::WIDEST,
         Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => self.cached_value_type(element).join(self.cached_value_type(result)).join(self.cached_value(list)).join(self.cached_comp(on_nil)).join(self.cached_comp(on_cons).under_binder().under_binder()),
         Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
+        Some(&Computation::PathTransport { motive, path, value }) => self.cached_value_type(motive).under_binder().join(self.cached_value(path)).join(self.cached_value(value)),
+        Some(&Computation::RelatedApplication { path, left, right, evidence, body }) => self.cached_value(path).join(self.cached_value(left)).join(self.cached_value(right)).join(self.cached_value(evidence)).join(self.cached_comp(body).under_binder().under_binder().under_binder()),
         Some(&Computation::Lambda(body) | &Computation::Fixpoint { body, .. }) => self.cached_comp(body).under_binder(),
         Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
         Some(&Computation::Return(value) | &Computation::Force(value)) => self.cached_value(value),
@@ -1423,6 +1495,32 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
             | Computation::Transport(path, value) => {
                 self.cached_value(path).join(self.cached_value(value))
             },
+            | Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => self
+                .cached_value_type(motive)
+                .under_binder()
+                .join(self.cached_value(path))
+                .join(self.cached_value(value)),
+            | Computation::RelatedApplication {
+                path,
+                left,
+                right,
+                evidence,
+                body,
+            } => self
+                .cached_value(path)
+                .join(self.cached_value(left))
+                .join(self.cached_value(right))
+                .join(self.cached_value(evidence))
+                .join(
+                    self.cached_comp(body)
+                        .under_binder()
+                        .under_binder()
+                        .under_binder(),
+                ),
             | Computation::Lambda(body) | Computation::Fixpoint { body, .. } => {
                 self.cached_comp(body).under_binder()
             },
