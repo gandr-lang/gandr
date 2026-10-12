@@ -78,20 +78,20 @@ struct Boolean
 fn boolean(arena: &mut TermArena) -> Boolean
 {
     let unit_type = arena.value_type_unit();
-    let ty = arena.value_type_sum(unit_type, unit_type);
+    let ty = arena.value_type_sum(&[unit_type, unit_type]);
     let returner = arena.comp_type_returner(ty);
     let arrow = arena.comp_type_arrow(ty, returner);
     let function = arena.value_type_thunk(arrow);
     let code = arena.value_quote(function);
     let unit = arena.value_unit();
-    let truth = arena.value_injection(Side::Left, unit);
-    let falsity = arena.value_injection(Side::Right, unit);
+    let truth = arena.value_injection(Side::Left.into(), unit);
+    let falsity = arena.value_injection(Side::Right.into(), unit);
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let left = arena.value_injection(Side::Right, variable);
-    let right = arena.value_injection(Side::Left, variable);
+    let left = arena.value_injection(Side::Right.into(), variable);
+    let right = arena.value_injection(Side::Left.into(), variable);
     let left = arena.computation_return(left);
     let right = arena.computation_return(right);
-    let body = arena.computation_case(variable, left, right);
+    let body = arena.computation_case(variable, &[left, right]);
     let lambda = arena.computation_lambda(body);
     let not = arena.value_thunk(lambda);
     let body = arena.computation_return(variable);
@@ -100,13 +100,13 @@ fn boolean(arena: &mut TermArena) -> Boolean
     // Case-inline the two negations, retaining the first return/bind seam.
     // The annotation-free checker cannot infer a lambda at an application head.
     let payload = arena.computation_return(variable);
-    let left = arena.value_injection(Side::Left, variable);
-    let right = arena.value_injection(Side::Right, variable);
+    let left = arena.value_injection(Side::Left.into(), variable);
+    let right = arena.value_injection(Side::Right.into(), variable);
     let left = arena.computation_return(left);
     let right = arena.computation_return(right);
     let left = arena.computation_bind(payload, left);
     let right = arena.computation_bind(payload, right);
-    let body = arena.computation_case(variable, left, right);
+    let body = arena.computation_case(variable, &[left, right]);
     let lambda = arena.computation_lambda(body);
     let double = arena.value_thunk(lambda);
     Boolean {
@@ -164,7 +164,7 @@ fn relation(
 /// - hypothesis: L3 — swapped Boolean components produce distinct evaluation
 ///   claims.
 /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
-#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => match arena.value(id) { Some(&Value::PathEquiv { .. }) => 3, Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2, Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1, _ => 0 }, AnyNode::Computation(id) => match arena.computation(id) { Some(&Computation::Case { .. }) => 3, Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2, Some(_) => 1, None => 0 }, _ => 0 })]
+#[spec(ensures: |ret| ret.len() == match node { AnyNode::Value(id) => arena.value(id).map_or(0, |value| match *value { Value::PathEquiv { .. } => 3, Value::Tuple(ref components) => components.len(), Value::StaticApplication(..) | Value::PathProduct(..) => 2, Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::PathRefl(_) => 1, _ => 0 }), AnyNode::Computation(id) => arena.computation(id).map_or(0, |computation| match *computation { Computation::Case { ref branches, .. } => branches.len().saturating_add(1), Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2, _ => 1 }), _ => 0 })]
 fn children(
     arena: &TermArena,
     node: AnyNode,
@@ -172,10 +172,12 @@ fn children(
 {
     match node {
         | AnyNode::Value(id) => match arena.value(id).expect("value") {
-            | &Value::Pair(a, b) => vec![AnyNode::Value(a), AnyNode::Value(b)],
+            | &Value::Tuple(ref components) => {
+                components.iter().copied().map(AnyNode::Value).collect()
+            },
             | &Value::Injection(_, value) => vec![AnyNode::Value(value)],
             | &Value::Thunk(body) => vec![AnyNode::Computation(body)],
-            | &Value::Unit | &Value::Variable(_) => Vec::new(),
+            | &Value::Variable(_) => Vec::new(),
             | _ => panic!("outside producer fixture"),
         },
         | AnyNode::Computation(id) => match *arena.computation(id).expect("computation") {
@@ -187,21 +189,16 @@ fn children(
             | Computation::Bind(a, b) => vec![AnyNode::Computation(a), AnyNode::Computation(b)],
             | Computation::Case {
                 scrutinee,
-                on_left,
-                on_right,
-            } => vec![
-                AnyNode::Value(scrutinee),
-                AnyNode::Computation(on_left),
-                AnyNode::Computation(on_right),
-            ],
+                ref branches,
+            } => core::iter::once(AnyNode::Value(scrutinee))
+                .chain(branches.iter().copied().map(AnyNode::Computation))
+                .collect(),
             | Computation::Transport(..) => panic!("no native transport in fixtures"),
             | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                 panic!("no nominal or record eliminator in this fixture")
             },
             | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-            | Computation::ListFold { .. } | Computation::Absurd(_) => {
-                panic!("eliminator outside fixture fragment")
-            },
+            | Computation::ListFold { .. } => panic!("eliminator outside fixture fragment"),
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
     }
@@ -253,11 +250,15 @@ fn translate(
         match node {
             | AnyNode::Value(id) => {
                 let value = match *arena.value(id).expect("value") {
-                    | Value::Unit => core.value_unit(),
                     | Value::Variable(index) => core.value_variable(Zone::Intuitionistic, index),
-                    | Value::Pair(a, b) => core.value_tuple(&[values[&a], values[&b]]),
-                    | Value::Injection(side, value) => {
-                        core.value_injection(side.into(), values[&value])
+                    | Value::Tuple(ref components) => core.value_tuple(
+                        &components
+                            .iter()
+                            .map(|component| values[component])
+                            .collect::<Vec<_>>(),
+                    ),
+                    | Value::Injection(summand, value) => {
+                        core.value_injection(summand, values[&value])
                     },
                     | Value::Thunk(body) => core.value_thunk(computations[&body]),
                     | _ => panic!("unsupported value"),
@@ -277,20 +278,20 @@ fn translate(
                     },
                     | Computation::Case {
                         scrutinee,
-                        on_left,
-                        on_right,
-                    } => core.computation_case(values[&scrutinee], &[
-                        computations[&on_left],
-                        computations[&on_right],
-                    ]),
+                        ref branches,
+                    } => core.computation_case(
+                        values[&scrutinee],
+                        &branches
+                            .iter()
+                            .map(|branch| computations[branch])
+                            .collect::<Vec<_>>(),
+                    ),
                     | Computation::Transport(..) => panic!("no native transport in fixtures"),
                     | Computation::DataCase { .. } | Computation::RecordProjection(..) => {
                         panic!("no nominal or record eliminator in this fixture")
                     },
                     | Computation::Fixpoint { .. } => panic!("no fixpoint in this fixture"),
-                    | Computation::ListFold { .. } | Computation::Absurd(_) => {
-                        panic!("unsupported computation")
-                    },
+                    | Computation::ListFold { .. } => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);
             },
@@ -806,7 +807,7 @@ fn symbolic_coverage_keeps_base_variables_independent()
 {
     let mut arena = TermArena::new();
     let base = arena.value_type_base(BaseType::String);
-    let pair = arena.value_type_product(base, base);
+    let pair = arena.value_type_product(&[base, base]);
     let returned = arena.comp_type_returner(pair);
     let arrow = arena.comp_type_arrow(pair, returned);
     let thunk = arena.value_type_thunk(arrow);
@@ -819,7 +820,10 @@ fn symbolic_coverage_keeps_base_variables_independent()
     else {
         panic!("one constructor shape")
     };
-    let Value::Pair(left, right) = *arena.value(pattern.value).expect("pair")
+    let &[left, right] = arena
+        .value(pattern.value)
+        .and_then(Value::components)
+        .expect("tuple")
     else {
         panic!("pair")
     };

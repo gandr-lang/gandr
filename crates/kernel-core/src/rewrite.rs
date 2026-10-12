@@ -2597,7 +2597,7 @@ mod tests
         let mut arena = TermArena::new();
         let inner = arena.value_variable(index(BinderDepth::from(0_u32)));
         let outer = arena.value_variable(index(BinderDepth::from(1_u32)));
-        let pair = arena.value_pair(inner, outer);
+        let pair = arena.value_tuple(&[inner, outer]);
         let body = arena.computation_return(pair);
         let lambda = arena.computation_lambda(body);
         let mut table = ContentTable::new();
@@ -2618,7 +2618,7 @@ mod tests
         else {
             panic!("its body is a returner");
         };
-        let Some(&Value::Pair(first, second)) = arena.value(shifted_pair)
+        let Some(&[first, second]) = arena.value(shifted_pair).and_then(Value::components)
         else {
             panic!("and the returner carries the pair");
         };
@@ -2642,8 +2642,8 @@ mod tests
         let bound_inside = arena.value_variable(index(BinderDepth::from(0_u32)));
         let substituted = arena.value_variable(index(BinderDepth::from(1_u32)));
         let outside = arena.value_variable(index(BinderDepth::from(2_u32)));
-        let inner_pair = arena.value_pair(bound_inside, substituted);
-        let pair = arena.value_pair(inner_pair, outside);
+        let inner_pair = arena.value_tuple(&[bound_inside, substituted]);
+        let pair = arena.value_tuple(&[inner_pair, outside]);
         let body = arena.computation_return(pair);
         let lambda = arena.computation_lambda(body);
         let thunk = arena.value_thunk(lambda);
@@ -2663,11 +2663,13 @@ mod tests
         else {
             panic!("whose body returns");
         };
-        let Some(&Value::Pair(result_inner, result_outside)) = arena.value(result_pair)
+        let Some(&[result_inner, result_outside]) =
+            arena.value(result_pair).and_then(Value::components)
         else {
             panic!("a pair");
         };
-        let Some(&Value::Pair(result_bound, result_substituted)) = arena.value(result_inner)
+        let Some(&[result_bound, result_substituted]) =
+            arena.value(result_inner).and_then(Value::components)
         else {
             panic!("over a pair");
         };
@@ -2730,7 +2732,7 @@ mod tests
         let mut arena = TermArena::new();
         let base = arena.value_type_base(BaseType::Integer);
         let unit = arena.value_type_unit();
-        let product = arena.value_type_product(base, unit);
+        let product = arena.value_type_product(&[base, unit]);
         let returner = arena.comp_type_returner(product);
         let dependent = arena.comp_type_pi(unit, returner);
         let thunk = arena.value_type_thunk(dependent);
@@ -2857,7 +2859,7 @@ mod tests
         #[spec(ensures: |ret| if levels.0 == 0 {
             arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(0_u32)))
         } else {
-            matches!(arena.value(ret), Some(&Value::Pair(left, right)) if left == right)
+            matches!(arena.value(ret).and_then(Value::components), Some(&[left, right]) if left == right)
         })]
         fn shared_composite(
             arena: &mut TermArena,
@@ -2867,7 +2869,7 @@ mod tests
             let mut node = arena.value_variable(index(BinderDepth::from(0_u32)));
             let mut remaining = levels.0;
             while remaining > 0 {
-                node = arena.value_pair(node, node);
+                node = arena.value_tuple(&[node, node]);
                 remaining = u32::from(arith::sub(
                     arith::Int::from(remaining),
                     arith::Int::from(1_u32),
@@ -2925,7 +2927,8 @@ mod tests
         // answer shares its two children on one node, and the memoless answer
         // does not, so the workload cannot silently stop being shared and keep
         // this case passing.
-        let Some(&Value::Pair(memoized_left, memoized_right)) = arena.value(memoized_result)
+        let Some(&[memoized_left, memoized_right]) =
+            arena.value(memoized_result).and_then(Value::components)
         else {
             panic!("the composite rewrites to a pair");
         };
@@ -2933,7 +2936,8 @@ mod tests
             memoized_left, memoized_right,
             "the memoized rewrite answers once for the one distinct subject"
         );
-        let Some(&Value::Pair(memoless_left, memoless_right)) = arena.value(memoless_result)
+        let Some(&[memoless_left, memoless_right]) =
+            arena.value(memoless_result).and_then(Value::components)
         else {
             panic!("and so does the memoless one");
         };
@@ -2993,7 +2997,7 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let element = arena.value_type_element(variable, Level::zero());
         let unit = arena.value_type_unit();
-        let payloads = arena.value_type_product(element, unit);
+        let payloads = arena.value_type_product(&[element]);
         let graph = alloc::sync::Arc::new(Graph {
             root: State(0),
             nodes: alloc::vec![Node::End],
@@ -3047,11 +3051,12 @@ mod tests
             panic!("session code")
         };
         assert_eq!(actual, &graph);
-        let Some(&ValueType::Product(field, rest)) = arena.value_type(payloads)
+        let Some(&[field]) = arena
+            .value_type(payloads)
+            .and_then(ValueType::product_parts)
         else {
-            panic!("payload telescope")
+            panic!("one payload in the telescope")
         };
-        assert_eq!(rest, unit);
         let Some(&ValueType::Element { code, .. }) = arena.value_type(field)
         else {
             panic!("open payload code")
@@ -3091,7 +3096,7 @@ mod tests
         assert_eq!(actual, &graph);
         assert_eq!(
             arena.value_type(payloads),
-            Some(&ValueType::Product(unit, unit))
+            Some(&ValueType::Product(alloc::boxed::Box::from([unit])))
         );
         let before = arena.watermark();
         assert_eq!(
@@ -3296,7 +3301,7 @@ mod tests
         let left = arena.computation_return(inner);
         let right = arena.computation_return(outer);
         let sequence = arena.computation_bind(bound, left);
-        let case = arena.computation_case(inner, left, right);
+        let case = arena.computation_case(inner, &[left, right]);
         let mut table = ContentTable::new();
         let mut memo = RewriteMemo::new();
         let shifted = shift_computation(
@@ -3333,9 +3338,12 @@ mod tests
         );
         let Some(&Computation::Case {
             scrutinee,
-            on_left,
-            on_right,
+            ref branches,
         }) = arena.computation(shifted)
+        else {
+            panic!("expected case");
+        };
+        let &[on_left, on_right] = &**branches
         else {
             panic!("expected case");
         };

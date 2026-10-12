@@ -122,19 +122,19 @@ fn both_modes_compute_all_element_clauses()
     let unit_code = arena.value_quote(unit_type);
     let unit = arena.value_unit();
     let scalars = scalars(&mut arena);
-    let sum = arena.value_type_sum(scalars.ty, unit_type);
+    let sum = arena.value_type_sum(&[scalars.ty, unit_type]);
     let sum_code = arena.value_quote(sum);
-    let left = arena.value_injection(Side::Left, scalars.first);
-    let unequal_left = arena.value_injection(Side::Left, scalars.second);
-    let right = arena.value_injection(Side::Right, unit);
-    let product = arena.value_type_product(sum, scalars.ty);
+    let left = arena.value_injection(Side::Left.into(), scalars.first);
+    let unequal_left = arena.value_injection(Side::Left.into(), scalars.second);
+    let right = arena.value_injection(Side::Right.into(), unit);
+    let product = arena.value_type_product(&[sum, scalars.ty]);
     let product_code = arena.value_quote(product);
-    let pair = arena.value_pair(left, scalars.first);
-    let changed_first = arena.value_pair(right, scalars.first);
-    let changed_second = arena.value_pair(left, scalars.second);
-    let units = arena.value_type_product(unit_type, unit_type);
-    let empty_first = arena.value_type_product(empty, unit_type);
-    let empty_second = arena.value_type_product(unit_type, empty);
+    let pair = arena.value_tuple(&[left, scalars.first]);
+    let changed_first = arena.value_tuple(&[right, scalars.first]);
+    let changed_second = arena.value_tuple(&[left, scalars.second]);
+    let units = arena.value_type_product(&[unit_type, unit_type]);
+    let empty_first = arena.value_type_product(&[empty, unit_type]);
+    let empty_second = arena.value_type_product(&[unit_type, empty]);
     for mode in [Mode::Identity, Mode::Bridge] {
         for (code, a, b, expected) in [
             (unit_code, unit, unit, unit_type),
@@ -162,9 +162,9 @@ fn neutral_fibres_do_not_decide_equality()
     let scalars = scalars(&mut arena);
     let x = arena.value_variable(DeBruijnIndex::from(1_u32));
     let y = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let product = arena.value_type_product(scalars.ty, scalars.ty);
+    let product = arena.value_type_product(&[scalars.ty, scalars.ty]);
     let product_code = arena.value_quote(product);
-    let sum = arena.value_type_sum(scalars.ty, scalars.ty);
+    let sum = arena.value_type_sum(&[scalars.ty, scalars.ty]);
     let sum_code = arena.value_quote(sum);
     for mode in [Mode::Identity, Mode::Bridge] {
         let base = relation(&arena, mode, scalars.code);
@@ -219,12 +219,12 @@ fn reflexivity_and_transport_compute()
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
     let unit_code = arena.value_quote(unit_type);
-    let sum = arena.value_type_sum(scalars.ty, unit_type);
+    let sum = arena.value_type_sum(&[scalars.ty, unit_type]);
     let sum_code = arena.value_quote(sum);
-    let injection = arena.value_injection(Side::Left, scalars.first);
-    let product = arena.value_type_product(sum, scalars.ty);
+    let injection = arena.value_injection(Side::Left.into(), scalars.first);
+    let product = arena.value_type_product(&[sum, scalars.ty]);
     let product_code = arena.value_quote(product);
-    let pair = arena.value_pair(injection, scalars.second);
+    let pair = arena.value_tuple(&[injection, scalars.second]);
     for (code, value) in [
         (unit_code, unit),
         (scalars.code, scalars.first),
@@ -276,11 +276,11 @@ fn product_transport_composes_componentwise()
 {
     let mut arena = TermArena::new();
     let scalars = scalars(&mut arena);
-    let pair_type = arena.value_type_product(scalars.ty, scalars.ty);
+    let pair_type = arena.value_type_product(&[scalars.ty, scalars.ty]);
     let code = arena.value_quote(pair_type);
     let x = arena.value_variable(DeBruijnIndex::from(1_u32));
     let y = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let pair = arena.value_pair(x, y);
+    let pair = arena.value_tuple(&[x, y]);
     let relation = relation(&arena, Mode::Identity, code);
     let first = relation
         .reflexivity(&mut arena, &[scalars.ty, scalars.ty], pair)
@@ -303,7 +303,7 @@ fn product_transport_composes_componentwise()
             .expect("composite transport"),
         Transport::Return(pair)
     );
-    let changed = arena.value_pair(y, x);
+    let changed = arena.value_tuple(&[y, x]);
     let other = relation
         .reflexivity(&mut arena, &[scalars.ty, scalars.ty], changed)
         .expect("other diagonal");
@@ -315,14 +315,14 @@ fn product_transport_composes_componentwise()
         .fiber(&mut arena, &[scalars.ty, scalars.ty], pair, pair)
         .expect("independent fibre");
     let expected = arena.value_type_unit();
-    let expected = arena.value_type_product(expected, expected);
+    let expected = arena.value_type_product(&[expected, expected]);
     let native = fiber.native(&mut arena).expect("computed product fibre");
     assert_eq!(
         convertible_value_types(&arena, expected, native),
         Convertibility::Convertible
     );
     let unit_type = arena.value_type_unit();
-    let pair_type = arena.value_type_product(unit_type, unit_type);
+    let pair_type = arena.value_type_product(&[unit_type, unit_type]);
     let code = arena.value_quote(pair_type);
     let family = interpret(&arena, Mode::Identity, Domain::Elements(code))
         .expect("product interpretation")
@@ -331,11 +331,11 @@ fn product_transport_composes_componentwise()
     let x = arena.value_variable(DeBruijnIndex::from(2_u32));
     let y = arena.value_variable(DeBruijnIndex::from(1_u32));
     let z = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let left = arena.value_pair(x, x);
-    let middle = arena.value_pair(y, y);
-    let right = arena.value_pair(z, z);
+    let left = arena.value_tuple(&[x, x]);
+    let middle = arena.value_tuple(&[y, y]);
+    let right = arena.value_tuple(&[z, z]);
     let unit = arena.value_unit();
-    let proof = arena.value_pair(unit, unit);
+    let proof = arena.value_tuple(&[unit, unit]);
     let context = [unit_type, unit_type, unit_type];
     let first = family
         .witness(&mut arena, &context, left, middle, proof)
@@ -385,12 +385,12 @@ fn identity_evidence_refuses_false_fibres()
         other.transport(&mut arena, &[], &identity, unit_type, unit),
         Err(RelationError::Boundary)
     ));
-    let pair_type = arena.value_type_product(scalars.ty, scalars.ty);
+    let pair_type = arena.value_type_product(&[scalars.ty, scalars.ty]);
     let code = arena.value_quote(pair_type);
     let product = super::tests::relation(&arena, Mode::Identity, code);
-    let left = arena.value_pair(scalars.first, scalars.first);
-    let right = arena.value_pair(scalars.first, scalars.second);
-    let proof = arena.value_pair(unit, unit);
+    let left = arena.value_tuple(&[scalars.first, scalars.first]);
+    let right = arena.value_tuple(&[scalars.first, scalars.second]);
+    let proof = arena.value_tuple(&[unit, unit]);
     assert!(matches!(
         product.witness(&mut arena, &[], left, right, proof),
         Err(RelationError::Typing(_))
@@ -403,11 +403,11 @@ fn universe_bridge_is_an_indexed_relation()
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
     let unit_code = arena.value_quote(unit_type);
-    let boolean = arena.value_type_sum(unit_type, unit_type);
+    let boolean = arena.value_type_sum(&[unit_type, unit_type]);
     let boolean_code = arena.value_quote(boolean);
     let unit = arena.value_unit();
-    let left = arena.value_injection(Side::Left, unit);
-    let right = arena.value_injection(Side::Right, unit);
+    let left = arena.value_injection(Side::Left.into(), unit);
+    let right = arena.value_injection(Side::Right.into(), unit);
     let empty = arena.value_type_empty();
     let classifier = interpret(&arena, Mode::Bridge, Domain::Codes).expect("universe clause");
     let yes = Relation::constant(&arena, unit_code, unit_code, Inhabitation::Unit)
@@ -475,7 +475,7 @@ fn abstract_is_an_interface_obstruction()
     let atom = arena.value_type_abstract(gandr_kernel_term::ConstantIndex::from(0_usize));
     let code = arena.value_quote(atom);
     let unit = arena.value_type_unit();
-    let composite = arena.value_type_product(unit, atom);
+    let composite = arena.value_type_product(&[unit, atom]);
     let composite = arena.value_quote(composite);
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     for mode in [Mode::Identity, Mode::Bridge] {
@@ -498,7 +498,7 @@ fn empty_elimination_is_native_and_has_no_introduction()
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let absurd = arena.computation_absurd(x);
+    let absurd = arena.computation_case(x, &[]);
 
     let body = arena.computation_lambda(absurd);
     let body = arena.value_thunk(body);
@@ -510,16 +510,19 @@ fn empty_elimination_is_native_and_has_no_introduction()
     let wrong_type = arena.value_type_thunk(wrong_arrow);
     assert!(matches!(
         check_closed_value(&mut arena, body, wrong_type),
-        Err(KernelError::ValueTypeMismatch(_))
+        Err(KernelError::ValueShapeMismatch {
+            expected: crate::error::ExpectedValueShape::Sum,
+            ..
+        })
     ));
     assert!(matches!(
         check_closed_value(&mut arena, unit, empty),
-        Err(KernelError::ValueTypeMismatch(_))
+        Err(KernelError::ValueShapeMismatch { .. })
     ));
     let quote = arena.value_quote(empty);
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     check_value(&mut arena, &[], quote, universe).expect("empty type forms at zero");
-    assert_eq!(arena.value_type(empty), Some(&ValueType::Empty));
+    assert_eq!(arena.value_type(empty), Some(&ValueType::empty()));
     assert!(
         matches!(interpret(&arena, Mode::Identity, Domain::Elements(quote)), Err(RelationError::UnsupportedType(found)) if found == empty)
     );

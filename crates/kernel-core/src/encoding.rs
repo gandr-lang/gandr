@@ -2370,8 +2370,8 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
-        let forward = arena.value_type_product(unit, base);
-        let backward = arena.value_type_product(base, unit);
+        let forward = arena.value_type_product(&[unit, base]);
+        let backward = arena.value_type_product(&[base, unit]);
         let mut table = ContentTable::new();
         assert_ne!(
             encode_support(&mut table, &arena, SupportGoal::ValueTypeLevel(forward), &[
@@ -2503,10 +2503,10 @@ mod tests
         // separates which pair.
         let left = arena.value_literal(text(String::from("ab")));
         let right = arena.value_literal(text(String::from("c")));
-        let joined = arena.value_pair(left, right);
+        let joined = arena.value_tuple(&[left, right]);
         let left = arena.value_literal(text(String::from("a")));
         let right = arena.value_literal(text(String::from("bc")));
-        let split = arena.value_pair(left, right);
+        let split = arena.value_tuple(&[left, right]);
         assert_ne!(
             encode_support(&mut table, &arena, SupportGoal::SynthValue(joined), &[]),
             encode_support(&mut table, &arena, SupportGoal::SynthValue(split), &[]),
@@ -2688,15 +2688,15 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let left = arena.value_injection(gandr_kernel_term::Side::Left, unit);
-        let right = arena.value_injection(gandr_kernel_term::Side::Right, unit);
+        let left = arena.value_injection(gandr_kernel_term::Side::Left.into(), unit);
+        let right = arena.value_injection(gandr_kernel_term::Side::Right.into(), unit);
         let returns_unit = arena.computation_return(unit);
         let returns_variable = arena.computation_return(variable);
         let roots = [
-            arena.computation_case(left, returns_unit, returns_unit),
-            arena.computation_case(right, returns_unit, returns_unit),
-            arena.computation_case(left, returns_variable, returns_unit),
-            arena.computation_case(left, returns_unit, returns_variable),
+            arena.computation_case(left, &[returns_unit, returns_unit]),
+            arena.computation_case(right, &[returns_unit, returns_unit]),
+            arena.computation_case(left, &[returns_variable, returns_unit]),
+            arena.computation_case(left, &[returns_unit, returns_variable]),
         ];
         let mut table = ContentTable::new();
         let keys =
@@ -2820,8 +2820,8 @@ mod tests
         let mut arena = TermArena::new();
         let first_unit = arena.value_type_unit();
         let second_unit = arena.value_type_unit();
-        let first = arena.value_type_product(first_unit, first_unit);
-        let second = arena.value_type_product(second_unit, second_unit);
+        let first = arena.value_type_product(&[first_unit, first_unit]);
+        let second = arena.value_type_product(&[second_unit, second_unit]);
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
         assert_eq!(
             content_digest(&arena, AnyNode::ValueType(first)),
@@ -2842,7 +2842,7 @@ mod tests
         let mut arena = TermArena::new();
         let mut body = arena.value_unit();
         for _step in 0 .. 16_u32 {
-            body = arena.value_pair(body, body);
+            body = arena.value_tuple(&[body, body]);
         }
         let mut table = ContentTable::new();
         let key = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
@@ -2869,7 +2869,7 @@ mod tests
         );
         let mut reminted = arena.value_unit();
         for _step in 0 .. 16_u32 {
-            reminted = arena.value_pair(reminted, reminted);
+            reminted = arena.value_tuple(&[reminted, reminted]);
         }
         let reminted_key =
             encode_support(&mut table, &arena, SupportGoal::SynthValue(reminted), &[]);

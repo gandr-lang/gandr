@@ -76,13 +76,12 @@ mod sharing_format
         else {
             panic!("list former retained");
         };
-        let Some(&ValueType::Sum(ref summands)) = decoded.arena().value_type(element)
+        let Some(&[left, right]) = decoded
+            .arena()
+            .value_type(element)
+            .and_then(ValueType::summands)
         else {
-            panic!("element sum retained");
-        };
-        let &[left, right] = &**summands
-        else {
-            panic!("two summands retained");
+            panic!("an element sum of two summands retained");
         };
         assert_eq!(decoded.arena().value_type(left), Some(&ValueType::unit()));
         assert_eq!(left, right);
@@ -2812,7 +2811,7 @@ mod sharing_format
                 && marked.declaration().provenance().is_empty()
                 && arena.value_type(marked.declaration().declared_id()) == Some(&ValueType::unit())
                 && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => position.rem_euclid(3) == 0
-                && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or(value == &Value::unit(),
+                && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or_else(|| value.components() == Some(&[]),
             |previous| value == &Value::Constant(ConstantIndex::from(previous)))), DeclarationContent::Axiom { .. } => position.rem_euclid(3) == 1, DeclarationContent::AbstractType { .. } => position.rem_euclid(3) == 2, DeclarationContent::Data { .. } => false }),
     )]
     fn referencing_sequence(

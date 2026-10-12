@@ -1778,7 +1778,7 @@ impl TermArena
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Product(ref components)) if components.is_empty()),
+                && matches!(self.value_types.last(), Some(ValueType::Product(components)) if components.is_empty()),
     )]
     #[inline]
     pub fn value_type_unit(&mut self) -> ValueTypeId
@@ -1813,7 +1813,7 @@ impl TermArena
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Product(ref minted)) if **minted == *components),
+                && matches!(self.value_types.last(), Some(ValueType::Product(minted)) if **minted == *components),
     )]
     #[inline]
     pub fn value_type_product(
@@ -1852,7 +1852,7 @@ impl TermArena
                 && self.value_types.len() == before.value_types.saturating_add(1)
                 && self.comp_types.len() == before.comp_types
                 && ret.0 == u32::try_from(before.value_types).unwrap_or(u32::MAX)
-                && matches!(self.value_types.last(), Some(&ValueType::Sum(ref minted)) if **minted == *summands),
+                && matches!(self.value_types.last(), Some(ValueType::Sum(minted)) if **minted == *summands),
     )]
     #[inline]
     pub fn value_type_sum(
@@ -3057,6 +3057,28 @@ mod tests
         assert_eq!(arena.value_type(empty), Some(&ValueType::empty()));
         assert_ne!(ValueType::unit(), ValueType::empty());
         assert_ne!(arena.value_type(product), Some(&ValueType::unit()));
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::product_parts),
+            Some([unit_type, unit_type].as_slice())
+        );
+        assert_eq!(
+            arena
+                .value_type(unit_type)
+                .and_then(ValueType::product_parts),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::product_parts),
+            None
+        );
+        assert_eq!(
+            arena.value_type(empty).and_then(ValueType::summands),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            arena.value_type(product).and_then(ValueType::summands),
+            None
+        );
     }
 
     #[test]

@@ -255,7 +255,7 @@ impl Allowance
     Ok(root) => matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
     Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
     Err(PathError::Budget | PathError::Arena) => true,
-    Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && !matches!(node, ValueType::Sum(summands) if !summands.is_empty())),
+    Err(PathError::UnsupportedType(root)) => arena.value_type(root).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && node.summands().is_none_or(<[_]>::is_empty)),
 
     Err(_) => false,
 })]
@@ -329,8 +329,8 @@ pub fn endpoints(
 #[spec(ensures: |ret| match (arena.value(term.path), &ret) {
     (Some(&Value::PathRefl(_)), &Ok(Reduction::Reduced(result))) => matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Return(value)) if value == term.value),
     (Some(&Value::PathEquiv { forward, .. }), &Ok(Reduction::Reduced(result))) => matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Application(head, value)) if value == term.value && matches!(arena.computation(head), Some(&gandr_kernel_term::Computation::Force(map)) if map == forward)),
-    (Some(&Value::PathProduct(..)), &Ok(Reduction::Reduced(result))) => matches!(arena.value(term.value), Some(Value::Tuple(components)) if components.len() == 2_usize) && matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Bind(..))),
-    (Some(&Value::PathProduct(..)), &Ok(Reduction::Stuck)) => arena.value(term.value).is_some_and(|value| !matches!(value, Value::Tuple(components) if components.len() == 2_usize)),
+    (Some(&Value::PathProduct(..)), &Ok(Reduction::Reduced(result))) => arena.value(term.value).and_then(Value::components).is_some_and(|components| components.len() == 2_usize) && matches!(arena.computation(result), Some(&gandr_kernel_term::Computation::Bind(..))),
+    (Some(&Value::PathProduct(..)), &Ok(Reduction::Stuck)) => arena.value(term.value).is_some_and(|value| value.components().is_none_or(|components| components.len() != 2_usize)),
     (Some(&Value::PathProduct(..)), &Err(PathError::Arena)) => arena.value(term.value).is_none(),
     (None, &Err(PathError::Arena)) => true,
     (Some(value), &Ok(Reduction::Stuck)) => !matches!(value, &Value::PathRefl(_) | &Value::PathEquiv { .. } | &Value::PathProduct(..)),

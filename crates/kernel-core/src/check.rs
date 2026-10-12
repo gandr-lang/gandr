@@ -1632,6 +1632,8 @@ fn resolve_constant(
 /// - witness: `check::tests::a_force_unwraps_a_thunk`
 /// - witness: `check::tests::a_case_requires_convergent_branches`
 /// - witness: `check::tests::a_case_propagates_the_expected_type`
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+/// - witness: `check::tests::a_tuple_and_an_injection_read_their_positions`
 /// - witness: `check::tests::a_bind_binds_the_returned_value`
 #[spec(captures: entry_mark = arena.watermark(), ensures: |ret|
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark
@@ -3368,6 +3370,7 @@ mod tests
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
+    use gandr_kernel_term::Summand;
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueId;
@@ -3403,7 +3406,7 @@ mod tests
         let cons = arena.value_list_cons(unit, nil);
         let malformed_tail = arena.value_list_cons(unit, unit);
         let malformed_head = arena.value_list_cons(nil, nil);
-        let sum_encoding = arena.value_injection(Side::Left, unit);
+        let sum_encoding = arena.value_injection(Side::Left.into(), unit);
         for valid in [nil, cons] {
             assert_eq!(
                 super::check_closed_value(&mut arena, valid, list_type),
@@ -3458,14 +3461,14 @@ mod tests
             let mut remaining = usize::from(super::MAX_CODE_OBLIGATIONS);
             while remaining != 0 {
                 if remaining & 1_usize != 0 {
-                    root = builder.arena().value_type_product(root, power);
+                    root = builder.arena().value_type_product(&[root, power]);
                 }
                 remaining >>= 1_u32;
                 if remaining != 0 {
-                    power = builder.arena().value_type_product(power, power);
+                    power = builder.arena().value_type_product(&[power, power]);
                 }
             }
-            let above = builder.arena().value_type_product(root, leaf);
+            let above = builder.arena().value_type_product(&[root, leaf]);
             (builder.axiom(LevelSignature::monomorphic(), root), above)
         };
         let above_limit = gandr_kernel_term::DeclarationBuilder::new(&mut arena)
@@ -3737,7 +3740,8 @@ mod tests
     /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
     #[spec(ensures: |ret| match arena.value_type(root) {
         None => matches!(&ret, Err(KernelError::ArenaFault)),
-        Some(&ValueType::Base(_) | &ValueType::Unit) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(&ValueType::Base(_)) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
+        Some(held) if held.product_parts() == Some(&[]) => ret.as_ref().is_ok_and(|level| *level == Level::zero()),
         Some(_) => ret.is_err() || ret.as_ref().is_ok_and(|level| level.atoms().next().is_none()),
     })]
     fn value_level(
@@ -3812,7 +3816,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let injection = arena.value_injection(Side::Left, unit);
+        let injection = arena.value_injection(Side::Left.into(), unit);
         assert_eq!(
             Err(KernelError::NotInferable {
                 form: NonInferableForm::Injection
@@ -3829,19 +3833,23 @@ mod tests
         let unit = arena.value_unit();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(unit_type, integer);
-        let left = arena.value_injection(Side::Left, unit);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let left = arena.value_injection(Side::Left.into(), unit);
         assert!(
             check_value(&mut arena, Vec::new(), left, sum).is_ok(),
             "the left injection checks against the left summand"
         );
-        let right = arena.value_injection(Side::Right, unit);
+        let right = arena.value_injection(Side::Right.into(), unit);
         assert!(
             matches!(
                 check_value(&mut arena, Vec::new(), right, sum),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
-            "and the right injection is checked against the right summand, which unit is not"
+            "and the right injection is checked against the right summand, which the unit tuple \
+             is not"
         );
         let refused = check_value(&mut arena, Vec::new(), left, unit_type);
         assert!(
@@ -3863,10 +3871,10 @@ mod tests
         let unit = arena.value_unit();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let injection = arena.value_injection(Side::Left, unit);
-        let sum = arena.value_type_sum(unit_type, integer);
-        let pair = arena.value_pair(unit, injection);
-        let product = arena.value_type_product(unit_type, sum);
+        let injection = arena.value_injection(Side::Left.into(), unit);
+        let sum = arena.value_type_sum(&[unit_type, integer]);
+        let pair = arena.value_tuple(&[unit, injection]);
+        let product = arena.value_type_product(&[unit_type, sum]);
         assert!(
             check_value(&mut arena, Vec::new(), pair, product).is_ok(),
             "the expected product flows into both components, so the checking-only injection \
@@ -3964,20 +3972,20 @@ mod tests
         let mut arena = TermArena::new();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let sum = arena.value_type_sum(unit_type, unit_type);
+        let sum = arena.value_type_sum(&[unit_type, unit_type]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
         let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
         let left = arena.computation_return(bound);
         let right = arena.computation_return(bound);
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
             synth_comp(&mut arena, vec![sum], case).is_ok(),
             "two branches returning their own summand converge when the summands agree"
         );
 
-        let mixed = arena.value_type_sum(unit_type, integer);
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         assert!(
             matches!(
                 synth_comp(&mut arena, vec![mixed], case),
@@ -3993,12 +4001,12 @@ mod tests
         let mut arena = TermArena::new();
         let unit_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
-        let mixed = arena.value_type_sum(unit_type, integer);
+        let mixed = arena.value_type_sum(&[unit_type, integer]);
         let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
         let unit = arena.value_unit();
         let left = arena.computation_return(unit);
         let right = arena.computation_return(unit);
-        let case = arena.computation_case(scrutinee, left, right);
+        let case = arena.computation_case(scrutinee, &[left, right]);
         let expected = arena.comp_type_returner(unit_type);
         let thunk = arena.value_thunk(case);
         let thunk_type = arena.value_type_thunk(expected);
@@ -4006,6 +4014,131 @@ mod tests
             check_value(&mut arena, vec![mixed], thunk, thunk_type).is_ok(),
             "checking pushes one expected type into both branches, where synthesis would have \
              required them to agree on their own"
+        );
+    }
+
+    /// A case binds each branch to the summand at its position, takes exactly
+    /// one branch per summand, and at no branches eliminates the empty sum,
+    /// which checks but cannot be synthesized.
+    #[test]
+    fn an_n_way_case_binds_each_summand()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let three_way = arena.computation_case(scrutinee, &[returned, returned, returned]);
+
+        let uniform = arena.value_type_sum(&[integer, integer, integer]);
+        let produced = synth_comp(&mut arena, vec![uniform], three_way)
+            .expect("three branches returning agreeing summands converge");
+        assert!(
+            matches!(
+                arena.comp_type(produced.comp_type().expect("a computation type")),
+                Some(&CompType::Returner(result)) if result == integer
+            ),
+            "and the case returns the summands' common type"
+        );
+        let middle_differs = arena.value_type_sum(&[integer, unit_type, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![middle_differs], three_way),
+                Err(KernelError::CaseBranchMismatch(_))
+            ),
+            "the middle branch binds the middle summand"
+        );
+        let two_way = arena.value_type_sum(&[integer, integer]);
+        assert!(
+            matches!(
+                synth_comp(&mut arena, vec![two_way], three_way),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "three branches do not eliminate a sum of two"
+        );
+
+        let empty = arena.value_type_empty();
+        let no_branches = arena.computation_case(scrutinee, &[]);
+        let returner = arena.comp_type_returner(integer);
+        let thunk_type = arena.value_type_thunk(returner);
+        let thunk = arena.value_thunk(no_branches);
+        assert!(
+            check_value(&mut arena, vec![empty], thunk, thunk_type).is_ok(),
+            "a case of no branches over the empty sum checks at any type"
+        );
+        assert_eq!(
+            Err(KernelError::NotInferable {
+                form: NonInferableForm::EmptyCase
+            }),
+            synth_comp(&mut arena, vec![empty], no_branches),
+            "and has no branch to synthesize a type from"
+        );
+        assert!(
+            matches!(
+                check_value(&mut arena, vec![unit_type], thunk, thunk_type),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "but eliminates nothing that is not the empty sum"
+        );
+    }
+
+    /// A tuple checks component by component against a product of its own
+    /// arity and synthesizes the product of its components' types; an
+    /// injection checks against the summand its position names.
+    #[test]
+    fn a_tuple_and_an_injection_read_their_positions()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit = arena.value_unit();
+        let triple = arena.value_tuple(&[unit, unit, unit]);
+        let three = arena.value_type_product(&[unit_type, unit_type, unit_type]);
+        assert!(check_value(&mut arena, Vec::new(), triple, three).is_ok());
+        let produced = synth_value(&mut arena, Vec::new(), triple)
+            .expect("a tuple synthesizes")
+            .value_type()
+            .expect("a value type");
+        assert_eq!(
+            crate::conv::Convertibility::Convertible,
+            crate::conv::convertible_value_types(&arena, produced, three),
+            "the product of its components' types"
+        );
+        let two = arena.value_type_product(&[unit_type, unit_type]);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), triple, two),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
+            ),
+            "a product of another arity is a shape mismatch"
+        );
+
+        let sum = arena.value_type_sum(&[integer, integer, unit_type]);
+        let last = arena.value_injection(Summand::from(2_usize), unit);
+        assert!(
+            check_value(&mut arena, Vec::new(), last, sum).is_ok(),
+            "the third summand is the unit type"
+        );
+        let past = arena.value_injection(Summand::from(3_usize), unit);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), past, sum),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "a position past the summands is a shape mismatch"
         );
     }
 
@@ -4190,7 +4323,10 @@ mod tests
         assert!(
             matches!(
                 synth_value(&mut arena, vec![operator], ill_argument),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
             "the argument is checked against the domain"
         );
@@ -4604,9 +4740,9 @@ mod tests
     }
 
     /// A code whose type is not the universe its own node claimed is refused,
-    /// and the refusal is the ordinary conversion mismatch rather than a
-    /// special one — the carried level is checked exactly like every other
-    /// obligation the kernel re-derives.
+    /// and the refusal is the ordinary checking mismatch rather than a special
+    /// one — the carried level is checked exactly like every other obligation
+    /// the kernel re-derives.
     #[test]
     fn a_code_that_is_not_of_its_declared_universe_refuses()
     {
@@ -4614,8 +4750,9 @@ mod tests
         let axiom = {
             let mut staging = environment.stage();
             let mint = staging.arena();
-            // The unit *value* is not a code: its type is the unit type, not a
-            // universe, so the type read off it does not form.
+            // The unit *value* is not a code: it is the empty tuple, which
+            // checks only against a product, so the type read off it does not
+            // form.
             let not_a_code = mint.value_unit();
             let declared = mint.value_type_element(not_a_code, level(LevelConstant::from(0)));
             staging.axiom(LevelSignature::monomorphic(), declared)
@@ -4623,7 +4760,10 @@ mod tests
         assert!(
             matches!(
                 environment.add_decl(axiom),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Product,
+                    ..
+                })
             ),
             "a code that does not inhabit the universe its type named is refused"
         );

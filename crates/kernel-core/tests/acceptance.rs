@@ -122,11 +122,11 @@ mod acceptance
         GoalCount(u64::from(count))
     }
 
-    /// The memoless goal-expansion law: `5 * 2^d - 2` in total.
+    /// The memoless goal-expansion law: `4 * 2^d - 2` in total.
     ///
     /// # Specification
     /// - requires: `depth <= 61`, so the intermediate scaled power fits.
-    /// - ensures: `5 * 2^depth - 2`, the total goal expansions a memoless check
+    /// - ensures: `4 * 2^depth - 2`, the total goal expansions a memoless check
     ///   of the composite makes across both planes.
     /// - provides: the closed form the memoless side of the collapse law is
     ///   asserted against, so the law is a form rather than a sample.
@@ -139,22 +139,23 @@ mod acceptance
     ///   12, and 16 distinguish the coefficient, leaf offset, and selected
     ///   plane; no execution at exponential depth 28 is claimed.
     /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
-    #[spec(requires: depth.0 <= 61, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(5)).and_then(|scaled| scaled.checked_sub(2)))]
+    #[spec(requires: depth.0 <= 61, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(4)).and_then(|scaled| scaled.checked_sub(2)))]
     fn memoless_total(depth: CompositeDepth) -> GoalCount
     {
         let scaled = arith::mul(
-            arith::Int::from(5_u64),
+            arith::Int::from(4_u64),
             arith::Int::from(two_to_the(depth).0),
         );
         GoalCount(u64::from(arith::sub(scaled, arith::Int::from(2_u64))))
     }
 
-    /// The memoless term-plane law: `3 * 2^d - 1` body checks.
+    /// The memoless term-plane law: `2^(d+1) - 1` body checks, one per
+    /// occurrence of a tuple or its unit leaf.
     ///
     /// # Specification
     /// - requires: `depth <= 62`, so the intermediate scaled power fits.
-    /// - ensures: `3 * 2^depth - 1`, the body checks a memoless check makes on
-    ///   the term plane.
+    /// - ensures: `2^(depth + 1) - 1`, the body checks a memoless check makes
+    ///   on the term plane.
     /// - provides: the term-plane half of the memoless form, so neither plane's
     ///   collapse hides behind the other's numbers.
     /// - fails: never.
@@ -165,11 +166,11 @@ mod acceptance
     ///   12, and 16 distinguish the coefficient, leaf offset, and selected
     ///   plane; no execution at exponential depth 28 is claimed.
     /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
-    #[spec(requires: depth.0 <= 62, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(3)).and_then(|scaled| scaled.checked_sub(1)))]
+    #[spec(requires: depth.0 <= 62, ensures: |ret| Some(ret.0) == 1_u64.checked_shl(depth.0).and_then(|power| power.checked_mul(2)).and_then(|scaled| scaled.checked_sub(1)))]
     fn memoless_term(depth: CompositeDepth) -> GoalCount
     {
         let scaled = arith::mul(
-            arith::Int::from(3_u64),
+            arith::Int::from(2_u64),
             arith::Int::from(two_to_the(depth).0),
         );
         GoalCount(u64::from(arith::sub(scaled, arith::Int::from(1_u64))))
@@ -200,13 +201,13 @@ mod acceptance
         GoalCount(u64::from(arith::sub(doubled, arith::Int::from(1_u64))))
     }
 
-    /// The memoized term-plane law: `d + 1` body checks plus one leaf
-    /// synthesis.
+    /// The memoized term-plane law: `d + 1` body checks, the unit leaf's
+    /// among them.
     ///
     /// # Specification
     /// - requires: nothing; every depth fits the widened sum.
-    /// - ensures: `depth + 2`: one body check per spine level plus the leaf
-    ///   synthesis.
+    /// - ensures: `depth + 1`: one body check per spine level and one for the
+    ///   unit leaf, which checks against the empty product directly.
     /// - provides: the term-plane half of the memoized form — linear against
     ///   the memoless form's exponential, which is the collapse stated as a
     ///   number.
@@ -219,12 +220,12 @@ mod acceptance
     ///   8, 12, and 16 distinguishes a missing level or extra leaf obligation;
     ///   this is a fixture law, not a general checker cost bound.
     /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
-    #[spec(ensures: |ret| ret.0 == u64::from(depth.0).saturating_add(2))]
+    #[spec(ensures: |ret| ret.0 == u64::from(depth.0).saturating_add(1))]
     fn memoized_term(depth: CompositeDepth) -> GoalCount
     {
         GoalCount(u64::from(arith::add(
             arith::Int::from(u64::from(depth.0)),
-            arith::Int::from(2_u64),
+            arith::Int::from(1_u64),
         )))
     }
 
@@ -334,10 +335,10 @@ mod acceptance
     /// - witness: `acceptance::acceptance::the_collapse_is_a_closed_form_at_three_depths`
     /// - witness: `acceptance::acceptance::the_occurrence_count_is_pinned_so_the_workload_cannot_stop_being_shared`
     #[spec(ensures: |ret| if depth.0 == 0 {
-        arena.value_type(ret.0) == Some(&ValueType::Unit) && arena.value(ret.1) == Some(&Value::Unit)
+        arena.value_type(ret.0) == Some(&ValueType::unit()) && arena.value(ret.1) == Some(&Value::unit())
     } else {
-        matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
-            && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one == other)
+        matches!(arena.value_type(ret.0), Some(ValueType::Product(parts)) if matches!(**parts, [one, other] if one == other))
+            && matches!(arena.value(ret.1).and_then(Value::components), Some(&[one, other]) if one == other)
     })]
     fn shared_composite(
         arena: &mut TermArena,
@@ -347,8 +348,8 @@ mod acceptance
         let mut declared = arena.value_type_unit();
         let mut body = arena.value_unit();
         for _step in 0 .. depth.0 {
-            declared = arena.value_type_product(declared, declared);
-            body = arena.value_pair(body, body);
+            declared = arena.value_type_product(&[declared, declared]);
+            body = arena.value_tuple(&[body, body]);
         }
         (declared, body)
     }
@@ -375,10 +376,10 @@ mod acceptance
     /// - witness: `acceptance::acceptance::sharing_costs_the_memoless_checker_nothing`
     /// - witness: `acceptance::acceptance::memoized_checking_agrees_with_memoless_checking`
     #[spec(ensures: |ret| if depth.0 == 0 {
-        arena.value_type(ret.0) == Some(&ValueType::Unit) && arena.value(ret.1) == Some(&Value::Unit)
+        arena.value_type(ret.0) == Some(&ValueType::unit()) && arena.value(ret.1) == Some(&Value::unit())
     } else {
-        matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one != other)
-            && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one != other)
+        matches!(arena.value_type(ret.0), Some(ValueType::Product(parts)) if matches!(**parts, [one, other] if one != other))
+            && matches!(arena.value(ret.1).and_then(Value::components), Some(&[one, other]) if one != other)
     })]
     fn unshared_composite(
         arena: &mut TermArena,
@@ -400,14 +401,14 @@ mod acceptance
                 else {
                     panic!("each level has an even length");
                 };
-                next_types.push(arena.value_type_product(first, second));
+                next_types.push(arena.value_type_product(&[first, second]));
             }
             for slot in values.chunks(2) {
                 let (Some(&first), Some(&second)) = (slot.first(), slot.last())
                 else {
                     panic!("each level has an even length");
                 };
-                next_values.push(arena.value_pair(first, second));
+                next_values.push(arena.value_tuple(&[first, second]));
             }
             types = next_types;
             values = next_values;
@@ -446,8 +447,8 @@ mod acceptance
     /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
     #[spec(ensures: |ret| u64::try_from(ret.2.len()).ok() == Some(u64::from(depth.0).saturating_add(1))
         && ret.2.last() == Some(&ret.1)
-        && ret.2.first().is_some_and(|leaf| matches!(arena.value(*leaf), Some(&Value::Injection(Side::Left, payload)) if arena.value(payload) == Some(&Value::Unit)))
-        && ret.2.windows(2).all(|pair| match pair { &[previous, next] => arena.value(next) == Some(&Value::Pair(previous, previous)), _ => false }))]
+        && ret.2.first().is_some_and(|leaf| matches!(arena.value(*leaf), Some(&Value::Injection(summand, payload)) if summand == Side::Left.into() && arena.value(payload) == Some(&Value::unit())))
+        && ret.2.windows(2).all(|pair| match pair { &[previous, next] => arena.value(next).and_then(Value::components) == Some(&[previous, previous]), _ => false }))]
     fn injection_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
@@ -455,13 +456,13 @@ mod acceptance
     {
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
-        let mut declared = arena.value_type_sum(unit_type, unit_type);
-        let mut body = arena.value_injection(Side::Left, unit);
+        let mut declared = arena.value_type_sum(&[unit_type, unit_type]);
+        let mut body = arena.value_injection(Side::Left.into(), unit);
         let mut levels_of_body = Vec::new();
         levels_of_body.push(body);
         for _step in 0 .. depth.0 {
-            declared = arena.value_type_product(declared, declared);
-            body = arena.value_pair(body, body);
+            declared = arena.value_type_product(&[declared, declared]);
+            body = arena.value_tuple(&[body, body]);
             levels_of_body.push(body);
         }
         (declared, body, levels_of_body)
@@ -484,16 +485,16 @@ mod acceptance
     ///   with a single edited spine; identical root children prevent the
     ///   baseline from silently containing an edit.
     /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
-    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
-        && matches!(arena.value(ret.1), Some(&Value::Pair(one, other)) if one == other))]
+    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(ValueType::Product(parts)) if matches!(**parts, [one, other] if one == other))
+        && matches!(arena.value(ret.1).and_then(Value::components), Some(&[one, other]) if one == other))]
     fn unedited_composite(
         arena: &mut TermArena,
         depth: CompositeDepth,
     ) -> (ValueTypeId, ValueId)
     {
         let (declared, body, _levels) = injection_composite(arena, depth);
-        let pair_type = arena.value_type_product(declared, declared);
-        let pair = arena.value_pair(body, body);
+        let pair_type = arena.value_type_product(&[declared, declared]);
+        let pair = arena.value_tuple(&[body, body]);
         (pair_type, pair)
     }
 
@@ -537,14 +538,14 @@ mod acceptance
     ///   root observer checks a changed child beside the original sibling, not
     ///   the entire edit path.
     /// - witness: `acceptance::acceptance::a_depth_d_edit_re_checks_its_spine_and_nothing_else`
-    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(&ValueType::Product(one, other)) if one == other)
-        && match arena.value(ret.1) {
-            Some(&Value::Pair(original, edited)) if original != edited => {
+    #[spec(ensures: |ret| matches!(arena.value_type(ret.0), Some(ValueType::Product(parts)) if matches!(**parts, [one, other] if one == other))
+        && match arena.value(ret.1).and_then(Value::components) {
+            Some(&[original, edited]) if original != edited => {
                 if depth.0 == 0 {
-                    matches!((arena.value(original), arena.value(edited)), (Some(&Value::Injection(Side::Left, old)), Some(&Value::Injection(Side::Right, fresh)))
-                        if old != fresh && arena.value(old) == Some(&Value::Unit) && arena.value(fresh) == Some(&Value::Unit))
+                    matches!((arena.value(original), arena.value(edited)), (Some(&Value::Injection(left, old)), Some(&Value::Injection(right, fresh)))
+                        if left == Side::Left.into() && right == Side::Right.into() && old != fresh && arena.value(old) == Some(&Value::unit()) && arena.value(fresh) == Some(&Value::unit()))
                 } else {
-                    matches!((arena.value(original), arena.value(edited)), (Some(&Value::Pair(old, sibling)), Some(&Value::Pair(changed, retained)))
+                    matches!((arena.value(original).and_then(Value::components), arena.value(edited).and_then(Value::components)), (Some(&[old, sibling]), Some(&[changed, retained]))
                         if old == sibling && changed != old && retained == sibling)
                 }
             },
@@ -561,18 +562,18 @@ mod acceptance
         // is structurally identical to the original's. A content key collapses the
         // payload with the original's; an arena-identity key would not.
         let fresh_unit = arena.value_unit();
-        let mut edited = arena.value_injection(Side::Right, fresh_unit);
+        let mut edited = arena.value_injection(Side::Right.into(), fresh_unit);
         for step in 0 .. depth.0 {
             let index = usize::try_from(step).expect("the level index fits");
             let Some(&sibling) = levels_of_body.get(index)
             else {
                 panic!("every level below the root was recorded");
             };
-            edited = arena.value_pair(edited, sibling);
+            edited = arena.value_tuple(&[edited, sibling]);
         }
 
-        let pair_type = arena.value_type_product(declared, declared);
-        let body = arena.value_pair(original, edited);
+        let pair_type = arena.value_type_product(&[declared, declared]);
+        let body = arena.value_tuple(&[original, edited]);
         (pair_type, body)
     }
 
@@ -772,7 +773,7 @@ mod acceptance
             assert_eq!(
                 ExpansionCount::from(memoless_total(depth)),
                 memoless.expansions(),
-                "memoless expansions are 5 * 2^d - 2 at depth {depth:?}"
+                "memoless expansions are 4 * 2^d - 2 at depth {depth:?}"
             );
             let memoized_total = arith::add(
                 arith::Int::from(u64::from(memoized_term(depth))),
@@ -781,7 +782,7 @@ mod acceptance
             assert_eq!(
                 ExpansionCount::from(u64::from(memoized_total)),
                 memoized.expansions(),
-                "memoized expansions are 2d + 3 at depth {depth:?}"
+                "memoized expansions are 2d + 2 at depth {depth:?}"
             );
 
             // The law, decomposed per plane, so neither machine's collapse can hide
@@ -789,7 +790,7 @@ mod acceptance
             assert_eq!(
                 ExpansionCount::from(memoless_term(depth)),
                 memoless.plane_expansions(SupportPlane::Term),
-                "memoless body checks are 3 * 2^d - 1 at depth {depth:?}"
+                "memoless body checks are 2^(d+1) - 1 at depth {depth:?}"
             );
             assert_eq!(
                 ExpansionCount::from(memoless_type(depth)),
@@ -799,7 +800,7 @@ mod acceptance
             assert_eq!(
                 ExpansionCount::from(memoized_term(depth)),
                 memoized.plane_expansions(SupportPlane::Term),
-                "memoized body checks are d + 2 at depth {depth:?}"
+                "memoized body checks are d + 1 at depth {depth:?}"
             );
             assert_eq!(
                 ExpansionCount::from(memoized_type(depth)),
@@ -827,7 +828,7 @@ mod acceptance
             assert_eq!(
                 ExpansionCount::from(memoless_term(depth)),
                 census.plane_expansions(SupportPlane::Term),
-                "the leaf occurs 2^d times, so the body's occurrence count is 3 * 2^d - 1"
+                "the leaf occurs 2^d times, so the body's occurrence count is 2^(d+1) - 1"
             );
             assert!(
                 u64::from(two_to_the(depth)) > u64::from(memoized_term(depth)),
@@ -991,7 +992,8 @@ mod acceptance
             u64::from(memoless_total(CAPABILITY_DEPTH))
         );
         assert_eq!(
-            1_342_177_278_u64,
+            // 1,073,741,822: 4 * 2^28 - 2.
+            0x3FFF_FFFE_u64,
             u64::from(memoless_total(CAPABILITY_DEPTH)),
             "and that is the number the memoless law names at depth 28"
         );
@@ -1014,7 +1016,7 @@ mod acceptance
         assert_eq!(
             ExpansionCount::from(memoized_term(CAPABILITY_DEPTH)),
             census.plane_expansions(SupportPlane::Term),
-            "d + 2 body checks at depth 28"
+            "d + 1 body checks at depth 28"
         );
         assert_eq!(
             ExpansionCount::from(memoized_type(CAPABILITY_DEPTH)),
@@ -1022,9 +1024,9 @@ mod acceptance
             "d + 1 type formations at depth 28"
         );
         assert_eq!(
-            ExpansionCount::from(59_u64),
+            ExpansionCount::from(58_u64),
             census.expansions(),
-            "fifty-nine goal expansions against the {} the memoless law names",
+            "fifty-eight goal expansions against the {} the memoless law names",
             u64::from(memoless_total(CAPABILITY_DEPTH))
         );
     }
@@ -1064,7 +1066,7 @@ mod acceptance
         })
         .0;
         assert!(
-            matches!(refused, Err(KernelError::ValueTypeMismatch(_))),
+            matches!(refused, Err(KernelError::ValueShapeMismatch { .. })),
             "unit does not inhabit the integers: {refused:?}"
         );
 
@@ -1090,8 +1092,8 @@ mod acceptance
                 let second_thunk = arena.value_thunk(second);
                 let first_type = arena.value_type_thunk(integer_arrow);
                 let second_type = arena.value_type_thunk(unit_arrow);
-                let declared = arena.value_type_product(first_type, second_type);
-                let body = arena.value_pair(first_thunk, second_thunk);
+                let declared = arena.value_type_product(&[first_type, second_type]);
+                let body = arena.value_tuple(&[first_thunk, second_thunk]);
                 (declared, body)
             })
             .0,
@@ -1120,8 +1122,8 @@ mod acceptance
                 let second_thunk = arena.value_thunk(lambda);
                 let first_type = arena.value_type_thunk(integer_arrow);
                 let second_type = arena.value_type_thunk(unit_arrow);
-                let declared = arena.value_type_product(first_type, second_type);
-                let body = arena.value_pair(first_thunk, second_thunk);
+                let declared = arena.value_type_product(&[first_type, second_type]);
+                let body = arena.value_tuple(&[first_thunk, second_thunk]);
                 (declared, body)
             })
             .0,
@@ -1152,7 +1154,7 @@ mod acceptance
         let mut null = NullMemo;
         let (honest, _census) = check_with(&mut arena, &declaration, &mut null);
         assert!(
-            matches!(honest, Err(KernelError::ValueTypeMismatch(_))),
+            matches!(honest, Err(KernelError::ValueShapeMismatch { .. })),
             "the honest verdict is a refusal: {honest:?}"
         );
 
@@ -1589,8 +1591,8 @@ mod acceptance
         let Some(&CompType::Returner(result)) = arena.comp_type(codomain) else { return false; };
         let Some(&Value::Thunk(lambda)) = arena.value(ret.1) else { return false; };
         let Some(&Computation::Lambda(body)) = arena.computation(lambda) else { return false; };
-        arena.value_type(domain) == Some(&ValueType::Unit)
-            && matches!(arena.value_type(result), Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&Value::Unit))
+        arena.value_type(domain) == Some(&ValueType::unit())
+            && matches!(arena.value_type(result), Some(&ValueType::Element { code, .. }) if arena.value(code) == Some(&Value::unit()))
             && matches!(arena.computation(body), Some(&Computation::Return(value)) if arena.value(value) == Some(&Value::Variable(DeBruijnIndex::from(0_u32))))
     })]
     fn bad_code_identity(arena: &mut TermArena) -> (ValueTypeId, ValueId)

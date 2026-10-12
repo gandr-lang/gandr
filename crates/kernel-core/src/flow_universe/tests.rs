@@ -52,13 +52,13 @@ struct Fixture
 fn fixture(arena: &mut TermArena) -> Fixture
 {
     let unit_type = arena.value_type_unit();
-    let boolean_type = arena.value_type_sum(unit_type, unit_type);
+    let boolean_type = arena.value_type_sum(&[unit_type, unit_type]);
     let boolean = arena.value_quote(boolean_type);
     let unit_code = arena.value_quote(unit_type);
     let unit = arena.value_unit();
     let constructors = [
-        arena.value_injection(Side::Left, unit),
-        arena.value_injection(Side::Right, unit),
+        arena.value_injection(Side::Left.into(), unit),
+        arena.value_injection(Side::Right.into(), unit),
     ];
     let terminal = returning(arena, unit);
     Fixture {
@@ -265,11 +265,11 @@ fn one_way_classes_preserve_leaves()
     let code = arena.value_quote(base);
     let sample = arena.value_literal(Literal::Text(StringLiteral::new("leaf".into())));
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let product = arena.value_type_product(base, base);
+    let product = arena.value_type_product(&[base, base]);
     let product_code = arena.value_quote(product);
-    let pair = arena.value_pair(variable, variable);
+    let pair = arena.value_tuple(&[variable, variable]);
     let diagonal = returning(&mut arena, pair);
-    let sample_pair = arena.value_pair(sample, sample);
+    let sample_pair = arena.value_tuple(&[sample, sample]);
     let evidence = image(&mut arena, diagonal, sample, sample_pair, pair);
     let diagonal = flows
         .push(Flow::Forward {
@@ -281,12 +281,12 @@ fn one_way_classes_preserve_leaves()
         .expect("diagonal");
     computes(&mut arena, &flows, diagonal, sample, sample_pair);
 
-    let sum = arena.value_type_sum(base, base);
+    let sum = arena.value_type_sum(&[base, base]);
     let sum_code = arena.value_quote(sum);
     for side in [Side::Left, Side::Right] {
-        let injection = arena.value_injection(side, variable);
+        let injection = arena.value_injection(side.into(), variable);
         let function = returning(&mut arena, injection);
-        let output = arena.value_injection(side, sample);
+        let output = arena.value_injection(side.into(), sample);
         let evidence = image(&mut arena, function, sample, output, injection);
         let id = flows
             .push(Flow::Forward {
@@ -299,12 +299,12 @@ fn one_way_classes_preserve_leaves()
         computes(&mut arena, &flows, id, sample, output);
     }
     let branch = arena.computation_return(variable);
-    let case = arena.computation_case(variable, branch, branch);
+    let case = arena.computation_case(variable, &[branch, branch]);
     let lambda = arena.computation_lambda(case);
     let fold = arena.value_thunk(lambda);
     let inputs = [
-        arena.value_injection(Side::Left, sample),
-        arena.value_injection(Side::Right, sample),
+        arena.value_injection(Side::Left.into(), sample),
+        arena.value_injection(Side::Right.into(), sample),
     ];
     let images = inputs
         .into_iter()
@@ -341,7 +341,7 @@ fn one_way_classes_preserve_leaves()
     // Two equal-typed input positions must remain distinct in symbolic coverage.
     let identity = returning(&mut arena, variable);
     let first = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let output = arena.value_pair(first, variable);
+    let output = arena.value_tuple(&[first, variable]);
     let evidence = image(&mut arena, identity, sample_pair, sample_pair, output);
     let identity = flows
         .push(Flow::Forward {
@@ -413,10 +413,10 @@ fn constant_leaf_and_forged_evidence_refuse()
             matches!(form(&mut arena, &flows, bad, ReplayBudget::DEFAULT), Err(FlowError::NonNatural(found)) if found == output)
         );
     }
-    let pair_type = arena.value_type_product(string, string);
+    let pair_type = arena.value_type_product(&[string, string]);
     let pair_code = arena.value_quote(pair_type);
-    let sample_pair = arena.value_pair(sample, sample);
-    let wrong_pair = arena.value_pair(variable, variable);
+    let sample_pair = arena.value_tuple(&[sample, sample]);
+    let wrong_pair = arena.value_tuple(&[variable, variable]);
     let evidence = image(&mut arena, identity, sample_pair, sample_pair, wrong_pair);
     let bad = flows
         .push(Flow::Forward {
@@ -433,7 +433,7 @@ fn constant_leaf_and_forged_evidence_refuse()
             verdict: KernelVerdict::Declined(_)
         })
     ));
-    let literal_pair = arena.value_pair(variable, sample);
+    let literal_pair = arena.value_tuple(&[variable, sample]);
     let diagonal = returning(&mut arena, wrong_pair);
     let evidence = image(&mut arena, diagonal, sample, sample_pair, literal_pair);
     let bad = flows
@@ -448,10 +448,10 @@ fn constant_leaf_and_forged_evidence_refuse()
         matches!(form(&mut arena, &flows, bad, ReplayBudget::DEFAULT), Err(FlowError::NonNatural(found)) if found == sample)
     );
     let integer = arena.value_type_base(BaseType::Integer);
-    let heterogeneous = arena.value_type_product(string, integer);
+    let heterogeneous = arena.value_type_product(&[string, integer]);
     let heterogeneous_code = arena.value_quote(heterogeneous);
     let first = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let swapped = arena.value_pair(variable, first);
+    let swapped = arena.value_tuple(&[variable, first]);
     let bad = flows
         .push(Flow::Forward {
             source: heterogeneous_code,
@@ -466,11 +466,11 @@ fn constant_leaf_and_forged_evidence_refuse()
     assert!(
         matches!(form(&mut arena, &flows, bad, ReplayBudget::DEFAULT), Err(FlowError::NonNatural(found)) if found == variable)
     );
-    let sum = arena.value_type_sum(string, string);
+    let sum = arena.value_type_sum(&[string, string]);
     let sum_code = arena.value_quote(sum);
-    let injection = arena.value_injection(Side::Left, variable);
+    let injection = arena.value_injection(Side::Left.into(), variable);
     let function = returning(&mut arena, injection);
-    let literal_injection = arena.value_injection(Side::Left, sample);
+    let literal_injection = arena.value_injection(Side::Left.into(), sample);
     let evidence = image(
         &mut arena,
         function,

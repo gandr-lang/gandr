@@ -1030,7 +1030,10 @@ mod tests
             );
             assert_eq!(environment.arena().watermark(), watermark);
             assert_eq!(environment.entries().len(), entries);
-            assert_eq!(environment.arena().value_type(unit), Some(&ValueType::Unit));
+            assert_eq!(
+                environment.arena().value_type(unit),
+                Some(&ValueType::unit())
+            );
         }
     }
 }

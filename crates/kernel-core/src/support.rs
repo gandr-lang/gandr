@@ -1470,7 +1470,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         let mut reaches = LooseDepths::new();
         assert_eq!(
             LooseDepth::from(0_u32),
@@ -1485,7 +1485,7 @@ mod tests
         let mut arena = TermArena::new();
         let zero = arena.value_variable(DeBruijnIndex::from(0_u32));
         let three = arena.value_variable(DeBruijnIndex::from(3_u32));
-        let pair = arena.value_pair(zero, three);
+        let pair = arena.value_tuple(&[zero, three]);
         let mut reaches = LooseDepths::new();
         assert_eq!(
             LooseDepth::from(1_u32),

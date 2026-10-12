@@ -103,7 +103,7 @@ mod adversarial_depth
     ///   and a type descent beyond the link count. No unbounded stack theorem
     ///   is claimed.
     /// - witness: `adversarial_depth::adversarial_depth::the_two_machines_are_total_on_a_chain_deep_term`
-    #[spec(ensures: |ret| u64::from(ret.plane_expansions(SupportPlane::Term)) == u64::from(CHAIN_LINKS).saturating_mul(2).saturating_add(2)
+    #[spec(ensures: |ret| u64::from(ret.plane_expansions(SupportPlane::Term)) == u64::from(CHAIN_LINKS).saturating_mul(2).saturating_add(1)
         && u64::from(ret.plane_expansions(SupportPlane::Type)) > u64::from(CHAIN_LINKS))]
     fn check_a_deep_chain(active: MemoActivityChoice) -> ExpansionCensus
     {
@@ -175,8 +175,8 @@ mod adversarial_depth
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `2 * CHAIN_LINKS + 2`: two term goals per link, plus the unit
-    ///   leaf's check and its synthesis.
+    /// - ensures: `2 * CHAIN_LINKS + 1`: two term goals per link, plus the unit
+    ///   leaf's check against the empty product.
     /// - provides: the closed form both instantiations are asserted against.
     ///   Every node of the chain is distinct, so the memo collapses nothing and
     ///   the two agree — which is what makes this a depth case rather than a
@@ -188,18 +188,18 @@ mod adversarial_depth
     /// # Adequacy
     /// - hypothesis: L3: the closed form is compared with independently counted
     ///   live and null-memo executions at 20,000 links, distinguishing a
-    ///   missing leaf synthesis or an omitted link plane.
+    ///   missing leaf check or an omitted link plane.
     /// - witness: `adversarial_depth::adversarial_depth::the_two_machines_are_total_on_a_chain_deep_term`
-    #[spec(ensures: |ret| u64::from(ret) == u64::from(CHAIN_LINKS).saturating_add(u64::from(CHAIN_LINKS)).saturating_add(2))]
+    #[spec(ensures: |ret| u64::from(ret) == u64::from(CHAIN_LINKS).saturating_add(u64::from(CHAIN_LINKS)).saturating_add(1))]
     fn expected_term_expansions() -> ExpansionCount
     {
         // Two term goals per link (the thunk's check and the returner's check),
-        // plus the unit leaf's check and its synthesis.
+        // plus the unit leaf's check, which the empty product answers directly.
         let scaled = arith::mul(
             arith::Int::from(u64::from(CHAIN_LINKS)),
             arith::Int::from(2_u64),
         );
-        ExpansionCount::from(u64::from(arith::add(scaled, arith::Int::from(2_u64))))
+        ExpansionCount::from(u64::from(arith::add(scaled, arith::Int::from(1_u64))))
     }
 
     #[test]

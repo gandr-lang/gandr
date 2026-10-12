@@ -113,20 +113,20 @@ fn universe_clause_is_native()
         Err(RelationError::CertificateOperationRequired)
     ));
 
-    let nested = arena.value_type_product(universe, unit_type);
+    let nested = arena.value_type_product(&[universe, unit_type]);
     let nested_code = arena.value_quote(nested);
     let Interpretation::Elements(nested_relation) =
         interpret(&arena, Mode::Identity, Domain::Elements(nested_code)).expect("nested universe")
     else {
         panic!("element clause")
     };
-    let pair = arena.value_pair(boolean.code, unit);
+    let pair = arena.value_tuple(&[boolean.code, unit]);
     let nested_fiber = nested_relation
         .fiber(&mut arena, &[], pair, pair)
         .expect("nested fibre")
         .native(&mut arena)
         .expect("nested native fibre");
-    let expected_nested = arena.value_type_product(native, unit_type);
+    let expected_nested = arena.value_type_product(&[native, unit_type]);
     assert_eq!(
         convertible_value_types(&arena, nested_fiber, expected_nested),
         Convertibility::Convertible
@@ -138,7 +138,7 @@ fn universe_clause_is_native()
         projected.native(&mut arena),
         Err(RelationError::NeutralFiber)
     ));
-    let sum = arena.value_type_sum(universe, unit_type);
+    let sum = arena.value_type_sum(&[universe, unit_type]);
     let sum_code = arena.value_quote(sum);
     let sums = interpret(&arena, Mode::Identity, Domain::Elements(sum_code))
         .expect("sum containing codes")

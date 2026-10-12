@@ -44,10 +44,10 @@ use crate::replay::ReplayBudget;
     ensures: |ret| ret.root == HigherId(values.len())
         && ret.nodes.len() == values.len().saturating_add(1)
         && ret.nodes.first().is_some_and(|layer| matches!(layer, Layer::Guard { evidence, .. }
-            if matches!(arena.value(*evidence), Some(&Value::Injection(Side::Left, unit)) if matches!(arena.value(unit), Some(&Value::Unit)))))
+            if matches!(arena.value(*evidence), Some(&Value::Injection(summand, unit)) if summand == Side::Left.into() && arena.value(unit) == Some(&Value::unit()))))
         && ret.nodes.iter().enumerate().skip(1).all(|(index, layer)| matches!(layer, Layer::Guard { evidence, tail }
             if tail.0 == index.saturating_sub(1)
-                && matches!(arena.value(*evidence), Some(&Value::Injection(Side::Right, head)) if values.get(values.len().saturating_sub(index)) == Some(&head)))),
+                && matches!(arena.value(*evidence), Some(&Value::Injection(summand, head)) if summand == Side::Right.into() && values.get(values.len().saturating_sub(index)) == Some(&head)))),
 )]
 pub fn list(
     arena: &mut TermArena,
@@ -55,7 +55,7 @@ pub fn list(
 ) -> Codata
 {
     let unit = arena.value_unit();
-    let nil = arena.value_injection(Side::Left, unit);
+    let nil = arena.value_injection(Side::Left.into(), unit);
     let mut nodes = Vec::with_capacity(values.len().saturating_add(1));
     nodes.push(Layer::Guard {
         evidence: nil,
@@ -63,7 +63,7 @@ pub fn list(
     });
     let mut root = HigherId(0);
     for &value in values.iter().rev() {
-        let evidence = arena.value_injection(Side::Right, value);
+        let evidence = arena.value_injection(Side::Right.into(), value);
         nodes.push(Layer::Guard {
             evidence,
             tail: root,
@@ -78,7 +78,7 @@ fn list_identity_is_lazy()
 {
     let mut arena = TermArena::new();
     let unit = arena.value_type_unit();
-    let boolean = arena.value_type_sum(unit, unit);
+    let boolean = arena.value_type_sum(&[unit, unit]);
     let list_type = arena.value_type_list(boolean);
     let code = arena.value_quote(list_type);
     let relation = interpret(&arena, Mode::Identity, Domain::Elements(code))
@@ -86,8 +86,8 @@ fn list_identity_is_lazy()
         .elements()
         .expect("recursive relation");
     let unit = arena.value_unit();
-    let truth = arena.value_injection(Side::Left, unit);
-    let falsity = arena.value_injection(Side::Right, unit);
+    let truth = arena.value_injection(Side::Left.into(), unit);
+    let falsity = arena.value_injection(Side::Right.into(), unit);
     for (left, right, fiber, depth, steps) in [
         (vec![], vec![], Inhabitation::Unit, 1, 2),
         (
@@ -128,8 +128,8 @@ fn list_identity_is_lazy()
         assert_eq!(refused.progress.steps, Steps(steps.saturating_sub(1)));
     }
     // A distinguishing constructor does not touch either invalid tail.
-    let left_head = arena.value_injection(Side::Right, truth);
-    let right_head = arena.value_injection(Side::Right, falsity);
+    let left_head = arena.value_injection(Side::Right.into(), truth);
+    let right_head = arena.value_injection(Side::Right.into(), falsity);
     let left = Codata {
         nodes: vec![Layer::Guard {
             evidence: left_head,
@@ -175,7 +175,7 @@ fn uncertified_stratum_refuses()
         .elements()
         .expect("list");
     let unit = arena.value_unit();
-    let head = arena.value_injection(Side::Right, unit);
+    let head = arena.value_injection(Side::Right.into(), unit);
     let looped = Codata {
         nodes: vec![Layer::Redirect(HigherId(0))],
         root: HigherId(0),

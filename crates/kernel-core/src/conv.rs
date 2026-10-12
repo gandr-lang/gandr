@@ -1035,7 +1035,7 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(unit, base);
+        let product = arena.value_type_product(&[unit, base]);
         assert_eq!(
             Convertibility::Convertible,
             convertible_value_types(&arena, product, product),
@@ -1063,8 +1063,8 @@ mod tests
         let mut arena = TermArena::new();
         let first_unit = arena.value_type_unit();
         let second_unit = arena.value_type_unit();
-        let first = arena.value_type_product(first_unit, first_unit);
-        let second = arena.value_type_product(second_unit, second_unit);
+        let first = arena.value_type_product(&[first_unit, first_unit]);
+        let second = arena.value_type_product(&[second_unit, second_unit]);
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
         assert_eq!(
             Convertibility::Convertible,
@@ -1082,8 +1082,8 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
         let numeric = arena.value_type_base(BaseType::Numeric);
-        let product = arena.value_type_product(unit, integer);
-        let sum = arena.value_type_sum(unit, integer);
+        let product = arena.value_type_product(&[unit, integer]);
+        let sum = arena.value_type_sum(&[unit, integer]);
         let returner = arena.comp_type_returner(unit);
         let thunk = arena.value_type_thunk(returner);
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
@@ -1111,7 +1111,7 @@ mod tests
                 );
             }
         }
-        let transposed = arena.value_type_product(integer, unit);
+        let transposed = arena.value_type_product(&[integer, unit]);
         assert_eq!(
             Convertibility::Distinct,
             convertible_value_types(&arena, product, transposed),
@@ -1296,10 +1296,10 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let constant = arena.value_constant(ConstantIndex::from(0_usize));
         let other_constant = arena.value_constant(ConstantIndex::from(1_usize));
-        let pair = arena.value_pair(unit, variable);
-        let transposed = arena.value_pair(variable, unit);
-        let left = arena.value_injection(Side::Left, unit);
-        let right = arena.value_injection(Side::Right, unit);
+        let pair = arena.value_tuple(&[unit, variable]);
+        let transposed = arena.value_tuple(&[variable, unit]);
+        let left = arena.value_injection(Side::Left.into(), unit);
+        let right = arena.value_injection(Side::Right.into(), unit);
         let returner = arena.computation_return(unit);
         let force = arena.computation_force(unit);
         let thunk = arena.value_thunk(returner);
@@ -1353,8 +1353,8 @@ mod tests
         let mut left = arena.value_type_unit();
         let mut right = arena.value_type_unit();
         for _step in 0 .. 30_u32 {
-            left = arena.value_type_product(left, left);
-            right = arena.value_type_product(right, right);
+            left = arena.value_type_product(&[left, left]);
+            right = arena.value_type_product(&[right, right]);
         }
         assert_ne!(
             left, right,
@@ -1373,7 +1373,7 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let mut other = integer;
         for _step in 0 .. 30_u32 {
-            other = arena.value_type_product(other, other);
+            other = arena.value_type_product(&[other, other]);
         }
         assert_eq!(
             Convertibility::Distinct,
@@ -1468,7 +1468,7 @@ mod tests
         else {
             panic!("the refusal is a value-type mismatch");
         };
-        assert_eq!(ValueTypeHead::Unit, mismatch.expected().head());
+        assert_eq!(ValueTypeHead::Product, mismatch.expected().head());
         assert_eq!(ValueTypeHead::Base, mismatch.actual().head());
         assert_ne!(
             mismatch.expected().digest(),

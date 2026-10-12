@@ -1794,7 +1794,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
  else if let Some(matched_left_node) = matched_left_value && let ref one @ (Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }) = *matched_left_node && let Some(other) = matched_right_value { matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
                 && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)) }
  else if matches!((matched_left_value, matched_right_value), (Some(&Value::ListNil), Some(&Value::ListNil))) { ret == Ok(Structure::Leaf(Expect::Convertible)) }
- else if let (Some(Value::Tuple(one)), Some(Value::Tuple(other))) = (matched_left_value, matched_right_value) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
+ else if let (Some(one), Some(other)) = (matched_left_value.and_then(Value::components), matched_right_value.and_then(Value::components)) { if one.len() == other.len() { ret == Ok(Structure::of(one.iter().zip(other.iter()).map(|(&a, &b)| Premise::values(a, b)).collect())) } else { ret == Ok(Structure::Leaf(Expect::NotConvertible)) } }
  else if let Some(matched_left_node) = matched_left_value && let ref one @ Value::Literal(_) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let ref other @ Value::Literal(_) = *matched_right_node { ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })) }
  else if let (Some(&Value::ListCons(one_first, one_second)), Some(&Value::ListCons(other_first, other_second))) = (matched_left_value, matched_right_value) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]) }
  else if let Some(matched_left_node) = matched_left_value && let Value::Injection(one_side, one_body) = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Value::Injection(other_side, other_body) = *matched_right_node && (one_side == other_side) { matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]) }
@@ -2057,7 +2057,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
             Some(&(Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret == Rigidity::Rigid,
-            Some(Value::Tuple(components)) if components.is_empty() => ret == Rigidity::Rigid,
+            Some(held) if held.components() == Some(&[]) => ret == Rigidity::Rigid,
             Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
             Some(&Value::Thunk(_)) | None => ret == Rigidity::Flexible,
             _ => true,
@@ -3252,22 +3252,25 @@ fn rule(
     let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| match (*one,*other) {
         (Elimination::RecordProjection(a),Elimination::RecordProjection(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::RecordProjection(_,a)),Some(Computation::RecordProjection(_,b))) if a == b),
         (Elimination::DataCase(a),Elimination::DataCase(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::DataCase{branches:a,..}),Some(Computation::DataCase{branches:b,..})) if a.len() == b.len()),
-        (Elimination::Case(a),Elimination::Case(b)) => matches!((arena.computation(a),arena.computation(b)), (Some(Computation::Case{branches:a,..}),Some(Computation::Case{branches:b,..})) if a.len() == b.len()),
+        (Elimination::Case(a),Elimination::Case(b)) => {
+            let width = |case: ComputationId| match *arena.computation(case)? { Computation::Case { ref branches, .. } => Some(branches.len()), _ => None };
+            width(a).is_some() && width(a) == width(b)
+        },
         _ => core::mem::discriminant(one) == core::mem::discriminant(other),
     });
     match ret {
 Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
 Err(_) => false,
 Ok(Structure::Leaf(Expect::NotConvertible)) => !compatible,
-Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_)) || matches!(*one, Elimination::Case(case) if matches!(arena.computation(case), Some(Computation::Case{branches,..}) if branches.is_empty()))),
+Ok(Structure::Leaf(Expect::Convertible)) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::RecordProjection(_)) || matches!(*one, Elimination::Case(case) if arena.computation(case).is_some_and(|node| matches!(*node, Computation::Case { ref branches, .. } if branches.is_empty())))),
 Ok(Structure::Premises(ref premises)) => compatible && !premises.is_empty() && {
             let mut pending = premises.iter();
             let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
                 (Elimination::Force, Elimination::Force) | (Elimination::RecordProjection(_),Elimination::RecordProjection(_)) => true,
-                (Elimination::Case(a),Elimination::Case(b)) => match (arena.computation(a),arena.computation(b)) {
-                    (Some(Computation::Case{branches:a,..}),Some(Computation::Case{branches:b,..})) => a.iter().zip(b.iter()).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))),
-                    _ => false,
-                },
+                (Elimination::Case(a),Elimination::Case(b)) => {
+if let Some(left_node) = arena.computation(a) && let Computation::Case{branches:ref a,..} = *left_node && let Some(right_node) = arena.computation(b) && let Computation::Case{branches:ref b,..} = *right_node { a.iter().zip(b.iter()).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
+ else { false }
+},
                 (Elimination::DataCase(a),Elimination::DataCase(b)) => { let (matched_left_value, matched_right_value) = (arena.computation(a),arena.computation(b));
 if let Some(matched_left_node) = matched_left_value && let Computation::DataCase{motive:ref a_motive,branches:ref a,..} = *matched_left_node && let Some(matched_right_node) = matched_right_value && let Computation::DataCase{motive:ref b_motive,branches:ref b,..} = *matched_right_node { pending.next().is_some_and(|premise| matches!((premise.left,premise.right),(Term::Value(left),Term::Value(right)) if arena.value(left) == Some(&Value::QuoteComputation(*a_motive)) && arena.value(right) == Some(&Value::QuoteComputation(*b_motive)))) && a.iter().zip(b).all(|(a,b)| pending.next() == Some(&Premise::computations(*a,*b))) }
  else { false }
@@ -3368,14 +3371,15 @@ fn spines(
                 else {
                     return Err(unreadable());
                 };
-                let (
-                    &Computation::Case {
-                        branches: ref a, ..
-                    },
-                    &Computation::Case {
-                        branches: ref b, ..
-                    },
-                ) = (left_node, right_node)
+                let Computation::Case {
+                    branches: ref a, ..
+                } = *left_node
+                else {
+                    return Err(unreadable());
+                };
+                let Computation::Case {
+                    branches: ref b, ..
+                } = *right_node
                 else {
                     return Err(unreadable());
                 };
@@ -3542,9 +3546,9 @@ mod tests
         let unit = arena.value_unit();
         let near = arena.value_variable(DeBruijnIndex::from(0));
         let far = arena.value_variable(DeBruijnIndex::from(1));
-        let left = arena.value_pair(unit, near);
-        let same = arena.value_pair(unit, near);
-        let apart = arena.value_pair(unit, far);
+        let left = arena.value_tuple(&[unit, near]);
+        let same = arena.value_tuple(&[unit, near]);
+        let apart = arena.value_tuple(&[unit, far]);
         let pairs = |right| ReplaySides::Values(left, right);
         let mark = arena.watermark();
 
@@ -3626,10 +3630,10 @@ mod tests
         let identity = arena.computation_lambda(returned_bound);
         let applied = arena.computation_application(identity, unit);
         let sequenced = arena.computation_bind(returned_unit, returned_bound);
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         let returned_pair = arena.computation_return(pair);
-        let injected = arena.value_injection(Side::Right, unit);
-        let cased = arena.computation_case(injected, returned_pair, returned_bound);
+        let injected = arena.value_injection(Side::Right.into(), unit);
+        let cased = arena.computation_case(injected, &[returned_pair, returned_bound]);
         let mark = arena.watermark();
 
         for redex in [applied, sequenced, cased] {
@@ -3759,7 +3763,7 @@ mod tests
         let inner = arena.value_variable(DeBruijnIndex::from(0));
         let outer_type = arena.value_type_element(outer, Level::zero());
         let inner_type = arena.value_type_element(inner, Level::zero());
-        let parameters = arena.value_type_product(outer_type, inner_type);
+        let parameters = arena.value_type_product(&[outer_type, inner_type]);
         let body = arena.value_quote(parameters);
         let head = arena.value_constant(operator);
         let unfoldings = Unfoldings::new(Vec::from([
@@ -3773,9 +3777,9 @@ mod tests
         let string = arena.value_type_base(BaseType::String);
         let integer_code = arena.value_quote(integer);
         let string_code = arena.value_quote(string);
-        let in_order_type = arena.value_type_product(integer, string);
+        let in_order_type = arena.value_type_product(&[integer, string]);
         let in_order = arena.value_quote(in_order_type);
-        let swapped_type = arena.value_type_product(string, integer);
+        let swapped_type = arena.value_type_product(&[string, integer]);
         let swapped = arena.value_quote(swapped_type);
         let partial = arena.value_static_application(head, integer_code);
         let instance = arena.value_static_application(partial, string_code);
@@ -3818,7 +3822,7 @@ mod tests
         let ambient = arena.value_variable(DeBruijnIndex::from(0));
         let open_instance = arena.value_static_application(partial, ambient);
         let ambient_type = arena.value_type_element(ambient, Level::zero());
-        let open_type = arena.value_type_product(integer, ambient_type);
+        let open_type = arena.value_type_product(&[integer, ambient_type]);
         let open = arena.value_quote(open_type);
         assert_eq!(
             run(
@@ -3868,8 +3872,8 @@ mod tests
         let none = Unfoldings::default();
         let unit = arena.value_unit();
         let bound = arena.value_variable(DeBruijnIndex::from(0));
-        let left = arena.value_pair(unit, unit);
-        let right = arena.value_pair(unit, bound);
+        let left = arena.value_tuple(&[unit, unit]);
+        let right = arena.value_tuple(&[unit, bound]);
         let sides = ReplaySides::Values(left, right);
         let negative = |position| {
             [ConversionDecision::NegativeSubgoal {
@@ -3928,7 +3932,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let pair = arena.value_pair(unit, unit);
+        let pair = arena.value_tuple(&[unit, unit]);
         let first = ConstantIndex::from(0_usize);
         let second = ConstantIndex::from(1_usize);
         let third = ConstantIndex::from(2_usize);
@@ -4350,8 +4354,8 @@ mod tests
         let unit = arena.value_unit();
         let same_branch = arena.computation_return(unit);
         let differing_branch = arena.computation_return(different);
-        let left_case = arena.computation_case(head, same_branch, same_branch);
-        let right_case = arena.computation_case(head, same_branch, differing_branch);
+        let left_case = arena.computation_case(head, &[same_branch, same_branch]);
+        let right_case = arena.computation_case(head, &[same_branch, differing_branch]);
         let left = arena.computation_application(left_case, unit);
         let right = arena.computation_application(right_case, unit);
         let negative = |position| ConversionDecision::NegativeSubgoal {

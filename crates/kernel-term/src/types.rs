@@ -267,6 +267,51 @@ impl ValueType
     {
         Self::Sum(alloc::boxed::Box::default())
     }
+
+    /// The parts of a product, in order; nothing for any other former.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the product's own part list for a product, and nothing for
+    ///   every other former, a sum included.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a product of two parts, the unit and the empty type
+    ///   separate the product reading from the sum reading.
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| match *self { Self::Product(ref parts) => ret == Some(&**parts), _ => ret.is_none() })]
+    #[inline]
+    #[must_use]
+    pub fn product_parts(&self) -> Option<&[ValueTypeId]>
+    {
+        match *self {
+            | Self::Product(ref parts) => Some(parts),
+            | _ => None,
+        }
+    }
+
+    /// The summands of a sum, in order; nothing for any other former.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sum's own summand list for a sum, and nothing for every
+    ///   other former, a product included.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::product_parts`].
+    /// - witness: `arena::tests::the_unit_and_the_empty_type_are_zero_ary`
+    #[spec(ensures: |ret| match *self { Self::Sum(ref summands) => ret == Some(&**summands), _ => ret.is_none() })]
+    #[inline]
+    #[must_use]
+    pub fn summands(&self) -> Option<&[ValueTypeId]>
+    {
+        match *self {
+            | Self::Sum(ref summands) => Some(summands),
+            | _ => None,
+        }
+    }
 }
 
 /// A computation type: the negative fragment of the type vocabulary.

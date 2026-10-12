@@ -49,7 +49,7 @@ use crate::rewrite::shift_value;
     ensures: |ret| allowance.0 <= before && match ret {
         Ok(root) => allowance.0 < before && matches!(arena.value(code), Some(&Value::Quote(ty)) if root == ty),
         Err(FlowError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
-        Err(FlowError::UnsupportedType(ty)) => arena.value_type(ty).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && !matches!(node, ValueType::Sum(summands) if !summands.is_empty())),
+        Err(FlowError::UnsupportedType(ty)) => arena.value_type(ty).is_some_and(|node| !matches!(node, &ValueType::Base(_) | &ValueType::Product(..)) && node.summands().is_none_or(<[_]>::is_empty)),
         Err(FlowError::Budget) => allowance.0 == 0,
         Err(FlowError::Arena) => true,
         Err(_) => false,
@@ -74,7 +74,7 @@ pub(super) fn code(
         }
         match arena.value_type(id).ok_or(FlowError::Arena)? {
             | &ValueType::Base(_) => {},
-            | ValueType::Sum(parts) if parts.is_empty() => {
+            | &ValueType::Sum(ref parts) if parts.is_empty() => {
                 return Err(FlowError::UnsupportedType(id));
             },
             | &ValueType::Sum(ref parts) | &ValueType::Product(ref parts) => {
@@ -155,9 +155,9 @@ enum Cover
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |patterns| allowance.0 < before && match arena.value_type(root) {
-Some(ValueType::Product(parts)) if parts.is_empty() => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves.is_empty() && matches!(arena.value(pattern.value), Some(Value::Tuple(components)) if components.is_empty())),
+Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves.is_empty() && arena.value(pattern.value).and_then(Value::components) == Some(&[])),
         Some(&ValueType::Base(base)) => patterns.len() == 1 && patterns.first().is_some_and(|pattern| pattern.leaves == [base] && matches!(arena.value(pattern.value), Some(&Value::Variable(index)) if u32::from(index) == 0)),
-        Some(ValueType::Product(parts)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(Value::Tuple(components)) if components.len() == parts.len())),
+        Some(held) if held.product_parts().is_some() => patterns.iter().all(|pattern| arena.value(pattern.value).and_then(Value::components).map(<[_]>::len) == held.product_parts().map(<[_]>::len)),
         Some(&ValueType::Sum(..)) => patterns.iter().all(|pattern| matches!(arena.value(pattern.value), Some(&Value::Injection(..)))),
         _ => false,
     }),
@@ -179,7 +179,7 @@ fn patterns(
                     value: arena.value_variable(DeBruijnIndex::from(0_u32)),
                     leaves: Vec::from([base]),
                 }])),
-                | ValueType::Sum(parts) if parts.is_empty() => {
+                | &ValueType::Sum(ref parts) if parts.is_empty() => {
                     return Err(FlowError::UnsupportedType(id));
                 },
                 | &ValueType::Sum(ref parts) => {
@@ -212,9 +212,10 @@ fn patterns(
             | Cover::Product(arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
                 let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<BaseType>::new())]);
-                for component in results.drain(start ..).collect::<Vec<_>>() {
+                for component in results.drain(start ..) {
                     let mut crossed = Vec::new();
-                    for &(ref prefix, ref prefix_leaves) in &tuples {
+                    for tuple in &tuples {
+                        let (ref prefix, ref prefix_leaves) = *tuple;
                         for next in &component {
                             allowance.charge()?;
                             let depth = u32::try_from(next.leaves.len())
@@ -274,8 +275,8 @@ fn patterns(
 #[spec(
     captures: before = allowance.0,
     ensures: |ret| allowance.0 <= before && ret.as_ref().map_or(true, |&()| allowance.0 < before && match (arena.value(output), arena.value_type(target)) {
-        (Some(Value::Tuple(components)), Some(ValueType::Product(parts))) => components.len() == parts.len(),
-        (Some(&Value::Injection(summand, _)), Some(ValueType::Sum(summands))) => usize::from(summand) < summands.len(),
+        (Some(value), Some(classifier)) if value.components().is_some() => value.components().map(<[_]>::len) == classifier.product_parts().map(<[_]>::len),
+        (Some(&Value::Injection(summand, _)), Some(classifier)) => classifier.summands().is_some_and(|summands| usize::from(summand) < summands.len()),
         (Some(&Value::Variable(index)), Some(&ValueType::Base(base))) => usize::try_from(u32::from(index)).ok().and_then(|index| leaves.len().checked_sub(index.saturating_add(1))).and_then(|position| leaves.get(position)) == Some(&base),
         _ => false,
     }),
@@ -340,7 +341,7 @@ fn natural(
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::formation_boundaries_refuse`
 #[spec(ensures: |ret| match ret {
-    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && match arena.value_type(source) { Some(&ValueType::Base(_)) => images.len() == 1, Some(ValueType::Product(parts)) if parts.is_empty() => images.len() == 1, _ => true },
+    Ok(()) => u64::from(budget) > 0 && !images.is_empty() && match arena.value_type(source) { Some(&ValueType::Base(_)) => images.len() == 1, Some(held) if held.product_parts() == Some(&[]) => images.len() == 1, _ => true },
     Err(FlowError::ForwardReplay { pattern, verdict }) => pattern.0 < images.len() && verdict != KernelVerdict::Convertible,
     Err(_) => true,
 })]

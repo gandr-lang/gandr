@@ -1388,7 +1388,7 @@ enum CodeEdges
     AnyNode::Value(id) => match arena.value(id) {
         Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
         Some(&Value::Variable(_) | &Value::Literal(_)) | None => ret.is_empty(),
-        Some(&Value::Tuple(ref components)) if components.is_empty() => ret.is_empty(),
+        Some(held) if held.components() == Some(&[]) => ret.is_empty(),
         _ => true,
     },
     AnyNode::Computation(id) => arena.computation(id).is_some() || ret.is_empty(),
@@ -1646,7 +1646,7 @@ fn audited_type_constants(
 #[spec(ensures: |ret| match arena.value_type(root) {
     Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
     Some(&ValueType::Data { .. } | &ValueType::Base(_) | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
-    Some(&ValueType::Product(ref parts)) if parts.is_empty() => ret.is_empty(),
+    Some(held) if held.product_parts() == Some(&[]) => ret.is_empty(),
     _ => true,
 })]
 #[inline]
@@ -2131,8 +2131,8 @@ mod tests
         && environment.outstanding.marks.last() == Some(&entry_mark)
         && match *ret.declaration.content() {
             super::DeclarationContent::Def { declared, body } =>
-                matches!(environment.arena().value_type(declared), Some(&super::ValueType::Unit))
-                && matches!(environment.arena().value(body), Some(&super::Value::Unit)),
+                matches!(environment.arena().value_type(declared), Some(super::ValueType::Product(parts)) if parts.is_empty())
+                && matches!(environment.arena().value(body).and_then(super::Value::components), Some(&[])),
             _ => false,
         })]
     fn stage_unit(environment: &mut Environment) -> StagedDeclaration
@@ -2188,7 +2188,7 @@ mod tests
         assert_eq!(before, environment.arena().watermark());
         assert!(matches!(
             environment.arena().value_type(declared),
-            Some(&super::ValueType::Unit)
+            Some(super::ValueType::Product(parts)) if parts.is_empty()
         ));
         let report = environment.audit(admitted);
         assert!(report.axioms().is_empty());
@@ -2204,7 +2204,7 @@ mod tests
         let code = arena.value_constant(constant);
         let abstract_type = arena.value_type_abstract(atom);
         let quote = arena.value_quote(abstract_type);
-        let pair = arena.value_pair(code, quote);
+        let pair = arena.value_tuple(&[code, quote]);
         assert_eq!(
             super::BTreeSet::from([constant, atom]),
             super::collect_reachable(
@@ -2382,7 +2382,7 @@ mod tests
         assert!(
             matches!(
                 environment.add_decl(bad),
-                Err(KernelError::ValueTypeMismatch(_))
+                Err(KernelError::ValueShapeMismatch { .. })
             ),
             "the refusal is the type error, not the outstanding-content guard"
         );

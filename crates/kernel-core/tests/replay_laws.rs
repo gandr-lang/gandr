@@ -110,11 +110,11 @@ mod laws
             let mut right = arena.value_variable(DeBruijnIndex::from(if apart { 4 } else { index }));
             for branch in branches {
                 if branch {
-                    left = arena.value_pair(left, unit);
-                    right = arena.value_pair(right, unit);
+                    left = arena.value_tuple(&[left, unit]);
+                    right = arena.value_tuple(&[right, unit]);
                 } else {
-                    left = arena.value_pair(unit, left);
-                    right = arena.value_pair(unit, right);
+                    left = arena.value_tuple(&[unit, left]);
+                    right = arena.value_tuple(&[unit, right]);
                 }
             }
             let bound = arena.value_variable(DeBruijnIndex::from(0));
