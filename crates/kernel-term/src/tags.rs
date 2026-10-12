@@ -31,10 +31,11 @@
 //!
 //! The tag space is one disjoint enumeration over four families, and this
 //! table is authoritative; [`NODE_TAG_TABLE`] supplies the assigned formers
-//! and their arities. Native paths have distinct bytes. Higher fields and
-//! function identity remain in-memory rule languages, with reserved ranges and
-//! no wire nodes. The original `0x00–0x1F` meanings are frozen, including the
-//! static operators at `0x1E–0x1F`.
+//! and their arities. Native paths have distinct bytes. Element identity holds
+//! `0x30–0x37` and function identity `0x38–0x47`; [Element and function
+//! identity](#element-and-function-identity) states each assigned node's
+//! children and inline payload. The original `0x00–0x1F` meanings are frozen,
+//! including the static operators at `0x1E–0x1F`.
 //!
 //! | Byte or range | Meaning | Artifact reader |
 //! | ------------- | ------- | --------------- |
@@ -52,8 +53,16 @@
 //! | `0x2D` | Product path, two path children | Admitted |
 //! | `0x2E` | Transport, path and input children | Admitted |
 //! | `0x2F` | Unassigned | Refused |
-//! | `0x30–0x37` | Higher-field reservation | Refused |
-//! | `0x38–0x47` | Funext reservation | Refused |
+//! | `0x30` | Element `Path`, value-type child and two endpoint value children | Assigned; refused until kernel checking lands |
+//! | `0x31` | `here`, one point value child | Assigned; refused until kernel checking lands |
+//! | `0x32` | Dependent transport, motive (value type under one binder), path and input children | Assigned; refused until kernel checking lands |
+//! | `0x33` | Guarded higher field, inline depth and layers, one evidence child per guard | Assigned; refused until kernel checking lands |
+//! | `0x34–0x37` | Unassigned element-identity growth | Refused |
+//! | `0x38` | Higher evaluation, inline dialogues and three value children per component | Assigned; refused until kernel checking lands |
+//! | `0x39` | Related-inputs application, path, two arguments, evidence and a body under three binders | Assigned; refused until kernel checking lands |
+//! | `0x3A` | Reserved: quantified higher evaluation | Refused |
+//! | `0x3B` | Reserved: dependent-arrow higher evaluation | Refused |
+//! | `0x3C–0x47` | Held function-identity growth | Refused |
 //! | `0x48–0x4F` | `Flow_U` reservation | Refused |
 //! | `0x50` | List code, one element-type child | Admitted |
 //! | `0x51` | Native List nil, no children | Admitted |
@@ -121,6 +130,40 @@
 //! it: the core resumes above [`SHARING_BLOCK_LAST`], and the block's
 //! contiguity — the property that makes a sharing former's family a
 //! subtraction rather than a lookup — survives.
+//!
+//! # Element and function identity
+//!
+//! Element identity takes the higher-field reservation because the higher
+//! field is identity between identities: a higher cell inhabits an element
+//! path whose value type is itself an element path, so the former and its
+//! guarded inhabitant share one range. Function identity takes the funext
+//! reservation for the same reason the range was held: identity at a thunk
+//! code is the related-inputs product, introduced by higher evaluation.
+//!
+//! | byte | node | family | children, in order | inline payload |
+//! | ---- | ---- | ------ | ------------------ | -------------- |
+//! | `0x30` | [`NODE_VT_PATH`] | value type | the value type `A`; endpoint values `a`, `b` | none |
+//! | `0x31` | [`NODE_V_HERE`] | value | the point `a` | none |
+//! | `0x32` | [`NODE_C_PATH_TRANSPORT`] | computation | the motive, a value type under one value binder; the path; the input value | none |
+//! | `0x33` | [`NODE_V_HIGHER`] | value | one evidence value per guard layer, in layer order | depth, root, layer count, layers |
+//! | `0x38` | [`NODE_V_HIGHER_EVALUATION`] | value | per component: left returned value, right returned value, output evidence | component count, then per component the left and the right dialogue |
+//! | `0x39` | [`NODE_C_RELATED_APPLICATION`] | computation | the function path; left and right arguments; argument evidence; the body under three value binders | none |
+//!
+//! The two structural invariants the reader names rather than reporting as
+//! a bare polarity fault are an endpoint child of [`NODE_VT_PATH`] that is
+//! not a value, and a motive child of [`NODE_C_PATH_TRANSPORT`] that is not a
+//! value type: the motive is a type-level function, a value type scoped under
+//! the endpoint binder. A higher-field layer is [`HIGHER_GUARD`] followed by
+//! its tail position, or [`HIGHER_REDIRECT`] followed by its target position;
+//! positions, depth and counts are unsigned varints, and dialogues use the
+//! decision alphabet of [`NODE_V_PATH_EQUIV`]'s evidence.
+//!
+//! [`NODE_V_QUANTIFIED_EVALUATION`] and [`NODE_V_DEPENDENT_EVALUATION`] name
+//! the next two function-identity introductions — higher-order argument
+//! coverage and identity at dependent arrows — and carry no shape yet; a
+//! reader refuses them as it refuses any unassigned byte. Filling any of
+//! these slots holds [`FORMAT_VERSION`]: every byte in both ranges is a node
+//! tag, refused by name by the closed-vocabulary reader until it is admitted.
 //!
 //! # Universe paths
 //!
@@ -430,6 +473,65 @@ pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
 
 /// Node tag: transport, over a path and its source value.
 pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
+
+/// Node tag: element identity `Path(A, a, b)`, over the value type `A` and
+/// the endpoint values `a` and `b`.
+///
+/// The first byte of the identity range: the higher field and function
+/// identity are both inhabitants of this former at a particular value type.
+pub const NODE_VT_PATH: WireTag = WireTag(0x30);
+
+/// Node tag: `here(a)`, the diagonal of element identity, over its point.
+///
+/// One child rather than three: it inhabits `Path(A, a, b)` exactly when
+/// both endpoints convert to its point, so storing them again would only
+/// admit a disagreeing copy.
+pub const NODE_V_HERE: WireTag = WireTag(0x31);
+
+/// Node tag: dependent transport along an element path, over the motive, the
+/// path and the input value.
+///
+/// A byte apart from [`NODE_C_TRANSPORT`], which transports along a universe
+/// path with the family implicit: here the motive is explicit syntax, a value
+/// type scoped under one binder, so the substitution law has a family to
+/// substitute each endpoint into.
+pub const NODE_C_PATH_TRANSPORT: WireTag = WireTag(0x32);
+
+/// Node tag: the guarded higher field, an inline guarded program over one
+/// evidence value per guard layer.
+///
+/// Identity between identities is codata; its finite syntax is a graph whose
+/// cycles a guard must break, replayed to the depth the node states. The
+/// guard and redirect alphabet is [`HIGHER_GUARD`] and [`HIGHER_REDIRECT`].
+pub const NODE_V_HIGHER: WireTag = WireTag(0x33);
+
+/// Higher-field layer kind: expose one evidence value, then observe its tail.
+pub const HIGHER_GUARD: WireTag = WireTag(0);
+/// Higher-field layer kind: follow an edge without exposing a constructor.
+pub const HIGHER_REDIRECT: WireTag = WireTag(1);
+
+/// Node tag: higher evaluation, the introduction of identity at a thunk code,
+/// with inline replay dialogues over three values per coverage component.
+///
+/// `refl` of a λ and function extensionality share it: both relate related
+/// inputs to related outputs, one component per kernel-generated coverage
+/// pattern, each replayed rather than trusted.
+pub const NODE_V_HIGHER_EVALUATION: WireTag = WireTag(0x38);
+
+/// Node tag: application at related inputs, the related-inputs product's
+/// elimination, over the function path, both arguments, their evidence and
+/// a body under three binders.
+///
+/// The body binds the left result, the right result and their identity,
+/// innermost last: the output endpoints are the two returned values, which
+/// only evaluation names, so the eliminator continues rather than returns.
+pub const NODE_C_RELATED_APPLICATION: WireTag = WireTag(0x39);
+
+/// Reserved node tag: higher evaluation with quantified evidence, covering
+/// higher-order arguments.
+pub const NODE_V_QUANTIFIED_EVALUATION: WireTag = WireTag(0x3A);
+/// Reserved node tag: higher evaluation at a dependent arrow.
+pub const NODE_V_DEPENDENT_EVALUATION: WireTag = WireTag(0x3B);
 
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
