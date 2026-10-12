@@ -174,6 +174,10 @@ pub enum FragmentBoundary
     /// unchanging parameters stands, something other than that parameter: only
     /// the last parameter descends.
     NonUniform,
+    /// The form is a function exit, `return` or `become`, standing where no
+    /// function's, lambda's or thunk's body ends: an early exit, which the
+    /// fragment does not read yet.
+    NotInTail,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -200,6 +204,9 @@ impl fmt::Display for FragmentBoundary
             | Self::NonUniform => f.write_str(
                 "passes something other than the parameter itself where an earlier parameter \
                  stands; only the last parameter descends",
+            ),
+            | Self::NotInTail => f.write_str(
+                "stands where no function body ends; an exit leaves only from tail position",
             ),
         }
     }

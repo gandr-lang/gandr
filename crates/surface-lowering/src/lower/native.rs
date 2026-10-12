@@ -1289,6 +1289,9 @@ impl<'source> Lowerer<'_, 'source>
             if let Maybe::Present(stated) = answer {
                 let _first = self.answers.insert(body.node, stated);
             }
+            if self.exits.contains(&site.at.node) {
+                let _tail = self.exits.insert(body.node);
+            }
         }
         let index = CaseIndex(self.cases.len());
         self.cases.push(CaseForm {

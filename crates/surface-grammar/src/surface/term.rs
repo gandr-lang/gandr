@@ -44,7 +44,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.ret", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 97 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=31 | 83..=88 => Sort::Pattern, 32..=37 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.atom", "expression.ret", "expression.or", "expression.and", "expression.cmp", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 99 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=18 => Sort::Item, 19..=21 => Sort::ModuleMember, 22..=31 | 85..=90 => Sort::Pattern, 32..=37 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "escape_sequence")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -1482,7 +1482,7 @@ fn instantiations(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 45 && added.iter().zip(["ret_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "ret_expression" | "pack_expression" => p.ret, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 47 && added.iter().zip(["ret_expression", "return_expression", "become_expression", "binary_expression.or", "binary_expression.and", "binary_expression.cmp.eq", "binary_expression.cmp.ne", "binary_expression.cmp.lt", "binary_expression.cmp.le", "binary_expression.cmp.gt", "binary_expression.cmp.ge", "binary_expression.then", "binary_expression.add.concat", "binary_expression.add.plus", "binary_expression.add.minus", "binary_expression.mul.times", "unary_expression", "force_expression", "hold_expression", "pack_expression", "call_expression", "instantiation_expression", "projection_expression", "hole", "parenthesized_expression", "list_expression", "block", "lambda_expression", "thunk_expression", "case_expression", "if_expression", "for_expression", "while_expression", "loop_expression", "break_expression", "continue_expression", "co_expression", "glob_expression", "record_expression", "offer_expression", "migrate_expression", "send_expression", "close_expression", "select_expression", "dup_expression", "drop_expression", "shell_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Expression && rule.prec() == match name { "ret_expression" | "return_expression" | "become_expression" | "pack_expression" => p.ret, "binary_expression.or" => p.or, "binary_expression.and" => p.and, "binary_expression.cmp.eq" | "binary_expression.cmp.ne" | "binary_expression.cmp.lt" | "binary_expression.cmp.le" | "binary_expression.cmp.gt" | "binary_expression.cmp.ge" | "binary_expression.then" => p.cmp, "binary_expression.add.concat" | "binary_expression.add.plus" | "binary_expression.add.minus" => p.add, "binary_expression.mul.times" => p.mul, "unary_expression" | "force_expression" | "hold_expression" => p.unary, "call_expression" | "instantiation_expression" | "projection_expression" => p.postfix, _ => p.atom } && rule.provenance().0 == if name.starts_with("binary_expression.") { "binary_expression" } else { name })))]
 fn expressions(
     out: &mut Vec<Rule>,
     p: ExprPrecs,
@@ -1495,6 +1495,24 @@ fn expressions(
         s,
         p.ret,
         seq([t(TileLabel("ret")), h(s)]),
+    ));
+    // The function exits: `return v` leaves the enclosing function with a
+    // value, `become c` by running a computation in tail position. Keyword-led
+    // like `ret`, at its precedence, so the first token decides the form.
+    // PBG-only, parity-exempt.
+    out.push(r(
+        RuleName("return_expression"),
+        Provenance("return_expression"),
+        s,
+        p.ret,
+        seq([t(TileLabel("return")), h(s)]),
+    ));
+    out.push(r(
+        RuleName("become_expression"),
+        Provenance("become_expression"),
+        s,
+        p.ret,
+        seq([t(TileLabel("become")), h(s)]),
     ));
     binary(
         out,

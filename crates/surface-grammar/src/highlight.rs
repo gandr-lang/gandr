@@ -60,12 +60,13 @@ const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 /// The words the surface reads as keywords where a form molds them, the
 /// compound bridge tiles included.
 const KEYWORDS: &[&str] = &[
-    "+U", "-F", "acquire", "as", "at", "break", "case", "close", "co", "codata", "continue",
-    "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for", "forall", "force",
-    "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl", "infixr", "leta",
-    "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack", "package", "postfix",
-    "prefix", "rec", "recv", "release", "ret", "rule", "run", "select", "send", "sign", "sort",
-    "tail", "then", "thunk", "type", "unpack", "val", "while", "with",
+    "+U", "-F", "acquire", "as", "at", "become", "break", "case", "close", "co", "codata",
+    "continue", "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for",
+    "forall", "force", "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl",
+    "infixr", "leta", "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack",
+    "package", "postfix", "prefix", "rec", "recv", "release", "ret", "return", "rule", "run",
+    "select", "send", "sign", "sort", "tail", "then", "thunk", "type", "unpack", "val", "while",
+    "with",
 ];
 
 /// The operators of terms, types, sessions, circuits and shell control, the

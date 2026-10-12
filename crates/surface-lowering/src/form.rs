@@ -378,6 +378,10 @@ impl TileName
     pub const RELEASE: Self = Self("release");
     /// The returner keyword `ret`.
     pub const RET: Self = Self("ret");
+    /// The function exit `return`.
+    pub const RETURN: Self = Self("return");
+    /// The tail-call exit `become`.
+    pub const BECOME: Self = Self("become");
     /// The bind keyword `run`, opening a statement.
     pub const RUN: Self = Self("run");
     /// The eager product's `*`.
@@ -504,6 +508,10 @@ pub enum Former
     Block,
     /// The returner `ret v`.
     Return,
+    /// The function exit `return v`, in tail position of a body.
+    Exit,
+    /// The tail call `become c`, in tail position of a body.
+    Become,
     /// The force `force v`.
     Force,
     /// The application `c(v)`.
@@ -581,7 +589,7 @@ impl Former
     ///   of successful table outcomes plus the miss outcome. The evidence is
     ///   bounded to the current closed enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 34_usize] = [
+    pub const ALL: [Self; 36_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -592,6 +600,8 @@ impl Former
         Self::Lambda,
         Self::Block,
         Self::Return,
+        Self::Exit,
+        Self::Become,
         Self::Force,
         Self::Call,
         Self::Case,
@@ -638,7 +648,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 35_usize] = [
+pub const FORMERS: [(&str, Former); 37_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -649,6 +659,8 @@ pub const FORMERS: [(&str, Former); 35_usize] = [
     ("lambda_expression", Former::Lambda),
     ("block", Former::Block),
     ("ret_expression", Former::Return),
+    ("return_expression", Former::Exit),
+    ("become_expression", Former::Become),
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
     ("case_expression", Former::Case),
