@@ -203,6 +203,13 @@ impl<A: CellAlphabet> VarFlowGraph<A>
     /// - hypothesis: L3 seam-role boundaries and replay witnesses separate
     ///   omitted flow edges, changed boundaries and lost certificate steps.
     /// - witness: `composition::tests::the_seam_edge_is_drawn_exactly_when_the_left_emits_and_the_right_absorbs`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "refusal path: the check pairs the cycle with the seam endpoints of one composition, a graph whose builder already paired its endpoints"
+        )
+    )]
     #[spec(ensures: |ret| matches!(&ret, CompositionObstruction::Cycle { cycle } if !cycle.is_empty() && cycle.iter().all(|node| self.nodes.contains(node))))]
     #[inline]
     fn obstruction(

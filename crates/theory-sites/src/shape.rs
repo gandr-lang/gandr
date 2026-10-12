@@ -560,6 +560,13 @@ impl Shape
     /// - witness: `tests::shapes::a_wiring_reads_back_as_its_shape`
     /// - witness: `tests::shapes::the_constructor_refuses_by_variant`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every wire's ends for each vertex to build the wiring the check reads back"
+        )
+    )]
     #[spec(ensures: |ref result| result.as_ref().map_or(true, |wiring| presented(wiring).is_ok_and(|ends| *ends == *self.ends)))]
     pub fn to_wiring(&self) -> Result<Wiring, WiringObstruction>
     {
@@ -586,6 +593,13 @@ impl Shape
     /// - witness: `tests::shapes::a_wiring_reads_back_as_its_shape`
     /// - witness: `tests::units::scalars_are_counted_and_labelled`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every wire's ends for each vertex and for both boundary sides"
+        )
+    )]
     #[spec(ensures: |ref result| result.as_ref().map_or(true, |wiring| {
         wiring.edge_count() == self.vertices
             && usize::from(wiring.wire_count()) == self.ends.len()
@@ -709,6 +723,13 @@ impl Shape
     /// - witness: `tests::shapes::points_are_the_vertices_no_wire_touches`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans the same ends for the vertex"
+        )
+    )]
     #[spec(ensures: |kind| (kind == VertexKind::Point) == self.ends.iter().all(|ends| {
         ends.producer != End::Vertex(vertex) && ends.consumer != End::Vertex(vertex)
     }))]
@@ -742,6 +763,13 @@ impl Shape
     /// - witness: `tests::shapes::points_are_the_vertices_no_wire_touches`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body classifies every vertex with `vertex_kind`, as the check does"
+        )
+    )]
     #[spec(ensures: |ref points| [
         points.is_sorted(),
         points.iter().all(|point| self.vertex_kind(*point) == VertexKind::Point),
@@ -801,6 +829,13 @@ impl Shape
     ///   two points has the corolla as its core.
     /// - witness: `tests::point_count::every_shape_is_its_core_beside_its_points`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body classifies every vertex and renames every wire's ends"
+        )
+    )]
     #[spec(ensures: |ref result| result.as_ref().is_ok_and(|core| {
         usize::from(core.point_count()) == 0
             && core.ends.len() == self.ends.len()
@@ -848,6 +883,13 @@ impl Shape
     ///   as the hand-built shape, and sixty-five points are refused by count.
     /// - witness: `tests::point_count::every_shape_is_its_core_beside_its_points`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every wire's ends and validates them; the check compares them and counts points"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(ref whole) => *whole.ends == *self.ends
             && usize::from(whole.vertices) == usize::from(self.vertices).saturating_add(usize::from(count))
@@ -885,6 +927,13 @@ impl Shape
     /// - witness: `tests::shapes::a_relabelled_shape_keys_alike`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body sorts a relabelled copy of the ends for every vertex order; the check sorts one more"
+        )
+    )]
     #[spec(ensures: |ref key| [
         key.vertices == self.vertices,
         key.ends.is_sorted(),

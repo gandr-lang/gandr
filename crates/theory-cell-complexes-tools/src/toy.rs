@@ -452,6 +452,13 @@ impl ToySubst
     ///   have exact final terms. Missing a triangular pass, substituting a
     ///   wrong image or changing an unbound term changes the result.
     /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test reference alphabet over substitutions of a few bindings; the check reads each image's metavariables once"
+        )
+    )]
     #[spec(ensures: |output| (term.vars().any(|var| self.0.contains_key(var)) || output == *term)
         && (!self.0.values().all(|image| image.vars().all(|var| !self.0.contains_key(var)))
             || output.vars().all(|var| !self.0.contains_key(var))))]
@@ -484,6 +491,13 @@ impl ToySubst
     ///   self-cycle separate head walking from full substitution. Losing a
     ///   chain link or descending into compound arguments changes the result.
     /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "test reference alphabet over substitutions of a few bindings; the check compares the result with each image once"
+        )
+    )]
     #[spec(captures: original = term.clone(), ensures: |output| output == original || self.0.values().any(|image| image == &output))]
     fn walk(
         &self,
@@ -760,6 +774,13 @@ impl CellAlphabet for ToyAlphabet
     ///   observations.
     /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clones `subst` into its staging map and compares each bound image it meets"
+        )
+    )]
     #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_once(pattern) == *target } else { *subst == before })]
     fn match_cmd(
         pattern: &Self::Cmd,
@@ -809,6 +830,13 @@ impl CellAlphabet for ToyAlphabet
     ///   bindings. Eager commits and skipped occurs checks change the result.
     /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body clones `subst` into its staging map and walks each goal through it"
+        )
+    )]
     #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_fully(lhs) == subst.apply_fully(rhs) } else { *subst == before })]
     fn unify_cmd(
         lhs: &Self::Cmd,

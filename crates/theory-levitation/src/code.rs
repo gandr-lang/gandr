@@ -627,6 +627,13 @@ impl Attrs
     /// - witness: `code::tests::attribute_membership_scans_markers`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the markers once, as the check does"
+        )
+    )]
     #[spec(ensures: |present| bool::from(present)
         == self.markers.iter().any(|attr| attr.name.as_ref() == name.as_ref()))]
     pub fn contains(
@@ -893,6 +900,13 @@ impl<G> Code<G>
     /// - witness: `code::tests::recursive_sorts_preserve_order_and_repetition`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the code's heads up to the first recursive occurrence, as the check's preorder does"
+        )
+    )]
     #[spec(ensures: |recursive| bool::from(recursive) == self.recursive_sorts().next().is_some())]
     pub fn is_recursive(&self) -> RecursiveStatus
     {

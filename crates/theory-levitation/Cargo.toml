@@ -25,6 +25,7 @@ anodized.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+gandr-theory-spec-combinators.workspace = true
 proptest.workspace = true
 
 [lints]

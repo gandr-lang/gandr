@@ -17,6 +17,8 @@ use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 
 use anodized::spec;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::sorted_around;
 
 use crate::EdgeSource;
 use crate::Fingerprint;
@@ -416,16 +418,18 @@ impl PrecSpec
     ///   observer distinguish a new edge, a repeated edge, and either invalid
     ///   endpoint with its original payload. L3 canonicalization and state
     ///   equality on refusal catch duplicate insertion and collateral mutation.
-    ///   Global acyclicity is deliberately deferred to DAG construction.
+    ///   Global acyclicity is deliberately deferred to DAG construction. The
+    ///   stored edges ascend strictly before the call, since every insertion
+    ///   keeps them so, and a success writes at most the one position the
+    ///   search finds, so the predicate checks the order around that position.
     /// - witness: `tests::prec::duplicate_edge_canonicalization_and_invalid_edges`
     /// - witness: `tests::prec::prec_spec_size_and_boundary_contract`
     #[spec(
         captures: [prior = self.edges.len(), existed = self.edges.binary_search(&(tighter, looser)).is_ok()],
         ensures: |ref result| match *result {
             Ok(()) => usize::from(tighter.0.0) < self.names.len() && usize::from(looser.0.0) < self.names.len()
-                && self.edges.binary_search(&(tighter, looser)).is_ok()
-                && self.edges.len() == prior.saturating_add(usize::from(!existed))
-                && self.edges.windows(2).all(|pair| matches!(*pair, [left, right] if left < right)),
+                && self.edges.binary_search(&(tighter, looser)).is_ok_and(|at| bool::from(sorted_around(&self.edges, Mark::from(at))))
+                && self.edges.len() == prior.saturating_add(usize::from(!existed)),
             Err(PrecSpecError::InvalidEdge { tighter: refused_tighter, looser: refused_looser, node_count }) =>
                 refused_tighter == tighter && refused_looser == looser && node_count == group_node_count(&self.names)
                 && (usize::from(tighter.0.0) >= self.names.len() || usize::from(looser.0.0) >= self.names.len())
@@ -1192,6 +1196,13 @@ impl PrecDag
     ///   freedom is not claimed for a 64-bit fingerprint.
     /// - witness: `tests::prec::stable_fingerprint_sensitivity`
     /// - witness: `tests::prec::fingerprint_stream_is_pinned`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body hashes every name and every edge once; the precondition reads the same edges once"
+        )
+    )]
     #[spec(requires: self.names.len() == self.assocs.len()
         && self.edges.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))
         && self.edges.iter().all(|&(source, target)| usize::from(source.0.0) < self.names.len() && usize::from(target.0.0) < self.names.len()))]

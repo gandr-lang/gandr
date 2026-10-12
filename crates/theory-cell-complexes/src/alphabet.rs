@@ -332,6 +332,10 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
     ///
+    /// # Clause cost
+    /// - bound: linear in `pattern` and `target`, reading `subst` by key; the
+    ///   test reference alphabets also copy `subst` to stage their bindings.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — sequent patterns with two hole categories and a
     ///   constructor clash are observed through replayed substitutions and
@@ -356,6 +360,11 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - panics: none.
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: linear in `lhs`, `rhs` and the images the walk follows through
+    ///   `subst`, then up to one pass over `subst` per binding to resolve it;
+    ///   the test reference alphabets also copy `subst`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — renamed-apart sequent terms with compatible holes or
@@ -413,6 +422,11 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - panics: none.
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: walks `cmd` once and copies the image of each metavariable it
+    ///   meets, so linear in `cmd` and the result; the test reference alphabet
+    ///   repeats that pass up to once per binding.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — sequent substitutions bind producer and consumer
@@ -609,6 +623,9 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
     ///
+    /// # Clause cost
+    /// - bound: linear in `cmd` and `replacement`, which the result copies.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — root, producer/consumer children and off-term sequent
     ///   positions separate replacement from the two typed refusals. Exact
@@ -680,6 +697,9 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - panics: none.
     /// - executable: none — an abstract declaration has no body; trait-wide
     ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Clause cost
+    /// - bound: linear in `cmd`, which the result relabels.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — producer and consumer holes in one sequent term are

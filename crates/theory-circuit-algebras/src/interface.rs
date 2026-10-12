@@ -633,13 +633,17 @@ impl PartialBijection
     ///   expose an independently pinned restricted pair set and its inverse.
     ///   Dropping mapped ports, keeping nonports, duplicating entries or
     ///   omitting the reverse map changes those observations; no invalid
-    ///   private map representation is admitted.
+    ///   private map representation is admitted. The predicate looks each port
+    ///   up once: every mapped port is kept with its image, every kept pair is
+    ///   one of this map's, and as many pairs are kept as there are distinct
+    ///   mapped ports, so no nonport is kept.
     /// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
     /// - witness: `matching::tests::the_searches_certificates_verify_against_their_own_diagrams`
     /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
     #[spec(ensures: |ref restricted|
-        restricted.forward.len() == self.forward.keys().filter(|wire| ports.contains(wire)).count()
-        && restricted.forward.iter().all(|entry| ports.contains(entry.0) && self.forward.get(entry.0) == Some(entry.1))
+        restricted.forward.len() == ports.iter().filter(|port| self.forward.contains_key(port)).collect::<BTreeSet<_>>().len()
+        && ports.iter().all(|port| self.forward.get(port).is_none_or(|image| restricted.forward.get(port) == Some(image)))
+        && restricted.forward.iter().all(|entry| self.forward.get(entry.0) == Some(entry.1))
         && restricted.backward.len() == restricted.forward.len()
         && restricted.forward.iter().all(|entry| restricted.backward.get(entry.1) == Some(entry.0)))]
     #[inline]
@@ -678,27 +682,26 @@ impl PartialBijection
     /// - hypothesis: L3 — a fresh pair, its idempotent repeat, a re-bound
     ///   source and a re-used image separate the four outcomes, each refusal
     ///   asserted with its payload and the map asserted unchanged after both.
+    ///   The two directions agree for the empty map and an extension writes one
+    ///   pair both ways, so the predicate checks that pair and the two sizes;
+    ///   the witnesses compare whole maps.
     /// - witness: `interface::tests::a_partial_bijection_stays_injective`
     /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
     #[spec(captures: [
         prior_image = self.forward.get(&source).copied(),
         prior_source = self.backward.get(&image).copied(),
         prior_count = self.forward.len(),
-    ], ensures: |ref result| {
-        let consistent = self.forward.len() == self.backward.len()
-            && self.forward.iter().all(|entry| self.backward.get(entry.1) == Some(entry.0));
-        consistent && match *result {
-            Ok(()) => (prior_image == Some(image) || (prior_image.is_none() && prior_source.is_none()))
-                && self.forward.get(&source) == Some(&image)
-                && self.backward.get(&image) == Some(&source)
-                && self.forward.len() == prior_count.saturating_add(usize::from(prior_image.is_none())),
-            Err(BijectionClash::SourceBound { source: rejected, bound }) => rejected == source
-                && prior_image == Some(bound) && bound != image
-                && self.forward.get(&source) == Some(&bound) && self.forward.len() == prior_count,
-            Err(BijectionClash::ImageBound { image: rejected, bound }) => rejected == image
-                && prior_image.is_none() && prior_source == Some(bound)
-                && self.backward.get(&image) == Some(&bound) && self.forward.len() == prior_count,
-        }
+    ], ensures: |ref result| self.forward.len() == self.backward.len() && match *result {
+        Ok(()) => (prior_image == Some(image) || (prior_image.is_none() && prior_source.is_none()))
+            && self.forward.get(&source) == Some(&image)
+            && self.backward.get(&image) == Some(&source)
+            && self.forward.len() == prior_count.saturating_add(usize::from(prior_image.is_none())),
+        Err(BijectionClash::SourceBound { source: rejected, bound }) => rejected == source
+            && prior_image == Some(bound) && bound != image
+            && self.forward.get(&source) == Some(&bound) && self.forward.len() == prior_count,
+        Err(BijectionClash::ImageBound { image: rejected, bound }) => rejected == image
+            && prior_image.is_none() && prior_source == Some(bound)
+            && self.backward.get(&image) == Some(&bound) && self.forward.len() == prior_count,
     })]
     #[inline]
     pub fn extend(
@@ -1221,11 +1224,13 @@ impl Wiring
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a produced wire, an input port and a wire past the
-    ///   count separate the three answers.
+    ///   count separate the three answers. Assembly checks boundary honesty
+    ///   once, and a wiring is immutable after it, so the predicate reads the
+    ///   producer index for a declared wire rather than the boundary.
     /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
     #[spec(ensures: |ref result| match *result {
         Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.targets.contains(&wire)),
-        Maybe::Absent(wire_producer::Absent::BoundaryInput) => wire.0 < self.wires.0 && self.boundary.inputs.contains(&wire),
+        Maybe::Absent(wire_producer::Absent::BoundaryInput) => wire.0 < self.wires.0 && !self.producer.contains_key(&wire),
         Maybe::Absent(wire_producer::Absent::OutOfRange) => wire.0 >= self.wires.0,
     })]
     #[inline]
@@ -1254,11 +1259,13 @@ impl Wiring
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a consumed wire, an output port and a wire past the
-    ///   count separate the three answers.
+    ///   count separate the three answers. Assembly checks boundary honesty
+    ///   once, and a wiring is immutable after it, so the predicate reads the
+    ///   consumer index for a declared wire rather than the boundary.
     /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
     #[spec(ensures: |ref result| match *result {
         Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.sources.contains(&wire)),
-        Maybe::Absent(wire_consumer::Absent::BoundaryOutput) => wire.0 < self.wires.0 && self.boundary.outputs.contains(&wire),
+        Maybe::Absent(wire_consumer::Absent::BoundaryOutput) => wire.0 < self.wires.0 && !self.consumer.contains_key(&wire),
         Maybe::Absent(wire_consumer::Absent::OutOfRange) => wire.0 >= self.wires.0,
     })]
     #[inline]

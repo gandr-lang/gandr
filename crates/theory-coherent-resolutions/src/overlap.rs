@@ -32,6 +32,8 @@ use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CommandSpliceRefusal;
 use gandr_theory_cell_complexes::SequentAlphabet;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CertificateIndex;
@@ -176,10 +178,10 @@ impl OverlapSupport
     /// - witness: `tests::overlap::overlap_support_is_symmetric_and_certificate_memoized`
     /// - witness: `overlap::tests::support_identity_and_empty_certificates_have_distinct_boundaries`
     #[inline]
-    #[spec(captures: base = self.certificate_cells.len(), ensures: |output| usize::from(output.0) == base
+    #[spec(captures: [base = self.certificate_cells.len(), mark = Mark::of(&self.certificate_cells)], ensures: |output| usize::from(output.0) == base
         && usize::from(output.1) == base.saturating_add(certificates.len())
         && self.certificate_cells.len() == usize::from(output.1)
-        && certificates.iter().zip(self.certificate_cells.iter().skip(base)).all(|(certificate, held)|
+        && certificates.iter().zip(appended(&self.certificate_cells, mark)).all(|(certificate, held)|
             certificate.path_a.iter().chain(&certificate.path_b).all(|step| held.contains(&step.cell))
             && held.iter().all(|id| certificate.path_a.iter().chain(&certificate.path_b).any(|step| step.cell == *id)))
         && (base..self.certificate_cells.len()).all(|index| self.certificate_overlaps.contains(&(CertificateIndex::from(index), CertificateIndex::from(index)))))]

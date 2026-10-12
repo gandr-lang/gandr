@@ -334,6 +334,13 @@ impl Overrides
     ///   default changes the asserted priority.
     /// - witness: `priority::tests::a_filter_matches_exactly_or_by_containment`
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the rules to the first match, as the check walks them once"
+        )
+    )]
     #[spec(ensures: |ret| ret == Priority::DEFAULT || self.0.iter().any(|rule| rule.priority == ret))]
     #[inline]
     pub fn current(

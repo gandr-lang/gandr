@@ -631,6 +631,13 @@ impl SiteMap
     /// - witness: `map::tests::each_clause_refuses_by_variant`
     /// - witness: `negatives::sticks_as_objects_admit_no_degree`
     /// - witness: `negatives::vertex_end_fusions_are_not_closed`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the range, disjointness and fusion steps walk every image and wire; the check walks them once more"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(()) => self.images.len() == usize::from(source.vertex_count())
             && self.wires.len() == usize::from(source.wire_count())
@@ -746,6 +753,13 @@ impl SiteMap
     ///   brute force observes every overlapping candidate refused.
     /// - witness: `map::tests::each_clause_refuses_by_variant`
     /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body unions every image; the refusal's minimality pairs the images below `second`, at most 64 by the vertex-set width"
+        )
+    )]
     #[spec(ensures: |result| match result {
         Ok(()) => usize::from(self.image_union().count())
             == self.images.iter().fold(0_usize, |total, image| total.saturating_add(usize::from(image.count()))),
@@ -868,6 +882,13 @@ impl SiteMap
     ///   inner wire's image, and two sticks fused onto one are admitted.
     /// - witness: `map::tests::each_clause_refuses_by_variant`
     /// - witness: `negatives::sticks_as_objects_admit_no_degree`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body gathers the same preimages for every target wire"
+        )
+    )]
     #[spec(ensures: |result| match result {
         Ok(()) => (0 .. usize::from(target.wire_count())).all(|index| {
             let group = self.preimages(source, Wire::from(index));
@@ -926,6 +947,13 @@ impl SiteMap
     /// - witness: `tests::maps::a_contraction_composes_with_a_deletion`
     /// - witness: `map::tests::composition_refuses_a_missing_image`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body builds every image and wire image the check compares"
+        )
+    )]
     #[spec(ensures: |ref result| match *result {
         Ok(ref composite) => composite.images.len() == self.images.len()
             && composite.wires.len() == self.wires.len()
@@ -981,6 +1009,13 @@ impl SiteMap
     /// - witness: `tests::maps::the_two_classes_sort_the_fixtures`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's `kernel` walks every image, as the check does"
+        )
+    )]
     #[spec(ensures: |answer| (answer == Membership::Inside) == self.images.iter().all(|image| *image != VertexSet::EMPTY))]
     pub fn raising(&self) -> Membership
     {
@@ -1009,6 +1044,13 @@ impl SiteMap
     /// - witness: `tests::maps::the_two_classes_sort_the_fixtures`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's `form` walks every image and unions them, as the check does"
+        )
+    )]
     #[spec(ensures: |answer| answer == Membership::Outside || (
         self.wires.len() == usize::from(target.wire_count())
             && usize::from(self.image_union().count()) == usize::from(target.vertex_count())
@@ -1044,6 +1086,13 @@ impl SiteMap
     /// - witness: `tests::maps::invertibility_matches_two_sided_inverses`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every image, unions them and reads the wire form, as `raising` and `lowering` do"
+        )
+    )]
     #[spec(ensures: |answer| (answer == Invertibility::Invertible)
         == (self.raising() == Membership::Inside && self.lowering(target) == Membership::Inside))]
     pub fn invertibility(
@@ -1084,6 +1133,13 @@ impl SiteMap
     /// - witness: `tests::maps::map_forms_read_back`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body classifies every image and unions them, as the check does"
+        )
+    )]
     #[spec(ensures: |form| [
         match form.images {
             ImageForm::Singletons => self.images.iter().all(|image| usize::from(image.count()) == 1),
@@ -1285,6 +1341,13 @@ impl Odometer
     ///   an independent brute force over every pair at the bound; a skipped or
     ///   repeated reading loses or doubles a map.
     /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check stops at the first non-zero digit, the one the body grew after resetting the digits before it"
+        )
+    )]
     #[spec(ensures: |progress| (progress == Progress::Done) == self.digits.iter().all(|digit| digit.0 == 0))]
     fn advance(&mut self) -> Progress
     {
@@ -1315,6 +1378,13 @@ impl Iterator for Odometer
     /// - hypothesis: L2 — as [`Odometer::advance`].
     /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies every digit into the reading the check walks"
+        )
+    )]
     #[spec(ensures: |ref reading| reading.as_ref().is_none_or(|choices| {
         choices.len() == self.bases.len() && choices.iter().zip(self.bases.iter()).all(|pair| pair.0.0 < pair.1.0)
     }))]

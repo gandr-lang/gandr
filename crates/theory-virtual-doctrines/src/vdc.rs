@@ -149,6 +149,13 @@ impl SigMorphism
     /// - hypothesis: L3 — composition compares the images of mapped generators
     ///   and the identity image of an unmapped name.
     /// - witness: `tests::laws::tests::tight_composition_is_associative_and_unital`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the map once, as the check does"
+        )
+    )]
     #[spec(ensures: |ret| ret.as_ref() == self.map.iter().find(|pair| pair.0.as_ref() == name.as_ref()).map_or_else(|| name.as_ref(), |pair| pair.1.as_ref()))]
     pub fn apply_name(
         &self,
@@ -757,6 +764,13 @@ impl<G> DescTable<G>
     /// - hypothesis: L3 — lookup distinguishes nominal identity from a shared
     ///   display name and retains the stored generic field grade.
     /// - witness: `tests::constructor_menu::description_registry_retains_generic_grades_and_first_identity`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the descriptions once, as the check does"
+        )
+    )]
     #[spec(ensures: |ref ret| match *ret { Maybe::Present(desc) => desc.id == *id, Maybe::Absent(_) => self.descs.iter().all(|desc| desc.id != *id) })]
     pub fn get(
         &self,

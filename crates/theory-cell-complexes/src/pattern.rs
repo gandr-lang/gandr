@@ -1064,6 +1064,13 @@ impl ConsPat
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body folds the same frames and argument sizes"
+        )
+    )]
     #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
         let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
         args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
@@ -1194,6 +1201,13 @@ impl<'pattern> ConsRef<'pattern>
     /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body folds the same frames and argument sizes"
+        )
+    )]
     #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
         let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
         args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
@@ -1448,6 +1462,13 @@ impl CmdPat
     /// - witness: `pattern::tests::the_per_category_sizes_count_their_own_subtree`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body sizes both halves once; the check sizes each once more"
+        )
+    )]
     #[spec(ensures: |output| usize::from(output) == 1_usize
         .saturating_add(usize::from(self.prod.size())).saturating_add(usize::from(self.cons.size())))]
     pub fn size(&self) -> PatternSize
@@ -1471,6 +1492,13 @@ impl CmdPat
     /// - witness: `pattern::tests::ground_and_size_track_structure`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the metavariables up to the first; the check walks each half the same way"
+        )
+    )]
     #[spec(ensures: |output| bool::from(output)
         == (bool::from(self.prod.is_ground()) && bool::from(self.cons.is_ground())))]
     pub fn is_ground(&self) -> GroundPatternStatus

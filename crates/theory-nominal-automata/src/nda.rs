@@ -364,6 +364,13 @@ impl<A: Copy + Ord> Nda<A>
     /// - witness: `tests::nda::session_monitor_degree_is_maximum_arity`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every control's arity once, as the check does"
+        )
+    )]
     #[spec(ensures: |result| self.arities.iter().all(|arity| usize::from(*arity) <= usize::from(result)) && self.arities.iter().any(|arity| usize::from(*arity) == usize::from(result)))]
     pub fn degree(&self) -> Degree
     {

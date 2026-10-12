@@ -140,6 +140,13 @@ impl OpSig
     /// - witness: `tests::directed::tests::op_is_an_involution_on_reflected_signatures`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body copies the signature once; the check compares it once"
+        )
+    )]
     #[spec(ensures: |out| out.sig == self.sig && out.variance == self.variance.flip())]
     pub fn op(&self) -> Self
     {
@@ -240,6 +247,13 @@ impl DirectedContext
     ///   executable; the variance laws exercise declared versus derived
     ///   polarity.
     /// - witness: `tests::directed::tests::a_producer_hole_sorted_contravariantly_is_rejected`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the bindings innermost first, as the check does"
+        )
+    )]
     #[spec(ensures: |out| match (out, self.vars.iter().rfind(|entry| entry.0.as_ref() == name.as_ref())) { (Maybe::Present(variance), Some(entry)) => variance == entry.1.variance, (Maybe::Absent(_), None) => true, _ => false })]
     pub fn variance_of(
         &self,
@@ -267,6 +281,13 @@ impl DirectedContext
     ///   executable. The opposite law observes signature preservation
     ///   independently of the polarity.
     /// - witness: `tests::directed::tests::op_is_an_involution_on_reflected_signatures`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the bindings innermost first, as the check does"
+        )
+    )]
     #[spec(ensures: |out| match (out, self.vars.iter().rfind(|entry| entry.0.as_ref() == name.as_ref())) { (Maybe::Present(signature), Some(entry)) => signature == &entry.1.sig, (Maybe::Absent(_), None) => true, _ => false })]
     pub fn signature_of(
         &self,
@@ -292,6 +313,13 @@ impl DirectedContext
     /// - hypothesis: L3 — declaration membership separates constrained engine
     ///   holes from undeclared ones.
     /// - witness: `tests::directed::tests::an_undeclared_hole_is_unconstrained`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body searches the bindings once, as the check does"
+        )
+    )]
     #[spec(ensures: |out| bool::from(out) == self.vars.iter().any(|entry| entry.0.as_ref() == name.as_ref()))]
     pub fn declares(
         &self,
@@ -339,6 +367,13 @@ impl DirectedContext
     /// - witness: `tests::directed::tests::a_producer_hole_sorted_contravariantly_is_rejected`
     /// - witness: `tests::directed::tests::a_mixed_hole_cannot_be_sorted_at_a_directed_variance`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body looks up every hole's declared variance, as the check does"
+        )
+    )]
     #[spec(ensures: |out| out.is_ok() == cell.meta().vars().iter().all(|meta| match self.variance_of(NameRef::from(meta.var().hole().as_ref())) { Maybe::Absent(_) => true, Maybe::Present(declared) => Variance::of_cell(meta.variance()) == Maybe::Present(declared) }))]
     pub fn check_cell_variance(
         &self,

@@ -19,6 +19,8 @@ use gandr_theory_levitation::TermArgs;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermPositionIndex;
 use gandr_theory_levitation::TermView;
+use gandr_theory_spec_combinators::Mark;
+use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
 
 use crate::support::GeneratorIndex;
@@ -138,7 +140,7 @@ enum Rebuild<'term>
 #[spec(captures: before = work.len(), ensures: work.len() > before
     && matches!(work.get(before), Some(&Rebuild::Assemble { arity, .. })
         if usize::from(arity) == work.len().saturating_sub(before).saturating_sub(1))
-    && work.iter().skip(before.saturating_add(1)).all(|step| matches!(*step, Rebuild::Enter(_))))]
+    && appended(work.as_slice(), Mark::from(before.saturating_add(1))).iter().all(|step| matches!(*step, Rebuild::Enter(_))))]
 fn schedule<'term>(
     work: &mut Vec<Rebuild<'term>>,
     application: Application,

@@ -125,6 +125,13 @@ impl<'term> Points<'term>
     ///   duplicate points and category confusion.
     /// - witness: `generalize::tests::positions_agreeing_member_by_member_stand_one_point`
     /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body finds an equal column by the same scan over the points stood so far"
+        )
+    )]
     #[spec(
         captures: [entry_count = self.stood.len(), entry = self.stood.iter().position(|stood| stood.1 == disagreement),
             category = match disagreement { Disagreement::Prod(_) => crate::pattern::Cat::Producer, Disagreement::Cons(_) => crate::pattern::Cat::Consumer }],

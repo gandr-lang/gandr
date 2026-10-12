@@ -279,6 +279,13 @@ where
     ///   and head-only comparison by the equality verdict.
     /// - witness: `tree::tests::subtree_equality_observes_heads_and_descendants`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body compares both table ranges entry for entry, as the check does"
+        )
+    )]
     #[spec(ensures: |equal| equal == (self.root == other.root
         && self.below.len() == other.below.len()
         && self.below.iter().zip(other.below).all(|(left, right)| left == right)))]

@@ -114,6 +114,13 @@ impl<'store> Query<'store>
     /// - witness: `tests::laws::tests::a_path_query_trace_reproduces_its_target`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check replays the steps the body's normalization fired and asks the store for one more redex, as normalization's last step does"
+        )
+    )]
     #[spec(ensures: |out| out.steps.len() <= usize::from(budget) && bool::from(gandr_theory_coherent_resolutions::replay_from_peak(self.cells, from, &out.target, &out.steps, &out.steps)) && bool::from(out.complete) == matches!(gandr_theory_coherent_resolutions::apply_once(self.cells, &out.target), Maybe::Absent(_)))]
     pub fn path(
         &self,
@@ -143,6 +150,13 @@ impl<'store> Query<'store>
     ///   observes only that a claimed target has no remaining redex, not
     ///   reachability by itself.
     /// - witness: `tests::laws::tests::a_path_query_trace_reproduces_its_target`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body normalizes, whose last step is the same search for a redex the check makes once"
+        )
+    )]
     #[spec(ensures: |out| !bool::from(out) || matches!(gandr_theory_coherent_resolutions::apply_once(self.cells, to), Maybe::Absent(_)))]
     pub fn reaches(
         &self,

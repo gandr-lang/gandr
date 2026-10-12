@@ -355,24 +355,33 @@ impl ExchangeWitness
     ///   order and compared with the canonical order the same [`EventOrder`]
     ///   computed separately. An empty witness preserves an empty order; a real
     ///   transposition applied to a shorter order produces the declared absence
-    ///   rather than a partial schedule.
+    ///   rather than a partial schedule. The predicate undoes the
+    ///   transpositions in reverse, each an involution, and expects `order`
+    ///   back, so a reordered or skipped transposition is refuted.
     /// - witness: `causal::tests::the_exchange_witness_carries_the_recorded_order_to_the_canonical_one`
     /// - witness: `tests::normal_form::an_exchange_witness_replays_to_its_target_order`
     /// - witness: `causal::tests::a_real_exchange_refuses_a_shortened_source`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body applies every transposition once; the check bounds and undoes each once"
+        )
+    )]
     #[spec(ensures: |output| {
     let valid = self.transpositions.iter().all(|swap| usize::from(swap.position).saturating_add(1_usize) < order.len());
     match output {
         Maybe::Absent(exchange_application::Absent::PositionOutOfRange) => !valid,
-        Maybe::Present(ref result) => valid && result.len() == order.len() && result.iter().enumerate().all(|(index, event)| {
-            let mut source = index;
+        Maybe::Present(ref result) => valid && result.len() == order.len() && {
+            let mut undone = result.clone();
             for swap in self.transpositions.iter().rev() {
                 let below = usize::from(swap.position);
                 let above = below.saturating_add(1_usize);
-                if source == below { source = above; } else if source == above { source = below; }
+                if above < undone.len() { undone.swap(below, above); }
             }
-            order.get(source) == Some(event)
-        }),
+            undone == order
+        },
     }
 })]
     pub fn apply(
@@ -687,12 +696,13 @@ impl<A: CellAlphabet> EventOrder<A>
     /// # Adequacy
     /// - hypothesis: L3 — membership in one event's edge list is separated by a
     ///   dependent pair, an independent pair, the same pair asked backwards,
-    ///   and an out-of-range index.
+    ///   and an out-of-range index. Every edge list ascends, as the builder's
+    ///   predicate checks, so membership is decided by binary search.
     /// - witness: `tests::normal_form::the_dependence_edges_are_the_pairs_the_guard_refuses`
     /// - witness: `causal::tests::an_out_of_range_index_depends_on_nothing`
     #[inline]
     #[must_use]
-    #[spec(ensures: |output| bool::from(output) == self.dependences.get(usize::from(later)).is_some_and(|edges| edges.contains(&earlier)))]
+    #[spec(ensures: |output| bool::from(output) == self.dependences.get(usize::from(later)).is_some_and(|edges| edges.binary_search(&earlier).is_ok()))]
     pub fn depends_directly(
         &self,
         later: EventIndex,
@@ -703,7 +713,7 @@ impl<A: CellAlphabet> EventOrder<A>
         else {
             return EventDependence::from(false);
         };
-        EventDependence::from(edges.contains(&earlier))
+        EventDependence::from(edges.binary_search(&earlier).is_ok())
     }
 
     /// The events `later` depends on directly, ascending in recorded order.
@@ -721,7 +731,7 @@ impl<A: CellAlphabet> EventOrder<A>
     ///   a missing or extra edge fails.
     /// - witness: `causal_web::tests::a_tracelet_fixture_builds_the_two_colour_web`
     /// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
-    #[spec(ensures: |output| output == self.dependences.get(usize::from(later)).map_or(&[][..], Vec::as_slice) && output.iter().zip(output.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |output| self.dependences.get(usize::from(later)).map_or(output.is_empty(), |row| row.as_slice() == output) && output.iter().zip(output.iter().skip(1)).all(|(left, right)| left < right))]
     pub(crate) fn direct_dependences(
         &self,
         later: EventIndex,
@@ -803,6 +813,13 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body's search and the check's sweep both read at most the dependence rows of the events up to `later`"
+        )
+    )]
     #[spec(ensures: |output| {
     let expected = if earlier >= later || usize::from(later) >= self.events.len() { false } else {
         let end = usize::from(later).saturating_add(1_usize);
@@ -875,6 +892,13 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `tests::normal_form::events_sharing_a_layer_are_pairwise_concurrent`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body asks `precedes` both ways, as the check does"
+        )
+    )]
     #[spec(ensures: |output| bool::from(output) == (left != right && usize::from(left) < self.events.len() && usize::from(right) < self.events.len() && !bool::from(self.precedes(left, right)) && !bool::from(self.precedes(right, left))))]
     pub fn concurrent(
         &self,
@@ -1140,6 +1164,13 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `causal::tests::the_exchange_witness_carries_the_recorded_order_to_the_canonical_one`
     /// - witness: `tests::normal_form::the_canonical_order_is_always_reachable_by_licensed_transpositions`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check repeats the body's one call"
+        )
+    )]
     #[spec(ensures: |output| output == self.exchange_between(&self.recorded_order(), &self.canonical_order()))]
     pub fn exchange_to_canonical(&self) -> Result<ExchangeWitness, ExchangeObstruction>
     {

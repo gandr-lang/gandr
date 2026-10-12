@@ -226,6 +226,13 @@ impl<A: CellAlphabet> CellStore<A>
     ///   duplication.
     /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body scans every cell with the same `position` search"
+        )
+    )]
     #[spec(
         captures: [
             entry_count = self.cells.len(),
@@ -262,8 +269,7 @@ impl<A: CellAlphabet> CellStore<A>
     /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
     #[inline]
     #[spec(ensures: |output| match output {
-        Maybe::Present(cell) => self.cells.iter().enumerate()
-            .any(|(index, held)| index == id.0 && held == cell),
+        Maybe::Present(cell) => self.cells.get(id.0).is_some_and(|held| held == cell),
         Maybe::Absent(_) => id.0 >= self.cells.len(),
     })]
     pub fn get(

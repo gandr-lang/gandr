@@ -306,7 +306,11 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     ///   decline is unchanged by resume, and a budget decline whose pending
     ///   work is malformed is revalidated into a typed decline. Completed
     ///   outcomes stay unchanged even under zero ceilings. Lost accumulated
-    ///   evidence, skipped validation or restarted work changes the outcome.
+    ///   evidence, skipped validation or restarted work changes the outcome. A
+    ///   terminal outcome is moved back out whole, and the completion loop only
+    ///   appends to the store, the derived cells and the certificates, so the
+    ///   predicate reads their lengths and the witnesses compare whole
+    ///   outcomes.
     /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
     /// - witness: `tests::completion::invalid_supplied_decline_is_terminal_on_resume`
     /// - witness: `tests::completion::non_unifying_supplied_decline_is_terminal_on_resume`
@@ -314,14 +318,22 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     /// - witness: `completion::tests::terminal_outcomes_and_empty_sources_preserve_state`
     #[inline]
     #[must_use]
-    #[spec(captures: before = self.clone(), ensures: |output| if matches!(before, Self::Completed { .. } | Self::Declined { reason: DeclineReason::InvalidSuppliedOverlap(_), .. }) {
-        output == before
+    #[spec(captures: [
+        terminal = matches!(self, Self::Completed { .. } | Self::Declined { reason: DeclineReason::InvalidSuppliedOverlap(_), .. }),
+        completed = bool::from(self.is_completed()),
+        cells = usize::from(self.store().len()),
+        derived = self.derived().len(),
+        certificates = self.certificates().len(),
+    ], ensures: |output| if terminal {
+        bool::from(output.is_completed()) == completed
+        && usize::from(output.store().len()) == cells
+        && output.derived().len() == derived && output.certificates().len() == certificates
     } else {
-        before.store().iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
-        && output.derived().starts_with(before.derived()) && output.certificates().starts_with(before.certificates())
-        && output.derived().len() <= before.derived().len().saturating_add(usize::from(budget.max_steps))
-        && output.certificates().len() <= before.certificates().len().saturating_add(usize::from(budget.max_steps))
-        && usize::from(output.store().len()) <= core::cmp::max(usize::from(before.store().len()), usize::from(budget.max_cells))
+        usize::from(output.store().len()) >= cells
+        && output.derived().len() >= derived && output.certificates().len() >= certificates
+        && output.derived().len() <= derived.saturating_add(usize::from(budget.max_steps))
+        && output.certificates().len() <= certificates.saturating_add(usize::from(budget.max_steps))
+        && usize::from(output.store().len()) <= core::cmp::max(cells, usize::from(budget.max_cells))
     })]
     pub fn resume(
         self,

@@ -560,6 +560,13 @@ impl<A: Copy + Ord, F> Rnta<A, F>
     /// - witness: `tests::rnta::construction_accepts_a_well_formed_rnta`
     #[inline]
     #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body reads every control's arity once, as the check does"
+        )
+    )]
     #[spec(ensures: |result| self.arities.iter().all(|arity| usize::from(*arity) <= usize::from(result)) && self.arities.iter().any(|arity| usize::from(*arity) == usize::from(result)))]
     pub fn degree(&self) -> Degree
     {

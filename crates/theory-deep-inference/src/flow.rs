@@ -337,6 +337,13 @@ impl Flow
     /// - witness: `flow::tests::indistinguishable_vertices_are_refused_a_canonical_order`
     /// - witness: `flow::tests::canonical_reindexing_preserves_peak_anchors_and_ports`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the check keys, sorts and reindexes every vertex and thread as the body does"
+        )
+    )]
     #[spec(ensures: |output| {
     let depths = self.causal_depths();
     let mut keys: Vec<(VertexKey, FlowVertexIndex)> = self.labels.iter().enumerate().map(|(index, label)| (self.vertex_key(FlowVertexIndex::from(index), *label, depths.get(index).copied().unwrap_or_default()), FlowVertexIndex::from(index))).collect();
@@ -421,6 +428,13 @@ impl Flow
     /// - witness: `tests::flow::a_consumed_creation_is_one_thread_between_two_vertices`
     /// - witness: `tests::flow::the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form`
     /// - witness: `flow::tests::mixed_depth_creators_determine_the_maximum_layer`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body lifts depths along every thread once, as the check does"
+        )
+    )]
     #[spec(requires: self.threads.iter().all(|thread| [thread.up, thread.lo].into_iter().all(|end| match end { FlowEnd::Vertex { vertex, .. } => usize::from(vertex) < self.labels.len(), FlowEnd::Peak { .. } | FlowEnd::Join => true })), ensures: |output| {
     let mut expected = alloc::vec![CausalDepth::default(); self.labels.len()];
     for thread in &self.threads {
@@ -471,6 +485,13 @@ impl Flow
     /// - witness: `tests::flow::the_two_legs_of_a_permutation_tile_have_one_flow`
     /// - witness: `tests::flow::the_projection_forgets_where_a_cell_fired`
     /// - witness: `flow::tests::mixed_depth_creators_determine_the_maximum_layer`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body counts the vertex's incidences over every thread, as the check does"
+        )
+    )]
     #[spec(ensures: |output| {
     let mut from_peak = Vec::new();
     let mut upper = 0_usize; let mut lower = 0_usize;
