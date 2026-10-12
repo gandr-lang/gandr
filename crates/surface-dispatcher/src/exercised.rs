@@ -547,6 +547,7 @@ fn checking_row(
                 | CheckingForm::Shift(_)
                 | CheckingForm::With(_)
                 | CheckingForm::Case(_)
+                | CheckingForm::Split(_)
                 | CheckingForm::List(_)
                 | CheckingForm::Return(_)
                 | CheckingForm::Hole(_)
@@ -815,7 +816,14 @@ fn formers(
                     worklist.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     worklist.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
-                | Some(&Computation::Resume(value, body)) => {
+                | Some(
+                    &(Computation::Resume(value, body)
+                    | Computation::Split {
+                        scrutinee: value,
+                        body,
+                        ..
+                    }),
+                ) => {
                     worklist.extend([Node::Value(value), Node::Computation(body)]);
                 },
                 | Some(

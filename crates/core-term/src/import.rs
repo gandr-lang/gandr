@@ -166,9 +166,14 @@ impl Image
                 | Computation::With(ref mut first, ref mut second)
                 | Computation::Bind(ref mut first, ref mut second),
             ) => [Some(C(first)), Some(C(second)), None, None, None],
-            | Self::Computation(Computation::Resume(ref mut stack, ref mut body)) => {
-                [Some(V(stack)), Some(C(body)), None, None, None]
-            },
+            | Self::Computation(
+                Computation::Resume(ref mut stack, ref mut body)
+                | Computation::Split {
+                    scrutinee: ref mut stack,
+                    ref mut body,
+                    ..
+                },
+            ) => [Some(V(stack)), Some(C(body)), None, None, None],
             | Self::Value(Value::Primitive { ref mut body, .. } | Value::Thunk(ref mut body))
             | Self::Computation(
                 Computation::Lambda(ref mut body)

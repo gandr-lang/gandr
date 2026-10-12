@@ -462,6 +462,17 @@ fn walk(
                     pending.push((AnyNode::Value(stack), depth, results));
                     pending.push((AnyNode::Computation(body), depth, results));
                 },
+                // Components bind unrelated: a call on one is refused, never
+                // accepted on a descent the kernel's projections might not see.
+                | Some(&Computation::Split {
+                    scrutinee,
+                    arity,
+                    body,
+                }) => {
+                    let inside = (0_usize .. usize::from(arity)).fold(depth, |at, _| at.deeper());
+                    pending.push((AnyNode::Value(scrutinee), depth, results));
+                    pending.push((AnyNode::Computation(body), inside, results));
+                },
                 | Some(&Computation::Perform {
                     ref signature,
                     payload,

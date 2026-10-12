@@ -2875,6 +2875,7 @@ where
                 Computation::Perform { ref operation, ref signature, .. } => matches!(ret, ContentNode::Perform { operation: ref actual, signature: ref mapped, .. } if operation == actual && signature.name() == mapped.name()),
                 Computation::Handle { ref signature, .. } => matches!(ret, ContentNode::Handle { signature: ref mapped, .. } if signature.name() == mapped.name()),
                 Computation::Resume(..) => matches!(ret, ContentNode::Resume(..)),
+                Computation::Split { arity, .. } => matches!(ret, ContentNode::Split(_, actual, _) if actual == arity),
                 Computation::Reset(_) => matches!(ret, ContentNode::Reset(_)),
                 Computation::Shift(_) => matches!(ret, ContentNode::Shift(_)),
                 Computation::With(..) => matches!(ret, ContentNode::With(..)),
@@ -2971,6 +2972,15 @@ where
         | Some(&Computation::Resume(stack, body)) => {
             ContentNode::Resume(child(Root::Value(stack)), child(Root::Computation(body)))
         },
+        | Some(&Computation::Split {
+            scrutinee,
+            arity,
+            body,
+        }) => ContentNode::Split(
+            child(Root::Value(scrutinee)),
+            arity,
+            child(Root::Computation(body)),
+        ),
         | Some(&Computation::Reset(body)) => ContentNode::Reset(child(Root::Computation(body))),
         | Some(&Computation::Shift(body)) => ContentNode::Shift(child(Root::Computation(body))),
         | Some(&Computation::With(first, second)) => ContentNode::With(

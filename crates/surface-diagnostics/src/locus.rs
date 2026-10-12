@@ -822,6 +822,7 @@ fn checked(
                 | CheckingForm::Shift(at)
                 | CheckingForm::With(at)
                 | CheckingForm::Case(at)
+                | CheckingForm::Split(at)
                 | CheckingForm::Lambda(at)
                 | CheckingForm::Return(at)
                 | CheckingForm::Fixpoint(at),
@@ -1048,6 +1049,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Injection(_) => "an injection",
                     | CheckingForm::List(_) => "a List introduction",
                     | CheckingForm::Case(_) => "a case",
+                    | CheckingForm::Split(_) => "a split",
                     | CheckingForm::Thunk(_) => "a thunk",
                     | CheckingForm::Lambda(_) => "a lambda",
                     | CheckingForm::Return(_) => "a return",

@@ -245,6 +245,8 @@ pub enum Elimination
 {
     /// A nominal case, retaining its motive and field functions over a capture.
     DataCase(CompClosureId),
+    /// A product elimination, retaining its arity and body over a capture.
+    Split(CompClosureId),
     /// A record or tuple projection, retaining its source term, which names
     /// the field's label or the component's position.
     Projection(gandr_core_term::ComputationId),

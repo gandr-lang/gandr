@@ -60,6 +60,7 @@ use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::hole::TermId;
 use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
@@ -102,6 +103,36 @@ impl Binders
         Self(u32::from(arith::saturating_add(
             arith::Int::from(self.0),
             arith::Int::from(1_u32),
+        )))
+    }
+
+    /// The count past `count` binders further in, as a split's body is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the count plus `count`, clamped at the representable ceiling,
+    ///   which no context reaches.
+    /// - provides: the step a walk takes past a split's binders.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero binders, one, and a count past the u32 ceiling
+    ///   distinguish addition from increment and saturation.
+    /// - witness: `rewrite::tests::binder_counts_clamp_at_the_ceiling`
+    #[spec(ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(u64::try_from(usize::from(count)).unwrap_or(u64::MAX)).min(u64::from(u32::MAX)))]
+    #[inline]
+    #[must_use]
+    pub fn deeper_by(
+        self,
+        count: ComponentCount,
+    ) -> Self
+    {
+        let raised = u32::try_from(usize::from(count)).unwrap_or(u32::MAX);
+        // reason: a binder count uses u32::MAX as its conservative ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(raised),
         )))
     }
 
@@ -643,14 +674,21 @@ impl<'arena> Engine<'arena>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — lambda and static lambda bind their bodies, bind
-    ///   scopes only its continuation, case scopes both branches, and Pi scopes
-    ///   only its codomain; static Pi, arrow, quote and decode do not bind.
-    ///   Exact rewritten indices distinguish each boundary and the untouched
-    ///   linear zone; L2 generated codomains cover their nested combinations.
+    ///   scopes only its continuation, case scopes both branches, a split
+    ///   scopes its body under one binder per component, and Pi scopes only its
+    ///   codomain; static Pi, arrow, quote and decode do not bind. Exact
+    ///   rewritten indices distinguish each boundary and the untouched linear
+    ///   zone; L2 generated codomains cover their nested combinations.
     /// - witness: `rewrite::tests::binding_sites_distinguish_free_bound_and_linear_indices`
     /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
     #[spec(
-        captures: [pending = self.tasks.len(), ready = self.results.len(), children = match node {
+        captures: [pending = self.tasks.len(), ready = self.results.len(), split = match node {
+            | Node::Computation(id) => match self.arena.computation(id) {
+                | Some(&Computation::Split { arity, .. }) => Some(depth.deeper_by(arity)),
+                | _ => None,
+            },
+            | Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => None,
+        }, children = match node {
         | Node::Value(id) => self.arena.value(id).map_or(0_usize, |matched_native_node| match *matched_native_node {
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
@@ -668,7 +706,7 @@ Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 }),
@@ -689,7 +727,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     }],
         ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
             && self.tasks.get(pending..).is_some_and(|tasks| tasks.iter().all(|task|
-                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper())))),
+                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper() || Some(*at) == split)))),
     )]
     fn push_children(
         &mut self,
@@ -821,6 +859,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 | Some(&Computation::Resume(stack, body)) => {
                     self.tasks.push(open(Node::Computation(body), depth));
                     self.tasks.push(open(Node::Value(stack), depth));
+                },
+                | Some(&Computation::Split {
+                    scrutinee,
+                    arity,
+                    body,
+                }) => {
+                    self.tasks
+                        .push(open(Node::Computation(body), depth.deeper_by(arity)));
+                    self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
                 | Some(&Computation::With(first, second)) => {
                     self.tasks.push(open(Node::Computation(second), depth));
@@ -1495,7 +1542,7 @@ Computation::ListFold { .. } => 5,
 Computation::Primitive { ref arguments, .. } => arguments.len(),
 Computation::DataCase { ref branches, .. } => branches.len().saturating_add(2),
 Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Return(_) | Computation::Force(_) | Computation::Mark { .. } => 1,
-Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) => 2,
+Computation::Resume(..) | Computation::With(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Transport(..) | Computation::Split { .. } => 2,
 Computation::Case { ref branches, .. } => branches.len().saturating_add(1),
 Computation::Hole(_) => 0_usize,
 })],
@@ -1575,6 +1622,21 @@ Computation::Hole(_) => 0_usize,
                 else {
                     self.arena
                         .computation_resume(rewritten_stack, rewritten_body)
+                }
+            },
+            | Computation::Split {
+                scrutinee,
+                arity,
+                body,
+            } => {
+                let rewritten_body = Self::computation(&mut self.results, body);
+                let rewritten_scrutinee = Self::value(&mut self.results, scrutinee);
+                if (rewritten_scrutinee, rewritten_body) == (scrutinee, body) {
+                    id
+                }
+                else {
+                    self.arena
+                        .computation_split(rewritten_scrutinee, arity, rewritten_body)
                 }
             },
             | Computation::With(first, second) => {
@@ -3567,6 +3629,19 @@ mod tests
                 Binders::past(DeBruijnIndex::from(input))
             );
         }
+        for (input, count, expected) in [
+            (3_u32, 0_usize, 3_u32),
+            (3_u32, 1_usize, 4_u32),
+            (3_u32, 4_usize, 7_u32),
+            (u32::MAX - 1, 4_usize, u32::MAX),
+            (0_u32, usize::MAX, u32::MAX),
+        ] {
+            assert_eq!(
+                Binders::from(expected),
+                Binders::from(input).deeper_by(crate::ComponentCount::from(count)),
+                "{input} binders past {count} more"
+            );
+        }
     }
 
     #[test]
@@ -4060,10 +4135,15 @@ mod tests
         let case = arena.computation_case(zero, &[shared, linear_branch]);
         let bind = arena.computation_bind(shared, shared);
         let lambda = arena.computation_lambda(shared);
+        let split = arena.computation_split(one, crate::ComponentCount::from(2_usize), shared);
+        let empty_split =
+            arena.computation_split(zero, crate::ComponentCount::from(0_usize), shared);
         for (root, expected) in [
             (case, vec![1_u32, 0, 2]),
             (bind, vec![1, 2, 0, 2]),
             (lambda, vec![0, 2]),
+            (split, vec![2, 0, 1]),
+            (empty_split, vec![1, 1, 2]),
         ] {
             let Node::Computation(rewritten) = Engine::new(&mut arena).run(
                 Node::Computation(root),
@@ -4119,6 +4199,11 @@ mod tests
                                         .map(|&branch| Node::Computation(branch)),
                                 );
                                 pending.push(Node::Value(scrutinee));
+                            },
+                            | crate::Computation::Split {
+                                scrutinee, body, ..
+                            } => {
+                                pending.extend([Node::Computation(body), Node::Value(scrutinee)]);
                             },
                             | _ => panic!("the golden uses binding computations and return"),
                         }

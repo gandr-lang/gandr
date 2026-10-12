@@ -1703,6 +1703,12 @@ enum Frame
         /// The mark.
         at: ComputationId,
     },
+    /// A split, awaiting the image of the projection binds it reduces to.
+    SplitReduct
+    {
+        /// The split.
+        at: ComputationId,
+    },
     /// A force, awaiting its value.
     Force
     {
@@ -3022,6 +3028,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
             | Computation::Case { .. } => return self.prepare_native(target, node),
+            | Computation::Split {
+                scrutinee,
+                arity,
+                body,
+            } => (
+                Frame::SplitReduct { at },
+                TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
+            ),
             | Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             | Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -3710,9 +3724,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             | (Frame::Reduced { at } | Frame::UnmarkedValue { at }, AnyNode::Value(reduct)) => {
                 Ok(self.erased_value(at, reduct))
             },
-            | (Frame::UnmarkedComputation { at }, AnyNode::Computation(unmarked)) => {
-                Ok(self.erased_computation(at, unmarked))
-            },
+            | (
+                Frame::UnmarkedComputation { at } | Frame::SplitReduct { at },
+                AnyNode::Computation(image),
+            ) => Ok(self.erased_computation(at, image)),
             | (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
                 self.frames.push(Frame::StaticArgument { at, head });
                 Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
@@ -3742,7 +3757,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Fixpoint { .. }
                 | Frame::BindBound { .. }
                 | Frame::BindBody { .. }
-                | Frame::UnmarkedComputation { .. },
+                | Frame::UnmarkedComputation { .. }
+                | Frame::SplitReduct { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -3847,6 +3863,48 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         self.memo().computations.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::Computation(erased))
+    }
+
+    /// The projection binds a split of `scrutinee` into `body` reduces to,
+    /// minted into the source arena: component zero is bound outermost, each
+    /// projection reading the scrutinee shifted past the binds before it, so a
+    /// split of no components is its body.
+    ///
+    /// # Specification
+    /// - requires: `body` is scoped under `arity` binders beyond `scrutinee`.
+    /// - ensures: a chain of `arity` binds, each of the next component, ending
+    ///   in `body`; the kernel has no split, and every component crosses as the
+    ///   projection the kernel already judges.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split reading each of three components crosses as
+    ///   the binds that read them, and a split of the unit crosses as its body;
+    ///   a wrong shift or order changes the kernel's verdict.
+    /// - witness: `native_formers::native_formers::a_split_crosses_as_its_projection_binds`
+    #[spec(ensures: |ret| usize::from(arity) != 0_usize || ret == body)]
+    fn split_reduct(
+        &mut self,
+        scrutinee: ValueId,
+        arity: gandr_core_term::ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        (0_usize .. usize::from(arity))
+            .rev()
+            .fold(body, |rest, component| {
+                let shift = u32::try_from(component).unwrap_or(u32::MAX);
+                let read = gandr_core_term::shift_value(
+                    self.arena,
+                    scrutinee,
+                    gandr_core_term::Binders::from(shift),
+                );
+                let projected = self.arena.computation_tuple_projection(
+                    read,
+                    gandr_core_term::Component::from(component),
+                );
+                self.arena.computation_bind(projected, rest)
+            })
     }
 
     /// Record `erased` as the image of the value type `at`, and ascend it.

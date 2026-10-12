@@ -233,6 +233,37 @@ impl Value
     }
 }
 
+/// How many components a product elimination binds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComponentCount(usize);
+
+impl From<usize> for ComponentCount
+{
+    /// The count of `components`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(components: usize) -> Self
+    {
+        Self(components)
+    }
+}
+
+impl From<ComponentCount> for usize
+{
+    /// The number of components.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ComponentCount) -> Self
+    {
+        count.0
+    }
+}
+
 /// A computation: the negative fragment of the core term vocabulary.
 ///
 /// The eliminators — application, force, bind, case — synthesize; the
@@ -282,6 +313,19 @@ pub enum Computation
         /// One branch per summand, in order, each checked with its summand
         /// bound.
         branches: alloc::boxed::Box<[ComputationId]>,
+    },
+    /// A product elimination, binding every component of the scrutinee into
+    /// the body: component zero outermost, the last innermost. The arity is
+    /// the scrutinee's own, stated so that a split of no components types its
+    /// scrutinee as the unit.
+    Split
+    {
+        /// The scrutinee value, of a product type.
+        scrutinee: ValueId,
+        /// How many components the scrutinee has, each bound in the body.
+        arity: ComponentCount,
+        /// The body, under one intuitionistic binder per component.
+        body: ComputationId,
     },
     /// A nominal case with a motive under one scrutinee binder.
     DataCase
@@ -932,6 +976,18 @@ fn equal_syntax(
                     | (&Computation::Resume(a, b), &Computation::Resume(c, d)) => {
                         pending.extend([V(a, c), C(b, d)]);
                     },
+                    | (
+                        &Computation::Split {
+                            scrutinee: a,
+                            arity: left_arity,
+                            body: b,
+                        },
+                        &Computation::Split {
+                            scrutinee: c,
+                            arity: right_arity,
+                            body: d,
+                        },
+                    ) if left_arity == right_arity => pending.extend([V(a, c), C(b, d)]),
                     | (&Computation::Reset(a), &Computation::Reset(b))
                     | (&Computation::Shift(a), &Computation::Shift(b))
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),

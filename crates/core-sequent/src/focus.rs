@@ -227,6 +227,9 @@ pub enum FocusRefusal
     /// A tuple projection has no command-IL destructor: the IL splits no
     /// positive tuple.
     TupleProjection(ComputationId),
+    /// A split has no command-IL translation yet: its case on one tuple
+    /// pattern is not focused.
+    Split(ComputationId),
     /// A core value id names no node of the core arena.
     DanglingValue(ValueId),
     /// A core computation id names no node of the core arena.
@@ -272,6 +275,7 @@ impl fmt::Display for FocusRefusal
             | Self::TupleProjection(_) => {
                 f.write_str("a tuple projection has no command-IL destructor")
             },
+            | Self::Split(_) => f.write_str("a split has no command-IL translation"),
             | Self::DanglingValue(_) => f.write_str("a core value id names no node"),
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
@@ -1287,7 +1291,7 @@ impl<'run> Focusing<'run>
     ///   [`FocusRefusal::IncompleteComputation`] for a hole or a mark,
     ///   [`FocusRefusal::RecordProjection`] for a record projection,
     ///   [`FocusRefusal::TupleProjection`] for a tuple projection,
-    // refused_by: container_member · collision: none (both sides edited, nowhere the same lines)
+    ///   [`FocusRefusal::Split`] for a split,
     ///   [`FocusRefusal::UniverseTransport`] for a transport, or a refused
     ///   mint.
     /// - panics: none.
@@ -1313,6 +1317,7 @@ impl<'run> Focusing<'run>
             | Some(&Computation::Hole(_) | &Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::RecordProjection(..)) => ret == Err(FocusRefusal::RecordProjection(id)),
             | Some(&Computation::TupleProjection(..)) => ret == Err(FocusRefusal::TupleProjection(id)),
+            | Some(&Computation::Split { .. }) => ret == Err(FocusRefusal::Split(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -1333,6 +1338,7 @@ impl<'run> Focusing<'run>
             | Computation::TupleProjection(..) => {
                 return Err(FocusRefusal::TupleProjection(id));
             },
+            | Computation::Split { .. } => return Err(FocusRefusal::Split(id)),
             | Computation::DataCase {
                 scrutinee,
                 ref branches,
@@ -2200,5 +2206,3 @@ mod tests
         assert_eq!(Err(FocusRefusal::TranslationInvariant), run.pop_command());
     }
 }
-// weave: run 'weave explain crates/core-sequent/src/focus.rs' for per-hunk
-// detail, 'weave check' to verify your resolution

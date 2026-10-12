@@ -89,8 +89,13 @@ pub enum SupportSides
     Opened(CompClosureId, CompClosureId),
     /// Two captured computations, entered without introducing a binder.
     Closed(CompClosureId, CompClosureId),
-    /// Two List branches opened under two fresh binders.
-    OpenedTwice(CompClosureId, CompClosureId),
+    /// Two closures opened under this many fresh binders: List cell branches
+    /// under two, split bodies under their arity.
+    OpenedUnder(
+        CompClosureId,
+        CompClosureId,
+        gandr_core_term::ComponentCount,
+    ),
 }
 
 /// The whole input of a goal the machine starts fresh: its sides and the
@@ -162,7 +167,7 @@ impl GoalSupport
     #[spec(ensures: |ret| {
         let resolving = match sides {
             SupportSides::Heads(left, right) => side_content(domain, left).is_ok() && side_content(domain, right).is_ok(),
-            SupportSides::Opened(left, right) | SupportSides::Closed(left, right) | SupportSides::OpenedTwice(left, right) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
+            SupportSides::Opened(left, right) | SupportSides::Closed(left, right) | SupportSides::OpenedUnder(left, right, _) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
         };
         if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
         else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
@@ -181,7 +186,7 @@ impl GoalSupport
             },
             | SupportSides::Opened(left, right)
             | SupportSides::Closed(left, right)
-            | SupportSides::OpenedTwice(left, right) => {
+            | SupportSides::OpenedUnder(left, right, _) => {
                 domain
                     .comp_closure(left)
                     .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;

@@ -43,6 +43,7 @@ use crate::classifier::Sort;
 use crate::hole::HoleId;
 use crate::hole::MarkIndex;
 use crate::syntax::CompType;
+use crate::syntax::ComponentCount;
 use crate::syntax::Computation;
 use crate::syntax::Value;
 use crate::syntax::ValueType;
@@ -1126,6 +1127,38 @@ impl CoreArena
         self.alloc_computation(Computation::Case {
             scrutinee,
             branches: branches.into(),
+        })
+    }
+
+    /// Mint a split of an already-allocated scrutinee into a body under one
+    /// binder per component.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee` names a value node and `body` a computation
+    ///   node, both already allocated in this arena.
+    /// - ensures: appends the split of `arity` components and returns a fresh
+    ///   id strictly above its children.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct child ids and an arity other than the body's
+    ///   distinguish swapped children, a dropped arity and confused formers.
+    /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
+    #[spec(ensures: |ret| self.computation(ret).is_some_and(|held| *held == Computation::Split { scrutinee, arity, body }))]
+    #[inline]
+    pub fn computation_split(
+        &mut self,
+        scrutinee: ValueId,
+        arity: ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Split {
+            scrutinee,
+            arity,
+            body,
         })
     }
 
@@ -2319,6 +2352,14 @@ mod tests
                 crate::Computation::Case {
                     scrutinee: first,
                     branches: [left, right].into(),
+                },
+            ),
+            (
+                arena.computation_split(second, crate::ComponentCount::from(2_usize), left),
+                crate::Computation::Split {
+                    scrutinee: second,
+                    arity: crate::ComponentCount::from(2_usize),
+                    body: left,
                 },
             ),
         ];

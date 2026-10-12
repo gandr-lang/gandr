@@ -1412,6 +1412,11 @@ impl<'run> Walk<'run>
                     }
                     queued.push(Goal::Closures(left, right));
                 },
+                // A split's closure holds the split itself, so one source
+                // body already fixes the arity.
+                | (Elimination::Split(left), Elimination::Split(right)) => {
+                    queued.push(Goal::Closures(left, right));
+                },
                 | (Elimination::Projection(left), Elimination::Projection(right)) => {
                     if crate::rules::projection_key(self.core, left)?
                         != crate::rules::projection_key(self.core, right)?
@@ -1473,6 +1478,7 @@ impl<'run> Walk<'run>
                 | (
                     Elimination::Transport(_)
                     | Elimination::DataCase(_)
+                    | Elimination::Split(_)
                     | Elimination::Projection(_)
                     | Elimination::ProductTransport(_)
                     | Elimination::Apply(_)

@@ -1039,7 +1039,7 @@ impl<'source> Program<'source>
         },
         Some(&Computation::Primitive { .. } |
 &(Computation::Transport(..) | Computation::Application(..) |
-Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
+Computation::DataCase {..} | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) |
 Computation::ListFold { .. } | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. }
 | Computation::Hole(_) | Computation::Mark { .. } | Computation::Fixpoint { .. })) |
 None => ret.0 == "<computation>",
@@ -1062,6 +1062,7 @@ None => ret.0 == "<computation>",
                 | Computation::Perform { .. }
                 | Computation::Handle { .. }
                 | Computation::Resume(..)
+                | Computation::Split { .. }
                 | Computation::Reset(_)
                 | Computation::Shift(_)
                 | Computation::Project(..)
@@ -1365,7 +1366,14 @@ fn references(
                     pending.extend([Node::Computation(subject), Node::Computation(on_return)]);
                     pending.extend(clauses.iter().map(|clause| Node::Computation(clause.body)));
                 },
-                | Some(&Computation::Resume(value, body)) => {
+                | Some(
+                    &(Computation::Resume(value, body)
+                    | Computation::Split {
+                        scrutinee: value,
+                        body,
+                        ..
+                    }),
+                ) => {
                     pending.extend([Node::Value(value), Node::Computation(body)]);
                 },
                 | Some(
