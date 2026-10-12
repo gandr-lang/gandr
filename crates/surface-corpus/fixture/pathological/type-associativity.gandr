@@ -1,6 +1,6 @@
 @[ checks ]
 def product_chain : Integer * Unit * Integer * String;
-def product_chain = (1, (), 2, "text");
+def product_chain = (1, unit, 2, "text");
 
 @[ refuses("OutOfFragment") ]
 def sum_chain : Integer + Unit + Boolean + String;

@@ -23,8 +23,8 @@
 //! A term name resolves against the enclosing lambda binders, then against the
 //! module's declarations strictly earlier than the one being lowered. Nothing
 //! falls through: a name neither scope answers is a refusal, and there is no
-//! atom former reachable from name resolution. The unit value is the empty
-//! parentheses `()`, a form of its own, so no name is reserved for it.
+//! atom former reachable from name resolution. The unit value is the keyword
+//! `unit`, a form of its own, so no name answers it.
 
 use alloc::vec::Vec;
 use core::fmt;

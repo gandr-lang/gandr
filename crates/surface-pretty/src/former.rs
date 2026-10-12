@@ -197,7 +197,7 @@ pub enum Former<'source, Node>
     },
     /// A constant, by its name.
     Constant(Name<'source>),
-    /// The unit value, `()`.
+    /// The unit value, `unit`.
     Unit,
     /// A literal.
     Literal(&'source Literal),

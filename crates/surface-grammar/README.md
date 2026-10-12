@@ -24,6 +24,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Frozen tables](#frozen-tables)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
+- [The unit value is a keyword](#the-unit-value-is-a-keyword)
 - [Named-kind inventory](#named-kind-inventory)
 - [Highlighter](#highlighter)
 - [Fingerprint](#fingerprint)
@@ -187,7 +188,7 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2485 molds, 77 labels projected to more than one mold, and the fingerprint `0x8069_0ebc_b08c_1117`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2489 molds, 78 labels projected to more than one mold, and the fingerprint `0x5984_1cfd_3dbe_9111`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
 
 ### Lists close on an optional separator
 
@@ -234,8 +235,18 @@ A type operator is written `\A. T`: the backslash, one binder — a type name or
 
 The value function space `A => B` is the alias of the thunked arrow `+U (A -> -F B)`, and `(A, B) => C` its n-ary form, `+U (A -> B -> -F C)`. It is an infix rule in the arrow's group, so the two arrows nest to the right of one another; its n-ary domain is a parenthesized type list, which is why `parenthesized_type` holds one type or several. One rule keeps `(` at a single type-sort mold, so the molder never opens a lookahead window to tell a parenthesized type from a domain list, and the lowering refuses a list anywhere but before `=>`. A case arm's `=>` follows a pattern and this one a type; the two never compete for one slot. Nothing distinguishes the alias from its unfolding after lowering except the printer, which may choose either spelling.
 
-- Alternatives: a separate rule for the n-ary domain, `( T , T+ ) => T`, which gives `(` two type-sort molds tied on the molder's local key; a nullary `() => B` for `+U (-F B)`, which the recorded design does not rule and the surface does not need while `+U (-F B)` is short.
+The empty list `() => B` is the nullary form, `+U (-F B)`: the lowering reads an empty domain list as no domain, so it is a different type from `Unit => B`, the function of one argument of the unit type.
+
+- Alternatives: a separate rule for the n-ary domain, `( T , T+ ) => T`, which gives `(` two type-sort molds tied on the molder's local key.
 - Reversal: if a tuple type ever takes the parenthesized list, the domain list moves into the alias rule and the tie is settled there.
+
+## The unit value is a keyword
+
+The unit value is the keyword `unit`, one tile at the expression sort and one at the pattern sort, beside `true` and `false`; its type is the type name `Unit`. The empty parentheses `()` stay a parenthesised list with no member, so the lowering refuses them as a value or a type and reads them as the empty domain list before `=>`. Adding the two rules moved the pinned shape from 2487 molds, 77 labels and the fingerprint `0x4116_5b5c_93e2_0732`.
+
+- Choice: `unit` is reserved, and `()` is always an empty list. The unit is the nullary product, and with an n-ary product the empty list is its nullary case, so one spelling stands for one thing.
+- Alternatives: `()` as the unit, which makes `() => B` and `Unit => B` the same type and reads one token sequence two ways by position; leaving `unit` an ordinary name the prelude declares, which a local binding could shadow.
+- Reversal: if the n-ary product is never admitted and no source writes `() => B`, `()` may return as a second spelling of `unit` and the keyword stays.
 
 ## Named-kind inventory
 

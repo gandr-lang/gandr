@@ -1,5 +1,5 @@
 @[ runs("0") ]
-def unit = 0;
+def neutral = 0;
 
 @[ refuses("OutOfFragment") ]
 def mul(x: Integer, y: Integer) -> -F Integer {
@@ -7,12 +7,12 @@ def mul(x: Integer, y: Integer) -> -F Integer {
 }
 
 @[ refuses("OutOfFragment") ]
-def unitL(x: Integer) -> -F Path(Integer, mul(unit, x), x) {
+def unitL(x: Integer) -> -F Path(Integer, mul(neutral, x), x) {
   return here(x)
 }
 
 @[ refuses("OutOfFragment") ]
-def unitR(x: Integer) -> -F Path(Integer, mul(x, unit), x) {
+def unitR(x: Integer) -> -F Path(Integer, mul(x, neutral), x) {
   return here(x)
 }
 

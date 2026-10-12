@@ -149,6 +149,7 @@ impl fmt::Display for FragmentSort
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+/// - witness: `lower::tests::the_empty_parentheses_are_never_the_unit`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -178,6 +179,9 @@ pub enum FragmentBoundary
     /// function's, lambda's or thunk's body ends: an early exit, which the
     /// fragment does not read yet.
     NotInTail,
+    /// The form is the empty parentheses `()` standing as a value or a type:
+    /// an empty list, which is never the unit.
+    EmptyList,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -207,6 +211,10 @@ impl fmt::Display for FragmentBoundary
             ),
             | Self::NotInTail => f.write_str(
                 "stands where no function body ends; an exit leaves only from tail position",
+            ),
+            | Self::EmptyList => f.write_str(
+                "is spelled `()`, an empty list and never the unit: the unit value is `unit` and \
+                 its type `Unit`",
             ),
         }
     }

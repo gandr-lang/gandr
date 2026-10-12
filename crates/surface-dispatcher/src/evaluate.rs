@@ -556,7 +556,7 @@ impl<'source> Program<'source>
     ///   [`Evaluation::Stuck`]; a machine fault or a terminal with no core
     ///   reading is [`Evaluation::Unfinished`]; otherwise the terminal is read
     ///   back and spelled: an integer in decimal, a text quoted with its
-    ///   escapes, `()`, a pair as `(a, b)`, an injection as `inl(v)` or
+    ///   escapes, `unit`, a pair as `(a, b)`, an injection as `inl(v)` or
     ///   `inr(v)`, a thunk as `<thunk>`, a function as `<fun>`, a code as
     ///   `<code>`.
     /// - provides: the run stage every caller shares, so one declaration has
@@ -1001,7 +1001,7 @@ impl<'source> Program<'source>
             Some(&Value::Record(_)) => ret.0.starts_with("#{") && ret.0.ends_with('}'),
             Some(&Value::Reify(_)) => ret.0 == "<stack>",
             Some(&Value::Primitive { primitive, .. }) => ret.0 == primitive.name().as_ref(),
-            Some(&Value::Unit) => ret.0 == "()",
+            Some(&Value::Unit) => ret.0 == "unit",
             Some(&Value::ListNil) => ret.0 == "nil",
             Some(&Value::ListCons(..)) => ret.0.starts_with("cons(") && ret.0.ends_with(')'),
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
@@ -1141,7 +1141,7 @@ None => ret.0 == "<computation>",
                     spelled.extend(text.escape_debug());
                     spelled.push('"');
                 },
-                | Some(&Value::Unit) => spelled.push_str("()"),
+                | Some(&Value::Unit) => spelled.push_str("unit"),
                 | Some(&Value::ListNil) => spelled.push_str("nil"),
                 | Some(&Value::ListCons(head, tail)) => pending.extend([
                     Piece::Text(")"),
@@ -1494,7 +1494,7 @@ mod tests
         let mut values = program(
             r#"def answer : Integer ; def answer = 42 ;
 def greeting : String ; def greeting = "a \"quoted\"\nline" ;
-def nothing : Unit ; def nothing = () ;
+def nothing : Unit ; def nothing = unit ;
 def copy = answer ;
 def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { return x } } ;
 def first : +U (Integer -> Integer -> -F Integer) ; def first = thunk { fn (x) { fn (y) { return x } } } ;
@@ -1506,7 +1506,7 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
         for (name, spelled) in [
             ("answer", "42"),
             ("greeting", r#""a \"quoted\"\nline""#),
-            ("nothing", "()"),
+            ("nothing", "unit"),
             ("copy", "42"),
             ("identity", "<fun>"),
             ("first", "<fun>"),

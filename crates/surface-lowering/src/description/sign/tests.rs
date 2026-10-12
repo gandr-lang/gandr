@@ -200,7 +200,7 @@ fn a_fillerless_rule_member_declines_to_the_higher_cells_lane()
 #[test]
 fn a_written_face_in_a_sign_block_declines_naming_the_block_form_that_holds_it()
 {
-    let source = "sign Written { sort Nat : Type; rule unit ==> add; oper neg : Nat --> Nat; }";
+    let source = "sign Written { sort Nat : Type; rule ident ==> add; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refusal = report
         .diagnostics
@@ -211,7 +211,7 @@ fn a_written_face_in_a_sign_block_declines_naming_the_block_form_that_holds_it()
         .unwrap();
     assert_eq!(
         source.get(usize::from(refusal.span.start()) .. usize::from(refusal.span.end())),
-        Some("rule unit ==> add")
+        Some("rule ident ==> add")
     );
     assert_eq!(
         report.declarations[0].description.opers[0].name.as_ref(),
@@ -240,7 +240,7 @@ fn a_data_spelled_sign_oper_declines_before_no_output_can_be_fabricated()
 #[test]
 fn a_declined_rule_member_leaves_the_members_after_it_intact()
 {
-    let source = "sign Adder { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule unit ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
+    let source = "sign Adder { sort Nat : Type; oper add : (Nat, Nat) --> Nat; rule ident ==> add; rule swap ==> mul; oper neg : Nat --> Nat; }";
     let report = described(source);
     let refused: Vec<_> = report
         .diagnostics
@@ -252,7 +252,7 @@ fn a_declined_rule_member_leaves_the_members_after_it_intact()
             source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
         })
         .collect();
-    assert_eq!(refused, ["rule unit ==> add", "rule swap ==> mul"]);
+    assert_eq!(refused, ["rule ident ==> add", "rule swap ==> mul"]);
     assert_eq!(
         report.declarations[0]
             .description
@@ -459,7 +459,7 @@ fn terminated_members_are_all_presented()
 #[test]
 fn an_unreadable_member_keeps_its_own_report()
 {
-    let source = "sign Adder {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule unit ==> add;\n}\n";
+    let source = "sign Adder {\n  sort Nat : Type;\n  oper add : (Nat, Nat) --> Nat;\n  rule ident ==> add;\n}\n";
     let report = described(source);
     let [ref diagnostic] = *report.diagnostics.as_slice()
     else {
@@ -471,6 +471,6 @@ fn an_unreadable_member_keeps_its_own_report()
     );
     assert_eq!(
         source.get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end())),
-        Some("rule unit ==> add")
+        Some("rule ident ==> add")
     );
 }

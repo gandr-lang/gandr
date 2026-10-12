@@ -26,7 +26,7 @@ sign NatDesugared {
 
 sign Labelled {
   sort Nat : Type;
-  oper unit : () --> (out : Nat);
+  oper zero : () --> (out : Nat);
   oper step : (i : Nat) --> (o : Nat);
 
   rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {

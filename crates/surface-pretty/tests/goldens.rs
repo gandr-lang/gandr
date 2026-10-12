@@ -915,7 +915,7 @@ mod tests
             faithful(Written("-3.25")),
             faithful(Written("7")),
             faithful(Written("\"\\r\\0\"")),
-            faithful(Written("()")),
+            faithful(Written("unit")),
             faithful(Written("Carry")),
             approximate(Written("<thunk>")),
         ]) {
