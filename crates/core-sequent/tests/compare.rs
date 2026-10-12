@@ -106,11 +106,11 @@ pub fn same_value(
 /// - hypothesis: L3 — independently allocated graphs agree despite different
 ///   addresses; distinct leaves, each pair field, branch labels, binders,
 ///   eliminators, constructor ordinals and field counts, nominal branches and
-///   fixpoint evidence differ, while a datatype or motive alone does not.
-///   Missing nodes, quotes, static forms and native paths are outside this
-///   observer's pure focusing fragment. These finite cases challenge ignored
-///   labels or children and address comparison, not cyclic inputs or
-///   equivalence modulo evaluation.
+///   fixpoint evidence and split arities differ, while a datatype or motive
+///   alone does not. Missing nodes, quotes, static forms and native paths are
+///   outside this observer's pure focusing fragment. These finite cases
+///   challenge ignored labels or children and address comparison, not cyclic
+///   inputs or equivalence modulo evaluation.
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
 #[spec(ensures: |ret| match start {
@@ -292,6 +292,22 @@ fn walk(
                                 .map(|(&branch, &other)| Pending::Computations(branch, other)),
                         );
                         branches.len() == other_branches.len()
+                    },
+                    | (
+                        &Computation::Split {
+                            scrutinee,
+                            arity,
+                            body,
+                        },
+                        &Computation::Split {
+                            scrutinee: other_scrutinee,
+                            arity: other_arity,
+                            body: other_body,
+                        },
+                    ) => {
+                        pending.push(Pending::Values(scrutinee, other_scrutinee));
+                        pending.push(Pending::Computations(body, other_body));
+                        arity == other_arity
                     },
                     | (
                         &Computation::Fixpoint { body, evidence },

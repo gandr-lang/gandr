@@ -425,6 +425,9 @@ enum Task
     Case(NodeCount),
     /// Pop the branches and the scrutinee and build the nominal case.
     DataCase(NodeCount),
+    /// Pop the body and the scrutinee and build the split of this many
+    /// components.
+    Split(gandr_core_term::ComponentCount),
 }
 
 /// The state of one decoding.
@@ -551,7 +554,7 @@ impl Unfocusing<'_>
             | &Task::Primitive(_, arguments) => self.values.len() >= arguments.len(),
             | &Task::ListCons => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
-            | &Task::Application => !self.values.is_empty() && !self.computations.is_empty(),
+            | &Task::Application | &Task::Split(_) => !self.values.is_empty() && !self.computations.is_empty(),
             | &Task::ListFold(..) => !self.values.is_empty() && self.computations.len() >= 2,
             | &Task::Tuple(arity) | &Task::Native { arity, .. } => self.values.len() >= usize::from(arity),
             | &Task::Case(branches) | &Task::DataCase(branches) => !self.values.is_empty() && self.computations.len() >= usize::from(branches),
@@ -702,6 +705,13 @@ impl Unfocusing<'_>
                 let scrutinee = self.pop_value()?;
                 let cased = self.core.computation_case(scrutinee, &branches);
                 self.computations.push(cased);
+                Ok(())
+            },
+            | Task::Split(arity) => {
+                let body = self.pop_computation()?;
+                let scrutinee = self.pop_value()?;
+                let split = self.core.computation_split(scrutinee, arity, body);
+                self.computations.push(split);
                 Ok(())
             },
             | Task::DataCase(count) => {
@@ -1312,6 +1322,31 @@ impl Unfocusing<'_>
                 self.tasks.push(Task::Spine(then, depth));
                 self.tasks.push(Task::Force);
             },
+            | ConsumerNode::Case { ref arms }
+                if matches!(**arms, [crate::il::PatternArm {
+                    constructor: ConstructorTag::Tuple(_),
+                    ..
+                }]) =>
+            {
+                let [
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Tuple(arity),
+                        body,
+                    },
+                ] = **arms
+                else {
+                    return Err(UnfocusRefusal::DecodeInvariant);
+                };
+                let mut under = depth;
+                for _ in 0_usize .. usize::from(arity) {
+                    under = under.under_producer();
+                }
+                self.tasks
+                    .push(Task::Split(gandr_core_term::ComponentCount::from(
+                        usize::from(arity),
+                    )));
+                self.tasks.push(Task::Command(body, under));
+            },
             | ConsumerNode::Case { ref arms } => {
                 let in_order = arms.iter().enumerate().all(|(summand, arm)| {
                     arm.constructor == ConstructorTag::Injection(Summand::from(summand))
@@ -1691,19 +1726,25 @@ mod tests
 
         let matcher = arena
             .mint_consumer(ConsumerNode::Case {
-                arms: Box::from([crate::il::PatternArm {
-                    constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
-                    body: inner,
-                }]),
+                arms: Box::from([
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Tuple(ProducerArity::ZERO),
+                        body: inner,
+                    },
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Injection(Summand::from(1_usize)),
+                        body: inner,
+                    },
+                ]),
             })
-            .expect("the arm resolves");
+            .expect("the arms resolve");
         let matched = arena
             .mint_cut(Polarity::Positive, unit, matcher)
             .expect("children resolve");
         assert_eq!(
             Err(UnfocusRefusal::ConsumerOutsideTheImage(matcher)),
             unfocus_command(&arena, matched, &mut core),
-            "the core cases on a sum alone"
+            "the core splits one tuple pattern or cases on a sum, never a mix"
         );
         assert_eq!(
             CoreArena::new().watermark(),
